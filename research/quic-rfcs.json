@@ -1,0 +1,328 @@
+{
+  "review_date": "2026-09-16",
+  "review_timezone": "America/Edmonton",
+  "scope": "Architecture review of all published QUIC WG RFCs and eight directly related RFCs; selected peripheral and supporting documents. Not a transitive dependency or conformance audit.",
+  "index_url": "https://www.rfc-editor.org/rfc-index.xml",
+  "index_sha256": "6e15da7fc4aa1965ec1fa89cb47f362a99ae7871045368761e7b4f076dc6bdac",
+  "index_entry_count": 9839,
+  "working_group_url": "https://datatracker.ietf.org/wg/quic/documents/",
+  "title_screen_regex": "\\bQUIC\\b|HTTP/3|QPACK|HTTP Datagrams|UDP in HTTP|IP in HTTP|Extensible Prioritization",
+  "rfc_counts": {
+    "quic-wg": 12,
+    "companion": 8,
+    "peripheral-screening": 2,
+    "supporting": 2
+  },
+  "documents": [
+    {
+      "rfc": 8999,
+      "title": "Version-Independent Properties of QUIC",
+      "status": "PROPOSED STANDARD",
+      "working_group": "quic",
+      "scope": "quic-wg",
+      "url": "https://www.rfc-editor.org/rfc/rfc8999.html",
+      "updates": [],
+      "updated-by": [
+        "RFC9368"
+      ],
+      "obsoletes": [],
+      "obsoleted-by": []
+    },
+    {
+      "rfc": 9000,
+      "title": "QUIC: A UDP-Based Multiplexed and Secure Transport",
+      "status": "PROPOSED STANDARD",
+      "working_group": "quic",
+      "scope": "quic-wg",
+      "url": "https://www.rfc-editor.org/rfc/rfc9000.html",
+      "updates": [],
+      "updated-by": [],
+      "obsoletes": [],
+      "obsoleted-by": []
+    },
+    {
+      "rfc": 9001,
+      "title": "Using TLS to Secure QUIC",
+      "status": "PROPOSED STANDARD",
+      "working_group": "quic",
+      "scope": "quic-wg",
+      "url": "https://www.rfc-editor.org/rfc/rfc9001.html",
+      "updates": [],
+      "updated-by": [],
+      "obsoletes": [],
+      "obsoleted-by": []
+    },
+    {
+      "rfc": 9002,
+      "title": "QUIC Loss Detection and Congestion Control",
+      "status": "PROPOSED STANDARD",
+      "working_group": "quic",
+      "scope": "quic-wg",
+      "url": "https://www.rfc-editor.org/rfc/rfc9002.html",
+      "updates": [],
+      "updated-by": [],
+      "obsoletes": [],
+      "obsoleted-by": []
+    },
+    {
+      "rfc": 9114,
+      "title": "HTTP/3",
+      "status": "PROPOSED STANDARD",
+      "working_group": "quic",
+      "scope": "quic-wg",
+      "url": "https://www.rfc-editor.org/rfc/rfc9114.html",
+      "updates": [],
+      "updated-by": [],
+      "obsoletes": [],
+      "obsoleted-by": []
+    },
+    {
+      "rfc": 9204,
+      "title": "QPACK: Field Compression for HTTP/3",
+      "status": "PROPOSED STANDARD",
+      "working_group": "quic",
+      "scope": "quic-wg",
+      "url": "https://www.rfc-editor.org/rfc/rfc9204.html",
+      "updates": [],
+      "updated-by": [],
+      "obsoletes": [],
+      "obsoleted-by": []
+    },
+    {
+      "rfc": 9218,
+      "title": "Extensible Prioritization Scheme for HTTP",
+      "status": "PROPOSED STANDARD",
+      "working_group": "httpbis",
+      "scope": "companion",
+      "url": "https://www.rfc-editor.org/rfc/rfc9218.html",
+      "updates": [],
+      "updated-by": [],
+      "obsoletes": [],
+      "obsoleted-by": []
+    },
+    {
+      "rfc": 9220,
+      "title": "Bootstrapping WebSockets with HTTP/3",
+      "status": "PROPOSED STANDARD",
+      "working_group": "httpbis",
+      "scope": "companion",
+      "url": "https://www.rfc-editor.org/rfc/rfc9220.html",
+      "updates": [],
+      "updated-by": [],
+      "obsoletes": [],
+      "obsoleted-by": []
+    },
+    {
+      "rfc": 9221,
+      "title": "An Unreliable Datagram Extension to QUIC",
+      "status": "PROPOSED STANDARD",
+      "working_group": "quic",
+      "scope": "quic-wg",
+      "url": "https://www.rfc-editor.org/rfc/rfc9221.html",
+      "updates": [],
+      "updated-by": [],
+      "obsoletes": [],
+      "obsoleted-by": []
+    },
+    {
+      "rfc": 9250,
+      "title": "DNS over Dedicated QUIC Connections",
+      "status": "PROPOSED STANDARD",
+      "working_group": "dprive",
+      "scope": "companion",
+      "url": "https://www.rfc-editor.org/rfc/rfc9250.html",
+      "updates": [],
+      "updated-by": [],
+      "obsoletes": [],
+      "obsoleted-by": []
+    },
+    {
+      "rfc": 9265,
+      "title": "Forward Erasure Correction (FEC) Coding and Congestion Control in Transport",
+      "status": "INFORMATIONAL",
+      "working_group": null,
+      "scope": "supporting",
+      "url": "https://www.rfc-editor.org/rfc/rfc9265.html",
+      "updates": [],
+      "updated-by": [],
+      "obsoletes": [],
+      "obsoleted-by": []
+    },
+    {
+      "rfc": 9287,
+      "title": "Greasing the QUIC Bit",
+      "status": "PROPOSED STANDARD",
+      "working_group": "quic",
+      "scope": "quic-wg",
+      "url": "https://www.rfc-editor.org/rfc/rfc9287.html",
+      "updates": [],
+      "updated-by": [],
+      "obsoletes": [],
+      "obsoleted-by": []
+    },
+    {
+      "rfc": 9297,
+      "title": "HTTP Datagrams and the Capsule Protocol",
+      "status": "PROPOSED STANDARD",
+      "working_group": "masque",
+      "scope": "companion",
+      "url": "https://www.rfc-editor.org/rfc/rfc9297.html",
+      "updates": [],
+      "updated-by": [],
+      "obsoletes": [],
+      "obsoleted-by": []
+    },
+    {
+      "rfc": 9298,
+      "title": "Proxying UDP in HTTP",
+      "status": "PROPOSED STANDARD",
+      "working_group": "masque",
+      "scope": "companion",
+      "url": "https://www.rfc-editor.org/rfc/rfc9298.html",
+      "updates": [],
+      "updated-by": [
+        "RFC9484",
+        "RFC9931"
+      ],
+      "obsoletes": [],
+      "obsoleted-by": []
+    },
+    {
+      "rfc": 9308,
+      "title": "Applicability of the QUIC Transport Protocol",
+      "status": "INFORMATIONAL",
+      "working_group": "quic",
+      "scope": "quic-wg",
+      "url": "https://www.rfc-editor.org/rfc/rfc9308.html",
+      "updates": [],
+      "updated-by": [],
+      "obsoletes": [],
+      "obsoleted-by": []
+    },
+    {
+      "rfc": 9312,
+      "title": "Manageability of the QUIC Transport Protocol",
+      "status": "INFORMATIONAL",
+      "working_group": "quic",
+      "scope": "quic-wg",
+      "url": "https://www.rfc-editor.org/rfc/rfc9312.html",
+      "updates": [],
+      "updated-by": [],
+      "obsoletes": [],
+      "obsoleted-by": []
+    },
+    {
+      "rfc": 9368,
+      "title": "Compatible Version Negotiation for QUIC",
+      "status": "PROPOSED STANDARD",
+      "working_group": "quic",
+      "scope": "quic-wg",
+      "url": "https://www.rfc-editor.org/rfc/rfc9368.html",
+      "updates": [
+        "RFC8999"
+      ],
+      "updated-by": [],
+      "obsoletes": [],
+      "obsoleted-by": []
+    },
+    {
+      "rfc": 9369,
+      "title": "QUIC Version 2",
+      "status": "PROPOSED STANDARD",
+      "working_group": "quic",
+      "scope": "quic-wg",
+      "url": "https://www.rfc-editor.org/rfc/rfc9369.html",
+      "updates": [],
+      "updated-by": [],
+      "obsoletes": [],
+      "obsoleted-by": []
+    },
+    {
+      "rfc": 9412,
+      "title": "The ORIGIN Extension in HTTP/3",
+      "status": "PROPOSED STANDARD",
+      "working_group": "httpbis",
+      "scope": "companion",
+      "url": "https://www.rfc-editor.org/rfc/rfc9412.html",
+      "updates": [],
+      "updated-by": [],
+      "obsoletes": [],
+      "obsoleted-by": []
+    },
+    {
+      "rfc": 9443,
+      "title": "Multiplexing Scheme Updates for QUIC",
+      "status": "PROPOSED STANDARD",
+      "working_group": "avtcore",
+      "scope": "companion",
+      "url": "https://www.rfc-editor.org/rfc/rfc9443.html",
+      "updates": [
+        "RFC5764",
+        "RFC7983"
+      ],
+      "updated-by": [],
+      "obsoletes": [],
+      "obsoleted-by": []
+    },
+    {
+      "rfc": 9463,
+      "title": "DHCP and Router Advertisement Options for the Discovery of Network-designated Resolvers (DNR)",
+      "status": "PROPOSED STANDARD",
+      "working_group": "add",
+      "scope": "peripheral-screening",
+      "url": "https://www.rfc-editor.org/rfc/rfc9463.html",
+      "updates": [],
+      "updated-by": [],
+      "obsoletes": [],
+      "obsoleted-by": []
+    },
+    {
+      "rfc": 9464,
+      "title": "Internet Key Exchange Protocol Version 2 (IKEv2) Configuration for Encrypted DNS",
+      "status": "PROPOSED STANDARD",
+      "working_group": "ipsecme",
+      "scope": "peripheral-screening",
+      "url": "https://www.rfc-editor.org/rfc/rfc9464.html",
+      "updates": [],
+      "updated-by": [],
+      "obsoletes": [],
+      "obsoleted-by": []
+    },
+    {
+      "rfc": 9484,
+      "title": "Proxying IP in HTTP",
+      "status": "PROPOSED STANDARD",
+      "working_group": "masque",
+      "scope": "companion",
+      "url": "https://www.rfc-editor.org/rfc/rfc9484.html",
+      "updates": [
+        "RFC9298"
+      ],
+      "updated-by": [],
+      "obsoletes": [],
+      "obsoleted-by": []
+    },
+    {
+      "rfc": 9846,
+      "title": "The Transport Layer Security (TLS) Protocol Version 1.3",
+      "status": "PROPOSED STANDARD",
+      "working_group": "tls",
+      "scope": "supporting",
+      "url": "https://www.rfc-editor.org/rfc/rfc9846.html",
+      "updates": [
+        "RFC5705",
+        "RFC6066"
+      ],
+      "updated-by": [],
+      "obsoletes": [
+        "RFC5077",
+        "RFC5246",
+        "RFC6961",
+        "RFC7627",
+        "RFC8422",
+        "RFC8446"
+      ],
+      "obsoleted-by": []
+    }
+  ]
+}

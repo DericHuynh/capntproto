@@ -1,0 +1,47 @@
+[package]
+name = "reproto-rpc-bench"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+reproto = { path = "../..", default-features = false, features = ["noise"] }
+capnp = { path = "../../vendor/capnp" }
+capnp-rpc = { path = "../../vendor/capnp-rpc" }
+futures = "0.3"
+tokio = { version = "1", features = ["rt", "macros", "net", "time", "io-util", "sync"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+tokio-stream = { version = "0.1", features = ["net"] }
+tonic = "=0.14.6"
+tonic-prost = "=0.14.6"
+prost = "0.14"
+tokio-tungstenite = "=0.29.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[build-dependencies]
+capnpc = { path = "../../vendor/capnpc" }
+tonic-prost-build = "=0.14.6"
+
+[profile.release]
+debug = 1
+overflow-checks = true
+
+
+[[bench]]
+name = "noise"
+harness = false
+
+[[bench]]
+name = "grpc"
+harness = false
+
+[[bench]]
+name = "websocket"
+harness = false
+
+[[bench]]
+name = "capnp_cpp"
+harness = false

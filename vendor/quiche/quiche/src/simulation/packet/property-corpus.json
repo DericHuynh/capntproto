@@ -1,0 +1,29 @@
+[
+  {
+    "format": 1,
+    "seed": 42,
+    "cc": "cubic",
+    "psk": false,
+    "after_handshake": false,
+    "decisions": [
+      {"pick": 0, "treatment": "Corrupt", "delay_ms": 3},
+      {"pick": 2, "treatment": "Drop", "delay_ms": 1},
+      {"pick": 255, "treatment": "Duplicate", "delay_ms": 0},
+      {"pick": 2, "treatment": "CorruptCopy", "delay_ms": 2}
+    ]
+  },
+  {
+    "format": 1,
+    "seed": 7,
+    "cc": "bbr2_gcongestion",
+    "psk": true,
+    "after_handshake": true,
+    "decisions": [
+      {"pick": 255, "treatment": "Duplicate", "delay_ms": 3},
+      {"pick": 0, "treatment": "Deliver", "delay_ms": 2},
+      {"pick": 0, "treatment": "Corrupt", "delay_ms": 0},
+      {"pick": 255, "treatment": "CorruptCopy", "delay_ms": 1},
+      {"pick": 0, "treatment": "Drop", "delay_ms": 3}
+    ]
+  }
+]

@@ -1,0 +1,4 @@
+syntax = "proto3";
+package echo;
+message Frame { uint64 sequence = 1; bytes payload = 2; }
+service Echo { rpc Echo(Frame) returns (Frame); }

@@ -1,0 +1,112 @@
+//! File operations with deterministic fault injection compiled only for unit tests.
+use std::{
+    fs::File,
+    io::{self, Write},
+};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Point {
+    AppendWrite,
+    Appended,
+    AppendSync,
+    AppendSynced,
+    RecoverySync,
+    RecoveryDirectorySync,
+    Recovered,
+    CompactWrite,
+    CompactSync,
+    CompactSynced,
+    CompactRename,
+    CompactRenamed,
+    CompactDirectorySync,
+    CompactComplete,
+}
+
+pub(super) fn point(at: Point) -> io::Result<()> {
+    #[cfg(test)]
+    faults::visit(at, 0)?;
+    #[cfg(not(test))]
+    let _ = at;
+    Ok(())
+}
+
+pub(super) fn sync(file: &File, at: Point) -> io::Result<()> {
+    point(at)?;
+    file.sync_all()
+}
+
+pub(super) struct StorageWriter<'a> {
+    file: &'a File,
+    at: Point,
+}
+impl<'a> StorageWriter<'a> {
+    pub(super) fn new(file: &'a File, at: Point) -> Self {
+        Self { file, at }
+    }
+}
+impl Write for StorageWriter<'_> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        #[cfg(test)]
+        let size = faults::visit(self.at, bytes.len())?;
+        #[cfg(not(test))]
+        let size = {
+            let _ = self.at;
+            bytes.len()
+        };
+        self.file.write(&bytes[..size])
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        self.file.flush()
+    }
+}
+
+#[cfg(test)]
+pub(super) mod faults {
+    use super::*;
+    use std::{cell::RefCell, collections::VecDeque};
+
+    #[derive(Clone, Copy)]
+    pub(in crate::storage) enum Action {
+        Short(usize),
+        Error(i32),
+        Crash,
+    }
+    thread_local! {
+        static PLAN: RefCell<VecDeque<(Point, Action)>> = const { RefCell::new(VecDeque::new()) };
+        static VISITS: RefCell<Vec<Point>> = const { RefCell::new(Vec::new()) };
+    }
+    pub(in crate::storage) struct Guard;
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            PLAN.with(|p| p.borrow_mut().clear());
+        }
+    }
+    pub(in crate::storage) fn install(steps: impl IntoIterator<Item = (Point, Action)>) -> Guard {
+        PLAN.with(|p| {
+            assert!(p.borrow().is_empty());
+            *p.borrow_mut() = steps.into_iter().collect();
+        });
+        VISITS.with(|p| p.borrow_mut().clear());
+        Guard
+    }
+    pub(in crate::storage) fn visits() -> Vec<Point> {
+        VISITS.with(|p| p.borrow().clone())
+    }
+    pub(super) fn visit(at: Point, size: usize) -> io::Result<usize> {
+        VISITS.with(|p| p.borrow_mut().push(at));
+        let action = PLAN.with(|p| {
+            let mut plan = p.borrow_mut();
+            if plan.front().is_some_and(|(point, _)| *point == at) {
+                plan.pop_front().map(|(_, action)| action)
+            } else {
+                None
+            }
+        });
+        match action {
+            Some(Action::Short(n)) => Ok(n.min(size)),
+            Some(Action::Error(errno)) => Err(io::Error::from_raw_os_error(errno)),
+            Some(Action::Crash) => std::process::exit(86),
+            None => Ok(size),
+        }
+    }
+}

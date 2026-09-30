@@ -1,0 +1,4755 @@
+use crate::fd::{AttachedFd, IncomingFds, OutgoingFds};
+// Copyright (c) 2013-2015 Sandstorm Development Group, Inc. and contributors
+// Licensed under the MIT License:
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+use capnp::capability::CallHints;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+
+use capnp::any_pointer;
+use capnp::capability::Promise;
+use capnp::private::capability::{
+    ClientHook, ParamsHook, PipelineHook, PipelineOp, RequestHook, ResponseHook, ResultsHook,
+};
+use capnp::Error;
+
+use futures::channel::oneshot;
+use futures::{future, Future, FutureExt, TryFutureExt};
+
+use std::cell::{Cell, RefCell};
+use std::collections::hash_map::{self, HashMap};
+use std::mem;
+use std::rc::{Rc, Weak};
+
+use crate::attach::Attach;
+use crate::local::ResultsDoneHook;
+use crate::rpc_capnp::{
+    bootstrap, call, cap_descriptor, disembargo, exception, finish, message, message_target,
+    payload, promised_answer, resolve, return_,
+};
+use crate::task_set::TaskSet;
+use crate::{broken, local, queued};
+
+#[path = "answer_adoption.rs"]
+mod answer_adoption;
+#[path = "join.rs"]
+pub(crate) mod join;
+#[path = "multiparty_join.rs"]
+mod multiparty_join;
+
+#[path = "rpc_ids.rs"]
+mod rpc_ids;
+#[path = "rpc_tables.rs"]
+mod rpc_tables;
+use rpc_ids::{AnswerId, EmbargoId, ExportId, ImportId, QuestionId, WireId};
+use rpc_tables::{LocalTable, PeerTable};
+
+struct Question<VatId>
+where
+    VatId: 'static,
+{
+    is_awaiting_return: bool,
+
+    #[allow(dead_code)]
+    param_exports: Vec<ExportId>,
+
+    #[allow(dead_code)]
+    is_tail_call: bool,
+
+    /// The local QuestionRef, set to None when it is destroyed.
+    self_ref: Option<Weak<RefCell<QuestionRef<VatId>>>>,
+
+    /// If true, don't send a Finish message.
+    skip_finish: bool,
+    join_id: Option<u32>,
+    allow_third_party: bool,
+    multiparty_join: bool,
+}
+
+impl<VatId> Question<VatId> {
+    fn new() -> Self {
+        Self {
+            is_awaiting_return: true,
+            param_exports: Vec::new(),
+            is_tail_call: false,
+            self_ref: None,
+            skip_finish: false,
+            join_id: None,
+            allow_third_party: false,
+            multiparty_join: false,
+        }
+    }
+}
+
+/// A reference to an entry on the question table.  Used to detect when the `Finish` message
+/// can be sent.
+struct QuestionRef<VatId>
+where
+    VatId: 'static,
+{
+    connection_state: Option<Rc<ConnectionState<VatId>>>,
+    id: QuestionId,
+    fulfiller: Option<oneshot::Sender<Promise<Response<VatId>, Error>>>,
+    pipeline: Option<Weak<RefCell<PipelineState<VatId>>>>,
+}
+
+impl<VatId> QuestionRef<VatId> {
+    fn new(
+        state: Rc<ConnectionState<VatId>>,
+        id: QuestionId,
+        fulfiller: oneshot::Sender<Promise<Response<VatId>, Error>>,
+    ) -> Self {
+        Self {
+            connection_state: Some(state),
+            id,
+            fulfiller: Some(fulfiller),
+            pipeline: None,
+        }
+    }
+    fn fulfill(&mut self, response: Promise<Response<VatId>, Error>) {
+        if let Some(fulfiller) = self.fulfiller.take() {
+            let _ = fulfiller.send(response);
+        }
+    }
+
+    fn reject(&mut self, err: Error) {
+        if let Some(fulfiller) = self.fulfiller.take() {
+            let _ = fulfiller.send(Promise::err(err));
+        }
+    }
+}
+
+impl<VatId> Drop for QuestionRef<VatId> {
+    fn drop(&mut self) {
+        let Some(connection_state) = self.connection_state.take() else {
+            return;
+        };
+        let mut questions = connection_state.questions.borrow_mut();
+        let Some(q) = questions.find(self.id) else {
+            unreachable!()
+        };
+        if let Ok(ref mut c) = *connection_state.connection.borrow_mut() {
+            if !q.skip_finish {
+                let mut message = c.new_outgoing_message(5);
+                {
+                    let root: message::Builder = message.get_body().unwrap().init_as();
+                    let mut builder = root.init_finish();
+                    builder.set_question_id(self.id.to_wire());
+                    builder.set_require_early_cancellation_workaround(false);
+
+                    // If we're still awaiting a return, then this request is being
+                    // canceled, and we're going to ignore any capabilities in the return
+                    // message, so set releaseResultCaps true. If we already received the
+                    // return, then we've already built local proxies for the caps and will
+                    // send Release messages when those are destroyed.
+                    builder.set_release_result_caps(q.is_awaiting_return);
+                }
+                let _ = message.send();
+            }
+        }
+
+        if q.is_awaiting_return {
+            // Still waiting for return, so just remove the QuestionRef pointer from the table.
+            q.self_ref = None;
+        } else {
+            // Call has already returned, so we can now remove it from the table.
+            questions.erase(self.id)
+        }
+        drop(questions);
+        connection_state.schedule_idle_check();
+    }
+}
+
+struct Answer<VatId>
+where
+    VatId: 'static,
+{
+    return_has_been_sent: Rc<Cell<bool>>,
+    request_words: usize,
+    pipeline_only_guard: Option<Rc<ReturnGuard<VatId>>>,
+
+    // Send pipelined calls here.  Becomes null as soon as a `Finish` is received.
+    pipeline: Option<Box<dyn PipelineHook>>,
+
+    // For locally-redirected calls (Call.sendResultsTo.yourself), this is a promise for the call
+    // result, to be picked up by a subsequent `Return`.
+    redirected_results: Option<Promise<Response<VatId>, Error>>,
+
+    received_finish: Rc<Cell<bool>>,
+    call_completion_promise: Option<Promise<(), Error>>,
+
+    // List of exports that were sent in the results.  If the finish has `releaseResultCaps` these
+    // will need to be released.
+    result_exports: Vec<ExportId>,
+    provision: Option<(
+        Rc<crate::third_party::ThirdPartyExchange>,
+        Box<dyn std::any::Any>,
+    )>,
+    join: Option<join::PartGuard<VatId>>,
+    callee_allocated: bool,
+    join_response: Option<Box<dyn std::any::Any>>,
+}
+
+impl<VatId> Answer<VatId> {
+    fn new() -> Self {
+        Self {
+            return_has_been_sent: Rc::new(Cell::new(false)),
+            request_words: 0,
+            pipeline_only_guard: None,
+            pipeline: None,
+            redirected_results: None,
+            received_finish: Rc::new(Cell::new(false)),
+            call_completion_promise: None,
+            result_exports: Vec::new(),
+            provision: None,
+            join: None,
+            callee_allocated: false,
+            join_response: None,
+        }
+    }
+}
+
+pub(crate) struct Export {
+    refcount: u32,
+
+    /// If true, this is the canonical export entry for this clientHook, that is,
+    /// `exports_by_cap[clientHook]` points to this entry.
+    canonical: bool,
+
+    client_hook: Box<dyn ClientHook>,
+
+    // If this export is a promise (not a settled capability), the `resolve_op` represents the
+    // ongoing operation to wait for that promise to resolve and then send a `Resolve` message.
+    resolve_op: Promise<(), Error>,
+    vine: Option<Rc<dyn Fn(&[u8]) -> capnp::Result<()>>>,
+    reflected_vine: Option<Rc<dyn Fn() -> Box<dyn ClientHook>>>,
+}
+
+impl Export {
+    fn new(client_hook: Box<dyn ClientHook>) -> Self {
+        Self {
+            refcount: 1,
+            canonical: false,
+            client_hook,
+            resolve_op: Promise::err(Error::failed("no resolve op".to_string())),
+            vine: None,
+            reflected_vine: None,
+        }
+    }
+}
+
+pub(crate) struct Import<VatId>
+where
+    VatId: 'static,
+{
+    import_client: Weak<RefCell<ImportClient<VatId>>>,
+
+    // Either a copy of importClient, or, in the case of promises, the wrapping PromiseClient.
+    // Becomes null when it is discarded *or* when the import is destroyed (e.g. the promise is
+    // resolved and the import is no longer needed).
+    app_client: Option<WeakClient<VatId>>,
+
+    // If non-null, the import is a promise.
+    promise_client_to_resolve: Option<Weak<RefCell<PromiseClient<VatId>>>>,
+}
+
+impl<VatId> Import<VatId> {
+    fn new(import_client: &Rc<RefCell<ImportClient<VatId>>>) -> Self {
+        Self {
+            import_client: Rc::downgrade(import_client),
+            app_client: None,
+            promise_client_to_resolve: None,
+        }
+    }
+}
+
+struct Embargo {
+    fulfiller: Option<oneshot::Sender<Result<(), Error>>>,
+}
+
+impl Embargo {
+    fn new(fulfiller: oneshot::Sender<Result<(), Error>>) -> Self {
+        Self {
+            fulfiller: Some(fulfiller),
+        }
+    }
+}
+
+fn to_pipeline_ops(
+    ops: ::capnp::struct_list::Reader<promised_answer::op::Owned>,
+) -> ::capnp::Result<Vec<PipelineOp>> {
+    let mut result = Vec::new();
+    for op in ops {
+        match op.which()? {
+            promised_answer::op::Noop(()) => {
+                result.push(PipelineOp::Noop);
+            }
+            promised_answer::op::GetPointerField(idx) => {
+                result.push(PipelineOp::GetPointerField(idx));
+            }
+        }
+    }
+    Ok(result)
+}
+
+fn from_error(error: &Error, mut builder: exception::Builder, trace: Option<&str>) {
+    if let Some(trace) = trace {
+        builder.set_trace(trace);
+    }
+    let details: Vec<_> = error.details().collect();
+    if !details.is_empty() {
+        let mut output = builder.reborrow().init_details(details.len() as u32);
+        for (index, (id, data)) in details.into_iter().enumerate() {
+            let mut detail = output.reborrow().get(index as u32);
+            detail.set_detail_id(id);
+            detail.set_data(data);
+        }
+    }
+    let typ = match error.kind {
+        ::capnp::ErrorKind::Failed => exception::Type::Failed,
+        ::capnp::ErrorKind::Overloaded => exception::Type::Overloaded,
+        ::capnp::ErrorKind::Disconnected => exception::Type::Disconnected,
+        ::capnp::ErrorKind::Unimplemented => exception::Type::Unimplemented,
+        ::capnp::ErrorKind::SettingDynamicCapabilitiesIsUnsupported => {
+            exception::Type::Unimplemented
+        }
+        _ => exception::Type::Failed,
+    };
+    builder.set_type(typ);
+    match error.kind {
+        ::capnp::ErrorKind::Failed
+        | ::capnp::ErrorKind::Overloaded
+        | ::capnp::ErrorKind::Disconnected
+        | ::capnp::ErrorKind::Unimplemented => {
+            builder.set_reason(&error.extra);
+        }
+        _ => {
+            // There is extra information in `error.kind` that is not
+            // captured by `typ`. We call `error.to_string()` to allow that
+            // information to be recorded in the `reason` field.
+            builder.set_reason(error.to_string());
+        }
+    }
+}
+
+fn remote_exception_to_error(exception: exception::Reader) -> Error {
+    // Unknown enum values still carry a useful reason; clamp only their kind.
+    let kind = match exception.get_type() {
+        Ok(exception::Type::Overloaded) => capnp::ErrorKind::Overloaded,
+        Ok(exception::Type::Disconnected) => capnp::ErrorKind::Disconnected,
+        Ok(exception::Type::Unimplemented) => capnp::ErrorKind::Unimplemented,
+        _ => capnp::ErrorKind::Failed,
+    };
+    let mut error = Error::from_kind(kind);
+    error.extra = match exception.get_reason() {
+        Ok(reason) => {
+            let reason = reason
+                .to_str()
+                .unwrap_or("<malformed utf-8 in error reason>");
+            if reason.starts_with("remote exception: ") {
+                reason.to_string()
+            } else {
+                format!("remote exception: {reason}")
+            }
+        }
+        Err(_) => "remote exception: (malformed error)".into(),
+    };
+    // Malformed diagnostic pointers must not hide the original RPC failure.
+    if exception.has_trace() {
+        if let Ok(trace) = exception
+            .get_trace()
+            .and_then(|trace| trace.to_str().map_err(Into::into))
+        {
+            error.set_remote_trace(trace.to_string());
+        }
+    }
+    if let Ok(details) = exception.get_details() {
+        for detail in details {
+            if detail.has_data() {
+                if let Ok(data) = detail.get_data() {
+                    error.set_detail(detail.get_detail_id(), data.to_vec());
+                }
+            }
+        }
+    }
+    error
+}
+
+pub(crate) struct ConnectionErrorHandler<VatId>
+where
+    VatId: 'static,
+{
+    weak_state: Weak<ConnectionState<VatId>>,
+}
+
+impl<VatId> ConnectionErrorHandler<VatId> {
+    fn new(weak_state: Weak<ConnectionState<VatId>>) -> Self {
+        Self { weak_state }
+    }
+}
+
+impl<VatId> crate::task_set::TaskReaper<capnp::Error> for ConnectionErrorHandler<VatId> {
+    fn task_failed(&mut self, error: ::capnp::Error) {
+        if let Some(state) = self.weak_state.upgrade() {
+            state.disconnect(error)
+        }
+    }
+}
+
+pub(crate) struct ConnectionState<VatId>
+where
+    VatId: 'static,
+{
+    bootstrap: crate::Bootstrap<VatId>,
+    weak_self: Weak<Self>,
+    connection_id: usize,
+    idle: Cell<bool>,
+    idle_check_queued: Cell<bool>,
+    read_canceler: RefCell<Option<future::AbortHandle>>,
+    exports: RefCell<LocalTable<ExportId, Export>>,
+    questions: RefCell<LocalTable<QuestionId, Question<VatId>>>,
+    got_return_for_high_id: Cell<bool>,
+    answers: RefCell<PeerTable<AnswerId, Answer<VatId>>>,
+    joins: RefCell<join::Table<VatId>>,
+    next_adopted_answer: Cell<u32>,
+    imports: RefCell<PeerTable<ImportId, Import<VatId>>>,
+
+    /// Exports keyed by ClientHook::get_ptr().
+    exports_by_cap: RefCell<HashMap<usize, ExportId>>,
+
+    embargoes: RefCell<LocalTable<EmbargoId, Embargo>>,
+
+    tasks: RefCell<Option<crate::task_set::TaskSetHandle<capnp::Error>>>,
+    connection: RefCell<::std::result::Result<Box<dyn crate::Connection<VatId>>, ::capnp::Error>>,
+    disconnect_fulfiller: RefCell<Option<oneshot::Sender<Promise<(), Error>>>>,
+
+    client_downcast_map: RefCell<HashMap<usize, WeakClient<VatId>>>,
+    registry: Weak<RefCell<ConnectionRegistry<VatId>>>,
+    system_tasks: crate::task_set::TaskSetHandle<Error>,
+    flow_limit: Cell<usize>,
+    call_words: Cell<usize>,
+    flow_waiter: RefCell<Option<oneshot::Sender<()>>>,
+}
+
+impl<VatId> ConnectionState<VatId> {
+    pub(crate) fn new(
+        bootstrap: crate::Bootstrap<VatId>,
+        connection: Box<dyn crate::Connection<VatId>>,
+        disconnect_fulfiller: oneshot::Sender<Promise<(), Error>>,
+        registry: Weak<RefCell<ConnectionRegistry<VatId>>>,
+        system_tasks: crate::task_set::TaskSetHandle<Error>,
+        flow_limit: usize,
+    ) -> (TaskSet<Error>, Rc<Self>) {
+        let connection_id = connection.connection_id();
+        let state = Rc::new_cyclic(|weak| Self {
+            bootstrap,
+            weak_self: weak.clone(),
+            connection_id,
+            idle: Cell::new(true),
+            idle_check_queued: Cell::new(false),
+            read_canceler: RefCell::new(None),
+            exports: RefCell::new(LocalTable::new()),
+            questions: RefCell::new(LocalTable::new()),
+            got_return_for_high_id: Cell::new(false),
+            answers: RefCell::new(PeerTable::new()),
+            joins: RefCell::new(join::Table::default()),
+            next_adopted_answer: Cell::new(0),
+            imports: RefCell::new(PeerTable::new()),
+            exports_by_cap: RefCell::new(HashMap::new()),
+            embargoes: RefCell::new(LocalTable::new()),
+            tasks: RefCell::new(None),
+            connection: RefCell::new(Ok(connection)),
+            disconnect_fulfiller: RefCell::new(Some(disconnect_fulfiller)),
+            client_downcast_map: RefCell::new(HashMap::new()),
+            registry,
+            system_tasks,
+            flow_limit: Cell::new(flow_limit),
+            call_words: Cell::new(0),
+            flow_waiter: RefCell::new(None),
+        });
+        let (mut handle, tasks) =
+            TaskSet::new(Box::new(ConnectionErrorHandler::new(Rc::downgrade(&state))));
+
+        state.set_not_idle();
+        handle.add(Self::message_loop(Rc::downgrade(&state)));
+        *state.tasks.borrow_mut() = Some(handle);
+        (tasks, state)
+    }
+
+    pub(crate) fn set_not_idle(&self) {
+        if self.idle.replace(false) {
+            if let Ok(connection) = self.connection.borrow_mut().as_mut() {
+                connection.set_idle(false);
+            }
+        }
+    }
+
+    fn all_tables_empty(&self) -> bool {
+        self.questions.borrow().is_empty()
+            && self.answers.borrow().slots.is_empty()
+            && self.imports.borrow().slots.is_empty()
+            && self.exports.borrow().is_empty()
+            && self.embargoes.borrow().is_empty()
+    }
+
+    fn schedule_idle_check(&self) {
+        if self.idle.get() || self.idle_check_queued.replace(true) {
+            return;
+        }
+        let weak = self.weak_self.clone();
+        self.add_task(async move {
+            if let Some(state) = weak.upgrade() {
+                state.idle_check_queued.set(false);
+                if !state.idle.get() && state.all_tables_empty() {
+                    if let Ok(connection) = state.connection.borrow_mut().as_mut() {
+                        state.idle.set(true);
+                        connection.set_idle(true);
+                    }
+                }
+            }
+            Ok(())
+        });
+    }
+
+    fn detach_from_registry(&self) {
+        if let Some(registry) = self.registry.upgrade() {
+            let removed = {
+                let mut registry = registry.borrow_mut();
+                let removed = registry.states.remove(&self.connection_id);
+                if removed.is_some() {
+                    registry.closing_connections += 1;
+                }
+                removed
+            };
+            drop(removed);
+        }
+    }
+
+    fn cancel_read(&self) {
+        let canceler = self.read_canceler.borrow_mut().take();
+        if let Some(canceler) = canceler {
+            canceler.abort();
+        }
+    }
+
+    fn idle_eof(&self) {
+        debug_assert!(self.all_tables_empty());
+        let old = mem::replace(
+            &mut *self.connection.borrow_mut(),
+            Err(Error::disconnected(
+                "Peer disconnected idle session.".into(),
+            )),
+        );
+        let Ok(mut connection) = old else {
+            return;
+        };
+        self.detach_from_registry();
+        self.cancel_read();
+        let shutdown = connection.shutdown(Ok(()));
+        if let Some(fulfiller) = self.disconnect_fulfiller.borrow_mut().take() {
+            let _ = fulfiller.send(Promise::from_future(shutdown.attach(connection)));
+        }
+    }
+
+    fn encode_trace(&self, error: &Error) -> Option<String> {
+        // Snapshot the callback without retaining the registry borrow while
+        // application code runs. Existing and introduced connections share it.
+        let encoder = self
+            .registry
+            .upgrade()
+            .and_then(|registry| registry.borrow().trace_encoder.clone());
+        encoder.map(|encode| encode(error))
+    }
+
+    pub(crate) fn set_flow_limit(&self, words: usize) {
+        self.flow_limit.set(words);
+        self.maybe_unblock_flow();
+    }
+
+    fn maybe_unblock_flow(&self) {
+        if self.call_words.get() < self.flow_limit.get() {
+            let waiter = self.flow_waiter.borrow_mut().take();
+            if let Some(waiter) = waiter {
+                let _ = waiter.send(());
+            }
+        }
+    }
+
+    fn new_outgoing_message(
+        &self,
+        first_segment_words: u32,
+    ) -> capnp::Result<Box<dyn crate::OutgoingMessage>> {
+        self.set_not_idle();
+        match self.connection.borrow_mut().as_mut() {
+            Err(e) => Err(e.clone()),
+            Ok(c) => Ok(c.new_outgoing_message(first_segment_words)),
+        }
+    }
+
+    pub(crate) fn disconnect(&self, error: ::capnp::Error) {
+        if self.connection.borrow().is_err() {
+            // Already disconnected.
+            return;
+        }
+
+        // Application calls observe a lost connection even when its original
+        // failure was a protocol error or an Abort with another error kind.
+        // Clone the complete error so remote diagnostics and details survive.
+        let mut network_error = error.clone();
+        network_error.kind = capnp::ErrorKind::Disconnected;
+
+        // Publish the failure before any capability destructor, promise resolution,
+        // trace encoder, or network callback can re-enter RPC. C++ does this before
+        // touching its tables as well. Only this stack frame owns the dying transport.
+        let connection = mem::replace(
+            &mut *self.connection.borrow_mut(),
+            Err(network_error.clone()),
+        );
+        let Ok(mut c) = connection else {
+            unreachable!()
+        };
+        self.detach_from_registry();
+        self.cancel_read();
+
+        // Detach tables before invoking user code. In particular, rejecting a
+        // promise or dropping an export can release imports and QuestionRefs.
+        let questions = mem::replace(&mut *self.questions.borrow_mut(), LocalTable::new());
+        for question in questions.iter() {
+            if let Some(reference) = question.self_ref.as_ref().and_then(Weak::upgrade) {
+                let mut reference = reference.borrow_mut();
+                reference.connection_state.take();
+                reference.reject(network_error.clone());
+            }
+        }
+        let answers_to_release = mem::take(&mut self.answers.borrow_mut().slots);
+        for answer in answers_to_release.values() {
+            answer.received_finish.set(true);
+        }
+        let exports_to_release = mem::replace(&mut *self.exports.borrow_mut(), LocalTable::new());
+        self.exports_by_cap.borrow_mut().clear();
+        let imports = self
+            .imports
+            .borrow_mut()
+            .slots
+            .values_mut()
+            .filter_map(|import| import.promise_client_to_resolve.take())
+            .collect::<Vec<_>>();
+        for import in imports {
+            if let Some(promise) = import.upgrade() {
+                promise.borrow_mut().resolve(Err(network_error.clone()));
+            }
+        }
+        let mut embargoes = mem::replace(&mut *self.embargoes.borrow_mut(), LocalTable::new());
+        for embargo in embargoes.iter_mut() {
+            if let Some(fulfiller) = embargo.fulfiller.take() {
+                let _ = fulfiller.send(Err(network_error.clone()));
+            }
+        }
+        drop(exports_to_release);
+        // Includes redirected results and tail-call completion ownership.
+        drop(answers_to_release);
+
+        // Idle is a promise to the transport that no further messages will be
+        // sent without new traffic/network activity. Explicit disconnect and
+        // receive errors must honor it as well as orderly EOF.
+        if !self.idle.get() {
+            let trace = self.encode_trace(&error);
+            // Abort is best effort; a transport that cannot allocate its body
+            // must not prevent shutdown and release of the remaining owners.
+            let mut message = c.new_outgoing_message(100);
+            if let Ok(body) = message.get_body() {
+                from_error(
+                    &error,
+                    body.init_as::<message::Builder>().init_abort(),
+                    trace.as_deref(),
+                );
+                let _ = message.send();
+            }
+        }
+
+        self.call_words.set(0);
+        let flow_waiter = self.flow_waiter.borrow_mut().take();
+        drop(flow_waiter);
+
+        let promise = c.shutdown(Err(network_error)).then(|r| match r {
+            Ok(()) => Promise::ok(()),
+            Err(e) => {
+                if e.kind != ::capnp::ErrorKind::Disconnected {
+                    // Don't report disconnects as an error.
+                    Promise::err(e)
+                } else {
+                    Promise::ok(())
+                }
+            }
+        });
+        let Some(fulfiller) = self.disconnect_fulfiller.borrow_mut().take() else {
+            unreachable!()
+        };
+        let _ = fulfiller.send(Promise::from_future(promise.attach(c)));
+    }
+
+    // Transform a future into a promise that gets executed even if it is never polled.
+    // Dropping the returned promise cancels the computation.
+    fn eagerly_evaluate<T, F>(&self, task: F) -> Promise<T, Error>
+    where
+        F: Future<Output = Result<T, Error>> + 'static + Unpin,
+        T: 'static,
+    {
+        let (tx, rx) = oneshot::channel::<Result<T, Error>>();
+        let (tx2, rx2) = oneshot::channel::<()>();
+        let f1 = Box::pin(task.map(move |r| {
+            let _ = tx.send(r);
+        })) as Pin<Box<dyn Future<Output = ()> + Unpin>>;
+        let f2 = Box::pin(rx2.map(drop)) as Pin<Box<dyn Future<Output = ()> + Unpin>>;
+
+        self.add_task(future::select(f1, f2).map(|_| Ok(())));
+        Promise::from_future(rx.map_err(crate::canceled_to_error).map(|r| {
+            drop(tx2);
+            r?
+        }))
+    }
+
+    fn add_task<F>(&self, task: F)
+    where
+        F: Future<Output = Result<(), Error>> + 'static,
+    {
+        if let Some(ref mut tasks) = *self.tasks.borrow_mut() {
+            tasks.add(task);
+        }
+    }
+
+    pub(crate) fn bootstrap(state: &Rc<Self>) -> Box<dyn ClientHook> {
+        let question_id = state.questions.borrow_mut().push(Question::new());
+
+        let (fulfiller, promise) = oneshot::channel();
+        let promise = promise.map_err(crate::canceled_to_error);
+        let promise = promise.and_then(|response_promise| response_promise);
+        let question_ref = Rc::new(RefCell::new(QuestionRef::new(
+            state.clone(),
+            question_id,
+            fulfiller,
+        )));
+        let promise = promise.attach(question_ref.clone());
+        match state.questions.borrow_mut().find(question_id) {
+            Some(ref mut q) => {
+                q.self_ref = Some(Rc::downgrade(&question_ref));
+            }
+            None => unreachable!(),
+        }
+        match *state.connection.borrow_mut() {
+            Ok(ref mut c) => {
+                let mut message = c.new_outgoing_message(5);
+                {
+                    let mut builder = message
+                        .get_body()
+                        .unwrap()
+                        .init_as::<message::Builder>()
+                        .init_bootstrap();
+                    builder.set_question_id(question_id.to_wire());
+                }
+                let _ = message.send();
+            }
+            Err(_) => panic!(),
+        }
+
+        let pipeline = Pipeline::new(state, question_ref, Some(Promise::from_future(promise)));
+        pipeline.get_pipelined_cap_move(Vec::new())
+    }
+
+    fn message_loop(weak_state: Weak<Self>) -> Promise<(), capnp::Error> {
+        let Some(state) = weak_state.upgrade() else {
+            return Promise::err(Error::disconnected(
+                "message loop cannot continue without a connection".into(),
+            ));
+        };
+
+        if state.connection.borrow().is_ok() && state.call_words.get() > state.flow_limit.get() {
+            let (sender, receiver) = oneshot::channel();
+            *state.flow_waiter.borrow_mut() = Some(sender);
+            return Promise::from_future(async move {
+                let _ = receiver.await;
+                if let Some(state) = weak_state.upgrade() {
+                    state.add_task(Self::message_loop(weak_state));
+                }
+                Ok(())
+            });
+        }
+
+        let promise = match *state.connection.borrow_mut() {
+            Err(_) => return Promise::ok(()),
+            Ok(ref mut connection) => connection.receive_incoming_message(),
+        };
+
+        // Disconnect must release a pending read even if the peer never sends
+        // again. Cancel only transport input; protected application calls and
+        // already-delivered response/pipeline ownership have separate lifetimes.
+        let (canceler, registration) = future::AbortHandle::new_pair();
+        *state.read_canceler.borrow_mut() = Some(canceler);
+        Promise::from_future(async move {
+            let Ok(received) = future::Abortable::new(promise, registration).await else {
+                return Ok(());
+            };
+            match received? {
+                Some(m) => {
+                    Self::handle_message(&weak_state, m)?;
+                    if let Some(state) = weak_state.upgrade() {
+                        state.add_task(Self::message_loop(weak_state));
+                    }
+                }
+                None => {
+                    if let Some(state) = weak_state.upgrade() {
+                        if state.idle.get() && state.connection.borrow().is_ok() {
+                            state.idle_eof();
+                        } else {
+                            state.disconnect(Error::disconnected("Peer disconnected.".to_string()));
+                        }
+                    }
+                }
+            }
+            Ok(())
+        })
+    }
+
+    fn send_unimplemented(
+        connection_state: &Rc<Self>,
+        message: &dyn crate::IncomingMessage,
+    ) -> capnp::Result<()> {
+        let mut out_message = connection_state.new_outgoing_message(50)?; // XXX size hint
+        {
+            let mut root: message::Builder = out_message.get_body()?.get_as()?;
+            root.set_unimplemented(message.get_body()?.get_as()?)?;
+        }
+        let _ = out_message.send();
+        Ok(())
+    }
+
+    fn handle_unimplemented(
+        connection_state: &Rc<Self>,
+        message: message::Reader,
+    ) -> capnp::Result<()> {
+        match message.which()? {
+            message::Join(request) => {
+                join::unimplemented(connection_state, request?)?;
+            }
+            message::Resolve(resolve) => {
+                let resolve = resolve?;
+                match resolve.which()? {
+                    resolve::Cap(c) => match c?.which()? {
+                        cap_descriptor::None(()) => (),
+                        cap_descriptor::SenderHosted(export_id) => {
+                            connection_state.release_export(ExportId::from_wire(export_id), 1)?;
+                        }
+                        cap_descriptor::SenderPromise(export_id) => {
+                            connection_state.release_export(ExportId::from_wire(export_id), 1)?;
+                        }
+                        cap_descriptor::ReceiverAnswer(_) | cap_descriptor::ReceiverHosted(_) => (),
+                        cap_descriptor::ThirdPartyHosted(_) => {
+                            return Err(Error::failed(
+                                "Peer claims we resolved a ThirdPartyHosted cap.".to_string(),
+                            ));
+                        }
+                    },
+                    resolve::Exception(_) => (),
+                }
+            }
+            _ => {
+                return Err(Error::failed(
+                    "Peer did not implement required RPC message type.".to_string(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_bootstrap(
+        connection_state: &Rc<Self>,
+        bootstrap: bootstrap::Reader,
+    ) -> capnp::Result<()> {
+        use ::capnp::traits::ImbueMut;
+
+        let answer_id = AnswerId::from_wire(bootstrap.get_question_id());
+        answer_adoption::ordinary_id(answer_id)?;
+        if connection_state.connection.borrow().is_err() {
+            // Disconnected; ignore.
+            return Ok(());
+        }
+
+        if connection_state
+            .answers
+            .borrow()
+            .slots
+            .contains_key(&answer_id)
+        {
+            return Err(Error::failed("questionId is already in use".into()));
+        }
+        // Release the transport borrow before entering application factory code.
+        let peer = connection_state
+            .connection
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .get_peer_vat_id();
+        let capability = if bootstrap.has_deprecated_object_id() {
+            Err(Error::failed(
+                "named exports are obsolete; use the bootstrap interface".into(),
+            ))
+        } else {
+            connection_state.bootstrap.for_peer(&peer)
+        };
+        let mut fds = OutgoingFds::default();
+        let mut response = connection_state.new_outgoing_message(10)?;
+        let mut ret = response
+            .get_body()?
+            .init_as::<message::Builder>()
+            .init_return();
+        ret.set_answer_id(answer_id.to_wire());
+        let (cap, result_exports) = match capability {
+            Ok(cap) => {
+                let mut cap_table = Vec::new();
+                let mut payload = ret.init_results();
+                {
+                    let mut content = payload.reborrow().get_content();
+                    content.imbue_mut(&mut cap_table);
+                    content.set_as_capability(cap.clone());
+                }
+                let exports =
+                    Self::write_descriptors(connection_state, &cap_table, payload, &mut fds);
+                (cap, exports)
+            }
+            Err(error) => {
+                from_error(
+                    &error,
+                    ret.init_exception(),
+                    connection_state.encode_trace(&error).as_deref(),
+                );
+                (broken::new_cap(error), Vec::new())
+            }
+        };
+        let mut answer = Answer::new();
+        answer.return_has_been_sent.set(true);
+        answer.result_exports = result_exports;
+        answer.pipeline = Some(Box::new(SingleCapPipeline::new(cap)));
+        connection_state
+            .answers
+            .borrow_mut()
+            .slots
+            .insert(answer_id, answer);
+        fds.attach(&mut *response);
+        let _ = response.send();
+        Ok(())
+    }
+
+    fn handle_finish(connection_state: &Rc<Self>, finish: finish::Reader) -> capnp::Result<()> {
+        let mut exports = Vec::new();
+        let mut pipeline = None;
+        let mut task = None;
+        let mut answer_to_release = None;
+        let mut pipeline_only_guard = None;
+        let mut join = None;
+        {
+            let mut answers = connection_state.answers.borrow_mut();
+            if let hash_map::Entry::Occupied(mut entry) = answers
+                .slots
+                .entry(AnswerId::from_wire(finish.get_question_id()))
+            {
+                let answer = entry.get_mut();
+                answer.received_finish.set(true);
+                let result_exports = mem::take(&mut answer.result_exports);
+                if finish.get_release_result_caps() {
+                    exports = result_exports;
+                }
+                pipeline = answer.pipeline.take();
+                task = answer.call_completion_promise.take();
+                pipeline_only_guard = answer.pipeline_only_guard.take();
+                join = answer.join.take();
+                if answer.return_has_been_sent.get() {
+                    answer_to_release = Some(entry.remove());
+                }
+            }
+        }
+        // A call context's destructor may send its Return and erase the answer.
+        // Do not run destructors while borrowing the table they can re-enter.
+        drop(pipeline);
+        drop(join);
+        if finish.get_require_early_cancellation_workaround() {
+            connection_state.add_task(async move {
+                yield_once().await;
+                drop(task);
+                Ok(())
+            });
+        } else {
+            drop(task);
+        }
+        drop(answer_to_release);
+        drop(pipeline_only_guard);
+        connection_state.release_exports(&exports)
+    }
+
+    fn handle_resolve(
+        connection_state: &Rc<Self>,
+        resolve: resolve::Reader,
+        fds: &mut IncomingFds,
+    ) -> capnp::Result<()> {
+        let replacement_or_error = match resolve.which()? {
+            resolve::Cap(c) => match Self::receive_cap(connection_state, c?, fds)? {
+                Some(cap) => Ok(cap),
+                None => {
+                    return Err(Error::failed(
+                        "'Resolve' contained 'CapDescriptor.none'.".to_string(),
+                    ));
+                }
+            },
+            resolve::Exception(e) => {
+                // We can't set `replacement` to a new broken cap here because this will
+                // confuse PromiseClient::Resolve() into thinking that the remote
+                // promise resolved to a local capability and therefore a Disembargo is
+                // needed. We must actually reject the promise.
+                Err(remote_exception_to_error(e?))
+            }
+        };
+
+        // If the import is in the table, fulfill it.
+        let slots = &mut connection_state.imports.borrow_mut().slots;
+        if let Some(import) = slots.get_mut(&ImportId::from_wire(resolve.get_promise_id())) {
+            match import.promise_client_to_resolve.take() {
+                Some(weak_promise_client) => {
+                    if let Some(promise_client) = weak_promise_client.upgrade() {
+                        promise_client.borrow_mut().resolve(replacement_or_error);
+                    }
+                }
+                None => {
+                    return Err(Error::failed(
+                        "Got 'Resolve' for a non-promise import.".to_string(),
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_disembargo(
+        connection_state: &Rc<Self>,
+        disembargo: disembargo::Reader,
+    ) -> capnp::Result<()> {
+        let context = disembargo.get_context();
+        match context.which()? {
+            disembargo::context::SenderLoopback(embargo_id) => {
+                // Opaque peer-owned context: echo it without interpreting it as
+                // an entry in our local embargo table.
+                let mut target = connection_state.get_message_target(disembargo.get_target()?)?;
+                let connection_state_ref = connection_state.clone();
+                let connection_state_ref1 = connection_state.clone();
+                let task = async move {
+                    target.when_resolved().await?;
+                    // Let queued calls made before resolution forward first.
+                    let mut yielded = false;
+                    future::poll_fn(move |cx| {
+                        if yielded {
+                            Poll::Ready(())
+                        } else {
+                            yielded = true;
+                            cx.waker().wake_by_ref();
+                            Poll::Pending
+                        }
+                    })
+                    .await;
+                    while let Some(resolved) = target.get_resolved() {
+                        target = resolved;
+                    }
+                    if target.get_brand() != connection_state_ref.get_brand() {
+                        return Err(Error::failed(
+                            "senderLoopback target does not point back to sender".into(),
+                        ));
+                    }
+                    if let Ok(ref mut c) = *connection_state_ref.connection.borrow_mut() {
+                        let mut message = c.new_outgoing_message(100); // TODO estimate size
+                        {
+                            let root: message::Builder = message.get_body()?.init_as();
+                            let mut disembargo = root.init_disembargo();
+                            disembargo
+                                .reborrow()
+                                .init_context()
+                                .set_receiver_loopback(embargo_id);
+
+                            let redirect =
+                                match Client::from_ptr(target.get_ptr(), &connection_state_ref1) {
+                                    Some(c) => c.write_target(disembargo.init_target()),
+                                    None => unreachable!(),
+                                };
+                            if redirect.is_some() {
+                                return Err(Error::failed(
+                                    "'Disembargo' of type 'senderLoopback' sent to an object that \
+                                     does not appear to have been the subject of a previous \
+                                     'Resolve' message."
+                                        .to_string(),
+                                ));
+                            }
+                        }
+                        let _ = message.send();
+                    }
+                    Ok(())
+                };
+                connection_state.add_task(task);
+            }
+            disembargo::context::ReceiverLoopback(embargo_id) => {
+                let embargo_id = EmbargoId::from_wire(embargo_id);
+                if let Some(embargo) = connection_state.embargoes.borrow_mut().find(embargo_id) {
+                    let fulfiller = embargo.fulfiller.take().unwrap();
+                    let _ = fulfiller.send(Ok(()));
+                } else {
+                    return Err(Error::failed(
+                        "Invalid embargo ID in `Disembargo.context.receiverLoopback".to_string(),
+                    ));
+                }
+                connection_state.embargoes.borrow_mut().erase(embargo_id);
+            }
+            disembargo::context::Accept(id) => {
+                let target = disembargo.get_target()?;
+                match target.which()? {
+                    message_target::PromisedAnswer(answer) => {
+                        let answer = answer?;
+                        if !answer.get_transform()?.is_empty() {
+                            return Err(Error::failed(
+                                "Provide disembargo cannot have a transform".into(),
+                            ));
+                        }
+                        let exchange = connection_state
+                            .answers
+                            .borrow()
+                            .slots
+                            .get(&AnswerId::from_wire(answer.get_question_id()))
+                            .and_then(|answer| answer.provision.as_ref().map(|p| p.0.clone()))
+                            .ok_or_else(|| {
+                                Error::failed("disembargo does not identify a Provide".into())
+                            })?;
+                        exchange.disembargo(id?)?;
+                    }
+                    message_target::ImportedCap(export) => {
+                        let forward = connection_state
+                            .exports
+                            .borrow_mut()
+                            .find(ExportId::from_wire(export))
+                            .and_then(|e| e.vine.clone())
+                            .ok_or_else(|| {
+                                Error::failed("disembargo target is not a vine".into())
+                            })?;
+                        forward(id?)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_provide(
+        state: &Rc<Self>,
+        provide: crate::rpc_capnp::provide::Reader<'_>,
+    ) -> capnp::Result<()> {
+        let id = AnswerId::from_wire(provide.get_question_id());
+        answer_adoption::ordinary_id(id)?;
+        if state.answers.borrow().slots.contains_key(&id) {
+            return Err(Error::failed("questionId is already in use".into()));
+        }
+        let target = state.get_message_target(provide.get_target()?)?;
+        let exchange = crate::third_party::ThirdPartyExchange::new(target);
+        let registration = state
+            .connection
+            .borrow_mut()
+            .as_mut()
+            .map_err(|e| e.clone())?
+            .await_third_party(provide.get_recipient(), exchange.clone())?;
+        let mut answer = Answer::new();
+        // Provide intentionally never sends Return. Finish can erase it immediately.
+        answer.return_has_been_sent.set(true);
+        answer.provision = Some((exchange, registration));
+        answer.pipeline = Some(Box::new(broken::Pipeline::new(Error::failed(
+            "cannot pipeline on Provide".into(),
+        ))));
+        state.answers.borrow_mut().slots.insert(id, answer);
+        Ok(())
+    }
+
+    fn handle_accept(
+        state: &Rc<Self>,
+        accept: crate::rpc_capnp::accept::Reader<'_>,
+    ) -> capnp::Result<()> {
+        let id = AnswerId::from_wire(accept.get_question_id());
+        answer_adoption::ordinary_id(id)?;
+        if state.answers.borrow().slots.contains_key(&id) {
+            return Err(Error::failed("questionId is already in use".into()));
+        }
+        let embargo = if accept.has_embargo() {
+            Some(accept.get_embargo()?.to_vec())
+        } else {
+            None
+        };
+        let completion = state
+            .connection
+            .borrow_mut()
+            .as_mut()
+            .map_err(|e| e.clone())?
+            .complete_third_party(accept.get_provision());
+        let answer = Answer::new();
+        let (sender, receiver) = oneshot::channel();
+        let (pipeline_sender, mut pipeline) = queued::Pipeline::new();
+        let mut results = Results::new(
+            state,
+            id,
+            false,
+            sender,
+            answer.received_finish.clone(),
+            answer.return_has_been_sent.clone(),
+            Some(pipeline_sender.weak_clone()),
+        );
+        state.answers.borrow_mut().slots.insert(id, answer);
+        let task = async move {
+            let status = async {
+                let exchange = completion.await?;
+                let accepting = exchange.accept(embargo);
+                drop(exchange);
+                let cap = accepting.await?;
+                results.get()?.set_as_capability(cap);
+                Ok(())
+            }
+            .await;
+            drop(results);
+            // Reuse the normal Return and pipelining machinery, including Finish,
+            // result export reference counts, and exception delivery.
+            let _ = ResultsDone::from_results_inner(
+                receiver.await.map_err(crate::canceled_to_error),
+                status,
+                pipeline_sender,
+            );
+            Ok(())
+        }
+        .boxed_local()
+        .shared();
+        pipeline.drive(task.clone());
+        let running = state.eagerly_evaluate(task);
+        let mut answers = state.answers.borrow_mut();
+        let answer = answers.slots.get_mut(&id).unwrap();
+        answer.pipeline = Some(Box::new(pipeline));
+        answer.call_completion_promise = Some(running);
+        Ok(())
+    }
+
+    fn handle_message(
+        weak_state: &Weak<Self>,
+        mut message: Box<dyn crate::IncomingMessage>,
+    ) -> ::capnp::Result<()> {
+        let Some(connection_state) = weak_state.upgrade() else {
+            return Err(Error::disconnected(
+                "handle_message() cannot continue without a connection".into(),
+            ));
+        };
+
+        if connection_state.connection.borrow().is_err() {
+            return Ok(());
+        }
+        connection_state.set_not_idle();
+        let mut fds = IncomingFds::new(&mut *message);
+        let reader = message.get_body()?.get_as::<message::Reader>()?;
+        match reader.which() {
+            Ok(message::Unimplemented(message)) => {
+                Self::handle_unimplemented(&connection_state, message?)?
+            }
+            Ok(message::Abort(abort)) => return Err(remote_exception_to_error(abort?)),
+            Ok(message::Bootstrap(bootstrap)) => {
+                Self::handle_bootstrap(&connection_state, bootstrap?)?
+            }
+            Ok(message::Call(call)) => {
+                let call = call?;
+                answer_adoption::ordinary_id(AnswerId::from_wire(call.get_question_id()))?;
+                if let call::send_results_to::ThirdParty(_) = call.get_send_results_to().which()? {
+                    return answer_adoption::receive_call(&connection_state, message, &mut fds);
+                }
+                let capability = connection_state.get_message_target(call.get_target()?)?;
+                let (interface_id, method_id, question_id, cap_table_array, redirect_results) = {
+                    let redirect_results = match call.get_send_results_to().which()? {
+                        call::send_results_to::Caller(()) => false,
+                        call::send_results_to::Yourself(()) => true,
+                        call::send_results_to::ThirdParty(_) => {
+                            return Err(Error::failed(
+                                "Unsupported `Call.sendResultsTo`.".to_string(),
+                            ))
+                        }
+                    };
+                    let payload = call.get_params()?;
+
+                    (
+                        call.get_interface_id(),
+                        call.get_method_id(),
+                        AnswerId::from_wire(call.get_question_id()),
+                        Self::receive_caps(&connection_state, payload.get_cap_table()?, &mut fds)?,
+                        redirect_results,
+                    )
+                };
+
+                if connection_state
+                    .answers
+                    .borrow()
+                    .slots
+                    .contains_key(&question_id)
+                {
+                    return Err(Error::failed(format!(
+                        "Received a new call on in-use question id {question_id}"
+                    )));
+                }
+
+                let request_words = message.size_in_words();
+                let total = connection_state
+                    .call_words
+                    .get()
+                    .checked_add(request_words)
+                    .ok_or_else(|| Error::overloaded("incoming call word count overflow".into()))?;
+                let only_promise_pipeline = call.get_only_promise_pipeline() && !redirect_results;
+                let hints = CallHints {
+                    only_promise_pipeline,
+                    no_promise_pipelining: call.get_no_promise_pipelining(),
+                };
+                let allow_third_party = call.get_allow_third_party_tail_call();
+                let params = Params::new(message, cap_table_array);
+                let mut answer = Answer::new();
+                answer.request_words = request_words;
+                connection_state.call_words.set(total);
+
+                let (results_inner_fulfiller, results_inner_promise) = oneshot::channel();
+                let results_inner_promise = results_inner_promise.map_err(crate::canceled_to_error);
+
+                let (pipeline_sender, mut pipeline) = queued::Pipeline::new();
+                let mut results = Results::new(
+                    &connection_state,
+                    question_id,
+                    redirect_results,
+                    results_inner_fulfiller,
+                    answer.received_finish.clone(),
+                    answer.return_has_been_sent.clone(),
+                    Some(pipeline_sender.weak_clone()),
+                );
+
+                let inner = results.inner.as_mut().unwrap();
+                inner.allow_third_party = allow_third_party;
+                inner.only_promise_pipeline = only_promise_pipeline;
+                if only_promise_pipeline {
+                    Rc::get_mut(&mut inner.return_guard).unwrap().only_pipeline = true;
+                    answer.pipeline_only_guard = Some(inner.return_guard.clone());
+                }
+
+                let (redirected_results_done_promise, redirected_results_done_fulfiller) =
+                    if redirect_results {
+                        let (f, p) = oneshot::channel::<Result<Response<VatId>, Error>>();
+                        let p = p.map_err(crate::canceled_to_error).and_then(future::ready);
+                        (Some(Promise::from_future(p)), Some(f))
+                    } else {
+                        (None, None)
+                    };
+
+                {
+                    let slots = &mut connection_state.answers.borrow_mut().slots;
+                    let hash_map::Entry::Vacant(slot) = slots.entry(question_id) else {
+                        return Err(Error::failed("questionId is already in use".to_string()));
+                    };
+                    slot.insert(answer);
+                }
+
+                let call_promise = capability.call_with_hints(
+                    interface_id,
+                    method_id,
+                    Box::new(params),
+                    Box::new(results),
+                    hints,
+                );
+
+                let promise = call_promise
+                    .then(move |call_result| {
+                        results_inner_promise.then(move |result| {
+                            future::ready(ResultsDone::from_results_inner(
+                                result,
+                                call_result,
+                                pipeline_sender,
+                            ))
+                        })
+                    })
+                    .then(move |v| {
+                        if let Some(f) = redirected_results_done_fulfiller {
+                            match v {
+                                Ok(r) => drop(f.send(Ok(Response::redirected(r.clone())))),
+                                Err(e) => drop(f.send(Err(e))),
+                            }
+                        }
+                        Promise::ok(())
+                    });
+
+                let fork = promise.shared();
+                pipeline.drive(fork.clone());
+
+                {
+                    let slots = &mut connection_state.answers.borrow_mut().slots;
+                    let Some(answer) = slots.get_mut(&question_id) else {
+                        unreachable!()
+                    };
+                    answer.pipeline = Some(Box::new(pipeline));
+                    if redirect_results {
+                        answer.redirected_results = redirected_results_done_promise;
+                    }
+                    answer.call_completion_promise = Some(connection_state.eagerly_evaluate(fork));
+                }
+            }
+            Ok(message::Return(oret)) => {
+                let ret = oret?;
+                let question_id = QuestionId::from_wire(ret.get_answer_id());
+                if question_id.is_pipeline_only() {
+                    // A legacy peer ignored onlyPromisePipeline. Never interpret
+                    // this Return using a possibly already-retired high ID.
+                    connection_state.got_return_for_high_id.set(true);
+                    return Ok(());
+                }
+                let (reference, is_tail, param_exports) = {
+                    let mut questions = connection_state.questions.borrow_mut();
+                    let question = questions.find(question_id).ok_or_else(|| {
+                        Error::failed(format!("Invalid question ID in Return: {question_id}"))
+                    })?;
+                    if !question.is_awaiting_return {
+                        return Err(Error::failed(
+                            "duplicate Return or Return for Provide".into(),
+                        ));
+                    }
+                    if (question.join_id.is_some()
+                        || question.multiparty_join
+                        || question_id.is_adopted())
+                        && ret.get_no_finish_needed()
+                    {
+                        return Err(Error::failed(
+                            "Join and adopted results require Finish".into(),
+                        ));
+                    }
+                    if matches!(ret.which()?, return_::AwaitFromThirdParty(_))
+                        && (!question.allow_third_party || ret.get_no_finish_needed())
+                    {
+                        return Err(Error::failed("unauthorized third-party tail return".into()));
+                    }
+                    question.is_awaiting_return = false;
+                    question.skip_finish = ret.get_no_finish_needed();
+                    (
+                        question.self_ref.as_ref().and_then(Weak::upgrade),
+                        question.is_tail_call,
+                        mem::take(&mut question.param_exports),
+                    )
+                };
+                // Releasing exports or receiving third-party descriptors can re-enter
+                // question allocation. Never hold the question table borrow here.
+                if ret.get_release_param_caps() {
+                    connection_state.release_exports(&param_exports)?;
+                }
+                if let Some(reference) = reference {
+                    match ret.which()? {
+                        return_::Results(results) => {
+                            if is_tail {
+                                return Err(Error::failed(
+                                    "tail call returned ordinary results".into(),
+                                ));
+                            }
+                            let caps = Self::receive_caps(
+                                &connection_state,
+                                results?.get_cap_table()?,
+                                &mut fds,
+                            )?;
+                            let response = Response::new(
+                                connection_state.clone(),
+                                reference.clone(),
+                                message,
+                                caps,
+                            );
+                            reference.borrow_mut().fulfill(Promise::ok(response));
+                        }
+                        return_::Exception(exception) => {
+                            if is_tail {
+                                return Err(Error::failed(
+                                    "tail call returned ordinary exception".into(),
+                                ));
+                            }
+                            reference
+                                .borrow_mut()
+                                .reject(remote_exception_to_error(exception?));
+                        }
+                        return_::Canceled(()) => {
+                            return Err(Error::failed(
+                                "peer canceled an outstanding question".into(),
+                            ))
+                        }
+                        return_::ResultsSentElsewhere(()) => {
+                            if !is_tail {
+                                return Err(Error::failed(
+                                    "resultsSentElsewhere for non-tail call".into(),
+                                ));
+                            }
+                            let empty = local::ResultsDone::new(
+                                capnp::message::Builder::new_default(),
+                                vec![],
+                            );
+                            reference
+                                .borrow_mut()
+                                .fulfill(Promise::ok(Response::redirected(Box::new(empty))));
+                        }
+                        return_::TakeFromOtherQuestion(id) => {
+                            let id = AnswerId::from_wire(id);
+                            if is_tail {
+                                return Err(Error::failed(
+                                    "tail call cannot take another answer".into(),
+                                ));
+                            }
+                            let (response, responded, task) = {
+                                let mut answers = connection_state.answers.borrow_mut();
+                                let answer = answers.slots.get_mut(&id).ok_or_else(|| {
+                                    Error::failed("takeFromOtherQuestion: invalid answer".into())
+                                })?;
+                                let response = answer.redirected_results.take().ok_or_else(|| Error::failed("takeFromOtherQuestion: already adopted or not redirected".into()))?;
+                                (
+                                    response,
+                                    answer.return_has_been_sent.clone(),
+                                    answer.call_completion_promise.take(),
+                                )
+                            };
+                            // Taking the response also takes ownership of its producer.
+                            // Finish may release the old answer before the adopted call
+                            // completes; the adopting question must keep it running.
+                            reference
+                                .borrow_mut()
+                                .fulfill(Promise::from_future(response.attach(task)));
+                            connection_state.acknowledge_redirected_answer(id, &responded)?;
+                        }
+                        return_::AwaitFromThirdParty(token) => {
+                            let pipeline = reference.borrow().pipeline.clone();
+                            let response =
+                                answer_adoption::await_answer(&connection_state, token, pipeline);
+                            reference.borrow_mut().fulfill(response);
+                        }
+                    }
+                } else {
+                    // A late tail-call response still transfers ownership, even if
+                    // the adopting caller has gone away. Release its producer and
+                    // acknowledge the redirect so the peer can Finish the old answer.
+                    if let return_::TakeFromOtherQuestion(id) = ret.which()? {
+                        let id = AnswerId::from_wire(id);
+                        let redirected = {
+                            let mut answers = connection_state.answers.borrow_mut();
+                            answers.slots.get_mut(&id).map(|answer| {
+                                (
+                                    answer.redirected_results.take(),
+                                    answer.call_completion_promise.take(),
+                                    answer.return_has_been_sent.clone(),
+                                )
+                            })
+                        };
+                        if let Some((response, task, responded)) = redirected {
+                            connection_state.acknowledge_redirected_answer(id, &responded)?;
+                            drop(response);
+                            drop(task);
+                        }
+                    }
+                    if let return_::AwaitFromThirdParty(token) = ret.which()? {
+                        // Register and immediately retire the rendezvous so an early
+                        // or late adoption releases its callee-allocated question.
+                        drop(answer_adoption::await_answer(
+                            &connection_state,
+                            token,
+                            None,
+                        ));
+                    }
+                    // Finish was already sent with releaseResultCaps=true.
+                    connection_state.questions.borrow_mut().erase(question_id);
+                }
+            }
+            Ok(message::Finish(finish)) => Self::handle_finish(&connection_state, finish?)?,
+            Ok(message::Resolve(resolve)) => {
+                Self::handle_resolve(&connection_state, resolve?, &mut fds)?
+            }
+            Ok(message::Release(release)) => {
+                let release = release?;
+                connection_state.release_export(
+                    ExportId::from_wire(release.get_id()),
+                    release.get_reference_count(),
+                )?;
+            }
+            Ok(message::Disembargo(disembargo)) => {
+                Self::handle_disembargo(&connection_state, disembargo?)?
+            }
+            Ok(message::Provide(provide)) => {
+                if connection_state
+                    .connection
+                    .borrow()
+                    .as_ref()
+                    .map(|c| c.supports_third_party())
+                    .unwrap_or(false)
+                {
+                    Self::handle_provide(&connection_state, provide?)?;
+                } else {
+                    Self::send_unimplemented(&connection_state, message.as_ref())?;
+                }
+            }
+            Ok(message::Accept(accept)) => {
+                if connection_state
+                    .connection
+                    .borrow()
+                    .as_ref()
+                    .map(|c| c.supports_third_party())
+                    .unwrap_or(false)
+                {
+                    Self::handle_accept(&connection_state, accept?)?;
+                } else {
+                    Self::send_unimplemented(&connection_state, message.as_ref())?;
+                }
+            }
+            Ok(message::Join(request)) => {
+                if multiparty_join::supported(&connection_state) {
+                    multiparty_join::receive(&connection_state, request?)?;
+                } else if join::supported(&connection_state) {
+                    join::receive(&connection_state, request?)?;
+                } else {
+                    Self::send_unimplemented(&connection_state, message.as_ref())?;
+                }
+            }
+            Ok(message::ThirdPartyAnswer(answer)) => {
+                if answer_adoption::supported(&connection_state) {
+                    answer_adoption::receive(&connection_state, answer?)?;
+                } else {
+                    Self::send_unimplemented(&connection_state, message.as_ref())?;
+                }
+            }
+            Ok(message::ObsoleteSave(_) | message::ObsoleteDelete(_))
+            | Err(::capnp::NotInSchema(_)) => {
+                Self::send_unimplemented(&connection_state, message.as_ref())?;
+            }
+        }
+        connection_state.schedule_idle_check();
+        Ok(())
+    }
+
+    fn acknowledge_redirected_answer(
+        &self,
+        id: AnswerId,
+        responded: &Cell<bool>,
+    ) -> capnp::Result<()> {
+        if !responded.get() {
+            let mut acknowledgement = self.new_outgoing_message(8)?;
+            let mut ret = acknowledgement
+                .get_body()?
+                .init_as::<message::Builder>()
+                .init_return();
+            ret.set_answer_id(id.to_wire());
+            ret.set_release_param_caps(false);
+            ret.set_results_sent_elsewhere(());
+            let _ = acknowledgement.send();
+            self.answer_has_sent_return(id, vec![]);
+        }
+        Ok(())
+    }
+
+    fn answer_has_sent_return(&self, id: AnswerId, result_exports: Vec<ExportId>) {
+        let (removed, words) = {
+            let mut answers = self.answers.borrow_mut();
+            let hash_map::Entry::Occupied(mut entry) = answers.slots.entry(id) else {
+                // Disconnect already removed every answer. A retained call
+                // context can outlive the connection but cannot send more wire data.
+                debug_assert!(self.connection.borrow().is_err());
+                return;
+            };
+            let answer = entry.get_mut();
+            answer.return_has_been_sent.set(true);
+            let words = mem::take(&mut answer.request_words);
+            if answer.received_finish.get() {
+                (Some(entry.remove()), words)
+            } else {
+                answer.result_exports = result_exports;
+                (None, words)
+            }
+        };
+        self.call_words.set(self.call_words.get() - words);
+        self.maybe_unblock_flow();
+        drop(removed);
+        self.schedule_idle_check();
+    }
+
+    fn release_export(&self, id: ExportId, refcount: u32) -> ::capnp::Result<()> {
+        let mut exports = self.exports.borrow_mut();
+        let Some(e) = exports.find(id) else {
+            return Err(Error::failed(
+                "Tried to release invalid export ID.".to_string(),
+            ));
+        };
+        if refcount > e.refcount {
+            return Err(Error::failed(
+                "Tried to drop export's refcount below zero.".to_string(),
+            ));
+        }
+        e.refcount -= refcount;
+        if e.refcount == 0 {
+            let client_ptr = e.client_hook.get_ptr();
+            if e.canonical {
+                self.exports_by_cap.borrow_mut().remove(&client_ptr);
+            }
+            let released = exports.remove(id);
+            drop(exports);
+            drop(released);
+            self.schedule_idle_check();
+        }
+        Ok(())
+    }
+
+    fn release_exports(&self, exports: &[ExportId]) -> ::capnp::Result<()> {
+        for &export_id in exports {
+            self.release_export(export_id, 1)?;
+        }
+        Ok(())
+    }
+
+    fn get_brand(&self) -> usize {
+        self as *const _ as usize
+    }
+
+    fn get_message_target(
+        &self,
+        target: message_target::Reader,
+    ) -> ::capnp::Result<Box<dyn ClientHook>> {
+        match target.which()? {
+            message_target::ImportedCap(export_id) => {
+                match self.exports.borrow().get(ExportId::from_wire(export_id)) {
+                    Some(exp) => Ok(exp.client_hook.clone()),
+                    _ => Err(Error::failed(
+                        "Message target is not a current export ID.".to_string(),
+                    )),
+                }
+            }
+            message_target::PromisedAnswer(promised_answer) => {
+                let promised_answer = promised_answer?;
+                let question_id = AnswerId::from_wire(promised_answer.get_question_id());
+
+                let pipeline = match self.answers.borrow().slots.get(&question_id) {
+                    None => Box::new(broken::Pipeline::new(Error::failed(
+                        "Pipeline call on a request that returned no capabilities or was already closed.".to_string(),
+                    ))) as Box<dyn PipelineHook>,
+                    Some(base) => {
+                        match base.pipeline {
+                            Some(ref pipeline) => pipeline.add_ref(),
+                            None => Box::new(broken::Pipeline::new(Error::failed(
+                                "Pipeline call on a request that returned not capabilities or was \
+                                 already closed."
+                                    .to_string(),
+                            ))) as Box<dyn PipelineHook>,
+                        }
+                    }
+                };
+                let ops = to_pipeline_ops(promised_answer.get_transform()?)?;
+                Ok(pipeline.get_pipelined_cap(&ops))
+            }
+        }
+    }
+
+    /// If calls to the given capability should pass over this connection, fill in `target`
+    /// appropriately for such a call and return None. Otherwise, return a `ClientHook` to which
+    /// the call should be forwarded; the caller should then delegate the call to that `ClientHook`.
+    ///
+    /// The main case where this ends up returning Some(_) is if `cap` is a promise that has
+    /// recently resolved. The application might have started building a request before the promise
+    /// resolved, and so the request may have been built on the assumption that it would be sent over
+    /// this network connection, but then the promise resolved to point somewhere else before the
+    /// request was sent. Now the request has to be redirected to the new target instead.
+    fn write_target(
+        &self,
+        cap: &dyn ClientHook,
+        target: message_target::Builder,
+    ) -> Option<Box<dyn ClientHook>> {
+        if cap.get_brand() == self.get_brand() {
+            match Client::from_ptr(cap.get_ptr(), self) {
+                Some(c) => c.write_target(target),
+                None => unreachable!(),
+            }
+        } else {
+            Some(cap.add_ref())
+        }
+    }
+
+    /// If the given client just wraps some other client -- even if it is only *temporarily*
+    /// wrapping that other client -- returns a reference to the other client, transitively.
+    /// Otherwise, returns a new reference to *this.
+    fn get_innermost_client(&self, mut client: Box<dyn ClientHook>) -> Box<dyn ClientHook> {
+        while let Some(inner) = client.get_resolved() {
+            client = inner;
+        }
+        if client.get_brand() == self.get_brand() {
+            match self.client_downcast_map.borrow().get(&client.get_ptr()) {
+                Some(c) => Box::new(c.upgrade().expect("dangling client?")),
+                None => unreachable!(),
+            }
+        } else {
+            client
+        }
+    }
+
+    /// Implements exporting of a promise.  The promise has been exported under the given ID, and is
+    /// to eventually resolve to the ClientHook produced by `promise`.  This method waits for that
+    /// resolve to happen and then sends the appropriate `Resolve` message to the peer.
+    #[allow(clippy::await_holding_refcell_ref)] // https://github.com/rust-lang/rust-clippy/issues/6353
+    fn resolve_exported_promise(
+        state: &Rc<Self>,
+        export_id: ExportId,
+        promise: Promise<Box<dyn ClientHook>, Error>,
+    ) -> Promise<(), Error> {
+        let weak_connection_state = Rc::downgrade(state);
+        state.eagerly_evaluate(Promise::from_future(async move {
+            let resolution_result = promise.await;
+            let connection_state = weak_connection_state
+                .upgrade()
+                .expect("dangling connection state?");
+
+            match resolution_result {
+                Ok(resolution) => {
+                    let resolution = connection_state.get_innermost_client(resolution.clone());
+
+                    let brand = resolution.get_brand();
+
+                    // Update the export table to point at this object instead. We know that our
+                    // entry in the export table is still live because when it is destroyed the
+                    // asynchronous resolution task (i.e. this code) is canceled.
+                    let mut exports = connection_state.exports.borrow_mut();
+                    let Some(exp) = exports.find(export_id) else {
+                        return Err(Error::failed("export table entry not found".to_string()));
+                    };
+
+                    if exp.canonical {
+                        connection_state
+                            .exports_by_cap
+                            .borrow_mut()
+                            .remove(&exp.client_hook.get_ptr());
+                    }
+                    exp.client_hook = resolution.clone();
+
+                    // The export now points to `resolution`, but it is not necessarily the
+                    // canonical export for `resolution`. The export itself still represents
+                    // the promise that ended up resolving to `resolution`, but `resolution`
+                    // itself also needs to be exported under a separate export ID to
+                    // distinguish from the promise. (Unless it's also a promise, see the next
+                    // bit...)
+                    exp.canonical = false;
+
+                    if brand != connection_state.get_brand() {
+                        // We're resolving to a local capability. If we're resolving to a promise,
+                        // we might be able to reuse our export table entry and avoid sending a
+                        // message.
+                        if let Some(promise) = resolution.when_more_resolved() {
+                            // We're replacing a promise with another local promise. In this case,
+                            // we might actually be able to just reuse the existing export table
+                            // entry to represent the new promise -- unless it already has an entry.
+                            // Let's check.
+
+                            let mut exports_by_cap = connection_state.exports_by_cap.borrow_mut();
+
+                            let replacement_export_id =
+                                match exports_by_cap.entry(exp.client_hook.get_ptr()) {
+                                    hash_map::Entry::Occupied(occ) => *occ.get(),
+                                    hash_map::Entry::Vacant(vac) => {
+                                        // The replacement capability isn't previously exported,
+                                        // so assign it to the existing table entry.
+                                        vac.insert(export_id);
+                                        export_id
+                                    }
+                                };
+                            if replacement_export_id == export_id {
+                                // The new promise was not already in the table, therefore the existing
+                                // export table entry has now been repurposed to represent it. There is
+                                // no need to send a resolve message at all. We do, however, have to
+                                // start resolving the next promise.
+                                exp.canonical = true;
+                                drop(exports);
+                                drop(exports_by_cap);
+                                return Self::resolve_exported_promise(
+                                    &connection_state,
+                                    export_id,
+                                    promise,
+                                )
+                                .await;
+                            }
+                        }
+                    }
+                    // Prevent a double borrow in write_descriptor() below.
+                    drop(exports);
+
+                    // OK, we have to send a `Resolve` message.
+                    let mut fds = OutgoingFds::default();
+                    let mut message = connection_state.new_outgoing_message(15)?;
+                    {
+                        let root: message::Builder = message.get_body()?.get_as()?;
+                        let mut resolve = root.init_resolve();
+                        resolve.set_promise_id(export_id.to_wire());
+                        let _export = Self::write_descriptor(
+                            &connection_state,
+                            resolution,
+                            resolve.init_cap(),
+                            &mut fds,
+                        )?;
+                    }
+                    fds.attach(&mut *message);
+                    let _ = message.send();
+                    Ok(())
+                }
+                Err(e) => {
+                    // send error resolution
+                    let mut message = connection_state.new_outgoing_message(15)?;
+                    {
+                        let root: message::Builder = message.get_body()?.get_as()?;
+                        let mut resolve = root.init_resolve();
+                        resolve.set_promise_id(export_id.to_wire());
+                        from_error(
+                            &e,
+                            resolve.init_exception(),
+                            connection_state.encode_trace(&e).as_deref(),
+                        );
+                    }
+                    let _ = message.send();
+                    Ok(())
+                }
+            }
+        }))
+    }
+
+    fn try_introduce(
+        state: &Rc<Self>,
+        inner: &dyn ClientHook,
+        mut descriptor: cap_descriptor::Builder<'_>,
+    ) -> capnp::Result<Option<ExportId>> {
+        let Some(registry) = state.registry.upgrade() else {
+            return Ok(None);
+        };
+        let host = registry
+            .borrow()
+            .states
+            .values()
+            .find(|c| c.get_brand() == inner.get_brand())
+            .cloned();
+        let Some(host) = host else {
+            return Ok(None);
+        };
+        // Deferred introductions must be inspected before when_more_resolved(),
+        // which is a request to accept them locally.
+        if let Some(Client {
+            variant: ClientVariant::ThirdParty(third),
+            ..
+        }) = Client::from_ptr(inner.get_ptr(), &host)
+        {
+            if let Some(export) = third.forward_to(state, descriptor.reborrow())? {
+                return Ok(Some(export));
+            }
+            let accepted = third.ensure_accepted();
+            return Self::try_introduce(state, &*accepted, descriptor);
+        }
+        // Never introduce an unresolved promise. Its eventual Resolve will use
+        // this same path, after the original route has been recorded.
+        if inner.when_more_resolved().is_some() {
+            return Ok(None);
+        }
+        let mut recipient = capnp::message::Builder::new_default();
+        let mut contact = capnp::message::Builder::new_default();
+        let peer = state
+            .connection
+            .borrow()
+            .as_ref()
+            .map_err(|e| e.clone())?
+            .get_peer_vat_id();
+        let introduced = host
+            .connection
+            .borrow_mut()
+            .as_mut()
+            .map_err(|e| e.clone())?
+            .introduce_to(peer, contact.init_root(), recipient.init_root())?;
+        if !introduced {
+            return Ok(None);
+        }
+        let mut message = host.new_outgoing_message(32)?;
+        {
+            let mut provide = message
+                .get_body()?
+                .init_as::<message::Builder>()
+                .init_provide();
+            if host
+                .write_target(inner, provide.reborrow().init_target())
+                .is_some()
+            {
+                return Ok(None);
+            }
+            provide
+                .get_recipient()
+                .set_as(recipient.get_root_as_reader::<any_pointer::Reader>()?)?;
+        }
+        let mut question = Question::new();
+        question.is_awaiting_return = false; // Provide never returns.
+        let id = host.questions.borrow_mut().push(question);
+        let (sender, _receiver) = oneshot::channel();
+        let reference = Rc::new(RefCell::new(QuestionRef::new(host.clone(), id, sender)));
+        host.questions.borrow_mut().find(id).unwrap().self_ref = Some(Rc::downgrade(&reference));
+        if let message::Provide(provide) =
+            message.get_body()?.get_as::<message::Builder>()?.which()?
+        {
+            provide?.set_question_id(id.to_wire());
+        }
+        let _ = message.send();
+        let mut export = Export::new(inner.add_ref());
+        export.vine = Some(Rc::new(move |embargo| {
+            let reference = reference.borrow();
+            let Some(state) = reference.connection_state.as_ref() else {
+                return Ok(());
+            };
+            let Ok(mut message) = state.new_outgoing_message(32) else {
+                // Losing the provision's connection must not abort this
+                // recipient's otherwise healthy connection. The lost provision
+                // will reject any acceptance still waiting for its embargo.
+                return Ok(());
+            };
+            let mut d = message
+                .get_body()?
+                .init_as::<message::Builder>()
+                .init_disembargo();
+            d.reborrow()
+                .init_target()
+                .init_promised_answer()
+                .set_question_id(reference.id.to_wire());
+            d.init_context().set_accept(embargo);
+            let _ = message.send();
+            Ok(())
+        }));
+        let export_id = state.exports.borrow_mut().push(export);
+        let mut third = descriptor.reborrow().init_third_party_hosted();
+        third.set_vine_id(export_id.to_wire());
+        third
+            .get_id()
+            .set_as(contact.get_root_as_reader::<any_pointer::Reader>()?)?;
+        Ok(Some(export_id))
+    }
+
+    fn receive_third_party(
+        state: &Rc<Self>,
+        third: crate::rpc_capnp::third_party_cap_descriptor::Reader<'_>,
+        fd: Option<AttachedFd>,
+    ) -> capnp::Result<Box<dyn ClientHook>> {
+        let vine = Self::import(state, ImportId::from_wire(third.get_vine_id()), false, fd);
+        let mut contact = capnp::message::Builder::new_default();
+        contact.set_root(third.get_id())?;
+        Ok(ThirdPartyClient::deferred(state, Rc::new(contact), vine))
+    }
+
+    fn accept_third_party(
+        state: &Rc<Self>,
+        contact: any_pointer::Reader<'_>,
+        vine: Box<dyn ClientHook>,
+    ) -> capnp::Result<Box<dyn ClientHook>> {
+        let mut completion = capnp::message::Builder::new_default();
+        let connection = state
+            .connection
+            .borrow_mut()
+            .as_mut()
+            .map_err(|e| e.clone())?
+            .connect_to_introduced(contact, completion.init_root())?;
+        let embargo = state
+            .connection
+            .borrow_mut()
+            .as_mut()
+            .map_err(|e| e.clone())?
+            .generate_embargo_id()?;
+        if embargo.is_empty() {
+            return Err(Error::failed("network generated empty embargo ID".into()));
+        }
+        let mut message = state.new_outgoing_message(32)?;
+        let mut d = message
+            .get_body()?
+            .init_as::<message::Builder>()
+            .init_disembargo();
+        if state
+            .write_target(&*vine, d.reborrow().init_target())
+            .is_some()
+        {
+            return Err(Error::failed("third-party vine changed connection".into()));
+        }
+        d.init_context().set_accept(&embargo);
+        let _ = message.send();
+        let Some(connection) = connection else {
+            let completion = state
+                .connection
+                .borrow_mut()
+                .as_mut()
+                .map_err(|e| e.clone())?
+                .complete_third_party_local(completion.get_root_as_reader()?);
+            let client: capnp::capability::Client = crate::new_future_client(async move {
+                let exchange = completion.await?;
+                let accepting = exchange.accept(Some(embargo));
+                drop(exchange);
+                let result = accepting.await.map(capnp::capability::Client::new);
+                drop(vine);
+                result
+            });
+            return Ok(client.hook);
+        };
+        let registry = state
+            .registry
+            .upgrade()
+            .ok_or_else(|| Error::disconnected("RPC system ended".into()))?;
+        if registry.borrow().closing {
+            return Err(Error::disconnected("RPC system is closing".into()));
+        }
+        let host = crate::RpcSystem::get_connection_state(
+            &registry,
+            state.bootstrap.clone(),
+            connection,
+            state.system_tasks.clone(),
+        );
+        let question_id = host.questions.borrow_mut().push(Question::new());
+        let (sender, receiver) = oneshot::channel();
+        let reference = Rc::new(RefCell::new(QuestionRef::new(
+            host.clone(),
+            question_id,
+            sender,
+        )));
+        host.questions
+            .borrow_mut()
+            .find(question_id)
+            .unwrap()
+            .self_ref = Some(Rc::downgrade(&reference));
+        let mut message = host.new_outgoing_message(32)?;
+        let mut accept = message
+            .get_body()?
+            .init_as::<message::Builder>()
+            .init_accept();
+        accept.set_question_id(question_id.to_wire());
+        accept.set_embargo(&embargo);
+        accept
+            .get_provision()
+            .set_as(completion.get_root_as_reader::<any_pointer::Reader>()?)?;
+        let _ = message.send();
+        let promise = receiver
+            .map_err(crate::canceled_to_error)
+            .and_then(|p| p)
+            .attach((reference.clone(), vine));
+        let pipeline = Pipeline::new(&host, reference, Some(Promise::from_future(promise)));
+        Ok(pipeline.get_pipelined_cap(&[]))
+    }
+
+    fn write_descriptor(
+        state: &Rc<Self>,
+        mut inner: Box<dyn ClientHook>,
+        mut descriptor: cap_descriptor::Builder,
+        fds: &mut OutgoingFds,
+    ) -> ::capnp::Result<Option<ExportId>> {
+        // Find the innermost wrapped capability.
+        while let Some(resolved) = inner.get_resolved() {
+            inner = resolved;
+        }
+        fds.add(&*inner, descriptor.reborrow());
+        if inner.get_brand() == state.get_brand() {
+            let Some(c) = Client::from_ptr(inner.get_ptr(), state) else {
+                unreachable!()
+            };
+            Ok(c.write_descriptor(descriptor, fds))
+        } else {
+            match Self::try_introduce(state, &*inner, descriptor.reborrow()) {
+                Ok(Some(export)) => return Ok(Some(export)),
+                Ok(None) => (),
+                // Transport-specific introduction/forwarding can fail. Export
+                // that failure as a broken capability, rather than panicking
+                // in payload serialization or breaking unrelated capabilities.
+                Err(error) => inner = broken::new_cap(error),
+            }
+            let ptr = inner.get_ptr();
+            let contains_key = state.exports_by_cap.borrow().contains_key(&ptr);
+            if contains_key {
+                // We've already seen and exported this capability before.  Just up the refcount.
+                let export_id = state.exports_by_cap.borrow()[&ptr];
+                descriptor.set_sender_hosted(export_id.to_wire());
+                // Should never fail because exports_by_cap should match exports.
+                state.exports.borrow_mut().find(export_id).unwrap().refcount += 1;
+                Ok(Some(export_id))
+            } else {
+                // This is the first time we've seen this capability.
+
+                let mut exp = Export::new(inner.clone());
+                exp.canonical = true;
+                let export_id = state.exports.borrow_mut().push(exp);
+                state.exports_by_cap.borrow_mut().insert(ptr, export_id);
+                match inner.when_more_resolved() {
+                    Some(wrapped) => {
+                        // This is a promise.  Arrange for the `Resolve` message to be sent later.
+                        if let Some(exp) = state.exports.borrow_mut().find(export_id) {
+                            exp.resolve_op =
+                                Self::resolve_exported_promise(state, export_id, wrapped);
+                        }
+                        descriptor.set_sender_promise(export_id.to_wire());
+                    }
+                    None => {
+                        descriptor.set_sender_hosted(export_id.to_wire());
+                    }
+                }
+                Ok(Some(export_id))
+            }
+        }
+    }
+
+    fn write_descriptors(
+        state: &Rc<Self>,
+        cap_table: &[Option<Box<dyn ClientHook>>],
+        payload: payload::Builder,
+        fds: &mut OutgoingFds,
+    ) -> Vec<ExportId> {
+        let mut cap_table_builder = payload.init_cap_table(cap_table.len() as u32);
+        let mut exports = Vec::new();
+        for (idx, value) in cap_table.iter().enumerate() {
+            match value {
+                Some(cap) => {
+                    if let Some(export_id) = Self::write_descriptor(
+                        state,
+                        cap.clone(),
+                        cap_table_builder.reborrow().get(idx as u32),
+                        fds,
+                    )
+                    .unwrap()
+                    {
+                        exports.push(export_id);
+                    }
+                }
+                None => {
+                    cap_table_builder.reborrow().get(idx as u32).set_none(());
+                }
+            }
+        }
+        exports
+    }
+
+    fn import(
+        state: &Rc<Self>,
+        import_id: ImportId,
+        is_promise: bool,
+        fd: Option<AttachedFd>,
+    ) -> Box<dyn ClientHook> {
+        let import_client = {
+            match state.imports.borrow_mut().slots.entry(import_id) {
+                hash_map::Entry::Occupied(occ) => occ
+                    .get()
+                    .import_client
+                    .upgrade()
+                    .expect("dangling ref to import client?"),
+                hash_map::Entry::Vacant(v) => {
+                    let import_client = ImportClient::new(state, import_id);
+                    v.insert(Import::new(&import_client));
+                    import_client
+                }
+            }
+        };
+
+        if import_client.borrow().fd.is_none() {
+            import_client.borrow_mut().fd = fd;
+        }
+
+        // We just received a copy of this import ID, so the remote refcount has gone up.
+        import_client.borrow_mut().add_remote_ref();
+
+        let mut tmp = state.imports.borrow_mut();
+        let Some(import) = tmp.slots.get_mut(&import_id) else {
+            unreachable!()
+        };
+
+        if is_promise {
+            // We need to construct a PromiseClient around this import, if we haven't already.
+            match &import.app_client {
+                Some(c) => {
+                    // Use the existing one.
+                    Box::new(c.upgrade().expect("dangling client ref?"))
+                }
+                None => {
+                    // Create a promise for this import's resolution.
+
+                    let client: Box<Client<VatId>> = Box::new(import_client.into());
+                    let client: Box<dyn ClientHook> = client;
+
+                    // Here the C++ implementation does something like:
+                    // ```
+                    //   // Make sure the import is not destroyed while this promise exists.
+                    //   let promise = promise.attach(client.add_ref());
+                    // ```
+                    // However, as far as I can tell that is unnecessary, because the
+                    // PromiseClient holds `client` until it resolves, after which point
+                    // there is no reason to keep the import alive.
+
+                    let client = PromiseClient::new(state, client, Some(import_id));
+
+                    import.promise_client_to_resolve = Some(Rc::downgrade(&client));
+                    let client: Box<Client<VatId>> = Box::new(client.into());
+                    import.app_client = Some(client.downgrade());
+                    client
+                }
+            }
+        } else {
+            let client: Box<Client<VatId>> = Box::new(import_client.into());
+            import.app_client = Some(client.downgrade());
+            client
+        }
+    }
+
+    fn receive_cap(
+        state: &Rc<Self>,
+        descriptor: cap_descriptor::Reader,
+        fds: &mut IncomingFds,
+    ) -> ::capnp::Result<Option<Box<dyn ClientHook>>> {
+        let fd = fds.take(descriptor.get_attached_fd());
+        match descriptor.which()? {
+            cap_descriptor::None(()) => Ok(None),
+            cap_descriptor::SenderHosted(sender_hosted) => Ok(Some(Self::import(
+                state,
+                ImportId::from_wire(sender_hosted),
+                false,
+                fd,
+            ))),
+            cap_descriptor::SenderPromise(sender_promise) => Ok(Some(Self::import(
+                state,
+                ImportId::from_wire(sender_promise),
+                true,
+                fd,
+            ))),
+            cap_descriptor::ReceiverHosted(receiver_hosted) => {
+                if let Some(exp) = state
+                    .exports
+                    .borrow_mut()
+                    .find(ExportId::from_wire(receiver_hosted))
+                {
+                    Ok(Some(match &exp.reflected_vine {
+                        Some(recreate) => recreate(),
+                        None => exp.client_hook.add_ref(),
+                    }))
+                } else {
+                    Ok(Some(broken::new_cap(Error::failed(
+                        "invalid 'receiverHosted' export ID".to_string(),
+                    ))))
+                }
+            }
+            cap_descriptor::ReceiverAnswer(receiver_answer) => {
+                let promised_answer = receiver_answer?;
+                let question_id = AnswerId::from_wire(promised_answer.get_question_id());
+                if let Some(answer) = state.answers.borrow().slots.get(&question_id) {
+                    if let Some(ref pipeline) = answer.pipeline {
+                        let ops = to_pipeline_ops(promised_answer.get_transform()?)?;
+                        return Ok(Some(pipeline.get_pipelined_cap(&ops)));
+                    }
+                }
+                Ok(Some(broken::new_cap(Error::failed(
+                    "invalid 'receiver answer'".to_string(),
+                ))))
+            }
+            cap_descriptor::ThirdPartyHosted(third) => {
+                Ok(Some(Self::receive_third_party(state, third?, fd)?))
+            }
+        }
+    }
+
+    fn receive_caps(
+        state: &Rc<Self>,
+        cap_table: ::capnp::struct_list::Reader<cap_descriptor::Owned>,
+        fds: &mut IncomingFds,
+    ) -> ::capnp::Result<Vec<Option<Box<dyn ClientHook>>>> {
+        let mut result = Vec::new();
+        for idx in 0..cap_table.len() {
+            result.push(Self::receive_cap(state, cap_table.get(idx), fds)?);
+        }
+        Ok(result)
+    }
+}
+
+pub(crate) struct JoinContext<VatId> {
+    pub(crate) bootstrap: crate::Bootstrap<VatId>,
+    pub(crate) tasks: crate::task_set::TaskSetHandle<Error>,
+}
+
+pub(crate) struct ConnectionRegistry<VatId: 'static> {
+    pub(crate) join_context: Weak<JoinContext<VatId>>,
+    pub(crate) join_network: Option<Rc<dyn crate::multiparty::JoinNetwork<VatId>>>,
+    pub(crate) flow_limit: usize,
+    pub(crate) trace_encoder: Option<Rc<dyn Fn(&Error) -> String>>,
+    pub(crate) states: HashMap<usize, Rc<ConnectionState<VatId>>>,
+    pub(crate) closing: bool,
+    pub(crate) closing_connections: usize,
+    pub(crate) waker: Option<std::task::Waker>,
+}
+impl<VatId> ConnectionRegistry<VatId> {
+    pub(crate) fn new() -> Self {
+        Self {
+            join_context: Weak::new(),
+            join_network: None,
+            flow_limit: usize::MAX,
+            trace_encoder: None,
+            states: HashMap::new(),
+            closing: false,
+            closing_connections: 0,
+            waker: None,
+        }
+    }
+}
+
+/// Closes every connection in an RPC system and waits for outgoing shutdowns.
+pub struct Disconnector<VatId: 'static> {
+    connections: Rc<RefCell<ConnectionRegistry<VatId>>>,
+}
+impl<VatId> Disconnector<VatId> {
+    pub(crate) fn new(connections: Rc<RefCell<ConnectionRegistry<VatId>>>) -> Self {
+        Self { connections }
+    }
+}
+impl<VatId: 'static> Future for Disconnector<VatId> {
+    type Output = Result<(), capnp::Error>;
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let states = {
+            let mut registry = self.connections.borrow_mut();
+            if registry.states.is_empty() && registry.closing_connections == 0 {
+                registry.closing = true;
+                return Poll::Ready(Ok(()));
+            }
+            registry.waker = Some(cx.waker().clone());
+            if registry.closing {
+                return Poll::Pending;
+            }
+            registry.closing = true;
+            registry.states.values().cloned().collect::<Vec<_>>()
+        };
+        // Destructors may re-enter the system; release the registry borrow first.
+        for state in states {
+            state.disconnect(Error::disconnected("client requested disconnect".into()));
+        }
+        Poll::Pending
+    }
+}
+
+struct ResponseState<VatId>
+where
+    VatId: 'static,
+{
+    _connection_state: Rc<ConnectionState<VatId>>,
+    message: Box<dyn crate::IncomingMessage>,
+    cap_table: Vec<Option<Box<dyn ClientHook>>>,
+    _question_ref: Rc<RefCell<QuestionRef<VatId>>>,
+}
+
+enum ResponseVariant<VatId>
+where
+    VatId: 'static,
+{
+    Rpc(ResponseState<VatId>),
+    LocallyRedirected(Box<dyn ResultsDoneHook>),
+    Adopted(Box<dyn ResponseHook>, Box<dyn std::any::Any>),
+}
+
+struct Response<VatId>
+where
+    VatId: 'static,
+{
+    variant: Rc<ResponseVariant<VatId>>,
+}
+
+impl<VatId> Response<VatId> {
+    fn new(
+        connection_state: Rc<ConnectionState<VatId>>,
+        question_ref: Rc<RefCell<QuestionRef<VatId>>>,
+        message: Box<dyn crate::IncomingMessage>,
+        cap_table_array: Vec<Option<Box<dyn ClientHook>>>,
+    ) -> Self {
+        Self {
+            variant: Rc::new(ResponseVariant::Rpc(ResponseState {
+                _connection_state: connection_state,
+                message,
+                cap_table: cap_table_array,
+                _question_ref: question_ref,
+            })),
+        }
+    }
+    fn redirected(results_done: Box<dyn ResultsDoneHook>) -> Self {
+        Self {
+            variant: Rc::new(ResponseVariant::LocallyRedirected(results_done)),
+        }
+    }
+}
+
+impl<VatId> Clone for Response<VatId> {
+    fn clone(&self) -> Self {
+        Self {
+            variant: self.variant.clone(),
+        }
+    }
+}
+
+impl<VatId> ResponseHook for Response<VatId> {
+    fn get(&self) -> ::capnp::Result<any_pointer::Reader<'_>> {
+        match *self.variant {
+            ResponseVariant::Rpc(ref state) => {
+                match state
+                    .message
+                    .get_body()?
+                    .get_as::<message::Reader>()?
+                    .which()?
+                {
+                    message::Return(Ok(ret)) => match ret.which()? {
+                        return_::Results(Ok(mut payload)) => {
+                            use ::capnp::traits::Imbue;
+                            payload.imbue(&state.cap_table);
+                            Ok(payload.get_content())
+                        }
+                        _ => unreachable!(),
+                    },
+                    _ => unreachable!(),
+                }
+            }
+            ResponseVariant::LocallyRedirected(ref results_done) => results_done.get(),
+            ResponseVariant::Adopted(ref response, ref _guard) => response.get(),
+        }
+    }
+}
+
+struct Request<VatId>
+where
+    VatId: 'static,
+{
+    connection_state: Rc<ConnectionState<VatId>>,
+    target: Client<VatId>,
+    message: Box<dyn crate::OutgoingMessage>,
+    cap_table: Vec<Option<Box<dyn ClientHook>>>,
+}
+
+fn get_call(message: &mut Box<dyn crate::OutgoingMessage>) -> ::capnp::Result<call::Builder<'_>> {
+    let message_root: message::Builder = message.get_body()?.get_as()?;
+    match message_root.which()? {
+        message::Call(call) => call,
+        _ => Err(Error::failed("request does not contain Call".into())),
+    }
+}
+
+impl<VatId> Request<VatId>
+where
+    VatId: 'static,
+{
+    fn new(
+        connection_state: Rc<ConnectionState<VatId>>,
+        _size_hint: Option<::capnp::MessageSize>,
+        target: Client<VatId>,
+    ) -> ::capnp::Result<Self> {
+        let message = connection_state.new_outgoing_message(1024)?;
+        Ok(Self {
+            connection_state,
+            target,
+            message,
+            cap_table: Vec::new(),
+        })
+    }
+
+    fn init_call(&mut self) -> call::Builder<'_> {
+        let message_root: message::Builder = self.message.get_body().unwrap().get_as().unwrap();
+        let mut call = message_root.init_call();
+        call.set_allow_third_party_tail_call(answer_adoption::supported(&self.connection_state));
+        call
+    }
+
+    fn send_internal(
+        connection_state: &Rc<ConnectionState<VatId>>,
+        mut message: Box<dyn crate::OutgoingMessage>,
+        cap_table: &[Option<Box<dyn ClientHook>>],
+        is_tail_call: bool,
+    ) -> (
+        Rc<RefCell<QuestionRef<VatId>>>,
+        Promise<Response<VatId>, Error>,
+    ) {
+        // Build the cap table.
+        let mut fds = OutgoingFds::default();
+        let exports = ConnectionState::write_descriptors(
+            connection_state,
+            cap_table,
+            get_call(&mut message).unwrap().get_params().unwrap(),
+            &mut fds,
+        );
+        fds.attach(&mut *message);
+
+        // Init the question table.  Do this after writing descriptors to avoid interference.
+        let mut question = Question::<VatId>::new();
+        question.is_awaiting_return = true;
+        question.param_exports = exports;
+        question.is_tail_call = is_tail_call;
+        question.allow_third_party = get_call(&mut message)
+            .unwrap()
+            .get_allow_third_party_tail_call();
+
+        let question_id = connection_state.questions.borrow_mut().push(question);
+        {
+            let mut call_builder: call::Builder = get_call(&mut message).unwrap();
+            // Finish and send.
+            call_builder
+                .reborrow()
+                .set_question_id(question_id.to_wire());
+            if is_tail_call
+                && !matches!(
+                    call_builder.reborrow().get_send_results_to().which(),
+                    Ok(call::send_results_to::ThirdParty(_))
+                )
+            {
+                call_builder.get_send_results_to().set_yourself(());
+            }
+        }
+        let _ = message.send();
+        // Make the result promise.
+        let (fulfiller, promise) = oneshot::channel::<Promise<Response<VatId>, Error>>();
+        let promise = promise.map_err(crate::canceled_to_error).and_then(|x| x);
+        let question_ref = Rc::new(RefCell::new(QuestionRef::new(
+            connection_state.clone(),
+            question_id,
+            fulfiller,
+        )));
+
+        match connection_state.questions.borrow_mut().find(question_id) {
+            Some(ref mut q) => {
+                q.self_ref = Some(Rc::downgrade(&question_ref));
+            }
+            None => unreachable!(),
+        }
+
+        let promise = promise.attach(question_ref.clone());
+        let promise2 = Promise::from_future(promise);
+
+        (question_ref, promise2)
+    }
+
+    fn send_streaming_internal(
+        connection_state: &Rc<ConnectionState<VatId>>,
+        mut message: Box<dyn crate::OutgoingMessage>,
+        cap_table: &[Option<Box<dyn ClientHook>>],
+        flow: Rc<RefCell<Option<Box<dyn crate::FlowController>>>>,
+    ) -> Promise<(), Error> {
+        // Build the cap table.
+        let mut fds = OutgoingFds::default();
+        let exports = ConnectionState::write_descriptors(
+            connection_state,
+            cap_table,
+            get_call(&mut message).unwrap().get_params().unwrap(),
+            &mut fds,
+        );
+        fds.attach(&mut *message);
+
+        // Init the question table.  Do this after writing descriptors to avoid interference.
+        let mut question = Question::<VatId>::new();
+        question.is_awaiting_return = true;
+        question.param_exports = exports;
+        question.is_tail_call = false;
+        question.allow_third_party = get_call(&mut message)
+            .unwrap()
+            .get_allow_third_party_tail_call();
+
+        let question_id = connection_state.questions.borrow_mut().push(question);
+        {
+            let mut call_builder: call::Builder = get_call(&mut message).unwrap();
+            call_builder
+                .reborrow()
+                .set_question_id(question_id.to_wire());
+        }
+
+        // Make the result promise.
+        let (fulfiller, promise) = oneshot::channel::<Promise<Response<VatId>, Error>>();
+        let promise = promise.map_err(crate::canceled_to_error).and_then(|x| x);
+        let question_ref = Rc::new(RefCell::new(QuestionRef::new(
+            connection_state.clone(),
+            question_id,
+            fulfiller,
+        )));
+
+        match connection_state.questions.borrow_mut().find(question_id) {
+            Some(ref mut q) => {
+                q.self_ref = Some(Rc::downgrade(&question_ref));
+            }
+            None => unreachable!(),
+        }
+        let promise = promise.attach(question_ref.clone());
+
+        let mut flow = flow.borrow_mut();
+        if flow.is_none() {
+            match connection_state.connection.borrow_mut().as_mut() {
+                Err(_) => return Promise::err(Error::failed("no connection".into())),
+                Ok(connection) => {
+                    let (s, p) = connection.new_stream();
+                    connection_state.add_task(p);
+                    *flow = Some(s);
+                }
+            };
+        }
+        let Some(ref mut flow) = *flow else {
+            unreachable!()
+        };
+        flow.send(
+            message,
+            Promise::from_future(async move {
+                let _ = promise.await?;
+                Ok(())
+            }),
+        )
+    }
+}
+
+impl<VatId> RequestHook for Request<VatId> {
+    fn third_party_tail_target(&self) -> Option<Box<dyn std::any::Any>> {
+        if self.get_brand() != 0 && answer_adoption::supported(&self.connection_state) {
+            Some(Box::new(self.connection_state.clone()))
+        } else {
+            None
+        }
+    }
+    fn set_third_party_tail_target(
+        &mut self,
+        contact: any_pointer::Reader<'_>,
+    ) -> capnp::Result<()> {
+        get_call(&mut self.message)?
+            .get_send_results_to()
+            .init_third_party()
+            .set_as(contact)
+    }
+
+    fn set_hints(&mut self, hints: CallHints) {
+        let mut call = get_call(&mut self.message).unwrap();
+        call.set_no_promise_pipelining(hints.no_promise_pipelining);
+        // Normal send() always requests its response; only send_for_pipeline()
+        // enables onlyPromisePipeline on the wire.
+    }
+    fn send_for_pipeline(mut self: Box<Self>) -> any_pointer::Pipeline {
+        if let Err(error) = &*self.connection_state.connection.borrow() {
+            return any_pointer::Pipeline::new(Box::new(broken::Pipeline::new(error.clone())));
+        }
+        let redirect = self
+            .target
+            .write_target(get_call(&mut self.message).unwrap().get_target().unwrap());
+        if let Some(redirect) = redirect {
+            let mut call = get_call(&mut self.message).unwrap();
+            let mut replacement = redirect.new_call_with_hints(
+                call.reborrow().get_interface_id(),
+                call.reborrow().get_method_id(),
+                None,
+                CallHints {
+                    no_promise_pipelining: false,
+                    only_promise_pipeline: true,
+                },
+            );
+            use capnp::traits::Imbue;
+            let mut params = call.get_params().unwrap().get_content().into_reader();
+            params.imbue(&self.cap_table);
+            if let Err(error) = replacement.set(params) {
+                return any_pointer::Pipeline::new(Box::new(broken::Pipeline::new(error)));
+            }
+            return replacement.hook.send_for_pipeline();
+        }
+        get_call(&mut self.message)
+            .unwrap()
+            .set_no_promise_pipelining(false);
+        if self.connection_state.got_return_for_high_id.get() {
+            return self.send().pipeline;
+        }
+        let mut fds = OutgoingFds::default();
+        let exports = ConnectionState::write_descriptors(
+            &self.connection_state,
+            &self.cap_table,
+            get_call(&mut self.message).unwrap().get_params().unwrap(),
+            &mut fds,
+        );
+        fds.attach(&mut *self.message);
+        let mut question = Question::new();
+        question.is_awaiting_return = false;
+        question.param_exports = exports;
+        let id = self
+            .connection_state
+            .questions
+            .borrow_mut()
+            .push_high(question);
+        let reference = Rc::new(RefCell::new(QuestionRef {
+            connection_state: Some(self.connection_state.clone()),
+            id,
+            fulfiller: None,
+            pipeline: None,
+        }));
+        self.connection_state
+            .questions
+            .borrow_mut()
+            .find(id)
+            .unwrap()
+            .self_ref = Some(Rc::downgrade(&reference));
+        let mut call = get_call(&mut self.message).unwrap();
+        call.set_question_id(id.to_wire());
+        call.set_no_promise_pipelining(false);
+        call.set_only_promise_pipeline(true);
+        let _ = self.message.send();
+        any_pointer::Pipeline::new(Box::new(Pipeline::never_done(
+            self.connection_state.clone(),
+            reference,
+        )))
+    }
+
+    fn get(&mut self) -> any_pointer::Builder<'_> {
+        use ::capnp::traits::ImbueMut;
+        let mut builder = get_call(&mut self.message)
+            .unwrap()
+            .get_params()
+            .unwrap()
+            .get_content();
+        builder.imbue_mut(&mut self.cap_table);
+        builder
+    }
+    fn get_brand<'a>(&self) -> usize {
+        // tail_send consumes its request even when it returns None. Only expose
+        // the connection brand while the target can still be sent on it, so a
+        // ResultsHook can choose ordinary forwarding before consuming a request
+        // whose promise resolved elsewhere. No executor turn occurs before send.
+        if self.connection_state.connection.borrow().is_ok() && self.target.can_tail_send() {
+            self.connection_state.get_brand()
+        } else {
+            0
+        }
+    }
+    fn send(self: Box<Self>) -> ::capnp::capability::RemotePromise<any_pointer::Owned> {
+        if let Err(error) = &*self.connection_state.connection.borrow() {
+            return capnp::capability::RemotePromise {
+                promise: Promise::err(error.clone()),
+                pipeline: any_pointer::Pipeline::new(Box::new(broken::Pipeline::new(
+                    error.clone(),
+                ))),
+            };
+        }
+        let tmp = *self;
+        let Self {
+            connection_state,
+            target,
+            mut message,
+            cap_table,
+        } = tmp;
+        let write_target_result = {
+            let call_builder: call::Builder = get_call(&mut message).unwrap();
+            target.write_target(call_builder.get_target().unwrap())
+        };
+        if let Some(redirect) = write_target_result {
+            // Whoops, this capability has been redirected while we were building the request!
+            // We'll have to make a new request and do a copy.  Ick.
+            let mut call_builder: call::Builder = get_call(&mut message).unwrap();
+            let mut replacement = redirect.new_call_with_hints(
+                call_builder.reborrow().get_interface_id(),
+                call_builder.reborrow().get_method_id(),
+                None,
+                CallHints {
+                    no_promise_pipelining: call_builder.reborrow().get_no_promise_pipelining(),
+                    only_promise_pipeline: false,
+                },
+            );
+
+            use capnp::traits::Imbue;
+            let mut params = call_builder
+                .get_params()
+                .unwrap()
+                .get_content()
+                .into_reader();
+            params.imbue(&cap_table);
+            replacement.set(params).unwrap();
+            return replacement.send();
+        }
+        let disabled = get_call(&mut message).unwrap().get_no_promise_pipelining();
+        let (question_ref, promise) =
+            Self::send_internal(&connection_state, message, &cap_table, false);
+        if disabled {
+            return capnp::capability::RemotePromise {
+                promise: Promise::from_future(
+                    promise.map_ok(|response| capnp::capability::Response::new(Box::new(response))),
+                ),
+                pipeline: any_pointer::Pipeline::new(Box::new(broken::Pipeline::new(
+                    Error::failed("promise pipelining disabled by call hint".into()),
+                ))),
+            };
+        }
+
+        let forked_promise1 = promise.shared();
+        let forked_promise2 = forked_promise1.clone();
+
+        // The pipeline must get notified of resolution before the app does to maintain ordering.
+        let pipeline = Pipeline::new(
+            &connection_state,
+            question_ref,
+            Some(Promise::from_future(forked_promise1)),
+        );
+
+        let resolved = pipeline.when_resolved();
+
+        let forked_promise2 = resolved.map(|_| Ok(())).and_then(|()| forked_promise2);
+
+        let app_promise = Promise::from_future(
+            forked_promise2
+                .map_ok(|response| ::capnp::capability::Response::new(Box::new(response))),
+        );
+
+        ::capnp::capability::RemotePromise {
+            promise: app_promise,
+            pipeline: any_pointer::Pipeline::new(Box::new(pipeline)),
+        }
+    }
+    fn send_streaming(self: Box<Self>) -> Promise<(), Error> {
+        if let Err(error) = &*self.connection_state.connection.borrow() {
+            return Promise::err(error.clone());
+        }
+        let tmp = *self;
+        let Self {
+            connection_state,
+            target,
+            mut message,
+            cap_table,
+        } = tmp;
+        let write_target_result = {
+            let call_builder: call::Builder = get_call(&mut message).unwrap();
+            target.write_target(call_builder.get_target().unwrap())
+        };
+        if let Some(redirect) = write_target_result {
+            // Whoops, this capability has been redirected while we were building the request!
+            // We'll have to make a new request and do a copy.  Ick.
+            let mut call_builder: call::Builder = get_call(&mut message).unwrap();
+            let mut replacement = redirect.new_call_with_hints(
+                call_builder.reborrow().get_interface_id(),
+                call_builder.reborrow().get_method_id(),
+                None,
+                CallHints {
+                    no_promise_pipelining: call_builder.reborrow().get_no_promise_pipelining(),
+                    only_promise_pipeline: false,
+                },
+            );
+
+            use capnp::traits::Imbue;
+            let mut params = call_builder
+                .get_params()
+                .unwrap()
+                .get_content()
+                .into_reader();
+            params.imbue(&cap_table);
+            replacement.set(params).unwrap();
+            return replacement.hook.send_streaming();
+        }
+        Self::send_streaming_internal(
+            &connection_state,
+            message,
+            &cap_table,
+            target.flow_controller,
+        )
+    }
+    fn tail_send(self: Box<Self>) -> Option<(u32, Promise<(), Error>, Box<dyn PipelineHook>)> {
+        let tmp = *self;
+        let Self {
+            connection_state,
+            target,
+            mut message,
+            cap_table,
+        } = tmp;
+
+        if connection_state.connection.borrow().is_err() {
+            // Disconnected; fall back to a regular send() which will fail appropriately.
+            return None;
+        }
+
+        let write_target_result = {
+            let call_builder: crate::rpc_capnp::call::Builder = get_call(&mut message).unwrap();
+            target.write_target(call_builder.get_target().unwrap())
+        };
+
+        let disabled = get_call(&mut message).unwrap().get_no_promise_pipelining();
+        let (question_ref, promise) = match write_target_result {
+            Some(_redirect) => {
+                return None;
+            }
+            None => Self::send_internal(&connection_state, message, &cap_table, true),
+        };
+
+        let promise = promise.map_ok(|_response| ());
+
+        let question_id = question_ref.borrow().id;
+        let pipeline: Box<dyn PipelineHook> = if disabled {
+            Box::new(broken::Pipeline::new(Error::failed(
+                "promise pipelining disabled by call hint".into(),
+            )))
+        } else {
+            Box::new(Pipeline::never_done(connection_state, question_ref))
+        };
+
+        // RequestHook is shared with non-RPC backends and exposes a wire ID;
+        // only this trait boundary projects the typed local question.
+        Some((
+            question_id.to_wire(),
+            Promise::from_future(promise),
+            pipeline,
+        ))
+    }
+}
+
+enum PipelineVariant<VatId>
+where
+    VatId: 'static,
+{
+    Waiting(Rc<RefCell<QuestionRef<VatId>>>),
+    Adopted(Box<dyn PipelineHook>),
+    Resolved(Response<VatId>),
+    Broken(Error),
+}
+
+struct PipelineState<VatId>
+where
+    VatId: 'static,
+{
+    variant: PipelineVariant<VatId>,
+    redirect_later: Option<RefCell<futures::future::Shared<Promise<Response<VatId>, Error>>>>,
+    connection_state: Rc<ConnectionState<VatId>>,
+
+    #[allow(dead_code)]
+    resolve_self_promise: Promise<(), Error>,
+
+    promise_clients_to_resolve: RefCell<
+        crate::sender_queue::SenderQueue<
+            (Weak<RefCell<PromiseClient<VatId>>>, Vec<PipelineOp>),
+            (),
+        >,
+    >,
+    resolution_waiters: crate::sender_queue::SenderQueue<(), ()>,
+}
+
+impl<VatId> PipelineState<VatId>
+where
+    VatId: 'static,
+{
+    fn adopt(state: &Rc<RefCell<Self>>, pipeline: Box<dyn PipelineHook>) {
+        let clients = state
+            .borrow()
+            .promise_clients_to_resolve
+            .borrow_mut()
+            .drain();
+        for ((client, ops), _) in clients {
+            if let Some(client) = client.upgrade() {
+                let (used, old, connection) = {
+                    let client = client.borrow();
+                    (
+                        client.received_call,
+                        client.cap.clone(),
+                        client.connection_state.clone(),
+                    )
+                };
+                let direct = pipeline.get_pipelined_cap(&ops);
+                if used {
+                    // A bounded, authenticated Join freezes future calls until
+                    // the old path has reached the adopted capability. Standard
+                    // senderLoopback is not a fence for a third-party target.
+                    if let Some(fenced) = answer_adoption::fence(&connection, old.clone(), direct) {
+                        client.borrow_mut().replace_resolved(fenced);
+                    } else {
+                        client.borrow_mut().resolve(Ok(old));
+                    }
+                } else {
+                    client.borrow_mut().resolve(Ok(direct));
+                }
+            }
+        }
+        let _old = mem::replace(
+            &mut state.borrow_mut().variant,
+            PipelineVariant::Adopted(pipeline),
+        );
+    }
+
+    fn resolve(state: &Rc<RefCell<Self>>, response: Result<Response<VatId>, Error>) {
+        let to_resolve = {
+            let tmp = state.borrow();
+            let r = tmp.promise_clients_to_resolve.borrow_mut().drain();
+            r
+        };
+        for ((c, ops), _) in to_resolve {
+            let resolved = match response.clone() {
+                Ok(v) => match v.get() {
+                    Ok(x) => x.get_pipelined_cap(&ops),
+                    Err(e) => Err(e),
+                },
+                Err(e) => Err(e),
+            };
+            if let Some(c) = c.upgrade() {
+                c.borrow_mut().resolve(resolved);
+            }
+        }
+
+        let new_variant = match response {
+            Ok(r) => PipelineVariant::Resolved(r),
+            Err(e) => PipelineVariant::Broken(e),
+        };
+        let _old_variant = mem::replace(&mut state.borrow_mut().variant, new_variant);
+
+        let waiters = state.borrow_mut().resolution_waiters.drain();
+        for (_, waiter) in waiters {
+            let _ = waiter.send(());
+        }
+    }
+}
+
+struct Pipeline<VatId>
+where
+    VatId: 'static,
+{
+    state: Rc<RefCell<PipelineState<VatId>>>,
+}
+
+impl<VatId> Pipeline<VatId> {
+    fn new(
+        connection_state: &Rc<ConnectionState<VatId>>,
+        question_ref: Rc<RefCell<QuestionRef<VatId>>>,
+        redirect_later: Option<Promise<Response<VatId>, ::capnp::Error>>,
+    ) -> Self {
+        let reference = question_ref.clone();
+        let state = Rc::new(RefCell::new(PipelineState {
+            variant: PipelineVariant::Waiting(question_ref),
+            connection_state: connection_state.clone(),
+            redirect_later: None,
+            resolve_self_promise: Promise::from_future(future::pending()),
+            promise_clients_to_resolve: RefCell::new(crate::sender_queue::SenderQueue::new()),
+            resolution_waiters: crate::sender_queue::SenderQueue::new(),
+        }));
+        reference.borrow_mut().pipeline = Some(Rc::downgrade(&state));
+        if let Some(redirect_later_promise) = redirect_later {
+            let fork = redirect_later_promise.shared();
+            let this = Rc::downgrade(&state);
+            let resolve_self_promise =
+                connection_state.eagerly_evaluate(fork.clone().then(move |response| {
+                    let Some(state) = this.upgrade() else {
+                        return Promise::err(Error::failed("dangling reference to this".into()));
+                    };
+                    PipelineState::resolve(&state, response);
+                    Promise::ok(())
+                }));
+
+            state.borrow_mut().resolve_self_promise = resolve_self_promise;
+            state.borrow_mut().redirect_later = Some(RefCell::new(fork));
+        }
+        Self { state }
+    }
+
+    fn when_resolved(&self) -> Promise<(), Error> {
+        let mut state = self.state.borrow_mut();
+        match &state.variant {
+            PipelineVariant::Waiting(_) | PipelineVariant::Adopted(_) => {
+                state.resolution_waiters.push(())
+            }
+            PipelineVariant::Resolved(_) => Promise::ok(()),
+            PipelineVariant::Broken(error) => Promise::err(error.clone()),
+        }
+    }
+
+    fn never_done(
+        connection_state: Rc<ConnectionState<VatId>>,
+        question_ref: Rc<RefCell<QuestionRef<VatId>>>,
+    ) -> Self {
+        let state = Rc::new(RefCell::new(PipelineState {
+            variant: PipelineVariant::Waiting(question_ref),
+            connection_state,
+            redirect_later: None,
+            resolve_self_promise: Promise::from_future(future::pending()),
+            promise_clients_to_resolve: RefCell::new(crate::sender_queue::SenderQueue::new()),
+            resolution_waiters: crate::sender_queue::SenderQueue::new(),
+        }));
+
+        Self { state }
+    }
+}
+
+impl<VatId> PipelineHook for Pipeline<VatId> {
+    fn add_ref(&self) -> Box<dyn PipelineHook> {
+        Box::new(Self {
+            state: self.state.clone(),
+        })
+    }
+    fn get_pipelined_cap(&self, ops: &[PipelineOp]) -> Box<dyn ClientHook> {
+        self.get_pipelined_cap_move(ops.into())
+    }
+    fn get_pipelined_cap_move(&self, ops: Vec<PipelineOp>) -> Box<dyn ClientHook> {
+        match *self.state.borrow() {
+            PipelineState {
+                variant: PipelineVariant::Waiting(ref question_ref),
+                ref connection_state,
+                ref redirect_later,
+                ref promise_clients_to_resolve,
+                ..
+            } => {
+                // Wrap a PipelineClient in a PromiseClient.
+                let pipeline_client =
+                    PipelineClient::new(connection_state, question_ref.clone(), ops.clone());
+
+                match redirect_later {
+                    Some(_r) => {
+                        let client: Client<VatId> = pipeline_client.into();
+                        let promise_client =
+                            PromiseClient::new(connection_state, Box::new(client), None);
+                        promise_client.borrow_mut().pipeline_owner = Some(self.state.clone());
+                        promise_clients_to_resolve
+                            .borrow_mut()
+                            .push_detach((Rc::downgrade(&promise_client), ops));
+                        let result: Client<VatId> = promise_client.into();
+                        Box::new(result)
+                    }
+                    None => {
+                        // Oh, this pipeline will never get redirected, so just return the PipelineClient.
+                        let client: Client<VatId> = pipeline_client.into();
+                        Box::new(client)
+                    }
+                }
+            }
+            PipelineState {
+                variant: PipelineVariant::Adopted(ref pipeline),
+                ..
+            } => pipeline.get_pipelined_cap_move(ops),
+            PipelineState {
+                variant: PipelineVariant::Resolved(ref response),
+                ..
+            } => response
+                .get()
+                .and_then(|r| r.get_pipelined_cap(&ops))
+                .unwrap_or_else(broken::new_cap),
+            PipelineState {
+                variant: PipelineVariant::Broken(ref e),
+                ..
+            } => broken::new_cap(e.clone()),
+        }
+    }
+}
+
+pub(crate) struct Params {
+    request: Box<dyn crate::IncomingMessage>,
+    cap_table: Vec<Option<Box<dyn ClientHook>>>,
+}
+
+impl Params {
+    fn new(
+        request: Box<dyn crate::IncomingMessage>,
+        cap_table: Vec<Option<Box<dyn ClientHook>>>,
+    ) -> Self {
+        Self { request, cap_table }
+    }
+}
+
+impl ParamsHook for Params {
+    fn get(&self) -> ::capnp::Result<any_pointer::Reader<'_>> {
+        let root: message::Reader = self.request.get_body()?.get_as()?;
+        let message::Call(call) = root.which()? else {
+            unreachable!()
+        };
+        use ::capnp::traits::Imbue;
+        let mut content = call?.get_params()?.get_content();
+        content.imbue(&self.cap_table);
+        Ok(content)
+    }
+}
+
+enum ResultsVariant {
+    Transferred(Box<dyn PipelineHook>),
+    Rpc(
+        Box<dyn crate::OutgoingMessage>,
+        Vec<Option<Box<dyn ClientHook>>>,
+    ),
+    LocallyRedirected(
+        ::capnp::message::Builder<::capnp::message::HeapAllocator>,
+        Vec<Option<Box<dyn ClientHook>>>,
+    ),
+}
+
+async fn yield_once() {
+    let mut yielded = false;
+    future::poll_fn(move |cx| {
+        if yielded {
+            Poll::Ready(())
+        } else {
+            yielded = true;
+            cx.waker().wake_by_ref();
+            Poll::Pending
+        }
+    })
+    .await
+}
+
+// Equivalent to the C++ RpcCallContext destructor's first-responder rule.
+// A Finish releases the answer's task, but pipelines or application-owned
+// Results may still hold the call context. Only its final drop sends cancellation.
+struct ReturnGuard<VatId: 'static> {
+    state: Weak<ConnectionState<VatId>>,
+    id: AnswerId,
+    responded: Rc<Cell<bool>>,
+    redirect: bool,
+    only_pipeline: bool,
+}
+impl<VatId> Drop for ReturnGuard<VatId> {
+    fn drop(&mut self) {
+        if self.responded.replace(true) {
+            return;
+        }
+        let Some(state) = self.state.upgrade() else {
+            return;
+        };
+        if state.connection.borrow().is_err() {
+            return;
+        }
+        if self.only_pipeline {
+            state.answer_has_sent_return(self.id, Vec::new());
+            return;
+        }
+        let result = (|| -> capnp::Result<()> {
+            let mut message = state.new_outgoing_message(8)?;
+            let mut ret = message
+                .get_body()?
+                .init_as::<message::Builder>()
+                .init_return();
+            ret.set_answer_id(self.id.to_wire());
+            ret.set_release_param_caps(false);
+            if self.redirect {
+                ret.set_results_sent_elsewhere(());
+            } else {
+                ret.set_canceled(());
+            }
+            let _ = message.send();
+            Ok(())
+        })();
+        state.answer_has_sent_return(self.id, Vec::new());
+        if let Err(error) = result {
+            state.add_task(async move { Err(error) });
+        }
+    }
+}
+
+struct ResultsInner<VatId>
+where
+    VatId: 'static,
+{
+    connection_state: Rc<ConnectionState<VatId>>,
+    variant: Option<ResultsVariant>,
+    redirect_results: bool,
+    only_promise_pipeline: bool,
+    allow_third_party: bool,
+    answer_id: AnswerId,
+    finish_received: Rc<Cell<bool>>,
+    pipeline_sender: Option<queued::PipelineInnerSender>,
+    return_guard: Rc<ReturnGuard<VatId>>,
+    retained_results: Rc<RefCell<Option<ResultsVariant>>>,
+}
+
+impl<VatId> Drop for ResultsInner<VatId> {
+    fn drop(&mut self) {
+        // A detached application method still owns its result capabilities even
+        // if it released Results early and its caller has since canceled.
+        if Rc::strong_count(&self.retained_results) > 1 {
+            *self.retained_results.borrow_mut() = self.variant.take();
+        }
+    }
+}
+
+impl<VatId> ResultsInner<VatId>
+where
+    VatId: 'static,
+{
+    fn ensure_initialized(&mut self, size_hint: Option<capnp::MessageSize>) {
+        let answer_id = self.answer_id;
+        if self.variant.is_none() {
+            match (
+                self.redirect_results || self.only_promise_pipeline,
+                self.connection_state.connection.borrow_mut().as_mut(),
+            ) {
+                (false, Ok(c)) => {
+                    let mut message = c.new_outgoing_message(result_size_hint(size_hint));
+
+                    {
+                        let root: message::Builder = message.get_body().unwrap().init_as();
+                        let mut ret = root.init_return();
+                        ret.set_answer_id(answer_id.to_wire());
+                        ret.set_release_param_caps(false);
+                    }
+                    self.variant = Some(ResultsVariant::Rpc(message, Vec::new()));
+                }
+                _ => {
+                    self.variant = Some(ResultsVariant::LocallyRedirected(
+                        ::capnp::message::Builder::new(local::result_allocator(size_hint)),
+                        Vec::new(),
+                    ));
+                }
+            }
+        }
+    }
+}
+
+fn result_size_hint(size: Option<capnp::MessageSize>) -> u32 {
+    use capnp::traits::HasStructSize;
+    size.map_or(0, |s| {
+        let descriptor = cap_descriptor::Builder::STRUCT_SIZE.total()
+            + promised_answer::Builder::STRUCT_SIZE.total();
+        let envelope = 1
+            + message::Builder::STRUCT_SIZE.total()
+            + return_::Builder::STRUCT_SIZE.total()
+            + payload::Builder::STRUCT_SIZE.total();
+        s.word_count
+            .saturating_add(u64::from(s.cap_count) * u64::from(descriptor))
+            .saturating_add(u64::from(s.cap_count > 0))
+            .min(1 << 20) as u32
+            + envelope
+    })
+}
+
+// This takes the place of both RpcCallContext and RpcServerResponse in capnproto-c++.
+pub(crate) struct Results<VatId>
+where
+    VatId: 'static,
+{
+    inner: Option<ResultsInner<VatId>>,
+    results_done_fulfiller: Option<oneshot::Sender<ResultsInner<VatId>>>,
+}
+
+impl<VatId> Results<VatId>
+where
+    VatId: 'static,
+{
+    fn new(
+        connection_state: &Rc<ConnectionState<VatId>>,
+        answer_id: AnswerId,
+        redirect_results: bool,
+        fulfiller: oneshot::Sender<ResultsInner<VatId>>,
+        finish_received: Rc<Cell<bool>>,
+        responded: Rc<Cell<bool>>,
+        pipeline_sender: Option<queued::PipelineInnerSender>,
+    ) -> Self {
+        Self {
+            inner: Some(ResultsInner {
+                variant: None,
+                connection_state: connection_state.clone(),
+                redirect_results,
+                only_promise_pipeline: false,
+                allow_third_party: false,
+                answer_id,
+                finish_received,
+                pipeline_sender,
+                retained_results: Rc::new(RefCell::new(None)),
+                return_guard: Rc::new(ReturnGuard {
+                    state: Rc::downgrade(connection_state),
+                    id: answer_id,
+                    responded,
+                    redirect: redirect_results,
+                    only_pipeline: false,
+                }),
+            }),
+            results_done_fulfiller: Some(fulfiller),
+        }
+    }
+}
+
+impl<VatId> Drop for Results<VatId> {
+    fn drop(&mut self) {
+        match (self.inner.take(), self.results_done_fulfiller.take()) {
+            (Some(inner), Some(fulfiller)) => {
+                let _ = fulfiller.send(inner);
+            }
+            (None, None) => (),
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl<VatId> ResultsHook for Results<VatId> {
+    fn cancellation_guard(&self) -> Option<Box<dyn std::any::Any>> {
+        let inner = self.inner.as_ref()?;
+        Some(Box::new((
+            inner.return_guard.clone(),
+            inner.retained_results.clone(),
+        )))
+    }
+    fn cancellation_executor(&self) -> Option<Rc<dyn capnp::capability::CallExecutor>> {
+        Some(Rc::new(crate::CallTaskExecutor(
+            self.inner.as_ref()?.connection_state.system_tasks.clone(),
+        )))
+    }
+
+    fn get_with_size_hint(
+        &mut self,
+        size_hint: Option<capnp::MessageSize>,
+    ) -> ::capnp::Result<any_pointer::Builder<'_>> {
+        use ::capnp::traits::ImbueMut;
+        let Some(ref mut inner) = self.inner else {
+            unreachable!();
+        };
+        inner.ensure_initialized(size_hint);
+        match inner.variant {
+            Some(ResultsVariant::Transferred(_)) => {
+                Err(Error::failed("tail results transferred".into()))
+            }
+            None => unreachable!(),
+            Some(ResultsVariant::Rpc(ref mut message, ref mut cap_table)) => {
+                let root: message::Builder = message.get_body()?.get_as()?;
+                let message::Return(ret) = root.which()? else {
+                    unreachable!();
+                };
+                let return_::Results(payload) = ret?.which()? else {
+                    unreachable!()
+                };
+                let mut content = payload?.get_content();
+                content.imbue_mut(cap_table);
+                Ok(content)
+            }
+            Some(ResultsVariant::LocallyRedirected(ref mut message, ref mut cap_table)) => {
+                let mut result: any_pointer::Builder = message.get_root()?;
+                result.imbue_mut(cap_table);
+                Ok(result)
+            }
+        }
+    }
+
+    fn set_pipeline(&mut self) -> ::capnp::Result<()> {
+        use ::capnp::traits::ImbueMut;
+        let root = self.get()?;
+        let size = root.target_size()?;
+        let mut message2 = capnp::message::Builder::new(
+            capnp::message::HeapAllocator::new().first_segment_words(size.word_count as u32 + 1),
+        );
+        let mut root2: capnp::any_pointer::Builder = message2.init_root();
+        let mut cap_table2 = vec![];
+        root2.imbue_mut(&mut cap_table2);
+        root2.set_as(root.into_reader())?;
+        let hook =
+            Box::new(local::ResultsDone::new(message2, cap_table2)) as Box<dyn ResultsDoneHook>;
+        self.set_pipeline_from(Box::new(local::Pipeline::new(hook)))
+    }
+
+    fn set_pipeline_from(&mut self, pipeline: Box<dyn PipelineHook>) -> capnp::Result<()> {
+        let Some(ref mut inner) = self.inner else {
+            unreachable!();
+        };
+        let Some(sender) = inner.pipeline_sender.take() else {
+            return Err(Error::failed("set_pipeline() called twice".into()));
+        };
+        sender.complete(pipeline);
+        Ok(())
+    }
+
+    fn tail_call(self: Box<Self>, request: Box<dyn RequestHook>) -> Promise<(), Error> {
+        self.direct_tail_call(request).0
+    }
+
+    fn direct_tail_call(
+        mut self: Box<Self>,
+        mut request: Box<dyn RequestHook>,
+    ) -> (Promise<(), Error>, Box<dyn PipelineHook>) {
+        let inner = self.inner.as_mut().expect("missing results context");
+        if inner.variant.is_some() {
+            let error = Error::failed("tail_call after initializing results".into());
+            return (
+                Promise::err(error.clone()),
+                Box::new(broken::Pipeline::new(error)),
+            );
+        }
+        if inner.only_promise_pipeline {
+            let pipeline = request.send_for_pipeline();
+            if let Some(sender) = inner.pipeline_sender.take() {
+                sender.complete(pipeline.hook.clone());
+            }
+            let completion = Promise::from_future(async move {
+                let _context = self;
+                futures::future::pending::<capnp::Result<()>>().await
+            });
+            return (completion, pipeline.hook);
+        }
+        if !inner.redirect_results
+            && !inner.only_promise_pipeline
+            && request.get_brand() == inner.connection_state.get_brand()
+        {
+            let Some((question, completion, pipeline)) = request.tail_send() else {
+                let error =
+                    Error::failed("tail-send target changed during synchronous send".into());
+                return (
+                    Promise::err(error.clone()),
+                    Box::new(broken::Pipeline::new(error)),
+                );
+            };
+            inner.variant = Some(ResultsVariant::Transferred(pipeline.clone()));
+            if let Some(sender) = inner.pipeline_sender.take() {
+                sender.complete(pipeline.clone());
+            }
+            let result = (|| -> capnp::Result<()> {
+                let mut message = inner.connection_state.new_outgoing_message(8)?;
+                let mut ret = message
+                    .get_body()?
+                    .init_as::<message::Builder>()
+                    .init_return();
+                ret.set_answer_id(inner.answer_id.to_wire());
+                ret.set_release_param_caps(false);
+                ret.set_take_from_other_question(question);
+                let _ = message.send();
+                inner
+                    .connection_state
+                    .answer_has_sent_return(inner.answer_id, vec![]);
+                Ok(())
+            })();
+            if let Err(error) = result {
+                return (Promise::err(error), pipeline);
+            }
+            return (Promise::from_future(completion.attach(self)), pipeline);
+        }
+        if inner.allow_third_party && !inner.redirect_results {
+            match answer_adoption::prepare_tail(inner, &mut *request) {
+                Ok(Some(redirect)) => {
+                    let Some((_, completion, pipeline)) = request.tail_send() else {
+                        let error = Error::failed("third-party tail target changed".into());
+                        return (
+                            Promise::err(error.clone()),
+                            Box::new(broken::Pipeline::new(error)),
+                        );
+                    };
+                    inner.variant = Some(ResultsVariant::Transferred(pipeline.clone()));
+                    if let Some(sender) = inner.pipeline_sender.take() {
+                        sender.complete(pipeline.clone());
+                    }
+                    let _ = redirect.send();
+                    inner
+                        .connection_state
+                        .answer_has_sent_return(inner.answer_id, vec![]);
+                    return (Promise::from_future(completion.attach(self)), pipeline);
+                }
+                Ok(None) => (),
+                Err(error) => {
+                    return (
+                        Promise::err(error.clone()),
+                        Box::new(broken::Pipeline::new(error)),
+                    )
+                }
+            }
+        }
+        let capnp::capability::RemotePromise { promise, pipeline } = request.send();
+        if let Some(inner) = self.inner.as_mut() {
+            if let Some(sender) = inner.pipeline_sender.take() {
+                sender.complete(pipeline.hook.clone());
+            }
+        }
+        let completion = Promise::from_future(async move {
+            let response = promise.await?;
+            self.get()?.set_as(response.get()?)?;
+            Ok(())
+        });
+        (completion, pipeline.hook)
+    }
+
+    fn allow_cancellation(&self) {
+        // This runtime already permits cancellation when the response and all
+        // dependent pipelines are dropped. No additional opt-in is required.
+    }
+}
+
+enum ResultsDoneVariant {
+    Rpc(
+        Rc<::capnp::message::Builder<::capnp::message::HeapAllocator>>,
+        Vec<Option<Box<dyn ClientHook>>>,
+    ),
+    LocallyRedirected(
+        ::capnp::message::Builder<::capnp::message::HeapAllocator>,
+        Vec<Option<Box<dyn ClientHook>>>,
+    ),
+}
+
+struct ResultsDone {
+    inner: Rc<ResultsDoneVariant>,
+}
+
+impl ResultsDone {
+    fn from_results_inner<VatId>(
+        results_inner: Result<ResultsInner<VatId>, Error>,
+        call_status: Result<(), Error>,
+        pipeline_sender: queued::PipelineInnerSender,
+    ) -> Result<Box<dyn ResultsDoneHook>, Error>
+    where
+        VatId: 'static,
+    {
+        match results_inner {
+            Err(e) => {
+                pipeline_sender.complete(Box::new(crate::broken::Pipeline::new(e.clone())));
+                Err(e)
+            }
+            Ok(mut results_inner) => {
+                results_inner.ensure_initialized(None);
+                let connection_state = results_inner.connection_state.clone();
+                let variant = results_inner.variant.take();
+                let answer_id = results_inner.answer_id;
+                let finish_received = results_inner.finish_received.clone();
+                // Kept until after response serialization or exception handling.
+                let _return_guard = results_inner.return_guard.clone();
+                match variant {
+                    Some(ResultsVariant::Transferred(pipeline)) => {
+                        // The transfer already sent the one Return and released flow
+                        // credit. Completion acknowledges ownership, not result data.
+                        pipeline_sender.complete(pipeline);
+                        call_status?;
+                        Ok(Box::new(Self::redirected(
+                            capnp::message::Builder::new_default(),
+                            vec![],
+                        )))
+                    }
+                    None => unreachable!(),
+                    Some(ResultsVariant::Rpc(mut message, cap_table)) => {
+                        match (finish_received.get(), call_status) {
+                            (true, _) => {
+                                let hook = Box::new(Self::rpc(Rc::new(message.take()), cap_table))
+                                    as Box<dyn ResultsDoneHook>;
+                                pipeline_sender
+                                    .complete(Box::new(local::Pipeline::new(hook.clone())));
+
+                                // Send a Canceled return.
+                                if let Ok(connection) =
+                                    connection_state.connection.borrow_mut().as_mut()
+                                {
+                                    let mut message = connection.new_outgoing_message(10);
+                                    {
+                                        let root: message::Builder =
+                                            message.get_body()?.get_as()?;
+                                        let mut ret = root.init_return();
+                                        ret.set_answer_id(answer_id.to_wire());
+                                        ret.set_release_param_caps(false);
+                                        ret.set_canceled(());
+                                    }
+                                    let _ = message.send();
+                                }
+
+                                connection_state.answer_has_sent_return(answer_id, Vec::new());
+                                Ok(hook)
+                            }
+                            (false, Ok(())) => {
+                                let mut fds = OutgoingFds::default();
+                                let exports = {
+                                    let root: message::Builder = message.get_body()?.get_as()?;
+                                    let message::Return(Ok(mut ret)) = root.which()? else {
+                                        unreachable!()
+                                    };
+                                    // Join retains downstream responses; callee-allocated
+                                    // answer IDs also require explicit Finish before reuse.
+                                    let requires_finish = connection_state
+                                        .answers
+                                        .borrow()
+                                        .slots
+                                        .get(&answer_id)
+                                        .is_some_and(|answer| {
+                                            answer.join.is_some()
+                                                || answer.join_response.is_some()
+                                                || answer.callee_allocated
+                                        });
+                                    if cap_table.is_empty() && !requires_finish {
+                                        ret.set_no_finish_needed(true);
+                                        finish_received.set(true);
+                                    }
+                                    let crate::rpc_capnp::return_::Results(Ok(payload)) =
+                                        ret.which()?
+                                    else {
+                                        unreachable!()
+                                    };
+                                    ConnectionState::write_descriptors(
+                                        &connection_state,
+                                        &cap_table,
+                                        payload,
+                                        &mut fds,
+                                    )
+                                };
+
+                                fds.attach(&mut *message);
+                                let (_promise, m) = message.send();
+                                connection_state.answer_has_sent_return(answer_id, exports);
+                                let hook =
+                                    Box::new(Self::rpc(m, cap_table)) as Box<dyn ResultsDoneHook>;
+                                pipeline_sender
+                                    .complete(Box::new(local::Pipeline::new(hook.clone())));
+                                Ok(hook)
+                            }
+                            (false, Err(e)) => {
+                                // Send an error return.
+                                let trace = connection_state.encode_trace(&e);
+                                if let Ok(connection) =
+                                    connection_state.connection.borrow_mut().as_mut()
+                                {
+                                    let mut message = connection.new_outgoing_message(50); // XXX size hint
+                                    {
+                                        let root: message::Builder =
+                                            message.get_body()?.get_as()?;
+                                        let mut ret = root.init_return();
+                                        ret.set_answer_id(answer_id.to_wire());
+                                        ret.set_release_param_caps(false);
+                                        let mut exc = ret.init_exception();
+                                        from_error(&e, exc.reborrow(), trace.as_deref());
+                                    }
+                                    let _ = message.send();
+                                }
+                                connection_state.answer_has_sent_return(answer_id, Vec::new());
+
+                                pipeline_sender
+                                    .complete(Box::new(crate::broken::Pipeline::new(e.clone())));
+
+                                Err(e)
+                            }
+                        }
+                    }
+                    Some(ResultsVariant::LocallyRedirected(results_done, cap_table)) => {
+                        if let Err(error) = call_status {
+                            pipeline_sender
+                                .complete(Box::new(broken::Pipeline::new(error.clone())));
+                            return Err(error);
+                        }
+                        let hook = Box::new(Self::redirected(results_done, cap_table))
+                            as Box<dyn ResultsDoneHook>;
+                        pipeline_sender
+                            .complete(Box::new(crate::local::Pipeline::new(hook.clone())));
+                        Ok(hook)
+                    }
+                }
+            }
+        }
+    }
+
+    fn rpc(
+        message: Rc<::capnp::message::Builder<::capnp::message::HeapAllocator>>,
+        cap_table: Vec<Option<Box<dyn ClientHook>>>,
+    ) -> Self {
+        Self {
+            inner: Rc::new(ResultsDoneVariant::Rpc(message, cap_table)),
+        }
+    }
+
+    fn redirected(
+        message: ::capnp::message::Builder<::capnp::message::HeapAllocator>,
+        cap_table: Vec<Option<Box<dyn ClientHook>>>,
+    ) -> Self {
+        Self {
+            inner: Rc::new(ResultsDoneVariant::LocallyRedirected(message, cap_table)),
+        }
+    }
+}
+
+impl ResultsDoneHook for ResultsDone {
+    fn add_ref(&self) -> Box<dyn ResultsDoneHook> {
+        Box::new(Self {
+            inner: self.inner.clone(),
+        })
+    }
+    fn get(&self) -> ::capnp::Result<any_pointer::Reader<'_>> {
+        use ::capnp::traits::Imbue;
+        match *self.inner {
+            ResultsDoneVariant::Rpc(ref message, ref cap_table) => {
+                let root: message::Reader = message.get_root_as_reader()?;
+                let message::Return(ret) = root.which()? else {
+                    unreachable!();
+                };
+                let crate::rpc_capnp::return_::Results(payload) = ret?.which()? else {
+                    unreachable!();
+                };
+                let mut content = payload?.get_content();
+                content.imbue(cap_table);
+                Ok(content)
+            }
+            ResultsDoneVariant::LocallyRedirected(ref message, ref cap_table) => {
+                let mut result: any_pointer::Reader = message.get_root_as_reader()?;
+                result.imbue(cap_table);
+                Ok(result)
+            }
+        }
+    }
+}
+
+// This capability's old route is ordered by its Accept embargo. Retaining
+// the introducing connection's brand avoids a second senderLoopback embargo.
+struct ThirdPartyClient<VatId: 'static> {
+    state: Rc<ConnectionState<VatId>>,
+    cap: RefCell<ThirdPartyState>,
+}
+
+enum ThirdPartyState {
+    Deferred {
+        contact: Rc<capnp::message::Builder<capnp::message::HeapAllocator>>,
+        vine: Box<dyn ClientHook>,
+    },
+    Accepted(Box<dyn ClientHook>),
+}
+
+impl<VatId> ThirdPartyClient<VatId> {
+    fn deferred(
+        state: &Rc<ConnectionState<VatId>>,
+        contact: Rc<capnp::message::Builder<capnp::message::HeapAllocator>>,
+        vine: Box<dyn ClientHook>,
+    ) -> Box<dyn ClientHook> {
+        Box::new(Client::new(
+            state,
+            ClientVariant::ThirdParty(Rc::new(Self {
+                state: state.clone(),
+                cap: RefCell::new(ThirdPartyState::Deferred { contact, vine }),
+            })),
+        ))
+    }
+
+    fn ensure_accepted(&self) -> Box<dyn ClientHook> {
+        // Cache both success and failure. Release the state borrow before any
+        // transport or capability callback; reentrant use sees a broken cap.
+        let old = {
+            let mut state = self.cap.borrow_mut();
+            if let ThirdPartyState::Accepted(cap) = &*state {
+                return cap.clone();
+            }
+            std::mem::replace(
+                &mut *state,
+                ThirdPartyState::Accepted(broken::new_cap(Error::failed(
+                    "reentrant third-party acceptance".into(),
+                ))),
+            )
+        };
+        let ThirdPartyState::Deferred { contact, vine } = old else {
+            unreachable!()
+        };
+        let cap = contact
+            .get_root_as_reader()
+            .and_then(|contact| ConnectionState::accept_third_party(&self.state, contact, vine))
+            .unwrap_or_else(broken::new_cap);
+        *self.cap.borrow_mut() = ThirdPartyState::Accepted(cap.clone());
+        cap
+    }
+
+    fn descriptor_cap(&self) -> Box<dyn ClientHook> {
+        match &*self.cap.borrow() {
+            ThirdPartyState::Deferred { vine, .. } => vine.clone(),
+            ThirdPartyState::Accepted(cap) => cap.clone(),
+        }
+    }
+
+    fn resolved(&self) -> Option<Box<dyn ClientHook>> {
+        match &*self.cap.borrow() {
+            ThirdPartyState::Deferred { .. } => None,
+            ThirdPartyState::Accepted(cap) => Some(cap.clone()),
+        }
+    }
+
+    fn forward_to(
+        &self,
+        destination: &Rc<ConnectionState<VatId>>,
+        mut descriptor: cap_descriptor::Builder<'_>,
+    ) -> capnp::Result<Option<ExportId>> {
+        let (contact, vine) = match &*self.cap.borrow() {
+            ThirdPartyState::Deferred { contact, vine } => (contact.clone(), vine.clone()),
+            ThirdPartyState::Accepted(_) => return Ok(None),
+        };
+        let peer = destination
+            .connection
+            .borrow()
+            .as_ref()
+            .map_err(|e| e.clone())?
+            .get_peer_vat_id();
+        let mut forwarded = capnp::message::Builder::new_default();
+        if !self
+            .state
+            .connection
+            .borrow_mut()
+            .as_mut()
+            .map_err(|e| e.clone())?
+            .forward_third_party_to_contact(
+                contact.get_root_as_reader()?,
+                peer,
+                forwarded.init_root(),
+            )?
+        {
+            return Ok(None);
+        }
+        let mut export = Export::new(vine.clone());
+        let origin = self.state.clone();
+        let reflected_origin = origin.clone();
+        let reflected_vine = vine.clone();
+        export.reflected_vine = Some(Rc::new(move || {
+            Self::deferred(&reflected_origin, contact.clone(), reflected_vine.clone())
+        }));
+        export.vine = Some(Rc::new(move |embargo| {
+            let Ok(mut message) = origin.new_outgoing_message(32) else {
+                // A forwarded vine can outlive its upstream connection.
+                // C++ ignores this Disembargo and lets provision loss reject
+                // the acceptance, preserving the downstream connection.
+                return Ok(());
+            };
+            let mut d = message
+                .get_body()?
+                .init_as::<message::Builder>()
+                .init_disembargo();
+            if origin
+                .write_target(&*vine, d.reborrow().init_target())
+                .is_some()
+            {
+                return Err(Error::failed("forwarded vine changed connection".into()));
+            }
+            d.init_context().set_accept(embargo);
+            let _ = message.send();
+            Ok(())
+        }));
+        let export_id = destination.exports.borrow_mut().push(export);
+        let mut third = descriptor.reborrow().init_third_party_hosted();
+        third.set_vine_id(export_id.to_wire());
+        third
+            .get_id()
+            .set_as(forwarded.get_root_as_reader::<any_pointer::Reader>()?)?;
+        Ok(Some(export_id))
+    }
+}
+impl<VatId> Drop for ThirdPartyClient<VatId> {
+    fn drop(&mut self) {
+        self.state
+            .client_downcast_map
+            .borrow_mut()
+            .remove(&(self as *const _ as usize));
+    }
+}
+
+enum ClientVariant<VatId>
+where
+    VatId: 'static,
+{
+    Import(Rc<RefCell<ImportClient<VatId>>>),
+    Pipeline(Rc<RefCell<PipelineClient<VatId>>>),
+    Promise(Rc<RefCell<PromiseClient<VatId>>>),
+    ThirdParty(Rc<ThirdPartyClient<VatId>>),
+}
+
+struct Client<VatId>
+where
+    VatId: 'static,
+{
+    connection_state: Rc<ConnectionState<VatId>>,
+    variant: ClientVariant<VatId>,
+    flow_controller: Rc<RefCell<Option<Box<dyn crate::FlowController>>>>,
+}
+
+enum WeakClientVariant<VatId>
+where
+    VatId: 'static,
+{
+    Import(Weak<RefCell<ImportClient<VatId>>>),
+    Pipeline(Weak<RefCell<PipelineClient<VatId>>>),
+    Promise(Weak<RefCell<PromiseClient<VatId>>>),
+    ThirdParty(Weak<ThirdPartyClient<VatId>>),
+}
+
+struct WeakClient<VatId>
+where
+    VatId: 'static,
+{
+    connection_state: Weak<ConnectionState<VatId>>,
+    variant: WeakClientVariant<VatId>,
+    flow_controller: Weak<RefCell<Option<Box<dyn crate::FlowController>>>>,
+}
+
+impl<VatId> WeakClient<VatId>
+where
+    VatId: 'static,
+{
+    fn upgrade(&self) -> Option<Client<VatId>> {
+        let variant = match &self.variant {
+            WeakClientVariant::ThirdParty(c) => ClientVariant::ThirdParty(c.upgrade()?),
+            WeakClientVariant::Import(ic) => ClientVariant::Import(ic.upgrade()?),
+            WeakClientVariant::Pipeline(pc) => ClientVariant::Pipeline(pc.upgrade()?),
+            WeakClientVariant::Promise(pc) => ClientVariant::Promise(pc.upgrade()?),
+        };
+        let connection_state = self.connection_state.upgrade()?;
+        let flow_controller = self.flow_controller.upgrade()?;
+        Some(Client {
+            connection_state,
+            variant,
+            flow_controller,
+        })
+    }
+}
+
+struct ImportClient<VatId>
+where
+    VatId: 'static,
+{
+    connection_state: Rc<ConnectionState<VatId>>,
+    import_id: ImportId,
+
+    /// Number of times we've received this import from the peer.
+    remote_ref_count: u32,
+    fd: Option<AttachedFd>,
+}
+
+impl<VatId> Drop for ImportClient<VatId> {
+    fn drop(&mut self) {
+        let connection_state = self.connection_state.clone();
+
+        assert!(connection_state
+            .client_downcast_map
+            .borrow_mut()
+            .remove(&((self) as *const _ as usize))
+            .is_some());
+
+        // Remove the corresponding entry of the imports table.
+        // Note: the C++ implementation checks here pointer equality between self and
+        // the entry in the imports table, but as far as I can tell the check should
+        // always pass because of how we construct ImportClient in import().
+        connection_state
+            .imports
+            .borrow_mut()
+            .slots
+            .remove(&self.import_id);
+
+        // Send a message releasing our remote references.
+        let mut tmp = connection_state.connection.borrow_mut();
+        if let (true, Ok(c)) = (self.remote_ref_count > 0, tmp.as_mut()) {
+            let mut message = c.new_outgoing_message(10);
+            {
+                let root: message::Builder = message.get_body().unwrap().init_as();
+                let mut release = root.init_release();
+                release.set_id(self.import_id.to_wire());
+                release.set_reference_count(self.remote_ref_count);
+            }
+            let _ = message.send();
+        }
+        drop(tmp);
+        connection_state.schedule_idle_check();
+    }
+}
+
+impl<VatId> ImportClient<VatId>
+where
+    VatId: 'static,
+{
+    fn new(
+        connection_state: &Rc<ConnectionState<VatId>>,
+        import_id: ImportId,
+    ) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(Self {
+            connection_state: connection_state.clone(),
+            import_id,
+            remote_ref_count: 0,
+            fd: None,
+        }))
+    }
+
+    fn add_remote_ref(&mut self) {
+        self.remote_ref_count += 1;
+    }
+}
+
+impl<VatId> From<Rc<RefCell<ImportClient<VatId>>>> for Client<VatId> {
+    fn from(client: Rc<RefCell<ImportClient<VatId>>>) -> Self {
+        let connection_state = client.borrow().connection_state.clone();
+        Self::new(&connection_state, ClientVariant::Import(client))
+    }
+}
+
+/// A `ClientHook` representing a pipelined promise.  Always wrapped in `PromiseClient`.
+struct PipelineClient<VatId>
+where
+    VatId: 'static,
+{
+    connection_state: Rc<ConnectionState<VatId>>,
+    question_ref: Rc<RefCell<QuestionRef<VatId>>>,
+    ops: Vec<PipelineOp>,
+}
+
+impl<VatId> PipelineClient<VatId>
+where
+    VatId: 'static,
+{
+    fn new(
+        connection_state: &Rc<ConnectionState<VatId>>,
+        question_ref: Rc<RefCell<QuestionRef<VatId>>>,
+        ops: Vec<PipelineOp>,
+    ) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(Self {
+            connection_state: connection_state.clone(),
+            question_ref,
+            ops,
+        }))
+    }
+}
+
+impl<VatId> From<Rc<RefCell<PipelineClient<VatId>>>> for Client<VatId> {
+    fn from(client: Rc<RefCell<PipelineClient<VatId>>>) -> Self {
+        let connection_state = client.borrow().connection_state.clone();
+        Self::new(&connection_state, ClientVariant::Pipeline(client))
+    }
+}
+
+impl<VatId> Drop for PipelineClient<VatId> {
+    fn drop(&mut self) {
+        assert!(self
+            .connection_state
+            .client_downcast_map
+            .borrow_mut()
+            .remove(&((self) as *const _ as usize))
+            .is_some());
+    }
+}
+
+/// A `ClientHook` that initially wraps one client and then, later on, redirects
+/// to some other client.
+struct PromiseClient<VatId>
+where
+    VatId: 'static,
+{
+    connection_state: Rc<ConnectionState<VatId>>,
+    is_resolved: bool,
+    cap: Box<dyn ClientHook>,
+    import_id: Option<ImportId>,
+    received_call: bool,
+    pipeline_owner: Option<Rc<RefCell<PipelineState<VatId>>>>,
+    resolution_waiters: crate::sender_queue::SenderQueue<(), Box<dyn ClientHook>>,
+}
+
+impl<VatId> PromiseClient<VatId> {
+    fn new(
+        connection_state: &Rc<ConnectionState<VatId>>,
+        initial: Box<dyn ClientHook>,
+        import_id: Option<ImportId>,
+    ) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(Self {
+            connection_state: connection_state.clone(),
+            is_resolved: false,
+            cap: initial,
+            import_id,
+            received_call: false,
+            pipeline_owner: None,
+            resolution_waiters: crate::sender_queue::SenderQueue::new(),
+        }))
+    }
+
+    fn resolve(&mut self, replacement: Result<Box<dyn ClientHook>, Error>) {
+        let (mut replacement, is_error) = match replacement {
+            Ok(v) => (v, false),
+            Err(e) => (broken::new_cap(e), true),
+        };
+        let connection_state = self.connection_state.clone();
+        let is_connected = connection_state.connection.borrow().is_ok();
+        let replacement_brand = replacement.get_brand();
+        if replacement_brand != connection_state.get_brand()
+            && self.received_call
+            && !is_error
+            && is_connected
+        {
+            // The new capability is hosted locally, not on the remote machine.  And, we had made calls
+            // to the promise.  We need to make sure those calls echo back to us before we allow new
+            // calls to go directly to the local capability, so we need to set a local embargo and send
+            // a `Disembargo` to echo through the peer.
+            let (fulfiller, promise) = oneshot::channel::<Result<(), Error>>();
+            let promise = promise
+                .map_err(crate::canceled_to_error)
+                .and_then(future::ready);
+            let embargo = Embargo::new(fulfiller);
+            let embargo_id = connection_state.embargoes.borrow_mut().push(embargo);
+
+            let mut message = connection_state
+                .new_outgoing_message(50)
+                .expect("no connection?"); // XXX size hint
+            {
+                let root: message::Builder = message.get_body().unwrap().init_as();
+                let mut disembargo = root.init_disembargo();
+                disembargo
+                    .reborrow()
+                    .init_context()
+                    .set_sender_loopback(embargo_id.to_wire());
+                let target = disembargo.init_target();
+
+                let redirect = connection_state.write_target(&*self.cap, target);
+                if redirect.is_some() {
+                    panic!("Original promise target should always be from this RPC connection.")
+                }
+            }
+
+            // Make a promise which resolves to `replacement` as soon as the `Disembargo` comes back.
+            let embargo_promise = promise.map_ok(move |()| replacement);
+
+            let mut queued_client = queued::Client::new(None);
+            let weak_queued = Rc::downgrade(&queued_client.inner);
+
+            queued_client.drive(embargo_promise.then(move |r| {
+                if let Some(q) = weak_queued.upgrade() {
+                    queued::ClientInner::resolve(&q, r);
+                }
+                Promise::ok(())
+            }));
+
+            // We need to queue up calls in the meantime, so we'll resolve ourselves to a local promise
+            // client instead.
+            replacement = Box::new(queued_client);
+
+            let _ = message.send();
+        }
+
+        self.replace_resolved(replacement);
+    }
+
+    // Used only after the ordinary embargo above or an authenticated adoption
+    // fence has installed its own queue. Never infer ordering from a new brand.
+    fn replace_resolved(&mut self, replacement: Box<dyn ClientHook>) {
+        let connection_state = self.connection_state.clone();
+        for ((), waiter) in self.resolution_waiters.drain() {
+            let _ = waiter.send(replacement.clone());
+        }
+
+        let old_cap = mem::replace(&mut self.cap, replacement);
+        connection_state.add_task(async move {
+            drop(old_cap);
+            Ok(())
+        });
+
+        self.is_resolved = true;
+        self.pipeline_owner.take();
+    }
+}
+
+impl<VatId> Drop for PromiseClient<VatId> {
+    fn drop(&mut self) {
+        let self_ptr = (self) as *const _ as usize;
+
+        if let Some(id) = self.import_id {
+            // This object is representing an import promise.  That means the import table may still
+            // contain a pointer back to it.  Remove that pointer.  Note that we have to verify that
+            // the import still exists and the pointer still points back to this object because this
+            // object may actually outlive the import.
+            let slots = &mut self.connection_state.imports.borrow_mut().slots;
+            if let Some(import) = slots.get_mut(&id) {
+                if let Some(c) = &import.app_client {
+                    if let Some(cs) = c.upgrade() {
+                        if cs.get_ptr() == self_ptr {
+                            import.app_client = None;
+                        }
+                    }
+                }
+            }
+        }
+
+        assert!(self
+            .connection_state
+            .client_downcast_map
+            .borrow_mut()
+            .remove(&self_ptr)
+            .is_some());
+    }
+}
+
+impl<VatId> From<Rc<RefCell<PromiseClient<VatId>>>> for Client<VatId> {
+    fn from(client: Rc<RefCell<PromiseClient<VatId>>>) -> Self {
+        let connection_state = client.borrow().connection_state.clone();
+        Self::new(&connection_state, ClientVariant::Promise(client))
+    }
+}
+
+impl<VatId> Client<VatId> {
+    fn new(connection_state: &Rc<ConnectionState<VatId>>, variant: ClientVariant<VatId>) -> Self {
+        let mut client = Self {
+            connection_state: connection_state.clone(),
+            variant,
+            flow_controller: Rc::new(RefCell::new(None)),
+        };
+        let ptr = client.get_ptr();
+        let mut clients = connection_state.client_downcast_map.borrow_mut();
+        // Re-imports share the variant identity. They must also share stream
+        // state, otherwise a temporary alias can overwrite the weak downcast
+        // entry and invalidate an older live client's lookup when it is dropped.
+        if let Some(flow) = clients
+            .get(&ptr)
+            .and_then(|old| old.flow_controller.upgrade())
+        {
+            client.flow_controller = flow;
+        }
+        clients.insert(ptr, client.downgrade());
+        client
+    }
+    fn downgrade(&self) -> WeakClient<VatId> {
+        let variant = match &self.variant {
+            ClientVariant::ThirdParty(c) => WeakClientVariant::ThirdParty(Rc::downgrade(c)),
+            ClientVariant::Import(import_client) => {
+                WeakClientVariant::Import(Rc::downgrade(import_client))
+            }
+            ClientVariant::Pipeline(pipeline_client) => {
+                WeakClientVariant::Pipeline(Rc::downgrade(pipeline_client))
+            }
+            ClientVariant::Promise(promise_client) => {
+                WeakClientVariant::Promise(Rc::downgrade(promise_client))
+            }
+        };
+        WeakClient {
+            connection_state: Rc::downgrade(&self.connection_state),
+            variant,
+            flow_controller: Rc::downgrade(&self.flow_controller),
+        }
+    }
+
+    fn from_ptr(ptr: usize, connection_state: &ConnectionState<VatId>) -> Option<Self> {
+        match connection_state.client_downcast_map.borrow().get(&ptr) {
+            Some(c) => c.upgrade(),
+            None => None,
+        }
+    }
+
+    fn can_tail_send(&self) -> bool {
+        match &self.variant {
+            ClientVariant::Import(_) | ClientVariant::Pipeline(_) => true,
+            ClientVariant::ThirdParty(_) => false,
+            ClientVariant::Promise(promise) => {
+                let cap = promise.borrow().cap.clone();
+                cap.get_brand() == self.connection_state.get_brand()
+                    && Client::from_ptr(cap.get_ptr(), &self.connection_state)
+                        .is_some_and(|client| client.can_tail_send())
+            }
+        }
+    }
+
+    fn write_target(
+        &self,
+        mut target: crate::rpc_capnp::message_target::Builder,
+    ) -> Option<Box<dyn ClientHook>> {
+        match &self.variant {
+            ClientVariant::ThirdParty(c) => Some(c.ensure_accepted()),
+            ClientVariant::Import(import_client) => {
+                target.set_imported_cap(import_client.borrow().import_id.to_wire());
+                None
+            }
+            ClientVariant::Pipeline(pipeline_client) => {
+                let mut builder = target.init_promised_answer();
+                let question_ref = &pipeline_client.borrow().question_ref;
+                builder.set_question_id(question_ref.borrow().id.to_wire());
+                let mut transform =
+                    builder.init_transform(pipeline_client.borrow().ops.len() as u32);
+                for idx in 0..pipeline_client.borrow().ops.len() {
+                    if let ::capnp::private::capability::PipelineOp::GetPointerField(ordinal) =
+                        pipeline_client.borrow().ops[idx]
+                    {
+                        transform
+                            .reborrow()
+                            .get(idx as u32)
+                            .set_get_pointer_field(ordinal);
+                    }
+                }
+                None
+            }
+            ClientVariant::Promise(promise_client) => {
+                promise_client.borrow_mut().received_call = true;
+                self.connection_state
+                    .write_target(&*promise_client.borrow().cap, target)
+            }
+        }
+    }
+
+    fn write_descriptor(
+        &self,
+        mut descriptor: cap_descriptor::Builder,
+        fds: &mut OutgoingFds,
+    ) -> Option<ExportId> {
+        match &self.variant {
+            ClientVariant::ThirdParty(c) => ConnectionState::write_descriptor(
+                &self.connection_state,
+                c.descriptor_cap(),
+                descriptor,
+                fds,
+            )
+            .unwrap(),
+            ClientVariant::Import(import_client) => {
+                descriptor.set_receiver_hosted(import_client.borrow().import_id.to_wire());
+                None
+            }
+            ClientVariant::Pipeline(pipeline_client) => {
+                let mut promised_answer = descriptor.init_receiver_answer();
+                let question_ref = &pipeline_client.borrow().question_ref;
+                promised_answer.set_question_id(question_ref.borrow().id.to_wire());
+                let mut transform =
+                    promised_answer.init_transform(pipeline_client.borrow().ops.len() as u32);
+                for idx in 0..pipeline_client.borrow().ops.len() {
+                    if let ::capnp::private::capability::PipelineOp::GetPointerField(ordinal) =
+                        pipeline_client.borrow().ops[idx]
+                    {
+                        transform
+                            .reborrow()
+                            .get(idx as u32)
+                            .set_get_pointer_field(ordinal);
+                    }
+                }
+
+                None
+            }
+            ClientVariant::Promise(promise_client) => {
+                promise_client.borrow_mut().received_call = true;
+
+                ConnectionState::write_descriptor(
+                    &self.connection_state.clone(),
+                    promise_client.borrow().cap.clone(),
+                    descriptor,
+                    fds,
+                )
+                .unwrap()
+            }
+        }
+    }
+}
+
+impl<VatId> Clone for Client<VatId> {
+    fn clone(&self) -> Self {
+        let variant = match &self.variant {
+            ClientVariant::ThirdParty(c) => ClientVariant::ThirdParty(c.clone()),
+            ClientVariant::Import(import_client) => ClientVariant::Import(import_client.clone()),
+            ClientVariant::Pipeline(pipeline_client) => {
+                ClientVariant::Pipeline(pipeline_client.clone())
+            }
+            ClientVariant::Promise(promise_client) => {
+                ClientVariant::Promise(promise_client.clone())
+            }
+        };
+        Self {
+            connection_state: self.connection_state.clone(),
+            variant,
+            flow_controller: self.flow_controller.clone(),
+        }
+    }
+}
+
+impl<VatId> ClientHook for Client<VatId> {
+    fn debug_info(&self, chain: &mut capnp::private::capability::DebugInfo) {
+        match &self.variant {
+            ClientVariant::Import(_) => chain.push("rpcImport"),
+            ClientVariant::Pipeline(_) => chain.push("rpcPipeline"),
+            ClientVariant::Promise(client) => {
+                chain.push("rpcPromise");
+                let Ok(state) = client.try_borrow() else {
+                    chain.push("busy");
+                    return;
+                };
+                let cap = state.cap.clone();
+                drop(state);
+                chain.follow(&*cap);
+            }
+            ClientVariant::ThirdParty(client) => {
+                // Inspection must never call ensure_accepted(): even a pending
+                // handoff is observable without allocating a route or sending Accept.
+                let Ok(state) = client.cap.try_borrow() else {
+                    chain.push("thirdParty(busy)");
+                    return;
+                };
+                let cap = match &*state {
+                    ThirdPartyState::Deferred { vine, .. } => {
+                        chain.push("thirdPartyPending");
+                        vine.clone()
+                    }
+                    ThirdPartyState::Accepted(cap) => {
+                        chain.push("thirdPartyAccepted");
+                        cap.clone()
+                    }
+                };
+                drop(state);
+                chain.follow(&*cap);
+            }
+        }
+    }
+
+    fn forward_join(
+        &self,
+        part: any_pointer::Reader<'_>,
+    ) -> Option<crate::multiparty::PartResponse> {
+        Some(multiparty_join::send_part(
+            &self.connection_state,
+            self.add_ref(),
+            part,
+        ))
+    }
+    fn join_capabilities(
+        &self,
+        caps: Vec<Box<dyn ClientHook>>,
+    ) -> Promise<capnp::private::capability::JoinedCapability, Error> {
+        join::send(&self.connection_state, caps)
+    }
+    #[cfg(unix)]
+    fn get_fd(&self) -> Option<AttachedFd> {
+        match &self.variant {
+            ClientVariant::Import(c) => c.borrow().fd.clone(),
+            ClientVariant::Promise(c) => c.borrow().cap.get_fd(),
+            ClientVariant::Pipeline(_) => None,
+            ClientVariant::ThirdParty(c) => c.resolved().and_then(|cap| cap.get_fd()),
+        }
+    }
+
+    fn add_ref(&self) -> Box<dyn ClientHook> {
+        Box::new(self.clone())
+    }
+    fn new_call(
+        &self,
+        interface_id: u64,
+        method_id: u16,
+        size_hint: Option<::capnp::MessageSize>,
+    ) -> ::capnp::capability::Request<any_pointer::Owned, any_pointer::Owned> {
+        // A resolved promise can outlive its original connection. Construct new
+        // requests on the replacement route instead of allocating on that link.
+        if let Some(resolved) = self.get_resolved() {
+            return resolved.new_call(interface_id, method_id, size_hint);
+        }
+        if let ClientVariant::ThirdParty(c) = &self.variant {
+            return c
+                .ensure_accepted()
+                .new_call(interface_id, method_id, size_hint);
+        }
+        let request: Box<dyn RequestHook> =
+            match Request::new(self.connection_state.clone(), size_hint, self.clone()) {
+                Ok(mut request) => {
+                    {
+                        let mut call_builder = request.init_call();
+                        call_builder.set_interface_id(interface_id);
+                        call_builder.set_method_id(method_id);
+                    }
+                    Box::new(request)
+                }
+                Err(e) => Box::new(broken::Request::new(e, None)),
+            };
+
+        ::capnp::capability::Request::new(request)
+    }
+
+    fn call(
+        &self,
+        interface_id: u64,
+        method_id: u16,
+        params: Box<dyn ParamsHook>,
+        results: Box<dyn ResultsHook>,
+    ) -> Promise<(), Error> {
+        self.call_with_hints(
+            interface_id,
+            method_id,
+            params,
+            results,
+            CallHints::default(),
+        )
+    }
+    fn call_with_hints(
+        &self,
+        interface_id: u64,
+        method_id: u16,
+        params: Box<dyn ParamsHook>,
+        results: Box<dyn ResultsHook>,
+        hints: CallHints,
+    ) -> Promise<(), Error> {
+        // Copy parameters into the destination connection, preserving capabilities.
+
+        let maybe_request = params.get().and_then(|p| {
+            let mut request = p
+                .target_size()
+                .map(|s| self.new_call_with_hints(interface_id, method_id, Some(s), hints))?;
+            request.get().set_as(p)?;
+            Ok(request)
+        });
+
+        // ResultsHook selects same-connection transfer or ordinary forwarding,
+        // and publishes the outgoing pipeline before completion in both cases.
+        match maybe_request {
+            Err(e) => Promise::err(e),
+            Ok(request) => results.tail_call(request.hook),
+        }
+    }
+
+    fn get_ptr(&self) -> usize {
+        match &self.variant {
+            ClientVariant::ThirdParty(c) => Rc::as_ptr(c) as usize,
+            ClientVariant::Import(import_client) => (&*import_client.borrow()) as *const _ as usize,
+            ClientVariant::Pipeline(pipeline_client) => {
+                (&*pipeline_client.borrow()) as *const _ as usize
+            }
+            ClientVariant::Promise(promise_client) => {
+                (&*promise_client.borrow()) as *const _ as usize
+            }
+        }
+    }
+
+    fn get_brand(&self) -> usize {
+        self.connection_state.get_brand()
+    }
+
+    fn get_resolved(&self) -> Option<Box<dyn ClientHook>> {
+        match &self.variant {
+            ClientVariant::ThirdParty(c) => c.resolved(),
+            ClientVariant::Import(_import_client) => None,
+            ClientVariant::Pipeline(_pipeline_client) => None,
+            ClientVariant::Promise(promise_client) => {
+                if promise_client.borrow().is_resolved {
+                    Some(promise_client.borrow().cap.clone())
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    fn when_more_resolved(&self) -> Option<Promise<Box<dyn ClientHook>, Error>> {
+        match &self.variant {
+            ClientVariant::ThirdParty(c) => Some(Promise::ok(c.ensure_accepted())),
+            ClientVariant::Import(_import_client) => None,
+            ClientVariant::Pipeline(_pipeline_client) => None,
+            ClientVariant::Promise(promise_client) => {
+                let mut promise = promise_client.borrow_mut();
+                if promise.is_resolved {
+                    Some(Promise::ok(promise.cap.clone()))
+                } else {
+                    // The observer owns its pending resolution even if the
+                    // application drops the temporary capability projection.
+                    Some(Promise::from_future(
+                        promise
+                            .resolution_waiters
+                            .push(())
+                            .attach(promise_client.clone()),
+                    ))
+                }
+            }
+        }
+    }
+
+    fn when_resolved(&self) -> Promise<(), Error> {
+        default_when_resolved_impl(self)
+    }
+}
+
+pub(crate) fn default_when_resolved_impl<C>(client: &C) -> Promise<(), Error>
+where
+    C: ClientHook,
+{
+    match client.when_more_resolved() {
+        Some(promise) => {
+            Promise::from_future(promise.and_then(|resolution| resolution.when_resolved()))
+        }
+        None => Promise::ok(()),
+    }
+}
+
+// ===================================
+
+struct SingleCapPipeline {
+    cap: Box<dyn ClientHook>,
+}
+
+impl SingleCapPipeline {
+    fn new(cap: Box<dyn ClientHook>) -> Self {
+        Self { cap }
+    }
+}
+
+impl PipelineHook for SingleCapPipeline {
+    fn add_ref(&self) -> Box<dyn PipelineHook> {
+        Box::new(Self {
+            cap: self.cap.clone(),
+        })
+    }
+    fn get_pipelined_cap(&self, ops: &[PipelineOp]) -> Box<dyn ClientHook> {
+        if ops.is_empty() {
+            self.cap.add_ref()
+        } else {
+            broken::new_cap(Error::failed("Invalid pipeline transform.".to_string()))
+        }
+    }
+}

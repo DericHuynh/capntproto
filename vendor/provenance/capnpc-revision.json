@@ -1,0 +1,14 @@
+{
+  "crate": "capnpc",
+  "version": "0.25.3",
+  "rust_upstream_commit": "26ba5c3a4ad7aba01a5a12db1c207cba01dc1616",
+  "license": "MIT",
+  "original_sources": {
+    "src/capnpc-rust-bootstrap.rs": "b50dd208679b9e13aa8c4403e346a0000df58accdc639a8eabc0472c2f03afa8",
+    "src/capnpc-rust.rs": "3df3122617128c99afde3765b5308f5f48502059188fbe0113d74681cb5ce26a",
+    "src/codegen.rs": "746cdeed0e422f78bfcb1dcaef687d70324cc393d5118c31cb4b0ebbe0ed0ea6",
+    "src/codegen_types.rs": "145ed31c69ea0ebc44ade31089ee243b97bc576a44ccfa5fe17a39fd2437fe76",
+    "src/lib.rs": "0176f57f4672e434684e35542f29bc83c1ced648125b4ec8410a774d8aaad996",
+    "src/pointer_constants.rs": "6b260498ae4e70f402de649d36f1fe1668b6b0ccb6e97e7f976de356de68f9e3"
+  }
+}

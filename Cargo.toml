@@ -1,0 +1,77 @@
+[package]
+name = "reproto"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Capn't Proto: Rust schemas, capability RPC, encrypted transport and durable storage"
+readme = "README.md"
+rust-version = "1.97"
+publish = false
+build = "build.rs"
+
+[workspace]
+resolver = "2"
+# capnp-rpc was already an implicit path-dependency member. Name it explicitly
+# so the workspace test boundary is visible and remains stable.
+members = ["test-support", "quality", "vendor/capnp-rpc", "crates/capnp-compiler", "crates/capnp-compat"]
+# These packages retain independent toolchains, lockfiles, or benchmark builds.
+exclude = [
+    "vendor/quiche",
+    "vendor/quiche/*",
+    "vendor/capnproto",
+    "vendor/capnp",
+    "vendor/capnpc",
+    "vendor/capnp-futures",
+    "benchmarks/rpc",
+    "benchmarks/storage",
+    "benchmarks/instructions",
+    "examples/downstream",
+    "fuzz",
+    "verification/miri",
+]
+
+[features]
+default = ["noise", "services", "storage"]
+noise = ["dep:quiche", "dep:snow", "dep:zeroize", "dep:capnpc", "dep:capnp-compiler"]
+services = ["dep:capnpc", "dep:capnp-compiler"]
+storage = ["dep:memmap2", "dep:fs2", "dep:capnpc", "dep:capnp-compiler"]
+
+[dependencies]
+quiche = { version = "0.29.3", optional = true, path = "vendor/quiche/quiche", default-features = false, features = ["noise", "custom-client-dcid", "tokio-clock"] }
+capnp = { version = "0.25", path = "vendor/capnp" }
+capnp-rpc = { version = "0.25.1", path = "vendor/capnp-rpc" }
+capnp-futures = { version = "0.25", path = "vendor/capnp-futures" }
+futures = "0.3"
+tokio = { version = "1", features = ["rt", "macros", "net", "time", "io-util", "sync"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+socket2 = "0.6"
+snow = { optional = true, git = "https://github.com/mcginty/snow", rev = "8ac60f51cfe3e010c84f0a454cc575ad9204fa12", default-features = false, features = ["std", "use-curve25519", "use-chacha20poly1305", "use-blake3", "use-getrandom", "risky-raw-split"] }
+ring = "0.17"
+memmap2 = { version = "0.9", optional = true }
+fs2 = { version = "0.4", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+zeroize = { version = "1", optional = true }
+tempfile = "3"
+
+[build-dependencies]
+capnpc = { version = "0.25", path = "vendor/capnpc", optional = true }
+capnp-compiler = { path = "crates/capnp-compiler", optional = true }
+capnp = { version = "0.25", path = "vendor/capnp" }
+
+[dev-dependencies]
+allocation-counter = "=0.8.1"
+proptest = { version = "=1.11.0", default-features = false, features = ["std"] }
+tokio = { version = "1", features = ["test-util"] }
+reproto-test-support = { path = "test-support" }
+capnp-compiler = { path = "crates/capnp-compiler" }
+capnpc = { version = "0.25", path = "vendor/capnpc" }
+
+[[bin]]
+name = "reproto-model"
+path = "src/bin/model.rs"
+
+
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+libc = "0.2"

@@ -1,0 +1,28 @@
+{
+  "crate": "capnp-rpc",
+  "version": "0.25.1",
+  "rust_upstream_commit": "61f2c7640516f6d74c4b7d6e67257fae4fff9bda",
+  "cpp_reference_commit": "0de72d8d8cec6b69edaa29de51d3bd490341f9c2",
+  "license": "MIT",
+  "original_rust_sources": {
+    "src/attach.rs": "72f5870d08a2b1de14ce8def1a6831ae9b9a13607d44bb92c9c34b6df5b7f70c",
+    "src/broken.rs": "39e595ea80edb4cfe71ad65ec788b8181f7ed1a92e26311fa082d333cba100ef",
+    "src/flow_control.rs": "7f310650de855ac7acc21d171b98acc0a153da48703fa42dc5ae8378a5cff7db",
+    "src/lib.rs": "be755ff2329ad013a839b77290bd9f63fe83d5e3dc4bc0f1f5ba217c13bca90c",
+    "src/local.rs": "4b9c3df7e0742d79081118bea0ba43f4a11efaad3104b2e2d8e72f39bfd499dc",
+    "src/queued.rs": "c2dfb9293d60882f78690f6d42abe7f7c1d477674de372fc4fcb7df6783609ab",
+    "src/reconnect.rs": "29d29214de7937ffdee97298917b9653555f1a37c53d2a53529dc0c1d66c0716",
+    "src/rpc.rs": "c2ca93052311386b099a0370ccfbdd90ea38eebb65ad4df2e955196941f77597",
+    "src/rpc_capnp.rs": "5f2cbb4431fa0d95492f8cf0e0abcfe73fa2bd8c166d078cc15c2fcf88a4a404",
+    "src/rpc_twoparty_capnp.rs": "b2fa98cbdff84a03389d39aede240c92e0e30bcd585c27d85cf534ee71dd418c",
+    "src/sender_queue.rs": "90c0ffb7f9a3fe4afd2cf8c150cbf4b7946626d29ee73fd3f21b62ddffbd41e1",
+    "src/split.rs": "05c95546b5b266f23acbc8cc38ea1ebf87ac231520576794289ab040bb24eeef",
+    "src/task_set.rs": "42f9bfbaa8498492728fb4b53ef597168d22152c6e13529d29fd4c5b446bfa8e",
+    "src/twoparty.rs": "1326eabfe23a1e32e3f3fbdbefe13c7d96a426629c2b5f1c23c8993d8369b474"
+  },
+  "pinned_schemas": {
+    "vendor/capnp-rpc/schema/persistent.capnp": "d77d4d2e2c1e9c42ded13de54ed11b535b076ac210945b53ecf76fd7648a867a",
+    "vendor/capnp-rpc/schema/rpc-twoparty.capnp": "22680f70c56e3c44dc73b52bf8dfd2838a5ea44249be01609be2d362d308b518",
+    "vendor/capnp-rpc/schema/rpc.capnp": "2ecc3049d4f7f2d48a3a368dbb9ef4b97b31c1365996d615bd19c267983a1931"
+  }
+}

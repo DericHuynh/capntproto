@@ -1,0 +1,21 @@
+[package]
+name = "reproto-memory-checks"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+# Keep OS/crypto dependencies and the root crate's newer MSRV out of Miri.
+[workspace]
+
+[features]
+default = ["alloc"]
+alloc = ["capnp/alloc"]
+unaligned = ["capnp/unaligned"]
+
+[dependencies]
+capnp = { path = "../../vendor/capnp" }
+capnp-rpc = { path = "../../vendor/capnp-rpc" }
+
+[build-dependencies]
+capnpc = { path = "../../vendor/capnpc" }

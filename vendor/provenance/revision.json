@@ -1,0 +1,9 @@
+{
+  "repository": "https://github.com/capnproto/capnproto",
+  "commit": "0de72d8d8cec6b69edaa29de51d3bd490341f9c2",
+  "schemas": {
+    "rpc.capnp": "2ecc3049d4f7f2d48a3a368dbb9ef4b97b31c1365996d615bd19c267983a1931",
+    "rpc-twoparty.capnp": "22680f70c56e3c44dc73b52bf8dfd2838a5ea44249be01609be2d362d308b518",
+    "persistent.capnp": "d77d4d2e2c1e9c42ded13de54ed11b535b076ac210945b53ecf76fd7648a867a"
+  }
+}

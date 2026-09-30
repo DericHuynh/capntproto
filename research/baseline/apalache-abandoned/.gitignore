@@ -1,0 +1,10 @@
+capnproto/
+tools/*.jar
+__pycache__/
+states/
+*_TTrace_*
+tools/apalache-*/
+_apalache-out/
+_apalache-tmp/
+dependencies.dot
+tmp/

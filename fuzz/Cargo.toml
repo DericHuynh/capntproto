@@ -1,0 +1,78 @@
+[package]
+name = "reproto-noise-fuzz"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[features]
+default = ["fuzz-targets"]
+fuzz-targets = ["dep:libfuzzer-sys"]
+
+[dependencies]
+capnp = { path = "../vendor/capnp" }
+capnp-rpc = { path = "../vendor/capnp-rpc" }
+futures = "0.3"
+libfuzzer-sys = { version = "=0.4.13", optional = true }
+quiche = { path = "../vendor/quiche/quiche", default-features = false, features = ["noise"] }
+snow = { git = "https://github.com/mcginty/snow", rev = "8ac60f51cfe3e010c84f0a454cc575ad9204fa12", default-features = false, features = ["std", "use-curve25519", "use-chacha20poly1305", "use-blake3", "use-getrandom", "risky-raw-split"] }
+
+[build-dependencies]
+capnpc = { path = "../vendor/capnpc" }
+
+[[bin]]
+name = "rpc_lifecycle"
+path = "fuzz_targets/rpc_lifecycle.rs"
+test = false
+doc = false
+bench = false
+required-features = ["fuzz-targets"]
+
+[[bin]]
+name = "capnp_framing"
+path = "fuzz_targets/capnp_framing.rs"
+test = false
+doc = false
+bench = false
+required-features = ["fuzz-targets"]
+
+[[bin]]
+name = "capnp_pointers"
+path = "fuzz_targets/capnp_pointers.rs"
+test = false
+doc = false
+bench = false
+required-features = ["fuzz-targets"]
+
+[[bin]]
+name = "capnp_schema"
+path = "fuzz_targets/capnp_schema.rs"
+test = false
+doc = false
+bench = false
+required-features = ["fuzz-targets"]
+
+[[bin]]
+name = "noise_packet"
+path = "fuzz_targets/noise_packet.rs"
+test = false
+doc = false
+bench = false
+required-features = ["fuzz-targets"]
+
+[[bin]]
+name = "noise_stream"
+path = "fuzz_targets/noise_stream.rs"
+test = false
+doc = false
+bench = false
+required-features = ["fuzz-targets"]
+
+[profile.release]
+debug = 1
+debug-assertions = true
+overflow-checks = true

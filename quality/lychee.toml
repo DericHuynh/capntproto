@@ -1,0 +1,17 @@
+max_concurrency = 8
+timeout = 20
+max_retries = 2
+include_mail = false
+# Historical evidence was archived outside the upload; downloaded C++ sources
+# and generated artifacts are absent from a clean checkout. Do not exclude
+# ordinary source/docs links or the frozen reports under research/reports/.
+exclude = [
+  '^file://.*/reports/(release-review|features-verified|conformance-before-handoff|conformance|realtime)/',
+  '^file://.*/reports/checks\.json$',
+  '^file://.*/vendor/capnproto/',
+  '^file://.*/target/',
+  '^file://.*/dist/',
+]
+
+# Template links target the generated repository-root README; check that output.
+exclude_path = ["docs/README.template.md"]

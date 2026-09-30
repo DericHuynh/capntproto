@@ -1,0 +1,67 @@
+# Rust build output (including standalone workspaces). Keep Cargo.lock files.
+target/
+*.rs.bk
+
+# LLVM coverage and profiling output.
+*.profraw
+*.profdata
+*.gcda
+*.gcno
+/coverage/
+/coverage.lcov
+/lcov.info
+
+# Generated releases. The pinned C++ reference is a tracked Git submodule.
+/dist/
+
+# Model-checker output and Python caches.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+states/
+*-states/
+*_TTrace_*
+_apalache-out/
+_apalache-tmp/
+/research/baseline/**/reports/
+
+# Historical run output. Retain the frozen research measurements used by the
+# source distribution; current quality reports are generated under target/.
+/research/reports/*
+!/research/reports/README.md
+!/research/reports/storage-benchmark/
+!/research/reports/eae-integration/
+/research/reports/storage-benchmark/*
+/research/reports/eae-integration/*
+!/research/reports/storage-benchmark/*.json
+!/research/reports/storage-benchmark/*.jsonl
+!/research/reports/eae-integration/*.json
+!/research/reports/eae-integration/*.jsonl
+
+# Locally discovered fuzz inputs; checked-in upstream corpora remain included.
+/fuzz/artifacts/
+/fuzz/corpus/
+
+# Local configuration and credentials. Keep public test certificates and keys.
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+.secrets/
+credentials.json
+/.doctl/
+/.ssh/
+
+# Editor and operating-system files.
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini

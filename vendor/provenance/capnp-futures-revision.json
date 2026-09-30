@@ -1,0 +1,16 @@
+{
+  "crate": "capnp-futures",
+  "version": "0.25.2",
+  "rust_upstream_commit": "89d7146c609be93a384d45485d11b625ef20bef7",
+  "license": "MIT",
+  "original_sources": {
+    "Cargo.toml": "d12829e60a2e40b5d2a5054b2252f8b2c03d745d8b11d089e7b9bedbbc33d4d4",
+    "LICENSE": "4c2dafff9370c57598f847969a8240b901226315bac3aff066955ce922361bbf",
+    "src/lib.rs": "acd63b2b4ef528987a671989a9a01411f115d4d8df5b18aa20ba36e27a6a3b96",
+    "src/read_stream.rs": "1ddcfa63cd8b17b65759e4e5678f76100d9a5220052666a0f0925927ea1c9519",
+    "src/serialize.rs": "3aeb841988f50cd2f25e0108084e1b5d27cc4cf28a36864dd5d2f9980c5ccd77",
+    "src/serialize_packed.rs": "8963de038c2fba4724d05dee66fbeda28ba0a97df54e1dd65e4a04e59b454c21",
+    "src/write_queue.rs": "5e8208d57b3240412d293e20e22804600cbc8f7aad7661ce0f4344a7c8df33a6"
+  },
+  "change": "Explicit path dependency on the coordinated vendored capnp core; Rust sources unchanged."
+}

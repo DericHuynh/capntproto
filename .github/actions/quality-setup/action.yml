@@ -1,0 +1,51 @@
+name: Pinned quality prerequisites
+description: Install the Linux tools and independent reference required by the quality gates.
+inputs:
+  lane:
+    description: Lane whose extra tools should be installed
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Reserve space for instrumented native builds
+      shell: bash
+      run: |
+        # Fresh disposable hosted runners only. These unrelated preinstalled
+        # SDKs occupy space needed by the instrumented workspace and native controls.
+        test "$RUNNER_ENVIRONMENT" = github-hosted
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        df -h "$GITHUB_WORKSPACE"
+    - name: Native tools
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install --no-install-recommends -y cmake ninja-build g++ binutils clang-22 libclang-rt-22-dev pkg-config capnproto libcapnp-dev protobuf-compiler valgrind openjdk-17-jre-headless unzip python3-matplotlib
+        echo "JAVA=/usr/lib/jvm/java-17-openjdk-amd64/bin/java" >> "$GITHUB_ENV"
+        echo "REPROTO_COVERAGE_CLANG=clang++-22" >> "$GITHUB_ENV"
+    - uses: ./.github/actions/auditable-setup # zizmor: ignore[self-repository]
+    - name: Pinned Rust toolchains
+      shell: bash
+      env:
+        QUALITY_LANE: ${{ inputs.lane }}
+      run: |
+        rustup toolchain install 1.97.0 --profile minimal --component rustfmt,clippy,llvm-tools-preview
+        # LLVM coverage retains its matched LLVM 22 toolchain and explicitly
+        # ignores package MSRV. Native verification must meet Rust 1.97.
+        if test "$QUALITY_LANE" = coverage; then
+          rustup toolchain install nightly-2026-03-05 --profile minimal --component rustfmt,clippy,llvm-tools-preview,rust-src
+        fi
+        case "$QUALITY_LANE" in
+          coverage|memory|fuzz)
+            rustup toolchain install nightly-2026-08-29 --profile minimal --component rustfmt,clippy,rust-src,miri
+            ;;
+        esac
+        cargo install cargo-llvm-cov --version 0.8.6 --locked
+        cargo install cargo-mutants --version 27.1.0 --locked
+        cargo install cargo-fuzz --version 0.13.1 --locked
+        cargo install cargo-audit --version 0.22.2 --locked
+    - name: Pinned C++ reference and model checker
+      shell: bash
+      run: |
+        git submodule update --init --depth 1 -- vendor/capnproto
+        curl --fail --location --retry 3 https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar -o "$RUNNER_TEMP/tla2tools.jar"
+        echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $RUNNER_TEMP/tla2tools.jar" | sha256sum --check --strict

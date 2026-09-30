@@ -1,0 +1,20 @@
+[package]
+name = "reproto-instruction-bench"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+[workspace]
+
+[dependencies]
+capnp = { path = "../../vendor/capnp" }
+gungraun = "=0.20.0"
+
+[[bench]]
+name = "hot_paths"
+harness = false
+
+[profile.bench]
+debug = 1
+overflow-checks = true

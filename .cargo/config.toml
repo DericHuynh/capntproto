@@ -1,0 +1,5 @@
+[env]
+# TLC/compiler subprocess creation can briefly inherit another thread's flock
+# descriptors before exec closes them. Keep reopen/crash checks isolated from
+# subprocess creation, as the former verification driver did.
+RUST_TEST_THREADS = "1"

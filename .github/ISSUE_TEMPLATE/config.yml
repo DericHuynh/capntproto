@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability privately
+    url: 'mailto:huynhderic@gmail.com?subject=Capn%27t%20Proto%20security%20report'
+    about: Email the maintainer; do not include vulnerability details in a public issue.
+  - name: Report a code-of-conduct concern privately
+    url: 'mailto:huynhderic@gmail.com?subject=Capn%27t%20Proto%20conduct%20report'
+    about: Email the maintainer about harassment or other conduct concerns.

@@ -1,0 +1,17 @@
+name: Auditable Cargo
+description: Pin cargo-auditable and route all subsequent Cargo invocations through it.
+runs:
+  using: composite
+  steps:
+    - name: Install auditable Cargo and metadata reader
+      shell: bash
+      run: |
+        rustup toolchain install 1.97.0 --profile minimal
+        bash scripts/setup-auditable.sh
+    - name: Activate the installed Cargo wrapper
+      shell: bash
+      # Intentional PATH replacement; both fixed paths contain tools installed
+      # above from pinned crates or the checked-out source, never tool output.
+      run: | # zizmor: ignore[github-env]
+        echo "$GITHUB_WORKSPACE/target/auditable-tools/wrapper" >> "$GITHUB_PATH"
+        echo "$GITHUB_WORKSPACE/target/auditable-tools/bin" >> "$GITHUB_PATH"

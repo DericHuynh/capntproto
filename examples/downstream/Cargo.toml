@@ -1,0 +1,24 @@
+[package]
+name = "reproto-preview-example"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+resolver = "2"
+
+[features]
+default = ["noise", "storage", "services"]
+noise = ["reproto/noise"]
+storage = ["reproto/storage"]
+services = ["reproto/services"]
+
+[dependencies]
+reproto = { path = "../..", default-features = false }
+capnp = { path = "../../vendor/capnp" }
+capnp-rpc = { path = "../../vendor/capnp-rpc" }
+tokio = { version = "1", features = ["rt", "macros", "io-util"] }
+tempfile = "3"
+
+[build-dependencies]
+capnpc = { path = "../../vendor/capnpc" }

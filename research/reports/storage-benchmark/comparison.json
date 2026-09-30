@@ -1,0 +1,332 @@
+{
+  "time_utc": "2026-09-21T00:17:32.157859+00:00",
+  "trials": 5,
+  "iterations": 200,
+  "runs": 80,
+  "summary": {
+    "small_replace": {
+      "store": {
+        "commit_p50_us": 2708.875,
+        "commit_p99_us": 3118.845,
+        "workload_ms": 602.19036,
+        "workload_ms_range": [
+          578.370753,
+          626.02679
+        ],
+        "first_snapshot_us": 1.955,
+        "repeated_snapshot_us": 0.106,
+        "reopen_with_log_ms": 13.615123,
+        "reopen_checkpoint_ms": 6.298382,
+        "total_written_bytes": 68112,
+        "write_amplification": 5.32125,
+        "process_peak_rss_kib": 3000
+      },
+      "eae": {
+        "commit_p50_us": 2702.31,
+        "commit_p99_us": 8945.446,
+        "workload_ms": 587.301883,
+        "workload_ms_range": [
+          575.500958,
+          602.299309
+        ],
+        "first_snapshot_us": 17.6,
+        "repeated_snapshot_us": 0.087,
+        "reopen_with_log_ms": 12.107035,
+        "reopen_checkpoint_ms": 6.428008,
+        "total_written_bytes": 67272,
+        "write_amplification": 5.255625,
+        "process_peak_rss_kib": 3052
+      }
+    },
+    "4k_replace": {
+      "store": {
+        "commit_p50_us": 2876.984,
+        "commit_p99_us": 6184.89,
+        "workload_ms": 611.351612,
+        "workload_ms_range": [
+          608.389776,
+          625.138899
+        ],
+        "first_snapshot_us": 1.955,
+        "repeated_snapshot_us": 0.106,
+        "reopen_with_log_ms": 21.158711,
+        "reopen_checkpoint_ms": 7.007483,
+        "total_written_bytes": 1390608,
+        "write_amplification": 1.69751953125,
+        "process_peak_rss_kib": 3420
+      },
+      "eae": {
+        "commit_p50_us": 2829.98,
+        "commit_p99_us": 6095.282,
+        "workload_ms": 601.833679,
+        "workload_ms_range": [
+          595.455041,
+          620.390859
+        ],
+        "first_snapshot_us": 95.823,
+        "repeated_snapshot_us": 0.087,
+        "reopen_with_log_ms": 10.844648,
+        "reopen_checkpoint_ms": 7.103376,
+        "total_written_bytes": 1518792,
+        "write_amplification": 1.853994140625,
+        "process_peak_rss_kib": 3832
+      }
+    },
+    "64k_replace": {
+      "store": {
+        "commit_p50_us": 2997.949,
+        "commit_p99_us": 6260.528,
+        "workload_ms": 643.952679,
+        "workload_ms_range": [
+          637.992122,
+          673.568568
+        ],
+        "first_snapshot_us": 1.956,
+        "repeated_snapshot_us": 0.106,
+        "reopen_with_log_ms": 19.699232,
+        "reopen_checkpoint_ms": 7.624673,
+        "total_written_bytes": 15236776,
+        "write_amplification": 1.1624737548828126,
+        "process_peak_rss_kib": 4788
+      },
+      "eae": {
+        "commit_p50_us": 2903.314,
+        "commit_p99_us": 6187.683,
+        "workload_ms": 625.721583,
+        "workload_ms_range": [
+          621.136905,
+          659.596135
+        ],
+        "first_snapshot_us": 342.783,
+        "repeated_snapshot_us": 0.089,
+        "reopen_with_log_ms": 11.581896,
+        "reopen_checkpoint_ms": 7.874496,
+        "total_written_bytes": 15768840,
+        "write_amplification": 1.2030670166015625,
+        "process_peak_rss_kib": 6112
+      }
+    },
+    "1m_replace": {
+      "store": {
+        "commit_p50_us": 4389.612,
+        "commit_p99_us": 28241.693,
+        "workload_ms": 1236.256259,
+        "workload_ms_range": [
+          1167.035655,
+          1631.261287
+        ],
+        "first_snapshot_us": 2.374,
+        "repeated_snapshot_us": 0.102,
+        "reopen_with_log_ms": 21.952599,
+        "reopen_checkpoint_ms": 11.131837,
+        "total_written_bytes": 234913384,
+        "write_amplification": 1.1201543045043945,
+        "process_peak_rss_kib": 14008
+      },
+      "eae": {
+        "commit_p50_us": 3804.41,
+        "commit_p99_us": 14859.491,
+        "workload_ms": 986.642242,
+        "workload_ms_range": [
+          950.570397,
+          1815.348559
+        ],
+        "first_snapshot_us": 1256.799,
+        "repeated_snapshot_us": 0.089,
+        "reopen_with_log_ms": 13.198589,
+        "reopen_checkpoint_ms": 10.646298,
+        "total_written_bytes": 237050648,
+        "write_amplification": 1.130345573425293,
+        "process_peak_rss_kib": 18092
+      }
+    },
+    "4k_field": {
+      "store": {
+        "commit_p50_us": 2877.961,
+        "commit_p99_us": 6107.993,
+        "workload_ms": 635.933256,
+        "workload_ms_range": [
+          602.755233,
+          1301.921657
+        ],
+        "first_snapshot_us": 1.956,
+        "repeated_snapshot_us": 0.117,
+        "reopen_with_log_ms": 21.922568,
+        "reopen_checkpoint_ms": 7.016423,
+        "total_written_bytes": 1390608,
+        "write_amplification": 869.13,
+        "process_peak_rss_kib": 3532
+      },
+      "eae": {
+        "commit_p50_us": 2707.548,
+        "commit_p99_us": 6039.339,
+        "workload_ms": 597.321284,
+        "workload_ms_range": [
+          572.124122,
+          1291.08511
+        ],
+        "first_snapshot_us": 96.382,
+        "repeated_snapshot_us": 0.089,
+        "reopen_with_log_ms": 12.494726,
+        "reopen_checkpoint_ms": 7.799417,
+        "total_written_bytes": 701192,
+        "write_amplification": 438.245,
+        "process_peak_rss_kib": 3904
+      }
+    },
+    "64k_field": {
+      "store": {
+        "commit_p50_us": 3002.488,
+        "commit_p99_us": 6334.141,
+        "workload_ms": 641.465133,
+        "workload_ms_range": [
+          641.068637,
+          1383.822483
+        ],
+        "first_snapshot_us": 1.955,
+        "repeated_snapshot_us": 0.104,
+        "reopen_with_log_ms": 22.60457,
+        "reopen_checkpoint_ms": 8.063977,
+        "total_written_bytes": 15236776,
+        "write_amplification": 9522.985,
+        "process_peak_rss_kib": 4872
+      },
+      "eae": {
+        "commit_p50_us": 2707.059,
+        "commit_p99_us": 5974.875,
+        "workload_ms": 578.303772,
+        "workload_ms_range": [
+          577.249443,
+          1179.552606
+        ],
+        "first_snapshot_us": 344.179,
+        "repeated_snapshot_us": 0.089,
+        "reopen_with_log_ms": 15.437848,
+        "reopen_checkpoint_ms": 8.475623,
+        "total_written_bytes": 2663240,
+        "write_amplification": 1664.525,
+        "process_peak_rss_kib": 6100
+      }
+    },
+    "sparse_64k_field": {
+      "store": {
+        "commit_p50_us": 3008.285,
+        "commit_p99_us": 6266.534,
+        "workload_ms": 648.730262,
+        "workload_ms_range": [
+          634.412526,
+          1332.360497
+        ],
+        "first_snapshot_us": 1.955,
+        "repeated_snapshot_us": 0.104,
+        "reopen_with_log_ms": 23.814366,
+        "reopen_checkpoint_ms": 8.003564,
+        "total_written_bytes": 15236776,
+        "write_amplification": 9522.985,
+        "process_peak_rss_kib": 4976
+      },
+      "eae": {
+        "commit_p50_us": 2709.992,
+        "commit_p99_us": 8263.165,
+        "workload_ms": 665.772371,
+        "workload_ms_range": [
+          630.900757,
+          1324.419512
+        ],
+        "first_snapshot_us": 1906.255,
+        "repeated_snapshot_us": 0.087,
+        "reopen_with_log_ms": 15.295092,
+        "reopen_checkpoint_ms": 16.176843,
+        "total_written_bytes": 34135880,
+        "write_amplification": 21334.925,
+        "process_peak_rss_kib": 22900
+      }
+    },
+    "snapshot_64k_field": {
+      "store": {
+        "commit_p50_us": 3001.022,
+        "commit_p99_us": 6362.357,
+        "workload_ms": 669.995617,
+        "workload_ms_range": [
+          653.741741,
+          1342.875494
+        ],
+        "first_snapshot_us": 1.955,
+        "repeated_snapshot_us": 0.104,
+        "reopen_with_log_ms": 19.981182,
+        "reopen_checkpoint_ms": 7.826376,
+        "total_written_bytes": 15236776,
+        "write_amplification": 9522.985,
+        "process_peak_rss_kib": 5032
+      },
+      "eae": {
+        "commit_p50_us": 2726.824,
+        "commit_p99_us": 5985.002,
+        "workload_ms": 664.233827,
+        "workload_ms_range": [
+          648.507881,
+          1385.476892
+        ],
+        "first_snapshot_us": 306.604,
+        "repeated_snapshot_us": 0.089,
+        "reopen_with_log_ms": 14.385895,
+        "reopen_checkpoint_ms": 9.369385,
+        "total_written_bytes": 2663240,
+        "write_amplification": 1664.525,
+        "process_peak_rss_kib": 6168
+      }
+    }
+  },
+  "sources": {
+    "benchmarks/storage/Cargo.toml": "453e87310f4d70293cedd1e1326caba447f5de5f4f8f35d81a1442f9c3bc5960",
+    "benchmarks/storage/Cargo.lock": "61d66aa4e60a9c9005d676978b22c01f4d3f88e6fdcf03104c38efd6efa9d669",
+    "benchmarks/storage/src/main.rs": "1699fb0045e4c63f54f7e6d441fde0f06c41b652bb84f52c89b134045216488c",
+    "benchmarks/storage/build.rs": "e55bebce699e35255bd52df469073ce022486e052f1b8bd0e153d29071374d5a",
+    "benchmarks/storage/entry.capnp": "c91bfcfbff1c4578989f5afdeb46a94c6a5bbfec4e3e4ecc0d8af80d6064ef03",
+    "rust-toolchain.toml": "0506c53cddc8435a55513d5f662c302ff6eb4035f012d5d5e5a47e96a7f40420",
+    "scripts/benchmark_storage.py": "72ad34cbe631000fd6858e33471225fe082257a6c449491973d9b1d28e97d459",
+    "Cargo.toml": "69124e61f673101b53eb9809bf814b71c645b0405fa77271314d97d6db42c235",
+    "Cargo.lock": "eb249720ebe54a6022259dc8815b5f5d97b014ef67f802244c3efa5c28feeb07",
+    "src/authority.rs": "0315a4fd8650f85fb9308f5a0bce40bc58650941fe8ef7d6009b597e3329e4cf",
+    "src/bin/model.rs": "c046da823d236c5debfab035df436f78f161053d1ca812df3e78ea33e8ad46b7",
+    "src/bulk.rs": "5f9b199cc6cc815906f0f1d99a3d724d49ed6de98bc5d2ed81249095d04eff9b",
+    "src/durable_bulk.rs": "123d9c084460070d7adc30a8fac9fa1c551b2f65dfc3b5d6e543984d050e6518",
+    "src/handoff.rs": "2d71d85dd4465d79dfae40b33fab0ab9d80bdf5e4aef33218a759f3507e659b7",
+    "src/introduction.rs": "d65396e74eb7121abb6ec0372e5375d768146560d33272d3c74c155da4204c96",
+    "src/lib.rs": "fecb16a0a2b8a1bcff984b7550b569a2bc3ebaa81d17c4100b89c1db2c304156",
+    "src/noise_arbitration.rs": "f2263576461684f13443888721ff276e67384df4dd50856e798754eae76ed5e0",
+    "src/noise_join.rs": "69c4f80696022af3529d832b9290a8228f1f036f48460373588835bdfa526f2b",
+    "src/noise_listener.rs": "a50f37bbf83f5b1f0c3afd4d1239e4450a9c57c984b4fb2ee99034a91f467f0d",
+    "src/noise_provisioning.rs": "6882db94fcc00daa3e2d8b8f2ac1691579af5bf8e976531f113c49896947aa10",
+    "src/noise_rpc/session.rs": "7cba01d9c4f09edd72fe180bec0d01028ca4ddbc67c45595fdc91c4ee9595b24",
+    "src/noise_rpc.rs": "22ee63196a4230744050d8ff342bcd86060626c2d7cb0850410fdee1b4241271",
+    "src/noise_shutdown.rs": "712b56d44bf4e0dfb73f2a4d6d9498caae9e527388e9543d6d3ef97c4fd22c03",
+    "src/orm/history.rs": "0c99100589824299e5da5fb20764210e4b569726f6a28357e34825410c1c171d",
+    "src/orm.rs": "53000e5ccd03e215b181a81b979862e7761d4e79eae01cac1f1eae9008a9b60e",
+    "src/persistence/hooks.rs": "ae9c76355b4d18fd1dc60ed7ca5b54b37820516ecf8aa496e02637e90db32449",
+    "src/persistence/orm.rs": "1e1ee23e1dc835f575d3d976f7ef4b4e328de18875ef47578340035e099deb36",
+    "src/persistence.rs": "710a678d6112628d99bb2160a0599763bc0b2ae1431cfcafd3f27b63dab10e20",
+    "src/realtime.rs": "c74e841d85f3c0a9a48735d399c5e1ceb9c86fc834de83ba9d3514101a8ccb8c",
+    "src/realtime_datagram/fragment.rs": "90e342cc3b24926df1e19ff2687fcfc213f2f81be1207d8fe58e5bbaa377d601",
+    "src/realtime_datagram/fragment_tests.rs": "f8db94a7302df042a775e1f468ebed925703a121b1ab1fe99cfea61134177409",
+    "src/realtime_datagram.rs": "84059d43f24844cf06f813ac35f4702a4298930e291dbddf589689d3692f110c",
+    "src/rpc.rs": "e92c51d8221e21e17705af68d55ef69481d98139b733ff49c590036436f43941",
+    "src/schema_exchange.rs": "1f7e1cdc4ac98ec23d43fbfc046adb5690fe073c411c6a12d782d2daeba9602c",
+    "src/semantics.rs": "116756e7761e5d5f3c0adc1b2e9c334c7a0639a8e05a3e14428af72fad75c472",
+    "src/storage/fault_tests.rs": "f2d76edb015d180c7ffd4a39bbc12825b5bd4e31bb217a1fa6b0afeba1254bc6",
+    "src/storage/io.rs": "1893a3c6a65e9a33b0b92b5ea4514328dd2f463ffb57de51c59c7a58b37089d5",
+    "src/storage/recovery_traces.rs": "379b761d80680c52d4165f8d722aae6175c86052129c94c64cba029c21864fb6",
+    "src/storage.rs": "a19b3a64da85e2ac95440eac9fd9d9f9f1cf3e23c31c38247d344b0c50b1fedf",
+    "src/transport/shutdown.rs": "ed6ba672c7267ad1897bd15049603d8c309b8be6a79dfda905ffd7e6eab673db",
+    "src/transport.rs": "2efd193a004d41de4363222135d1df2c93b73f54a146743b62273979913da38f",
+    "src/unix_rpc.rs": "f10e666610a1ed472e5611b605da6a0af29f995847347dbbcd92d9d17047423b"
+  },
+  "eae_archive_sha256": "55872653058ee56813a3417df242760b81dc002e53500ca13c7c696335cf7f5b",
+  "executable_sha256": "bfd7077bcd2ffbc8a382cd49003090d6176b6d4f9e5ac7e4eae01ceb3d71b49e",
+  "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+  "platform": "Linux-7.2.4-3-cachyos-x86_64-with-glibc2.44",
+  "filesystem": "btrfs",
+  "base_dir": "/home/deric/git/ReProto-Rs/reports/storage-benchmark/data",
+  "scope": "single writer; fixed-size latest-published objects; per-object CAS metadata; durable single-object transactions; one held snapshot and 32 repeated same-generation snapshots; all scheduled plus final checkpoints accounted",
+  "limits": "comparison adapter, not full ORM/history/capability integration; no buffered commits; fixed slots omit allocator/graph relocation; timings from one shared host; RSS is process peak; coexistence bytes are logical, not physical peak; warm-cache reopen; fsync calls do not prove hardware power-loss behavior"
+}

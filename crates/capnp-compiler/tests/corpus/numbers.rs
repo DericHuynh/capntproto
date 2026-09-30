@@ -1,0 +1,43 @@
+// Shared by native frontend tests and the pinned C++ differential test.
+// These test lexical shape; integer overflow remains a type-checking policy.
+pub const VALID: &[&str] = &[
+    "0",
+    "00",
+    "077",
+    "0x0",
+    "0xff",
+    "0xE",
+    "0xdeadBEEF",
+    "42",
+    "18446744073709551615",
+    "0xffffffffffffffff",
+    "01777777777777777777777",
+    "-9223372036854775808",
+    "-0x8000000000000000",
+    "-0",
+    "0.0",
+    "-0.0",
+    "1.",
+    "1.e2",
+    "1.e+2",
+    "1.e-2",
+    "1E2",
+    "1E+2",
+    "1E-2",
+    "00.5",
+    "07.85",
+    "01e1",
+    "007e-2",
+    "0.89",
+    "0e89",
+    "1e999",
+    "-1e999",
+    "1e-999",
+    "-1e-999",
+];
+
+pub const INVALID: &[&str] = &[
+    "0x", "0xg", "0Xff", "0b10", "0o10", "0x1p2", "0x1.2", "0x1e+2", "0x1e-2", "0x1E+2", "08",
+    "09", "078", "08.5", "09e1", "1e", "1E", "1e+", "1e-", "1.e", "1.e+", "1ee2", "1e2e3", "1.0.0",
+    "1..2", "123abc", "1f32", "1_0", "0x1_0", "1e_2", "1e+_2", "1é", "0xé",
+];

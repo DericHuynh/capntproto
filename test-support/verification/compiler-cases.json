@@ -1,0 +1,372 @@
+[
+  {
+    "name": "loaded-orphan-positive",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut loader=capnp::schema_loader::SchemaLoader::default();\nloader.load_compiled_type_and_dependencies::<field_api_capnp::person::Owned>().unwrap();\nlet schema=loader.get(<field_api_capnp::person::Reader<'static> as capnp::traits::HasTypeId>::TYPE_ID).unwrap();\nlet mut message=capnp::message::Builder::new_default();\nlet root=capnp::schema_loader::dynamic::Builder::init(message.init_root(),schema).unwrap();\nlet (mut root,token)=root.with_orphanage();\nlet mut owner=root.disown_named(\"address\",&token).unwrap();\ntoken.in_struct(&mut root).unwrap().edit(&mut owner, |v| {\n        let capnp::schema_loader::dynamic::orphan::Editor::Struct(mut b)=v else {panic!()};\n        b.set_named(\"city\",capnp::schema_loader::dynamic::Value::Text(\"loaded\".into()))\n    }).unwrap();root.adopt_named(\"previousAddress\",owner).unwrap();\n}\n",
+    "error": null
+  },
+  {
+    "name": "loaded-orphan-clone",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut loader=capnp::schema_loader::SchemaLoader::default();\nloader.load_compiled_type_and_dependencies::<field_api_capnp::person::Owned>().unwrap();\nlet schema=loader.get(<field_api_capnp::person::Reader<'static> as capnp::traits::HasTypeId>::TYPE_ID).unwrap();\nlet mut message=capnp::message::Builder::new_default();\nlet root=capnp::schema_loader::dynamic::Builder::init(message.init_root(),schema).unwrap();\nlet (mut root,token)=root.with_orphanage();\nlet mut owner=root.disown_named(\"address\",&token).unwrap();\nowner.clone();\n}\n",
+    "error": "E0599"
+  },
+  {
+    "name": "loaded-orphan-reuse",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut loader=capnp::schema_loader::SchemaLoader::default();\nloader.load_compiled_type_and_dependencies::<field_api_capnp::person::Owned>().unwrap();\nlet schema=loader.get(<field_api_capnp::person::Reader<'static> as capnp::traits::HasTypeId>::TYPE_ID).unwrap();\nlet mut message=capnp::message::Builder::new_default();\nlet root=capnp::schema_loader::dynamic::Builder::init(message.init_root(),schema).unwrap();\nlet (mut root,token)=root.with_orphanage();\nlet mut owner=root.disown_named(\"address\",&token).unwrap();\nroot.adopt_named(\"address\",owner).unwrap();root.adopt_named(\"address\",owner).unwrap();\n}\n",
+    "error": "E0382"
+  },
+  {
+    "name": "loaded-orphan-message-borrow",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut loader=capnp::schema_loader::SchemaLoader::default();\nloader.load_compiled_type_and_dependencies::<field_api_capnp::person::Owned>().unwrap();\nlet schema=loader.get(<field_api_capnp::person::Reader<'static> as capnp::traits::HasTypeId>::TYPE_ID).unwrap();\nlet mut message=capnp::message::Builder::new_default();\nlet root=capnp::schema_loader::dynamic::Builder::init(message.init_root(),schema).unwrap();\nlet (mut root,token)=root.with_orphanage();\nlet mut owner=root.disown_named(\"address\",&token).unwrap();\nmessage.init_root::<capnp::any_pointer::Builder>();drop(owner);\n}\n",
+    "error": "E0499"
+  },
+  {
+    "name": "loaded-orphan-schema-update",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut loader=capnp::schema_loader::SchemaLoader::default();\nloader.load_compiled_type_and_dependencies::<field_api_capnp::person::Owned>().unwrap();\nlet schema=loader.get(<field_api_capnp::person::Reader<'static> as capnp::traits::HasTypeId>::TYPE_ID).unwrap();\nlet mut message=capnp::message::Builder::new_default();\nlet root=capnp::schema_loader::dynamic::Builder::init(message.init_root(),schema).unwrap();\nlet (mut root,token)=root.with_orphanage();\nlet mut owner=root.disown_named(\"address\",&token).unwrap();\nloader.load_compiled_type_and_dependencies::<field_api_capnp::person::Owned>().unwrap();drop(owner);\n}\n",
+    "error": "E0502"
+  },
+  {
+    "name": "loaded-orphan-schema-drop",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut loader=capnp::schema_loader::SchemaLoader::default();\nloader.load_compiled_type_and_dependencies::<field_api_capnp::person::Owned>().unwrap();\nlet schema=loader.get(<field_api_capnp::person::Reader<'static> as capnp::traits::HasTypeId>::TYPE_ID).unwrap();\nlet mut message=capnp::message::Builder::new_default();\nlet root=capnp::schema_loader::dynamic::Builder::init(message.init_root(),schema).unwrap();\nlet (mut root,token)=root.with_orphanage();\nlet mut owner=root.disown_named(\"address\",&token).unwrap();\ndrop(loader);drop(owner);\n}\n",
+    "error": "E0505"
+  },
+  {
+    "name": "loaded-orphan-message-drop",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut loader=capnp::schema_loader::SchemaLoader::default();\nloader.load_compiled_type_and_dependencies::<field_api_capnp::person::Owned>().unwrap();\nlet schema=loader.get(<field_api_capnp::person::Reader<'static> as capnp::traits::HasTypeId>::TYPE_ID).unwrap();\nlet mut message=capnp::message::Builder::new_default();\nlet root=capnp::schema_loader::dynamic::Builder::init(message.init_root(),schema).unwrap();\nlet (mut root,token)=root.with_orphanage();\nlet mut owner=root.disown_named(\"address\",&token).unwrap();\ndrop(message);drop(owner);\n}\n",
+    "error": "E0505"
+  },
+  {
+    "name": "loaded-orphan-reader-escape",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut loader=capnp::schema_loader::SchemaLoader::default();\nloader.load_compiled_type_and_dependencies::<field_api_capnp::person::Owned>().unwrap();\nlet schema=loader.get(<field_api_capnp::person::Reader<'static> as capnp::traits::HasTypeId>::TYPE_ID).unwrap();\nlet mut message=capnp::message::Builder::new_default();\nlet root=capnp::schema_loader::dynamic::Builder::init(message.init_root(),schema).unwrap();\nlet (mut root,token)=root.with_orphanage();\nlet mut owner=root.disown_named(\"address\",&token).unwrap();\nlet mut saved=None;\n        token.in_struct(&mut root).unwrap().read(&mut owner,|v|{saved=Some(v);Ok(())}).unwrap();drop(saved);\n}\n",
+    "error": "E0521"
+  },
+  {
+    "name": "loaded-orphan-editor-escape",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut loader=capnp::schema_loader::SchemaLoader::default();\nloader.load_compiled_type_and_dependencies::<field_api_capnp::person::Owned>().unwrap();\nlet schema=loader.get(<field_api_capnp::person::Reader<'static> as capnp::traits::HasTypeId>::TYPE_ID).unwrap();\nlet mut message=capnp::message::Builder::new_default();\nlet root=capnp::schema_loader::dynamic::Builder::init(message.init_root(),schema).unwrap();\nlet (mut root,token)=root.with_orphanage();\nlet mut owner=root.disown_named(\"address\",&token).unwrap();\nlet mut saved=None;\n        token.in_struct(&mut root).unwrap().edit(&mut owner,|v|{saved=Some(v);Ok(())}).unwrap();drop(saved);\n}\n",
+    "error": "E0521"
+  },
+  {
+    "name": "loaded-orphan-nested-owner-escape",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut loader=capnp::schema_loader::SchemaLoader::default();\nloader.load_compiled_type_and_dependencies::<field_api_capnp::person::Owned>().unwrap();\nlet schema=loader.get(<field_api_capnp::person::Reader<'static> as capnp::traits::HasTypeId>::TYPE_ID).unwrap();\nlet mut message=capnp::message::Builder::new_default();\nlet root=capnp::schema_loader::dynamic::Builder::init(message.init_root(),schema).unwrap();\nlet (mut root,token)=root.with_orphanage();\nlet mut owner=root.disown_named(\"address\",&token).unwrap();\nlet mut saved=None;\n        token.in_struct(&mut root).unwrap().edit(&mut owner,|v|{\n            let capnp::schema_loader::dynamic::orphan::Editor::Struct(b)=v else{panic!()};\n            let (mut b,t)=b.with_orphanage();saved=Some(b.disown_named(\"city\",&t)?);Ok(())\n        }).unwrap();drop(saved);\n}\n",
+    "error": "E0521"
+  },
+  {
+    "name": "group-staging-positive",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=Message::<field_api_capnp::api::Choice>::new().unwrap();\n        m.edit().details().replace_with(|mut g| {g.count().set(7);g.label().copy_from(\"staged\")}).unwrap();\n        assert_eq!(m.read().details().unwrap().count(),7);\n}\n",
+    "error": null
+  },
+  {
+    "name": "group-staging-editor-escape",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=Message::<field_api_capnp::api::Choice>::new().unwrap();\n        let mut escaped=None;\n        m.edit().details().replace_with(|g| {escaped=Some(g);Ok(())}).unwrap();drop(escaped);\n}\n",
+    "error": "E0521"
+  },
+  {
+    "name": "group-staging-reader-escape",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=Message::<field_api_capnp::api::Choice>::new().unwrap();\n        let mut escaped=None;\n        m.edit().details().replace_with(|g| {escaped=Some(g.read());Ok(())}).unwrap();drop(escaped);\n}\n",
+    "error": "E0521"
+  },
+  {
+    "name": "group-staging-parent-reborrow",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=Message::<field_api_capnp::api::Choice>::new().unwrap();\n        m.edit().details().replace_with(|_| {m.edit().untouched().set(1);Ok(())}).unwrap();\n}\n",
+    "error": "E0499"
+  },
+  {
+    "name": "dynamic-orphan-positive",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=capnp::message::Builder::new_default();\n        let root=m.init_root::<field_api_capnp::person::Builder>();\n        let (mut root,token)=capnp::dynamic_value::Builder::from(root).downcast::<capnp::dynamic_struct::Builder>().with_orphanage();\n        let orphan=root.disown_named(\"name\", &token).unwrap();\n        root.adopt_named(\"name\", orphan).unwrap();\n}\n",
+    "error": null
+  },
+  {
+    "name": "dynamic-orphan-clone",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=capnp::message::Builder::new_default();\n        let root=m.init_root::<field_api_capnp::person::Builder>();\n        let (mut root,token)=capnp::dynamic_value::Builder::from(root).downcast::<capnp::dynamic_struct::Builder>().with_orphanage();\n        root.disown_named(\"name\", &token).unwrap().clone();\n}\n",
+    "error": "E0599"
+  },
+  {
+    "name": "dynamic-orphan-reused",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=capnp::message::Builder::new_default();\n        let root=m.init_root::<field_api_capnp::person::Builder>();\n        let (mut root,token)=capnp::dynamic_value::Builder::from(root).downcast::<capnp::dynamic_struct::Builder>().with_orphanage();\n        let orphan=root.disown_named(\"name\", &token).unwrap();\n        root.adopt_named(\"name\", orphan).unwrap(); root.adopt_named(\"name\", orphan).unwrap();\n}\n",
+    "error": "E0382"
+  },
+  {
+    "name": "dynamic-orphan-outlives-message",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet orphan;\n        { let mut m=capnp::message::Builder::new_default();\n          let root=m.init_root::<field_api_capnp::person::Builder>();\n          let (mut root,token)=capnp::dynamic_value::Builder::from(root).downcast::<capnp::dynamic_struct::Builder>().with_orphanage();\n          orphan=root.disown_named(\"name\", &token).unwrap(); }\n        drop(orphan);\n}\n",
+    "error": "E0597"
+  },
+  {
+    "name": "dynamic-orphan-message-reborrow",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=capnp::message::Builder::new_default();\n        let root=m.init_root::<field_api_capnp::person::Builder>();\n        let (mut root,token)=capnp::dynamic_value::Builder::from(root).downcast::<capnp::dynamic_struct::Builder>().with_orphanage();\n        let orphan=root.disown_named(\"name\", &token).unwrap();\n        m.init_root::<field_api_capnp::person::Builder>(); drop(orphan);\n}\n",
+    "error": "E0499"
+  },
+  {
+    "name": "positive",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m = Message::<Person>::new().unwrap();\n        m.edit().name().copy_from(\"hello\").unwrap();\n        let frozen = m.freeze(); assert_eq!(frozen.read().name().unwrap(), \"hello\");\n}\n",
+    "error": null
+  },
+  {
+    "name": "projection-outlives-owner",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet projection; { let m=Message::<Person>::new().unwrap(); projection=m.read().project().unwrap(); } let _=projection.name;\n}\n",
+    "error": "E0597"
+  },
+  {
+    "name": "native-loss-policy-required",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet m=Message::<Person>::new().unwrap(); m.read().to_value();\n}\n",
+    "error": "E0061"
+  },
+  {
+    "name": "frozen-editor",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m = Message::<Person>::new().unwrap().freeze(); m.edit();\n}\n",
+    "error": "E0599"
+  },
+  {
+    "name": "overlapping-editors",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m = Message::<Person>::new().unwrap();\n        let mut p = m.edit(); let name = p.name(); p.id().set(1); name.copy_from(\"x\").unwrap();\n}\n",
+    "error": "E0499"
+  },
+  {
+    "name": "consumed-handle",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m = Message::<Person>::new().unwrap(); let mut p = m.edit();\n        let name = p.name(); name.copy_from(\"x\").unwrap(); name.clear();\n}\n",
+    "error": "E0382"
+  },
+  {
+    "name": "cached-entry-positive",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=Message::<Person>::new().unwrap();\n        m.edit().name().copy_from(\"text\").unwrap(); let mut p=m.edit();\n        if let Entry::Occupied(e)=p.name().entry().unwrap() {\n            e.ensure().unwrap().as_bytes_mut().copy_from_slice(b\"edit\");\n        }\n        assert_eq!(p.read().name().unwrap(),\"edit\");\n}\n",
+    "error": null
+  },
+  {
+    "name": "cached-entry-parent-reborrow",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=Message::<Person>::new().unwrap();\n        let mut p=m.edit(); let e=p.name().entry().unwrap();\n        p.id().set(1); drop(e);\n}\n",
+    "error": "E0499"
+  },
+  {
+    "name": "cached-entry-child-reborrow",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=Message::<Person>::new().unwrap();\n        let mut p=m.edit(); if let Entry::Occupied(e)=p.name().entry().unwrap() {\n            let mut text=e.edit().unwrap(); p.id().set(1); text.as_bytes_mut().fill(0);\n        }\n}\n",
+    "error": "E0499"
+  },
+  {
+    "name": "cached-entry-consumed",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=Message::<Person>::new().unwrap();\n        if let Entry::Occupied(e)=m.edit().name().entry().unwrap() {\n            e.edit().unwrap(); e.ensure().unwrap();\n        }\n}\n",
+    "error": "E0382"
+  },
+  {
+    "name": "cached-entry-clone",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=Message::<Person>::new().unwrap();\n        if let Entry::Occupied(e)=m.edit().name().entry().unwrap() { e.clone(); }\n}\n",
+    "error": "E0599"
+  },
+  {
+    "name": "cached-entry-outlives-message",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet e; { let mut m=Message::<Person>::new().unwrap();\n        let mut p=m.edit(); e=p.name().entry().unwrap(); } drop(e);\n}\n",
+    "error": "E0597"
+  },
+  {
+    "name": "occupied-init",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m = Message::<Person>::new().unwrap();\n        if let Entry::Occupied(slot) = m.edit().address().entry().unwrap() { slot.init(); }\n}\n",
+    "error": "E0599"
+  },
+  {
+    "name": "editor-clone",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m = Message::<Person>::new().unwrap(); let p = m.edit(); let _ = p.clone();\n}\n",
+    "error": "E0599"
+  },
+  {
+    "name": "wrong-descriptor",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet m = Message::<Person>::new().unwrap(); m.read().field(Address::CITY);\n}\n",
+    "error": "E0308"
+  },
+  {
+    "name": "escaping-element",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m = Message::<Person>::new().unwrap(); let mut saved = None;\n        m.edit().phones().init_with(1, |_, p| { saved = Some(p); Ok(()) }).unwrap();\n}\n",
+    "error": "E0521"
+  },
+  {
+    "name": "view-outlives-owner",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet bytes = Message::<Person>::new().unwrap().to_vec();\n        let reader; { let view = MessageView::<Person>::from_unpacked(&bytes, Default::default()).unwrap(); reader = view.read(); }\n        let _ = reader.name();\n}\n",
+    "error": "E0597"
+  },
+  {
+    "name": "element-overlap",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m = Message::<Person>::new().unwrap(); let mut p = m.edit();\n        let mut list = p.phones().init(2).unwrap(); let mut first = list.get_mut(0).unwrap();\n        let _second = list.get_mut(1); first.number().copy_from(\"x\").unwrap();\n}\n",
+    "error": "E0499"
+  },
+  {
+    "name": "draft-commit",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=Message::<Person>::new().unwrap(); let mut p=m.edit();\n        p.payload().stage_replace(2).unwrap().commit();\n}\n",
+    "error": "E0599"
+  },
+  {
+    "name": "ready-reused",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=Message::<Person>::new().unwrap(); let mut p=m.edit();\n        let ready=p.payload().stage_replace(2).unwrap().read_exact_from(&mut &b\"ok\"[..]).unwrap();\n        ready.commit().unwrap(); ready.commit().unwrap();\n}\n",
+    "error": "E0382"
+  },
+  {
+    "name": "orphan-clone",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=Message::<Person>::new().unwrap(); m.edit().address().init().unwrap();\n        let (mut p,o)=m.edit_with_orphans(); p.address().take(&o).unwrap().unwrap().clone();\n}\n",
+    "error": "E0599"
+  },
+  {
+    "name": "orphan-reused",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=Message::<Person>::new().unwrap(); m.edit().address().init().unwrap();\n        let (mut p,o)=m.edit_with_orphans(); let orphan=p.address().take(&o).unwrap().unwrap();\n        p.previous_address().adopt(orphan).unwrap(); p.address().adopt(orphan).unwrap();\n}\n",
+    "error": "E0382"
+  },
+  {
+    "name": "orphan-outlives-message",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet orphan;\n        { let mut a=Message::<Person>::new().unwrap(); a.edit().address().init().unwrap();\n          let (mut p,o)=a.edit_with_orphans(); orphan=p.address().take(&o).unwrap().unwrap(); }\n        let mut b=Message::<Person>::new().unwrap(); b.edit().address().adopt(orphan).unwrap();\n}\n",
+    "error": "E0597"
+  },
+  {
+    "name": "message-edited-with-orphan",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=Message::<Person>::new().unwrap(); m.edit().address().init().unwrap();\n        let (mut p,o)=m.edit_with_orphans(); let orphan=p.address().take(&o).unwrap().unwrap();\n        m.edit().id().set(1); p.previous_address().adopt(orphan).unwrap();\n}\n",
+    "error": "E0499"
+  },
+  {
+    "name": "escaping-draft-editor",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=Message::<Person>::new().unwrap(); let mut p=m.edit(); let mut saved=None;\n        p.address().stage_replace().unwrap().fill_with(|a| {saved=Some(a);Ok(())}).unwrap();\n}\n",
+    "error": "E0521"
+  },
+  {
+    "name": "cross-session-brand",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut a=Message::<Person>::new().unwrap(); let mut b=Message::<Person>::new().unwrap();\n        a.scoped_edit(|session| { let (mut root,o)=session.into_parts(); root.edit().address().init().unwrap();\n            let orphan=root.field(Person::ADDRESS).take(&o).unwrap().unwrap();\n            b.scoped_edit(|other| { let (mut dest,_)=other.into_parts(); dest.field(Person::ADDRESS).adopt(orphan).unwrap(); });\n        });\n}\n",
+    "error": "E0521"
+  },
+  {
+    "name": "orphan-access-positive",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=capnp::message::Builder::new_default();\nlet root=m.init_root::<field_api_capnp::person::Builder>();\nlet (mut root,token)=capnp::dynamic_value::Builder::from(root).downcast::<capnp::dynamic_struct::Builder>().with_orphanage();\nlet mut access=token.in_struct(&mut root).unwrap();\nlet mut orphan=access.new_text(3).unwrap();\naccess.edit(&mut orphan, |v| {\n        v.downcast::<capnp::text::Builder>().as_bytes_mut().copy_from_slice(b\"abc\"); Ok(()) }).unwrap();\n        let mut typed=orphan.release_as::<capnp::text::Owned>().unwrap();\n        let text=access.read_typed(&mut typed, |v| Ok(v.to_str()?.to_owned())).unwrap();\n        assert_eq!(text, \"abc\"); drop(access); root.adopt_named(\"name\", typed.into_dynamic()).unwrap();\n}\n",
+    "error": null
+  },
+  {
+    "name": "orphan-reader-escape",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=capnp::message::Builder::new_default();\nlet root=m.init_root::<field_api_capnp::person::Builder>();\nlet (mut root,token)=capnp::dynamic_value::Builder::from(root).downcast::<capnp::dynamic_struct::Builder>().with_orphanage();\nlet mut access=token.in_struct(&mut root).unwrap();\nlet mut orphan=access.new_text(3).unwrap();\nlet mut escaped=None;\n        access.read(&mut orphan, |v| {escaped=Some(v);Ok(())}).unwrap(); drop(escaped);\n}\n",
+    "error": "E0521"
+  },
+  {
+    "name": "orphan-editor-escape",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=capnp::message::Builder::new_default();\nlet root=m.init_root::<field_api_capnp::person::Builder>();\nlet (mut root,token)=capnp::dynamic_value::Builder::from(root).downcast::<capnp::dynamic_struct::Builder>().with_orphanage();\nlet mut access=token.in_struct(&mut root).unwrap();\nlet mut orphan=access.new_text(3).unwrap();\nlet mut escaped=None;\n        access.edit(&mut orphan, |v| {escaped=Some(v);Ok(())}).unwrap(); drop(escaped);\n}\n",
+    "error": "E0521"
+  },
+  {
+    "name": "orphan-typed-reader-escape",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=capnp::message::Builder::new_default();\nlet root=m.init_root::<field_api_capnp::person::Builder>();\nlet (mut root,token)=capnp::dynamic_value::Builder::from(root).downcast::<capnp::dynamic_struct::Builder>().with_orphanage();\nlet mut access=token.in_struct(&mut root).unwrap();\nlet mut orphan=access.new_text(3).unwrap();\nlet mut typed=orphan.release_as::<capnp::text::Owned>().unwrap();\n        let mut escaped=None; access.read_typed(&mut typed, |v| {escaped=Some(v);Ok(())}).unwrap(); drop(escaped);\n}\n",
+    "error": "E0521"
+  },
+  {
+    "name": "orphan-nested-owner-escape",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=capnp::message::Builder::new_default();\nlet root=m.init_root::<field_api_capnp::person::Builder>();\nlet (mut root,token)=capnp::dynamic_value::Builder::from(root).downcast::<capnp::dynamic_struct::Builder>().with_orphanage();\nlet mut access=token.in_struct(&mut root).unwrap();\nlet mut orphan=access.new_text(3).unwrap();\nuse capnp::introspect::Introspect;\n        let mut object=access.new_struct(field_api_capnp::person::Owned::introspect().as_struct_schema().unwrap()).unwrap();\n        let mut escaped=None;\n        access.edit(&mut object, |v| {let (mut v,inner)=v.downcast::<capnp::dynamic_struct::Builder>().with_orphanage();\n            escaped=Some(inner.in_struct(&mut v)?.new_text(1)?); Ok(())}).unwrap(); drop(escaped);\n}\n",
+    "error": "E0521"
+  },
+  {
+    "name": "orphan-anchor-reborrow",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=capnp::message::Builder::new_default();\nlet root=m.init_root::<field_api_capnp::person::Builder>();\nlet (mut root,token)=capnp::dynamic_value::Builder::from(root).downcast::<capnp::dynamic_struct::Builder>().with_orphanage();\nlet mut access=token.in_struct(&mut root).unwrap();\nlet mut orphan=access.new_text(3).unwrap();\naccess.edit(&mut orphan, |_| {root.reborrow();Ok(())}).unwrap();\n}\n",
+    "error": "E0499"
+  },
+  {
+    "name": "orphan-typed-clone",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=capnp::message::Builder::new_default();\nlet root=m.init_root::<field_api_capnp::person::Builder>();\nlet (mut root,token)=capnp::dynamic_value::Builder::from(root).downcast::<capnp::dynamic_struct::Builder>().with_orphanage();\nlet mut access=token.in_struct(&mut root).unwrap();\nlet mut orphan=access.new_text(3).unwrap();\norphan.release_as::<capnp::text::Owned>().unwrap().clone();\n}\n",
+    "error": "E0599"
+  },
+  {
+    "name": "orphan-typed-reuse",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=capnp::message::Builder::new_default();\nlet root=m.init_root::<field_api_capnp::person::Builder>();\nlet (mut root,token)=capnp::dynamic_value::Builder::from(root).downcast::<capnp::dynamic_struct::Builder>().with_orphanage();\nlet mut access=token.in_struct(&mut root).unwrap();\nlet mut orphan=access.new_text(3).unwrap();\nlet typed=orphan.release_as::<capnp::text::Owned>().unwrap();\n        drop(typed.into_dynamic()); drop(typed.into_dynamic());\n}\n",
+    "error": "E0382"
+  },
+  {
+    "name": "orphan-group-positive",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=capnp::message::Builder::new_default();\nlet root=m.init_root::<field_api_capnp::choice::Builder>();\nlet (mut root,token)=capnp::dynamic_value::Builder::from(root).downcast::<capnp::dynamic_struct::Builder>().with_orphanage();\nlet schema=root.get_schema().get_field_by_name(\"details\").unwrap().get_type().as_struct_schema().unwrap();\nlet mut access=token.in_struct(&mut root).unwrap();\nlet mut group=access.new_group(schema).unwrap();\nlet mut field=access.edit_group(&mut group, |mut g| {\n        g.set_named(\"label\",capnp::dynamic_value::Reader::Text(\"moved\".into()))?;\n        g.disown_named(\"label\") }).unwrap();\n        assert_eq!(access.read(&mut field,|v|Ok(v.downcast::<capnp::text::Reader>().to_str()?.to_owned())).unwrap(),\"moved\");\n        access.edit_group(&mut group,|mut g|g.adopt_named(\"label\",field).map_err(|e|e.error)).unwrap();\n        access.read_group(&mut group,|mut g|g.read_named(\"label\",|v| {assert_eq!(v.downcast::<capnp::text::Reader>(),\"moved\");Ok(())})).unwrap();\n        drop(access);root.adopt_named(\"details\",group).unwrap();\n}\n",
+    "error": null
+  },
+  {
+    "name": "orphan-group-reader-escape",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=capnp::message::Builder::new_default();\nlet root=m.init_root::<field_api_capnp::choice::Builder>();\nlet (mut root,token)=capnp::dynamic_value::Builder::from(root).downcast::<capnp::dynamic_struct::Builder>().with_orphanage();\nlet schema=root.get_schema().get_field_by_name(\"details\").unwrap().get_type().as_struct_schema().unwrap();\nlet mut access=token.in_struct(&mut root).unwrap();\nlet mut group=access.new_group(schema).unwrap();\nlet mut escaped=None;\n        access.read_group(&mut group,|g| {escaped=Some(g);Ok(())}).unwrap(); drop(escaped);\n}\n",
+    "error": "E0521"
+  },
+  {
+    "name": "orphan-group-editor-escape",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=capnp::message::Builder::new_default();\nlet root=m.init_root::<field_api_capnp::choice::Builder>();\nlet (mut root,token)=capnp::dynamic_value::Builder::from(root).downcast::<capnp::dynamic_struct::Builder>().with_orphanage();\nlet schema=root.get_schema().get_field_by_name(\"details\").unwrap().get_type().as_struct_schema().unwrap();\nlet mut access=token.in_struct(&mut root).unwrap();\nlet mut group=access.new_group(schema).unwrap();\nlet mut escaped=None;\n        access.edit_group(&mut group,|g| {escaped=Some(g);Ok(())}).unwrap(); drop(escaped);\n}\n",
+    "error": "E0521"
+  },
+  {
+    "name": "orphan-group-payload-escape",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=capnp::message::Builder::new_default();\nlet root=m.init_root::<field_api_capnp::choice::Builder>();\nlet (mut root,token)=capnp::dynamic_value::Builder::from(root).downcast::<capnp::dynamic_struct::Builder>().with_orphanage();\nlet schema=root.get_schema().get_field_by_name(\"details\").unwrap().get_type().as_struct_schema().unwrap();\nlet mut access=token.in_struct(&mut root).unwrap();\nlet mut group=access.new_group(schema).unwrap();\nlet mut escaped=None;\n        access.read_group(&mut group,|mut g|g.read_named(\"label\",|v| {escaped=Some(v);Ok(())})).unwrap(); drop(escaped);\n}\n",
+    "error": "E0521"
+  },
+  {
+    "name": "orphan-group-anchor-reborrow",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=capnp::message::Builder::new_default();\nlet root=m.init_root::<field_api_capnp::choice::Builder>();\nlet (mut root,token)=capnp::dynamic_value::Builder::from(root).downcast::<capnp::dynamic_struct::Builder>().with_orphanage();\nlet schema=root.get_schema().get_field_by_name(\"details\").unwrap().get_type().as_struct_schema().unwrap();\nlet mut access=token.in_struct(&mut root).unwrap();\nlet mut group=access.new_group(schema).unwrap();\naccess.edit_group(&mut group,|_| {root.reborrow();Ok(())}).unwrap();\n}\n",
+    "error": "E0499"
+  },
+  {
+    "name": "orphan-group-read-only",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=capnp::message::Builder::new_default();\nlet root=m.init_root::<field_api_capnp::choice::Builder>();\nlet (mut root,token)=capnp::dynamic_value::Builder::from(root).downcast::<capnp::dynamic_struct::Builder>().with_orphanage();\nlet schema=root.get_schema().get_field_by_name(\"details\").unwrap().get_type().as_struct_schema().unwrap();\nlet mut access=token.in_struct(&mut root).unwrap();\nlet mut group=access.new_group(schema).unwrap();\naccess.read_group(&mut group,|mut g|g.set_named(\"count\",1u64.into())).unwrap();\n}\n",
+    "error": "E0599"
+  },
+  {
+    "name": "orphan-group-field-reuse",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut m=capnp::message::Builder::new_default();\nlet root=m.init_root::<field_api_capnp::choice::Builder>();\nlet (mut root,token)=capnp::dynamic_value::Builder::from(root).downcast::<capnp::dynamic_struct::Builder>().with_orphanage();\nlet schema=root.get_schema().get_field_by_name(\"details\").unwrap().get_type().as_struct_schema().unwrap();\nlet mut access=token.in_struct(&mut root).unwrap();\nlet mut group=access.new_group(schema).unwrap();\nlet field=access.edit_group(&mut group,|mut g|g.disown_named(\"label\")).unwrap();\n        access.edit_group(&mut group,|mut g| {g.adopt_named(\"label\",field).unwrap();g.adopt_named(\"label\",field).unwrap();Ok(())}).unwrap();\n}\n",
+    "error": "E0382"
+  },
+  {
+    "name": "loaded-group-positive",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut loader=capnp::schema_loader::SchemaLoader::default();\nloader.load_compiled_type_and_dependencies::<field_api_capnp::choice::Owned>().unwrap();\nlet schema=loader.get(<field_api_capnp::choice::Reader<'static> as capnp::traits::HasTypeId>::TYPE_ID).unwrap();\nlet mut message=capnp::message::Builder::new_default();\nlet root=capnp::schema_loader::dynamic::Builder::init(message.init_root(),schema).unwrap();\nlet (mut root,token)=root.with_orphanage();\nlet capnp::schema_loader::Type::Struct(schema)=root.schema().field(\"details\").unwrap().get_type().unwrap() else {panic!()};\nlet mut access=token.in_struct(&mut root).unwrap();\nlet mut group=access.new_group(schema).unwrap();\nlet field=access.edit_group(&mut group, |mut g| {\n        g.set_named(\"label\",capnp::schema_loader::dynamic::Value::Text(\"moved\".into()))?;\n        g.disown_named(\"label\") }).unwrap();\n        access.edit_group(&mut group,|mut g|g.adopt_named(\"label\",field).map_err(|e|e.error)).unwrap();\n        drop(access);root.adopt_named(\"details\",group).unwrap();\n}\n",
+    "error": null
+  },
+  {
+    "name": "loaded-group-reader-escape",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut loader=capnp::schema_loader::SchemaLoader::default();\nloader.load_compiled_type_and_dependencies::<field_api_capnp::choice::Owned>().unwrap();\nlet schema=loader.get(<field_api_capnp::choice::Reader<'static> as capnp::traits::HasTypeId>::TYPE_ID).unwrap();\nlet mut message=capnp::message::Builder::new_default();\nlet root=capnp::schema_loader::dynamic::Builder::init(message.init_root(),schema).unwrap();\nlet (mut root,token)=root.with_orphanage();\nlet capnp::schema_loader::Type::Struct(schema)=root.schema().field(\"details\").unwrap().get_type().unwrap() else {panic!()};\nlet mut access=token.in_struct(&mut root).unwrap();\nlet mut group=access.new_group(schema).unwrap();\nlet mut escaped=None;\n        access.read_group(&mut group,|g| {escaped=Some(g);Ok(())}).unwrap(); drop(escaped);\n}\n",
+    "error": "E0521"
+  },
+  {
+    "name": "loaded-group-editor-escape",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut loader=capnp::schema_loader::SchemaLoader::default();\nloader.load_compiled_type_and_dependencies::<field_api_capnp::choice::Owned>().unwrap();\nlet schema=loader.get(<field_api_capnp::choice::Reader<'static> as capnp::traits::HasTypeId>::TYPE_ID).unwrap();\nlet mut message=capnp::message::Builder::new_default();\nlet root=capnp::schema_loader::dynamic::Builder::init(message.init_root(),schema).unwrap();\nlet (mut root,token)=root.with_orphanage();\nlet capnp::schema_loader::Type::Struct(schema)=root.schema().field(\"details\").unwrap().get_type().unwrap() else {panic!()};\nlet mut access=token.in_struct(&mut root).unwrap();\nlet mut group=access.new_group(schema).unwrap();\nlet mut escaped=None;\n        access.edit_group(&mut group,|g| {escaped=Some(g);Ok(())}).unwrap(); drop(escaped);\n}\n",
+    "error": "E0521"
+  },
+  {
+    "name": "loaded-group-payload-escape",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut loader=capnp::schema_loader::SchemaLoader::default();\nloader.load_compiled_type_and_dependencies::<field_api_capnp::choice::Owned>().unwrap();\nlet schema=loader.get(<field_api_capnp::choice::Reader<'static> as capnp::traits::HasTypeId>::TYPE_ID).unwrap();\nlet mut message=capnp::message::Builder::new_default();\nlet root=capnp::schema_loader::dynamic::Builder::init(message.init_root(),schema).unwrap();\nlet (mut root,token)=root.with_orphanage();\nlet capnp::schema_loader::Type::Struct(schema)=root.schema().field(\"details\").unwrap().get_type().unwrap() else {panic!()};\nlet mut access=token.in_struct(&mut root).unwrap();\nlet mut group=access.new_group(schema).unwrap();\nlet mut escaped=None;\n        access.read_group(&mut group,|mut g|g.read_named(\"label\",|v| {escaped=Some(v);Ok(())})).unwrap(); drop(escaped);\n}\n",
+    "error": "E0521"
+  },
+  {
+    "name": "loaded-group-read-only",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut loader=capnp::schema_loader::SchemaLoader::default();\nloader.load_compiled_type_and_dependencies::<field_api_capnp::choice::Owned>().unwrap();\nlet schema=loader.get(<field_api_capnp::choice::Reader<'static> as capnp::traits::HasTypeId>::TYPE_ID).unwrap();\nlet mut message=capnp::message::Builder::new_default();\nlet root=capnp::schema_loader::dynamic::Builder::init(message.init_root(),schema).unwrap();\nlet (mut root,token)=root.with_orphanage();\nlet capnp::schema_loader::Type::Struct(schema)=root.schema().field(\"details\").unwrap().get_type().unwrap() else {panic!()};\nlet mut access=token.in_struct(&mut root).unwrap();\nlet mut group=access.new_group(schema).unwrap();\naccess.read_group(&mut group,|mut g|g.clear_named(\"count\")).unwrap();\n}\n",
+    "error": "E0599"
+  },
+  {
+    "name": "generic-owner-positive",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut caps=capnp::field_api::CapabilityTable::new();\n        let mut m=Message::<Person>::with_capabilities(&mut caps).unwrap();\n        m.edit().name().copy_from(\"owned\").unwrap();\n        let frozen=m.freeze();let (storage,context)=frozen.into_parts();\n        let r=capnp::field_api::MessageReader::<Person,_,_>::from_segments_with_capabilities(storage,Default::default(),context).unwrap();\n        assert_eq!(r.read().name().unwrap(),\"owned\");drop(r);caps.clear();\n}\n",
+    "error": null
+  },
+  {
+    "name": "generic-reader-positive",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet m=Message::<Person>::new().unwrap();let (storage,caps)=m.into_parts();\n        let reader=capnp::message::Reader::new(storage,Default::default());\n        let r=capnp::field_api::MessageReader::<Person,_,_>::from_reader_with_capabilities(reader,std::rc::Rc::new(caps)).unwrap();\n        assert_eq!(r.read().id(),42);\n}\n",
+    "error": null
+  },
+  {
+    "name": "generic-owner-view-escape",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet view;{let m=Message::<Person>::new().unwrap();\n        let r=m.into_reader(Default::default()).unwrap();view=r.read();}let _=view.name();\n}\n",
+    "error": "E0597"
+  },
+  {
+    "name": "generic-owner-parts-borrow",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet m=Message::<Person>::new().unwrap();\nlet reader=m.into_reader(Default::default()).unwrap();\nlet view=reader.read();let _=reader.into_parts();let _=view.name();\n}\n",
+    "error": "E0505"
+  },
+  {
+    "name": "generic-owner-segments-drop",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet bytes=Message::<Person>::new().unwrap().to_vec();let mut input=bytes.as_slice();\n        let raw=capnp::serialize::read_message_from_flat_slice(&mut input,Default::default()).unwrap();\n        let r=capnp::field_api::MessageReader::<Person,_>::from_reader(raw).unwrap();drop(bytes);let _=r.read().name();\n}\n",
+    "error": "E0505"
+  },
+  {
+    "name": "generic-owner-context-mutation",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut caps=capnp::field_api::CapabilityTable::new();\n        let m=Message::<Person>::with_capabilities(&mut caps).unwrap();caps.clear();let _=m.read();\n}\n",
+    "error": "E0499"
+  },
+  {
+    "name": "generic-owner-reader-edit",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet m=Message::<Person>::new().unwrap();\nlet reader=m.into_reader(Default::default()).unwrap();\nreader.edit();\n}\n",
+    "error": "E0599"
+  },
+  {
+    "name": "generic-owner-frozen-edit",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut caps=capnp::field_api::CapabilityTable::new();\n        let mut m=Message::<Person>::with_capabilities(&mut caps).unwrap().freeze();m.edit();\n}\n",
+    "error": "E0599"
+  },
+  {
+    "name": "generic-owner-orphan-drop",
+    "source": "#[allow(clippy::extra_unused_type_parameters)]\nmod field_api_capnp { include!(concat!(env!(\"OUT_DIR\"), \"/field_api_capnp.rs\")); }\nuse capnp::field_api::{Message, MessageView, Entry};\nuse field_api_capnp::api::{Person, Address};\nfn main() {\nlet mut caps=capnp::field_api::CapabilityTable::new();\n        let mut m=Message::<Person>::with_capabilities(&mut caps).unwrap();m.edit().address().init().unwrap();\n        let (mut root,token)=m.edit_with_orphans();let orphan=root.address().take(&token).unwrap();drop(m);drop(orphan);\n}\n",
+    "error": "E0505"
+  }
+]

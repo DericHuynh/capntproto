@@ -1,0 +1,16 @@
+{
+  "repository": "https://github.com/mcginty/snow",
+  "revision": "8ac60f51cfe3e010c84f0a454cc575ad9204fa12",
+  "version": "0.10.0",
+  "license": "Apache-2.0 OR MIT",
+  "features": [
+    "std",
+    "use-curve25519",
+    "use-chacha20poly1305",
+    "use-blake3",
+    "use-getrandom",
+    "risky-raw-split"
+  ],
+  "default_features": false,
+  "profile": "Upstream BLAKE3 implementation enabled through use-blake3; no local cryptographic implementation"
+}
