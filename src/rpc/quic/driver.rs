@@ -8,7 +8,7 @@ use tokio::{
 
 #[derive(Default)]
 pub(super) struct State {
-    pub acknowledged: bool,
+    pub write_closed: bool,
     pub closed: bool,
     failure: Option<(io::ErrorKind, String)>,
     pub waiter: Option<std::task::Waker>,
@@ -22,7 +22,7 @@ impl State {
                 self.closed.then(|| {
                     io::Error::new(
                         io::ErrorKind::BrokenPipe,
-                        "QUIC session closed before FIN acknowledgement",
+                        "QUIC session closed before submitting FIN",
                     )
                 })
             })
@@ -137,6 +137,7 @@ async fn pump(
     let mut rx_fin = false;
     let mut rx_closed = false;
     let mut stream_seen = !conn.is_server();
+    let mut detached = false;
     loop {
         if conn.is_established() {
             if conn.application_proto() != tls::ALPN {
@@ -167,13 +168,13 @@ async fn pump(
                         .collect();
                     let _ = ready.send(Ok(Ready {
                         certificates,
-                        version: conn
-                            .peer_transport_params()
-                            .and_then(|p| p.version_information.as_ref())
-                            .map_or(1, |v| v[0]),
+                        version: quiche::PROTOCOL_VERSION,
                     }));
                 }
-                if tx_start < tx_end || (tx_eof && !fin_sent) {
+                if !conn.is_closed()
+                    && !conn.is_draining()
+                    && (tx_start < tx_end || (tx_eof && !fin_sent))
+                {
                     match conn.stream_send(0, &tx[tx_start..tx_end], tx_eof) {
                         Ok(n) => {
                             tx_start += n;
@@ -185,10 +186,10 @@ async fn pump(
                         Err(e) => return Err(io::Error::other(e)),
                     }
                 }
-                if fin_sent && conn.stream_send_acknowledged(0).map_err(io::Error::other)? {
+                if fin_sent {
                     let wake = {
                         let mut state = state.borrow_mut();
-                        state.acknowledged = true;
+                        state.write_closed = true;
                         state.waiter.take()
                     };
                     if let Some(wake) = wake {
@@ -202,25 +203,54 @@ async fn pump(
             rx_closed = true;
         }
         let exhausted = flush(conn, core).await?;
-        if conn.is_closed() || conn.is_draining() {
+        // CONNECTION_CLOSE may overtake delivery from Quiche's receive buffer
+        // into the bounded application bridge. Preserve already authenticated
+        // bytes, including a final response larger than the bridge.
+        if (conn.is_closed() || conn.is_draining())
+            && rx_start == rx_end
+            && !conn.stream_readable(0)
+        {
             if conn.is_timed_out() {
                 return Err(io::Error::new(
                     io::ErrorKind::TimedOut,
                     "QUIC connection timed out",
                 ));
             }
-            if !state.borrow().acknowledged {
+            if !state.borrow().write_closed {
                 return Err(io::Error::new(
                     io::ErrorKind::ConnectionAborted,
-                    "QUIC connection closed before FIN acknowledgement",
+                    "QUIC connection closed before submitting FIN",
                 ));
             }
+            return Ok(());
+        }
+        // Once the application has completed shutdown and dropped its read
+        // half, keep recovery alive until Quiche collects the stream (or the
+        // connection fails/times out). Collection is only a cleanup signal;
+        // it is never reported as a peer-delivery receipt.
+        if detached
+            && matches!(
+                conn.stream_capacity(0),
+                Err(quiche::Error::InvalidStreamState(_))
+            )
+        {
             return Ok(());
         }
         let deadline = Instant::now() + conn.timeout().unwrap_or(Duration::from_secs(10));
         tokio::select! {
             biased;
-            _ = &mut *canceled => return Ok(()),
+            _ = &mut *canceled, if !detached => {
+                if !state.borrow().write_closed { return Ok(()); }
+                detached = true;
+                rx_start = 0;
+                rx_end = 0;
+                rx_fin = true;
+                rx_closed = true;
+                match conn.stream_shutdown(0, quiche::Shutdown::Read, 0) {
+                    Ok(()) | Err(quiche::Error::Done | quiche::Error::InvalidStreamState(_)) => (),
+                    Err(error) => return Err(io::Error::other(error)),
+                }
+            },
             packet = route.packets.recv() => {
                 let mut packet = packet.ok_or_else(|| io::Error::other("QUIC packet router closed"))?;
                 match conn.recv(&mut packet.bytes, quiche::RecvInfo { from: packet.from, to: local }) {
@@ -231,7 +261,7 @@ async fn pump(
             n = writer.write(&rx[rx_start..rx_end]), if rx_start < rx_end => {
                 let n = n?; if n == 0 { return Err(io::Error::new(io::ErrorKind::WriteZero, "RPC consumer closed")); } rx_start += n;
             }
-            n = reader.read(&mut tx), if ready.is_none() && tx_start == tx_end && !tx_eof => {
+            n = reader.read(&mut tx), if ready.is_none() && tx_start == tx_end && !tx_eof && !conn.is_closed() && !conn.is_draining() => {
                 tx_end = n?; tx_start = 0; tx_eof = tx_end == 0;
             }
             _ = tokio::time::sleep_until(deadline) => conn.on_timeout(),
@@ -244,7 +274,7 @@ async fn pump(
 mod tests {
     use super::*;
     #[tokio::test(flavor = "current_thread")]
-    async fn peer_stop_sending_cannot_become_a_successful_fin_receipt() {
+    async fn peer_stop_sending_rejects_subsequent_shutdown() {
         tokio::task::LocalSet::new().run_until(async {
             tokio::time::timeout(Duration::from_secs(5), async {
                 let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();

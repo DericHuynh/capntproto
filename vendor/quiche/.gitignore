@@ -1,4 +1,0 @@
-**/target
-**/*.rs.bk
-# ReProto pins this standalone workspace for its locked CI tests.
-**/*.*qlog

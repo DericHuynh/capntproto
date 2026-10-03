@@ -341,7 +341,7 @@ cargo test --test protocol_models field_ownership_model -- --exact
 cargo test --test protocol_models field_group_staging_model -- --exact
 cargo test --test tooling generated_api_compile_contracts -- --exact
 cargo test --workspace --all-targets
-cargo test --manifest-path vendor/capnp/Cargo.toml --all-targets
+cargo test --manifest-path crates/capntproto-core/Cargo.toml --all-targets
 cargo clippy --workspace --all-targets --no-deps -- -D warnings
 ```
 

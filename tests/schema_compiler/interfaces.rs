@@ -328,7 +328,7 @@ fn rust_interfaces_generate_working_rpc_bindings() {
         .run(capnp::serialize::write_message_to_words(&request).as_slice())
         .unwrap();
     fs::write(project.path().join("Cargo.toml"), format!(
-        "[package]\nname = \"rust-interface-acceptance\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\ncapnp = {{ path = {:?} }}\ncapnp-rpc = {{ path = {:?} }}\ntokio = {{ version = \"1\", features = [\"rt\", \"macros\", \"time\"] }}\n", root().join("vendor/capnp"), root().join("vendor/capnp-rpc"))).unwrap();
+        "[package]\nname = \"rust-interface-acceptance\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\ncapnp = {{ package = \"capntproto-core\", path = {:?} }}\ncapnp-rpc = {{ package = \"capntproto-rpc\", path = {:?} }}\ntokio = {{ version = \"1\", features = [\"rt\", \"macros\", \"time\"] }}\n", root().join("crates/capntproto-core"), root().join("crates/capntproto-rpc"))).unwrap();
     fs::write(project.path().join("src/lib.rs"), r#"
 pub mod interfaces_capnp { include!("interfaces_capnp.rs"); }
 #[cfg(test)]

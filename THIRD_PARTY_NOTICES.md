@@ -6,11 +6,10 @@ replace them.
 
 | Included component | Notice | Provenance |
 |---|---|---|
-| Coordinated `capnp`, `capnpc`, `capnp-rpc` forks | Each directory's `LICENSE` under `vendor/` (MIT) | Corresponding `vendor/provenance/*-revision.json` |
-| Coordinated `capnp-futures` fork | `vendor/capnp-futures/LICENSE` (MIT) | `vendor/provenance/capnp-futures-revision.json` records the upstream base; async framing and queue changes are maintained locally |
-| QUIC v1/v2 quiche fork | `vendor/quiche/COPYING` (BSD-2-Clause), source notices | `vendor/provenance/quiche-revision.json` and `quiche-native.patch` |
+| Owned `capntproto-core`, `capntproto-codegen`, `capntproto-rpc` crates derived from capnp-rs | Each directory's `LICENSE` under `crates/` (MIT) | Corresponding `vendor/provenance/*-revision.json` |
+| Owned `capntproto-futures` derived from `capnp-futures` | `crates/capntproto-futures/LICENSE` (MIT) | `vendor/provenance/capnp-futures-revision.json` records the upstream base; async framing and queue changes are maintained locally |
+| Unmodified quiche 0.30.0 | BSD-2-Clause, obtained through Cargo | Registry source and checksum in Cargo.lock |
 | C++ reference submodule and normative schemas | `vendor/capnproto/LICENSE`, schema notices | `.gitmodules` and `vendor/provenance/revision.json` |
-| RFC 9369 packet vectors | `vendor/quiche/LICENSE-RFC9369` (Revised BSD) | RFC 9369 Appendix A; protocol regression tests |
 | rustls and tokio-rustls | Apache-2.0 OR MIT, obtained through Cargo | TLS-over-TCP implementation; exact versions and checksums in Cargo.lock |
 | BoringSSL / boring and x509-parser | Respective crate license notices, obtained through Cargo | quiche TLS and pinned certificate verification; exact versions in Cargo.lock |
 | rcgen | Apache-2.0 OR MIT, obtained through Cargo | Native identity and test certificate generation; version and checksum in Cargo.lock |

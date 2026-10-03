@@ -139,50 +139,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
-name = "capnp"
-version = "0.25.6"
-dependencies = [
- "embedded-io",
-]
-
-[[package]]
-name = "capnp-futures"
-version = "0.25.2"
-dependencies = [
- "capnp",
- "futures-channel",
- "futures-util",
-]
-
-[[package]]
-name = "capnp-rpc"
-version = "0.25.1"
-dependencies = [
- "capnp",
- "capnp-futures",
- "capnpc",
- "futures",
-]
-
-[[package]]
-name = "capnpc"
-version = "0.25.3"
-dependencies = [
- "capnp",
- "pulldown-cmark",
- "pulldown-cmark-to-cmark",
-]
-
-[[package]]
 name = "capntproto"
 version = "0.1.0"
 dependencies = [
  "boring",
- "capnp",
- "capnp-futures",
- "capnp-rpc",
- "capnpc",
+ "capntproto-codegen",
  "capntproto-compiler",
+ "capntproto-core",
+ "capntproto-futures",
+ "capntproto-rpc",
  "futures",
  "libc",
  "quiche",
@@ -202,12 +167,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "capntproto-codegen"
+version = "0.25.3"
+dependencies = [
+ "capntproto-core",
+ "pulldown-cmark",
+ "pulldown-cmark-to-cmark",
+]
+
+[[package]]
 name = "capntproto-compiler"
 version = "0.1.0"
 dependencies = [
- "capnp",
+ "capntproto-core",
  "getrandom 0.4.3",
  "md5",
+]
+
+[[package]]
+name = "capntproto-core"
+version = "0.25.6"
+dependencies = [
+ "embedded-io",
+]
+
+[[package]]
+name = "capntproto-futures"
+version = "0.25.2"
+dependencies = [
+ "capntproto-core",
+ "futures-channel",
+ "futures-util",
 ]
 
 [[package]]
@@ -215,13 +205,23 @@ name = "capntproto-native-fuzz"
 version = "0.1.0"
 dependencies = [
  "afl",
- "capnp",
- "capnp-rpc",
- "capnpc",
  "capntproto",
+ "capntproto-codegen",
+ "capntproto-core",
+ "capntproto-rpc",
  "futures",
  "libfuzzer-sys",
  "quiche",
+]
+
+[[package]]
+name = "capntproto-rpc"
+version = "0.25.1"
+dependencies = [
+ "capntproto-codegen",
+ "capntproto-core",
+ "capntproto-futures",
+ "futures",
 ]
 
 [[package]]
@@ -530,12 +530,9 @@ dependencies = [
 
 [[package]]
 name = "intrusive-collections"
-version = "0.9.7"
+version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "189d0897e4cbe8c75efedf3502c18c887b05046e59d28404d4d8e46cbc4d1e86"
-dependencies = [
- "memoffset",
-]
+checksum = "4275b20e6057cd7733fd8df8a5a31701e4fe44497dad0f3fa0e1c4fb971506be"
 
 [[package]]
 name = "itertools"
@@ -625,15 +622,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
-name = "memoffset"
-version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
-dependencies = [
- "autocfg",
-]
-
-[[package]]
 name = "minimal-lexical"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -697,6 +685,8 @@ dependencies = [
 [[package]]
 name = "octets"
 version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d59d30d3ad7f7e1c9a66e51c9cb71ae1c794b28ffe7053fd785defb0d180069"
 
 [[package]]
 name = "oid-registry"
@@ -767,7 +757,9 @@ dependencies = [
 
 [[package]]
 name = "quiche"
-version = "0.29.3"
+version = "0.30.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52b35a721a2a56797347929745fa783fc99e680d9484b80324ce40106b75493a"
 dependencies = [
  "boring",
  "boring-sys",
@@ -783,7 +775,6 @@ dependencies = [
  "octets",
  "slab",
  "smallvec",
- "tokio",
  "windows-sys 0.59.0",
 ]
 

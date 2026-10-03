@@ -77,7 +77,6 @@ async fn authenticated_backends_exchange_rpc_datagrams_and_receipts() {
             for (client, server, version) in [
                 (Backend::Tcp, Backend::Tcp, QuicVersion::V1),
                 (Backend::Quiche, Backend::Quiche, QuicVersion::V1),
-                (Backend::Quiche, Backend::Quiche, QuicVersion::V2),
             ] {
                 eprintln!("backend {client:?} -> {server:?} {version:?}");
                 tokio::time::timeout(Duration::from_secs(15), async {
@@ -156,7 +155,7 @@ async fn tcp_directory_honors_the_configured_local_bind() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn quiche_dials_single_use_reservations_in_both_versions() {
+async fn quiche_dials_single_use_reservations() {
     use crate::{
         native_listener::{Limits, Listener},
         native_rpc::{Connector, DirectoryConnector},
@@ -164,7 +163,7 @@ async fn quiche_dials_single_use_reservations_in_both_versions() {
     use std::rc::Rc;
     tokio::task::LocalSet::new()
         .run_until(async {
-            for version in [QuicVersion::V1, QuicVersion::V2] {
+            for version in [QuicVersion::V1] {
                 let a = Rc::new(Identity::generate());
                 let b = Rc::new(Identity::generate());
                 let listener =
@@ -258,7 +257,7 @@ async fn native_network_runs_capability_rpc_on_every_backend() {
     tokio::task::LocalSet::new()
         .run_until(async {
             for backend in [Backend::Tcp, Backend::Quiche] {
-                let (a, b) = pair(backend, backend, QuicVersion::V2).await;
+                let (a, b) = pair(backend, backend, QuicVersion::V1).await;
                 let peer = b.local;
                 let (an, ah) = Network::new(a.local);
                 let (bn, bh) = Network::new(b.local);
@@ -340,7 +339,7 @@ async fn mutual_tls_rejects_wrong_peer_secret_and_context_before_server_admissio
                                 b.public_key(),
                                 Some([1; 32]),
                                 b"right",
-                                QuicVersion::V2
+                                QuicVersion::V1
                             ),
                             accept_authenticated(right, &b, peer, secret, context)
                         );
@@ -350,4 +349,19 @@ async fn mutual_tls_rejects_wrong_peer_secret_and_context_before_server_admissio
             }
         })
         .await;
+}
+
+#[test]
+fn native_quic_v2_is_rejected_without_silent_downgrade() {
+    let identity = Identity::generate();
+    assert!(matches!(
+        config_for_version(
+            &identity,
+            identity.public_key(),
+            None,
+            b"version test",
+            QuicVersion::V2
+        ),
+        Err(quiche::Error::UnknownVersion)
+    ));
 }

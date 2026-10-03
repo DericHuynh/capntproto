@@ -289,7 +289,7 @@ fn embeds_generate_working_rust_constants_and_mutable_defaults() {
         .run(capnp::serialize::write_message_to_words(&request).as_slice())
         .unwrap();
     fs::write(project.path().join("Cargo.toml"), format!(
-        "[package]\nname = \"rust-embed-acceptance\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\ncapnp = {{ path = {:?} }}\n",root().join("vendor/capnp"))).unwrap();
+        "[package]\nname = \"rust-embed-acceptance\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\ncapnp = {{ package = \"capntproto-core\", path = {:?} }}\n",root().join("crates/capntproto-core"))).unwrap();
     fs::write(project.path().join("src/lib.rs"), r#"
 pub mod embedded_capnp { include!("embedded_capnp.rs"); }
 #[cfg(test)]

@@ -3,7 +3,7 @@
   "repository": "DericHuynh/capntproto",
   "analysis_id": 1884760242,
   "source_commit": "3d383045ae16ee8bad8aa9e643410afc996e6e12",
-  "policy": "Review record only; not scanner configuration or an automatic suppression list. Keep all security queries and vendored runtime sources enabled. Re-review on relevant changes.",
+  "policy": "Historical review of source_commit only; not scanner configuration or an automatic suppression list. All security queries and owned runtime sources remain enabled. The Quiche fork and its Debug patches were removed when switching to registry quiche 0.30.0; those validation entries do not certify the upstream implementation. Re-review current results.",
   "validation": [
     "tests/memory_safety.rs: aligned/unaligned Stacked Borrows and Tree Borrows qualification",
     "quiche packet/frame/transport-parameter Debug regressions and wire round trips",

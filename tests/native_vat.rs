@@ -253,10 +253,6 @@ async fn tcp_tls_three_party_pipeline_join_and_drain() {
 async fn quic_v1_three_party_pipeline_join_and_drain() {
     handoff(Backend::Quiche).await;
 }
-#[tokio::test(flavor = "current_thread")]
-async fn quic_v2_three_party_pipeline_join_and_drain() {
-    handoff(Backend::QuicheV2).await;
-}
 
 #[tokio::test(flavor = "current_thread")]
 async fn bootstrap_factory_uses_authenticated_peer_and_preserves_connection_after_denial() {

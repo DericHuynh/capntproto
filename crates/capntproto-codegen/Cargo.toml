@@ -1,0 +1,53 @@
+# Maintained Capntproto crate derived from capnpc. See upstream provenance and LICENSE.
+[package]
+publish = false
+edition = "2021"
+name = "capntproto-codegen"
+version = "0.25.3"
+authors = ["David Renshaw <dwrenshaw@gmail.com>"]
+build = false
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+description = "Cap'n Proto code generation"
+readme = "README.md"
+keywords = [
+    "encoding",
+    "protocol",
+    "serialization",
+]
+license = "MIT"
+repository = "https://github.com/DericHuynh/capntproto"
+
+[lib]
+name = "capnpc"
+path = "src/lib.rs"
+
+[[bin]]
+name = "capnpc-rust"
+path = "src/capnpc-rust.rs"
+
+[[bin]]
+name = "capnpc-rust-bootstrap"
+path = "src/capnpc-rust-bootstrap.rs"
+
+[dependencies.capnp]
+package = "capntproto-core"
+version = "0.25.0"
+path = "../capntproto-core"
+
+[dependencies.pulldown-cmark]
+version = "=0.13.4"
+default-features = false
+
+[dependencies.pulldown-cmark-to-cmark]
+version = "=22.0.1"
+
+[lints.clippy]
+missing_safety_doc = "allow"
+type_complexity = "allow"
+
+[lints.rust]
+unreachable_pub = "deny"

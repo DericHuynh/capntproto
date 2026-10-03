@@ -8,7 +8,7 @@ license = "MIT"
 [workspace]
 
 [dependencies]
-capnp = { path = "../../vendor/capnp" }
+capnp = { package = "capntproto-core", path = "../../crates/capntproto-core" }
 gungraun = "=0.20.0"
 
 [[bench]]

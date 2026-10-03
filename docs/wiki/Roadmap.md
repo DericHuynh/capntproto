@@ -57,7 +57,7 @@ and [lock-free research](Lock-Free-Research.md). EAE remains a separate
 
 ## Transport and deployment
 
-TCP/TLS, quiche QUIC v1/v2, native mutual authentication, shared listeners,
+TCP/TLS, quiche QUIC v1, native mutual authentication, shared listeners,
 provisioning, arbitration, discovery renewal/failover, STUN rendezvous,
 CID rotation and client migration are implemented within their documented scopes.
 Open work includes broader hostile-peer/loss/soak qualification, deployment

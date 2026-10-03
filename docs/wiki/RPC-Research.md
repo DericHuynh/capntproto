@@ -29,13 +29,13 @@ it is not a performance measurement of these later runtime changes.
 | Streaming | Fixed/variable/adaptive windows and generated `-> stream` methods | Aggregate budgets across streams, final completion barriers, mixed small-call/bulk benchmarks |
 | Output | Scatter/gather batching, FIFO shutdown fences, active/queued diagnostics and opt-in outgoing Call-count admission | Cap batch work, add byte/principal budgets and reuse framing metadata |
 | Input | Buffered short-lived messages, independent retained payloads, reader limits | Bound retained contexts and capability tables; test control-message progress under overload |
-| TCP/TLS/QUIC | Owned drivers, TLS/mTLS, quiche v1/v2, native three-party routes | Measure loss/latency and copy costs; consider explicitly negotiated bulk separation |
+| TCP/TLS/QUIC | Owned drivers, TLS/mTLS, quiche v1, native three-party routes | Measure loss/latency and copy costs; consider explicitly negotiated bulk separation |
 
-Primary implementation paths are [RPC dispatch](../../vendor/capnp-rpc/src/rpc.rs),
-[queued capabilities](../../vendor/capnp-rpc/src/queued.rs),
-[generated call hints](../../vendor/capnpc/src/codegen.rs),
-[flow control](../../vendor/capnp-rpc/src/flow_control.rs), and
-[byte-stream output](../../vendor/capnp-futures/src/write_queue.rs).
+Primary implementation paths are [RPC dispatch](../../crates/capntproto-rpc/src/rpc.rs),
+[queued capabilities](../../crates/capntproto-rpc/src/queued.rs),
+[generated call hints](../../crates/capntproto-codegen/src/codegen.rs),
+[flow control](../../crates/capntproto-rpc/src/flow_control.rs), and
+[byte-stream output](../../crates/capntproto-futures/src/write_queue.rs).
 The [parity audit](Cpp-Parity.md) describes the wider existing feature set and
 its limits. It should not be interpreted as complete interoperability with every
 Cap'n Proto implementation.
@@ -101,7 +101,7 @@ entire pending queue as one active batch and resets the pending metrics. Therefo
 The new `output_snapshot()` preserves that pending-only API and separately
 reports the active batch through write/flush, failure and cancellation.
 
-Separately, unresolved clients use [SenderQueue](../../vendor/capnp-rpc/src/sender_queue.rs)
+Separately, unresolved clients use [SenderQueue](../../crates/capntproto-rpc/src/sender_queue.rs)
 to retain calls. A cap on socket buffering alone cannot bound pending calls,
 question/answer state, retained results or capabilities. Streaming credit is also
 not an ordinary-call admission limit.
@@ -255,7 +255,7 @@ RPC connections for clearly independent workloads. One QUIC stream per Call is a
 larger protocol adaptation: questions, imports, exports, Return/Finish ownership,
 promise resolution and embargo ordering currently share a connection. Design
 those dependencies and fences before splitting messages across streams. Existing
-TCP/TLS and quiche v1/v2 support should continue using their current ordered profile
+TCP/TLS and quiche v1 support should continue using their current ordered profile
 until an additional profile is specified and tested.
 
 ## Priority 5: deadlines, receipts and explicit interop profiles
@@ -289,7 +289,7 @@ not an upstream-assigned identifier.
 At the recorded research revision, the focused suites passed **68 tests**: call hints (7), incoming flow
 (6), native vats (8), outgoing queues (13), result pipelines (11), secure RPC
 (18) and tail transfer (5). They include their checked-in/TLC replay paths,
-pinned C++ comparisons, TCP/TLS/mTLS and quiche v1/v2 scenarios. These results
+pinned C++ comparisons, TCP/TLS/mTLS and quiche v1 scenarios. These results
 validate those finite cases, not universal interoperability or production capacity.
 The new probe passed its 15 scenarios in three identical repetitions and Clippy
 with warnings denied using the minimal feature configuration.
@@ -305,7 +305,7 @@ Qualification matrix for those changes:
 
 - Chain depths 1/4/16, fan-out 1/16/128, plain and capability-rich results,
   early success/failure, ordinary versus pipeline-only sends and tail forwarding.
-- Real TCP/TLS and quiche v1/v2 with RTT, jitter/loss, mixed bulk/control traffic,
+- Real TCP/TLS and quiche v1 with RTT, jitter/loss, mixed bulk/control traffic,
   burst and fixed-rate arrival workloads, plus stalled peers and readers.
 - Queue wait, service/response latency, rejected/expired/uncertain outcomes,
   allocations, RSS, retained words, table high-water marks and route changes.

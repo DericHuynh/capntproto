@@ -12,7 +12,7 @@ async fn tick(network: &Network) {
     while let Some(packet) = network.take(false) {
         network.deliver(packet);
     }
-    tokio::time::advance(Duration::from_millis(1)).await;
+    packet_tick().await;
     tokio::task::yield_now().await;
 }
 
@@ -196,7 +196,7 @@ async fn shared_demultiplexing_never_treats_routing_ids_as_authority() {
                             h.network.deliver(packet);
                         }
                     }
-                    tokio::time::advance(Duration::from_millis(1)).await;
+                    packet_tick().await;
                 }
                 assert!(!held.is_empty());
                 let mut bytes = [0; 16];
@@ -343,7 +343,7 @@ async fn failed_authentication_and_retired_ids_cannot_poison_replacement_reserva
                         }
                         h.network.deliver(packet);
                     }
-                    tokio::time::advance(Duration::from_millis(1)).await;
+                    packet_tick().await;
                     if server.is_finished() {
                         break;
                     }

@@ -10,7 +10,7 @@ cargo test --workspace
 ```
 
 That command discovers unit/integration tests, doctests, bounded models, Miri,
-mutation controls, fuzz/sanitizer controls, standalone maintained crates, quiche,
+mutation controls, fuzz/sanitizer controls, owned workspace crates, upstream quiche adapters,
 C++ interoperability and downstream checks. Native tools and pinned verification
 prerequisites are still required; see [Testing](Testing.md) and the
 [full setup action](../../.github/actions/quality-setup/action.yml). Tests launch
@@ -21,7 +21,7 @@ records their rationale.
 
 | Workflow | Trigger | Scope and README artifact |
 | --- | --- | --- |
-| [CI](../../.github/workflows/ci.yml) | PR; push to `main`; manual | Library/binary builds and RPC/pipelining, transport and selected feature checks on all three OSes. Linux/macOS also test storage reopen; Linux enforces allocation budgets and QUIC v2 interoperability. `platform-report` |
+| [CI](../../.github/workflows/ci.yml) | PR; push to `main`; manual | Library/binary builds and RPC/pipelining, transport and selected feature checks on all three OSes. Linux/macOS also test storage reopen; Linux enforces allocation budgets and QUIC v1 interoperability. `platform-report` |
 | [CI / Workflow validation](../../.github/workflows/ci-workflows.yml) | Called once by CI; manual | Workflow, auditable-build, trigger-test and README-reporting changes: actionlint with ShellCheck/Pyflakes, trigger regression tests, reporting tests and Zizmor |
 | [CI / Documentation](../../.github/workflows/ci-docs.yml) | Called once by CI; Tuesday 05:43 UTC; manual | Documentation/workflow/wiki-tool changes: wiki validation/export and local links. External checks are advisory and run only weekly/manually. `github-wiki`, `documentation-links` |
 | [Verification / Extended](../../.github/workflows/verification-extended.yml) | Wednesday 04:37 UTC; manual | Bounded Miri endian/seed sweep, native cargo-careful checks, LLVM IR size reports, and guard mutation/coverage controls in independent jobs |
@@ -123,7 +123,8 @@ match. TLA+ reports retain separate libtest replay counts and unique
 module/configuration/expected-exit checks; state totals across configurations
 are not a claim of globally distinct states. Fuzz feedback and source coverage
 have different units and are never combined. The new Cargo coverage scope is
-`first-party-cargo-rust-v2`: old combined-suite baselines need explicit review.
+`first-party-owned-crates-v3`: older scopes need explicit review; the imported core, RPC, futures and codegen
+crates are now included.
 
 Every producer uploads a README, SVGs, measured counters and diagnostics and
 publishes its own measured commit through the trusted report publisher. Cancelled
@@ -171,8 +172,8 @@ Each platform smoke job checks wrapper argument forwarding, including the
 macOS runner's Bash 3.2, before invoking Cargo. Schema fixtures come from the
 pinned C++ submodule; Linux jobs install both the compiler and schema headers.
 
-Platform jobs also package and compile the extracted `capnp` crate with Rust
-1.97.0, its declared minimum. Package contents include sources, tests, schemas,
+Platform jobs also package and compile the extracted `capntproto-core` crate with Rust
+1.97.0, its declared minimum. Package contents include sources, tests,
 license and documentation, while upstream archive metadata remains outside it.
 Platform jobs extract dependency metadata from both application binaries and
 fail if it is missing; their JSON inventories include binary SHA-256 hashes.
@@ -200,12 +201,10 @@ security audit.
 
 ## Focused checks and tool versions
 
-The standalone maintained `capnp` crate is outside the workspace, so workspace
-linting with `--no-deps` does not check it. Platform jobs run its all-targets
-Clippy check with warnings denied. The `capnp_runtime_lints` tooling test runs
-the same check through `cargo test --workspace`; the Linux
-`nightly_rpc_try_contracts` driver also checks the optional feature on the pinned
-nightly with Clippy installed.
+All maintained Rust implementations live in owned workspace crates. Workspace
+Clippy with warnings denied and ordinary Cargo tests cover them directly.
+The `core_feature_profiles` test checks no-std and allocation-only builds;
+`nightly_rpc_try_contracts` checks the optional feature on the pinned nightly.
 
 The platform jobs cover default-feature compile/smoke checks and selected minimal
 feature profiles; no feature powerset matrix is introduced. Allocation contracts in [allocations.rs](../../tests/allocations.rs)
@@ -272,10 +271,11 @@ artifacts from being shared across workspaces. Every collection uses fresh raw
 profiles even when Rust dependencies are restored from cache.
 
 Only project-owned `.rs` sources enter `coverage/FILES.md`, totals and regression
-checks: the runtime, compiler, compatibility crate, quality tools, test support,
+checks: the runtime, core, RPC, async framing, codegen, schema compiler,
+compatibility crate, quality tools, test support,
 tests, examples, fuzz harnesses, benchmarks and Miri checks. An explicit file
 allowlist is passed to **all** LLVM JSON, LCOV and HTML exports. Vendored crates,
-C++ reference sources, Cargo registry dependencies and generated `OUT_DIR` files
+C++ reference sources, Cargo registry dependencies generated `OUT_DIR` files and checked-in `*_capnp.rs` bindings
 are excluded. Instrumentation of linked Rust dependencies may still be present
 in raw execution profiles; it does not enter the published coverage scope.
 See [LLVM's source filtering](https://llvm.org/docs/CommandGuide/llvm-cov.html#export-command).
@@ -285,7 +285,7 @@ nonzero exit statuses, deadlines and cancellation still fail the collection.
 
 Zero-hit owned code remains in the denominator. Owned files without executable
 mappings are explicit N/A, never counted as covered. The scope is versioned as
-`first-party-cargo-rust-v2`; a baseline from the former vendor-inclusive scope is
+`first-party-owned-crates-v3`; a baseline from the former vendor-inclusive scope is
 rejected and must be reviewed again. Linux coverage does not qualify other OSes.
 
 Per-file and aggregate **line, region, function and branch ratios** must not

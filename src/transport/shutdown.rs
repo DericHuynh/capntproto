@@ -11,9 +11,11 @@ pub(super) struct ShutdownDriver {
     incoming_id: u64,
     outgoing: VecDeque<(u64, [u8; FRAME_BYTES])>,
     send_offset: usize,
-    incoming: [[u8; FRAME_BYTES + 1]; 2],
-    receive_offset: [usize; 2],
-    received: [bool; 2],
+    incoming: [[u8; FRAME_BYTES + 1]; 3],
+    receive_offset: [usize; 3],
+    received: [bool; 3],
+    ack_frame: Option<Frame>,
+    confirmation: Option<Frame>,
     ack_written: bool,
     ack_delivered: bool,
 }
@@ -27,9 +29,11 @@ impl ShutdownDriver {
             incoming_id: if server { 2 } else { 3 },
             outgoing: VecDeque::new(),
             send_offset: 0,
-            incoming: [[0; FRAME_BYTES + 1]; 2],
-            receive_offset: [0; 2],
-            received: [false; 2],
+            incoming: [[0; FRAME_BYTES + 1]; 3],
+            receive_offset: [0; 3],
+            received: [false; 3],
+            ack_frame: None,
+            confirmation: None,
             ack_written: false,
             ack_delivered: false,
         }
@@ -46,20 +50,28 @@ impl ShutdownDriver {
     pub fn acknowledged(&self) -> bool {
         self.protocol.ready(self.ack_delivered)
     }
+    /// Echo the exact receipt we validated, so an authenticated close can
+    /// confirm it even if the confirmation stream is reordered or lost.
+    pub fn close_reason(&self) -> Vec<u8> {
+        self.confirmation
+            .map(|f| f.encode().to_vec())
+            .unwrap_or_default()
+    }
     pub fn finish_on_close(&self, conn: &quiche::Connection) {
-        // A graceful peer close can overtake the transport ACK of our reply.
-        // It cannot replace the receipt, reciprocal request, input delivery or
-        // complete, unreset reply write. An unrelated close/idle timeout proves
-        // none of these. The authenticated application code states the peer completed
-        // its side of this exchange; the reason text is diagnostic only.
+        let valid_close = conn.peer_error().is_some_and(|error| {
+            error.is_app
+                && error.error_code == ACKNOWLEDGED_CLOSE
+                && (!self.protocol.expects_peer
+                    || self
+                        .ack_frame
+                        .is_some_and(|frame| error.reason.as_slice() == frame.encode()))
+        });
+        // A close code alone never confirms the reciprocal receipt. The peer
+        // must echo its nonce and byte fence over this authenticated connection.
         if (conn.is_closed() || conn.is_draining())
             && !conn.is_timed_out()
-            && conn
-                .peer_error()
-                .is_some_and(|error| error.is_app && error.error_code == ACKNOWLEDGED_CLOSE)
+            && valid_close
             && self.protocol.ready(self.ack_written)
-            && (!self.protocol.expects_peer
-                || conn.stream_send_acknowledged(self.outgoing_id + 4).is_ok())
         {
             self.control.finish(Ok(crate::native_shutdown::Receipt {
                 bytes: self.protocol.sent.unwrap().bytes,
@@ -78,9 +90,9 @@ impl ShutdownDriver {
                 self.protocol.request(self.nonce, written)?.encode(),
             ));
         }
-        // Each direction has one request stream (2/3) and one acknowledgement
-        // stream (6/7). Both contain exactly one bounded frame and a FIN.
-        for index in 0..2 {
+        // Request (2/3), receipt (6/7), and receipt confirmation (10/11).
+        // Each stream carries exactly one bounded frame and a FIN.
+        for index in 0..3 {
             if self.received[index] {
                 continue;
             }
@@ -109,7 +121,22 @@ impl ShutdownDriver {
                                     "wrong Native shutdown stream",
                                 ));
                             }
-                            self.protocol.receive(frame)?;
+                            if index == 2 {
+                                if !self.ack_written || self.ack_frame != Some(frame) {
+                                    return Err(io::Error::new(
+                                        io::ErrorKind::InvalidData,
+                                        "invalid Native shutdown receipt confirmation",
+                                    ));
+                                }
+                                self.ack_delivered = true;
+                            } else {
+                                self.protocol.receive(frame)?;
+                                if index == 1 {
+                                    self.confirmation = Some(frame);
+                                    self.outgoing
+                                        .push_back((self.outgoing_id + 8, frame.encode()));
+                                }
+                            }
                             self.received[index] = true;
                             if index == 0 {
                                 self.control.peer_closing();
@@ -130,6 +157,7 @@ impl ShutdownDriver {
         // request/data arrived first. The remote side then waits for both legs.
         if !self.requested() || self.protocol.sent.is_some() {
             if let Some(ack) = self.protocol.acknowledge() {
+                self.ack_frame = Some(ack);
                 self.outgoing
                     .push_back((self.outgoing_id + 4, ack.encode()));
             }
@@ -151,11 +179,6 @@ impl ShutdownDriver {
                 Err(quiche::Error::Done) => break,
                 Err(e) => return Err(super::error(e)),
             }
-        }
-        if self.ack_written {
-            self.ack_delivered = conn
-                .stream_send_acknowledged(self.outgoing_id + 4)
-                .map_err(super::error)?;
         }
         Ok(())
     }
@@ -299,48 +322,38 @@ mod tests {
             assert!(result.is_ok(), "crossed={crossed} a_offsets={:?}/{} b_offsets={:?}/{} a_received={:?} b_received={:?} ackwritten={}/{} ackdelivered={}/{} timeouts={:?}/{:?}", ad.receive_offset,ad.send_offset,bd.receive_offset,bd.send_offset,ad.received,bd.received,ad.ack_written,bd.ack_written,ad.ack_delivered,bd.ack_delivered,a.timeout(),b.timeout());
         }
     }
-    #[tokio::test(flavor = "current_thread")]
-    async fn explicit_send_receipt_survives_collection_but_rejects_resets() {
-        let (mut a, mut b) = pair(128);
-        assert!(a.stream_send_acknowledged(6).is_err());
-        a.stream_send(6, b"receipt", true).unwrap();
-        assert!(!a.stream_send_acknowledged(6).unwrap());
-        tokio::time::timeout(Duration::from_secs(2), async {
-            loop {
-                pump(&mut a, &mut b, &mut false);
-                let _ = b.stream_recv(6, &mut [0; 32]);
-                pump(&mut b, &mut a, &mut false);
-                if a.stream_send_acknowledged(6).unwrap() {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(2)).await;
-                timeout(&mut a);
-                timeout(&mut b);
-            }
-        })
-        .await
-        .unwrap();
-        assert!(a.stream_send_acknowledged(6).unwrap());
-        for stopped in [false, true] {
+    #[test]
+    fn confirmation_must_echo_the_complete_receipt() {
+        for fault in 0..5 {
             let (mut a, mut b) = pair(128);
-            a.stream_send(6, b"never acknowledge reset", false).unwrap();
-            if stopped {
-                pump(&mut a, &mut b, &mut false);
-                b.stream_shutdown(6, quiche::Shutdown::Read, 42).unwrap();
-                pump(&mut b, &mut a, &mut false);
-                assert!(matches!(
-                    a.stream_send_acknowledged(6),
-                    Err(quiche::Error::StreamStopped(42))
-                ));
-            } else {
-                a.stream_shutdown(6, quiche::Shutdown::Write, 42).unwrap();
+            let mut driver = ShutdownDriver::new(Control::new(), false);
+            let request = Frame {
+                kind: 1,
+                nonce: [4; 16],
+                bytes: 0,
+            };
+            b.stream_send(3, &request.encode(), true).unwrap();
+            pump(&mut b, &mut a, &mut false);
+            driver.step(&mut a, 0, true).unwrap();
+            assert!(driver.ack_written);
+            assert!(!driver.ack_delivered);
+            let mut echo = driver.ack_frame.unwrap().encode().to_vec();
+            match fault {
+                1 => echo[5] ^= 1,
+                2 => echo[21] ^= 1,
+                3 => {
+                    echo.pop();
+                }
+                _ => (),
             }
-            for _ in 0..4 {
-                pump(&mut a, &mut b, &mut false);
-                pump(&mut b, &mut a, &mut false);
-                let _ = a.stream_capacity(6); // May collect stopped state.
-                assert_ne!(a.stream_send_acknowledged(6), Ok(true));
+            b.stream_send(11, &echo, fault != 4).unwrap();
+            if fault == 4 {
+                b.stream_shutdown(11, quiche::Shutdown::Write, 42).unwrap();
             }
+            pump(&mut b, &mut a, &mut false);
+            let result = driver.step(&mut a, 0, true);
+            assert_eq!(result.is_ok(), fault == 0, "fault={fault}");
+            assert_eq!(driver.ack_delivered, fault == 0);
         }
     }
     #[test]

@@ -387,7 +387,7 @@ fn rust_request_generates_compilable_bindings_and_round_trips() {
         .run(bytes.as_slice())
         .unwrap();
     fs::write(project.path().join("Cargo.toml"), format!(
-        "[package]\nname = \"rust-schema-acceptance\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\ncapnp = {{ path = {:?} }}\n", root().join("vendor/capnp"))).unwrap();
+        "[package]\nname = \"rust-schema-acceptance\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\ncapnp = {{ package = \"capntproto-core\", path = {:?} }}\n", root().join("crates/capntproto-core"))).unwrap();
     fs::write(
         project.path().join("src/lib.rs"),
         r#"
@@ -624,7 +624,7 @@ fn imported_rust_bindings_compile_and_round_trip_without_cpp() {
         .run(capnp::serialize::write_message_to_words(&request).as_slice())
         .unwrap();
     fs::write(project.path().join("Cargo.toml"), format!(
-        "[package]\nname = \"rust-import-acceptance\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\ncapnp = {{ path = {:?} }}\n", root().join("vendor/capnp"))).unwrap();
+        "[package]\nname = \"rust-import-acceptance\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\ncapnp = {{ package = \"capntproto-core\", path = {:?} }}\n", root().join("crates/capntproto-core"))).unwrap();
     fs::write(
         project.path().join("src/lib.rs"),
         r#"
@@ -807,7 +807,7 @@ fn union_group_bindings_switch_alternatives_and_preserve_other_fields() {
         .run(capnp::serialize::write_message_to_words(&request).as_slice())
         .unwrap();
     fs::write(project.path().join("Cargo.toml"), format!(
-        "[package]\nname = \"rust-union-acceptance\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\ncapnp = {{ path = {:?} }}\n", root().join("vendor/capnp"))).unwrap();
+        "[package]\nname = \"rust-union-acceptance\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\ncapnp = {{ package = \"capntproto-core\", path = {:?} }}\n", root().join("crates/capntproto-core"))).unwrap();
     fs::write(project.path().join("src/lib.rs"), r#"
 pub mod choices_capnp;
 #[test]
@@ -1270,7 +1270,7 @@ fn constant_bindings_and_imported_data_defaults_compile_and_round_trip() {
         .unwrap();
     assert!(!project.path().join("src/external_capnp.rs").exists());
     fs::write(project.path().join("Cargo.toml"), format!(
-        "[package]\nname = \"rust-constant-acceptance\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\ncapnp = {{ path = {:?} }}\n", root().join("vendor/capnp"))).unwrap();
+        "[package]\nname = \"rust-constant-acceptance\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\ncapnp = {{ package = \"capntproto-core\", path = {:?} }}\n", root().join("crates/capntproto-core"))).unwrap();
     fs::write(
         project.path().join("src/lib.rs"),
         r#"
@@ -1628,7 +1628,7 @@ fn composite_constants_and_defaults_generate_bindings_and_round_trip() {
         .run(capnp::serialize::write_message_to_words(&request).as_slice())
         .unwrap();
     fs::write(project.path().join("Cargo.toml"), format!(
-        "[package]\nname = \"rust-composite-acceptance\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\ncapnp = {{ path = {:?} }}\n", root().join("vendor/capnp"))).unwrap();
+        "[package]\nname = \"rust-composite-acceptance\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\ncapnp = {{ package = \"capntproto-core\", path = {:?} }}\n", root().join("crates/capntproto-core"))).unwrap();
     fs::write(project.path().join("src/lib.rs"), r#"
 #![deny(unreachable_pub)]
 pub mod composites_capnp;

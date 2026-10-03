@@ -10,7 +10,7 @@ use std::{
     process::Command,
 };
 pub const NIGHTLY: &str = "nightly-2026-03-05";
-pub const SCOPE: &str = "first-party-cargo-rust-v2";
+pub const SCOPE: &str = "first-party-owned-crates-v3";
 const FLAGS: &str = "-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch";
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -68,6 +68,10 @@ pub struct Summary {
 fn owned_source(path: &Path) -> bool {
     if path.extension().is_none_or(|ext| ext != "rs")
         || path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.ends_with("_capnp.rs"))
+        || path
             .components()
             .any(|part| !matches!(part, std::path::Component::Normal(_)))
         || path
@@ -79,6 +83,10 @@ fn owned_source(path: &Path) -> bool {
     path == Path::new("build.rs")
         || [
             "src",
+            "crates/capntproto-core",
+            "crates/capntproto-rpc",
+            "crates/capntproto-futures",
+            "crates/capntproto-codegen",
             "crates/capntproto-compiler",
             "crates/capntproto-compat",
             "test-support",
@@ -151,6 +159,14 @@ fn group(path: &str) -> &str {
         "schema-compiler"
     } else if path.starts_with("crates/capntproto-compat/") {
         "optional-compatibility"
+    } else if path.starts_with("crates/capntproto-core/") {
+        "wire-runtime"
+    } else if path.starts_with("crates/capntproto-rpc/") {
+        "capability-rpc"
+    } else if path.starts_with("crates/capntproto-futures/") {
+        "async-framing"
+    } else if path.starts_with("crates/capntproto-codegen/") {
+        "rust-codegen"
     } else if path.starts_with("tests/") || path.starts_with("test-support/") {
         "tests-and-verification"
     } else {
@@ -572,6 +588,10 @@ mod tests {
             "build.rs",
             "crates/capntproto-compiler/src/lib.rs",
             "crates/capntproto-compat/src/json.rs",
+            "crates/capntproto-core/src/lib.rs",
+            "crates/capntproto-rpc/src/lib.rs",
+            "crates/capntproto-futures/src/lib.rs",
+            "crates/capntproto-codegen/src/lib.rs",
             "quality/src/coverage.rs",
             "tests/storage.rs",
             "verification/miri/tests/ownership.rs",
@@ -579,7 +599,8 @@ mod tests {
             assert!(owned_source(Path::new(path)), "{path}");
         }
         for path in [
-            "vendor/capnp/src/lib.rs",
+            "crates/capntproto-core/src/schema_capnp.rs",
+            "crates/capntproto-rpc/src/rpc_capnp.rs",
             "vendor/quiche/quiche/src/lib.rs",
             "vendor/capnproto/c++/src/capnp/rpc.c++",
             "target/debug/build/schema.rs",
@@ -604,12 +625,12 @@ mod tests {
         let summary = json!({"lines":counts,"regions":counts,"functions":counts,"branches":counts});
         let exported = json!({"type":"llvm.coverage.json.export", "data":[{"files":[
             {"filename":"/repo/src/lib.rs", "summary":summary},
-            {"filename":"/repo/vendor/capnp/src/lib.rs", "summary":{}},
+            {"filename":"/repo/crates/capntproto-core/src/lib.rs", "summary":summary},
             {"filename":"/repo/target/debug/build/generated.rs", "summary":{}},
             {"filename":"/registry/dependency/src/lib.rs", "summary":{}}
         ]}]});
         let files = parse_export(&exported, Path::new("/repo")).unwrap();
-        assert_eq!(files.len(), 1);
+        assert_eq!(files.len(), 2);
         assert_eq!(
             files["src/lib.rs"].lines,
             Metric {

@@ -202,7 +202,7 @@ cargo test --locked --test deferred_handoff --test disconnect_cleanup --test nat
 cargo test --locked --test tooling installed_cpp_rpc_interoperability -- --exact
 ```
 
-[RPC IDs](../../vendor/capnp-rpc/src/rpc_ids.rs) are distinct private types for local
+[RPC IDs](https://github.com/DericHuynh/capntproto/blob/7b0a5aafb6a58f6216979c7c9517739a5687428e/vendor/capnp-rpc/src/rpc_ids.rs) are distinct private types for local
 questions, answers, imports, exports and embargoes. Decoding follows the local
 endpoint's perspective: incoming Call/Finish IDs address answers, Return IDs
 address questions, sender-owned capability descriptors address imports, and
@@ -210,7 +210,7 @@ Release/receiver-owned descriptors address exports. The schema continues to use
 32-bit numbers, including zero. `RequestHook::tail_send()` remains a shared hook
 boundary exposing a wire number; peer-owned loopback contexts are echoed opaquely.
 
-[Tables](../../vendor/capnp-rpc/src/rpc_tables.rs) require the matching key type and
+[Tables](https://github.com/DericHuynh/capntproto/blob/7b0a5aafb6a58f6216979c7c9517739a5687428e/vendor/capnp-rpc/src/rpc_tables.rs) require the matching key type and
 local/peer allocation role. Only questions support high or adopted insertion.
 Private allocator storage centralizes allocation and removal: removing a missing
 entry is inert, duplicate removal cannot duplicate a free slot, and failed

@@ -1,4 +1,4 @@
-//! One Tokio time domain for the production transport and its runtime controls.
+//! Upstream recovery uses system time; application deadlines use Tokio time.
 use super::{engine::Engine, engine_tests, mobility, scheduling, PacketSocket};
 use crate::native_shutdown::Control;
 use futures::FutureExt;
@@ -19,21 +19,15 @@ fn discard_packets(engine: &mut Engine) -> usize {
     let mut count = 0;
     loop {
         match engine.conn.send(&mut [0; 1350]) {
-            Ok((_, info)) => {
-                // Quiche's pacing timestamps must inhabit the runtime's time
-                // domain even when the test starts minutes ahead of wall time.
-                assert!(info.at >= Instant::now().into_std());
-                count += 1;
-            }
+            Ok(_) => count += 1,
             Err(quiche::Error::Done) => return count,
             other => panic!("send failed: {other:?}"),
         }
     }
 }
 
-#[tokio::test(start_paused = true)]
-async fn recovery_and_packet_pacing_follow_runtime_time_after_loss() {
-    tokio::time::advance(Duration::from_secs(600)).await;
+#[tokio::test]
+async fn upstream_recovery_retransmits_after_real_timeout() {
     let (mut a, mut b) = engine_tests::pair();
     establish(&mut a, &mut b);
     a.tx.read_buffer().unwrap()[..4].copy_from_slice(b"lost");
@@ -42,8 +36,8 @@ async fn recovery_and_packet_pacing_follow_runtime_time_after_loss() {
     assert!(discard_packets(&mut a) > 0);
     let timeout = a.conn.timeout().unwrap();
     assert!(timeout > Duration::ZERO && timeout < Duration::from_secs(1));
-    // The first probe must become due in virtual time, without wall-clock sleep.
-    tokio::time::advance(timeout).await;
+    // Upstream recovery is driven by std::time::Instant.
+    tokio::time::sleep(timeout + Duration::from_millis(1)).await;
     assert_eq!(a.conn.timeout(), Some(Duration::ZERO));
     a.conn.on_timeout();
     for _ in 0..50 {
@@ -63,19 +57,20 @@ async fn recovery_and_packet_pacing_follow_runtime_time_after_loss() {
     assert!(b.rx.pending().is_empty());
 }
 
-#[tokio::test(start_paused = true)]
-async fn idle_expiry_is_virtual_and_does_not_expire_a_new_generation() {
-    let (mut a, mut b) = engine_tests::pair();
+#[tokio::test]
+async fn upstream_idle_expiry_does_not_expire_a_new_generation() {
+    let addresses = [
+        "127.0.0.1:1234".parse().unwrap(),
+        "127.0.0.1:4321".parse().unwrap(),
+    ];
+    let (mut a, mut b) = engine_tests::pair_at(addresses, |c| {
+        c.set_max_idle_timeout(100);
+        c.set_initial_rtt(Duration::from_millis(5));
+    });
     establish(&mut a, &mut b);
-    // The fixture drains the handshake/ACK flights, leaving only idle expiry.
-    let timeout = a.conn.timeout().unwrap();
-    assert_eq!(timeout, Duration::from_secs(10));
-    tokio::time::advance(timeout - Duration::from_millis(1)).await;
-    a.conn.on_timeout();
-    assert!(!a.conn.is_closed());
+    tokio::time::sleep(Duration::from_millis(150)).await;
     let (mut replacement, mut peer) = engine_tests::pair();
     establish(&mut replacement, &mut peer);
-    tokio::time::advance(Duration::from_millis(1)).await;
     a.conn.on_timeout();
     assert!(a.conn.is_closed() && a.conn.is_timed_out());
     assert_eq!(
@@ -88,7 +83,7 @@ async fn idle_expiry_is_virtual_and_does_not_expire_a_new_generation() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn pacing_migration_and_shutdown_deadlines_share_recovery_time() {
+async fn application_pacing_migration_and_shutdown_deadlines_use_runtime_time() {
     tokio::time::advance(Duration::from_secs(600)).await;
     let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let peer_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
@@ -167,56 +162,46 @@ async fn pacing_migration_and_shutdown_deadlines_share_recovery_time() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn outer_driver_observes_virtual_idle_and_shutdown_deadline_precedence() {
-    for shutdown in [false, true] {
-        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        let peer = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        let (mut a, mut b) = engine_tests::pair_at(
-            [socket.local_addr().unwrap(), peer.local_addr().unwrap()],
-            |_| {},
-        );
-        establish(&mut a, &mut b);
-        let deadline = a.conn.timeout().unwrap();
-        assert_eq!(deadline, Duration::from_secs(10));
-        let control = Control::new();
-        if shutdown {
-            control.begin(deadline).unwrap();
-        }
-        let (_application, io) = tokio::io::duplex(64);
-        let driver = super::drive(
-            PacketSocket::Dedicated(socket.into()),
-            a.conn,
-            io,
-            super::SessionDrivers {
-                established: None,
-                datagrams: None,
-                shutdown: Some(super::shutdown::ShutdownDriver::new(control.clone(), false)),
-                mobility: None,
-                scheduling: scheduling::pair().1,
-            },
-        );
-        tokio::pin!(driver);
-        assert!(driver.as_mut().now_or_never().is_none());
-        tokio::time::advance(deadline).await;
-        let error = driver
-            .as_mut()
-            .now_or_never()
-            .expect("driver did not expire in virtual time")
-            .unwrap_err();
-        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
-        assert_eq!(
-            error.to_string(),
-            if shutdown {
-                "Native shutdown acknowledgement timed out"
-            } else {
-                "Native session timed out"
-            }
-        );
-        assert_eq!(
-            control.wait().await.unwrap_err().kind(),
-            io::ErrorKind::TimedOut
-        );
-    }
+async fn outer_driver_observes_virtual_shutdown_deadline() {
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let peer = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let (mut a, mut b) = engine_tests::pair_at(
+        [socket.local_addr().unwrap(), peer.local_addr().unwrap()],
+        |_| {},
+    );
+    establish(&mut a, &mut b);
+    let control = Control::new();
+    control.begin(Duration::from_millis(40)).unwrap();
+    let (_application, io) = tokio::io::duplex(64);
+    let driver = super::drive(
+        PacketSocket::Dedicated(socket.into()),
+        a.conn,
+        io,
+        super::SessionDrivers {
+            established: None,
+            datagrams: None,
+            shutdown: Some(super::shutdown::ShutdownDriver::new(control.clone(), false)),
+            mobility: None,
+            scheduling: scheduling::pair().1,
+        },
+    );
+    tokio::pin!(driver);
+    assert!(driver.as_mut().now_or_never().is_none());
+    tokio::time::advance(Duration::from_millis(40)).await;
+    let error = driver
+        .as_mut()
+        .now_or_never()
+        .expect("shutdown deadline")
+        .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+    assert_eq!(
+        error.to_string(),
+        "Native shutdown acknowledgement timed out"
+    );
+    assert_eq!(
+        control.wait().await.unwrap_err().kind(),
+        io::ErrorKind::TimedOut
+    );
 }
 
 #[test]
@@ -250,28 +235,37 @@ fn replay_tlc_runtime_clock_and_replacement_deadlines() {
             .block_on(async {
                 tokio::time::advance(Duration::from_secs(600)).await;
                 let origin = Instant::now();
-                let (mut old, mut peer) = engine_tests::pair();
-                establish(&mut old, &mut peer);
+                let old = Control::new();
+                old.begin(Duration::from_secs(10)).unwrap();
+                let mut old_closed = false;
+                let mut new_closed = false;
                 let mut replacement = None;
                 for state in trace {
                     match state["event"] {
                         1 => tokio::time::advance(Duration::from_secs(5)).await,
                         2 => {
-                            let (mut new, mut peer) = engine_tests::pair();
-                            establish(&mut new, &mut peer);
+                            let new = Control::new();
+                            new.begin(Duration::from_secs(10)).unwrap();
                             replacement = Some(new);
                         }
-                        3 => old.conn.on_timeout(),
-                        4 => replacement.as_mut().unwrap().conn.on_timeout(),
+                        3 => old_closed = old.expired().now_or_never().is_some(),
+                        4 => {
+                            new_closed = replacement
+                                .as_ref()
+                                .unwrap()
+                                .expired()
+                                .now_or_never()
+                                .is_some()
+                        }
                         other => panic!("unknown clock event: {other}"),
                     }
                     assert_eq!((Instant::now() - origin).as_secs(), 5 * state["now"]);
-                    assert_eq!(old.conn.is_closed(), state["oldClosed"] == 1);
-                    assert_eq!(old.conn.is_timed_out(), state["oldClosed"] == 1);
+                    assert_eq!(old_closed, state["oldClosed"] == 1);
+                    assert_eq!(old_closed, state["oldClosed"] == 1);
                     assert_eq!(replacement.is_some(), state["replacement"] == 1);
-                    if let Some(new) = &replacement {
-                        assert_eq!(new.conn.is_closed(), state["newClosed"] == 1);
-                        assert_eq!(new.conn.is_timed_out(), state["newClosed"] == 1);
+                    if replacement.is_some() {
+                        assert_eq!(new_closed, state["newClosed"] == 1);
+                        assert_eq!(new_closed, state["newClosed"] == 1);
                     }
                 }
             });

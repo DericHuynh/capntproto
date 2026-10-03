@@ -12,5 +12,5 @@
     "src/serialize_packed.rs": "8963de038c2fba4724d05dee66fbeda28ba0a97df54e1dd65e4a04e59b454c21",
     "src/write_queue.rs": "5e8208d57b3240412d293e20e22804600cbc8f7aad7661ce0f4344a7c8df33a6"
   },
-  "change": "Explicit path dependency on the coordinated vendored capnp core; Rust sources unchanged."
+  "change": "Maintained as crates/capntproto-futures: buffered and scratch reads, batched vectored writes, queue diagnostics, cancellation and shutdown cleanup; coordinated path dependencies."
 }

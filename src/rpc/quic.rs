@@ -1,4 +1,4 @@
-//! Standard QUIC v1/v2 with quiche, TLS 1.3 and optional mandatory mTLS.
+//! Upstream QUIC v1 with quiche, TLS 1.3 and optional mandatory mTLS.
 //!
 //! One client-initiated stream carries ordinary Cap'n Proto RPC bytes. Configure
 //! CA trust explicitly. No resumption or application 0-RTT is enabled. All endpoint
@@ -29,7 +29,9 @@ use std::{
 use tokio::io::{AsyncRead, AsyncWrite, DuplexStream, ReadBuf};
 use tokio_util::compat::{Compat, TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-/// Authenticated RPC IO. Drop cancels the driver even when diagnostics are retained.
+/// Authenticated RPC IO. Drop cancels an open writer immediately. After successful
+/// write shutdown, drop cancels reading but lets Quiche finish queued transmission
+/// until the stream is collected or the connection closes/times out.
 pub struct Stream {
     io: DuplexStream,
     state: Rc<RefCell<driver::State>>,
@@ -79,15 +81,15 @@ impl AsyncWrite for Stream {
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         Pin::new(&mut self.io).poll_flush(cx)
     }
-    /// Wait for transport acknowledgement of every sent byte and FIN. The
-    /// receive half stays open; this does not acknowledge application execution.
+    /// Queue all buffered bytes and FIN in the upstream transport. The receive
+    /// half stays open. This is not a peer-delivery or application receipt.
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         match Pin::new(&mut self.io).poll_shutdown(cx) {
             Poll::Ready(Ok(())) => (),
             other => return other,
         }
         let mut state = self.state.borrow_mut();
-        if state.acknowledged {
+        if state.write_closed {
             return Poll::Ready(Ok(()));
         }
         if let Some(error) = state.error() {
@@ -107,7 +109,7 @@ pub async fn connect(
     rustls::pki_types::ServerName::try_from(server_name).map_err(tls::invalid_config)?;
     let ip = server_name.parse::<std::net::IpAddr>().ok();
     let id = crate::transport::cid();
-    let mut conn = {
+    let conn = {
         let mut config = endpoint.0.client.borrow_mut();
         let config = config
             .as_mut()
@@ -121,11 +123,26 @@ pub async fn connect(
         )
         .map_err(io::Error::other)?
     };
-    if let Some(ip) = ip {
-        conn.set_verify_peer_ip(ip).map_err(tls::invalid_config)?;
-    }
     let route = endpoint::register(&endpoint.0, vec![id.to_vec()])?;
-    driver::spawn(endpoint.0.clone(), route, Box::new(conn), timeout).await
+    let stream = driver::spawn(endpoint.0.clone(), route, Box::new(conn), timeout).await?;
+    if let Some(ip) = ip {
+        // Quiche verified the chain and server usage during TLS. IP literals
+        // bypass DNS/SNI; verify the IP SAN before exposing any application IO.
+        let certificate = stream
+            .certificates
+            .first()
+            .ok_or_else(|| tls::invalid_config("missing server certificate"))?;
+        let certificate = boring::x509::X509::from_der(certificate).map_err(tls::invalid_config)?;
+        if !certificate
+            .check_ip_asc(&ip.to_string())
+            .map_err(tls::invalid_config)?
+        {
+            return Err(tls::invalid_config(
+                "server certificate does not match the IP address",
+            ));
+        }
+    }
+    Ok(stream)
 }
 /// Complete authentication and await the first RPC stream under one deadline.
 pub async fn accept(incoming: Incoming, timeout: Duration) -> io::Result<Stream> {

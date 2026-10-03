@@ -9,7 +9,7 @@ qualification gates. [Architecture](Architecture.md) explains ownership.
 | --- | --- | --- |
 | Capability RPC | Calls, streaming, promise pipelines, tail transfers, cancellation policy, membranes and revocation | Drivers must run; cancellation does not undo effects |
 | Generated APIs | Field operations, directly awaitable calls, parameter closures and opt-in structured replies | Runtime errors remain for received data, authorization and application failures |
-| Bilateral transport | Plain TCP, CA-validated TLS 1.3/mTLS, quiche QUIC v1/v2, Linux/macOS descriptor transport | Plain TCP is unauthenticated; native macOS qualification remains open |
+| Bilateral transport | Plain TCP, CA-validated TLS 1.3/mTLS, quiche QUIC v1, Linux/macOS descriptor transport | Plain TCP is unauthenticated; native macOS qualification remains open |
 | Native multiparty network | Pinned Ed25519 mutual TLS over TCP or quiche, direct introductions, authenticated Join and answer adoption | Connector authority is configured; this is a project-specific network profile |
 | Native QUIC controls | Bounded datagrams, shared reservations, scheduling, CID rotation and validated client migration | TCP does not provide datagrams or QUIC path controls |
 | Resource controls | Per-connection outgoing Call limits, incoming flow control, queue/active-write metrics and protocol snapshots | No process-wide memory limit; byte/principal and local unresolved-call budgets remain open |

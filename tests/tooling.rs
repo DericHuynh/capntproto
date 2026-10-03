@@ -162,8 +162,8 @@ fn generated_api_compile_contracts() {
     .unwrap();
     let project = tempfile::tempdir().unwrap();
     fs::create_dir(project.path().join("src")).unwrap();
-    fs::write(project.path().join("Cargo.toml"), format!("[package]\nname = \"field-api-acceptance\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\ncapnp = {{ path = {:?} }}\n[build-dependencies]\ncapnpc = {{ path = {:?} }}\n", root().join("vendor/capnp"), root().join("vendor/capnpc"))).unwrap();
-    fs::write(project.path().join("build.rs"), format!("fn main() {{capnpc::CompilerCommand::new().src_prefix({:?}).file({:?}).import_path({:?}).field_api(true).field_api_values(true).field_api_projections(true).run().unwrap();}}",root().join("schemas"), root().join("schemas/field-api.capnp"), root().join("vendor/capnpc"))).unwrap();
+    fs::write(project.path().join("Cargo.toml"), format!("[package]\nname = \"field-api-acceptance\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\ncapnp = {{ package = \"capntproto-core\", path = {:?} }}\n[build-dependencies]\ncapnpc = {{ package = \"capntproto-codegen\", path = {:?} }}\n", root().join("crates/capntproto-core"), root().join("crates/capntproto-codegen"))).unwrap();
+    fs::write(project.path().join("build.rs"), format!("fn main() {{capnpc::CompilerCommand::new().src_prefix({:?}).file({:?}).import_path({:?}).field_api(true).field_api_values(true).field_api_projections(true).run().unwrap();}}",root().join("schemas"), root().join("schemas/field-api.capnp"), root().join("crates/capntproto-codegen"))).unwrap();
     assert!(cases.iter().any(|c| c.error.is_none()));
     assert!(cases.iter().any(|c| c.error.is_some()));
     // Establish positive controls before interpreting any negative diagnostics.
@@ -260,110 +260,36 @@ fn pinned_native_profile() {
     assert!(!graph.contains("snow v"));
     assert!(graph.contains("rustls v"));
     assert!(graph.contains("boring v"));
-    let runtime = cargo(
-        &[
-            "tree",
-            "--locked",
-            "-e",
-            "normal,build,features",
-            "-i",
-            "tokio",
-        ],
-        "native/runtime-clock",
-    );
-    assert!(runtime.contains("quiche feature \"tokio-clock\""));
-    assert!(!runtime.contains("tokio feature \"test-util\""));
     let output = cargo(
-        &["test", "--locked", "-p", "capntproto", "--test", "native"],
-        "native/backend",
+        &["metadata", "--locked", "--format-version", "1"],
+        "native/metadata",
     );
-    assert!(output.contains("0 failed"));
-    let provenance: Value = serde_json::from_slice(
-        &fs::read(root().join("vendor/provenance/quiche-revision.json")).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(
-        v::sha256(fs::read(root().join("vendor/provenance/quiche-native.patch")).unwrap()),
-        provenance["patch_sha256"].as_str().unwrap()
-    );
-    run(
-        command("git")
-            .arg("-C")
-            .arg(root())
-            .args(["apply", "--directory=vendor/quiche", "--reverse", "--check"])
-            .arg(root().join("vendor/provenance/quiche-native.patch")),
-        &log("native/patch"),
-        0,
-    )
-    .unwrap();
-}
-
-#[test]
-fn quiche_native_regressions() {
-    quiche_regressions(
-        "boringssl-boring-crate,custom-client-dcid,tokio-clock",
-        "native",
-    );
-}
-
-fn quiche_regressions(features: &str, report: &str) {
-    let base = [
-        "test",
-        "--locked",
-        "--manifest-path",
-        "vendor/quiche/Cargo.toml",
-        "-p",
-        "quiche",
-        "--no-default-features",
-        "--features",
-        features,
-        "--lib",
-        "--",
-    ];
-    let mut list = base.to_vec();
-    list.extend(["--list", "--format", "terse"]);
-    let inventory = cargo(&list, &format!("{report}/inventory"));
-    let all: BTreeSet<_> = inventory
-        .lines()
-        .filter_map(|line| line.strip_suffix(": test"))
+    let metadata: Value = serde_json::from_str(output.trim()).unwrap();
+    let packages: Vec<_> = metadata["packages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|p| p["name"] == "quiche")
         .collect();
-    let selected = all.len();
-    assert!(
-        selected >= 1104,
-        "Native regression selection unexpectedly shrank"
+    assert_eq!(packages.len(), 1);
+    assert_eq!(packages[0]["version"], "0.30.0");
+    assert_eq!(
+        packages[0]["source"],
+        "registry+https://github.com/rust-lang/crates.io-index"
     );
-    for required in [
-        "v2_tests::",
-        "tests::handshake::",
-        "tests::update_key_request::",
-        "tests::update_key_request_twice_error::",
-        "tests::connection_migration::",
-        "tests::dgram_multiple_datagrams::",
-        "tests::streamio::",
-        "tests::handshake_confirmation::",
-        "tests::early_1rtt_packet::",
-        "tests::limit_handshake_data::",
-        "tests::validate_peer_sent_ack_range_for_multi_path::",
-        "tests::stop_sending_before_flushed_packets::",
-        "tests::pmtud_probe_retry_after_loss::",
-        "tests::initial_cwnd::",
-    ] {
-        assert!(
-            all.iter().any(|name| name.starts_with(required)),
-            "missing critical regression family: {required}"
-        );
-    }
-    let output = cargo(&base, &format!("{report}/regressions"));
-    assert!(output.contains(&format!("{selected} passed; 0 failed; 0 ignored")));
-    assert!(output.contains("0 filtered out"));
-    eprintln!(
-        "Native regression gate ({features}): {selected} passed; no ignored or filtered cases"
-    );
+    let node = metadata["resolve"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| n["id"] == packages[0]["id"])
+        .unwrap();
+    assert!(!node["features"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|f| f == "fuzzing"));
+    assert!(!root().join("vendor/quiche").exists());
 }
-
-// The removed private Noise handshake and byte-deterministic Snow simulator
-// have no TLS equivalent. Standard QUIC recovery/handshake regressions above,
-// transport::backend_tests, and runtime_simulation exercise their replacements.
 
 #[test]
 fn nightly_rpc_try_contracts() {
@@ -378,7 +304,7 @@ fn nightly_rpc_try_contracts() {
         let common = [
             "--locked",
             "--manifest-path",
-            "vendor/capnp/Cargo.toml",
+            "crates/capntproto-core/Cargo.toml",
             "--features",
             "rpc_try",
         ];
@@ -404,7 +330,7 @@ fn nightly_rpc_try_contracts() {
             "check",
             "--locked",
             "--manifest-path",
-            "vendor/capnp/Cargo.toml",
+            "crates/capntproto-core/Cargo.toml",
             "--no-default-features",
             "--features",
             "rpc_try",
@@ -417,7 +343,7 @@ fn nightly_rpc_try_contracts() {
             "clippy",
             "--locked",
             "--manifest-path",
-            "vendor/capnp/Cargo.toml",
+            "crates/capntproto-core/Cargo.toml",
             "--features",
             "rpc_try",
             "--all-targets",
@@ -430,54 +356,14 @@ fn nightly_rpc_try_contracts() {
 }
 
 #[test]
-fn capnp_runtime_lints() {
-    // The runtime is outside the workspace: workspace --no-deps Clippy does
-    // not check it as a primary package, even when its consumers are checked.
-    cargo(
-        &[
-            "clippy",
-            "--locked",
-            "--manifest-path",
-            "vendor/capnp/Cargo.toml",
-            "--all-targets",
-            "--",
-            "-D",
-            "warnings",
-        ],
-        "capnp/clippy",
-    );
-}
-
-#[test]
-fn standalone_crate_tests() {
-    for name in ["capnp", "capnpc", "capnp-futures"] {
-        cargo(
-            &[
-                "test",
-                "--locked",
-                "--manifest-path",
-                &format!("vendor/{name}/Cargo.toml"),
-                "--all-targets",
-            ],
-            &format!("{name}/tests"),
-        );
-        cargo(
-            &[
-                "test",
-                "--locked",
-                "--manifest-path",
-                &format!("vendor/{name}/Cargo.toml"),
-                "--doc",
-            ],
-            &format!("{name}/doctests"),
-        );
-    }
+fn core_feature_profiles() {
+    // All owned crates' ordinary tests/lints are covered by --workspace.
     cargo(
         &[
             "check",
             "--locked",
             "--manifest-path",
-            "vendor/capnp/Cargo.toml",
+            "crates/capntproto-core/Cargo.toml",
             "--no-default-features",
             "--features",
             "alloc",
@@ -489,7 +375,7 @@ fn standalone_crate_tests() {
             "check",
             "--locked",
             "--manifest-path",
-            "vendor/capnp/Cargo.toml",
+            "crates/capntproto-core/Cargo.toml",
             "--no-default-features",
         ],
         "capnp/no-alloc",
@@ -659,7 +545,12 @@ fn external_consumer_default_features() {
         }
     }
     let mut manifest = fs::read_to_string(root().join("examples/downstream/Cargo.toml")).unwrap();
-    for suffix in ["/vendor/capnp-rpc", "/vendor/capnpc", "/vendor/capnp", ""] {
+    for suffix in [
+        "/crates/capntproto-rpc",
+        "/crates/capntproto-codegen",
+        "/crates/capntproto-core",
+        "",
+    ] {
         manifest = manifest.replace(
             &format!("path = \"../..{suffix}\""),
             &format!("path = {:?}", format!("{}{suffix}", root().display())),
@@ -693,7 +584,12 @@ fn external_consumer_default_features() {
         "metadata",
     );
     let metadata: Value = serde_json::from_str(output.trim()).unwrap();
-    for name in ["capnp", "capnpc", "capnp-rpc", "capnp-futures"] {
+    for name in [
+        "capntproto-core",
+        "capntproto-codegen",
+        "capntproto-rpc",
+        "capntproto-futures",
+    ] {
         let packages: Vec<_> = metadata["packages"]
             .as_array()
             .unwrap()
@@ -705,7 +601,7 @@ fn external_consumer_default_features() {
             PathBuf::from(packages[0]["manifest_path"].as_str().unwrap())
                 .parent()
                 .unwrap(),
-            root().join("vendor").join(name)
+            root().join("crates").join(name)
         );
     }
 }
@@ -804,7 +700,7 @@ fn schema_pin_and_wire_inventory() {
     }
     for name in ["rpc", "rpc-twoparty", "persistent"] {
         assert_eq!(
-            fs::read(root().join(format!("vendor/capnp-rpc/schema/{name}.capnp"))).unwrap(),
+            fs::read(root().join(format!("crates/capntproto-rpc/schema/{name}.capnp"))).unwrap(),
             fs::read(root().join(format!("vendor/capnproto/c++/src/capnp/{name}.capnp"))).unwrap()
         );
     }
@@ -927,39 +823,10 @@ fn cpp_decodes_durable_payloads() {
 
 #[test]
 fn formatting_and_lints() {
-    // Do not use `fmt --all`: quiche deliberately uses nightly-only formatting.
     cargo(
-        &[
-            "fmt",
-            "-p",
-            "capntproto",
-            "-p",
-            "capntproto-test-support",
-            "-p",
-            "capntproto-quality",
-            "-p",
-            "capntproto-compiler",
-            "-p",
-            "capntproto-compat",
-            "-p",
-            "capnp-rpc",
-            "--",
-            "--check",
-        ],
+        &["fmt", "--all", "--", "--check"],
         "quality/workspace-format",
     );
-    for name in ["capnp", "capnpc", "capnp-futures"] {
-        cargo(
-            &[
-                "fmt",
-                "--manifest-path",
-                &format!("vendor/{name}/Cargo.toml"),
-                "--",
-                "--check",
-            ],
-            &format!("quality/{name}-format"),
-        );
-    }
     cargo(
         &[
             "fmt",

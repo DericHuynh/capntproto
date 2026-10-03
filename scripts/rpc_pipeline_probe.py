@@ -33,11 +33,11 @@ def main():
         'examples/rpc_pipeline_probe.rs', 'scripts/rpc_pipeline_probe.py',
         'Cargo.toml', 'Cargo.lock', 'schemas/runtime-test.capnp', 'test-support/build.rs',
         'vendor/provenance/revision.json', 'vendor/provenance/capnp-rpc-revision.json',
-        'vendor/capnp-rpc/src/rpc.rs', 'vendor/capnp-rpc/src/queued.rs',
-        'vendor/capnp-rpc/src/local.rs', 'vendor/capnp-rpc/src/pipeline_builder.rs',
-        'vendor/capnp-rpc/src/twoparty.rs', 'vendor/capnp-futures/src/write_queue.rs',
-        'vendor/capnp-futures/src/serialize.rs', 'vendor/capnp-futures/src/buffered_read.rs',
-        'vendor/capnp/src/capability.rs', 'vendor/capnpc/src/codegen.rs',
+        'crates/capntproto-rpc/src/rpc.rs', 'crates/capntproto-rpc/src/queued.rs',
+        'crates/capntproto-rpc/src/local.rs', 'crates/capntproto-rpc/src/pipeline_builder.rs',
+        'crates/capntproto-rpc/src/twoparty.rs', 'crates/capntproto-futures/src/write_queue.rs',
+        'crates/capntproto-futures/src/serialize.rs', 'crates/capntproto-futures/src/buffered_read.rs',
+        'crates/capntproto-core/src/capability.rs', 'crates/capntproto-codegen/src/codegen.rs',
     ]
     environment = {
         'captured_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),

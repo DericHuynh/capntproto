@@ -21,8 +21,8 @@
     "src/twoparty.rs": "1326eabfe23a1e32e3f3fbdbefe13c7d96a426629c2b5f1c23c8993d8369b474"
   },
   "pinned_schemas": {
-    "vendor/capnp-rpc/schema/persistent.capnp": "d77d4d2e2c1e9c42ded13de54ed11b535b076ac210945b53ecf76fd7648a867a",
-    "vendor/capnp-rpc/schema/rpc-twoparty.capnp": "22680f70c56e3c44dc73b52bf8dfd2838a5ea44249be01609be2d362d308b518",
-    "vendor/capnp-rpc/schema/rpc.capnp": "2ecc3049d4f7f2d48a3a368dbb9ef4b97b31c1365996d615bd19c267983a1931"
+    "crates/capntproto-rpc/schema/persistent.capnp": "d77d4d2e2c1e9c42ded13de54ed11b535b076ac210945b53ecf76fd7648a867a",
+    "crates/capntproto-rpc/schema/rpc-twoparty.capnp": "22680f70c56e3c44dc73b52bf8dfd2838a5ea44249be01609be2d362d308b518",
+    "crates/capntproto-rpc/schema/rpc.capnp": "2ecc3049d4f7f2d48a3a368dbb9ef4b97b31c1365996d615bd19c267983a1931"
   }
 }

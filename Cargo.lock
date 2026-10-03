@@ -163,51 +163,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
-name = "capnp"
-version = "0.25.6"
-dependencies = [
- "embedded-io",
-]
-
-[[package]]
-name = "capnp-futures"
-version = "0.25.2"
-dependencies = [
- "capnp",
- "futures-channel",
- "futures-util",
-]
-
-[[package]]
-name = "capnp-rpc"
-version = "0.25.1"
-dependencies = [
- "capnp",
- "capnp-futures",
- "capnpc",
- "futures",
-]
-
-[[package]]
-name = "capnpc"
-version = "0.25.3"
-dependencies = [
- "capnp",
- "pulldown-cmark",
- "pulldown-cmark-to-cmark",
-]
-
-[[package]]
 name = "capntproto"
 version = "0.1.0"
 dependencies = [
  "allocation-counter",
  "boring",
- "capnp",
- "capnp-futures",
- "capnp-rpc",
- "capnpc",
+ "capntproto-codegen",
  "capntproto-compiler",
+ "capntproto-core",
+ "capntproto-futures",
+ "capntproto-rpc",
  "capntproto-test-support",
  "fs2",
  "futures",
@@ -231,14 +196,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "capntproto-codegen"
+version = "0.25.3"
+dependencies = [
+ "capntproto-core",
+ "pulldown-cmark",
+ "pulldown-cmark-to-cmark",
+]
+
+[[package]]
 name = "capntproto-compat"
 version = "0.1.0"
 dependencies = [
  "base64",
- "capnp",
- "capnp-rpc",
- "capnpc",
+ "capntproto-codegen",
  "capntproto-compiler",
+ "capntproto-core",
+ "capntproto-rpc",
  "capntproto-test-support",
  "futures",
  "serde_json",
@@ -251,10 +225,29 @@ dependencies = [
 name = "capntproto-compiler"
 version = "0.1.0"
 dependencies = [
- "capnp",
+ "capntproto-core",
  "getrandom 0.4.3",
  "md5",
  "tempfile",
+]
+
+[[package]]
+name = "capntproto-core"
+version = "0.25.6"
+dependencies = [
+ "embedded-io",
+ "quickcheck",
+]
+
+[[package]]
+name = "capntproto-futures"
+version = "0.25.2"
+dependencies = [
+ "capntproto-core",
+ "futures",
+ "futures-channel",
+ "futures-util",
+ "quickcheck",
 ]
 
 [[package]]
@@ -270,13 +263,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "capntproto-rpc"
+version = "0.25.1"
+dependencies = [
+ "capntproto-codegen",
+ "capntproto-core",
+ "capntproto-futures",
+ "futures",
+]
+
+[[package]]
 name = "capntproto-test-support"
 version = "0.1.0"
 dependencies = [
- "capnp",
- "capnp-rpc",
- "capnpc",
+ "capntproto-codegen",
  "capntproto-compiler",
+ "capntproto-core",
+ "capntproto-rpc",
  "flate2",
  "fs2",
  "ring",
@@ -426,6 +429,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "env_logger"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a19187fea3ac7e84da7dacf48de0c45d63c6a76f9490dae389aead16c243fce3"
+dependencies = [
+ "log",
+ "regex",
 ]
 
 [[package]]
@@ -666,12 +679,9 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "intrusive-collections"
-version = "0.9.7"
+version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "189d0897e4cbe8c75efedf3502c18c887b05046e59d28404d4d8e46cbc4d1e86"
-dependencies = [
- "memoffset",
-]
+checksum = "4275b20e6057cd7733fd8df8a5a31701e4fe44497dad0f3fa0e1c4fb971506be"
 
 [[package]]
 name = "itertools"
@@ -761,15 +771,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "memoffset"
-version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
-dependencies = [
- "autocfg",
-]
-
-[[package]]
 name = "minimal-lexical"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -843,6 +844,8 @@ dependencies = [
 [[package]]
 name = "octets"
 version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d59d30d3ad7f7e1c9a66e51c9cb71ae1c794b28ffe7053fd785defb0d180069"
 
 [[package]]
 name = "oid-registry"
@@ -971,7 +974,9 @@ dependencies = [
 
 [[package]]
 name = "quiche"
-version = "0.29.3"
+version = "0.30.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52b35a721a2a56797347929745fa783fc99e680d9484b80324ce40106b75493a"
 dependencies = [
  "boring",
  "boring-sys",
@@ -987,8 +992,18 @@ dependencies = [
  "octets",
  "slab",
  "smallvec",
- "tokio",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "quickcheck"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "588f6378e4dd99458b60ec275b4477add41ce4fa9f64dcba6f15adccb19b50d6"
+dependencies = [
+ "env_logger",
+ "log",
+ "rand 0.8.8",
 ]
 
 [[package]]

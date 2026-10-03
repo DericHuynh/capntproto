@@ -6,12 +6,11 @@ The public two-party RPC adapters support three ordinary network transports:
 | --- | --- | --- |
 | `capntproto::rpc::tcp` | Cap'n Proto RPC on TCP | Plaintext; no peer authentication |
 | `capntproto::rpc::tls` | Cap'n Proto RPC on TLS 1.3/TCP | Server certificates, optional required client certificates |
-| `capntproto::rpc::quic` | Cap'n Proto RPC on standard QUIC v1 or v2 | TLS 1.3 server certificates, optional required client certificates |
+| `capntproto::rpc::quic` | Cap'n Proto RPC on standard QUIC v1 | TLS 1.3 server certificates, optional required client certificates |
 
 TLS/TCP uses Cargo-managed rustls and tokio-rustls. All QUIC uses quiche with
 Cargo-managed BoringSSL, including standard two-party RPC and the authenticated
-[native multiparty profile](Native-Transports.md). The quiche source patch and
-pinned revision are recorded under `vendor/provenance/`.
+[native multiparty profile](Native-Transports.md). The unmodified quiche 0.30.0 registry package and checksum are pinned in Cargo.lock.
 
 Defaults enable `quic-quiche`, services and storage. `quic` and `quic-quiche`
 both enable the single QUIC engine and native sessions. For TLS/TCP alone use
@@ -111,7 +110,7 @@ let server = Endpoint::server(
 )?;
 let mut client = Endpoint::client("0.0.0.0:0".parse()?)?;
 client.set_default_client_config(quic::client_config_for_version(
-    server_ca_certificates, Some(client_identity), Version::V2,
+    server_ca_certificates, Some(client_identity), Version::V1,
 )?);
 let stream = quic::connect(
     &client, server_address, "rpc.example.com", Duration::from_secs(10),
@@ -119,16 +118,16 @@ let stream = quic::connect(
 // quic::client(stream, bootstrap, side, reader_options) returns the RPC driver.
 ```
 
-`client_config(roots, identity)` defaults to v1. Servers accept v1 and v2 on one
-socket. `stream.version()` reports the authenticated wire version. Both versions
-have the same RPC, TLS/mTLS and ALPN behavior. Clients verify a DNS name or IP subject alternative name;
-invalid names are rejected and IP literals are not sent as SNI. Roots are explicit; system trust is
-not loaded implicitly. Supplying client roots makes client authentication
-mandatory. `stream.peer_certificates()` exposes the verified peer chain.
+`client_config(roots, identity)` defaults to v1, the version supported by upstream
+Quiche 0.30.0. Explicit `Version::V2` requests return `Unsupported`; there is no
+silent downgrade. Servers accept v1 and `stream.version()` reports that version.
+Clients verify the certificate chain and DNS name or IP subject alternative name;
+IP literals are checked before exposing the authenticated stream and are not
+sent as SNI. Roots are explicit; system trust is not loaded implicitly.
+Supplying client roots makes authentication mandatory.
+`stream.peer_certificates()` exposes the verified peer chain.
 
-Version selection is explicit, with no automatic downgrade or compatible
-in-handshake switching. The engine validates RFC 9368 version information,
-mandatory for v2. Both versions use full TLS handshakes with no resumption or
+Sessions use full TLS handshakes with no resumption or
 application 0-RTT. `ServerConfig::require_retry(true)` enables stateless Retry
 before allocating handshake state; tokens expire after ten seconds and bind
 the source address, wire version, original destination CID and Retry CID.
@@ -146,10 +145,12 @@ stream. `quic::listen` performs concurrent bounded setup with the same
 cancels pending setup while established streams retain their packet router.
 The endpoint also bounds its incoming queue, route count and per-route packets.
 
-Write shutdown waits for transport acknowledgement of every sent byte and FIN.
-The receive direction stays open. Connection failure cannot substitute for an
-acknowledgement. This receipt does not prove method execution. Dropping a stream
-cancels its driver and retires its route. `Endpoint::wait_idle()` waits for route
+Write shutdown queues all buffered bytes and FIN into Quiche; the receive
+direction stays open. It is local write completion, not a peer receipt or method
+completion. Applications requiring delivery confirmation must use a response or
+the Native session shutdown protocol. Dropping a stream with an open writer cancels its driver immediately. After
+successful write shutdown, drop cancels reading while Quiche retains pending
+transmission until stream collection or connection close/idle timeout. `Endpoint::wait_idle()` waits for route
 release.
 
 ## Verification
@@ -160,18 +161,17 @@ cargo test --locked --no-default-features --features tls --test secure_rpc
 cargo test --locked --no-default-features --features quic --test secure_rpc
 cargo test --locked --lib transport::backend_tests
 cargo test --locked --lib rpc::quic::retry
-cargo test --locked --test tooling quiche_native_regressions
+cargo test --locked --lib transport:: -- --skip tlc
 ```
 
 Loopback tests exercise TLS/mTLS, callbacks, pipelined capabilities, large
 messages, shutdown, listener isolation and cancellation. Negative cases cover
 untrusted issuers, wrong hostnames, expired certificates, wrong key usage,
 missing client certificates and ALPN mismatch. Retry tokens are checked against
-mutation, expiry and reuse with another address, CID or version. The quiche
-suite includes RFC 9369 vectors and authenticated version parameters.
+mutation, expiry and reuse with another address, CID or version. Unsupported v2 configuration is also tested.
 
 Independent interoperability uses aioquic 1.3.0 in both client/server roles for
-v1 and v2, with and without Retry. Each case exchanges 256 KiB in each direction;
+v1, with and without Retry. Each case exchanges 256 KiB in each direction;
 the independent peer initiates key updates that quiche must process.
 
 ```sh
@@ -181,10 +181,6 @@ cargo build --locked --example quic-interop --no-default-features --features qui
 target/quic-interop-venv/bin/python scripts/check_quic_interop.py
 ```
 
-The test peer applies one explicit, in-memory correction to aioquic 1.3.0:
-its `next_key_phase` uses the v1 `quic ku` label for v2; the script uses RFC 9369's
-`quicv2 ku` label. Installed files stay unchanged. This correction is part of the
-fixture, not evidence of unmodified aioquic v2 key-update interoperability.
 These tests do not establish HTTP/3 support or production qualification.
 
 References: [quiche configuration](https://docs.rs/quiche/latest/quiche/struct.Config.html),

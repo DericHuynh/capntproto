@@ -1,7 +1,7 @@
 # Capntproto Wiki
 
 Capntproto is an experimental Rust implementation of Cap'n Proto schemas,
-serialization and capability RPC, with TCP/TLS, quiche QUIC v1/v2, multiparty
+serialization and capability RPC, with TCP/TLS, quiche QUIC v1, multiparty
 capability routing and durable object storage. Package names remain `capntproto`,
 `capnp`, `capnp-rpc`, `capnp-futures` and `capnpc`.
 
@@ -16,7 +16,7 @@ Start with the [runtime status](Runtime-Status.md) for supported boundaries and
 | Build a checkout or source bundle | [Getting started](Getting-Started.md) |
 | Write a client or server | [RPC applications](RPC-Applications.md) |
 | Prevent reply lifecycle mistakes at compile time | [Structured replies](RPC-Applications.md#structured-server-replies) |
-| Configure certificates, mTLS or QUIC v2 | [TCP, TLS and QUIC](TCP-TLS-and-QUIC.md) |
+| Configure certificates, mTLS or QUIC | [TCP, TLS and QUIC](TCP-TLS-and-QUIC.md) |
 | Connect authenticated vats and pass capabilities | [Native transports](Native-Transports.md), [RPC applications](RPC-Applications.md#three-party-capability-transfer) |
 | Generate Rust from schemas | [Schema compiler](Schema-Compiler.md), [Rust generator](Rust-Generator.md) |
 | Choose a storage layout | [Storage and ORM](Storage-and-ORM.md), [component storage](Component-Storage.md) |

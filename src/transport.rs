@@ -49,7 +49,7 @@ pub fn config_for_version(
     version: QuicVersion,
 ) -> quiche::Result<quiche::Config> {
     let mut c = identity.quiche_config(peer, psk, context, version)?;
-    c.set_application_protos(&[b"reproto/2"])?;
+    c.set_application_protos(&[b"capntproto/3"])?;
     c.set_max_idle_timeout(10_000);
     c.set_initial_max_data(2 * 1024 * 1024);
     c.set_initial_max_stream_data_bidi_local(1024 * 1024);

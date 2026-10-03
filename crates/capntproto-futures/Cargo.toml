@@ -1,0 +1,56 @@
+# Maintained Capntproto crate derived from capnp-futures. See upstream provenance and LICENSE.
+[package]
+publish = false
+edition = "2021"
+name = "capntproto-futures"
+version = "0.25.2"
+authors = ["David Renshaw <drenshaw@gmail.com>"]
+build = false
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+description = "async serialization for Cap'n Proto messages"
+readme = "README.md"
+keywords = ["async"]
+license = "MIT"
+repository = "https://github.com/DericHuynh/capntproto"
+
+[lib]
+name = "capnp_futures"
+path = "src/lib.rs"
+
+[dependencies.capnp]
+package = "capntproto-core"
+version = "0.25.0"
+path = "../capntproto-core"
+
+[dependencies.futures-channel]
+version = "0.3.0"
+features = ["std"]
+default-features = false
+
+[dependencies.futures-util]
+version = "0.3.0"
+features = [
+    "io",
+    "std",
+]
+default-features = false
+
+[dev-dependencies.capnp]
+package = "capntproto-core"
+version = "0.25.0"
+path = "../capntproto-core"
+features = ["quickcheck"]
+
+[dev-dependencies.futures]
+version = "0.3.0"
+features = ["executor"]
+default-features = false
+
+[dev-dependencies.quickcheck]
+version = "1"
+
+[lints]

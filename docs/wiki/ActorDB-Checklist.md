@@ -101,7 +101,7 @@ source freshness and clock proof is implemented.
 - [ ] Implement the selected restoration/delegation strategy before relocation of actors with saved capabilities; reject stale-host authority on live paths.
 - [ ] Preserve or explicitly translate accepted commit positions and projection source bindings across ownership/shard changes; reject unsupported split/merge operations.
 - [ ] Transfer consumer checkpoints, retention obligations and pending effects without dropping or duplicating acknowledged work.
-- [ ] Exercise leader loss, partitions, stale owners, interrupted transfer and lost replies over authenticated TCP and quiche QUIC v1/v2.
+- [ ] Exercise leader loss, partitions, stale owners, interrupted transfer and lost replies over authenticated TCP and quiche QUIC v1.
 
 Gate: a partitioned old owner cannot commit new work or serve unproved
 current reads; a new owner recovers each original operation and its event batch.

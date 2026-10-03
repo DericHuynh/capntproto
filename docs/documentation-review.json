@@ -641,22 +641,103 @@
       "note": "Retain evidence provenance and explicit distinction between frozen inputs and unavailable logs."
     },
     {
-      "source": "vendor/capnp/REPROTO.md",
+      "source": "crates/capntproto-core/REPROTO.md",
       "original_sha256": "d67f127308922fb2c9c247a9ad6e0232ef9c64718084d3435fcf85002c99f0db",
       "action": "revised",
       "destinations": [
-        "vendor/capnp/REPROTO.md"
+        "crates/capntproto-core/REPROTO.md"
       ],
       "note": "Retain local fork change notes; update guide paths and structured reply API summary."
     },
     {
-      "source": "vendor/capnpc/REPROTO.md",
+      "source": "crates/capntproto-codegen/REPROTO.md",
       "original_sha256": "679a6f79f4718035a2691fa2bc9ab269eedb395f0cfdfc015a7fbe414a3b85de",
       "action": "revised",
       "destinations": [
-        "vendor/capnpc/REPROTO.md"
+        "crates/capntproto-codegen/REPROTO.md"
       ],
       "note": "Retain local generator fork notes; update paths and structured-reply opt-in."
+    },
+    {
+      "source": "crates/capntproto-core/CHANGELOG.md",
+      "original_sha256": "4f115be36bae9e5f1df39f3ee00dc65cdacb47ecc426780eb5958ebd8dacd23a",
+      "action": "retained",
+      "destinations": [
+        "crates/capntproto-core/CHANGELOG.md"
+      ],
+      "note": "Imported owned crate documentation; upstream changelog retained as provenance, README updated for workspace ownership."
+    },
+    {
+      "source": "crates/capntproto-core/README.md",
+      "original_sha256": "39aa77e6a3f20745f29f0c7a5f48e05750503d3de2cd8b5a9850a200de036b35",
+      "action": "retained",
+      "destinations": [
+        "crates/capntproto-core/README.md"
+      ],
+      "note": "Imported owned crate documentation; upstream changelog retained as provenance, README updated for workspace ownership."
+    },
+    {
+      "source": "crates/capntproto-core/tests/README.md",
+      "original_sha256": "1a45bbeadb67b39a29bfd4eb89ee95b77865bdc75aa18f5c9a0b9e5ac140093d",
+      "action": "retained",
+      "destinations": [
+        "crates/capntproto-core/tests/README.md"
+      ],
+      "note": "Imported owned crate documentation; upstream changelog retained as provenance, README updated for workspace ownership."
+    },
+    {
+      "source": "crates/capntproto-rpc/CHANGELOG.md",
+      "original_sha256": "0da09ab04ae0cb96fbfa5d479288d19f9299b6b8f989a025fd9982f5defee2ea",
+      "action": "retained",
+      "destinations": [
+        "crates/capntproto-rpc/CHANGELOG.md"
+      ],
+      "note": "Imported owned crate documentation; upstream changelog retained as provenance, README updated for workspace ownership."
+    },
+    {
+      "source": "crates/capntproto-rpc/README.md",
+      "original_sha256": "498055ae4d23dec1595e278dfb26c24e6eaa2dbebaacd725fe9cbecd54e00d3b",
+      "action": "retained",
+      "destinations": [
+        "crates/capntproto-rpc/README.md"
+      ],
+      "note": "Imported owned crate documentation; upstream changelog retained as provenance, README updated for workspace ownership."
+    },
+    {
+      "source": "crates/capntproto-futures/README.md",
+      "original_sha256": "5fbe8bcc67ce27a71beef999955474da79a117385847e33f0f85f53282a01969",
+      "action": "retained",
+      "destinations": [
+        "crates/capntproto-futures/README.md"
+      ],
+      "note": "Imported owned crate documentation; upstream changelog retained as provenance, README updated for workspace ownership."
+    },
+    {
+      "source": "crates/capntproto-futures/CHANGELOG.md",
+      "original_sha256": "908339ce4ac2461d154629d91f76b37157090e53a7faee008173767d6bae30cd",
+      "action": "retained",
+      "destinations": [
+        "crates/capntproto-futures/CHANGELOG.md"
+      ],
+      "note": "Imported owned crate documentation; upstream changelog retained as provenance, README updated for workspace ownership."
+    },
+    {
+      "source": "crates/capntproto-codegen/CHANGELOG.md",
+      "original_sha256": "b2a64913b69b7f13aae67731160aa53d05c956eec03efa6bca31c02cd6aebe4e",
+      "action": "retained",
+      "destinations": [
+        "crates/capntproto-codegen/CHANGELOG.md"
+      ],
+      "note": "Imported owned crate documentation; upstream changelog retained as provenance, README updated for workspace ownership."
+    },
+    {
+      "source": "crates/capntproto-codegen/README.md",
+      "original_sha256": "aeac72494fe425d4e28f3ce8c5ac177ed4da31e9526cb3e1d29452cb1ac0be77",
+      "action": "retained",
+      "destinations": [
+        "crates/capntproto-codegen/README.md"
+      ],
+      "note": "Imported owned crate documentation; upstream changelog retained as provenance, README updated for workspace ownership."
     }
   ],
   "documents": [
@@ -675,8 +756,19 @@
     "SUPPORT.md",
     "THIRD_PARTY_NOTICES.md",
     "benchmarks/concurrency/README.md",
+    "crates/capntproto-codegen/CHANGELOG.md",
+    "crates/capntproto-codegen/README.md",
+    "crates/capntproto-codegen/REPROTO.md",
     "crates/capntproto-compat/README.md",
     "crates/capntproto-compiler/README.md",
+    "crates/capntproto-core/CHANGELOG.md",
+    "crates/capntproto-core/README.md",
+    "crates/capntproto-core/REPROTO.md",
+    "crates/capntproto-core/tests/README.md",
+    "crates/capntproto-futures/CHANGELOG.md",
+    "crates/capntproto-futures/README.md",
+    "crates/capntproto-rpc/CHANGELOG.md",
+    "crates/capntproto-rpc/README.md",
     "docs/README.md",
     "docs/README.template.md",
     "docs/archive/Correctness-History.md",
@@ -747,9 +839,7 @@
     "docs/wiki/Wiki-Maintenance.md",
     "docs/wiki/_Footer.md",
     "docs/wiki/_Sidebar.md",
-    "research/reports/README.md",
-    "vendor/capnp/REPROTO.md",
-    "vendor/capnpc/REPROTO.md"
+    "research/reports/README.md"
   ],
   "additional_inputs": [
     {

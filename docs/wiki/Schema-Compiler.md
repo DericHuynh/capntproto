@@ -28,10 +28,10 @@ cargo run --locked -p capntproto-compiler --bin capntproto-compile -- \
   --src-prefix crates/capntproto-compiler/examples/imports \
   crates/capntproto-compiler/examples/imports/main.capnp \
   crates/capntproto-compiler/examples/imports/common.capnp > target/import-request.bin
-cargo build --locked --manifest-path vendor/capnpc/Cargo.toml --bin capnpc-rust
+cargo build --locked --manifest-path crates/capntproto-codegen/Cargo.toml --bin capnpc-rust
 mkdir -p target/schema-compiler-demo
 (cd target/schema-compiler-demo && \
-  ../../vendor/capnpc/target/debug/capnpc-rust < ../import-request.bin)
+  ../../crates/capntproto-codegen/target/debug/capnpc-rust < ../import-request.bin)
 ```
 
 This writes `main_capnp.rs` and `common_capnp.rs` under
@@ -92,7 +92,7 @@ higher-priority file should trigger a rebuild.
 The root and test-support build scripts use this API and emit Cargo rerun
 instructions for those inputs. Their standard import root is `vendor`, containing
 the maintained `capnp/c++.capnp` and bundled `capnp/stream.capnp`; Rust annotations
-come from `vendor/capnpc`. The root build also honors `CAPNP_INCLUDE_DIR` before
+come from `crates/capntproto-codegen`. The root build also honors `CAPNP_INCLUDE_DIR` before
 that fallback. The vendored RPC crate still uses the external compiler, so the
 whole workspace still requires C++ tooling. A distributable compiler dependency
 is needed before migrating that separately packaged crate.

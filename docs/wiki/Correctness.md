@@ -40,7 +40,7 @@ mutation coverage, and a state count is not a correctness percentage.
 
 ## Limits and tools
 
-Native transport uses standard TLS 1.3 over TCP or quiche QUIC v1/v2. Application
+Native transport uses standard TLS 1.3 over TCP or quiche QUIC v1. Application
 0-RTT remains disabled. Retired custom-handshake tests and deterministic crypto
 fixtures do not qualify the TLS implementation. TLA+ ideal-crypto assumptions
 need separate implementation evidence.

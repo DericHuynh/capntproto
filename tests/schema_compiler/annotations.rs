@@ -188,7 +188,7 @@ fn annotation_imports_and_dependencies_match_pinned_cpp() {
     }
     fs::write(
         directory.path().join("rust.capnp"),
-        include_str!("../../vendor/capnpc/rust.capnp"),
+        include_str!("../../crates/capntproto-codegen/rust.capnp"),
     )
     .unwrap();
     fs::write(
@@ -343,7 +343,10 @@ fn rust_annotations_generate_renamed_optional_fields_and_reflection() {
         )
         .unwrap();
     parser
-        .add_source("rust.capnp", include_str!("../../vendor/capnpc/rust.capnp"))
+        .add_source(
+            "rust.capnp",
+            include_str!("../../crates/capntproto-codegen/rust.capnp"),
+        )
         .unwrap();
     let request = parser.parse(&["annotated.capnp"]).unwrap();
     capnpc::codegen::CodeGenerationCommand::new()
@@ -352,7 +355,7 @@ fn rust_annotations_generate_renamed_optional_fields_and_reflection() {
         .unwrap();
     assert!(!project.path().join("src/rust_capnp.rs").exists());
     fs::write(project.path().join("Cargo.toml"), format!(
-        "[package]\nname = \"rust-annotation-acceptance\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\ncapnp = {{ path = {:?} }}\n", root().join("vendor/capnp"))).unwrap();
+        "[package]\nname = \"rust-annotation-acceptance\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\ncapnp = {{ package = \"capntproto-core\", path = {:?} }}\n", root().join("crates/capntproto-core"))).unwrap();
     fs::write(project.path().join("src/lib.rs"), r#"
 #![deny(unreachable_pub)]
 pub mod container {

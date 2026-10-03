@@ -19,7 +19,7 @@ fn schema_documentation_renders_on_generated_rust_items_and_preserves_doctests()
     fs::write(sources.join("docs.capnp"), source).unwrap();
     fs::write(sources.join("dep.capnp"), "@0xbbbbbbbbbbbbbbbb; # DEP-FILE-DOC\nstruct Item { # DEP-ITEM-DOC\nx @0 :UInt32; # DEP-FIELD-DOC\n}\n").unwrap();
     let cpp_includes = root().join("vendor/capnproto/c++/src");
-    let rust_includes = root().join("vendor/capnpc");
+    let rust_includes = root().join("crates/capntproto-codegen");
     let request = capntproto_compiler::FileCompiler::new()
         .src_prefix(&sources)
         .import_path(&cpp_includes)
@@ -74,7 +74,7 @@ fn schema_documentation_renders_on_generated_rust_items_and_preserves_doctests()
             .unwrap();
     }
     fs::write(project.path().join("src/lib.rs"), modules).unwrap();
-    fs::write(project.path().join("Cargo.toml"), format!("[package]\nname = \"rust-schema-docs\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\ncapnp = {{ path = {:?} }}\n", root().join("vendor/capnp"))).unwrap();
+    fs::write(project.path().join("Cargo.toml"), format!("[package]\nname = \"rust-schema-docs\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\ncapnp = {{ package = \"capntproto-core\", path = {:?} }}\n", root().join("crates/capntproto-core"))).unwrap();
     let target = root().join("target/schema-compiler-acceptance");
     let evidence = root().join("target/verification/schema-compiler/rustdoc");
     fs::create_dir_all(&evidence).unwrap();

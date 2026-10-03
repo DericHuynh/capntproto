@@ -12,16 +12,17 @@ fn input_hashes() -> BTreeMap<String, String> {
         .into_iter()
         .filter(|path| {
             path.starts_with("fuzz")
-                || path.starts_with("vendor/capnp/src")
-                || path.starts_with("vendor/capnp-rpc")
-                || path.starts_with("vendor/capnp-futures")
-                || path.starts_with("vendor/capnpc")
+                || path.starts_with("src")
+                || path.starts_with("crates/capntproto-core/src")
+                || path.starts_with("crates/capntproto-rpc")
+                || path.starts_with("crates/capntproto-futures")
+                || path.starts_with("crates/capntproto-codegen")
                 || [
-                    "vendor/capnp/Cargo.toml",
+                    "crates/capntproto-core/Cargo.toml",
                     "tests/native_fuzz.rs",
                     "tests/schema_loader.rs",
-                    "vendor/provenance/quiche-native.patch",
-                    "vendor/provenance/quiche-revision.json",
+                    "Cargo.lock",
+                    "Cargo.toml",
                     "rust-toolchain.toml",
                     ".cargo/config.toml",
                 ]
@@ -113,27 +114,10 @@ fn native_fuzz_smoke() {
         ],
         "features",
     );
-    assert!(features.contains("quiche feature \"authenticated\""));
+    assert!(features.contains("quiche feature \"boringssl-boring-crate\""));
     for excluded in ["fuzzing", "ffi", "internal"] {
         assert!(!features.contains(&format!("quiche feature \"{excluded}\"")));
     }
-    let rejection = run(
-        command("cargo").args([
-            "check",
-            "--locked",
-            "--manifest-path",
-            "fuzz/Cargo.toml",
-            "--lib",
-            "--no-default-features",
-            "--features",
-            "quiche/fuzzing",
-        ]),
-        &log("crypto-bypass-rejected"),
-        101,
-    )
-    .unwrap();
-    assert!(rejection.contains("authenticated transport cannot enable the fuzzing crypto bypass"));
-
     let corpus = directory.join("corpus");
     let unit_output = run(
         command("cargo")
@@ -310,24 +294,29 @@ fn native_fuzz_smoke() {
         inputs,
         "fuzz sources changed during qualification"
     );
-    let provenance: Value = serde_json::from_slice(
-        &fs::read(root().join("vendor/provenance/quiche-revision.json")).unwrap(),
-    )
+    let metadata: Value = serde_json::from_str(&cargo(
+        &[
+            "metadata",
+            "--locked",
+            "--manifest-path",
+            "fuzz/Cargo.toml",
+            "--format-version",
+            "1",
+        ],
+        "metadata",
+    ))
     .unwrap();
+    let provenance = metadata["packages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|package| package["name"] == "quiche")
+        .unwrap();
+    assert_eq!(provenance["version"], "0.30.0");
     assert_eq!(
-        inputs["vendor/provenance/quiche-native.patch"],
-        provenance["patch_sha256"].as_str().unwrap()
+        provenance["source"],
+        "registry+https://github.com/rust-lang/crates.io-index"
     );
-    run(
-        command("git")
-            .arg("-C")
-            .arg(root())
-            .args(["apply", "--directory=vendor/quiche", "--reverse", "--check"])
-            .arg(root().join("vendor/provenance/quiche-native.patch")),
-        &log("fork-provenance"),
-        0,
-    )
-    .unwrap();
     let report = json!({
         "format": 3, "cargo_fuzz": version.trim(), "compiler": compiler, "schema_compiler": schema_compiler.trim(), "sanitizer": "address",
         "cfg_fuzzing": false, "quiche": provenance, "inputs": inputs, "campaigns": campaigns,
@@ -341,5 +330,5 @@ fn native_fuzz_smoke() {
         .values()
         .map(|campaign| campaign["runs"].as_u64().unwrap())
         .sum();
-    eprintln!("Fuzz: 6 ASan targets, {total_runs} total runs; native matrices, crypto guard and artifact replay passed");
+    eprintln!("Fuzz: 6 ASan targets, {total_runs} total runs; native matrices, feature checks and artifact replay passed");
 }

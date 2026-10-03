@@ -1,9 +1,9 @@
 fn main() {
     println!("cargo:rerun-if-changed=../../schemas/field-api.capnp");
-    println!("cargo:rerun-if-changed=../../vendor/capnpc/rust.capnp");
+    println!("cargo:rerun-if-changed=../../crates/capntproto-codegen/rust.capnp");
     capnpc::CompilerCommand::new()
         .src_prefix("../../schemas")
-        .import_path("../../vendor/capnpc")
+        .import_path("../../crates/capntproto-codegen")
         .file("../../schemas/field-api.capnp")
         .field_api(true)
         .field_api_values(true)

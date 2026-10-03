@@ -11,10 +11,10 @@ capntproto = { path = "../..", default-features = false, features = ["storage"] 
 eae_pages = { path = "../../target/eae-benchmark/eae-research/rust" }
 serde_json = "1"
 tempfile = "3"
-capnp = { path = "../../vendor/capnp" }
+capnp = { package = "capntproto-core", path = "../../crates/capntproto-core" }
 
 [build-dependencies]
-capnpc = { path = "../../vendor/capnpc" }
+capnpc = { package = "capntproto-codegen", path = "../../crates/capntproto-codegen" }
 
 [profile.release]
 debug = 1

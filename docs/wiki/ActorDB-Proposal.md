@@ -44,7 +44,7 @@ IVM can scale its reads but does not remove that write constraint.
 
 | Area | Available foundation | Work required for this proposal |
 | --- | --- | --- |
-| RPC and transport | Typed capabilities, pipelines, TCP/TLS and mTLS, quiche QUIC v1/v2 | Database services, bounded batch feeds and control progress |
+| RPC and transport | Typed capabilities, pipelines, TCP/TLS and mTLS, quiche QUIC v1 | Database services, bounded batch feeds and control progress |
 | Local persistence | V4 whole-entry revisions, V5 component revisions, immutable mapped snapshots and compaction | Atomic actor event/result/effect commits, durable indexes and projection transactions |
 | Publication history | Retained per-object publication cursors and explicit history gaps | Shard changefeeds, consumer checkpoints, retention reservations and domain event schemas |
 | Actor contracts | A normative design specification | Actor runtime, operation recovery, ownership proofs and placement |

@@ -1,8 +1,15 @@
 # 0.1.0 developer preview (unpublished)
 
+- Imported the maintained Cap’n Proto Rust runtime, RPC engine, async framing and
+  generator as `capntproto-{core,rpc,futures,codegen}` workspace crates, retaining
+  upstream licenses and generated Rust import names.
+- Replaced the Quiche fork with unmodified crates.io quiche 0.30.0. Explicit QUIC
+  v2 requests fail without downgrade. Native QUIC uses `capntproto/3` and explicit
+  receipt confirmations; conventional QUIC write shutdown now reports local FIN
+  submission. Recovery uses upstream system time. TCP/TLS remains supported.
 - Capability RPC runtime and field-oriented Rust generator with bounded TLC,
   Rust trace replay and selected C++ reference/interoperability checks.
-- TCP/TLS and quiche QUIC v1/v2 transport with native mutual authentication, dynamic schemas,
+- TCP/TLS and quiche QUIC v1 transport with native mutual authentication, dynamic schemas,
   bulk/realtime services and explicit three-party introductions.
 - Typed durable objects, publication history, atomic batches and revocable realms.
 - Opt-in bounded async storage owner for V4/V5, with size/principal admission

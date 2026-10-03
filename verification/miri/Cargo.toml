@@ -14,8 +14,8 @@ alloc = ["capnp/alloc"]
 unaligned = ["capnp/unaligned"]
 
 [dependencies]
-capnp = { path = "../../vendor/capnp" }
-capnp-rpc = { path = "../../vendor/capnp-rpc" }
+capnp = { package = "capntproto-core", path = "../../crates/capntproto-core" }
+capnp-rpc = { package = "capntproto-rpc", path = "../../crates/capntproto-rpc" }
 
 [build-dependencies]
-capnpc = { path = "../../vendor/capnpc" }
+capnpc = { package = "capntproto-codegen", path = "../../crates/capntproto-codegen" }

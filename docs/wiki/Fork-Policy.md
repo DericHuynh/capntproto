@@ -13,38 +13,36 @@ part of interoperability. Compact and fragmented realtime encodings serve distin
 payload sizes; the compact path is not a compatibility shim. Direct and arbitrated
 connections remain supported connection policies.
 
-The vendored core, RPC engine, async serialization and generator are a coordinated set. Generated field
-APIs target this vendored core. Upstream Cargo versions alone do not express fork
-compatibility; use Cargo.lock, the provenance files under `vendor/provenance/`, and the
-current validation source hashes. Do not mix independently upgraded components.
+The wire runtime, RPC engine, async serialization and Rust generator are owned
+workspace crates under `crates/capntproto-{core,rpc,futures,codegen}`. They share
+the root lockfile. Their package names identify our maintained implementations;
+Rust library names and generated binding paths remain `capnp`, `capnp_rpc`,
+`capnp_futures` and `capnpc`. Use explicit Cargo `package` aliases for direct
+consumers. Generated field APIs require this coordinated set.
+
+Original MIT licenses, upstream changelogs, release manifests and source hashes
+under `vendor/provenance/` retain attribution and the imported baseline. New
+changes belong to the owning workspace crate and run in the workspace test,
+lint, coverage and source-distribution gates.
+
+Quiche is the unmodified crates.io package, pinned to `=0.30.0` with its registry
+checksum in each consumer's lockfile. There is no source patch or local QUIC fork.
+Our transport adapters use public APIs. Native QUIC receipt confirmations belong
+to our protocol, not Quiche's internal stream state. Upstream currently supports
+QUIC v1; explicit v2 requests fail without downgrade. Ordinary dependencies,
+including the general `futures` crate and TLS libraries, remain Cargo-managed.
 
 For an upgrade:
 
-1. Record the upstream revision and license in its provenance file.
-2. Rebase changes preserving capability, budget, cancellation and output contracts.
-3. Regenerate RPC bindings and compiler fixtures; check standard schema identity.
-4. Run compiler rejection tests, C++ reference/interoperability tests and model replays.
-5. For quiche, run `python3 scripts/update_quiche_patch.py --git-dir
-   /path/to/pinned-upstream-checkout/.git`, then the Native profile check. It verifies
-   that the archived patch reverses cleanly on the vendored source tree.
-6. Run the complete acceptance gate on the resulting snapshot.
+1. Record upstream provenance and retain licenses for imported code.
+2. Preserve capability, budget, cancellation and output contracts in owned crates.
+3. Regenerate bindings and compiler fixtures; check standard schema identity.
+4. Run compiler rejection tests, C++ interoperability and relevant model replays.
+5. For Quiche, update the registry pin and lockfiles, then run our encrypted
+   transport tests, TLS/mTLS rejection tests and independent aioquic interoperability.
+6. Run the workspace and source-distribution acceptance gates.
 
-Fork extensions should expose explicit contracts at their owning layer: checked
-root ownership in the core, output completion in two-party RPC, and acknowledged
-send bytes in quiche. Higher layers must not infer these from implementation errors.
-
-`vendor/quiche/` is ordinary vendored source, including its CI lockfile. Keep upstream
-Git metadata outside this repository so an initial `git add` cannot turn the fork
-into an embedded repository link. For patch maintenance, use a separate clone of
-the repository in `vendor/provenance/quiche-revision.json`, checked out at its recorded
-revision, or preserved Git metadata from that revision. The patch helper uses
-that metadata with this repository's vendored source as its working tree; it does
-not stage changes or modify the separate clone's source. With an isolated fork
-checkout that still contains `vendor/quiche/.git`, the helper also works without the
-`--git-dir` option.
-
-The source-preview manifests use explicit paths throughout the coordinated
-crates, including `capnp-futures`. Consumer root patches are unnecessary.
-`cargo test --test tooling external_consumer_feature_matrix -- --exact` generates and executes a separate client/server.
-The pinned reference C++ tree has a source hash inventory so checks also work
-from an unpacked source release without `.git` metadata.
+`cargo test --test tooling external_consumer_feature_matrix -- --exact` builds a
+separate client/server with the owned packages and no consumer root patches.
+The C++ reference remains a pinned submodule with a source hash inventory, so
+checks also work from an unpacked source release without Git metadata.

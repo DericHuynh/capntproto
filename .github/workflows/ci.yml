@@ -76,8 +76,6 @@ jobs:
           workspaces: |
             . -> target
             examples/downstream -> target
-            vendor/capnp -> target
-            vendor/quiche -> target
       - name: Compile applications, Rust schema compiler, compatibility adapters and core package
         id: compile
         shell: bash
@@ -86,8 +84,8 @@ jobs:
           cargo build --locked -p capntproto-compiler --lib --bins
           cargo build --locked -p capntproto-compat --lib
           cargo build --locked --manifest-path examples/downstream/Cargo.toml
-          cargo package --locked --manifest-path vendor/capnp/Cargo.toml
-          cargo clippy --locked --manifest-path vendor/capnp/Cargo.toml --all-targets -- -D warnings
+          cargo package --locked --manifest-path crates/capntproto-core/Cargo.toml
+          cargo clippy --locked --manifest-path crates/capntproto-core/Cargo.toml --all-targets -- -D warnings
       - name: Require embedded dependency inventories
         id: auditable
         shell: bash
@@ -139,12 +137,12 @@ jobs:
         shell: bash
         run: |
           cargo test --locked -p capntproto --test allocations
-      - name: QUIC v2 protocol and independent interoperability checks
+      - name: Upstream QUIC v1 protocol and independent interoperability checks
         if: runner.os == 'Linux'
         shell: bash
         run: |
           cargo test --locked -p capntproto --test tooling pinned_native_profile
-          cargo test --locked -p capntproto --test tooling quiche_native_regressions
+          cargo test --locked -p capntproto --lib transport:: -- --skip tlc --skip transport::backend_tests
           python3 -m venv target/quic-interop-venv
           target/quic-interop-venv/bin/pip install -r scripts/requirements-quic-interop.txt
           cargo build --locked --example quic-interop --no-default-features --features quic

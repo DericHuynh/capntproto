@@ -118,8 +118,8 @@ fn runtime_packet_scenarios_replay_across_processes() {
         "format":1,"compiler":compiler,"inputs":inputs,"binary":binary,
         "binary_sha256":v::sha256(fs::read(binary).unwrap()),
         "runs_sha256":v::sha256(fs::read(replay).unwrap()),"cases":32,"processes":2,
-        "scope":"real Native mutual TLS with optional admission secrets driver; paused runtime time; in-memory packet IO; generated delivery faults and semantic replay",
-        "limits":"fixed two-peer paths, bounded schedules; crypto entropy and internal Tokio select order uncontrolled; no ciphertext or poll-order equivalence claim"
+        "scope":"real Native mutual TLS with optional admission secrets driver; real upstream recovery clock and paused application deadlines; in-memory packet IO; generated delivery faults and semantic replay",
+        "limits":"fixed two-peer paths, bounded schedules; real clock timing, crypto entropy and internal Tokio select order uncontrolled; no ciphertext or poll-order equivalence claim"
     });
     fs::write(
         directory.join("qualification.json"),

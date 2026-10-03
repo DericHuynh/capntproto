@@ -74,8 +74,8 @@ fn rpc_identifier_and_table_compile_contracts() {
     // promoting RPC implementation types into the public API.
     let prelude = format!(
         "#![allow(dead_code)]\n#[path = {:?}] mod rpc_ids;\n#[path = {:?}] mod rpc_tables;\nuse rpc_ids::*;\nuse rpc_tables::*;\n",
-        root().join("vendor/capnp-rpc/src/rpc_ids.rs"),
-        root().join("vendor/capnp-rpc/src/rpc_tables.rs")
+        root().join("crates/capntproto-rpc/src/rpc_ids.rs"),
+        root().join("crates/capntproto-rpc/src/rpc_tables.rs")
     );
     let mut cases = vec![(
         "positive".to_owned(),
@@ -290,7 +290,7 @@ fn main() {
         cases.push((name.to_owned(), format!("#![deny(unused_must_use)]\n{prelude}{code}\nfn main() {{}}"), Some(diagnostic)));
     }
     check_contracts("bulk-config-contracts", &format!(
-        "capntproto = {{ path = {:?}, default-features = false, features = [\"services\"] }}\ncapnp = {{ path = {:?} }}\nserde_json = \"1\"\n", root(), root().join("vendor/capnp")
+        "capntproto = {{ path = {:?}, default-features = false, features = [\"services\"] }}\ncapnp = {{ package = \"capntproto-core\", path = {:?} }}\nserde_json = \"1\"\n", root(), root().join("crates/capntproto-core")
     ), cases,
         "checked immutable bulk limits across receiver/sender APIs, private fields, explicit imports, Send/Sync, clone and must-use construction",
         "runtime validation of wire/JSON inputs is tested separately; limits are not authority or evidence of remote execution");

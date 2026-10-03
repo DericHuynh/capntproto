@@ -91,7 +91,7 @@ impl Engine {
         }
     }
     /// False means the connection has terminated. The adapter supplies Tokio
-    /// time, also used by quiche's recovery and packet pacing clock backend.
+    /// time for application deadlines; upstream Quiche uses the system clock.
     pub(super) fn step(&mut self, now: Instant) -> io::Result<bool> {
         if matches!(self.phase, Phase::Flushing { .. }) {
             return Ok(true);
@@ -173,7 +173,7 @@ impl Engine {
                 }
                 if shutdown.acknowledged() {
                     self.conn
-                        .close(true, shutdown::ACKNOWLEDGED_CLOSE, b"shutdown acknowledged")
+                        .close(true, shutdown::ACKNOWLEDGED_CLOSE, &shutdown.close_reason())
                         .map_err(error)?;
                     self.phase = Phase::Flushing {
                         receipt: Receipt {

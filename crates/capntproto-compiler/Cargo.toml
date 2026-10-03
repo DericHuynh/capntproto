@@ -9,7 +9,7 @@ readme = "README.md"
 publish = false
 
 [dependencies]
-capnp = { version = "0.25", path = "../../vendor/capnp" }
+capnp = { package = "capntproto-core", version = "0.25", path = "../capntproto-core" }
 getrandom = "0.4.3"
 md5 = "0.8"
 

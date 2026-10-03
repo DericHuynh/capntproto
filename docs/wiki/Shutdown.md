@@ -85,11 +85,12 @@ Control streams can arrive before their corresponding RPC bytes. A receiver
 waits for the byte boundary before acknowledging. In a crossed exchange it also
 waits for its own writer fence, then sends a crossed acknowledgement indicating
 that its own request is in flight. Each side waits for the reciprocal receipt to
-be transport-acknowledged before initiating connection close. The graceful close
-uses application code `0x525053`; its reason text is diagnostic only. If that
-authenticated peer close overtakes the final transport acknowledgement, the
-receiver may complete only with its validated receipt and, for a crossed exchange,
-the reciprocal request, full input delivery and fully queued, unreset reciprocal receipt.
+be explicitly confirmed before initiating connection close. The confirmation
+stream echoes the validated reciprocal receipt's nonce and byte count. The
+graceful close uses application code `0x525053` and carries that same echo in its
+reason bytes. If the close overtakes the confirmation stream, the receiver may
+complete only with the exact echoed receipt, its reciprocal request, full input
+delivery and fully queued reply. This is the `capntproto/3` Native QUIC profile.
 Other application/transport close codes and idle timeout cannot replace those
 fences. An authenticated peer's delivery assertion is trusted; the protocol cannot
 prove that a malicious peer actually delivered bytes. Packet loss and
@@ -149,6 +150,6 @@ quiescence, or end-to-end RPC execution refinement.
 terminal cause after the route is removed, without keeping a connection, task or
 capability alive. Causes distinguish acknowledged shutdown, cancellation and
 structured failures. Direct, connector and arbitration-selected sessions use the
-same lifecycle installation and task owner. `quiche::stream_send_acknowledged()`
-provides the packet engine's byte-receipt contract; collected/reset stream errors
-are never interpreted as acknowledgement by the RPC layer.
+same lifecycle installation and task owner. Native QUIC receipt confirmations
+echo the exact nonce/count over an authenticated control stream or close reason.
+Quiche stream collection/reset errors are never treated as receipt evidence.

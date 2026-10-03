@@ -31,8 +31,8 @@ fn runtime_paths_work_with_both_frontends() {
         let project = tempfile::tempdir().unwrap();
         fs::create_dir(project.path().join("src")).unwrap();
         fs::write(project.path().join("Cargo.toml"), format!(
-            "[package]\nname = \"runtime-path-{package}\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\n{dependency} = {{ package = \"capnp\", path = {:?} }}\n",
-            root().join("vendor/capnp"),
+            "[package]\nname = \"runtime-path-{package}\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\n{dependency} = {{ package = \"capntproto-core\", path = {:?} }}\n",
+            root().join("crates/capntproto-core"),
         )).unwrap();
         let mut source = format!(
             "use {dependency} as test_runtime;\n{}\npub mod generated {{\n",

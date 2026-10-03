@@ -9,7 +9,9 @@ fn main() {
         );
         compiler.import_path(directory);
     }
-    compiler.src_prefix("schemas").import_path("vendor");
+    compiler
+        .src_prefix("schemas")
+        .import_path("schemas/imports");
     let schemas: &[(&str, bool)] = &[
         ("store", cfg!(feature = "storage")),
         ("persistence", cfg!(feature = "storage")),

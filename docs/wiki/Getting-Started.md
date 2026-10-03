@@ -34,8 +34,8 @@ generates the field API, starts two RPC systems, calls a returned capability
 through a pipeline, and commits/reopens storage. It executes default and
 optimized builds. Its manifest shows the dependency
 recipe: point `capntproto`, `capnp`, `capnp-rpc` and build dependency `capnpc` at
-the **same unpacked bundle**. Internal paths also select vendored
-`capnp-futures`; no consumer `[patch.crates-io]` table is needed. Consumers own
+the **same unpacked bundle**. Internal paths select `capntproto-{core,rpc,futures,codegen}` using
+Cargo package aliases; no consumer `[patch.crates-io]` table is needed. Consumers own
 their Cargo.lock and must retain the coordinated versions. The separate sample
 uses in-memory duplex transport; `native_store` exercises the UDP/Native service.
 
@@ -54,7 +54,7 @@ or delegate a [discovery directory](Discovery-and-Mobility.md); sessions still p
 identities. Introductions delegate capability rights and bind
 the new connection; distribute private keys, tickets and SturdyRefs as secrets.
 The native mutual TLS admission profile is experimental and rejects application
-0-RTT. Quiche uses standard QUIC v1/v2. See [Native setup](Native-Transports.md) and
+0-RTT. Quiche uses standard QUIC v1. See [Native setup](Native-Transports.md) and
 [persistence](Persistence.md) for concrete constructors and provisioning.
 
 Set application request deadlines and resource limits for message traversal,

@@ -24,47 +24,84 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
-name = "capnp"
-version = "0.25.6"
+name = "capntproto"
+version = "0.1.0"
 dependencies = [
- "embedded-io",
+ "capntproto-codegen",
+ "capntproto-compiler",
+ "capntproto-core",
+ "capntproto-futures",
+ "capntproto-rpc",
+ "fs2",
+ "futures",
+ "libc",
+ "memmap2",
+ "ring",
+ "serde",
+ "serde_json",
+ "socket2",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "capntproto-codegen"
+version = "0.25.3"
+dependencies = [
+ "capntproto-core",
+ "pulldown-cmark",
+ "pulldown-cmark-to-cmark",
 ]
 
 [[package]]
 name = "capntproto-compiler"
 version = "0.1.0"
 dependencies = [
- "capnp",
+ "capntproto-core",
  "getrandom 0.4.3",
  "md5",
 ]
 
 [[package]]
-name = "capnp-futures"
+name = "capntproto-concurrency-probe"
+version = "0.0.0"
+dependencies = [
+ "arc-swap",
+ "capntproto",
+ "crossbeam-queue",
+ "futures",
+ "parking_lot",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "capntproto-core"
+version = "0.25.6"
+dependencies = [
+ "embedded-io",
+]
+
+[[package]]
+name = "capntproto-futures"
 version = "0.25.2"
 dependencies = [
- "capnp",
+ "capntproto-core",
  "futures-channel",
  "futures-util",
 ]
 
 [[package]]
-name = "capnp-rpc"
+name = "capntproto-rpc"
 version = "0.25.1"
 dependencies = [
- "capnp",
- "capnp-futures",
- "capnpc",
+ "capntproto-codegen",
+ "capntproto-core",
+ "capntproto-futures",
  "futures",
-]
-
-[[package]]
-name = "capnpc"
-version = "0.25.3"
-dependencies = [
- "capnp",
- "pulldown-cmark",
- "pulldown-cmark-to-cmark",
 ]
 
 [[package]]
@@ -391,43 +428,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed2bf2547551a7053d6fdfafda3f938979645c44812fbfcda098faae3f1a362d"
 dependencies = [
  "bitflags",
-]
-
-[[package]]
-name = "capntproto"
-version = "0.1.0"
-dependencies = [
- "capnp",
- "capntproto-compiler",
- "capnp-futures",
- "capnp-rpc",
- "capnpc",
- "fs2",
- "futures",
- "libc",
- "memmap2",
- "ring",
- "serde",
- "serde_json",
- "socket2",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-util",
-]
-
-[[package]]
-name = "capntproto-concurrency-probe"
-version = "0.0.0"
-dependencies = [
- "arc-swap",
- "crossbeam-queue",
- "futures",
- "parking_lot",
- "capntproto",
- "serde_json",
- "tempfile",
- "tokio",
 ]
 
 [[package]]

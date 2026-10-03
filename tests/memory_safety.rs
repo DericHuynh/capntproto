@@ -55,10 +55,10 @@ fn source_inputs() -> BTreeMap<PathBuf, String> {
         .filter(|p| {
             [
                 "verification/miri",
-                "vendor/capnp",
-                "vendor/capnp-rpc",
-                "vendor/capnp-futures",
-                "vendor/capnpc",
+                "crates/capntproto-core",
+                "crates/capntproto-rpc",
+                "crates/capntproto-futures",
+                "crates/capntproto-codegen",
             ]
             .iter()
             .any(|prefix| p.starts_with(prefix))

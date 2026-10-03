@@ -1,8 +1,10 @@
 ------------------------- MODULE NativeClockDomains -------------------------
+\* Application deadlines only. Upstream Quiche recovery uses system time and
+\* is exercised separately by real-clock packet tests.
 EXTENDS Naturals
 CONSTANT Fault
 \* One tick is five seconds. The original connection starts at 0 and a
-\* replacement, if created, starts at 1. Both negotiate ten-second idle expiry.
+\* replacement, if created, starts at 1. Both own ten-second application deadlines.
 \* Polling a timer is an adapter action: time alone does not execute callbacks.
 VARIABLES now, replacement, oldClosed, newClosed, oldPoll, newPoll, event
 vars == <<now,replacement,oldClosed,newClosed,oldPoll,newPoll,event>>

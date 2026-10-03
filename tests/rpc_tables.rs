@@ -2,10 +2,10 @@
 //! implementation or a public test-only runtime API. Wire behavior is exercised
 //! separately by the ordinary RPC, Join and third-party integration tests.
 #[allow(dead_code)]
-#[path = "../vendor/capnp-rpc/src/rpc_ids.rs"]
+#[path = "../crates/capntproto-rpc/src/rpc_ids.rs"]
 mod rpc_ids;
 #[allow(dead_code)]
-#[path = "../vendor/capnp-rpc/src/rpc_tables.rs"]
+#[path = "../crates/capntproto-rpc/src/rpc_tables.rs"]
 mod rpc_tables;
 
 use rpc_ids::{AnswerId, ExportId, ImportId, QuestionId, WireId};

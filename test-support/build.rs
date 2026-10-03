@@ -5,8 +5,8 @@ fn compile(files: &[&str], facade: bool, structured: bool) {
         .collect();
     let compiled = capntproto_compiler::FileCompiler::new()
         .src_prefix("../schemas")
-        .import_path("../vendor")
-        .import_path("../vendor/capnpc")
+        .import_path("../schemas/imports")
+        .import_path("../crates/capntproto-codegen")
         .compile_with_dependencies(&requested)
         .expect("compile test fixtures in Rust");
     for dependency in compiled.dependencies {

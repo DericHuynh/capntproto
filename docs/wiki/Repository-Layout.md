@@ -11,6 +11,7 @@ the root so GitHub discovers them.
 ├── Cargo.toml, Cargo.lock, build.rs, rust-toolchain.toml
 ├── README.md, LICENSE, CONTRIBUTING.md, SECURITY.md, …
 ├── src/                         Capntproto runtime and model-exploration binary
+├── crates/capntproto-{core,rpc,futures,codegen}/  Owned Rust protocol implementations
 ├── crates/capntproto-compiler/        Rust schema-language frontend library and CLI
 ├── crates/capntproto-compat/          Optional standard codecs and protocol adapters
 ├── schemas/                     Service schemas and shared schema test inputs
@@ -29,10 +30,9 @@ the root so GitHub discovers them.
 │   ├── wiki/                    Current guides and GitHub Wiki navigation
 │   ├── archive/                 Superseded ledgers and design proposals
 │   └── reports/                 Generated public charts and measured history
-├── vendor/                      Coordinated forks and pinned dependencies
+├── vendor/                      Reference dependency and import provenance
 │   ├── capnproto/               Pinned C++ submodule for verification and benchmarks
-│   ├── quiche/                  Quiche workspace with the Native fork
-│   └── provenance/              Upstream revisions, schema snapshots, fork patch
+│   └── provenance/              Upstream revisions, schema snapshots, import hashes
 ├── research/                    Frozen research inputs; no production dependency
 │   ├── baseline/                Historical model source, not active verification
 │   └── reports/                 Frozen measurements and archive explanation
@@ -45,21 +45,19 @@ the root so GitHub discovers them.
 | Package | Location | Role |
 | --- | --- | --- |
 | `capntproto` | Root `Cargo.toml`, `src/` | Production runtime and public API |
-| `capnp-rpc` | `vendor/capnp-rpc/` | Maintained RPC engine; its tests run in the root workspace |
+| `capntproto-core` | `crates/capntproto-core/` | Wire runtime, reflection and checked ownership |
+| `capntproto-rpc` | `crates/capntproto-rpc/` | Capability RPC engine |
+| `capntproto-futures` | `crates/capntproto-futures/` | Async framing and ordered writes |
+| `capntproto-codegen` | `crates/capntproto-codegen/` | Rust schema binding generator |
 | `capntproto-test-support` | `test-support/` | Verification tools and fixtures; a dev dependency of the runtime |
 | `capntproto-quality` | `quality/` | Developer/CI tooling, not a runtime dependency |
 | `capntproto-compiler` | `crates/capntproto-compiler/` | First-party textual schema frontend and CLI; no C++ runtime dependency |
 | `capntproto-compat` | `crates/capntproto-compat/` | Opt-in JSON/text codecs and standard ByteStream, HTTP, WebSocket and JSON-RPC adapters |
 
-The root manifest explicitly lists workspace members and excluded workspaces.
-`capnp-rpc` previously joined through Cargo's automatic path-dependency membership;
-it is now named explicitly. Workspace members share the root Cargo.lock.
-
-The other vendored crates, the quiche workspace, fuzzing, Miri, downstream example,
-and benchmark packages keep their own manifests and lockfiles. Their separation
-accommodates different toolchains, fuzz instrumentation, external tools, or
-release benchmarks. Relevant maintained-crate checks are launched by the root
-test suite; exclusion from Cargo membership is not exclusion from verification.
+All owned crates are workspace members sharing the root Cargo.lock. Fuzzing,
+Miri, the downstream example and benchmarks retain separate workspaces and
+lockfiles for their toolchains and instrumentation. Quiche and ordinary external
+Rust dependencies are resolved through Cargo.
 
 The full default verification command remains:
 
@@ -88,25 +86,25 @@ Update Cargo dependency keys, imports, command lines and `REPROTO_*` development
 environment variables to `CAPNTPROTO_*`. The compiler and compatibility directories
 also moved to `crates/capntproto-compiler` and `crates/capntproto-compat`.
 This is a source-level rename in the developer preview; no compatibility aliases
-are provided. Upstream `capnp`, `capnpc`, `capnp-rpc`, `capnp-futures`, schema paths,
-generated `_capnp` modules and Cap'n Proto wire names are unchanged.
-Existing ALPN values, authentication domain separators, persistence format IDs,
+are provided. The imported packages are now `capntproto-{core,rpc,futures,codegen}`.
+Their Rust library names, generated `_capnp` modules and standard wire names remain unchanged.
+Native QUIC now uses `capntproto/3` for explicit receipt confirmations; TCP retains
+`reproto/2`. Authentication domain separators, persistence format IDs,
 TLS fixture names and model identities retain their original bytes. Historical
 measurements retain their original source identity. The cloud cleanup tag prefix
 also remains stable so renamed tooling can reclaim older benchmark resources.
 
 ## Runtime, tests, and schemas
 
-Production dependency edges run from `capntproto` to the coordinated vendored crates
+Production dependency edges run from `capntproto` to the owned protocol crates
 and optional transport/storage dependencies. Production code must not depend on
 `test-support`, `quality`, benchmarks, fuzzing, or the EAE research implementation.
 `test-support` can depend on the core/RPC crates; runtime tests depend on it through
 `[dev-dependencies]`. CI tools may reuse test-support verification code.
 
 Runtime module ownership is described in [Architecture](Architecture.md).
-The first-party compiler lives under `crates/`, separate from vendored upstream
-forks. It depends on the core wire runtime, not the RPC/Native/storage runtime or
-verification helpers. `vendor/capnpc` owns Rust generation from compiled requests;
+The textual schema compiler lives alongside the other owned crates. It depends on the core wire runtime, not the RPC/Native/storage runtime or
+verification helpers. `crates/capntproto-codegen` owns Rust generation from compiled requests;
 `crates/capntproto-compiler` owns textual parsing, semantic checks and schema emission.
 `crates/capntproto-compat` depends on the maintained wire/RPC crates and the Rust
 compiler’s standalone text lexer. It owns copies of the pinned compatibility
@@ -150,15 +148,10 @@ recorded in the committed lockfiles. TLS dependencies, including BoringSSL,
 are fetched through Cargo. These dependency sources and all Cargo `target/` directories
 stay out of Git; see [Cargo dependency sources](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html).
 
-`vendor/` contains the coordinated forks and the C++ reference submodule. The
-`capnp`, `capnp-rpc`, `capnp-futures`, `capnpc`, and quiche crates contain local
-changes and use Cargo path dependencies. Replacing them with upstream releases
-would discard required APIs and behavior. Retain their source here until the
-coordinated forks have separately published versions or Git revisions.
-`vendor/quiche/` retains its upstream workspace layout to keep the archived fork
-patch and upstream updates straightforward. It is ordinary vendored source,
-not a Git submodule. Follow [Fork Policy](Fork-Policy.md) and update provenance
-under `vendor/provenance/` when changing forks.
+The maintained Rust implementations live under `crates/` and are first-party path
+dependencies. Their upstream provenance remains under `vendor/provenance/`.
+Quiche is the unmodified registry crate at version 0.30.0, with no local fork or
+patch. See [workspace policy](Fork-Policy.md).
 
 `vendor/capnproto/` is the pinned C++ dependency used by verification and benchmarks.
 Git records its upstream URL in `.gitmodules` and its exact commit as a submodule

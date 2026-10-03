@@ -98,6 +98,7 @@ pub enum Backend {
     Tcp,
     #[default]
     Quiche,
+    /// Reserved wire selection. Upstream Quiche currently rejects QUIC v2.
     QuicheV2,
 }
 /// Fixed allowlist of pinned peer endpoints for on-demand native RPC routes.

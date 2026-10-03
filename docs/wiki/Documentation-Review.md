@@ -64,7 +64,7 @@ for validation, export and the live-publication prerequisite.
 | `docs/NATIVE_RECOVERY.md` | moved and revised: [Connection-Recovery.md](Connection-Recovery.md) | Retain reconnect/fallback boundaries; repair links. |
 | `docs/NATIVE_SCHEDULING.md` | moved and revised: [Transport-Scheduling.md](Transport-Scheduling.md) | Scope packet/datagram scheduling to quiche; clarify TCP distinction. |
 | `docs/NATIVE_SHUTDOWN.md` | moved and revised: [Shutdown.md](Shutdown.md) | Describe quiche streams and native TCP multiplexing separately. |
-| `docs/NATIVE_TRANSPORTS.md` | moved and revised: [Native-Transports.md](Native-Transports.md) | Retain quiche-only v1/v2 and native TCP transport setup. |
+| `docs/NATIVE_TRANSPORTS.md` | moved and revised: [Native-Transports.md](Native-Transports.md) | Retain quiche-only v1 and native TCP transport setup. |
 | `docs/ORM_HISTORY.md` | moved and revised: [Publication-History.md](Publication-History.md) | Remove obsolete v3 checkpoint wording; retain publication/history semantics. |
 | `docs/PERSISTENCE.md` | moved and revised: [Persistence.md](Persistence.md) | Use typed revisions and distinguish injected I/O errors from device failure qualification. |
 | `docs/PREVIEW.md` | moved and revised: [Getting-Started.md](Getting-Started.md) | Correct native build prerequisites, audit wrapper and feature relationships. |
@@ -86,15 +86,15 @@ for validation, export and the live-publication prerequisite.
 | `docs/SCHEMA_COMPILER_QUALIFICATION.md` | moved and revised: [Compiler-Qualification.md](Compiler-Qualification.md) | Replace brittle current repository schema count with dated qualification scope. |
 | `docs/SCHEMA_EXCHANGE.md` | moved and revised: [Schema-Exchange.md](Schema-Exchange.md) | Retain exchange validation, bounds and trust contract; repair links. |
 | `docs/SCHEMA_LOADER.md` | moved and revised: [Schema-Loader.md](Schema-Loader.md) | Clarify reflection coverage/remaining limits; repair links. |
-| `docs/SECURE_TRANSPORTS.md` | moved and revised: [TCP-TLS-and-QUIC.md](TCP-TLS-and-QUIC.md) | Remove stale Quinn-style 0-RTT API reference; retain TCP/TLS/mTLS and quiche v1/v2. |
+| `docs/SECURE_TRANSPORTS.md` | moved and revised: [TCP-TLS-and-QUIC.md](TCP-TLS-and-QUIC.md) | Remove stale Quinn-style 0-RTT API reference; retain TCP/TLS/mTLS and quiche v1. |
 | `docs/STORAGE_COMPACTION.md` | moved and revised: [Storage-Compaction.md](Storage-Compaction.md) | Retain retention, generation and crash/recovery contracts; repair links. |
 | `docs/STORAGE_RESEARCH.md` | moved and revised: [Storage-Research.md](Storage-Research.md) | Keep frozen measurements and distinguish original prototype from later production worker. |
 | `docs/STORAGE_RESILIENCE_RESEARCH.md` | moved and revised: [Storage-Resilience.md](Storage-Resilience.md) | Keep failure-boundary evidence and acknowledge implemented worker separately from proposed receipts. |
 | `docs/STORAGE_WORKER.md` | moved and revised: [Storage-Worker.md](Storage-Worker.md) | Retain privileged opt-in worker/admission contracts; remove unrelated implementation commentary. |
 | `docs/TESTING.md` | rewritten; history archived: [Testing.md](Testing.md), [Testing-History.md](../archive/Testing-History.md) | Replace chronological test log with reproducible check matrix; archive full historical ledger. |
 | `research/reports/README.md` | revised: [README.md](../../research/reports/README.md) | Retain evidence provenance and explicit distinction between frozen inputs and unavailable logs. |
-| `vendor/capnp/REPROTO.md` | revised: [REPROTO.md](../../vendor/capnp/REPROTO.md) | Retain local fork change notes; update guide paths and structured reply API summary. |
-| `vendor/capnpc/REPROTO.md` | revised: [REPROTO.md](../../vendor/capnpc/REPROTO.md) | Retain local generator fork notes; update paths and structured-reply opt-in. |
+| `crates/capntproto-core/REPROTO.md` | revised: [REPROTO.md](../../crates/capntproto-core/REPROTO.md) | Retain local fork change notes; update guide paths and structured reply API summary. |
+| `crates/capntproto-codegen/REPROTO.md` | revised: [REPROTO.md](../../crates/capntproto-codegen/REPROTO.md) | Retain local generator fork notes; update paths and structured-reply opt-in. |
 
 ## New maintenance pages
 

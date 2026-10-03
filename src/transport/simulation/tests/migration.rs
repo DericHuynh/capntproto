@@ -154,7 +154,7 @@ fn replay_tlc_candidate_io_through_encrypted_driver() {
                                             fixture.network.deliver(packet);
                                         }
                                     }
-                                    tokio::time::advance(Duration::from_millis(1)).await;
+                                    packet_tick().await;
                                     if !held.is_empty() {
                                         break;
                                     }
@@ -178,7 +178,7 @@ fn replay_tlc_candidate_io_through_encrypted_driver() {
                                             fixture.network.deliver(packet);
                                         }
                                     }
-                                    tokio::time::advance(Duration::from_millis(1)).await;
+                                    packet_tick().await;
                                 }
                             }
                             4 | 8 => {

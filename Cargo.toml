@@ -11,17 +11,11 @@ build = "build.rs"
 
 [workspace]
 resolver = "2"
-# capnp-rpc was already an implicit path-dependency member. Name it explicitly
-# so the workspace test boundary is visible and remains stable.
-members = ["test-support", "quality", "vendor/capnp-rpc", "crates/capntproto-compiler", "crates/capntproto-compat"]
+# Maintained Rust implementations are first-party workspace members.
+members = ["test-support", "quality", "crates/*"]
 # These packages retain independent toolchains, lockfiles, or benchmark builds.
 exclude = [
-    "vendor/quiche",
-    "vendor/quiche/*",
     "vendor/capnproto",
-    "vendor/capnp",
-    "vendor/capnpc",
-    "vendor/capnp-futures",
     "benchmarks/rpc",
     "benchmarks/storage",
     "benchmarks/instructions",
@@ -44,10 +38,10 @@ quic-quiche = ["quic"]
 boring = { version = "5", optional = true }
 x509-parser = { version = "0.18", optional = true }
 rcgen = { version = "0.14", optional = true, default-features = false, features = ["crypto", "ring"] }
-quiche = { version = "0.29.3", optional = true, path = "vendor/quiche/quiche", default-features = false, features = ["authenticated", "boringssl-boring-crate", "custom-client-dcid", "tokio-clock"] }
-capnp = { version = "0.25", path = "vendor/capnp" }
-capnp-rpc = { version = "0.25.1", path = "vendor/capnp-rpc" }
-capnp-futures = { version = "0.25", path = "vendor/capnp-futures" }
+quiche = { version = "=0.30.0", optional = true, default-features = false, features = ["boringssl-boring-crate", "custom-client-dcid"] }
+capnp = { package = "capntproto-core", version = "0.25", path = "crates/capntproto-core" }
+capnp-rpc = { package = "capntproto-rpc", version = "0.25.1", path = "crates/capntproto-rpc" }
+capnp-futures = { package = "capntproto-futures", version = "0.25", path = "crates/capntproto-futures" }
 futures = "0.3"
 tokio = { version = "1", features = ["rt", "macros", "net", "time", "io-util", "sync"] }
 tokio-util = { version = "0.7", features = ["compat"] }
@@ -64,9 +58,9 @@ zeroize = { version = "1", optional = true }
 tempfile = "3"
 
 [build-dependencies]
-capnpc = { version = "0.25", path = "vendor/capnpc", optional = true }
+capnpc = { package = "capntproto-codegen", version = "0.25", path = "crates/capntproto-codegen", optional = true }
 capntproto-compiler = { path = "crates/capntproto-compiler", optional = true }
-capnp = { version = "0.25", path = "vendor/capnp" }
+capnp = { package = "capntproto-core", version = "0.25", path = "crates/capntproto-core" }
 
 [dev-dependencies]
 allocation-counter = "=0.8.1"
@@ -75,7 +69,7 @@ proptest = { version = "=1.11.0", default-features = false, features = ["std"] }
 tokio = { version = "1", features = ["test-util"] }
 capntproto-test-support = { path = "test-support" }
 capntproto-compiler = { path = "crates/capntproto-compiler" }
-capnpc = { version = "0.25", path = "vendor/capnpc" }
+capnpc = { package = "capntproto-codegen", version = "0.25", path = "crates/capntproto-codegen" }
 
 [[bin]]
 name = "capntproto-model"

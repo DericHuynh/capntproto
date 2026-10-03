@@ -1,7 +1,7 @@
 # Native multiparty transport
 
 Native RPC uses TCP/TLS or standard QUIC with TLS 1.3. Quiche is the sole QUIC
-engine and supports explicitly selected QUIC v1 and v2. One authenticated-session
+engine and uses unmodified upstream quiche 0.30.0 with QUIC v1. One authenticated-session
 type supplies peer identity, ordered RPC IO and shutdown control to
 `native_rpc::Network`.
 
@@ -24,7 +24,7 @@ must be replaced, including identity-bound references.
 
 Native sessions require mutual TLS 1.3. Each side pins the remote Ed25519 public
 key, checks its self-signed certificate and validity, and verifies TLS proof of
-possession. Native ALPN is `reproto/2`. Resumption and application 0-RTT are disabled.
+possession. Native QUIC ALPN is `capntproto/3`; Native TCP retains `reproto/2`. Resumption and application 0-RTT are disabled.
 
 The optional 32-byte reservation secret and application context authenticate
 admission. HMAC-SHA256 binds the sorted local/remote keys, context and secret
@@ -35,16 +35,17 @@ additional TLS traffic key. Existing `psk` arguments refer to this admission sec
 ## Routes and features
 
 `DirectoryConnector::insert_with_backend` selects `Backend::Tcp`,
-`Backend::Quiche` (v1), or `Backend::QuicheV2`. The directory's allowlist controls
+`Backend::Quiche` (v1). `Backend::QuicheV2` is retained as an explicit
+unsupported selection and fails at configuration. The directory's allowlist controls
 permitted destinations, and its bind address selects the local interface.
 Network attachment verifies both local and remote authenticated identities.
 
 Direct session APIs are `transport::tcp::{connect,connect_bound,accept}` and
 `transport::{connect_for_version,accept_authenticated}`. Shared UDP reservations
-support v1/v2 through `native_listener::connect_for_version` and
+support v1 through `native_listener::connect_for_version` and
 `DirectoryConnector::insert_reserved_for_version`.
 
-Both QUIC versions use the same native protocol and support multiparty RPC,
+Native QUIC v1 supports multiparty RPC,
 discovery/provisioning, capability handoff, restoration, bounded datagrams,
 scheduling, shutdown receipts, validated migration and explicit CID rotation.
 There is no second QUIC engine with a reduced feature set.
@@ -55,17 +56,24 @@ quiche. TCP does not emulate these wire semantics. A receipt acknowledges bytes
 delivered into the peer's bounded RPC input, not execution of methods.
 Dropping a session cancels its driver.
 
-Both QUIC versions authenticate version information. Selection is explicit;
-unauthenticated Version Negotiation cannot silently downgrade a connection.
-Compatible in-handshake version switching is not implemented.
+Version selection is explicit; requesting v2 fails without downgrade.
+
+Native QUIC uses bounded request streams 2/3, receipt streams 6/7, and
+confirmation streams 10/11. A confirmation echoes the exact validated receipt
+(nonce and byte count). In a crossed shutdown, a peer must confirm our reciprocal
+receipt before success. The authenticated close reason carries the same echo
+so close-packet reordering does not lose a validated receipt. A close code alone
+cannot substitute for it. `capntproto/3` prevents mixing this exchange with the
+former fork-dependent profile. This confirms bytes delivered to bounded input,
+not application execution.
 
 ## Verification
 
-Backend tests exercise TCP/TLS and quiche v1/v2, capability RPC, datagrams,
+Backend tests exercise TCP/TLS and quiche v1, capability RPC, datagrams,
 receipts and shared reservations. Existing discovery, authorization, handoff,
 restoration, migration and scheduling tests use TLS sessions. Conventional
 TLS/mTLS tests cover CA trust, hostnames, client credentials, ALPN, deadlines
-and cancellation. The quiche suite includes RFC 9369 vectors; aioquic provides
+and cancellation. The version gate rejects v2; aioquic provides
 an independent interoperability peer. See [secure transports](TCP-TLS-and-QUIC.md)
 and [testing](Testing.md).
 

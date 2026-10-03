@@ -14,7 +14,7 @@ Disembargo, Abort and Unimplemented, plus Provide/Accept and third-party
 capability descriptors. It supports hosted/promise reference accounting,
 promised-answer transforms, tail transfers, streaming hints, cancellation
 policies, server identity, membranes, revocation and reconnect wrappers.
-See [runtime tests](../../tests/runtime.rs) and [RPC implementation](../../vendor/capnp-rpc/src/rpc.rs).
+See [runtime tests](../../tests/runtime.rs) and [RPC implementation](../../crates/capntproto-rpc/src/rpc.rs).
 
 | Additional operation | Rust support | Reference boundary |
 | --- | --- | --- |

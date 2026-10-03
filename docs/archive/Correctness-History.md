@@ -225,7 +225,7 @@ Implementation started **2026-09-23**:
   composition, handoff and storage fuzz commands remain open.
 
 Commands, assumptions and model bounds: [TESTING.md](Testing-History.md#native-transport-correctness).
-The inherited [packet fuzz target](../../vendor/quiche/fuzz/src/packet_recv_server.rs) still
+The inherited [packet fuzz target](https://github.com/DericHuynh/capntproto/blob/7b0a5aafb6a58f6216979c7c9517739a5687428e/vendor/quiche/fuzz/src/packet_recv_server.rs) still
 uses TLS configuration and a BoringSSL-specific randomness reset. The separate
 [first-party fuzz package](../../fuzz/Cargo.toml) tests the Native transport with real
 cryptography. Runtime-wide deterministic injection and the other roadmap items

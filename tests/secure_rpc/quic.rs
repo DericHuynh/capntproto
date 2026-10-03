@@ -27,6 +27,16 @@ fn client(pki: &Pki, mutual: bool, version: Version) -> Endpoint {
     );
     endpoint
 }
+async fn assert_peer_closes(stream: &mut quic::Stream) {
+    tokio::time::timeout(TIMEOUT, async {
+        while !stream.is_closed() {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(stream.shutdown().await.is_err());
+}
 async fn roundtrip(mutual: bool, version: Version) {
     local(async {
         let pki = Pki::new();
@@ -59,10 +69,13 @@ async fn quic_v1_rpc_capabilities_pipeline_large_messages_and_shutdown() {
 async fn quic_v1_mtls_authenticates_both_peers() {
     roundtrip(true, Version::V1).await;
 }
-#[tokio::test(flavor = "current_thread")]
-async fn quic_v2_rpc_and_mtls() {
-    roundtrip(false, Version::V2).await;
-    roundtrip(true, Version::V2).await;
+#[test]
+fn quic_v2_is_rejected_without_silent_downgrade() {
+    let pki = Pki::new();
+    assert!(
+        matches!(quic::client_config_for_version(pki.roots_der(), None, Version::V2),
+        Err(error) if error.kind() == io::ErrorKind::Unsupported)
+    );
 }
 
 async fn rejected(
@@ -96,7 +109,7 @@ async fn rejected(
 async fn quic_rejects_untrusted_wrong_name_expired_and_wrong_usage_servers() {
     local(async {
         let pki = Pki::new();
-        for version in [Version::V1, Version::V2] {
+        for version in [Version::V1] {
             for fault in 0..4 {
                 let roots = if fault == 0 {
                     Pki::new().roots_der()
@@ -127,7 +140,7 @@ async fn quic_rejects_untrusted_wrong_name_expired_and_wrong_usage_servers() {
 async fn quic_mtls_rejects_missing_untrusted_expired_and_wrong_usage_clients() {
     local(async {
         let pki = Pki::new();
-        for version in [Version::V1, Version::V2] {
+        for version in [Version::V1] {
             for fault in 0..4 {
                 let identity = match fault {
                     0 => None,
@@ -155,7 +168,7 @@ async fn quic_mtls_rejects_missing_untrusted_expired_and_wrong_usage_clients() {
 async fn quic_rejects_mismatched_rpc_alpn() {
     local(async {
         let pki = Pki::new();
-        for version in [Version::V1, Version::V2] {
+        for version in [Version::V1] {
             for protocols in [&[][..], &[&b"h3"[..]][..]] {
                 let mut client =
                     quic::client_config_for_version(pki.roots_der(), None, version).unwrap();
@@ -177,7 +190,7 @@ async fn setup_deadline_closes_authenticated_peer_without_rpc_stream() {
     local(async {
         let pki = Pki::new();
         let server = server(&pki, false);
-        let client = client(&pki, false, Version::V2);
+        let client = client(&pki, false, Version::V1);
         let (connection, accepted) = tokio::join!(
             quic::connect(&client, server.local_addr().unwrap(), "localhost", TIMEOUT),
             async {
@@ -186,10 +199,7 @@ async fn setup_deadline_closes_authenticated_peer_without_rpc_stream() {
         );
         assert_eq!(accepted.err().unwrap().kind(), io::ErrorKind::TimedOut);
         let mut connection = connection.unwrap();
-        assert!(tokio::time::timeout(TIMEOUT, connection.shutdown())
-            .await
-            .unwrap()
-            .is_err());
+        assert_peer_closes(&mut connection).await;
     })
     .await;
 }
@@ -198,7 +208,7 @@ async fn listener_accepts_while_peer_stalls_and_preserves_established_rpc_after_
     local(async {
         let pki = Pki::new();
         let endpoint = server(&pki, true);
-        let client = client(&pki, true, Version::V2);
+        let client = client(&pki, true, Version::V1);
         let (server, driver) = TwoPartyServer::new(bootstrap());
         let server_task = tokio::task::spawn_local(driver);
         let mut listening = Box::pin(quic::listen(&server, &endpoint, Default::default(), Default::default(), |_, e| panic!("unexpected rejection: {e}")));
@@ -214,14 +224,14 @@ async fn listener_accepts_while_peer_stalls_and_preserves_established_rpc_after_
         };
         let (mut stalled, cap, close, task) = tokio::select! { r = clients => r, r = &mut listening => panic!("listener exited: {r:?}") };
         drop(listening);
-        assert!(tokio::time::timeout(TIMEOUT, stalled.shutdown()).await.unwrap().is_err());
+        assert_peer_closes(&mut stalled).await;
         assert_eq!(echo(&cap, 82).await.unwrap(), 82);
         close.await.unwrap(); task.await.unwrap().unwrap();
         server.drain().await.unwrap(); drop(server); server_task.await.unwrap().unwrap();
     }).await;
 }
 #[tokio::test(flavor = "current_thread")]
-async fn acknowledged_half_close_preserves_large_payload_and_reverse_direction() {
+async fn half_close_preserves_large_payload_and_reverse_direction() {
     local(async {
         let pki = Pki::new();
         let server = server(&pki, false);
@@ -233,20 +243,23 @@ async fn acknowledged_half_close_preserves_large_payload_and_reverse_direction()
             let mut payload = Vec::new();
             stream.read_to_end(&mut payload).await.unwrap();
             assert_eq!(payload, vec![0x37; 100_000]);
-            stream.write_all(b"received").await.unwrap();
+            stream.write_all(&vec![0x72; 100_000]).await.unwrap();
             stream.shutdown().await.unwrap();
         });
-        let endpoint = client(&pki, false, Version::V2);
+        let endpoint = client(&pki, false, Version::V1);
         let mut stream = quic::connect(&endpoint, address, "localhost", TIMEOUT)
             .await
             .unwrap();
         stream.write_all(&vec![0x37; 100_000]).await.unwrap();
         stream.shutdown().await.unwrap();
         stream.shutdown().await.unwrap();
+        // Let the sender finish and drop while our bounded receive bridge is
+        // full. Its queued FIN/data and our buffered final response must survive.
+        task.await.unwrap();
+        tokio::time::sleep(Duration::from_millis(50)).await;
         let mut response = Vec::new();
         stream.read_to_end(&mut response).await.unwrap();
-        assert_eq!(response, b"received");
-        task.await.unwrap();
+        assert_eq!(response, vec![0x72; 100_000]);
     })
     .await;
 }
@@ -277,10 +290,7 @@ async fn drop_cancels_session_and_releases_routes() {
         );
         drop(client);
         let mut server_stream = server_stream;
-        assert!(tokio::time::timeout(TIMEOUT, server_stream.shutdown())
-            .await
-            .unwrap()
-            .is_err());
+        assert_peer_closes(&mut server_stream).await;
         drop(server_stream);
         tokio::time::timeout(TIMEOUT, endpoint.wait_idle())
             .await
@@ -302,7 +312,7 @@ async fn quic_validates_ip_subject_alternative_names() {
                 "127.0.0.1:0".parse().unwrap(),
             )
             .unwrap();
-            let client = client(&pki, false, Version::V2);
+            let client = client(&pki, false, Version::V1);
             let (sent, accepted) = tokio::join!(
                 async {
                     let mut stream =

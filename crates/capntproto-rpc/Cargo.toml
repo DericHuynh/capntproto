@@ -1,0 +1,47 @@
+# Maintained Capntproto crate derived from capnp-rpc. See upstream provenance and LICENSE.
+[package]
+publish = false
+edition = "2021"
+name = "capntproto-rpc"
+version = "0.25.1"
+authors = ["David Renshaw <dwrenshaw@gmail.com>"]
+build = "build.rs"
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+description = "implementation of the Cap'n Proto remote procedure call protocol"
+readme = "README.md"
+categories = ["network-programming"]
+license = "MIT"
+repository = "https://github.com/DericHuynh/capntproto"
+
+[lib]
+name = "capnp_rpc"
+path = "src/lib.rs"
+
+[dependencies.capnp]
+package = "capntproto-core"
+version = "0.25.0"
+path = "../capntproto-core"
+
+[dependencies.capnp-futures]
+package = "capntproto-futures"
+version = "0.25.0"
+path = "../capntproto-futures"
+
+[dependencies.futures]
+version = "0.3.0"
+features = ["std"]
+default-features = false
+
+[lints.clippy]
+missing_safety_doc = "allow"
+type_complexity = "allow"
+
+[lints.rust]
+unreachable_pub = "deny"
+
+[build-dependencies]
+capnpc = { package = "capntproto-codegen", version = "0.25", path = "../capntproto-codegen" }

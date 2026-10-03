@@ -726,10 +726,17 @@ mod tests {
             "vendor/capnproto/CMakeLists.txt",
             "vendor/capnproto/c++/src/capnp/rpc.c++",
             "vendor/capnproto/LICENSE",
-            "vendor/quiche/Cargo.toml",
-            "vendor/quiche/quiche/src/lib.rs",
-            "vendor/provenance/quiche-revision.json",
-            "vendor/provenance/quiche-native.patch",
+            "crates/capntproto-core/src/lib.rs",
+            "crates/capntproto-core/LICENSE",
+            "crates/capntproto-rpc/src/lib.rs",
+            "crates/capntproto-rpc/LICENSE",
+            "crates/capntproto-futures/src/lib.rs",
+            "crates/capntproto-futures/LICENSE",
+            "crates/capntproto-codegen/src/lib.rs",
+            "crates/capntproto-codegen/LICENSE",
+            "schemas/imports/capnp/schema.capnp",
+            "schemas/imports/capnp/c++.capnp",
+            "schemas/imports/capnp/stream.capnp",
         ] {
             assert!(sources.contains(Path::new(path)), "unbundled input {path}");
         }

@@ -17,10 +17,10 @@ quic = ["capntproto/quic"]
 
 [dependencies]
 capntproto = { path = "../..", default-features = false }
-capnp = { path = "../../vendor/capnp" }
-capnp-rpc = { path = "../../vendor/capnp-rpc" }
+capnp = { package = "capntproto-core", path = "../../crates/capntproto-core" }
+capnp-rpc = { package = "capntproto-rpc", path = "../../crates/capntproto-rpc" }
 tokio = { version = "1", features = ["rt", "macros", "io-util"] }
 tempfile = "3"
 
 [build-dependencies]
-capnpc = { path = "../../vendor/capnpc" }
+capnpc = { package = "capntproto-codegen", path = "../../crates/capntproto-codegen" }

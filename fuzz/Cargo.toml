@@ -17,14 +17,14 @@ afl-targets = ["dep:afl"]
 [dependencies]
 afl = { version = "=0.18.2", optional = true, features = ["no_cfg_fuzzing"] }
 capntproto = { path = "..", default-features = false, features = ["native"] }
-capnp = { path = "../vendor/capnp" }
-capnp-rpc = { path = "../vendor/capnp-rpc" }
+capnp = { package = "capntproto-core", path = "../crates/capntproto-core" }
+capnp-rpc = { package = "capntproto-rpc", path = "../crates/capntproto-rpc" }
 futures = "0.3"
 libfuzzer-sys = { version = "=0.4.13", optional = true }
-quiche = { path = "../vendor/quiche/quiche", default-features = false, features = ["boringssl-boring-crate"] }
+quiche = { version = "=0.30.0", default-features = false, features = ["boringssl-boring-crate"] }
 
 [build-dependencies]
-capnpc = { path = "../vendor/capnpc" }
+capnpc = { package = "capntproto-codegen", path = "../crates/capntproto-codegen" }
 
 [[bin]]
 name = "rpc_lifecycle"

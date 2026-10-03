@@ -39,9 +39,9 @@ and CI lanes. Platform smoke jobs do not qualify storage durability on every OS.
 | Compile-time reply rejection contracts | `cargo test --locked --test api_contracts rpc_reply::structured_rpc_reply_compile_contracts -- --exact` |
 | Driver ownership and native vats | `cargo test --locked --test rpc_ownership --test native_vat` |
 | Admission, pipelining and forwarding | `cargo test --locked --test rpc_admission --test result_pipeline --test tail_transfer --test answer_adoption` |
-| TCP, TLS/mTLS and QUIC v1/v2 | `cargo test --locked --test tcp_rpc --test secure_rpc` |
+| TCP, TLS/mTLS and QUIC v1 | `cargo test --locked --test tcp_rpc --test secure_rpc` |
 | Native transport backends | `cargo test --locked --lib transport::backend_tests` |
-| QUIC fork and provenance | `cargo test --locked --test tooling quiche_native_regressions -- --exact` and `cargo test --locked --test tooling pinned_native_profile -- --exact` |
+| Upstream QUIC adapter and registry pin | `cargo test --locked --lib transport:: -- --skip tlc` and `cargo test --locked --test tooling pinned_native_profile -- --exact` |
 | Native routes and migration | `cargo test --locked --test native_multiparty --test native_pipeline_migration --test native_deployment` |
 | Storage worker and component ORM | `cargo test --locked --test storage_worker --test component_orm` |
 | Storage recovery in child processes | `cargo test --locked --test tooling storage_crashes_in_isolated_process -- --exact` |

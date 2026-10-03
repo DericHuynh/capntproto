@@ -18,12 +18,18 @@ pub fn client_config(
 ) -> io::Result<ClientConfig> {
     client_config_for_version(roots, identity, Version::V1)
 }
-/// Select v1 or v2 explicitly. No version downgrade, resumption or 0-RTT.
+/// Select a wire version. Unsupported versions fail; no downgrade or 0-RTT.
 pub fn client_config_for_version(
     roots: Vec<CertificateDer<'static>>,
     identity: Option<tls::Identity>,
     version: Version,
 ) -> io::Result<ClientConfig> {
+    if !quiche::version_is_supported(version.wire_id()) {
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "upstream Quiche does not support this QUIC version",
+        ));
+    }
     Ok(ClientConfig(config(identity, Some(roots), false, version)?))
 }
 /// A supplied client trust store makes client authentication mandatory.

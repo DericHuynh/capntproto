@@ -9,17 +9,17 @@ readme = "README.md"
 publish = false
 
 [dependencies]
-capnp = { path = "../../vendor/capnp" }
-capnp-rpc = { path = "../../vendor/capnp-rpc" }
+capnp = { package = "capntproto-core", path = "../capntproto-core" }
+capnp-rpc = { package = "capntproto-rpc", path = "../capntproto-rpc" }
 capntproto-compiler = { path = "../capntproto-compiler" }
 futures = "0.3"
 serde_json = "1"
 base64 = "0.22"
 
 [build-dependencies]
-capnp = { path = "../../vendor/capnp" }
+capnp = { package = "capntproto-core", path = "../capntproto-core" }
 capntproto-compiler = { path = "../capntproto-compiler" }
-capnpc = { path = "../../vendor/capnpc" }
+capnpc = { package = "capntproto-codegen", path = "../capntproto-codegen" }
 
 [dev-dependencies]
 capntproto-test-support = { path = "../../test-support" }

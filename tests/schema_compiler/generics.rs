@@ -309,7 +309,7 @@ fn rust_generics_generate_working_structs_and_rpc_bindings() {
         .run(capnp::serialize::write_message_to_words(&request).as_slice())
         .unwrap();
     fs::write(project.path().join("Cargo.toml"), format!(
-        "[package]\nname = \"rust-generic-acceptance\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\ncapnp = {{ path = {:?} }}\ncapnp-rpc = {{ path = {:?} }}\ntokio = {{ version = \"1\", features = [\"rt\", \"macros\", \"time\"] }}\n", root().join("vendor/capnp"), root().join("vendor/capnp-rpc"))).unwrap();
+        "[package]\nname = \"rust-generic-acceptance\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\ncapnp = {{ package = \"capntproto-core\", path = {:?} }}\ncapnp-rpc = {{ package = \"capntproto-rpc\", path = {:?} }}\ntokio = {{ version = \"1\", features = [\"rt\", \"macros\", \"time\"] }}\n", root().join("crates/capntproto-core"), root().join("crates/capntproto-rpc"))).unwrap();
     fs::write(project.path().join("src/lib.rs"), r#"
 pub mod generics_capnp { include!("generics_capnp.rs"); }
 #[cfg(test)]
@@ -408,7 +408,7 @@ fn repository_schemas_match_pinned_cpp_with_rust_frontend() {
         .join("c++/src/capnp/capnp");
     let schemas = root().join("schemas");
     let standard = root().join("vendor/capnproto/c++/src");
-    let rust_imports = root().join("vendor/capnpc");
+    let rust_imports = root().join("crates/capntproto-codegen");
     let mut files: Vec<_> = fs::read_dir(&schemas)
         .unwrap()
         .map(|e| e.unwrap().path())

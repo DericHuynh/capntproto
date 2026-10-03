@@ -48,22 +48,23 @@ RPC lifecycle state or own another shutdown-control slot.
 The two-party queue terminator drains admitted messages. `output_closed()` then
 confirms local half-close. `drive_until_shutdown()` also waits for disconnect.
 Native shutdown separately confirms peer byte receipt. None proves method completion.
-The quiche fork exposes `stream_send_acknowledged()`; successful receipt remains
-observable after collection, whereas STOP_SENDING and local resets never count.
+Native QUIC confirms reciprocal receipts with an explicit nonce/count echo on a
+control stream or authenticated close reason, using upstream Quiche public APIs.
 
 ## Transport transitions and buffers
 
 `rpc::tcp` adapts ordinary TCP connections to the two-party RPC engine.
 `rpc::tls` uses rustls/Tokio for TLS 1.3 over TCP, and `rpc::quic` uses
-the quiche engine for standard QUIC v1/v2 with TLS 1.3. Both secure transports use
+the quiche engine for standard QUIC v1 with TLS 1.3. Both secure transports use
 the `capntproto-rpc/1` ALPN, explicit trust roots, and optional mandatory client
 certificate verification. Connection setup completes before a bootstrap is
 installed; application-specific authorization uses the verified certificate chain.
 Bounded concurrent listeners isolate failed and stalled handshakes. Canceling a
 listener drops pending handshakes while the common ServerDriver retains accepted
 RPC sessions. Each QUIC session uses one client-initiated bidirectional stream;
-write shutdown waits for acknowledged bytes/FIN, and dropping the stream closes
-its connection even when a diagnostic handle remains. These are two-party
+write shutdown queues bytes/FIN into Quiche, and dropping an open writer closes
+its connection. After shutdown, pending transmission retains a driver until
+stream collection or connection close/timeout. These are two-party
 transports; Native-specific multiparty routing remains separate. See
 [TCP TLS and QUIC](TCP-TLS-and-QUIC.md) for configuration and tests.
 
@@ -72,17 +73,15 @@ shutdown protocol, scheduling and pending unreliable packet. Its synchronous
 `step(now)` advances the production protocol without socket IO or executor waits.
 The async adapter performs packet delivery, application reads/writes, pacing and
 half-close, then reports completions. Mobility decisions also receive explicit
-time. The root dependency enables the fork's `tokio-clock` backend, so quiche
-recovery, idle/path timers and packet pacing share Tokio's clock with runtime
-scheduling, migration and shutdown. Construct and drive connections within the
-same time domain; `SendInfo.at` converts directly to a Tokio deadline. Paused-time
-tests control these timers together. The standalone fork retains its OS-clock
-default and private deterministic packet-test scope. This clock feature enables
-no test utilities or deterministic entropy in production.
+time. Upstream Quiche recovery, idle/path timers and packet pacing use the system
+clock. Runtime scheduling, migration and shutdown deadlines use Tokio time.
+In production both advance together; Quiche `SendInfo.at` is converted to a Tokio
+deadline. Tests that require QUIC recovery must let real time advance.
 
 In unit tests, a private `DatagramSocket` variant supplies in-memory UDP queues,
 readiness, errors and closure to the same async driver. A local executor polls
-drivers only when woken; paused Tokio time controls recovery and shutdown waits.
+drivers only when woken; packet ticks advance real recovery time and align the
+paused Tokio clock for pacing. Scripted larger advances test application deadlines.
 Generated packet scripts check delivered bytes and receipts across processes.
 Crypto entropy and internal `select!` order remain uncontrolled; event logs are
 diagnostic rather than claims of identical executions. Active dedicated paths,
@@ -143,7 +142,7 @@ Changing providers, authority, or budget rules belongs at this core boundary.
 |---|---|
 | base `capntproto` | RPC adapters, authority and semantic helpers |
 | `tls` | Certificate configuration, TLS 1.3 over TCP, optional mandatory client certificates |
-| `quic` | Standard QUIC v1/v2 RPC streams with quiche; enables `native` and `tls` |
+| `quic` | Standard QUIC v1 RPC streams with quiche; enables `native` and `tls` |
 | `native` | Native/quiche transport, listener, arbitration, multiparty routing, provisioning, discovery, NAT rendezvous and path control |
 | `services` | Bulk, realtime and schema exchange |
 | `storage` | mmap store, typed ORM and persistence |

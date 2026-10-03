@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test v1/v2 in both directions against aioquic 1.3.0, including Retry and key updates.
+"""Test v1 in both directions against aioquic 1.3.0, including Retry and key updates.
 
 Build first: cargo build --locked --example quic-interop
 Run with an isolated Python environment containing aioquic==1.3.0.
@@ -14,33 +14,12 @@ import tempfile
 from aioquic.asyncio import connect, serve
 from aioquic.asyncio.protocol import QuicConnectionProtocol
 from aioquic.quic.configuration import QuicConfiguration
-from aioquic.quic import crypto
 from aioquic.quic.events import HandshakeCompleted
 from aioquic.quic.packet import QuicProtocolVersion
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
-
-# aioquic 1.3.0 incorrectly uses the v1 key-update label on v2. Correct that
-# single operation in this independent test peer per RFC 9369 section 3.3.2.
-# The independent peer initiates updates; quiche must process the new key
-# phase in both roles and versions. No installed files are modified.
-_original_next_key_phase = crypto.next_key_phase
-
-
-def next_key_phase(context):
-    if context.version != QuicProtocolVersion.VERSION_2:
-        return _original_next_key_phase(context)
-    algorithm = crypto.cipher_suite_hash(context.cipher_suite)
-    result = crypto.CryptoContext(key_phase=int(not context.key_phase))
-    result.setup(
-        cipher_suite=context.cipher_suite,
-        secret=crypto.hkdf_expand_label(algorithm, context.secret, b"quicv2 ku", b"", algorithm.digest_size),
-        version=context.version,
-    )
-    return result
-
 
 SIZE = 131_072
 ALPN = "capntproto-rpc/1"
@@ -77,8 +56,6 @@ async def exchange(reader, writer, client, update):
 
 async def main(binary):
     assert importlib.metadata.version("aioquic") == "1.3.0", "use aioquic==1.3.0"
-    crypto.next_key_phase = next_key_phase
-    print("aioquic 1.3.0 peer: applying RFC 9369 v2 key-update label correction", flush=True)
     key = ec.generate_private_key(ec.SECP256R1())
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "localhost")])
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -92,7 +69,7 @@ async def main(binary):
         root = pathlib.Path(directory)
         (root / "cert.der").write_bytes(cert.public_bytes(serialization.Encoding.DER))
         (root / "key.der").write_bytes(key.private_bytes(serialization.Encoding.DER, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
-        for version, wire in [("1", QuicProtocolVersion.VERSION_1), ("2", QuicProtocolVersion.VERSION_2)]:
+        for version, wire in [("1", QuicProtocolVersion.VERSION_1)]:
             for retry in (False, True):
                 for rust_server in (False, True):
                     config = QuicConfiguration(is_client=rust_server, alpn_protocols=[ALPN], supported_versions=[wire], server_name="localhost")

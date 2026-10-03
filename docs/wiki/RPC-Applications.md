@@ -105,7 +105,7 @@ let resources = connection.diagnostics();
 let output = connection.outgoing_queue();
 ```
 
-The same driver setting applies to TLS/mTLS and quiche QUIC v1/v2. For a native
+The same driver setting applies to TLS/mTLS and quiche QUIC v1. For a native
 vat, use `Vat::builder(...).outgoing_call_limit(128)`; introduced connections
 inherit the limit. The lower-level `RpcSystem::set_outgoing_call_limit` also
 updates existing connections. Defaults remain unlimited; zero rejects new
@@ -364,7 +364,7 @@ cargo test --locked -p capntproto --test rpc_ownership --test native_vat --test 
 [Native vat tests](../../tests/native_vat.rs) exercise three-party pipelining,
 on-demand direct dialing, capability joins, introducer removal, per-peer drain,
 authenticated bootstrap policy and cancellation. The handoff scenario runs over
-TCP/TLS and quiche QUIC v1 and v2. [Connection tests](../../tests/rpc_ownership.rs)
+TCP/TLS and quiche QUIC v1. [Connection tests](../../tests/rpc_ownership.rs)
 cover drop, active/unpolled shutdown cancellation, blocked writers and retained
 clients. The secure transport suite also exercises the owned connection facade
-with TLS, mTLS and both QUIC versions.
+with TLS, mTLS and QUIC v1.

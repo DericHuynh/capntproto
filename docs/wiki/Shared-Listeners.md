@@ -1,7 +1,7 @@
 # Shared Native listeners
 
 `native_listener` provides bounded, single-use incoming connection reservations
-on one UDP socket. The quiche engine uses standard QUIC v1/v2 and pinned mutual
+on one UDP socket. The quiche engine uses standard QUIC v1 and pinned mutual
 TLS. Quiche clients can select the unpredictable, provisioned
 initial destination ID. Admission verification binds that ID into the signed
 certificate context; possession of the routing ID alone grants no authority.

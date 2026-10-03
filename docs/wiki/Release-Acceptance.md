@@ -40,7 +40,7 @@ snapshots; test counts are not a substitute for matching inputs.
 | P3 — Advertised interoperability | Name and test peer versions/features; distinguish installed C++ from source-pinned comparisons and native Rust-only profiles |
 | P4 — Deployment/storage operations | Integrated offered-load/tail-latency measurements, cold recovery, real writeback failures, supported filesystems and verified backup restoration |
 
-TCP/TLS and standard quiche QUIC v1/v2 are implemented, including TLS/mTLS tests
+TCP/TLS and standard quiche QUIC v1 are implemented, including TLS/mTLS tests
 and an independent QUIC fixture with its documented correction. General Join
 and third-party answers remain unsupported by the pinned C++ dispatcher.
 [Transport verification](TCP-TLS-and-QUIC.md#verification) states what was tested.

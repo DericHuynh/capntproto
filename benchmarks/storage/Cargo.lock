@@ -15,47 +15,82 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
-name = "capnp"
-version = "0.25.6"
+name = "capntproto"
+version = "0.1.0"
 dependencies = [
- "embedded-io",
+ "capntproto-codegen",
+ "capntproto-compiler",
+ "capntproto-core",
+ "capntproto-futures",
+ "capntproto-rpc",
+ "fs2",
+ "futures",
+ "libc",
+ "memmap2",
+ "ring",
+ "serde",
+ "serde_json",
+ "socket2",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "capntproto-codegen"
+version = "0.25.3"
+dependencies = [
+ "capntproto-core",
+ "pulldown-cmark",
+ "pulldown-cmark-to-cmark",
 ]
 
 [[package]]
 name = "capntproto-compiler"
 version = "0.1.0"
 dependencies = [
- "capnp",
+ "capntproto-core",
  "getrandom 0.4.3",
  "md5",
 ]
 
 [[package]]
-name = "capnp-futures"
+name = "capntproto-core"
+version = "0.25.6"
+dependencies = [
+ "embedded-io",
+]
+
+[[package]]
+name = "capntproto-futures"
 version = "0.25.2"
 dependencies = [
- "capnp",
+ "capntproto-core",
  "futures-channel",
  "futures-util",
 ]
 
 [[package]]
-name = "capnp-rpc"
+name = "capntproto-rpc"
 version = "0.25.1"
 dependencies = [
- "capnp",
- "capnp-futures",
- "capnpc",
+ "capntproto-codegen",
+ "capntproto-core",
+ "capntproto-futures",
  "futures",
 ]
 
 [[package]]
-name = "capnpc"
-version = "0.25.3"
+name = "capntproto-storage-comparison"
+version = "0.1.0"
 dependencies = [
- "capnp",
- "pulldown-cmark",
- "pulldown-cmark-to-cmark",
+ "capntproto",
+ "capntproto-codegen",
+ "capntproto-core",
+ "eae_pages",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -331,41 +366,6 @@ name = "r-efi"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
-
-[[package]]
-name = "capntproto"
-version = "0.1.0"
-dependencies = [
- "capnp",
- "capnp-futures",
- "capnp-rpc",
- "capntproto-compiler",
- "capnpc",
- "fs2",
- "futures",
- "libc",
- "memmap2",
- "ring",
- "serde",
- "serde_json",
- "socket2",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-util",
-]
-
-[[package]]
-name = "capntproto-storage-comparison"
-version = "0.1.0"
-dependencies = [
- "capnp",
- "capnpc",
- "eae_pages",
- "capntproto",
- "serde_json",
- "tempfile",
-]
 
 [[package]]
 name = "ring"

@@ -13,7 +13,7 @@ A Rust implementation of Cap'n Proto schemas, serialization and capability RPC,
 with a native schema compiler, compatibility adapters, encrypted transport and
 correctness tooling. Start with the **[project wiki](docs/wiki/Home.md)**.
 
-**Experimental developer preview.** The project includes coordinated Rust forks
+**Experimental developer preview.** The project includes owned Rust protocol crates
 and independent comparisons against pinned C++ Cap'n Proto. It is not affiliated
 with the upstream Cap'n Proto project. Full API parity and production
 qualification remain work in progress; see the [release criteria](docs/wiki/Release-Acceptance.md).
@@ -25,7 +25,7 @@ qualification remain work in progress; see the [release criteria](docs/wiki/Rele
 - **Serialization and capability RPC:** maintained `capnp`, `capnpc` and
   `capnp-rpc` crates, with generated Rust APIs and C++ interoperability tests.
   [Runtime scope](docs/wiki/Runtime-Status.md) · [C++ parity](docs/wiki/Cpp-Parity.md).
-- **Adapters and transport:** TCP, TLS 1.3 and standard QUIC v1/v2 with optional mutual
+- **Adapters and transport:** TCP, TLS 1.3 and standard QUIC v1 with optional mutual
   TLS; JSON/text codecs, ByteStream, HTTP, WebSockets and JSON-RPC; encrypted
   multiparty sessions through quiche and durable storage. [TCP, TLS and QUIC guide](docs/wiki/TCP-TLS-and-QUIC.md).
   [Compatibility adapters](docs/wiki/Compatibility-Adapters.md) · [Architecture](docs/wiki/Architecture.md).
@@ -55,8 +55,8 @@ cargo test --workspace
 ```
 
 The C++ reference is pinned as a Git submodule. Ordinary Rust dependencies are
-resolved by Cargo; the modified Rust forks remain source dependencies in this
-checkout. [Dependency and checkout policy](docs/wiki/Repository-Layout.md#vendored-and-external-code).
+resolved by Cargo; the maintained Rust implementations live in this workspace under `crates/`.
+Quiche is the unmodified 0.30.0 registry package; QUIC v2 is currently unsupported. [Dependency and checkout policy](docs/wiki/Repository-Layout.md#vendored-and-external-code).
 
 Our crates use `capntproto`, `capntproto-compiler`, `capntproto-compat` and the
 `capntproto-` prefix for supporting tools. Upstream dependencies retain their

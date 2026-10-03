@@ -14,6 +14,7 @@ struct PacketCase {
     driver: ShutdownDriver,
     frame: [u8; FRAME_BYTES],
     failed: bool,
+    confirm_close: bool,
 }
 impl PacketCase {
     fn new(crossed: bool, valid: bool, reply_fits: bool, psk: bool) -> Self {
@@ -57,6 +58,7 @@ impl PacketCase {
             driver,
             frame,
             failed: false,
+            confirm_close: true,
         }
     }
     fn step(&mut self) {
@@ -76,7 +78,15 @@ impl PacketCase {
         }
     }
     fn close(&mut self, app: bool, code: u64) {
-        self.b.close(app, code, b"scripted peer close").unwrap();
+        let reason = if self.confirm_close {
+            self.driver
+                .ack_frame
+                .map(|f| f.encode().to_vec())
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        self.b.close(app, code, &reason).unwrap();
         pump(&mut self.b, &mut self.a, &mut false);
         assert!(self.a.is_draining());
         self.driver.finish_on_close(&self.a);
@@ -169,7 +179,33 @@ fn encrypted_close_requires_complete_crossed_fences_and_graceful_application_cod
 }
 
 #[test]
-fn reset_reciprocal_stream_cannot_be_replaced_by_graceful_peer_close() {
+fn close_code_requires_an_exact_authenticated_receipt_echo() {
+    for fault in 0..5 {
+        let mut case = PacketCase::new(true, true, true, true);
+        for event in [1, 2, 3, 4, 4] {
+            case.apply(event);
+        }
+        let mut reason = case.driver.ack_frame.unwrap().encode().to_vec();
+        match fault {
+            0 => reason.clear(),
+            1 => reason[5] ^= 1,
+            2 => reason[21] ^= 1,
+            3 => {
+                reason.pop();
+            }
+            4 => reason.push(0),
+            _ => unreachable!(),
+        }
+        case.b.close(true, ACKNOWLEDGED_CLOSE, &reason).unwrap();
+        pump(&mut case.b, &mut case.a, &mut false);
+        case.driver.finish_on_close(&case.a);
+        drop(DriverGuard(case.driver.control.clone()));
+        assert_eq!(case.outcome(), 2, "fault={fault}");
+    }
+}
+
+#[test]
+fn reset_reciprocal_stream_without_confirmation_cannot_be_replaced_by_close_code() {
     let mut case = PacketCase::new(true, true, true, true);
     for event in [1, 2, 3, 4, 4] {
         case.apply(event);
@@ -178,7 +214,7 @@ fn reset_reciprocal_stream_cannot_be_replaced_by_graceful_peer_close() {
     case.a
         .stream_shutdown(6, quiche::Shutdown::Write, 42)
         .unwrap();
-    assert!(case.a.stream_send_acknowledged(6).is_err());
+    case.confirm_close = false;
     case.close(true, ACKNOWLEDGED_CLOSE);
     assert_eq!(case.outcome(), 2);
 }
@@ -326,7 +362,11 @@ async fn outer_transport_driver_preserves_close_validation_and_deadline_errors()
                     .close(
                         true,
                         if graceful { ACKNOWLEDGED_CLOSE } else { 42 },
-                        b"test close",
+                        &case
+                            .driver
+                            .ack_frame
+                            .map(|f| f.encode().to_vec())
+                            .unwrap_or_default(),
                     )
                     .unwrap();
                 pump(&mut case.b, &mut case.a, &mut false);
@@ -418,7 +458,7 @@ fn replay_tlc_encrypted_shutdown_packet_fences() {
                         case.a
                             .stream_shutdown(6, quiche::Shutdown::Write, 42)
                             .unwrap();
-                        assert!(case.a.stream_send_acknowledged(6).is_err());
+                        case.confirm_close = false;
                     }
                     case.apply(state["event"]);
                     let protocol = &case.driver.protocol;

@@ -40,7 +40,8 @@ pub enum QuicVersion {
     /// RFC 9000. The default for existing peers.
     #[default]
     V1,
-    /// RFC 9369, including authenticated RFC 9368 version information.
+    /// RFC 9369 identifier. Unsupported by the selected upstream Quiche release;
+    /// configuring this version returns an error without downgrading.
     V2,
 }
 

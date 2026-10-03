@@ -20,6 +20,17 @@ use tokio::{
     sync::oneshot,
 };
 
+// Upstream Quiche uses std::time::Instant. Let it advance, and keep the
+// paused application clock at least as far ahead as packet pacing timestamps.
+// Large scripted advances still belong only to our application deadlines.
+async fn packet_tick() {
+    std::thread::sleep(Duration::from_millis(1));
+    let step = tokio::time::Instant::from_std(std::time::Instant::now())
+        .saturating_duration_since(tokio::time::Instant::now())
+        .max(Duration::from_millis(1));
+    tokio::time::advance(step).await;
+}
+
 const ADDRESSES: [&str; 2] = ["127.0.0.1:1234", "127.0.0.1:4321"];
 
 #[derive(Default)]
@@ -81,6 +92,14 @@ impl Fixture {
         Self::with_mobility(network, psk, false)
     }
     fn with_mobility(network: Network, psk: bool, mobility: bool) -> Self {
+        Self::configured(network, psk, mobility, |_| {})
+    }
+    fn configured(
+        network: Network,
+        psk: bool,
+        mobility: bool,
+        configure: impl Fn(&mut quiche::Config),
+    ) -> Self {
         let identities = [
             Identity::from_private_key([7; 32]).unwrap(),
             Identity::from_private_key([9; 32]).unwrap(),
@@ -94,8 +113,10 @@ impl Fixture {
                 b"runtime packet simulation",
             )
             .unwrap();
+            config.set_initial_rtt(Duration::from_millis(10));
             config.set_initial_max_stream_data_bidi_local(42);
             config.set_initial_max_stream_data_bidi_remote(42);
+            configure(&mut config);
             let cid = [index as u8 + 1; 16];
             let conn = if index == 0 {
                 quiche::connect(
@@ -159,7 +180,7 @@ impl Fixture {
         while let Some(packet) = self.network.take(false) {
             self.network.deliver(packet);
         }
-        tokio::time::advance(Duration::from_millis(1)).await;
+        packet_tick().await;
         self.poll();
     }
     async fn establish(&mut self) {
@@ -240,7 +261,7 @@ async fn packet_schedule(psk: bool, choices: &[u8], log: &mut Vec<(usize, usize,
     let mut lost = false;
     for _ in 0..20 {
         fixture.poll();
-        tokio::time::advance(Duration::from_millis(1)).await;
+        packet_tick().await;
         if fixture.network.take(false).is_some() {
             lost = true;
             break;
@@ -286,7 +307,7 @@ async fn packet_schedule(psk: bool, choices: &[u8], log: &mut Vec<(usize, usize,
             fixture.network.deliver(delayed.pop_front().unwrap().1);
         }
         fixture.read();
-        tokio::time::advance(Duration::from_millis(1)).await;
+        packet_tick().await;
         if fixture.peers[0].received == inputs[1] && fixture.peers[1].received == inputs[0] {
             break;
         }
@@ -445,7 +466,7 @@ async fn blocked_packet_send_is_canceled_by_shutdown_close_error_and_drop() {
         fixture.network.sending(id, Send::Blocked);
         for _ in 0..10 {
             fixture.poll();
-            tokio::time::advance(Duration::from_millis(1)).await;
+            packet_tick().await;
         }
         assert!(!fixture.network.0.borrow().endpoints[id]
             .send_wait
@@ -457,7 +478,8 @@ async fn blocked_packet_send_is_canceled_by_shutdown_close_error_and_drop() {
                     .begin(Duration::from_millis(10))
                     .unwrap();
                 fixture.poll();
-                tokio::time::advance(Duration::from_millis(10)).await;
+                // Tokio timers round fractional real-clock ticks up to a millisecond.
+                tokio::time::advance(Duration::from_millis(11)).await;
                 io::ErrorKind::TimedOut
             }
             1 => {
@@ -537,7 +559,7 @@ async fn partition_and_stale_packets_cannot_deliver_into_a_replacement_generatio
             while let Some(packet) = network.take(false) {
                 stale.push(packet);
             }
-            tokio::time::advance(Duration::from_millis(1)).await;
+            packet_tick().await;
         }
         assert!(!stale.is_empty());
         let old_ids = old.peers.each_ref().map(|p| p.id);
@@ -571,7 +593,7 @@ async fn partition_and_stale_packets_cannot_deliver_into_a_replacement_generatio
             replacement.poll();
             while network.take(false).is_some() {}
             replacement.read();
-            tokio::time::advance(Duration::from_millis(1)).await;
+            packet_tick().await;
         }
         assert!(replacement.peers[1].received.is_empty());
         for _ in 0..2000 {
@@ -616,16 +638,26 @@ fn replay_tlc_socket_driver_terminal_races() {
             .build()
             .unwrap()
             .block_on(async {
-                let mut fixture = Fixture::new(Network::default(), false);
+                // This model bounds one blocked flight before recovery. Keep
+                // retransmission outside its 100 ms application deadline and
+                // emit that flight without inter-packet pacing. Other packet
+                // simulations retain pacing and short RTTs for loss recovery.
+                let mut fixture = Fixture::configured(Network::default(), false, false, |config| {
+                    config.set_initial_rtt(Duration::from_secs(1));
+                    config.enable_pacing(false);
+                });
                 let id = fixture.peers[0].id;
                 fixture.network.sending(id, Send::Blocked);
                 for _ in 0..10 {
                     fixture.poll();
-                    tokio::time::advance(Duration::from_millis(1)).await;
+                    packet_tick().await;
                 }
                 assert!(!fixture.network.0.borrow().endpoints[id]
                     .send_wait
                     .is_empty());
+                // Unpaced SendInfo uses system timestamps; keep virtual time
+                // ahead so a model poll doesn't stop at a zero-duration timer.
+                tokio::time::advance(Duration::from_millis(20)).await;
                 fixture.peers[0]
                     .control
                     .begin(Duration::from_millis(100))
@@ -634,14 +666,21 @@ fn replay_tlc_socket_driver_terminal_races() {
                 for state in trace {
                     match state["event"] {
                         1 => fixture.network.close(id),
-                        2 => tokio::time::advance(Duration::from_millis(100)).await,
+                        // Include Tokio's millisecond rounding after a real-clock tick.
+                        2 => tokio::time::advance(Duration::from_millis(101)).await,
                         3 => fixture
                             .network
                             .sending(id, Send::Fail(io::ErrorKind::ConnectionReset)),
                         4 if state["failed"] == 0 => fixture.network.sending(id, Send::Ready),
                         4 => (),
                         5 => fixture.peers[0].driver.future = None,
-                        6 => fixture.peers[0].driver.poll(),
+                        6 => {
+                            // A poll transition also releases upstream pacing
+                            // from the preceding turn; it cannot advance the
+                            // explicit 100 ms application expiry on its own.
+                            packet_tick().await;
+                            fixture.peers[0].driver.poll();
+                        }
                         other => panic!("unknown socket event {other}"),
                     }
                     let result = fixture.peers[0]
