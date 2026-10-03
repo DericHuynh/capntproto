@@ -1,7 +1,8 @@
 {
-  "noise_shutdown::schedule_tests::shuttle_detects_lost_wakeup": "Intentional negative control executed by tests/schedules.rs; must detect the lost wakeup.",
-  "noise_rpc::session::shutdown_tests::shuttle_detects_lost_shutdown_terminal_wakeup": "Intentional negative control executed by the schedule gate; must deadlock.",
+  "native_shutdown::schedule_tests::shuttle_detects_lost_wakeup": "Intentional negative control executed by tests/schedules.rs; must detect the lost wakeup.",
+  "native_rpc::session::shutdown_tests::shuttle_detects_lost_shutdown_terminal_wakeup": "Intentional negative control executed by the schedule gate; must deadlock.",
   "storage::fault_tests::child_process_crashes_preserve_batch_atomicity_across_recovery_and_second_crash": "Executed in isolation by the storage recovery gate to preserve flock semantics.",
+  "storage::components::crash_tests::child_process_crashes_preserve_components_across_recovery_and_second_crash": "Executed in isolation by the storage recovery gate to preserve flock semantics.",
   "protocol_reference": "Optional full composed state-space exploration; bounded model checks remain mandatory.",
   "isolated_release_qualification": "Separate clean source-bundle release qualification, not a substitute for required CI checks.",
   "build_qualified_source": "Publishes a source bundle only after separate release qualification."

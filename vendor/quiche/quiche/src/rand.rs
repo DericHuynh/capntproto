@@ -25,20 +25,8 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 pub fn rand_bytes(buf: &mut [u8]) {
-    #[cfg(all(test, feature = "noise"))]
-    if crate::simulation::fill_bytes(buf) {
-        return;
-    }
-    #[cfg(not(feature = "noise"))]
     unsafe {
         RAND_bytes(buf.as_mut_ptr(), buf.len());
-    }
-    #[cfg(feature = "noise")]
-    {
-        use ring::rand::SecureRandom;
-        ring::rand::SystemRandom::new()
-            .fill(buf)
-            .expect("OS randomness unavailable");
     }
 }
 
@@ -71,7 +59,6 @@ pub fn rand_u64_uniform(max: u64) -> u64 {
     r / chunk_size
 }
 
-#[cfg(not(feature = "noise"))]
 extern "C" {
     fn RAND_bytes(buf: *mut u8, len: libc::size_t) -> libc::c_int;
 }

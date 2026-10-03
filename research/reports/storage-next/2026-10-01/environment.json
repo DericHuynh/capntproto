@@ -1,0 +1,33 @@
+{
+  "started_utc": "2026-10-02T00:14:21.520020+00:00",
+  "platform": "Linux-7.2.8-1-cachyos-x86_64-with-glibc2.44",
+  "filesystem": {
+    "filesystems": [
+      {
+        "target": "/home",
+        "source": "/dev/nvme0n1p2[/@home]",
+        "fstype": "btrfs",
+        "options": "rw,noatime,compress=zstd:3,ssd,discard=async,space_cache=v2,subvolid=257,subvol=/@home"
+      }
+    ]
+  },
+  "binary_sha256": "5749131a95f5d8d782eeaf401d90d7581df74038cf1be7e7e91c7965d9946147",
+  "sources_sha256": {
+    "examples/storage_probe.rs": "9632e87755ebf64e7abde71534cfd5910ad93dc55de7351d91458e731b0d3eb8",
+    "scripts/storage_probe.py": "49752dbe37fee9ad1d7727d89c1b13b89b9cb053e1aed7bbf189e197ed549c5f",
+    "src/storage.rs": "cb6789b022f6fd6239a65ce7604002d60d518509d023497043189914595503f5",
+    "src/storage/components.rs": "88e3ee451efabfc95d223ffe39bb2669cef201f65566c6346feb10409ba200ba",
+    "src/storage/history.rs": "1ccc05a256e29bb2fe63ae29338146f75d228356227578e3933196b29b853473",
+    "src/storage/io.rs": "1893a3c6a65e9a33b0b92b5ea4514328dd2f463ffb57de51c59c7a58b37089d5",
+    "src/orm.rs": "480dc6d2ecd810c2661ebb6f7789ef6a0dbeb0f43523f2d281dd8be92798abca",
+    "src/orm/components.rs": "dded6ca8c63065e4e9f87aeaf724c54395c94f2bf7050d8199db2df0ec5a978d",
+    "Cargo.lock": "30e91684702313b3f70e651cd30ca1517cb40e67224d542121c0b6fbc6fa249f"
+  },
+  "git_head": "05055dab033fd8b60d3ae0edc8c4f388e832cdcd",
+  "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+  "trials": 3,
+  "order_seed": 20261001,
+  "notes": "Uncontrolled shared host; warm-cache reads/reopen; no timing gates; logical file bytes, not device writes. Git HEAD alone does not identify the dirty source tree; source hashes are included.",
+  "cpu_model": "AMD Ryzen 7 5800H with Radeon Graphics",
+  "cpu0_governor": "powersave"
+}

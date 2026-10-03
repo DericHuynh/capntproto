@@ -153,7 +153,6 @@ pub struct StreamMap<F: BufFactory = DefaultBufFactory> {
 
     // Successful send completion survives collection; reset/stopped streams
     // never enter this set. Used by explicit transport receipt fences.
-    #[cfg(feature = "noise")]
     send_acknowledged: CollectedStreams,
 
     /// Peer's maximum bidirectional stream count limit.
@@ -630,7 +629,6 @@ impl<F: BufFactory> StreamMap<F> {
         }
 
         let s = self.streams.remove(&stream_id).unwrap();
-        #[cfg(feature = "noise")]
         if (s.local || s.bidi) &&
             s.send.is_complete() &&
             !s.send.is_stopped() &&
@@ -648,7 +646,6 @@ impl<F: BufFactory> StreamMap<F> {
         self.collected.insert(stream_id);
     }
 
-    #[cfg(feature = "noise")]
     pub fn send_acknowledged(&self, stream_id: u64) -> Result<bool> {
         if let Some(stream) = self.streams.get(&stream_id) {
             if (!stream.local && !stream.bidi) || stream.send.is_shutdown() {

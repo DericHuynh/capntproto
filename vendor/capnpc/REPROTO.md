@@ -25,7 +25,7 @@ require the vendored ReProto capnp core API.
 * Generated server hooks support self-capabilities and ordered shortenPath.
 
 * Opt-in `field_api(true)` / plugin `--field-api` emits the API-design `api`
-  module and legacy `into_api()` bridges. See docs/RUST_GENERATOR.md for supported
+  module and legacy `into_api()` bridges. See docs/wiki/Rust-Generator.md for supported
   contracts, acceptance tests, and deferred runtime features.
 
 * Field API descriptors retain union selection for scoped edits. Non-group
@@ -61,3 +61,7 @@ require the vendored ReProto capnp core API.
   CommonMark parsing/serialization marks untagged examples as text and preserves
   explicit Rust doctests. This fixes accidental doctests from schema pseudocode
   and indented URLs. The Markdown dependencies are build-time generator dependencies.
+
+* Opt-in `structured_replies(true)` / `--structured-replies` generates server
+  methods using consuming Reply stages. It composes with field_api; default
+  legacy bindings remain supported. See the [RPC contract](../../docs/wiki/RPC-Applications.md#structured-server-replies).

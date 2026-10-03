@@ -1,23 +1,23 @@
-#![cfg(feature = "noise")]
+#![cfg(feature = "native")]
 use reproto::transport::{self, Identity, IdentityError};
 
-// RFC 7748 section 6.1, independent of Snow's own encoder/decoder.
-// https://www.rfc-editor.org/rfc/rfc7748.txt
+// RFC 8032 section 7.1 Ed25519 test vectors.
+// https://www.rfc-editor.org/rfc/rfc8032.txt
 fn key(hex: &str) -> [u8; 32] {
     assert_eq!(hex.len(), 64);
     std::array::from_fn(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).unwrap())
 }
 fn private(index: u64) -> [u8; 32] {
     key(match index {
-        1 => "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
-        2 => "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb",
+        1 => "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+        2 => "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
         _ => panic!("unknown fixture"),
     })
 }
 fn public(index: u64) -> [u8; 32] {
     match index {
-        1 => key("8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a"),
-        2 => key("de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f"),
+        1 => key("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"),
+        2 => key("3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c"),
         3 => [0; 32],
         _ => panic!("unknown fixture"),
     }
@@ -42,17 +42,10 @@ fn imported_keys_match_independent_vectors_and_reject_mismatched_pairs() {
                 "identity public key does not match its private key"
             );
         }
-        // X25519 masks these scalar bits. Import must use the provider's actual
-        // public derivation instead of comparing raw scalars or rejecting them.
-        let mut equivalent = private(index);
-        equivalent[0] ^= 7;
-        equivalent[31] ^= 192;
-        assert_eq!(
-            Identity::from_keypair(equivalent, public(index))
-                .unwrap()
-                .public_key(),
-            public(index)
-        );
+        // Ed25519 seeds are exact bytes, with no X25519 scalar equivalence.
+        let mut changed = private(index);
+        changed[0] ^= 7;
+        assert!(Identity::from_keypair(changed, public(index)).is_err());
         let mut copied_public = identity.public_key();
         copied_public[0] ^= 255;
         assert_ne!(copied_public, identity.public_key());
@@ -177,9 +170,9 @@ async fn imported_keys_label_authenticated_sessions_with_their_proven_peers() {
 #[test]
 fn tlc_identity_construction_and_configuration_traces() {
     use reproto_test_support::verification::exploration;
-    const MODEL: &str = "verification/NoiseIdentity.tla";
-    const CONFIG: &str = include_str!("../verification/NoiseIdentity.cfg");
-    let paths = exploration::traces(MODEL, "noise-identity", CONFIG).unwrap();
+    const MODEL: &str = "verification/NativeIdentity.tla";
+    const CONFIG: &str = include_str!("../verification/NativeIdentity.cfg");
+    let paths = exploration::traces(MODEL, "native-identity", CONFIG).unwrap();
     let peer = Identity::from_private_key([4; 32]).unwrap();
     let mut handshakes = 0;
     for path in &paths {
@@ -245,7 +238,7 @@ fn tlc_identity_construction_and_configuration_traces() {
     assert!(handshakes > 0);
     exploration::controls(
         MODEL,
-        "noise-identity",
+        "native-identity",
         CONFIG,
         &[
             ("acceptMismatch", "LiveBinding"),
@@ -258,7 +251,7 @@ fn tlc_identity_construction_and_configuration_traces() {
     )
     .unwrap();
     eprintln!(
-        "{} identity edge-prefix replays, {handshakes} real Noise handshakes",
+        "{} identity edge-prefix replays, {handshakes} real Native handshakes",
         paths.len()
     );
 }

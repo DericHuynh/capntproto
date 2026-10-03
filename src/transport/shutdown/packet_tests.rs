@@ -4,7 +4,7 @@ use super::{
     tests::{pair_identities, pair_profile, pump},
     *,
 };
-use crate::noise_shutdown::DriverGuard;
+use crate::native_shutdown::DriverGuard;
 use futures::FutureExt;
 use std::time::Duration;
 
@@ -278,7 +278,7 @@ fn damaged_and_previous_session_ciphertext_cannot_supply_a_receipt() {
         old.step();
         assert!(old.driver.acknowledged());
 
-        // Same pinned identities, addresses, CIDs and PSK, but a fresh Noise
+        // Same pinned identities, addresses, CIDs and PSK, but a fresh Native
         // handshake and fence nonce. Neither packet replay nor its duplicate
         // may authenticate into the replacement connection.
         let mut fresh = new_case();
@@ -377,8 +377,8 @@ async fn outer_transport_driver_preserves_close_validation_and_deadline_errors()
 #[test]
 fn replay_tlc_encrypted_shutdown_packet_fences() {
     use reproto_test_support::verification::exploration;
-    const MODEL: &str = "verification/NoiseShutdownPacketFence.tla";
-    const CONFIG: &str = include_str!("../../../verification/NoiseShutdownPacketFence.cfg");
+    const MODEL: &str = "verification/NativeShutdownPacketFence.tla";
+    const CONFIG: &str = include_str!("../../../verification/NativeShutdownPacketFence.cfg");
     let mut total = 0;
     for (crossed, valid, reply_fits, reply_intact) in [
         (false, true, true, true),
@@ -408,7 +408,7 @@ fn replay_tlc_encrypted_shutdown_packet_fences() {
                 ),
             );
         let report =
-            format!("noise-shutdown-packet-fence/{crossed}-{valid}-{reply_fits}-{reply_intact}");
+            format!("native-shutdown-packet-fence/{crossed}-{valid}-{reply_fits}-{reply_intact}");
         let paths = exploration::traces(MODEL, &report, &config).unwrap();
         for psk in [false, true] {
             for path in &paths {

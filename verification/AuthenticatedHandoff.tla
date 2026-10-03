@@ -1,9 +1,9 @@
 ---------------------- MODULE AuthenticatedHandoff -------------------------
 EXTENDS Naturals
 CONSTANT Fault
-\* One provided introduction, one outstanding proxy call, one dedicated Noise
+\* One provided introduction, one outstanding proxy call, one dedicated Native
 \* session, two Accept attempts and at most four operations. Proof abstracts
-\* a completed, correctly bound handshake; Rust replay uses real UDP/Noise.
+\* a completed, correctly bound handshake; Rust replay uses real UDP/Native.
 VARIABLES status, proof, phase, pending, accepted, live, swapped, attempts,
           result, expected, event, steps
 vars == <<status,proof,phase,pending,accepted,live,swapped,attempts,

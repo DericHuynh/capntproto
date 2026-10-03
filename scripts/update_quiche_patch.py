@@ -19,7 +19,7 @@ def main():
     args = parser.parse_args()
     if not args.git_dir.is_dir():
         parser.error('vendored quiche has no Git metadata; pass --git-dir '
-                     '/path/to/pinned-upstream-checkout/.git (see docs/FORK_POLICY.md)')
+                     '/path/to/pinned-upstream-checkout/.git (see docs/wiki/Fork-Policy.md)')
     git = ['git', '--git-dir', str(args.git_dir.resolve()),
            '--work-tree', str(CHECKOUT)]
     provenance = ROOT/'vendor/provenance/quiche-revision.json'
@@ -35,13 +35,13 @@ def main():
         # Restrict archived additions to the fork's source/build inputs.
         corpus = name == 'quiche/src/simulation/packet/property-corpus.json'
         source = name.startswith('quiche/src/') and (name.endswith('.rs') or corpus)
-        if not source and name != 'Cargo.lock':
+        if not source and name not in ('Cargo.lock', 'LICENSE-RFC9369'):
             raise RuntimeError(f'unreviewed untracked fork file: {name}')
         result = subprocess.run(['git','diff','--no-index','--binary','--','/dev/null',name],cwd=CHECKOUT,stdout=subprocess.PIPE)
         if result.returncode != 1:
             raise RuntimeError(f'could not archive {name}')
         patch += result.stdout
-    target = ROOT/'vendor/provenance/quiche-noise.patch'
+    target = ROOT/'vendor/provenance/quiche-native.patch'
     target.write_bytes(patch)
     subprocess.run(git+['apply','--reverse','--check',str(target)],cwd=CHECKOUT,check=True)
     value['patch_sha256'] = hashlib.sha256(patch).hexdigest()

@@ -4,9 +4,9 @@ Capn't Proto is an experimental developer preview. Community support is provided
 maintainer availability permits; there is no guaranteed response time or
 production support contract.
 
-Start with the [README](README.md), [build and operating guide](docs/PREVIEW.md),
-[test guide](docs/TESTING.md), and [quality/benchmark guide](docs/QUALITY.md).
-The [release acceptance criteria](docs/RELEASE_ACCEPTANCE.md) describe current
+Start with the [README](README.md), [build and operating guide](docs/wiki/Getting-Started.md),
+[test guide](docs/wiki/Testing.md), and [quality/benchmark guide](docs/wiki/Quality-and-Benchmarks.md).
+The [release acceptance criteria](docs/wiki/Release-Acceptance.md) describe current
 limitations and remaining qualification work.
 
 ## Public questions and problems

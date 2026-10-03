@@ -26,8 +26,24 @@ pub(super) enum Event {
 }
 /// Control for one authenticated session. It does not keep the session alive.
 #[derive(Clone)]
-pub struct Mobility(mpsc::Sender<Command>);
+pub struct Mobility(Option<mpsc::Sender<Command>>);
 impl Mobility {
+    pub(super) fn unavailable() -> Self {
+        Self(None)
+    }
+    /// Whether this backend exposes validated migration and CID rotation.
+    pub fn is_supported(&self) -> bool {
+        self.0.is_some()
+    }
+    fn sender(&self) -> io::Result<&mpsc::Sender<Command>> {
+        self.0.as_ref().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::Unsupported,
+                "backend does not expose migration controls",
+            )
+        })
+    }
+
     /// Probe from a new, concrete UDP socket, then switch only after encrypted
     /// PATH_RESPONSE validation. Until then, application traffic uses the old
     /// path. Dropping the future cancels a pending probe before commitment.
@@ -53,11 +69,11 @@ impl Mobility {
         {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "invalid Noise migration path or deadline",
+                "invalid Native migration path or deadline",
             ));
         }
         let (tx, rx) = oneshot::channel();
-        self.0
+        self.sender()?
             .try_send(Command::Migrate(socket, peer, Instant::now() + timeout, tx))
             .map_err(queue_error)?;
         rx.await.map_err(|_| closed())?
@@ -67,17 +83,19 @@ impl Mobility {
     /// installed before publication and removed on retirement.
     pub async fn rotate_connection_id(&self) -> io::Result<()> {
         let (tx, rx) = oneshot::channel();
-        self.0.try_send(Command::Rotate(tx)).map_err(queue_error)?;
+        self.sender()?
+            .try_send(Command::Rotate(tx))
+            .map_err(queue_error)?;
         rx.await.map_err(|_| closed())?
     }
 }
 fn closed() -> io::Error {
-    io::Error::new(io::ErrorKind::BrokenPipe, "Noise mobility session closed")
+    io::Error::new(io::ErrorKind::BrokenPipe, "Native mobility session closed")
 }
 fn queue_error<T>(error: mpsc::error::TrySendError<T>) -> io::Error {
     match error {
         mpsc::error::TrySendError::Full(_) => {
-            io::Error::new(io::ErrorKind::WouldBlock, "Noise mobility queue full")
+            io::Error::new(io::ErrorKind::WouldBlock, "Native mobility queue full")
         }
         _ => closed(),
     }
@@ -126,7 +144,7 @@ pub(super) struct Driver {
 pub(super) fn pair() -> (Mobility, Driver) {
     let (tx, rx) = mpsc::channel(8);
     (
-        Mobility(tx),
+        Mobility(Some(tx)),
         Driver {
             commands: rx,
             pending: None,
@@ -146,7 +164,7 @@ impl Driver {
         if self.issued >= 128 {
             return Err(io::Error::new(
                 io::ErrorKind::WouldBlock,
-                "Noise session CID budget exhausted",
+                "Native session CID budget exhausted",
             ));
         }
         let id = cid();
@@ -192,13 +210,13 @@ impl Driver {
                 pending.gate.retire();
                 Some(Err(io::Error::new(
                     io::ErrorKind::Interrupted,
-                    "Noise migration canceled",
+                    "Native migration canceled",
                 )))
             } else if now >= pending.deadline {
                 pending.gate.retire();
                 Some(Err(io::Error::new(
                     io::ErrorKind::TimedOut,
-                    "Noise path validation timed out",
+                    "Native path validation timed out",
                 )))
             } else if conn
                 .is_path_validated(pending.path.local, pending.path.peer)
@@ -301,13 +319,13 @@ impl Driver {
                     {
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidInput,
-                            "Noise migration unavailable or exhausted",
+                            "Native migration unavailable or exhausted",
                         ));
                     }
                     if now >= deadline {
                         return Err(io::Error::new(
                             io::ErrorKind::TimedOut,
-                            "Noise migration deadline elapsed",
+                            "Native migration deadline elapsed",
                         ));
                     }
                     let local = candidate.local_addr()?;
@@ -399,12 +417,12 @@ mod tests {
     #[test]
     fn replay_tlc_path_validation_gate() {
         use reproto_test_support::verification::exploration;
-        let config = include_str!("../../verification/NoisePathMigration.cfg");
+        let config = include_str!("../../verification/NativePathMigration.cfg");
         let live =
             config.replace("SPECIFICATION Spec", "SPECIFICATION LiveSpec") + "\nPROPERTY Settles\n";
         exploration::controls(
-            "verification/NoisePathMigration.tla",
-            "noise-path-migration",
+            "verification/NativePathMigration.tla",
+            "native-path-migration",
             config,
             &[
                 ("early", "Authenticated"),
@@ -415,8 +433,8 @@ mod tests {
         )
         .unwrap();
         let traces = exploration::traces(
-            "verification/NoisePathMigration.tla",
-            "noise-path-migration",
+            "verification/NativePathMigration.tla",
+            "native-path-migration",
             config,
         )
         .unwrap();

@@ -1,0 +1,39 @@
+{
+  "started_utc": "2026-10-02T01:21:28.045403+00:00",
+  "platform": "Linux-7.2.8-1-cachyos-x86_64-with-glibc2.44",
+  "filesystem": {
+    "filesystems": [
+      {
+        "target": "/home",
+        "source": "/dev/nvme0n1p2[/@home]",
+        "fstype": "btrfs",
+        "options": "rw,noatime,compress=zstd:3,ssd,discard=async,space_cache=v2,subvolid=257,subvol=/@home"
+      }
+    ]
+  },
+  "binary_sha256": "843ded56987e650a18a3b928447b8cf9cb17a2d359bc61cd9b86a0f5fe553644",
+  "sources_sha256": {
+    "scripts/concurrency_probe.py": "821e83e331dd975869102206ef5f86339e78d8e5a7bf06e67407b710a72c81d2",
+    "Cargo.toml": "db946d8e581024589ead2d1db6b8275da37be4709539f1f70c382a935b4087e9",
+    "Cargo.lock": "30e91684702313b3f70e651cd30ca1517cb40e67224d542121c0b6fbc6fa249f",
+    "benchmarks/concurrency/Cargo.toml": "0ed28f3ab62f78a3d0a79bb29500e106149d5db27360af71781b5b1e640f9949",
+    "benchmarks/concurrency/Cargo.lock": "c9dfaddc150fb321c99e36e854d3f05ad5cb07f1811dc865df5ec167eda8e347",
+    "src/storage.rs": "5396f888ad21d314fab937c6c2ab6c21f20b006e4254f36a01f5d89584b473ee",
+    "src/storage/components.rs": "6189c44c9796c24fd7d6c6cbc9d6e0ed27e75a97e1ba635d763d9c777d0ef97e",
+    "src/storage/history.rs": "1ccc05a256e29bb2fe63ae29338146f75d228356227578e3933196b29b853473",
+    "src/storage/io.rs": "1893a3c6a65e9a33b0b92b5ea4514328dd2f463ffb57de51c59c7a58b37089d5",
+    "src/storage/worker.rs": "8b349fb6fe54b031f86d7b9a7e51223bfa17a318edb505478beae410a9454fa5",
+    "src/storage/worker/operations.rs": "82c78e2c38e45096b21b045943a09250c3458044bd31ef0ece66406e6a642d07",
+    "benchmarks/concurrency/src/main.rs": "51ea14432c3ddee84b4cb94f8330fbc048e8b77ec1b5bd2c4dbc75fe07a6703d",
+    "benchmarks/concurrency/src/queue.rs": "276b524db80af3b43132e05ec4230ee02fd0e9b96e3e7e0554df4bad5d68c329",
+    "benchmarks/concurrency/src/snapshot.rs": "1abd995a3910f15691bef8b6efa204d2430ecff0987c6e07c9eb61dd4d129b82",
+    "benchmarks/concurrency/src/worker.rs": "4a2a19d0fe6ce34e5eb47ea6596c8840b31bea8788a0d50dde546a5e2282118d"
+  },
+  "git_head": "05055dab033fd8b60d3ae0edc8c4f388e832cdcd",
+  "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+  "trials": 3,
+  "order_seed": 20261002,
+  "notes": "Uncontrolled shared host. Each trial shuffles 28 scenarios run serially in fresh processes. Queue probes yield on full/empty; this is saturation, not production parking or admission. Snapshot writers sleep 100us between publications; achieved counts vary by duration. Worker cases use one outstanding request per producer, default budgets, real fsync for writes. No disk errors, CPU pinning, warmup exclusion or performance gates. Git HEAD alone does not identify the dirty checkout; source and lockfile hashes are included.",
+  "cpu_model": "AMD Ryzen 7 5800H with Radeon Graphics",
+  "cpu0_governor": "powersave"
+}

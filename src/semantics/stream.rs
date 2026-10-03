@@ -15,7 +15,7 @@ pub enum NativeStreamState {
     Failed,
 }
 
-/// Publication gate for stream 0 in native multiparty Noise RPC. The stream is
+/// Publication gate for stream 0 in native multiparty Native RPC. The stream is
 /// initiator-opened even when the first RPC call comes from the responder.
 ///
 /// ```compile_fail,E0451

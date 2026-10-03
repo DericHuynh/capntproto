@@ -1,8 +1,8 @@
-//! Whole-entry storage with append-only generations and atomic compaction.
+//! Whole-entry and component storage with append-only generations and atomic compaction.
 //! Mapped snapshots retain their generation and the stable path lock.
 use fs2::FileExt;
 use memmap2::{Mmap, MmapOptions};
-use ring::digest::{digest, SHA256};
+use ring::digest::{digest, Context, SHA256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File, OpenOptions},
@@ -13,11 +13,14 @@ use std::{
 use thiserror::Error;
 #[cfg(test)]
 mod batch_tests;
+mod components;
 mod history;
+pub use components::{ComponentId, ComponentPublication, ComponentSnapshot, ComponentUpdate};
 mod io;
 mod key;
 #[cfg(test)]
 mod revision_tests;
+pub mod worker;
 pub use crate::semantics::Revision;
 pub use history::{Publication, PublicationCursor};
 use io::{Point, StorageWriter};
@@ -81,6 +84,10 @@ enum CompactStage {
 }
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("operation does not match the store format or object layout")]
+    Layout,
+    #[error("invalid component update: {0}")]
+    Component(&'static str),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("corrupt storage: {0}")]
@@ -185,9 +192,10 @@ fn record(kind: u64, object: ObjectKey, revision: Revision, value: &[u8]) -> Res
     set(&mut record, 16, object.get());
     set(&mut record, 24, revision.get());
     set(&mut record, 32, value.len() as u64);
-    let mut hashed = record[..40].to_vec();
-    hashed.extend_from_slice(value);
-    record[40..72].copy_from_slice(digest(&SHA256, &hashed).as_ref());
+    let mut hashed = Context::new(&SHA256);
+    hashed.update(&record[..40]);
+    hashed.update(value);
+    record[40..72].copy_from_slice(hashed.finish().as_ref());
     // Independently protect framing before recovery trusts the payload length.
     // This truncated digest detects accidental header corruption; it is not a MAC.
     let header_digest = digest(&SHA256, &record[..72]);
@@ -224,11 +232,13 @@ impl Snapshot {
     }
 }
 pub struct Store {
+    version: u64,
     path: PathBuf,
     path_lock: Arc<File>,
     file: Arc<File>,
     map: Arc<Mmap>,
     entries: BTreeMap<(ObjectKey, Revision), (usize, usize)>,
+    components: components::Manifests,
     heads: BTreeMap<ObjectKey, Revision>,
     published: BTreeMap<ObjectKey, Revision>,
     publications: BTreeSet<(ObjectKey, Revision)>,
@@ -246,8 +256,21 @@ impl Store {
         Self::open_with_limits(path, Limits::default())
     }
     pub fn open_with_limits(path: impl AsRef<Path>, limits: Limits) -> Result<Self> {
+        Self::open_version(path.as_ref(), limits, 4)
+    }
+    /// Create or open an opt-in version-5 store supporting component objects.
+    /// Existing version-4 files are rejected unchanged; migration is explicit.
+    pub fn open_components(path: impl AsRef<Path>) -> Result<Self> {
+        Self::open_components_with_limits(path, Limits::default())
+    }
+    pub fn open_components_with_limits(path: impl AsRef<Path>, limits: Limits) -> Result<Self> {
+        Self::open_version(path.as_ref(), limits, 5)
+    }
+    pub fn format_version(&self) -> u64 {
+        self.version
+    }
+    fn open_version(input: &Path, limits: Limits, version: u64) -> Result<Self> {
         limits.check()?;
-        let input = path.as_ref();
         // Resolve symlink aliases before taking the stable lock. Open the data
         // inode only AFTER the lock: a waiting opener must not read a generation
         // replaced by compaction while it waited.
@@ -283,8 +306,12 @@ impl Store {
         file.try_lock_exclusive()?;
         if file.metadata()?.len() == 0 {
             let mut h = [0; HEADER];
-            h[..8].copy_from_slice(b"RPROTO04");
-            set(&mut h, 8, 4);
+            h[..8].copy_from_slice(if version == 4 {
+                b"RPROTO04"
+            } else {
+                b"RPROTO05"
+            });
+            set(&mut h, 8, version);
             set(&mut h, 16, HEADER as u64);
             let checksum = digest(&SHA256, &h[..32]);
             h[32..].copy_from_slice(checksum.as_ref());
@@ -304,7 +331,14 @@ impl Store {
         // SAFETY: exclusive lifetime lock; this format only appends. No writer
         // mutates mapped committed bytes. Snapshots retain both mapping and lock.
         let map = unsafe { MmapOptions::new().map(&file)? };
-        if &map[..8] != b"RPROTO04" || u64_at(&map, 8) != 4 {
+        if &map[..8]
+            != (if version == 4 {
+                b"RPROTO04"
+            } else {
+                b"RPROTO05"
+            })
+            || u64_at(&map, 8) != version
+        {
             return Err(Error::Corrupt("header/version"));
         }
         if u64_at(&map, 24) != 0 || digest(&SHA256, &map[..32]).as_ref() != &map[32..64] {
@@ -316,6 +350,7 @@ impl Store {
             return Err(Error::Corrupt("incomplete checkpoint"));
         }
         let mut entries = BTreeMap::new();
+        let mut components = components::Manifests::new();
         let mut heads = BTreeMap::new();
         let mut published = BTreeMap::new();
         let mut publications = BTreeSet::new();
@@ -354,9 +389,10 @@ impl Store {
             if &tail[..8] != b"RPCOMMIT" || u64_at(tail, 8) != total as u64 {
                 return Err(Error::Corrupt("commit footer"));
             }
-            let mut hashed = h[..40].to_vec();
-            hashed.extend_from_slice(&map[end + RECORD..end + RECORD + size]);
-            if digest(&SHA256, &hashed).as_ref() != &h[40..72]
+            let mut hashed = Context::new(&SHA256);
+            hashed.update(&h[..40]);
+            hashed.update(&map[end + RECORD..end + RECORD + size]);
+            if hashed.finish().as_ref() != &h[40..72]
                 || map[end + RECORD + size..end + RECORD + padded]
                     .iter()
                     .any(|b| *b != 0)
@@ -374,7 +410,10 @@ impl Store {
                         object, revision, ..
                     } in &batch
                     {
-                        if heads
+                        if components.contains_key(&(
+                            object,
+                            heads.get(&object).copied().unwrap_or(Revision::INITIAL),
+                        )) || heads
                             .get(&object)
                             .copied()
                             .unwrap_or(Revision::INITIAL)
@@ -400,7 +439,7 @@ impl Store {
                         }
                     }
                 }
-                3 if checkpoint => {
+                3 | 9 if checkpoint && (kind == 3 || version == 5) => {
                     let key = (object, rev);
                     if rev == Revision::INITIAL
                         || checkpoint_publication.is_some()
@@ -410,11 +449,34 @@ impl Store {
                         return Err(Error::Corrupt("checkpoint revision order"));
                     }
                     checkpoint_key = Some(key);
+                    let prior = heads.get(&object).copied().unwrap_or(Revision::INITIAL);
+                    if prior != Revision::INITIAL
+                        && components.contains_key(&(object, prior)) != (kind == 9)
+                    {
+                        return Err(Error::Corrupt("object layout changed"));
+                    }
+                    if kind == 9 {
+                        let (manifest, publish) = components::decode(
+                            &map[end + RECORD..end + RECORD + size],
+                            object,
+                            rev,
+                            end + RECORD,
+                            &components,
+                            limits,
+                        )?;
+                        if publish {
+                            return Err(Error::Corrupt("checkpoint component publication"));
+                        }
+                        components.insert(key, Arc::new(manifest));
+                    }
                     entries.insert(key, (end + RECORD, size));
                     heads.insert(object, rev);
                 }
                 1 if !checkpoint => {
                     let head = heads.get(&object).copied().unwrap_or(Revision::INITIAL);
+                    if components.contains_key(&(object, head)) {
+                        return Err(Error::Corrupt("object layout changed"));
+                    }
                     if rev
                         != head
                             .checked_next()
@@ -424,6 +486,29 @@ impl Store {
                     }
                     entries.insert((object, rev), (end + RECORD, size));
                     heads.insert(object, rev);
+                }
+                8 if !checkpoint && version == 5 => {
+                    let head = heads.get(&object).copied().unwrap_or(Revision::INITIAL);
+                    if head.checked_next() != Some(rev)
+                        || (head != Revision::INITIAL && !components.contains_key(&(object, head)))
+                    {
+                        return Err(Error::Corrupt("component revision order/layout"));
+                    }
+                    let (manifest, publish) = components::decode(
+                        &map[end + RECORD..end + RECORD + size],
+                        object,
+                        rev,
+                        end + RECORD,
+                        &components,
+                        limits,
+                    )?;
+                    components.insert((object, rev), Arc::new(manifest));
+                    entries.insert((object, rev), (end + RECORD, size));
+                    heads.insert(object, rev);
+                    if publish {
+                        published.insert(object, rev);
+                        publications.insert((object, rev));
+                    }
                 }
                 2 | 4 | 5
                     if (kind == 2 && !checkpoint) || ((kind == 4 || kind == 5) && checkpoint) =>
@@ -488,11 +573,13 @@ impl Store {
         // SAFETY: see the exclusive-lock and append-only contract above.
         let map = Arc::new(unsafe { MmapOptions::new().map(&*file)? });
         Ok(Self {
+            version,
             path,
             path_lock: Arc::new(path_lock),
             file,
             map,
             entries,
+            components,
             heads,
             published,
             publications,
@@ -522,6 +609,10 @@ impl Store {
         self.healthy()?;
         limits.check()?;
         if self.end > limits.max_file_bytes
+            || self
+                .components
+                .values()
+                .any(|m| components::full_size(m).map_or(true, |n| n > limits.max_entry_bytes))
             || self
                 .entries
                 .values()
@@ -575,9 +666,15 @@ impl Store {
             .map(|(key, value)| (*key, *value))
             .collect();
         let mut after_bytes = HEADER;
-        for (_, (_, len)) in &retained {
+        let mut seen = BTreeMap::new();
+        for ((object, rev), (_, len)) in &retained {
+            let len = if let Some(manifest) = self.components.get(&(*object, *rev)) {
+                components::checkpoint_size(manifest, *object, *rev, &mut seen)?
+            } else {
+                *len
+            };
             after_bytes = after_bytes
-                .checked_add(record_size(*len)?.1)
+                .checked_add(record_size(len)?.1)
                 .ok_or(Error::Limit)?;
         }
         after_bytes = after_bytes
@@ -612,18 +709,40 @@ impl Store {
             .set_permissions(self.file.metadata()?.permissions())?;
         let mut header = [0; HEADER];
         let history = retention == Retention::History;
-        header[..8].copy_from_slice(b"RPROTO04");
-        set(&mut header, 8, 4);
+        header[..8].copy_from_slice(if self.version == 4 {
+            b"RPROTO04"
+        } else {
+            b"RPROTO05"
+        });
+        set(&mut header, 8, self.version);
         set(&mut header, 16, after_bytes as u64);
         let checksum = digest(&SHA256, &header[..32]);
         header[32..].copy_from_slice(checksum.as_ref());
         StorageWriter::new(temporary.as_file(), Point::CompactWrite).write_all(&header)?;
         let mut entries = BTreeMap::new();
+        let mut components = components::Manifests::new();
+        let mut seen = BTreeMap::new();
         let mut offset = HEADER;
         for ((object, rev), (old_offset, len)) in retained {
-            let bytes = record(3, object, rev, &self.map[old_offset..old_offset + len])?;
+            let payload;
+            let (kind, value) = if let Some(manifest) = self.components.get(&(object, rev)) {
+                payload = components::checkpoint(manifest, object, rev, &self.map, &mut seen)?;
+                let (manifest, _) = components::decode(
+                    &payload,
+                    object,
+                    rev,
+                    offset + RECORD,
+                    &components,
+                    self.limits,
+                )?;
+                components.insert((object, rev), Arc::new(manifest));
+                (9, payload.as_slice())
+            } else {
+                (3, &self.map[old_offset..old_offset + len])
+            };
+            let bytes = record(kind, object, rev, value)?;
             StorageWriter::new(temporary.as_file(), Point::CompactWrite).write_all(&bytes)?;
-            entries.insert((object, rev), (offset + RECORD, len));
+            entries.insert((object, rev), (offset + RECORD, value.len()));
             offset += bytes.len();
         }
         if history {
@@ -668,6 +787,7 @@ impl Store {
         self.file = Arc::new(file);
         self.map = map;
         self.entries = entries;
+        self.components = components;
         if !history {
             self.publications = self.published.iter().map(|(&o, &r)| (o, r)).collect();
             self.history_floors = self.published.clone();
@@ -710,6 +830,12 @@ impl Store {
         self.revision(object, self.published(object))
     }
     pub fn revision(&self, object: ObjectKey, revision: Revision) -> Result<Snapshot> {
+        if self.components.contains_key(&(object, revision)) {
+            return Err(Error::Layout);
+        }
+        self.mapped_revision(object, revision)
+    }
+    fn mapped_revision(&self, object: ObjectKey, revision: Revision) -> Result<Snapshot> {
         self.healthy()?;
         let &(offset, len) = self
             .entries
@@ -731,6 +857,9 @@ impl Store {
         expected_head: Revision,
         value: &[u8],
     ) -> Result<Revision> {
+        if self.components.contains_key(&(object, self.head(object))) {
+            return Err(Error::Layout);
+        }
         let current = crate::semantics::Revisions::new(self.head(object), self.published(object))
             .ok_or(Error::Corrupt("revision state"))?;
         let revision = current.stage(expected_head).ok_or(Error::Conflict)?.head();
@@ -775,6 +904,12 @@ impl Store {
         let mut objects = BTreeSet::new();
         let mut size = 8usize;
         for update in updates {
+            if self
+                .components
+                .contains_key(&(update.object, self.head(update.object)))
+            {
+                return Err(Error::Layout);
+            }
             if !objects.insert(update.object)
                 || self.head(update.object) != update.expected_head
                 || update

@@ -1,7 +1,7 @@
 --------------------- MODULE CapnpEncryptedTransport ---------------------
 EXTENDS Naturals, Sequences, FiniteSets, TLC
 \* Proposed VatNetwork contract with ideal authenticated encryption, NOT a
-\* concrete Noise handshake or a proof about cryptographic primitives.
+\* concrete Native handshake or a proof about cryptographic primitives.
 \* Recipient 1, trusted introducer 2, host 3, active network attacker 4.
 \* The introducer distributes an epoch-specific PSK over protected existing
 \* channels. It is trusted with that key. Capability scope is "service" only.

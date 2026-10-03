@@ -612,14 +612,19 @@ mod tests {
             "scripts/generate_network_configs.py",
             "scripts/generate_feature_configs.py",
             "scripts/generate_realtime_configs.py",
-            "docs/PROTOCOL.md",
+            "docs/wiki/Protocol-Models.md",
+            "docs/wiki/Home.md",
+            "docs/wiki/_Sidebar.md",
+            "docs/documentation-review.json",
+            "scripts/wiki.py",
+            "scripts/tests/test_wiki.py",
             "vendor/capnproto/CMakeLists.txt",
             "vendor/capnproto/c++/src/capnp/rpc.c++",
             "vendor/capnproto/LICENSE",
             "vendor/quiche/Cargo.toml",
             "vendor/quiche/quiche/src/lib.rs",
             "vendor/provenance/quiche-revision.json",
-            "vendor/provenance/quiche-noise.patch",
+            "vendor/provenance/quiche-native.patch",
         ] {
             assert!(sources.contains(Path::new(path)), "unbundled input {path}");
         }

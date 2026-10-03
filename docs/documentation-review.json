@@ -1,0 +1,769 @@
+{
+  "reviewed_at": "2026-10-01",
+  "scope": "Project-owned Markdown, excluding upstream dependency documentation and frozen research snapshots.",
+  "migrations": [
+    {
+      "source": ".github/DESCRIPTION.md",
+      "original_sha256": "10c7ba3867a62a7842f44d20f683cfaac58eb6df1ace3c1e591bd629e3d70216",
+      "action": "retained",
+      "destinations": [
+        ".github/DESCRIPTION.md"
+      ],
+      "note": "Retain GitHub community metadata/template in its recognized location; review links."
+    },
+    {
+      "source": ".github/ISSUE_TEMPLATE/bug_report.md",
+      "original_sha256": "c0b998f00848febbc42577ce357235160a44dae69a7e756ce2fa56a144ccf768",
+      "action": "retained",
+      "destinations": [
+        ".github/ISSUE_TEMPLATE/bug_report.md"
+      ],
+      "note": "Retain GitHub community metadata/template in its recognized location; review links."
+    },
+    {
+      "source": ".github/ISSUE_TEMPLATE/documentation.md",
+      "original_sha256": "c39473d499e47996079c29e32cec2636d32a59db6a9018f6b159cd42e2d89b29",
+      "action": "retained",
+      "destinations": [
+        ".github/ISSUE_TEMPLATE/documentation.md"
+      ],
+      "note": "Retain GitHub community metadata/template in its recognized location; review links."
+    },
+    {
+      "source": ".github/ISSUE_TEMPLATE/feature_request.md",
+      "original_sha256": "4fc36c79b335618cc1d53fe2625d90b54439bea963e95ebf5d0e89d8733088af",
+      "action": "retained",
+      "destinations": [
+        ".github/ISSUE_TEMPLATE/feature_request.md"
+      ],
+      "note": "Retain GitHub community metadata/template in its recognized location; review links."
+    },
+    {
+      "source": ".github/ISSUE_TEMPLATE/question.md",
+      "original_sha256": "fffcae61fd2cb800d81e7c9c04837f3ccedd15e73f69acad63de3b188da613ab",
+      "action": "retained",
+      "destinations": [
+        ".github/ISSUE_TEMPLATE/question.md"
+      ],
+      "note": "Retain GitHub community metadata/template in its recognized location; review links."
+    },
+    {
+      "source": ".github/PULL_REQUEST_TEMPLATE.md",
+      "original_sha256": "6e947d820a4c544b0edea5d8141dd640f7431b85122d248a91b545fd499d1b33",
+      "action": "retained",
+      "destinations": [
+        ".github/PULL_REQUEST_TEMPLATE.md"
+      ],
+      "note": "Retain GitHub community metadata/template in its recognized location; review links."
+    },
+    {
+      "source": "CHANGELOG.md",
+      "original_sha256": "dbef0332c47e00b9051a4a536fc2b3cd0ad9fe4d998730f9ee815bf5fe770e74",
+      "action": "revised",
+      "destinations": [
+        "CHANGELOG.md"
+      ],
+      "note": "Retain concise project history and refresh guide destinations."
+    },
+    {
+      "source": "CODE_OF_CONDUCT.md",
+      "original_sha256": "96de89e9aa87ef38e5cbd0b4fe4f610efed371f2f34cbfa93c83a5db2830423c",
+      "action": "retained",
+      "destinations": [
+        "CODE_OF_CONDUCT.md"
+      ],
+      "note": "Retain community policy and private reporting contact in GitHub-recognized location."
+    },
+    {
+      "source": "CONTRIBUTING.md",
+      "original_sha256": "ece0e989889da249e7569546e7c4014ae21a2c74529954ca7d59d69a517145ed",
+      "action": "revised",
+      "destinations": [
+        "CONTRIBUTING.md"
+      ],
+      "note": "Retain contributor workflow and add wiki link/export validation requirements."
+    },
+    {
+      "source": "README.md",
+      "original_sha256": "53972a353aa5d44341ac14c7e0606653932aa52d883b8d68fead7a0271a93eea",
+      "action": "revised",
+      "destinations": [
+        "README.md"
+      ],
+      "note": "Regenerate from the updated template; make Wiki Home the primary guide entry point."
+    },
+    {
+      "source": "SECURITY.md",
+      "original_sha256": "7b936b2ef643f386466047269ee0032a5db5cc02cf4dcc410fed31798d8b206f",
+      "action": "revised",
+      "destinations": [
+        "SECURITY.md"
+      ],
+      "note": "Clarify plaintext TCP versus TLS 1.3; retain private reporting channel."
+    },
+    {
+      "source": "SUPPORT.md",
+      "original_sha256": "475f10ace11d1767ac900b708386aa45029ed4d3dfedd0127852607ae0cf9a3d",
+      "action": "revised",
+      "destinations": [
+        "SUPPORT.md"
+      ],
+      "note": "Retain support boundaries and refresh guide destinations."
+    },
+    {
+      "source": "THIRD_PARTY_NOTICES.md",
+      "original_sha256": "dcc934a440e69debf4c3e068e33f8f2957047bccce7896d5dd592f33682e6965",
+      "action": "revised",
+      "destinations": [
+        "THIRD_PARTY_NOTICES.md"
+      ],
+      "note": "Retain license/provenance attribution; correct rustls transport description."
+    },
+    {
+      "source": "benchmarks/concurrency/README.md",
+      "original_sha256": "942d5be27bfc110ddf70f2f00c19d2aaf8d869e9ad214f2ecb78c6fd70a0db65",
+      "action": "revised",
+      "destinations": [
+        "benchmarks/concurrency/README.md"
+      ],
+      "note": "Retain standalone probe setup and link to canonical research guide."
+    },
+    {
+      "source": "crates/capnp-compat/README.md",
+      "original_sha256": "dcbb591ccac601a1baf0304bbb32f73ee90f0251b9e34129e65e2b81d5f8452d",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Compatibility-Adapters.md",
+        "crates/capnp-compat/README.md"
+      ],
+      "note": "Move detailed adapter guide to wiki; keep package landing/build README."
+    },
+    {
+      "source": "crates/capnp-compiler/README.md",
+      "original_sha256": "08947c8678c6d81172ceeddb327d62040255f2d72ae310f732b80f957ad79e4b",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Schema-Compiler.md",
+        "crates/capnp-compiler/README.md"
+      ],
+      "note": "Move detailed compiler guide to wiki; keep package landing/build README and date corpus claims."
+    },
+    {
+      "source": "docs/ANSWER_ADOPTION.md",
+      "original_sha256": "519bc2976976954f6c8be3f4a1827043ee59f6acfd68eceaf6bab23ed233889b",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Third-Party-Answers.md"
+      ],
+      "note": "Retain authenticated adoption semantics and explicit C++ interoperability boundary."
+    },
+    {
+      "source": "docs/ARCHITECTURE.md",
+      "original_sha256": "4ec186727621d14961344467b669f461806ef6694265772a106d1cff5c3a0dc9",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Architecture.md"
+      ],
+      "note": "Retain module ownership; repair guide and source references."
+    },
+    {
+      "source": "docs/BULK_RUNTIME.md",
+      "original_sha256": "395c41ef8fb0253bbfd9903bfb81350e96176e62d5f786ff4347e618835f207b",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Bulk-Transfer.md"
+      ],
+      "note": "Retain capability-scoped bulk contracts, limits and test entry points."
+    },
+    {
+      "source": "docs/COMPONENT_STORAGE.md",
+      "original_sha256": "81b20c28ba2570efb7bc5dce7ca0e4d4d785de38ebeb48b05b44688518d26955",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Component-Storage.md"
+      ],
+      "note": "Retain explicit V5 opt-in and sharing/CAS/compaction limits."
+    },
+    {
+      "source": "docs/CONFORMANCE.md",
+      "original_sha256": "36750a0f146a09e646f8d2800f122db2049efd026a5e40708661e171a8d31fd5",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Model-Conformance.md"
+      ],
+      "note": "Distinguish historical model evidence from current replay gates; remove unavailable log links."
+    },
+    {
+      "source": "docs/CORRECTNESS_ROADMAP.md",
+      "original_sha256": "37adb06c6336a1cde6e9999a947fff39a864bd88c7f0b98b4fa1cea1ddbccf4c",
+      "action": "rewritten; history archived",
+      "destinations": [
+        "docs/wiki/Correctness.md",
+        "docs/archive/Correctness-History.md"
+      ],
+      "note": "Replace completed development ledger with current guarantees and remaining acceptance criteria; archive full history."
+    },
+    {
+      "source": "docs/CPP_PARITY.md",
+      "original_sha256": "171ee5eb99f66186d8f0b80cf5cc686e4db10bdb03cb018754e29596ed024a12",
+      "action": "rewritten; history archived",
+      "destinations": [
+        "docs/wiki/Cpp-Parity.md",
+        "docs/archive/Cpp-Parity-History.md"
+      ],
+      "note": "Replace chronological ledger with current semantic parity and qualification gaps; archive full history."
+    },
+    {
+      "source": "docs/DURABLE_BULK.md",
+      "original_sha256": "198ad94ae05076e36be1d038893878eca09b822b439859237bbc272a63b730a3",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Durable-Bulk.md"
+      ],
+      "note": "Retain atomic value/receipt contract and recovery limits."
+    },
+    {
+      "source": "docs/DYNAMIC_ORPHANS.md",
+      "original_sha256": "c3d45e3a40c897b5a72025341cd0bf78593ea654cdd11d08b28e6892da3922f5",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Dynamic-Orphans.md"
+      ],
+      "note": "Retain API and ownership guide; correct command working-directory instruction."
+    },
+    {
+      "source": "docs/EAE_BENCHMARKS.md",
+      "original_sha256": "bab12ea9957a0e56b0b1fbcd3976776f7e5e3da6ae9c505ba85d2f2872e379c5",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/EAE-Comparison.md"
+      ],
+      "note": "Keep dated comparison; distinguish implemented worker outcomes from pending durable receipts."
+    },
+    {
+      "source": "docs/FEATURES.md",
+      "original_sha256": "5f4c759a2070e607fdfe4bc65d25e0b1df990eefbef354cc877efa4ff34b0ebc",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Service-Models.md"
+      ],
+      "note": "Clarify abstract early-data model versus production 0-RTT support; identify unavailable historical logs."
+    },
+    {
+      "source": "docs/FORK_POLICY.md",
+      "original_sha256": "27d2da2f96c432407258a5f232f844ace7a645e9de9e0217f1b817660efa7d0b",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Fork-Policy.md"
+      ],
+      "note": "Correct storage format policy for default V4 and explicit V5."
+    },
+    {
+      "source": "docs/GITHUB_SETUP.md",
+      "original_sha256": "78b0e1835b1a7217fcc3f6a3763af2aa6e0547c8d5fb97165c5800442da268c3",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/GitHub-Setup.md"
+      ],
+      "note": "Use actual remote identity and route documentation maintenance to wiki."
+    },
+    {
+      "source": "docs/HANDOFF.md",
+      "original_sha256": "a6d6d5fb658f3d5e8d3c82037e696474413e420f2d5b9ed649301e0e0eac20f9",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Handoff-Model.md"
+      ],
+      "note": "Separate TLA+ operators from Rust APIs and update conformance status."
+    },
+    {
+      "source": "docs/IMPLEMENTATION.md",
+      "original_sha256": "21c7fc5ddfefbdffb1fdb36c1ab337645ae0e880acbc42bb8f74b075e28e7c1d",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Storage-and-ORM.md"
+      ],
+      "note": "Extract storage/ORM contracts; remove duplicated omnibus runtime/transport status."
+    },
+    {
+      "source": "docs/JOIN.md",
+      "original_sha256": "8bac128e19698442fd9cfcd724e126f96253e8d0d3183d174f388c3765211dba",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Capability-Join.md"
+      ],
+      "note": "Retain capability equality/ownership and interoperability limits."
+    },
+    {
+      "source": "docs/LOCK_FREE_RESEARCH.md",
+      "original_sha256": "862b25d491bf22809c352e28153597e0620698a4b0703dd2b7336481f2ef2763",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Lock-Free-Research.md"
+      ],
+      "note": "Retain dated measurements, concurrency hypotheses and lifecycle acceptance requirements."
+    },
+    {
+      "source": "docs/MULTIPARTY_JOIN.md",
+      "original_sha256": "a67df639eef2eda1136cafba2342ea7d8d8a2acf9a9a4dabf34bfe089ec2cec3",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Multiparty-Join.md"
+      ],
+      "note": "Clarify Join secret versus TLS/admission credentials."
+    },
+    {
+      "source": "docs/NATIVE_ARBITRATION.md",
+      "original_sha256": "908286c81b6c85cb40235b7054a668d75636da23ff46493210b4143febdbb859",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Session-Arbitration.md"
+      ],
+      "note": "Remove duplicated authentication prose and preserve arbitration contract."
+    },
+    {
+      "source": "docs/NATIVE_DEPLOYMENT.md",
+      "original_sha256": "721b165bb99fb5362e8b8cd7790ccc55cff80b0fb9874076512e942e22a00f46",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Discovery-and-Mobility.md"
+      ],
+      "note": "Clarify native authenticated profile versus conventional two-party TLS/QUIC."
+    },
+    {
+      "source": "docs/NATIVE_LISTENER.md",
+      "original_sha256": "f1247c4f816d0aea123bc458f831b361e70a37fe9da00fa66728d5a846ab74d5",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Shared-Listeners.md"
+      ],
+      "note": "Retain shared-listener ownership, peer routing and resource bounds."
+    },
+    {
+      "source": "docs/NATIVE_PROVISIONING.md",
+      "original_sha256": "757c9eeb533dc0c268aa5f71682d31a561c06b07652a88def5701f5abfbf665e",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Provisioning.md"
+      ],
+      "note": "Retain trust and credential provisioning guidance; repair links."
+    },
+    {
+      "source": "docs/NATIVE_RECOVERY.md",
+      "original_sha256": "32f852e14a6756d092fd6ab53907bdc4465ba49965d2a23880b7b7e72ae4ff18",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Connection-Recovery.md"
+      ],
+      "note": "Retain reconnect/fallback boundaries; repair links."
+    },
+    {
+      "source": "docs/NATIVE_SCHEDULING.md",
+      "original_sha256": "6d916d54334619b321e06bc0002a00310cf228a24bcc103db4c583c9e00337e9",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Transport-Scheduling.md"
+      ],
+      "note": "Scope packet/datagram scheduling to quiche; clarify TCP distinction."
+    },
+    {
+      "source": "docs/NATIVE_SHUTDOWN.md",
+      "original_sha256": "20a2485a26e045c918d7ad264de0d3d81c5384e5eeef4bc8c1bcc45c3f5ece37",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Shutdown.md"
+      ],
+      "note": "Describe quiche streams and native TCP multiplexing separately."
+    },
+    {
+      "source": "docs/NATIVE_TRANSPORTS.md",
+      "original_sha256": "2f4771e4e85fc25e0e40837bc1a09700af94724066738c324ad98776eef4dad4",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Native-Transports.md"
+      ],
+      "note": "Retain quiche-only v1/v2 and native TCP transport setup."
+    },
+    {
+      "source": "docs/ORM_HISTORY.md",
+      "original_sha256": "426e241e6e0d4eabeb4a70c4b8624b2dc017a871b77f33d0e84a440a5027e4e9",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Publication-History.md"
+      ],
+      "note": "Remove obsolete v3 checkpoint wording; retain publication/history semantics."
+    },
+    {
+      "source": "docs/PERSISTENCE.md",
+      "original_sha256": "7d9c3da6533d6562724e35f865c202b885ffb1ba15dbd1feb2ef50fe374ea61c",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Persistence.md"
+      ],
+      "note": "Use typed revisions and distinguish injected I/O errors from device failure qualification."
+    },
+    {
+      "source": "docs/PREVIEW.md",
+      "original_sha256": "c1e4169685e9e9860b4f9304258225b5a646084d8d0db899372bbc97bfda1de7",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Getting-Started.md"
+      ],
+      "note": "Correct native build prerequisites, audit wrapper and feature relationships."
+    },
+    {
+      "source": "docs/PROTOCOL.md",
+      "original_sha256": "685c1245e4b053767660cbc461cc066117b87467c24a574eb92209eea37925cc",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Protocol-Models.md"
+      ],
+      "note": "Retain bounded model specifications; distinguish active and historical conformance evidence."
+    },
+    {
+      "source": "docs/QUALITY.md",
+      "original_sha256": "2d2ef9541f1466b36d19cf5bff323998885c2217690bacb583d993e53cbf2bf1",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Quality-and-Benchmarks.md"
+      ],
+      "note": "Retain measured CI/benchmark contracts; repair guide links."
+    },
+    {
+      "source": "docs/README.md",
+      "original_sha256": "afd9761818d5e7500d053e8ad86622fb17a681f9f1705381c3b8c8e8768b9226",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Home.md",
+        "docs/README.md"
+      ],
+      "note": "Replace flat index with task-oriented Wiki Home and local entry point."
+    },
+    {
+      "source": "docs/README.template.md",
+      "original_sha256": "bb26bf2405d33a2719d0007a1868897df79afaf05191bf3cb77f72f6edd1409d",
+      "action": "revised",
+      "destinations": [
+        "docs/README.template.md"
+      ],
+      "note": "Keep concise project/build overview; point to canonical wiki guides."
+    },
+    {
+      "source": "docs/REALTIME.md",
+      "original_sha256": "8e564358815798fc4cd7e808c8849a38e98c2b18721c98ff33dba97232ae2135",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Realtime-Model.md"
+      ],
+      "note": "Retain model scope; identify unbundled historical verification logs."
+    },
+    {
+      "source": "docs/REALTIME_RUNTIME.md",
+      "original_sha256": "a730886e4a66504c64d0d340d47e93c6b79b056eba495e27975251242393329e",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Realtime-Snapshots.md"
+      ],
+      "note": "Retain runtime snapshot lifecycle, bounds and examples; repair links."
+    },
+    {
+      "source": "docs/RELEASE_ACCEPTANCE.md",
+      "original_sha256": "6ce6bc6114a0e7450fa803557ef7a426db48bef9ef8dc013ab29dc4384fa3b1e",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Release-Acceptance.md"
+      ],
+      "note": "Separate implemented mechanisms from fresh candidate qualification; remove stale release-complete count."
+    },
+    {
+      "source": "docs/REPORTING.md",
+      "original_sha256": "0cf7170284fe15b27339ae54155c3c8fc65fb0997b7a47fde7f8d120f481005b",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/README-Reports.md"
+      ],
+      "note": "Retain reproducible reporting/README workflow and actual repository identity."
+    },
+    {
+      "source": "docs/REPOSITORY_LAYOUT.md",
+      "original_sha256": "08d6a9b77eda332afcb951f5777a81c0a4258aba536e3ef7d9a039ecee7777ab",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Repository-Layout.md"
+      ],
+      "note": "Document canonical wiki, archive and export ownership; preserve Cargo/dependency boundaries."
+    },
+    {
+      "source": "docs/ROADMAP.md",
+      "original_sha256": "ed530c1114c00837754915d67c1725bd77a3c91ab03daabe6ca2e0198a078752",
+      "action": "rewritten; history archived",
+      "destinations": [
+        "docs/wiki/Roadmap.md",
+        "docs/archive/Roadmap-History.md"
+      ],
+      "note": "Replace completed-task ledger with ordered remaining work; archive history."
+    },
+    {
+      "source": "docs/RPC_APPLICATIONS.md",
+      "original_sha256": "ad9538b4e70d2f3672f38d7b9a9dd77905d125a6a3c8789643fc4ae859677ce2",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/RPC-Applications.md"
+      ],
+      "note": "Retain structured replies, pipeline ownership, admission and native vat ergonomics; repair links."
+    },
+    {
+      "source": "docs/RPC_RESEARCH.md",
+      "original_sha256": "d1423701c05dfeef1125874546ec71f6dc62281377472d5a0e1f5362fd86d0dd",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/RPC-Research.md"
+      ],
+      "note": "Mark first RPC implementation slices complete; retain frozen experiment and remaining budget/batch work."
+    },
+    {
+      "source": "docs/RUNTIME_PORT.md",
+      "original_sha256": "2b3576b10165871d6babac7018f05d2646dcc23dbbe6d5f75e372ff523185c08",
+      "action": "rewritten; history archived",
+      "destinations": [
+        "docs/wiki/Runtime-Status.md",
+        "docs/archive/Runtime-Status-History.md"
+      ],
+      "note": "Replace chronological inventory with current feature matrix and explicit limits; archive history."
+    },
+    {
+      "source": "docs/RUST_API_DESIGN.md",
+      "original_sha256": "f485ebc98d327fa8c06746717fe3e3f38b065f89ec494dbf6857687a239d9acf",
+      "action": "archived",
+      "destinations": [
+        "docs/archive/Rust-API-Design.md"
+      ],
+      "note": "Archive superseded proposal; direct current users to generator and RPC contracts."
+    },
+    {
+      "source": "docs/RUST_GENERATOR.md",
+      "original_sha256": "8c7a18c65daf6b816c16966e869acec82e24406cf439c897a4a0b9e93541bd3f",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Rust-Generator.md"
+      ],
+      "note": "Add structured replies and consuming call ergonomics alongside existing field API."
+    },
+    {
+      "source": "docs/SCHEMA_COMPILER_QUALIFICATION.md",
+      "original_sha256": "ad50701b51f0176a169cbcb24b0622abfbd6f2df0c332b30817d01fb24ae68c1",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Compiler-Qualification.md"
+      ],
+      "note": "Replace brittle current repository schema count with dated qualification scope."
+    },
+    {
+      "source": "docs/SCHEMA_EXCHANGE.md",
+      "original_sha256": "f98432b3b61db122ebb7b0d724c91d2114ad7e77c17f4f2027923afc6ed76bea",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Schema-Exchange.md"
+      ],
+      "note": "Retain exchange validation, bounds and trust contract; repair links."
+    },
+    {
+      "source": "docs/SCHEMA_LOADER.md",
+      "original_sha256": "8ef9b15034e8875ecd7ff9fb7de9a392cef8e377b20b0b08429c31dbd4357220",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Schema-Loader.md"
+      ],
+      "note": "Clarify reflection coverage/remaining limits; repair links."
+    },
+    {
+      "source": "docs/SECURE_TRANSPORTS.md",
+      "original_sha256": "58367bdf7594b229132cadb21b8fb20ee53a5cbc2ab68d64477afa5df74b753c",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/TCP-TLS-and-QUIC.md"
+      ],
+      "note": "Remove stale Quinn-style 0-RTT API reference; retain TCP/TLS/mTLS and quiche v1/v2."
+    },
+    {
+      "source": "docs/STORAGE_COMPACTION.md",
+      "original_sha256": "00fd437127840dec23824ad34eb45bd0edfeef6753c409fd76b53429fe5a1f03",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Storage-Compaction.md"
+      ],
+      "note": "Retain retention, generation and crash/recovery contracts; repair links."
+    },
+    {
+      "source": "docs/STORAGE_RESEARCH.md",
+      "original_sha256": "c544e8d8957f995bcc6a85c839822e232905cc90c1f9c66d58b7dc1153fee96c",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Storage-Research.md"
+      ],
+      "note": "Keep frozen measurements and distinguish original prototype from later production worker."
+    },
+    {
+      "source": "docs/STORAGE_RESILIENCE_RESEARCH.md",
+      "original_sha256": "0f2995ae4ecc04a71c529a42b7c8c8032226d7d26daf64a7d7f617689249f450",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Storage-Resilience.md"
+      ],
+      "note": "Keep failure-boundary evidence and acknowledge implemented worker separately from proposed receipts."
+    },
+    {
+      "source": "docs/STORAGE_WORKER.md",
+      "original_sha256": "460008c9633f83c3b9368c8dea7b90b7c0001295345d4d9e34cf5935d82da4c7",
+      "action": "moved and revised",
+      "destinations": [
+        "docs/wiki/Storage-Worker.md"
+      ],
+      "note": "Retain privileged opt-in worker/admission contracts; remove unrelated implementation commentary."
+    },
+    {
+      "source": "docs/TESTING.md",
+      "original_sha256": "1fdfbf1b6575d52168de69aa77b07a59bcb86b903c285ff12c3aac478b0942f5",
+      "action": "rewritten; history archived",
+      "destinations": [
+        "docs/wiki/Testing.md",
+        "docs/archive/Testing-History.md"
+      ],
+      "note": "Replace chronological test log with reproducible check matrix; archive full historical ledger."
+    },
+    {
+      "source": "research/reports/README.md",
+      "original_sha256": "1bbb37a8baec07d72fa463093ae0ab258c4dbd0741962f31cd7624631c53d8b1",
+      "action": "revised",
+      "destinations": [
+        "research/reports/README.md"
+      ],
+      "note": "Retain evidence provenance and explicit distinction between frozen inputs and unavailable logs."
+    },
+    {
+      "source": "vendor/capnp/REPROTO.md",
+      "original_sha256": "d67f127308922fb2c9c247a9ad6e0232ef9c64718084d3435fcf85002c99f0db",
+      "action": "revised",
+      "destinations": [
+        "vendor/capnp/REPROTO.md"
+      ],
+      "note": "Retain local fork change notes; update guide paths and structured reply API summary."
+    },
+    {
+      "source": "vendor/capnpc/REPROTO.md",
+      "original_sha256": "679a6f79f4718035a2691fa2bc9ab269eedb395f0cfdfc015a7fbe414a3b85de",
+      "action": "revised",
+      "destinations": [
+        "vendor/capnpc/REPROTO.md"
+      ],
+      "note": "Retain local generator fork notes; update paths and structured-reply opt-in."
+    }
+  ],
+  "documents": [
+    ".github/DESCRIPTION.md",
+    ".github/ISSUE_TEMPLATE/bug_report.md",
+    ".github/ISSUE_TEMPLATE/documentation.md",
+    ".github/ISSUE_TEMPLATE/feature_request.md",
+    ".github/ISSUE_TEMPLATE/question.md",
+    ".github/PULL_REQUEST_TEMPLATE.md",
+    "CHANGELOG.md",
+    "CODE_OF_CONDUCT.md",
+    "CONTRIBUTING.md",
+    "Capnt Actors API Specification.md",
+    "README.md",
+    "SECURITY.md",
+    "SUPPORT.md",
+    "THIRD_PARTY_NOTICES.md",
+    "benchmarks/concurrency/README.md",
+    "crates/capnp-compat/README.md",
+    "crates/capnp-compiler/README.md",
+    "docs/README.md",
+    "docs/README.template.md",
+    "docs/archive/Correctness-History.md",
+    "docs/archive/Cpp-Parity-History.md",
+    "docs/archive/README.md",
+    "docs/archive/Roadmap-History.md",
+    "docs/archive/Runtime-Status-History.md",
+    "docs/archive/Rust-API-Design.md",
+    "docs/archive/Testing-History.md",
+    "docs/wiki/ActorDB-Checklist.md",
+    "docs/wiki/ActorDB-Proposal.md",
+    "docs/wiki/Architecture.md",
+    "docs/wiki/Bulk-Transfer.md",
+    "docs/wiki/Capability-Join.md",
+    "docs/wiki/Compatibility-Adapters.md",
+    "docs/wiki/Compiler-Qualification.md",
+    "docs/wiki/Component-Storage.md",
+    "docs/wiki/Connection-Recovery.md",
+    "docs/wiki/Correctness.md",
+    "docs/wiki/Cpp-Parity.md",
+    "docs/wiki/Discovery-and-Mobility.md",
+    "docs/wiki/Documentation-Review.md",
+    "docs/wiki/Durable-Bulk.md",
+    "docs/wiki/Dynamic-Orphans.md",
+    "docs/wiki/EAE-Comparison.md",
+    "docs/wiki/Fork-Policy.md",
+    "docs/wiki/Getting-Started.md",
+    "docs/wiki/GitHub-Setup.md",
+    "docs/wiki/Handoff-Model.md",
+    "docs/wiki/Home.md",
+    "docs/wiki/Lock-Free-Research.md",
+    "docs/wiki/Model-Conformance.md",
+    "docs/wiki/Multiparty-Join.md",
+    "docs/wiki/Native-Transports.md",
+    "docs/wiki/Persistence.md",
+    "docs/wiki/Protocol-Models.md",
+    "docs/wiki/Provisioning.md",
+    "docs/wiki/Publication-History.md",
+    "docs/wiki/Quality-and-Benchmarks.md",
+    "docs/wiki/README-Reports.md",
+    "docs/wiki/RPC-Applications.md",
+    "docs/wiki/RPC-Research.md",
+    "docs/wiki/Realtime-Model.md",
+    "docs/wiki/Realtime-Snapshots.md",
+    "docs/wiki/Release-Acceptance.md",
+    "docs/wiki/Repository-Layout.md",
+    "docs/wiki/Roadmap.md",
+    "docs/wiki/Runtime-Status.md",
+    "docs/wiki/Rust-Generator.md",
+    "docs/wiki/Schema-Compiler.md",
+    "docs/wiki/Schema-Exchange.md",
+    "docs/wiki/Schema-Loader.md",
+    "docs/wiki/Service-Models.md",
+    "docs/wiki/Session-Arbitration.md",
+    "docs/wiki/Shared-Listeners.md",
+    "docs/wiki/Shutdown.md",
+    "docs/wiki/Storage-Compaction.md",
+    "docs/wiki/Storage-Research.md",
+    "docs/wiki/Storage-Resilience.md",
+    "docs/wiki/Storage-Worker.md",
+    "docs/wiki/Storage-and-ORM.md",
+    "docs/wiki/TCP-TLS-and-QUIC.md",
+    "docs/wiki/Testing.md",
+    "docs/wiki/Third-Party-Answers.md",
+    "docs/wiki/Transport-Scheduling.md",
+    "docs/wiki/Wiki-Maintenance.md",
+    "docs/wiki/_Footer.md",
+    "docs/wiki/_Sidebar.md",
+    "research/reports/README.md",
+    "vendor/capnp/REPROTO.md",
+    "vendor/capnpc/REPROTO.md"
+  ],
+  "additional_inputs": [
+    {
+      "path": "Capnt Actors API Specification.md",
+      "action": "renamed, terminology aligned and protocol contracts revised",
+      "note": "Future Capnt Actors API proposal aligned with current RPC/vat, quiche/TCP, authority and storage. Revised ownership/read proofs, operation recovery/fingerprints, capability relocation, executor boundaries, outbox retention and overload contracts with acceptance gates and implementation order. Actor APIs remain unimplemented."
+    },
+    {
+      "path": "docs/wiki/ActorDB-Proposal.md",
+      "action": "added design proposal",
+      "note": "Future ActorDB profile using event-sourced actors and incremental views; records architecture, consistency, recovery, retention and implementation choices without claiming runtime support."
+    },
+    {
+      "path": "docs/wiki/ActorDB-Checklist.md",
+      "action": "added implementation checklist",
+      "note": "Open phased ActorDB implementation and acceptance gates, including single-host and replicated profiles; no implementation items marked complete."
+    }
+  ]
+}

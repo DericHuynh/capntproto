@@ -255,7 +255,7 @@ fn authority_and_transition_mutations() {
         "tool": version.trim(), "compiler": compiler, "files": FILES,
         "features": [], "tests": tests, "inputs": inputs, "results": report,
         "artifacts": directory,
-        "limits": "selected implementation mutations; excludes Noise crypto, native drivers, storage, concurrency schedules and TLC mutants",
+        "limits": "selected implementation mutations; excludes Native crypto, native drivers, storage, concurrency schedules and TLC mutants",
     });
     fs::write(
         base.join("checked.json"),

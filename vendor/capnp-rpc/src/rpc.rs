@@ -66,6 +66,7 @@ struct Question<VatId>
 where
     VatId: 'static,
 {
+    _permit: Option<Rc<crate::admission::Permit>>,
     is_awaiting_return: bool,
 
     #[allow(dead_code)]
@@ -87,6 +88,7 @@ where
 impl<VatId> Question<VatId> {
     fn new() -> Self {
         Self {
+            _permit: None,
             is_awaiting_return: true,
             param_exports: Vec::new(),
             is_tail_call: false,
@@ -445,6 +447,8 @@ where
     registry: Weak<RefCell<ConnectionRegistry<VatId>>>,
     system_tasks: crate::task_set::TaskSetHandle<Error>,
     flow_limit: Cell<usize>,
+    admission: Rc<crate::admission::Admission>,
+    held_responses: Cell<usize>,
     call_words: Cell<usize>,
     flow_waiter: RefCell<Option<oneshot::Sender<()>>>,
 }
@@ -457,6 +461,7 @@ impl<VatId> ConnectionState<VatId> {
         registry: Weak<RefCell<ConnectionRegistry<VatId>>>,
         system_tasks: crate::task_set::TaskSetHandle<Error>,
         flow_limit: usize,
+        outgoing_call_limit: usize,
     ) -> (TaskSet<Error>, Rc<Self>) {
         let connection_id = connection.connection_id();
         let state = Rc::new_cyclic(|weak| Self {
@@ -482,6 +487,8 @@ impl<VatId> ConnectionState<VatId> {
             registry,
             system_tasks,
             flow_limit: Cell::new(flow_limit),
+            admission: crate::admission::Admission::new(outgoing_call_limit),
+            held_responses: Cell::new(0),
             call_words: Cell::new(0),
             flow_waiter: RefCell::new(None),
         });
@@ -492,6 +499,36 @@ impl<VatId> ConnectionState<VatId> {
         handle.add(Self::message_loop(Rc::downgrade(&state)));
         *state.tasks.borrow_mut() = Some(handle);
         (tasks, state)
+    }
+
+    pub(crate) fn set_outgoing_call_limit(&self, calls: usize) {
+        self.admission.limit.set(calls);
+    }
+
+    pub(crate) fn snapshot(&self) -> crate::ConnectionSnapshot {
+        crate::ConnectionSnapshot {
+            connection_id: self.connection_id,
+            outgoing_call_limit: self.admission.limit.get(),
+            outgoing_calls: self.admission.used.get(),
+            questions: self.questions.borrow().len(),
+            answers: self.answers.borrow().slots.len(),
+            imports: self.imports.borrow().slots.len(),
+            exports: self.exports.borrow().len(),
+            embargoes: self.embargoes.borrow().len(),
+            incoming_call_words: self.call_words.get(),
+            held_responses: self.held_responses.get(),
+        }
+    }
+
+    fn send_call(
+        &self,
+        message: Box<dyn crate::OutgoingMessage>,
+        permit: Rc<crate::admission::Permit>,
+    ) {
+        let (completion, _) = message.send();
+        // The transport owns the message even if all application owners vanish.
+        // In particular, pipeline-only questions can finish before this flush.
+        self.add_task(Promise::from_future(completion.attach(permit)));
     }
 
     pub(crate) fn set_not_idle(&self) {
@@ -2385,6 +2422,7 @@ pub(crate) struct ConnectionRegistry<VatId: 'static> {
     pub(crate) join_context: Weak<JoinContext<VatId>>,
     pub(crate) join_network: Option<Rc<dyn crate::multiparty::JoinNetwork<VatId>>>,
     pub(crate) flow_limit: usize,
+    pub(crate) outgoing_call_limit: usize,
     pub(crate) trace_encoder: Option<Rc<dyn Fn(&Error) -> String>>,
     pub(crate) states: HashMap<usize, Rc<ConnectionState<VatId>>>,
     pub(crate) closing: bool,
@@ -2397,6 +2435,7 @@ impl<VatId> ConnectionRegistry<VatId> {
             join_context: Weak::new(),
             join_network: None,
             flow_limit: usize::MAX,
+            outgoing_call_limit: usize::MAX,
             trace_encoder: None,
             states: HashMap::new(),
             closing: false,
@@ -2449,6 +2488,13 @@ where
     _question_ref: Rc<RefCell<QuestionRef<VatId>>>,
 }
 
+impl<VatId> Drop for ResponseState<VatId> {
+    fn drop(&mut self) {
+        let count = &self._connection_state.held_responses;
+        count.set(count.get() - 1);
+    }
+}
+
 enum ResponseVariant<VatId>
 where
     VatId: 'static,
@@ -2472,6 +2518,9 @@ impl<VatId> Response<VatId> {
         message: Box<dyn crate::IncomingMessage>,
         cap_table_array: Vec<Option<Box<dyn ClientHook>>>,
     ) -> Self {
+        connection_state
+            .held_responses
+            .set(connection_state.held_responses.get() + 1);
         Self {
             variant: Rc::new(ResponseVariant::Rpc(ResponseState {
                 _connection_state: connection_state,
@@ -2523,11 +2572,50 @@ impl<VatId> ResponseHook for Response<VatId> {
     }
 }
 
+// A streaming controller owns the send operation. Retain admission through the
+// write receipt even when that controller discards its copy of the receipt.
+struct StreamingMessage<VatId: 'static> {
+    message: Box<dyn crate::OutgoingMessage>,
+    state: Rc<ConnectionState<VatId>>,
+    permit: Rc<crate::admission::Permit>,
+}
+impl<VatId> crate::OutgoingMessage for StreamingMessage<VatId> {
+    #[cfg(unix)]
+    fn set_fds(&mut self, fds: Vec<Rc<std::os::fd::OwnedFd>>) {
+        self.message.set_fds(fds);
+    }
+    fn get_body(&mut self) -> capnp::Result<any_pointer::Builder<'_>> {
+        self.message.get_body()
+    }
+    fn get_body_as_reader(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+        self.message.get_body_as_reader()
+    }
+    fn size_in_words(&self) -> usize {
+        self.message.size_in_words()
+    }
+    fn take(self: Box<Self>) -> capnp::message::Builder<capnp::message::HeapAllocator> {
+        self.message.take()
+    }
+    fn send(
+        self: Box<Self>,
+    ) -> (
+        Promise<(), Error>,
+        Rc<capnp::message::Builder<capnp::message::HeapAllocator>>,
+    ) {
+        let (completion, message) = self.message.send();
+        let completion = completion.shared();
+        self.state
+            .add_task(Promise::from_future(completion.clone().attach(self.permit)));
+        (Promise::from_future(completion), message)
+    }
+}
+
 struct Request<VatId>
 where
     VatId: 'static,
 {
     connection_state: Rc<ConnectionState<VatId>>,
+    permit: Rc<crate::admission::Permit>,
     target: Client<VatId>,
     message: Box<dyn crate::OutgoingMessage>,
     cap_table: Vec<Option<Box<dyn ClientHook>>>,
@@ -2550,9 +2638,11 @@ where
         _size_hint: Option<::capnp::MessageSize>,
         target: Client<VatId>,
     ) -> ::capnp::Result<Self> {
+        let permit = connection_state.admission.reserve()?;
         let message = connection_state.new_outgoing_message(1024)?;
         Ok(Self {
             connection_state,
+            permit,
             target,
             message,
             cap_table: Vec::new(),
@@ -2571,6 +2661,7 @@ where
         mut message: Box<dyn crate::OutgoingMessage>,
         cap_table: &[Option<Box<dyn ClientHook>>],
         is_tail_call: bool,
+        permit: Rc<crate::admission::Permit>,
     ) -> (
         Rc<RefCell<QuestionRef<VatId>>>,
         Promise<Response<VatId>, Error>,
@@ -2587,6 +2678,7 @@ where
 
         // Init the question table.  Do this after writing descriptors to avoid interference.
         let mut question = Question::<VatId>::new();
+        question._permit = Some(permit.clone());
         question.is_awaiting_return = true;
         question.param_exports = exports;
         question.is_tail_call = is_tail_call;
@@ -2610,7 +2702,7 @@ where
                 call_builder.get_send_results_to().set_yourself(());
             }
         }
-        let _ = message.send();
+        connection_state.send_call(message, permit);
         // Make the result promise.
         let (fulfiller, promise) = oneshot::channel::<Promise<Response<VatId>, Error>>();
         let promise = promise.map_err(crate::canceled_to_error).and_then(|x| x);
@@ -2638,6 +2730,7 @@ where
         mut message: Box<dyn crate::OutgoingMessage>,
         cap_table: &[Option<Box<dyn ClientHook>>],
         flow: Rc<RefCell<Option<Box<dyn crate::FlowController>>>>,
+        permit: Rc<crate::admission::Permit>,
     ) -> Promise<(), Error> {
         // Build the cap table.
         let mut fds = OutgoingFds::default();
@@ -2651,6 +2744,7 @@ where
 
         // Init the question table.  Do this after writing descriptors to avoid interference.
         let mut question = Question::<VatId>::new();
+        question._permit = Some(permit.clone());
         question.is_awaiting_return = true;
         question.param_exports = exports;
         question.is_tail_call = false;
@@ -2698,7 +2792,11 @@ where
             unreachable!()
         };
         flow.send(
-            message,
+            Box::new(StreamingMessage {
+                message,
+                state: connection_state.clone(),
+                permit,
+            }),
             Promise::from_future(async move {
                 let _ = promise.await?;
                 Ok(())
@@ -2739,6 +2837,7 @@ impl<VatId> RequestHook for Request<VatId> {
             .target
             .write_target(get_call(&mut self.message).unwrap().get_target().unwrap());
         if let Some(redirect) = redirect {
+            drop(self.permit);
             let mut call = get_call(&mut self.message).unwrap();
             let mut replacement = redirect.new_call_with_hints(
                 call.reborrow().get_interface_id(),
@@ -2772,6 +2871,7 @@ impl<VatId> RequestHook for Request<VatId> {
         );
         fds.attach(&mut *self.message);
         let mut question = Question::new();
+        question._permit = Some(self.permit.clone());
         question.is_awaiting_return = false;
         question.param_exports = exports;
         let id = self
@@ -2795,7 +2895,7 @@ impl<VatId> RequestHook for Request<VatId> {
         call.set_question_id(id.to_wire());
         call.set_no_promise_pipelining(false);
         call.set_only_promise_pipeline(true);
-        let _ = self.message.send();
+        self.connection_state.send_call(self.message, self.permit);
         any_pointer::Pipeline::new(Box::new(Pipeline::never_done(
             self.connection_state.clone(),
             reference,
@@ -2835,6 +2935,7 @@ impl<VatId> RequestHook for Request<VatId> {
         let tmp = *self;
         let Self {
             connection_state,
+            permit,
             target,
             mut message,
             cap_table,
@@ -2844,6 +2945,7 @@ impl<VatId> RequestHook for Request<VatId> {
             target.write_target(call_builder.get_target().unwrap())
         };
         if let Some(redirect) = write_target_result {
+            drop(permit);
             // Whoops, this capability has been redirected while we were building the request!
             // We'll have to make a new request and do a copy.  Ick.
             let mut call_builder: call::Builder = get_call(&mut message).unwrap();
@@ -2869,7 +2971,7 @@ impl<VatId> RequestHook for Request<VatId> {
         }
         let disabled = get_call(&mut message).unwrap().get_no_promise_pipelining();
         let (question_ref, promise) =
-            Self::send_internal(&connection_state, message, &cap_table, false);
+            Self::send_internal(&connection_state, message, &cap_table, false, permit);
         if disabled {
             return capnp::capability::RemotePromise {
                 promise: Promise::from_future(
@@ -2912,6 +3014,7 @@ impl<VatId> RequestHook for Request<VatId> {
         let tmp = *self;
         let Self {
             connection_state,
+            permit,
             target,
             mut message,
             cap_table,
@@ -2921,6 +3024,7 @@ impl<VatId> RequestHook for Request<VatId> {
             target.write_target(call_builder.get_target().unwrap())
         };
         if let Some(redirect) = write_target_result {
+            drop(permit);
             // Whoops, this capability has been redirected while we were building the request!
             // We'll have to make a new request and do a copy.  Ick.
             let mut call_builder: call::Builder = get_call(&mut message).unwrap();
@@ -2949,12 +3053,14 @@ impl<VatId> RequestHook for Request<VatId> {
             message,
             &cap_table,
             target.flow_controller,
+            permit,
         )
     }
     fn tail_send(self: Box<Self>) -> Option<(u32, Promise<(), Error>, Box<dyn PipelineHook>)> {
         let tmp = *self;
         let Self {
             connection_state,
+            permit,
             target,
             mut message,
             cap_table,
@@ -2975,7 +3081,7 @@ impl<VatId> RequestHook for Request<VatId> {
             Some(_redirect) => {
                 return None;
             }
-            None => Self::send_internal(&connection_state, message, &cap_table, true),
+            None => Self::send_internal(&connection_state, message, &cap_table, true, permit),
         };
 
         let promise = promise.map_ok(|_response| ());

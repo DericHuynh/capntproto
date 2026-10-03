@@ -2,10 +2,10 @@
 
 Contributions can improve the runtime, protocol models, regression tests,
 documentation, and quality tooling. Capn't Proto is an experimental source preview;
-the [correctness roadmap](docs/CORRECTNESS_ROADMAP.md) and
-[release acceptance criteria](docs/RELEASE_ACCEPTANCE.md) describe current work.
+the [correctness roadmap](docs/wiki/Correctness.md) and
+[release acceptance criteria](docs/wiki/Release-Acceptance.md) describe current work.
 All participation follows the [code of conduct](CODE_OF_CONDUCT.md).
-The [repository layout](docs/REPOSITORY_LAYOUT.md) explains where code, model
+The [repository layout](docs/wiki/Repository-Layout.md) explains where code, model
 inputs, fixtures, maintenance scripts, and research belong.
 
 ## Before starting
@@ -46,7 +46,7 @@ cargo run --locked --manifest-path examples/downstream/Cargo.toml
 ```
 
 Use bash (Git Bash on Windows) and retain this PATH for subsequent Cargo commands.
-The [auditable build policy](docs/QUALITY.md#auditable-cargo-builds) applies to
+The [auditable build policy](docs/wiki/Quality-and-Benchmarks.md#auditable-cargo-builds) applies to
 tests, examples, benchmarks and installed CI tools as well as application builds.
 
 The smoke example exercises generated capability RPC and pipelining. It also
@@ -67,7 +67,7 @@ cargo test --workspace
 
 This includes unit and integration tests, doctests, model checks, maintained
 standalone crates, and native verification controls. It can take substantial time
-and disk space. Install the pinned prerequisites in [TESTING.md](docs/TESTING.md)
+and disk space. Install the pinned prerequisites in [Testing](docs/wiki/Testing.md)
 and the [quality setup action](.github/actions/quality-setup/action.yml) first:
 these include Java/TLC, the pinned C++ reference, Clang/LLVM, Miri, Valgrind,
 mutation testing, and fuzzing tools. The setup action's disk-cleanup step is for
@@ -82,7 +82,7 @@ PR CI compiles and runs smoke checks on Linux, macOS, and Windows. Linux also
 runs allocation-budget tests. Workflow changes run actionlint/Zizmor, and
 documentation changes run local link checks. Full LLVM
 coverage and regression gates run in the separate full-quality workflow. See
-[QUALITY.md](docs/QUALITY.md) for the boundaries of each check. Do not replace
+[Quality and Benchmarks](docs/wiki/Quality-and-Benchmarks.md) for the boundaries of each check. Do not replace
 measured results with estimates or lower a coverage baseline to conceal a
 regression.
 
@@ -90,7 +90,7 @@ Benchmarks run separately from tests. Compile an individual release benchmark,
 for example:
 
 ```sh
-cargo bench --locked --manifest-path benchmarks/rpc/Cargo.toml --bench noise --no-run
+cargo bench --locked --manifest-path benchmarks/rpc/Cargo.toml --bench native --no-run
 ```
 
 The dedicated benchmark workflow transfers compiled artifacts to a temporary
@@ -108,7 +108,7 @@ differences. Contributors do not need cloud credentials to submit a patch.
   requires nightly rustfmt; use its pinned nightly toolchain when formatting it.
 - Update public API documentation and affected guides when contracts change.
   State unsupported behavior and verification limits accurately.
-- Follow [FORK_POLICY.md](docs/FORK_POLICY.md) for coordinated vendored changes,
+- Follow [Fork Policy](docs/wiki/Fork-Policy.md) for coordinated vendored changes,
   provenance updates, and refreshing the quiche patch with external Git metadata.
 - Keep generated build output, coverage profiles, downloaded tools, live secrets,
   and local benchmark artifacts out of commits. Preserve reviewed fixtures,
@@ -132,4 +132,12 @@ in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## README and report changes
 
-Edit `docs/README.template.md` and regenerate with `python3 scripts/update_readme.py render`. Do not hand-edit public measurement history. See [the reporting guide](docs/REPORTING.md) for renderer dependencies, CI origin checks and validation.
+Edit `docs/README.template.md` and regenerate with `python3 scripts/update_readme.py render`. Do not hand-edit public measurement history. See [the reporting guide](docs/wiki/README-Reports.md) for renderer dependencies, CI origin checks and validation.
+
+## Wiki documentation
+
+Edit the relevant page under `docs/wiki/` and update its Home/sidebar links when
+adding or removing topics. Run `python3 scripts/wiki.py check` and build an export
+with `python3 scripts/wiki.py build --output target/wiki`. See
+[Wiki maintenance](docs/wiki/Wiki-Maintenance.md) for publishing and the distinction
+between current guides, historical ledgers and frozen research evidence.

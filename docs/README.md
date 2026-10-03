@@ -1,23 +1,12 @@
 # Documentation
 
-Start with the [project README](../README.md),
-[repository layout](REPOSITORY_LAYOUT.md), and
-[contribution guide](../CONTRIBUTING.md).
+Start at the [Wiki home](wiki/Home.md). Maintained guides live in `docs/wiki/`
+and can be read in this checkout or exported to GitHub Wiki.
 
-| Area | Starting points |
-| --- | --- |
-| Build and operate | [Preview setup](PREVIEW.md), [testing](TESTING.md), [quality CI and benchmarks](QUALITY.md) |
-| Runtime ownership and APIs | [Architecture](ARCHITECTURE.md), [implementation](IMPLEMENTATION.md), [runtime port](RUNTIME_PORT.md) |
-| Protocol models | [Protocol mapping](PROTOCOL.md), [conformance limits](CONFORMANCE.md), [handoff](HANDOFF.md), [feature contracts](FEATURES.md), [realtime contract](REALTIME.md) |
-| Generator and API design | [Rust schema compiler](../crates/capnp-compiler/README.md), [Generator guide](RUST_GENERATOR.md), [API design](RUST_API_DESIGN.md) |
-| Planning and qualification | [Correctness roadmap](CORRECTNESS_ROADMAP.md), [feature roadmap](ROADMAP.md), [release acceptance](RELEASE_ACCEPTANCE.md) |
-| Forks and research | [Fork policy](FORK_POLICY.md), [EAE comparison](EAE_BENCHMARKS.md), [third-party notices](../THIRD_PARTY_NOTICES.md) |
-| Repository administration | [GitHub setup](GITHUB_SETUP.md), [security policy](../SECURITY.md), [community support](../SUPPORT.md) |
+[Wiki maintenance](wiki/Wiki-Maintenance.md) explains validation and publishing.
+[Documentation review](wiki/Documentation-Review.md) records the migration of each
+project-owned document. [Historical records](archive/README.md) retain superseded
+checklists and design proposals separately from current usage instructions.
 
-Topic-specific runtime guides live alongside this index. Active TLA+ source and
-configurations are in [verification/](../verification); frozen trace fixtures
-are in [test-support/verification/](../test-support/verification). Historical
-run output linked by older design documents is described in
-[research/reports/README.md](../research/reports/README.md).
-
-[Generated README and public CI charts](REPORTING.md) describes the template, aggregate test history, benchmark bars and publishing workflow.
+`README.template.md` generates the repository-root README. `reports/` contains
+renderer-owned public CI charts and history; see [README reports](wiki/README-Reports.md).

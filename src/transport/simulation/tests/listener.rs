@@ -1,7 +1,7 @@
 //! The real shared receive loop, reservations and spawned transport drivers.
 use super::*;
 use crate::{
-    noise_listener::{self, Limits, Listener, Reservation},
+    native_listener::{self, Limits, Listener, Reservation},
     transport::{socket::DatagramSocket, AuthenticatedSession},
 };
 
@@ -17,7 +17,7 @@ async fn tick(network: &Network) {
 }
 
 struct Route {
-    target: noise_listener::Target,
+    target: native_listener::Target,
     client: AuthenticatedSession,
     server: Option<AuthenticatedSession>,
     received: Vec<u8>,
@@ -55,8 +55,14 @@ impl Harness {
             let target = reservation.target();
             let socket = DatagramSocket::Simulated(network.bind(address.parse().unwrap()));
             let client = tokio::task::spawn_local(async move {
-                noise_listener::connect_socket(socket, target, &identity, key, b"shared simulation")
-                    .await
+                native_listener::connect_socket(
+                    socket,
+                    target,
+                    &identity,
+                    key,
+                    b"shared simulation",
+                )
+                .await
             });
             let server = tokio::task::spawn_local(reservation.accept());
             for _ in 0..2000 {
@@ -150,7 +156,7 @@ async fn shared_demultiplexing_never_treats_routing_ids_as_authority() {
                     });
                     bytes.extend_from_slice(b"no authentication");
                     if i % 4 == 0 {
-                        bytes.resize(noise_listener::MAX_PACKET_BYTES + 2, 0);
+                        bytes.resize(native_listener::MAX_PACKET_BYTES + 2, 0);
                     }
                     if i % 4 == 1 {
                         bytes = vec![0; 20];
@@ -318,7 +324,7 @@ async fn failed_authentication_and_retired_ids_cannot_poison_replacement_reserva
                 let socket = DatagramSocket::Simulated(h.network.bind(address));
                 let caller = identity.clone();
                 let client = tokio::task::spawn_local(async move {
-                    noise_listener::connect_socket(
+                    native_listener::connect_socket(
                         socket,
                         target,
                         &caller,
@@ -345,7 +351,7 @@ async fn failed_authentication_and_retired_ids_cannot_poison_replacement_reserva
                 assert!(server.is_finished(), "reservation did not reject or expire");
                 assert!(
                     server.await.unwrap().is_err(),
-                    "unauthorized Noise peer published"
+                    "unauthorized Native peer published"
                 );
                 assert!(!stale_packets.is_empty());
                 client.abort();
@@ -366,7 +372,7 @@ async fn failed_authentication_and_retired_ids_cannot_poison_replacement_reserva
                 }
                 let socket = DatagramSocket::Simulated(h.network.bind(address));
                 let client = tokio::task::spawn_local(async move {
-                    noise_listener::connect_socket(socket, new_target, &identity, key, b"auth")
+                    native_listener::connect_socket(socket, new_target, &identity, key, b"auth")
                         .await
                 });
                 let server = tokio::task::spawn_local(fresh.accept());
@@ -459,10 +465,10 @@ fn shared_send_readiness_wakes_each_task_without_emitting_canceled_sends() {
 #[test]
 fn replay_tlc_shared_listener_io_lifecycle() {
     use reproto_test_support::verification::exploration;
-    let config = include_str!("../../../../verification/NoiseListenerIo.cfg");
+    let config = include_str!("../../../../verification/NativeListenerIo.cfg");
     exploration::controls(
-        "verification/NoiseListenerIo.tla",
-        "noise-listener-io",
+        "verification/NativeListenerIo.tla",
+        "native-listener-io",
         config,
         &[
             ("lostWake", "Progress"),
@@ -475,8 +481,8 @@ fn replay_tlc_shared_listener_io_lifecycle() {
     )
     .unwrap();
     let traces = exploration::traces(
-        "verification/NoiseListenerIo.tla",
-        "noise-listener-io",
+        "verification/NativeListenerIo.tla",
+        "native-listener-io",
         config,
     )
     .unwrap();

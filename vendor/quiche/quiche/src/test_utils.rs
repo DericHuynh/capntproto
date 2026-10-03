@@ -36,68 +36,7 @@ use crate::recovery::Sent;
 /// fit in a single Initial packet; those tests opt out of PQ to keep that
 /// invariant. See [`config_no_pq`] and
 /// [`Config::set_curves_list`](crate::Config::set_curves_list).
-#[cfg(not(feature = "noise"))]
 const NO_PQ_CURVES: &str = "X25519:P-256:P-384";
-
-/// Configure the authentication backend without changing transport limits.
-pub(crate) fn configure_test_protocol(config: &mut Config) -> Result<()> {
-    #[cfg(feature = "noise")]
-    config.set_application_protos(&[b"reproto/1"])?;
-
-    #[cfg(not(feature = "noise"))]
-    {
-        config.load_cert_chain_from_pem_file("examples/cert.crt")?;
-        config.load_priv_key_from_pem_file("examples/cert.key")?;
-        config.set_application_protos(&[b"proto1", b"proto2"])?;
-    }
-
-    Ok(())
-}
-
-#[cfg(feature = "noise")]
-pub(crate) const TEST_APPLICATION_PROTOCOLS: &[&[u8]] = &[b"reproto/1"];
-#[cfg(not(feature = "noise"))]
-pub(crate) const TEST_APPLICATION_PROTOCOLS: &[&[u8]] = &[b"proto1", b"proto2"];
-
-/// Each Pipe endpoint gets a distinct, reciprocally pinned test identity.
-/// These fixed keys are fixture data, never production credentials. This
-/// helper is deliberately separate from Config's production constructors.
-#[cfg(feature = "noise")]
-pub(crate) fn configure_test_identity(
-    config: &mut Config, is_server: bool,
-) -> Result<()> {
-    use snow::params::DHChoice;
-    use snow::resolvers::CryptoResolver;
-    use snow::resolvers::DefaultResolver;
-
-    let (private, peer_private) = if is_server {
-        ([0x22; 32], [0x11; 32])
-    } else {
-        ([0x11; 32], [0x22; 32])
-    };
-    let mut dh = DefaultResolver
-        .resolve_dh(&DHChoice::Curve25519)
-        .ok_or(Error::InvalidState)?;
-    dh.set(&peer_private);
-    let peer = dh.pubkey().try_into().map_err(|_| Error::InvalidState)?;
-    config.set_noise_identity(private, peer, None, b"quiche regression tests")
-}
-
-fn connect_test_peer<F: BufFactory>(
-    scid: &ConnectionId, local: SocketAddr, peer: SocketAddr, config: &mut Config,
-) -> Result<Connection<F>> {
-    #[cfg(feature = "noise")]
-    configure_test_identity(config, false)?;
-    connect_with_buffer_factory(Some("quic.tech"), scid, local, peer, config)
-}
-
-fn accept_test_peer<F: BufFactory>(
-    scid: &ConnectionId, local: SocketAddr, peer: SocketAddr, config: &mut Config,
-) -> Result<Connection<F>> {
-    #[cfg(feature = "noise")]
-    configure_test_identity(config, true)?;
-    accept_with_buf_factory(scid, None, local, peer, config)
-}
 
 /// Returns a `Config` equivalent to `Config::new(version)` but with
 /// post-quantum TLS curves disabled.
@@ -108,15 +47,9 @@ fn accept_test_peer<F: BufFactory>(
 /// ClientHello across two Initial packets, which perturbs those
 /// expectations.
 pub fn config_no_pq(version: u32) -> Result<Config> {
-    #[cfg(feature = "noise")]
-    return Config::new(version);
-
-    #[cfg(not(feature = "noise"))]
-    {
-        let mut config = Config::new(version)?;
-        config.set_curves_list(NO_PQ_CURVES)?;
-        Ok(config)
-    }
+    let mut config = Config::new(version)?;
+    config.set_curves_list(NO_PQ_CURVES)?;
+    Ok(config)
 }
 
 pub struct Pipe<F = DefaultBufFactory>
@@ -131,7 +64,9 @@ impl Pipe {
     pub fn default_config(cc_algorithm_name: &str) -> Result<Config> {
         let mut config = Config::new(PROTOCOL_VERSION)?;
         assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
-        configure_test_protocol(&mut config)?;
+        config.load_cert_chain_from_pem_file("examples/cert.crt")?;
+        config.load_priv_key_from_pem_file("examples/cert.key")?;
+        config.set_application_protos(&[b"proto1", b"proto2"])?;
         config.set_initial_max_data(30);
         config.set_initial_max_stream_data_bidi_local(15);
         config.set_initial_max_stream_data_bidi_remote(15);
@@ -147,15 +82,9 @@ impl Pipe {
     /// Like [`default_config`](Self::default_config) but with post-quantum
     /// TLS curves disabled. See [`config_no_pq`] for the rationale.
     pub fn default_config_no_pq(cc_algorithm_name: &str) -> Result<Config> {
-        #[cfg(feature = "noise")]
-        return Self::default_config(cc_algorithm_name);
-
-        #[cfg(not(feature = "noise"))]
-        {
-            let mut config = Self::default_config(cc_algorithm_name)?;
-            config.set_curves_list(NO_PQ_CURVES)?;
-            Ok(config)
-        }
+        let mut config = Self::default_config(cc_algorithm_name)?;
+        config.set_curves_list(NO_PQ_CURVES)?;
+        Ok(config)
     }
 
     #[cfg(feature = "boringssl-boring-crate")]
@@ -239,14 +168,16 @@ impl<F: BufFactory> Pipe<F> {
         let server_addr = Pipe::server_addr();
 
         Ok(Pipe {
-            client: connect_test_peer(
+            client: connect_with_buffer_factory(
+                Some("quic.tech"),
                 &client_scid,
                 client_addr,
                 server_addr,
                 config,
             )?,
-            server: accept_test_peer(
+            server: accept_with_buf_factory(
                 &server_scid,
+                None,
                 server_addr,
                 client_addr,
                 config,
@@ -268,14 +199,16 @@ impl<F: BufFactory> Pipe<F> {
         let server_addr = Pipe::server_addr();
 
         Ok(Pipe {
-            client: connect_test_peer(
+            client: connect_with_buffer_factory(
+                Some("quic.tech"),
                 &client_scid,
                 client_addr,
                 server_addr,
                 config,
             )?,
-            server: accept_test_peer(
+            server: accept_with_buf_factory(
                 &server_scid,
+                None,
                 server_addr,
                 client_addr,
                 config,
@@ -297,7 +230,9 @@ impl<F: BufFactory> Pipe<F> {
         let server_addr = Pipe::server_addr();
 
         let mut config = Config::new(PROTOCOL_VERSION)?;
-        configure_test_protocol(&mut config)?;
+        config.load_cert_chain_from_pem_file("examples/cert.crt")?;
+        config.load_priv_key_from_pem_file("examples/cert.key")?;
+        config.set_application_protos(&[b"proto1", b"proto2"])?;
         config.set_initial_max_data(30);
         config.set_initial_max_stream_data_bidi_local(15);
         config.set_initial_max_stream_data_bidi_remote(15);
@@ -306,14 +241,16 @@ impl<F: BufFactory> Pipe<F> {
         config.set_ack_delay_exponent(8);
 
         Ok(Pipe {
-            client: connect_test_peer(
+            client: connect_with_buffer_factory(
+                Some("quic.tech"),
                 &client_scid,
                 client_addr,
                 server_addr,
                 client_config,
             )?,
-            server: accept_test_peer(
+            server: accept_with_buf_factory(
                 &server_scid,
+                None,
                 server_addr,
                 client_addr,
                 &mut config,
@@ -335,9 +272,6 @@ impl<F: BufFactory> Pipe<F> {
         let server_addr = Pipe::server_addr();
 
         let mut config = Config::new(PROTOCOL_VERSION)?;
-        #[cfg(feature = "noise")]
-        config.set_application_protos(&[b"reproto/1"])?;
-        #[cfg(not(feature = "noise"))]
         config.set_application_protos(&[b"proto1", b"proto2"])?;
         config.set_initial_max_data(30);
         config.set_initial_max_stream_data_bidi_local(15);
@@ -347,14 +281,16 @@ impl<F: BufFactory> Pipe<F> {
         config.set_ack_delay_exponent(8);
 
         Ok(Pipe {
-            client: connect_test_peer(
+            client: connect_with_buffer_factory(
+                Some("quic.tech"),
                 &client_scid,
                 client_addr,
                 server_addr,
                 &mut config,
             )?,
-            server: accept_test_peer(
+            server: accept_with_buf_factory(
                 &server_scid,
+                None,
                 server_addr,
                 client_addr,
                 server_config,
@@ -376,14 +312,16 @@ impl<F: BufFactory> Pipe<F> {
         let server_addr = Pipe::server_addr();
 
         Ok(Pipe {
-            client: connect_test_peer(
+            client: connect_with_buffer_factory(
+                Some("quic.tech"),
                 &client_scid,
                 client_addr,
                 server_addr,
                 client_config,
             )?,
-            server: accept_test_peer(
+            server: accept_with_buf_factory(
                 &server_scid,
+                None,
                 server_addr,
                 client_addr,
                 server_config,
@@ -399,11 +337,6 @@ impl<F: BufFactory> Pipe<F> {
             let flight = emit_flight(&mut self.server)?;
             process_flight(&mut self.client, flight)?;
         }
-
-        // IK establishes the responder one flight earlier than TLS. Deliver
-        // the initiator's confirmation before returning a ready-to-use pair.
-        #[cfg(feature = "noise")]
-        self.advance()?;
 
         Ok(())
     }
@@ -662,11 +595,7 @@ pub fn decode_pkt<F: BufFactory>(
 
     let aead = conn.crypto_ctx[epoch].crypto_open.as_ref().unwrap();
 
-    let payload_len = if hdr.ty == Type::Short {
-        b.cap()
-    } else {
-        b.get_varint()? as usize
-    };
+    let payload_len = b.cap();
 
     packet::decrypt_hdr(&mut b, &mut hdr, aead).unwrap();
 

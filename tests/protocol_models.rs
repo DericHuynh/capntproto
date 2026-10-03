@@ -230,48 +230,48 @@ fn orphan_groups_model() {
 }
 
 #[test]
-fn noise_arbitration_model() {
+fn native_arbitration_model() {
     verify(
         catalog()
             .groups
             .iter()
-            .find(|g| g.id == "noise_arbitration_model")
+            .find(|g| g.id == "native_arbitration_model")
             .unwrap(),
     )
     .unwrap();
 }
 
 #[test]
-fn noise_provisioning_model() {
+fn native_provisioning_model() {
     verify(
         catalog()
             .groups
             .iter()
-            .find(|g| g.id == "noise_provisioning_model")
+            .find(|g| g.id == "native_provisioning_model")
             .unwrap(),
     )
     .unwrap();
 }
 
 #[test]
-fn noise_listener_model() {
+fn native_listener_model() {
     verify(
         catalog()
             .groups
             .iter()
-            .find(|g| g.id == "noise_listener_model")
+            .find(|g| g.id == "native_listener_model")
             .unwrap(),
     )
     .unwrap();
 }
 
 #[test]
-fn noise_shutdown_model() {
+fn native_shutdown_model() {
     verify(
         catalog()
             .groups
             .iter()
-            .find(|g| g.id == "noise_shutdown_model")
+            .find(|g| g.id == "native_shutdown_model")
             .unwrap(),
     )
     .unwrap();
@@ -350,24 +350,24 @@ fn schema_exchange_model() {
 }
 
 #[test]
-fn noise_routes_model() {
+fn native_routes_model() {
     verify(
         catalog()
             .groups
             .iter()
-            .find(|g| g.id == "noise_routes_model")
+            .find(|g| g.id == "native_routes_model")
             .unwrap(),
     )
     .unwrap();
 }
 
 #[test]
-fn noise_multiparty_model() {
+fn native_multiparty_model() {
     verify(
         catalog()
             .groups
             .iter()
-            .find(|g| g.id == "noise_multiparty_model")
+            .find(|g| g.id == "native_multiparty_model")
             .unwrap(),
     )
     .unwrap();

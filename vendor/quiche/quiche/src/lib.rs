@@ -439,11 +439,10 @@ use crate::stream::StreamPriorityKey;
 pub const PROTOCOL_VERSION: u32 = PROTOCOL_VERSION_V1;
 
 /// Supported QUIC versions.
-const PROTOCOL_VERSION_V1: u32 = if cfg!(feature = "noise") {
-    0xff52_5001
-} else {
-    0x0000_0001
-};
+const PROTOCOL_VERSION_V1: u32 = 0x0000_0001;
+
+/// QUIC version 2 (RFC 9369).
+pub const PROTOCOL_VERSION_V2: u32 = 0x6b33_43cf;
 
 /// The maximum length of a connection ID.
 pub const MAX_CONN_ID_LEN: usize = packet::MAX_CID_LEN as usize;
@@ -647,16 +646,6 @@ impl Config {
         version: u32, tls_ctx_builder: boring::ssl::SslContextBuilder,
     ) -> Result<Config> {
         Self::with_tls_ctx(version, tls::Context::from_boring(tls_ctx_builder)?)
-    }
-
-    /// Configure pinned Noise identities and an optional introduction PSK.
-    /// Context is transcript-bound; both peers must provide identical bytes.
-    #[cfg(feature = "noise")]
-    pub fn set_noise_identity(
-        &mut self, private: [u8; 32], peer: [u8; 32], psk: Option<[u8; 32]>,
-        context: &[u8],
-    ) -> Result<()> {
-        self.tls_ctx.configure(private, peer, psk, context)
     }
 
     fn with_tls_ctx(version: u32, tls_ctx: tls::Context) -> Result<Config> {
@@ -1388,11 +1377,6 @@ where
     /// The path manager.
     paths: path::PathMap,
 
-    /// Original address tuple awaiting a Noise return-path confirmation.
-    /// Keep the tuple rather than a reusable path-table slot.
-    #[cfg(feature = "noise")]
-    noise_handshake_path: Option<(SocketAddr, SocketAddr)>,
-
     /// PATH_CHALLENGE receive queue max length.
     path_challenge_recv_max_queue_len: usize,
 
@@ -1908,7 +1892,7 @@ pub fn retry(
 /// Returns true if the given protocol version is supported.
 #[inline]
 pub fn version_is_supported(version: u32) -> bool {
-    matches!(version, PROTOCOL_VERSION_V1)
+    matches!(version, PROTOCOL_VERSION_V1 | PROTOCOL_VERSION_V2)
 }
 
 /// Pushes a frame to the output packet if there is enough space.
@@ -2114,8 +2098,6 @@ impl<F: BufFactory> Connection<F> {
             recovery_config,
 
             paths,
-            #[cfg(feature = "noise")]
-            noise_handshake_path: is_server.then_some((local, peer)),
             path_challenge_recv_max_queue_len: config
                 .path_challenge_recv_max_queue_len,
             path_challenge_rx_count: 0,
@@ -2267,7 +2249,7 @@ impl<F: BufFactory> Connection<F> {
         conn.handshake.init(is_server)?;
 
         conn.handshake
-            .use_legacy_codepoint(config.version != PROTOCOL_VERSION_V1);
+            .use_legacy_codepoint(!version_is_supported(config.version));
 
         conn.encode_transport_params()?;
 
@@ -2434,6 +2416,9 @@ impl<F: BufFactory> Connection<F> {
     #[inline]
     pub fn set_session(&mut self, session: &[u8]) -> Result<()> {
         let mut b = octets::Octets::with_slice(session);
+        if b.get_u32()? != self.version {
+            return Err(Error::InvalidState);
+        }
 
         let session_len = b.get_u64()? as usize;
         let session_bytes = b.get_bytes(session_len)?;
@@ -3060,6 +3045,11 @@ impl<F: BufFactory> Connection<F> {
                 return Err(Error::Done);
             }
 
+            // Explicit stable versions never silently downgrade on an
+            // unauthenticated Version Negotiation packet.
+            if matches!(self.version, PROTOCOL_VERSION_V1 | PROTOCOL_VERSION_V2) {
+                return Err(Error::Done);
+            }
             let supported_versions =
                 versions.iter().filter(|&&v| version_is_supported(v));
 
@@ -3107,7 +3097,7 @@ impl<F: BufFactory> Connection<F> {
             self.crypto_ctx[packet::Epoch::Initial].crypto_seal = Some(aead_seal);
 
             self.handshake
-                .use_legacy_codepoint(self.version != PROTOCOL_VERSION_V1);
+                .use_legacy_codepoint(!version_is_supported(self.version));
 
             // Encode transport parameters again, as the new version might be
             // using a different format.
@@ -3182,7 +3172,7 @@ impl<F: BufFactory> Connection<F> {
             self.did_version_negotiation = true;
 
             self.handshake
-                .use_legacy_codepoint(self.version != PROTOCOL_VERSION_V1);
+                .use_legacy_codepoint(!version_is_supported(self.version));
 
             // Encode transport parameters again, as the new version might be
             // using a different format.
@@ -3832,21 +3822,6 @@ impl<F: BufFactory> Connection<F> {
             self.drop_epoch_state(packet::Epoch::Initial, now);
 
             self.paths.get_mut(recv_pid)?.verified_peer_address = true;
-        }
-
-        // Noise has no Handshake packet epoch. An authenticated application
-        // packet proves receipt of the responder flight, so its Initial
-        // retransmission state can now be retired. Only the original address
-        // gets this return-path confirmation; a migrated path must still
-        // complete PATH_CHALLENGE/PATH_RESPONSE validation.
-        #[cfg(feature = "noise")]
-        if self.is_server && hdr.ty == Type::Short {
-            if let Some(original) = self.noise_handshake_path.take() {
-                self.drop_epoch_state(packet::Epoch::Initial, now);
-                if original == (info.to, info.from) {
-                    self.paths.get_mut(recv_pid)?.verified_peer_address = true;
-                }
-            }
         }
 
         self.ack_eliciting_sent = false;
@@ -5551,15 +5526,7 @@ impl<F: BufFactory> Connection<F> {
                 self.amplification_limited_count.saturating_add(1);
         }
 
-        // The Noise initiator can send application packets only after it has
-        // authenticated the responder flight. This replaces TLS's Handshake
-        // packet transition and proves the initiator flight was received.
-        if !self.is_server &&
-            (hdr_ty == Type::Handshake ||
-                (cfg!(feature = "noise") &&
-                    hdr_ty == Type::Short &&
-                    self.crypto_ctx[packet::Epoch::Initial].has_keys()))
-        {
+        if !self.is_server && hdr_ty == Type::Handshake {
             self.drop_epoch_state(packet::Epoch::Initial, now);
         }
 
@@ -6370,7 +6337,6 @@ impl<F: BufFactory> Connection<F> {
     /// itself. Successful completion remains observable after stream
     /// collection. Local resets, STOP_SENDING and unopened streams never
     /// count as receipt.
-    #[cfg(feature = "noise")]
     pub fn stream_send_acknowledged(&self, stream_id: u64) -> Result<bool> {
         self.streams.send_acknowledged(stream_id)
     }
@@ -7672,6 +7638,18 @@ impl<F: BufFactory> Connection<F> {
         self.handshake.server_name()
     }
 
+    /// Require an IP subject alternative name in the server certificate.
+    ///
+    /// Call immediately after `connect(None, ...)`, before sending packets.
+    /// IP literals are not sent as TLS Server Name Indication. The configured
+    /// certificate chain verification remains enabled.
+    pub fn set_verify_peer_ip(&mut self, ip: std::net::IpAddr) -> Result<()> {
+        if self.is_server || self.is_established() || self.sent_count != 0 {
+            return Err(Error::InvalidState);
+        }
+        self.handshake.set_peer_ip(ip)
+    }
+
     /// Returns the peer's leaf certificate (if any) as a DER-encoded buffer.
     #[inline]
     pub fn peer_cert(&self) -> Option<&[u8]> {
@@ -7961,6 +7939,13 @@ impl<F: BufFactory> Connection<F> {
     }
 
     fn encode_transport_params(&mut self) -> Result<()> {
+        self.local_transport_params.version_information =
+            Some(if self.is_server {
+                vec![self.version, PROTOCOL_VERSION_V1, PROTOCOL_VERSION_V2]
+            } else {
+                vec![self.version, self.version]
+            });
+        self.handshake.set_version_context(self.version)?;
         self.handshake.set_quic_transport_params(
             &self.local_transport_params,
             self.is_server,
@@ -7970,6 +7955,13 @@ impl<F: BufFactory> Connection<F> {
     fn parse_peer_transport_params(
         &mut self, peer_params: TransportParams,
     ) -> Result<()> {
+        match &peer_params.version_information {
+            Some(versions) if versions[0] != self.version =>
+                return Err(Error::VersionNegotiation),
+            None if self.version == PROTOCOL_VERSION_V2 =>
+                return Err(Error::VersionNegotiation),
+            _ => (),
+        }
         // Validate initial_source_connection_id.
         match &peer_params.initial_source_connection_id {
             Some(v) if v != &self.destination_id() =>
@@ -8075,6 +8067,7 @@ impl<F: BufFactory> Connection<F> {
     /// If the connection is already established, it does nothing.
     fn do_handshake(&mut self, now: Instant) -> Result<()> {
         let mut ex_data = tls::ExData {
+            version: self.version,
             application_protos: &self.application_protos,
 
             crypto_ctx: &mut self.crypto_ctx,
@@ -9584,22 +9577,11 @@ pub use crate::error::Error;
 pub use crate::error::Result;
 pub use crate::error::WireErrorCode;
 
+#[cfg(all(feature = "authenticated", feature = "fuzzing"))]
+compile_error!("authenticated transport cannot enable the fuzzing crypto bypass");
 mod buffers;
 mod cid;
 mod clock;
-#[cfg(all(test, feature = "noise"))]
-mod noise_tests;
-#[cfg(all(test, feature = "noise"))]
-mod simulation;
-#[cfg(all(
-    feature = "noise",
-    any(
-        feature = "boringssl-boring-crate",
-        feature = "fuzzing",
-        feature = "ffi"
-    )
-))]
-compile_error!("Noise profile cannot be combined with TLS, fuzzing crypto bypass, or TLS C FFI");
 mod crypto;
 mod dgram;
 mod error;
@@ -9617,9 +9599,7 @@ mod range_buf;
 mod ranges;
 mod recovery;
 mod stream;
-#[cfg(not(feature = "noise"))]
-mod tls;
-#[cfg(feature = "noise")]
-#[path = "tls/noise.rs"]
 mod tls;
 mod transport_params;
+#[cfg(test)]
+mod v2_tests;

@@ -35,25 +35,28 @@ while accounting for Capn't Proto's fork-specific behavior.
 
 ## Deployment and support boundary
 
-This is a 0.x developer preview. The custom Noise/quiche binding has not received
-an independent production cryptographic review. Supported deployment is explicitly
-provisioned peers with pinned identities, configured resource limits and trusted
-local storage. Treat introduction tickets and SturdyRefs as secrets.
+This is a 0.x developer preview. Native identity, admission and capability
+integration still require independent production security review. Provision peers
+with pinned Ed25519 identities, configured resource limits and trusted local
+storage. Treat introduction tickets and SturdyRefs as secrets.
 
-The handshake is `Noise_IK_25519_ChaChaPoly_BLAKE3`; introduced sessions use
-IKpsk2 with the same primitives. Application 0-RTT is rejected. This transport
-does not interoperate with TLS QUIC. Checksums protect storage against accidental
-corruption, not a malicious writer or rollback. Runtime capability hooks are
-never persisted as authority.
+`rpc::tcp` is plaintext and unauthenticated. Use `rpc::tls` or native TCP
+for TLS 1.3. Quiche uses standard QUIC v1/v2 with TLS 1.3.
+Native sessions require mutual peer-key authentication and reject application
+0-RTT. Reservation secrets authenticate admission; they do not independently
+contribute to TLS traffic encryption. Conventional CA/name-validated TLS and
+mTLS remain available through the two-party adapters.
+Checksums protect storage against accidental corruption, not a malicious writer
+or rollback. Runtime capability hooks are never persisted as authority.
 
 Correctness bugs in advertised behavior block a release. Optional features and
-unbounded proof goals do not. See [release acceptance](docs/RELEASE_ACCEPTANCE.md) for current
+unbounded proof goals do not. See [release acceptance](docs/wiki/Release-Acceptance.md) for current
 implementation evidence and remaining production qualification.
 
 ## Maintainer setup
 
 Publishing this file makes the reporting policy available; it does not enable
 GitHub's private reporting form. Follow the
-[repository setup guide](docs/GITHUB_SETUP.md) to enable that feature and its
+[repository setup guide](docs/wiki/GitHub-Setup.md) to enable that feature and its
 notifications after the repository is uploaded. GitHub documents the separate
 [private vulnerability reporting setting](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configure-for-a-repository).

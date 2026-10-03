@@ -26,8 +26,9 @@ rust-version = "1.88"
 workspace = true
 
 [features]
-default = ["noise"]
-noise = ["dep:snow", "dep:ring", "dep:hkdf", "dep:sha2", "dep:subtle", "dep:zeroize"]
+# Require real packet protection for authenticated application transports.
+authenticated = []
+default = ["boringssl-boring-crate"]
 
 # Share the application's Tokio clock for recovery, pacing and expiry. This
 # enables no test utilities or deterministic entropy in production builds.
@@ -96,12 +97,6 @@ cdylib-link-lines = { version = "0.1", optional = true }
 
 [dependencies]
 tokio = { workspace = true, features = ["time"], optional = true }
-snow = { git = "https://github.com/mcginty/snow", rev = "8ac60f51cfe3e010c84f0a454cc575ad9204fa12", default-features = false, features = ["std", "use-curve25519", "use-chacha20poly1305", "use-blake3", "use-getrandom", "risky-raw-split"], optional = true }
-ring = { version = "0.17", optional = true }
-hkdf = { version = "0.12", optional = true }
-sha2 = { version = "0.10", optional = true }
-subtle = { version = "2", optional = true }
-zeroize = { version = "1", optional = true }
 bytes = { workspace = true }
 boring = { workspace = true, optional = true }
 boring-sys = { workspace = true, optional = true }

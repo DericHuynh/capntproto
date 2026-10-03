@@ -40,6 +40,33 @@ _apalache-tmp/
 !/research/reports/storage-benchmark/*.jsonl
 !/research/reports/eae-integration/*.json
 !/research/reports/eae-integration/*.jsonl
+!/research/reports/storage-next/
+/research/reports/storage-next/*
+!/research/reports/storage-next/2026-10-01/
+/research/reports/storage-next/2026-10-01/*
+!/research/reports/storage-next/2026-10-01/environment.json
+!/research/reports/storage-next/2026-10-01/runs.jsonl
+!/research/reports/storage-next/2026-10-01/summary.json
+!/research/reports/storage-resilience/
+/research/reports/storage-resilience/*
+!/research/reports/storage-resilience/2026-10-01/
+/research/reports/storage-resilience/2026-10-01/*
+!/research/reports/storage-resilience/2026-10-01/environment.json
+!/research/reports/storage-resilience/2026-10-01/runs.jsonl
+!/research/reports/storage-resilience/2026-10-01/summary.json
+!/research/reports/concurrency/
+/research/reports/concurrency/*
+!/research/reports/concurrency/2026-10-01/
+/research/reports/concurrency/2026-10-01/*
+!/research/reports/concurrency/2026-10-01/environment.json
+!/research/reports/concurrency/2026-10-01/runs.jsonl
+!/research/reports/concurrency/2026-10-01/summary.json
+!/research/reports/rpc-pipeline/
+/research/reports/rpc-pipeline/*
+!/research/reports/rpc-pipeline/2026-10-01/
+/research/reports/rpc-pipeline/2026-10-01/*
+!/research/reports/rpc-pipeline/2026-10-01/environment.json
+!/research/reports/rpc-pipeline/2026-10-01/results.json
 
 # Locally discovered fuzz inputs; checked-in upstream corpora remain included.
 /fuzz/artifacts/

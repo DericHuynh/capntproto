@@ -2,12 +2,10 @@ max_concurrency = 8
 timeout = 20
 max_retries = 2
 include_mail = false
-# Historical evidence was archived outside the upload; downloaded C++ sources
-# and generated artifacts are absent from a clean checkout. Do not exclude
+# Downloaded C++ sources and generated artifacts may be absent from a clean
+# checkout. Historical logs now point to their archive policy. Do not exclude
 # ordinary source/docs links or the frozen reports under research/reports/.
 exclude = [
-  '^file://.*/reports/(release-review|features-verified|conformance-before-handoff|conformance|realtime)/',
-  '^file://.*/reports/checks\.json$',
   '^file://.*/vendor/capnproto/',
   '^file://.*/target/',
   '^file://.*/dist/',

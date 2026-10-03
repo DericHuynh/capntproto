@@ -196,6 +196,14 @@ fn batch_metrics_exclude_active_io_and_restart_age_after_idle() {
     h.cancel(0);
     h.pump(); // Both messages become active, even with no writer capacity.
     assert_eq!(h.snapshot(), QueueSnapshot::default());
+    assert_eq!(
+        h.queue.output_snapshot().active,
+        QueueSnapshot {
+            message_count: 2,
+            bytes: 24,
+            wait_time: Duration::from_secs(2)
+        }
+    );
     h.time.store(10, Ordering::SeqCst);
     h.send(16);
     h.time.store(11, Ordering::SeqCst);
@@ -210,6 +218,14 @@ fn batch_metrics_exclude_active_io_and_restart_age_after_idle() {
     h.output.borrow_mut().budget = 40; // First batch, including framing.
     h.pump();
     assert_eq!(
+        h.queue.output_snapshot().active,
+        QueueSnapshot {
+            message_count: 2,
+            bytes: 24,
+            wait_time: Duration::from_secs(11)
+        }
+    );
+    assert_eq!(
         h.outcomes,
         [4, 1, 1],
         "writing without flushing is not completion"
@@ -218,6 +234,14 @@ fn batch_metrics_exclude_active_io_and_restart_age_after_idle() {
     h.pump();
     assert_eq!(h.outcomes, [4, 2, 1]);
     assert_eq!(h.snapshot(), QueueSnapshot::default());
+    assert_eq!(
+        h.queue.output_snapshot().active,
+        QueueSnapshot {
+            message_count: 1,
+            bytes: 24,
+            wait_time: Duration::from_secs(1)
+        }
+    );
     assert_eq!(
         h.output.borrow().writes,
         1,
@@ -230,6 +254,7 @@ fn batch_metrics_exclude_active_io_and_restart_age_after_idle() {
     assert!(h.terminated);
     assert_eq!(h.result, 1);
     assert_eq!(h.output.borrow().flushes, 2);
+    assert_eq!(h.queue.output_snapshot(), Default::default());
     let output = h.output.borrow();
     let mut bytes = &output.bytes[..];
     for size in [0, 8, 16] {
@@ -287,6 +312,7 @@ fn failure_and_driver_cancellation_clear_metrics_and_fail_every_receipt() {
             assert_eq!(h.outcomes, [3, 3]);
             assert!(!h.terminated);
             assert_eq!(h.snapshot(), QueueSnapshot::default());
+            assert_eq!(h.queue.output_snapshot(), Default::default());
             assert!(h.sender.send(message(0)).now_or_never().unwrap().is_err());
         }
     }
@@ -616,11 +642,14 @@ fn cancel_after_partial_write_fails_active_and_queued_messages() {
     h.send(8);
     assert_eq!(h.output.borrow().bytes.len(), 7);
     assert_eq!(h.sender.len(), 1);
+    assert_eq!(h.queue.output_snapshot().active.bytes, 24);
+    assert_eq!(h.queue.output_snapshot().queued.bytes, 16);
     h.driver.take();
     h.observe();
     assert_eq!(h.outcomes, [3, 3]);
     assert_eq!(h.snapshot(), QueueSnapshot::default());
     assert_eq!(h.output.borrow().bytes.len(), 7);
+    assert_eq!(h.queue.output_snapshot(), Default::default());
 }
 
 #[test]

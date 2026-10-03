@@ -404,7 +404,7 @@
         }
       },
       "scope": "two/three independently routed shares, equal/different objects/hosts, tampered share, proof validation, authenticated acquisition, cancellation and independent guard release; every edge prefix uses production share/MAC/registration code",
-      "limits": "ideal cryptography in TLC; real MACs in Rust replay; bounded drained schedules; real multi-vat Noise RPC and on-demand direct dialing checked separately; not whole-runtime refinement"
+      "limits": "ideal cryptography in TLC; real MACs in Rust replay; bounded drained schedules; real multi-vat Native RPC and on-demand direct dialing checked separately; not whole-runtime refinement"
     },
     {
       "id": "answer_adoption_model",
@@ -565,7 +565,7 @@
         }
       },
       "scope": "one third-party answer, both arrival orders, early Return, success/exception, caller drop, callee disconnect and result capability retention; shared callee execution with independent forwarding/direct answers and a retained child pipeline, Finish and disconnect; every graph edge prefix replayed over production Rust RPC",
-      "limits": "drained schedules, one authenticated rendezvous; malformed tokens/namespaces, proxy fallback, self-adoption and real Noise have separate regressions; no whole-runtime refinement or cryptographic proof"
+      "limits": "drained schedules, one authenticated rendezvous; malformed tokens/namespaces, proxy fallback, self-adoption and real Native have separate regressions; no whole-runtime refinement or cryptographic proof"
     },
     {
       "id": "caller_pipeline_model",
@@ -719,7 +719,7 @@
         }
       },
       "scope": "one saved public pipeline, unused or previously called; both authorization orders, early success/exception Return, wire target selection, retained capability after request drop, independent disconnects and Finish ownership; every graph edge replayed",
-      "limits": "one probe call and drained schedules; original request drop and relay disconnect occur after adoption; unauthenticated cancellation, fresh references, prebuilt requests, self-adoption, exports and native Noise use separate regressions; used references retain their relay route, no arbitrary graph refinement"
+      "limits": "one probe call and drained schedules; original request drop and relay disconnect occur after adoption; unauthenticated cancellation, fresh references, prebuilt requests, self-adoption, exports and native Native use separate regressions; used references retain their relay route, no arbitrary graph refinement"
     },
     {
       "id": "two_party_join_model",
@@ -1012,7 +1012,7 @@
         }
       },
       "scope": "two settled wrapped imports; explicit policy authorization, mixed-boundary rejection, both directions, equal/unequal underlying Join, either Return order, revocation, drop, disconnect, wrapper preservation and downstream Finish; every graph edge replayed on Rust RPC",
-      "limits": "one membrane and one bilateral batch with drained schedules; related roots, opposite directions, nested boundaries, policy revocation signals, reentrant callbacks, delegation depth, upstream retention and native Noise multiparty paths have separate regressions; individual secret shares remain opaque, no arbitrary-policy or whole-runtime proof"
+      "limits": "one membrane and one bilateral batch with drained schedules; related roots, opposite directions, nested boundaries, policy revocation signals, reentrant callbacks, delegation depth, upstream retention and native Native multiparty paths have separate regressions; individual secret shares remain opaque, no arbitrary-policy or whole-runtime proof"
     },
     {
       "id": "storage_compaction_model",
@@ -1195,7 +1195,7 @@
         }
       },
       "scope": "every edge prefix: native disk publication/recovery/retention and all cursor queries; local and real RPC consumer retry, explicit acknowledgement, wait, drop, cancel, revocation and retention gap with executor drained after each action",
-      "limits": "three staged storage revisions; two RPC publications/requests; one checkpoint of each kind and restart; excludes arbitrary executor and crash histories; separate Rust tests cover torn records/checkpoints, full RPC restart and authenticated Noise"
+      "limits": "three staged storage revisions; two RPC publications/requests; one checkpoint of each kind and restart; excludes arbitrary executor and crash histories; separate Rust tests cover torn records/checkpoints, full RPC restart and authenticated Native"
     },
     {
       "id": "persistence_model",
@@ -1300,7 +1300,7 @@
         }
       },
       "scope": "every edge prefix for one committed reference, three owner epochs including ABA, intruder, asynchronous restoration/cancellation, close/reopen, revocation and renewal; actual realm disk commits and standard Persistent.save replayed",
-      "limits": "bounded local realm; hashes, randomness and filesystem commit are abstracted; separate byte-truncation recovery and authenticated Noise integration tests; trusted application factories, no distributed realm or complete RPC refinement"
+      "limits": "bounded local realm; hashes, randomness and filesystem commit are abstracted; separate byte-truncation recovery and authenticated Native integration tests; trusted application factories, no distributed realm or complete RPC refinement"
     },
     {
       "id": "persistence_expiry_model",
@@ -1960,12 +1960,12 @@
       "limits": "one group, one nested union arm, three capabilities, one held client and one moved field; bounded ownership histories, not whole-protocol refinement; defaults, generic brands and copying covered by separate regressions"
     },
     {
-      "id": "noise_arbitration_model",
-      "report": "noise-arbitration",
+      "id": "native_arbitration_model",
+      "report": "native-arbitration",
       "checks": [
         {
           "id": "1",
-          "module": "verification/RpcNoiseArbitration.tla",
+          "module": "verification/RpcNativeArbitration.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n Count = 1\n Bug = \"none\"\nINVARIANTS TypeOK SingleSelection Agreement AgreedPublication ConfirmedFollower DataCommitted EpochBound NoReactivation\n",
           "exit": 0,
           "message": "Model checking completed. No error has been found.",
@@ -1977,7 +1977,7 @@
         },
         {
           "id": "2",
-          "module": "verification/RpcNoiseArbitration.tla",
+          "module": "verification/RpcNativeArbitration.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n Count = 2\n Bug = \"none\"\nINVARIANTS TypeOK SingleSelection Agreement AgreedPublication ConfirmedFollower DataCommitted EpochBound NoReactivation\n",
           "exit": 0,
           "message": "Model checking completed. No error has been found.",
@@ -1989,70 +1989,70 @@
         },
         {
           "id": "closedPublish",
-          "module": "verification/RpcNoiseArbitration.tla",
+          "module": "verification/RpcNativeArbitration.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n Count = 2\n Bug = \"closedPublish\"\nINVARIANTS TypeOK NoReactivation\n",
           "exit": 12,
           "message": "Invariant NoReactivation is violated"
         },
         {
           "id": "doubleSelection",
-          "module": "verification/RpcNoiseArbitration.tla",
+          "module": "verification/RpcNativeArbitration.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n Count = 2\n Bug = \"doubleSelection\"\nINVARIANTS TypeOK SingleSelection\n",
           "exit": 12,
           "message": "Invariant SingleSelection is violated"
         },
         {
           "id": "earlyData",
-          "module": "verification/RpcNoiseArbitration.tla",
+          "module": "verification/RpcNativeArbitration.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n Count = 2\n Bug = \"earlyData\"\nINVARIANTS TypeOK DataCommitted\n",
           "exit": 12,
           "message": "Invariant DataCommitted is violated"
         },
         {
           "id": "lostCommit",
-          "module": "verification/RpcNoiseArbitration.tla",
+          "module": "verification/RpcNativeArbitration.tla",
           "config": "SPECIFICATION HealthySpec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n Count = 2\n Bug = \"lostCommit\"\nINVARIANTS TypeOK SingleSelection Agreement AgreedPublication ConfirmedFollower DataCommitted EpochBound NoReactivation\nPROPERTY BothReady\n",
           "exit": 13,
           "message": "Temporal properties were violated"
         },
         {
           "id": "progress-1",
-          "module": "verification/RpcNoiseArbitration.tla",
+          "module": "verification/RpcNativeArbitration.tla",
           "config": "SPECIFICATION HealthySpec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n Count = 1\n Bug = \"none\"\nINVARIANTS TypeOK SingleSelection Agreement AgreedPublication ConfirmedFollower DataCommitted EpochBound NoReactivation\nPROPERTY BothReady\n",
           "exit": 0,
           "message": "Model checking completed. No error has been found."
         },
         {
           "id": "progress-2",
-          "module": "verification/RpcNoiseArbitration.tla",
+          "module": "verification/RpcNativeArbitration.tla",
           "config": "SPECIFICATION HealthySpec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n Count = 2\n Bug = \"none\"\nINVARIANTS TypeOK SingleSelection Agreement AgreedPublication ConfirmedFollower DataCommitted EpochBound NoReactivation\nPROPERTY BothReady\n",
           "exit": 0,
           "message": "Model checking completed. No error has been found."
         },
         {
           "id": "retryWinner",
-          "module": "verification/RpcNoiseArbitration.tla",
+          "module": "verification/RpcNativeArbitration.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n Count = 2\n Bug = \"retryWinner\"\nINVARIANTS TypeOK SingleSelection\n",
           "exit": 12,
           "message": "Invariant SingleSelection is violated"
         },
         {
           "id": "skipAck",
-          "module": "verification/RpcNoiseArbitration.tla",
+          "module": "verification/RpcNativeArbitration.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n Count = 2\n Bug = \"skipAck\"\nINVARIANTS TypeOK AgreedPublication\n",
           "exit": 12,
           "message": "Invariant AgreedPublication is violated"
         },
         {
           "id": "skipCommit",
-          "module": "verification/RpcNoiseArbitration.tla",
+          "module": "verification/RpcNativeArbitration.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n Count = 2\n Bug = \"skipCommit\"\nINVARIANTS TypeOK ConfirmedFollower\n",
           "exit": 12,
           "message": "Invariant ConfirmedFollower is violated"
         },
         {
           "id": "staleEpoch",
-          "module": "verification/RpcNoiseArbitration.tla",
+          "module": "verification/RpcNativeArbitration.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n Count = 2\n Bug = \"staleEpoch\"\nINVARIANTS TypeOK EpochBound\n",
           "exit": 12,
           "message": "Invariant EpochBound is violated"
@@ -2060,7 +2060,7 @@
       ],
       "inputs": {
         "REPROTO_ARBITRATION_TRACES": {
-          "file": "noise-arbitration/traces.json.gz",
+          "file": "native-arbitration/traces.json.gz",
           "sha256": "407538d76bef2e03a1f959ab8b2cc9d865dc8ed9dc454439eb01a0ed5ba6ace8",
           "cases": 21609
         }
@@ -2069,40 +2069,40 @@
       "limits": "authentication, packet loss/timing and endpoint/RPC tables abstracted; UDP integration separately covers crossed dials, stable connection identity, queued calls/capabilities, reprovisioned handoff, duplicate rejection and reconnect; no crypto proof or complete composed refinement"
     },
     {
-      "id": "noise_provisioning_model",
-      "report": "noise-provisioning",
+      "id": "native_provisioning_model",
+      "report": "native-provisioning",
       "checks": [
         {
           "id": "closeRoute",
-          "module": "verification/RpcNoiseProvisioning.tla",
+          "module": "verification/RpcNativeProvisioning.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANT Bug = \"closeRoute\"\nINVARIANTS TypeOK InstalledLifetime\n",
           "exit": 12,
           "message": "Invariant InstalledLifetime is violated"
         },
         {
           "id": "closedIssue",
-          "module": "verification/RpcNoiseProvisioning.tla",
+          "module": "verification/RpcNativeProvisioning.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANT Bug = \"closedIssue\"\nINVARIANTS TypeOK Revoked\n",
           "exit": 12,
           "message": "Invariant Revoked is violated"
         },
         {
           "id": "dropLeak",
-          "module": "verification/RpcNoiseProvisioning.tla",
+          "module": "verification/RpcNativeProvisioning.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANT Bug = \"dropLeak\"\nINVARIANTS TypeOK Owned\n",
           "exit": 12,
           "message": "Invariant Owned is violated"
         },
         {
           "id": "earlyAck",
-          "module": "verification/RpcNoiseProvisioning.tla",
+          "module": "verification/RpcNativeProvisioning.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANT Bug = \"earlyAck\"\nINVARIANTS TypeOK Acknowledged\n",
           "exit": 12,
           "message": "Invariant Acknowledged is violated"
         },
         {
           "id": "model",
-          "module": "verification/RpcNoiseProvisioning.tla",
+          "module": "verification/RpcNativeProvisioning.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANT Bug = \"none\"\nINVARIANTS TypeOK Quota Revoked Authenticated Acknowledged Isolated InstalledLifetime Owned\n",
           "exit": 0,
           "message": "Model checking completed. No error has been found.",
@@ -2114,35 +2114,35 @@
         },
         {
           "id": "noExpiry",
-          "module": "verification/RpcNoiseProvisioning.tla",
+          "module": "verification/RpcNativeProvisioning.tla",
           "config": "SPECIFICATION FairSpec\nCHECK_DEADLOCK FALSE\nCONSTANT Bug = \"noExpiry\"\nINVARIANTS TypeOK Quota Revoked Authenticated Acknowledged Isolated InstalledLifetime Owned\nPROPERTIES Settled WaitersFinish\n",
           "exit": 13,
           "message": "Temporal properties were violated"
         },
         {
           "id": "overlap",
-          "module": "verification/RpcNoiseProvisioning.tla",
+          "module": "verification/RpcNativeProvisioning.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANT Bug = \"overlap\"\nINVARIANTS TypeOK Quota\n",
           "exit": 12,
           "message": "Invariant Quota is violated"
         },
         {
           "id": "progress",
-          "module": "verification/RpcNoiseProvisioning.tla",
+          "module": "verification/RpcNativeProvisioning.tla",
           "config": "SPECIFICATION FairSpec\nCHECK_DEADLOCK FALSE\nCONSTANT Bug = \"none\"\nINVARIANTS TypeOK Quota Revoked Authenticated Acknowledged Isolated InstalledLifetime Owned\nPROPERTIES Settled WaitersFinish\n",
           "exit": 0,
           "message": "Model checking completed. No error has been found."
         },
         {
           "id": "staleCancel",
-          "module": "verification/RpcNoiseProvisioning.tla",
+          "module": "verification/RpcNativeProvisioning.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANT Bug = \"staleCancel\"\nINVARIANTS TypeOK Isolated\n",
           "exit": 12,
           "message": "Invariant Isolated is violated"
         },
         {
           "id": "unauthed",
-          "module": "verification/RpcNoiseProvisioning.tla",
+          "module": "verification/RpcNativeProvisioning.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANT Bug = \"unauthed\"\nINVARIANTS TypeOK Authenticated\n",
           "exit": 12,
           "message": "Invariant Authenticated is violated"
@@ -2150,21 +2150,21 @@
       ],
       "inputs": {
         "REPROTO_PROVISIONING_TRACES": {
-          "file": "noise-provisioning/traces.json.gz",
+          "file": "native-provisioning/traces.json.gz",
           "sha256": "59d0f399a5db637a2028681aa1dacb1ef82036568f45f6f40e1b5e1ff920ec04",
           "cases": 46217
         }
       },
       "scope": "one delegated provider, two successive leases, one ready waiter per lease, cancellation/expiry/drop, authentication claim, attach success/failure, acknowledgement, revocation and old/new lease isolation; every graph edge-prefix replays production registry/lease futures",
-      "limits": "Noise proof, RPC delivery, deadline clock and network attach abstracted in component model; integration tests separately cover encrypted three-party relay, native handoff, authenticated publication, reprovisioning, duplicate route races and RPC capability release; no crypto proof or arbitrary executor/composed refinement"
+      "limits": "Native proof, RPC delivery, deadline clock and network attach abstracted in component model; integration tests separately cover encrypted three-party relay, native handoff, authenticated publication, reprovisioning, duplicate route races and RPC capability release; no crypto proof or arbitrary executor/composed refinement"
     },
     {
-      "id": "noise_listener_model",
-      "report": "noise-listener",
+      "id": "native_listener_model",
+      "report": "native-listener",
       "checks": [
         {
           "id": "1-1",
-          "module": "verification/RpcNoiseListener.tla",
+          "module": "verification/RpcNativeListener.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n Slots = 1\n Queue = 1\n Bug = \"none\"\nINVARIANTS TypeOK Quota Isolated Authenticated Expired Lifetime Stopped\n",
           "exit": 0,
           "message": "Model checking completed. No error has been found.",
@@ -2176,7 +2176,7 @@
         },
         {
           "id": "2-1",
-          "module": "verification/RpcNoiseListener.tla",
+          "module": "verification/RpcNativeListener.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n Slots = 2\n Queue = 1\n Bug = \"none\"\nINVARIANTS TypeOK Quota Isolated Authenticated Expired Lifetime Stopped\n",
           "exit": 0,
           "message": "Model checking completed. No error has been found.",
@@ -2188,63 +2188,63 @@
         },
         {
           "id": "closeLeak",
-          "module": "verification/RpcNoiseListener.tla",
+          "module": "verification/RpcNativeListener.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n Slots = 2\n Queue = 1\n Bug = \"closeLeak\"\nINVARIANTS TypeOK Lifetime\n",
           "exit": 12,
           "message": "Invariant Lifetime is violated"
         },
         {
           "id": "expiryLeak",
-          "module": "verification/RpcNoiseListener.tla",
+          "module": "verification/RpcNativeListener.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n Slots = 2\n Queue = 1\n Bug = \"expiryLeak\"\nINVARIANTS TypeOK Expired\n",
           "exit": 12,
           "message": "Invariant Expired is violated"
         },
         {
           "id": "lateReserve",
-          "module": "verification/RpcNoiseListener.tla",
+          "module": "verification/RpcNativeListener.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n Slots = 2\n Queue = 1\n Bug = \"lateReserve\"\nINVARIANTS TypeOK Stopped\n",
           "exit": 12,
           "message": "Invariant Stopped is violated"
         },
         {
           "id": "misroute",
-          "module": "verification/RpcNoiseListener.tla",
+          "module": "verification/RpcNativeListener.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n Slots = 2\n Queue = 1\n Bug = \"misroute\"\nINVARIANTS TypeOK Isolated\n",
           "exit": 12,
           "message": "Invariant Isolated is violated"
         },
         {
           "id": "overflow",
-          "module": "verification/RpcNoiseListener.tla",
+          "module": "verification/RpcNativeListener.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n Slots = 2\n Queue = 1\n Bug = \"overflow\"\nINVARIANTS TypeOK Quota\n",
           "exit": 12,
           "message": "Invariant Quota is violated"
         },
         {
           "id": "staleDrop",
-          "module": "verification/RpcNoiseListener.tla",
+          "module": "verification/RpcNativeListener.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n Slots = 2\n Queue = 1\n Bug = \"staleDrop\"\nINVARIANTS TypeOK Isolated\n",
           "exit": 12,
           "message": "Invariant Isolated is violated"
         },
         {
           "id": "stopAuthenticated",
-          "module": "verification/RpcNoiseListener.tla",
+          "module": "verification/RpcNativeListener.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n Slots = 2\n Queue = 1\n Bug = \"stopAuthenticated\"\nINVARIANTS TypeOK Isolated\n",
           "exit": 12,
           "message": "Invariant Isolated is violated"
         },
         {
           "id": "stopLeak",
-          "module": "verification/RpcNoiseListener.tla",
+          "module": "verification/RpcNativeListener.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n Slots = 2\n Queue = 1\n Bug = \"stopLeak\"\nINVARIANTS TypeOK Stopped\n",
           "exit": 12,
           "message": "Invariant Stopped is violated"
         },
         {
           "id": "wrongPeer",
-          "module": "verification/RpcNoiseListener.tla",
+          "module": "verification/RpcNativeListener.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n Slots = 2\n Queue = 1\n Bug = \"wrongPeer\"\nINVARIANTS TypeOK Authenticated\n",
           "exit": 12,
           "message": "Invariant Authenticated is violated"
@@ -2252,35 +2252,35 @@
       ],
       "inputs": {
         "REPROTO_LISTENER_TRACES": {
-          "file": "noise-listener/traces.json.gz",
+          "file": "native-listener/traces.json.gz",
           "sha256": "b25fe25aef77158209626f9859b6dee7277e7c3816194ef7206e6f3f764bb097",
           "cases": 23976
         }
       },
       "scope": "two unique reservation IDs, one/two active slots, bounded packet queues, quota rejection, authentication publication, expiry, cancellation, retired leases, unknown packets, two-phase listener admission stop and listener close; all edge-prefixes replay production allocation/dispatch/registry helpers with a controlled clock",
-      "limits": "cryptographic proof abstracted in model; real UDP regressions cover Noise keys/PSK/context/routing tamper, RPC/datagrams, directory consumption, native handoff and shutdown; no arbitrary executor/loss/migration or crypto proof"
+      "limits": "cryptographic proof abstracted in model; real UDP regressions cover Native keys/PSK/context/routing tamper, RPC/datagrams, directory consumption, native handoff and shutdown; no arbitrary executor/loss/migration or crypto proof"
     },
     {
-      "id": "noise_shutdown_model",
-      "report": "noise-shutdown",
+      "id": "native_shutdown_model",
+      "report": "native-shutdown",
       "checks": [
         {
           "id": "binding",
-          "module": "verification/RpcNoiseShutdown.tla",
+          "module": "verification/RpcNativeShutdown.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\nBytes = 2\nCrossed = TRUE\nFault = \"binding\"\nINVARIANTS TypeOK Binding\n",
           "exit": 12,
           "message": "Invariant Binding is violated"
         },
         {
           "id": "bytes-0-crossed-0/model-liveness",
-          "module": "verification/RpcNoiseShutdown.tla",
+          "module": "verification/RpcNativeShutdown.tla",
           "config": "SPECIFICATION LiveSpec\nCHECK_DEADLOCK FALSE\nCONSTANTS\nBytes = 0\nCrossed = FALSE\nFault = \"none\"\nINVARIANTS TypeOK DrainFence ReceiptFence ReplyFence Binding CrossedFence Terminal Success\nPROPERTY Progress\n",
           "exit": 0,
           "message": "Model checking completed. No error has been found."
         },
         {
           "id": "bytes-0-crossed-0/model",
-          "module": "verification/RpcNoiseShutdown.tla",
+          "module": "verification/RpcNativeShutdown.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\nBytes = 0\nCrossed = FALSE\nFault = \"none\"\nINVARIANTS TypeOK DrainFence ReceiptFence ReplyFence Binding CrossedFence Terminal Success\n",
           "exit": 0,
           "message": "Model checking completed. No error has been found.",
@@ -2292,14 +2292,14 @@
         },
         {
           "id": "bytes-2-crossed-0/model-liveness",
-          "module": "verification/RpcNoiseShutdown.tla",
+          "module": "verification/RpcNativeShutdown.tla",
           "config": "SPECIFICATION LiveSpec\nCHECK_DEADLOCK FALSE\nCONSTANTS\nBytes = 2\nCrossed = FALSE\nFault = \"none\"\nINVARIANTS TypeOK DrainFence ReceiptFence ReplyFence Binding CrossedFence Terminal Success\nPROPERTY Progress\n",
           "exit": 0,
           "message": "Model checking completed. No error has been found."
         },
         {
           "id": "bytes-2-crossed-0/model",
-          "module": "verification/RpcNoiseShutdown.tla",
+          "module": "verification/RpcNativeShutdown.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\nBytes = 2\nCrossed = FALSE\nFault = \"none\"\nINVARIANTS TypeOK DrainFence ReceiptFence ReplyFence Binding CrossedFence Terminal Success\n",
           "exit": 0,
           "message": "Model checking completed. No error has been found.",
@@ -2311,14 +2311,14 @@
         },
         {
           "id": "bytes-2-crossed-1/model-liveness",
-          "module": "verification/RpcNoiseShutdown.tla",
+          "module": "verification/RpcNativeShutdown.tla",
           "config": "SPECIFICATION LiveSpec\nCHECK_DEADLOCK FALSE\nCONSTANTS\nBytes = 2\nCrossed = TRUE\nFault = \"none\"\nINVARIANTS TypeOK DrainFence ReceiptFence ReplyFence Binding CrossedFence Terminal Success\nPROPERTY Progress\n",
           "exit": 0,
           "message": "Model checking completed. No error has been found."
         },
         {
           "id": "bytes-2-crossed-1/model",
-          "module": "verification/RpcNoiseShutdown.tla",
+          "module": "verification/RpcNativeShutdown.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\nBytes = 2\nCrossed = TRUE\nFault = \"none\"\nINVARIANTS TypeOK DrainFence ReceiptFence ReplyFence Binding CrossedFence Terminal Success\n",
           "exit": 0,
           "message": "Model checking completed. No error has been found.",
@@ -2330,43 +2330,43 @@
         },
         {
           "id": "crossed",
-          "module": "verification/RpcNoiseShutdown.tla",
+          "module": "verification/RpcNativeShutdown.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\nBytes = 2\nCrossed = TRUE\nFault = \"crossed\"\nINVARIANTS TypeOK CrossedFence\n",
           "exit": 12,
           "message": "Invariant CrossedFence is violated"
         },
         {
           "id": "earlyAck",
-          "module": "verification/RpcNoiseShutdown.tla",
+          "module": "verification/RpcNativeShutdown.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\nBytes = 2\nCrossed = TRUE\nFault = \"earlyAck\"\nINVARIANTS TypeOK ReceiptFence\n",
           "exit": 12,
           "message": "Invariant ReceiptFence is violated"
         },
         {
           "id": "earlyReply",
-          "module": "verification/RpcNoiseShutdown.tla",
+          "module": "verification/RpcNativeShutdown.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\nBytes = 2\nCrossed = TRUE\nFault = \"earlyReply\"\nINVARIANTS TypeOK ReplyFence\n",
           "exit": 12,
           "message": "Invariant ReplyFence is violated"
         },
         {
           "id": "resurrect",
-          "module": "verification/RpcNoiseShutdown.tla",
+          "module": "verification/RpcNativeShutdown.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\nBytes = 2\nCrossed = TRUE\nFault = \"resurrect\"\nINVARIANTS TypeOK Terminal\n",
           "exit": 12,
           "message": "Invariant Terminal is violated"
         },
         {
           "id": "undrained",
-          "module": "verification/RpcNoiseShutdown.tla",
+          "module": "verification/RpcNativeShutdown.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\nBytes = 2\nCrossed = TRUE\nFault = \"undrained\"\nINVARIANTS TypeOK DrainFence\n",
           "exit": 12,
           "message": "Invariant DrainFence is violated"
         }
       ],
       "inputs": {
-        "REPROTO_NOISE_SHUTDOWN_TRACES": {
-          "file": "noise-shutdown/traces.json.gz",
+        "REPROTO_NATIVE_SHUTDOWN_TRACES": {
+          "file": "native-shutdown/traces.json.gz",
           "sha256": "3e148e46c67dd8ddde9def334940a8f8336175cec41ac9020cf1f5d8a13af509",
           "cases": 1496
         }
@@ -2434,7 +2434,7 @@
         }
       },
       "scope": "every edge prefix: one immutable snapshot, two packet copies, loss, duplicate delivery, unknown tokens, malformed frames, cancel-before-data, revocation, driver stop and delayed reliable status replies; production ingress and real RPC control replay",
-      "limits": "deterministic ingress replaces UDP scheduling in trace replay; separate Noise tests cover packet transport/session isolation; clock/replacement checked by existing realtime model; no proof of cryptography, arbitrary executors or full composition"
+      "limits": "deterministic ingress replaces UDP scheduling in trace replay; separate Native tests cover packet transport/session isolation; clock/replacement checked by existing realtime model; no proof of cryptography, arbitrary executors or full composition"
     },
     {
       "id": "realtime_fragments_model",
@@ -2701,7 +2701,7 @@
         }
       },
       "scope": "two chunks, strict payload credit, delayed/reordered/duplicate acknowledgments, sticky failure, ordered cancellation, early done rejection and atomic publication; every edge prefix replayed against production CreditWindow and Receiver",
-      "limits": "finite FIFO requests with FIFO or reordered replies; wire prefixes without duplicate acknowledgments use the production Sender/Receiver through a proxy controlling dispatch and reply delivery; owner lifetime and Noise have separate tests; in-memory staging, no durability or whole-runtime proof"
+      "limits": "finite FIFO requests with FIFO or reordered replies; wire prefixes without duplicate acknowledgments use the production Sender/Receiver through a proxy controlling dispatch and reply delivery; owner lifetime and Native have separate tests; in-memory staging, no durability or whole-runtime proof"
     },
     {
       "id": "durable_bulk_model",
@@ -2912,7 +2912,7 @@
         }
       },
       "scope": "two durable chunks, retry, incomplete/repeated done, cancel, full store restart, history compaction, revocation, concurrent target edit and digest failure; every edge prefix executes native commits and real RPC on actual disk journals",
-      "limits": "at most one extra action per scenario and two completion calls, drained executor schedules; atomic batch uses fsync/validated-prefix recovery assumptions; separate Rust tests cover torn batches, lost replies, corruption, quotas and real Noise; not arbitrary power loss, cross-file transactions or whole-runtime refinement"
+      "limits": "at most one extra action per scenario and two completion calls, drained executor schedules; atomic batch uses fsync/validated-prefix recovery assumptions; separate Rust tests cover torn batches, lost replies, corruption, quotas and real Native; not arbitrary power loss, cross-file transactions or whole-runtime refinement"
     },
     {
       "id": "realtime_model",
@@ -3029,7 +3029,7 @@
         }
       },
       "scope": "two immutable snapshots, one/two keys, capacity, duplicates, cancellation tombstones, clock margin, expiry, replacement and close; every receiver edge prefix replayed against Rust",
-      "limits": "receiver traces use direct authenticated-adapter entry points; RPC/Noise, local timeout, quota and clock-regression behaviors have separate regressions; original protocol models cover loss/control delivery; datagram adapter checked separately by the realtime_datagram_model Cargo check; no hard realtime guarantee"
+      "limits": "receiver traces use direct authenticated-adapter entry points; RPC/Native, local timeout, quota and clock-regression behaviors have separate regressions; original protocol models cover loss/control delivery; datagram adapter checked separately by the realtime_datagram_model Cargo check; no hard realtime guarantee"
     },
     {
       "id": "schema_exchange_model",
@@ -3157,40 +3157,40 @@
       "limits": "three schema IDs, two revisions, drained executor schedules; metadata dependency extraction tested on a real compiler request; not C++ SchemaLoader semantics or a full type/layout validator"
     },
     {
-      "id": "noise_routes_model",
-      "report": "noise-routes",
+      "id": "native_routes_model",
+      "report": "native-routes",
       "checks": [
         {
           "id": "EarlyData",
-          "module": "verification/RpcNoiseRoutes.tla",
+          "module": "verification/RpcNativeRoutes.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n  WrongIdentity = FALSE\n  EarlyData = TRUE\n  OrphanDial = FALSE\n  MalformedKey = FALSE\nINVARIANTS TypeOK IdentityBinding AuthenticatedData Lifetime\n",
           "exit": 12,
           "message": "Invariant AuthenticatedData is violated"
         },
         {
           "id": "MalformedKey",
-          "module": "verification/RpcNoiseRoutes.tla",
+          "module": "verification/RpcNativeRoutes.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n  WrongIdentity = FALSE\n  EarlyData = FALSE\n  OrphanDial = FALSE\n  MalformedKey = TRUE\nINVARIANTS TypeOK IdentityBinding AuthenticatedData Lifetime\n",
           "exit": 12,
           "message": "Invariant IdentityBinding is violated"
         },
         {
           "id": "OrphanDial",
-          "module": "verification/RpcNoiseRoutes.tla",
+          "module": "verification/RpcNativeRoutes.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n  WrongIdentity = FALSE\n  EarlyData = FALSE\n  OrphanDial = TRUE\n  MalformedKey = FALSE\nINVARIANTS TypeOK IdentityBinding AuthenticatedData Lifetime\n",
           "exit": 12,
           "message": "Invariant Lifetime is violated"
         },
         {
           "id": "WrongIdentity",
-          "module": "verification/RpcNoiseRoutes.tla",
+          "module": "verification/RpcNativeRoutes.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n  WrongIdentity = TRUE\n  EarlyData = FALSE\n  OrphanDial = FALSE\n  MalformedKey = FALSE\nINVARIANTS TypeOK IdentityBinding AuthenticatedData Lifetime\n",
           "exit": 12,
           "message": "Invariant IdentityBinding is violated"
         },
         {
           "id": "model",
-          "module": "verification/RpcNoiseRoutes.tla",
+          "module": "verification/RpcNativeRoutes.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n  WrongIdentity = FALSE\n  EarlyData = FALSE\n  OrphanDial = FALSE\n  MalformedKey = FALSE\nINVARIANTS TypeOK IdentityBinding AuthenticatedData Lifetime\n",
           "exit": 0,
           "message": "Model checking completed. No error has been found.",
@@ -3202,29 +3202,29 @@
         }
       ],
       "inputs": {
-        "REPROTO_NOISE_ROUTE_TRACES": {
-          "file": "noise-routes/traces.json.gz",
+        "REPROTO_NATIVE_ROUTE_TRACES": {
+          "file": "native-routes/traces.json.gz",
           "sha256": "0e11a7484d5d2ddbdbb5a23082351b0d51ffbfb204dd5ad020b9bdc76bfaaa86",
           "cases": 91
         }
       },
-      "scope": "one route, two references, deferred authentication, identity/key-pair rejection, failure, cancellation, disconnect, network close; every edge prefix replayed against real Noise UDP sessions and Rust route registry",
+      "scope": "one route, two references, deferred authentication, identity/key-pair rejection, failure, cancellation, disconnect, network close; every edge prefix replayed against real Native UDP sessions and Rust route registry",
       "limits": "bounded drained schedules; reconnect generation isolation, both identity mismatches, 64-route quota and native three-party on-demand handoff are separate Rust regressions; no discovery, simultaneous-dial or crypto proof"
     },
     {
-      "id": "noise_multiparty_model",
-      "report": "noise-multiparty",
+      "id": "native_multiparty_model",
+      "report": "native-multiparty",
       "checks": [
         {
           "id": "gate0-Early",
-          "module": "verification/RpcNoiseStreamGate.tla",
+          "module": "verification/RpcNativeStreamGate.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n  Server = FALSE\n  Early = TRUE\n  BadPreface = FALSE\nINVARIANTS TypeOK AuthenticatedPublication\n",
           "exit": 12,
           "message": "Invariant AuthenticatedPublication is violated"
         },
         {
           "id": "gate0",
-          "module": "verification/RpcNoiseStreamGate.tla",
+          "module": "verification/RpcNativeStreamGate.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n  Server = FALSE\n  Early = FALSE\n  BadPreface = FALSE\nINVARIANTS TypeOK AuthenticatedPublication\n",
           "exit": 0,
           "message": "Model checking completed. No error has been found.",
@@ -3236,21 +3236,21 @@
         },
         {
           "id": "gate1-BadPreface",
-          "module": "verification/RpcNoiseStreamGate.tla",
+          "module": "verification/RpcNativeStreamGate.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n  Server = TRUE\n  Early = FALSE\n  BadPreface = TRUE\nINVARIANTS TypeOK AuthenticatedPublication\n",
           "exit": 12,
           "message": "Invariant AuthenticatedPublication is violated"
         },
         {
           "id": "gate1-Early",
-          "module": "verification/RpcNoiseStreamGate.tla",
+          "module": "verification/RpcNativeStreamGate.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n  Server = TRUE\n  Early = TRUE\n  BadPreface = FALSE\nINVARIANTS TypeOK AuthenticatedPublication\n",
           "exit": 12,
           "message": "Invariant AuthenticatedPublication is violated"
         },
         {
           "id": "gate1",
-          "module": "verification/RpcNoiseStreamGate.tla",
+          "module": "verification/RpcNativeStreamGate.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n  Server = TRUE\n  Early = FALSE\n  BadPreface = FALSE\nINVARIANTS TypeOK AuthenticatedPublication\n",
           "exit": 0,
           "message": "Model checking completed. No error has been found.",
@@ -3262,21 +3262,21 @@
         },
         {
           "id": "rendezvous0-Replay",
-          "module": "verification/RpcNoiseRendezvous.tla",
+          "module": "verification/RpcNativeRendezvous.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n  Steal = FALSE\n  Replay = TRUE\nINVARIANTS TypeOK RecipientBinding NoRetiredAccept NoEarlyResult\n",
           "exit": 12,
           "message": "Invariant NoRetiredAccept is violated"
         },
         {
           "id": "rendezvous0-Steal",
-          "module": "verification/RpcNoiseRendezvous.tla",
+          "module": "verification/RpcNativeRendezvous.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n  Steal = TRUE\n  Replay = FALSE\nINVARIANTS TypeOK RecipientBinding NoRetiredAccept NoEarlyResult\n",
           "exit": 12,
           "message": "Invariant RecipientBinding is violated"
         },
         {
           "id": "rendezvous0",
-          "module": "verification/RpcNoiseRendezvous.tla",
+          "module": "verification/RpcNativeRendezvous.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n  Steal = FALSE\n  Replay = FALSE\nINVARIANTS TypeOK RecipientBinding NoRetiredAccept NoEarlyResult\n",
           "exit": 0,
           "message": "Model checking completed. No error has been found.",
@@ -3288,8 +3288,8 @@
         }
       ],
       "inputs": {
-        "REPROTO_NOISE_MULTIPARTY_TRACES": {
-          "file": "noise-multiparty/traces.json.gz",
+        "REPROTO_NATIVE_MULTIPARTY_TRACES": {
+          "file": "native-multiparty/traces.json.gz",
           "sha256": "11e0f7858c76864546287cbcc0b4fb53ccee6162d30b816e868f3db3b2096d73",
           "cases": 167
         }
@@ -4153,7 +4153,7 @@
         }
       },
       "scope": "five-vat contact chain or reflected contact branching; deferred use/drop; independent remote/local accepts; cached acceptance/forwarding rejection; lazy FD retrieval on Unix; vine lifetime; upstream provision/forwarded-vine disconnect isolation; every model edge via shortest prefix",
-      "limits": "one provision, two forwards, up to four locally used deferred clients; deterministic drained executor; authenticated in-memory test network, not production multiparty Noise or arbitrary network schedules"
+      "limits": "one provision, two forwards, up to four locally used deferred clients; deterministic drained executor; authenticated in-memory test network, not production multiparty Native or arbitrary network schedules"
     },
     {
       "id": "cancellation_model",

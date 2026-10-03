@@ -24,9 +24,7 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#[cfg(not(feature = "noise"))]
 use libc::c_int;
-#[cfg(not(feature = "noise"))]
 use libc::c_void;
 
 use crate::Error;
@@ -44,8 +42,6 @@ pub const HP_MASK_LEN: usize = 5;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Level {
     Initial   = 0,
-    #[cfg_attr(feature = "noise", allow(dead_code))]
-    // Noise disables early data.
     ZeroRTT   = 1,
     Handshake = 2,
     OneRTT    = 3,
@@ -69,8 +65,6 @@ pub enum Algorithm {
     AES128_GCM,
 
     #[allow(non_camel_case_types)]
-    #[cfg_attr(feature = "noise", allow(dead_code))]
-    // Retained shared algorithm ABI.
     AES256_GCM,
 
     #[allow(non_camel_case_types)]
@@ -80,7 +74,6 @@ pub enum Algorithm {
 // Note: some vendor-specific methods are implemented in the boringssl
 // submodule.
 impl Algorithm {
-    #[cfg(not(feature = "noise"))]
     fn get_evp_digest(self) -> *const EVP_MD {
         match self {
             Algorithm::AES128_GCM => unsafe { EVP_sha256() },
@@ -118,14 +111,12 @@ impl Algorithm {
     }
 }
 
-#[cfg(not(feature = "noise"))]
 #[allow(non_camel_case_types)]
 #[repr(transparent)]
 pub struct EVP_AEAD {
     _unused: c_void,
 }
 
-#[cfg(not(feature = "noise"))]
 #[allow(non_camel_case_types)]
 #[repr(transparent)]
 struct EVP_MD {
@@ -135,6 +126,7 @@ struct EVP_MD {
 type HeaderProtectionMask = [u8; HP_MASK_LEN];
 
 pub struct Open {
+    version: u32,
     alg: Algorithm,
 
     secret: Vec<u8>,
@@ -155,6 +147,7 @@ impl Open {
         secret: Vec<u8>,
     ) -> Result<Open> {
         Ok(Open {
+            version: crate::PROTOCOL_VERSION_V1,
             alg,
 
             secret,
@@ -165,15 +158,18 @@ impl Open {
         })
     }
 
-    pub fn from_secret(aead: Algorithm, secret: &[u8]) -> Result<Open> {
+    pub fn from_secret(
+        aead: Algorithm, secret: &[u8], version: u32,
+    ) -> Result<Open> {
         Ok(Open {
+            version,
             alg: aead,
 
             secret: secret.to_vec(),
 
-            header: HeaderProtectionKey::from_secret(aead, secret)?,
+            header: HeaderProtectionKey::from_secret(aead, secret, version)?,
 
-            packet: PacketKey::from_secret(aead, secret, Self::DECRYPT)?,
+            packet: PacketKey::from_secret(aead, secret, Self::DECRYPT, version)?,
         })
     }
 
@@ -190,12 +186,18 @@ impl Open {
     }
 
     pub fn derive_next_packet_key(&self) -> Result<Open> {
-        let next_secret = derive_next_secret(self.alg, &self.secret)?;
+        let next_secret =
+            derive_next_secret_version(self.alg, &self.secret, self.version)?;
 
-        let next_packet_key =
-            PacketKey::from_secret(self.alg, &next_secret, Self::DECRYPT)?;
+        let next_packet_key = PacketKey::from_secret(
+            self.alg,
+            &next_secret,
+            Self::DECRYPT,
+            self.version,
+        )?;
 
         Ok(Open {
+            version: self.version,
             alg: self.alg,
 
             secret: next_secret,
@@ -226,6 +228,7 @@ impl Open {
 }
 
 pub struct Seal {
+    version: u32,
     alg: Algorithm,
 
     secret: Vec<u8>,
@@ -246,6 +249,7 @@ impl Seal {
         secret: Vec<u8>,
     ) -> Result<Seal> {
         Ok(Seal {
+            version: crate::PROTOCOL_VERSION_V1,
             alg,
 
             secret,
@@ -256,15 +260,18 @@ impl Seal {
         })
     }
 
-    pub fn from_secret(aead: Algorithm, secret: &[u8]) -> Result<Seal> {
+    pub fn from_secret(
+        aead: Algorithm, secret: &[u8], version: u32,
+    ) -> Result<Seal> {
         Ok(Seal {
+            version,
             alg: aead,
 
             secret: secret.to_vec(),
 
-            header: HeaderProtectionKey::from_secret(aead, secret)?,
+            header: HeaderProtectionKey::from_secret(aead, secret, version)?,
 
-            packet: PacketKey::from_secret(aead, secret, Self::ENCRYPT)?,
+            packet: PacketKey::from_secret(aead, secret, Self::ENCRYPT, version)?,
         })
     }
 
@@ -281,12 +288,18 @@ impl Seal {
     }
 
     pub fn derive_next_packet_key(&self) -> Result<Seal> {
-        let next_secret = derive_next_secret(self.alg, &self.secret)?;
+        let next_secret =
+            derive_next_secret_version(self.alg, &self.secret, self.version)?;
 
-        let next_packet_key =
-            PacketKey::from_secret(self.alg, &next_secret, Self::ENCRYPT)?;
+        let next_packet_key = PacketKey::from_secret(
+            self.alg,
+            &next_secret,
+            Self::ENCRYPT,
+            self.version,
+        )?;
 
         Ok(Seal {
+            version: self.version,
             alg: self.alg,
 
             secret: next_secret,
@@ -324,12 +337,14 @@ impl Seal {
 }
 
 impl HeaderProtectionKey {
-    pub fn from_secret(aead: Algorithm, secret: &[u8]) -> Result<Self> {
+    pub fn from_secret(
+        aead: Algorithm, secret: &[u8], version: u32,
+    ) -> Result<Self> {
         let key_len = aead.key_len();
 
         let mut hp_key = vec![0; key_len];
 
-        derive_hdr_key(aead, secret, &mut hp_key)?;
+        derive_hdr_key_version(aead, secret, &mut hp_key, version)?;
 
         Self::new(aead, hp_key)
     }
@@ -360,13 +375,13 @@ pub fn derive_initial_key_material(
     if did_reset {
         let (open, seal) = if is_server {
             (
-                Open::from_secret(aead, &client_secret)?,
-                Seal::from_secret(aead, &server_secret)?,
+                Open::from_secret(aead, &client_secret, version)?,
+                Seal::from_secret(aead, &server_secret, version)?,
             )
         } else {
             (
-                Open::from_secret(aead, &server_secret)?,
-                Seal::from_secret(aead, &client_secret)?,
+                Open::from_secret(aead, &server_secret, version)?,
+                Seal::from_secret(aead, &client_secret, version)?,
             )
         };
 
@@ -378,18 +393,18 @@ pub fn derive_initial_key_material(
     let mut client_iv = vec![0; nonce_len];
     let mut client_hp_key = vec![0; key_len];
 
-    derive_pkt_key(aead, &client_secret, &mut client_key)?;
-    derive_pkt_iv(aead, &client_secret, &mut client_iv)?;
-    derive_hdr_key(aead, &client_secret, &mut client_hp_key)?;
+    derive_pkt_key_version(aead, &client_secret, &mut client_key, version)?;
+    derive_pkt_iv_version(aead, &client_secret, &mut client_iv, version)?;
+    derive_hdr_key_version(aead, &client_secret, &mut client_hp_key, version)?;
 
     // Server.
     let mut server_key = vec![0; key_len];
     let mut server_iv = vec![0; nonce_len];
     let mut server_hp_key = vec![0; key_len];
 
-    derive_pkt_key(aead, &server_secret, &mut server_key)?;
-    derive_pkt_iv(aead, &server_secret, &mut server_iv)?;
-    derive_hdr_key(aead, &server_secret, &mut server_hp_key)?;
+    derive_pkt_key_version(aead, &server_secret, &mut server_key, version)?;
+    derive_pkt_iv_version(aead, &server_secret, &mut server_iv, version)?;
+    derive_hdr_key_version(aead, &server_secret, &mut server_hp_key, version)?;
 
     let (open, seal) = if is_server {
         (
@@ -403,6 +418,10 @@ pub fn derive_initial_key_material(
         )
     };
 
+    let mut open = open;
+    let mut seal = seal;
+    open.version = version;
+    seal.version = version;
     Ok((open, seal))
 }
 
@@ -415,6 +434,10 @@ fn derive_initial_secret(
     ];
 
     let salt = match version {
+        crate::PROTOCOL_VERSION_V2 => &[
+            0x0d, 0xed, 0xe3, 0xde, 0xf7, 0x00, 0xa6, 0xdb, 0x81, 0x93, 0x81,
+            0xbe, 0x6e, 0x26, 0x9d, 0xcb, 0xf9, 0xbd, 0x2e, 0xd9,
+        ],
         crate::PROTOCOL_VERSION_V1 => &INITIAL_SALT_V1,
 
         _ => &INITIAL_SALT_V1,
@@ -437,20 +460,40 @@ fn derive_server_initial_secret(
     hkdf_expand_label(aead, prk, LABEL, out)
 }
 
+#[cfg(test)]
 fn derive_next_secret(aead: Algorithm, secret: &[u8]) -> Result<Vec<u8>> {
-    const LABEL: &[u8] = b"quic ku";
+    derive_next_secret_version(aead, secret, crate::PROTOCOL_VERSION_V1)
+}
+
+pub fn derive_next_secret_version(
+    aead: Algorithm, secret: &[u8], version: u32,
+) -> Result<Vec<u8>> {
+    let label: &[u8] = if version == crate::PROTOCOL_VERSION_V2 {
+        b"quicv2 ku"
+    } else {
+        b"quic ku"
+    };
 
     let mut next_secret = vec![0u8; secret.len()];
 
-    hkdf_expand_label(aead, secret, LABEL, &mut next_secret)?;
+    hkdf_expand_label(aead, secret, label, &mut next_secret)?;
 
     Ok(next_secret)
 }
 
-pub fn derive_hdr_key(
-    aead: Algorithm, secret: &[u8], out: &mut [u8],
+#[cfg(test)]
+fn derive_hdr_key(aead: Algorithm, secret: &[u8], out: &mut [u8]) -> Result<()> {
+    derive_hdr_key_version(aead, secret, out, crate::PROTOCOL_VERSION_V1)
+}
+
+pub fn derive_hdr_key_version(
+    aead: Algorithm, secret: &[u8], out: &mut [u8], version: u32,
 ) -> Result<()> {
-    const LABEL: &[u8] = b"quic hp";
+    let label: &[u8] = if version == crate::PROTOCOL_VERSION_V2 {
+        b"quicv2 hp"
+    } else {
+        b"quic hp"
+    };
 
     let key_len = aead.key_len();
 
@@ -458,11 +501,22 @@ pub fn derive_hdr_key(
         return Err(Error::CryptoFail);
     }
 
-    hkdf_expand_label(aead, secret, LABEL, &mut out[..key_len])
+    hkdf_expand_label(aead, secret, label, &mut out[..key_len])
 }
 
-pub fn derive_pkt_key(aead: Algorithm, prk: &[u8], out: &mut [u8]) -> Result<()> {
-    const LABEL: &[u8] = b"quic key";
+#[cfg(test)]
+fn derive_pkt_key(aead: Algorithm, prk: &[u8], out: &mut [u8]) -> Result<()> {
+    derive_pkt_key_version(aead, prk, out, crate::PROTOCOL_VERSION_V1)
+}
+
+pub fn derive_pkt_key_version(
+    aead: Algorithm, prk: &[u8], out: &mut [u8], version: u32,
+) -> Result<()> {
+    let label: &[u8] = if version == crate::PROTOCOL_VERSION_V2 {
+        b"quicv2 key"
+    } else {
+        b"quic key"
+    };
 
     let key_len: usize = aead.key_len();
 
@@ -470,11 +524,22 @@ pub fn derive_pkt_key(aead: Algorithm, prk: &[u8], out: &mut [u8]) -> Result<()>
         return Err(Error::CryptoFail);
     }
 
-    hkdf_expand_label(aead, prk, LABEL, &mut out[..key_len])
+    hkdf_expand_label(aead, prk, label, &mut out[..key_len])
 }
 
-pub fn derive_pkt_iv(aead: Algorithm, prk: &[u8], out: &mut [u8]) -> Result<()> {
-    const LABEL: &[u8] = b"quic iv";
+#[cfg(test)]
+fn derive_pkt_iv(aead: Algorithm, prk: &[u8], out: &mut [u8]) -> Result<()> {
+    derive_pkt_iv_version(aead, prk, out, crate::PROTOCOL_VERSION_V1)
+}
+
+pub fn derive_pkt_iv_version(
+    aead: Algorithm, prk: &[u8], out: &mut [u8], version: u32,
+) -> Result<()> {
+    let label: &[u8] = if version == crate::PROTOCOL_VERSION_V2 {
+        b"quicv2 iv"
+    } else {
+        b"quic iv"
+    };
 
     let nonce_len = aead.nonce_len();
 
@@ -482,7 +547,7 @@ pub fn derive_pkt_iv(aead: Algorithm, prk: &[u8], out: &mut [u8]) -> Result<()> 
         return Err(Error::CryptoFail);
     }
 
-    hkdf_expand_label(aead, prk, LABEL, &mut out[..nonce_len])
+    hkdf_expand_label(aead, prk, label, &mut out[..nonce_len])
 }
 
 fn hkdf_expand_label(
@@ -514,7 +579,6 @@ fn make_nonce(iv: &[u8], counter: u64) -> [u8; MAX_NONCE_LEN] {
     nonce
 }
 
-#[cfg(not(feature = "noise"))]
 pub fn verify_slices_are_equal(a: &[u8], b: &[u8]) -> Result<()> {
     if a.len() != b.len() {
         return Err(Error::CryptoFail);
@@ -529,7 +593,6 @@ pub fn verify_slices_are_equal(a: &[u8], b: &[u8]) -> Result<()> {
     Err(Error::CryptoFail)
 }
 
-#[cfg(not(feature = "noise"))]
 extern "C" {
     fn EVP_sha256() -> *const EVP_MD;
 
@@ -678,26 +741,5 @@ mod tests {
     }
 }
 
-#[cfg(not(feature = "noise"))]
 mod boringssl;
-#[cfg(not(feature = "noise"))]
 pub(crate) use boringssl::*;
-#[cfg(feature = "noise")]
-mod rust_crypto;
-#[cfg(feature = "noise")]
-pub(crate) use rust_crypto::*;
-
-#[cfg(feature = "noise")]
-impl Drop for Open {
-    fn drop(&mut self) {
-        use zeroize::Zeroize;
-        self.secret.zeroize();
-    }
-}
-#[cfg(feature = "noise")]
-impl Drop for Seal {
-    fn drop(&mut self) {
-        use zeroize::Zeroize;
-        self.secret.zeroize();
-    }
-}

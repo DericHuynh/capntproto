@@ -1,4 +1,5 @@
-//! Typed whole-entry objects, coalescing notifications and resumable publication history.
+//! Typed objects, component facets, notifications and resumable publication history.
+pub mod components;
 mod history;
 use crate::{
     authority::{Grant, ObjectId, Rights},
@@ -146,22 +147,7 @@ where
     ) -> capnp::Result<()> {
         self.require(Rights::PUT)?;
         let p = params.get()?;
-        let mut message = capnp::message::Builder::new_default();
-        message.set_root::<T>(p.get_value()?)?;
-        if message
-            .get_root_as_reader::<capnp::any_pointer::Reader<'_>>()?
-            .target_size()?
-            .cap_count
-            != 0
-        {
-            return Err(failure(
-                "persistent entries cannot contain live connection capabilities",
-            ));
-        }
-        let mut bytes = <T::Reader<'static> as HasTypeId>::TYPE_ID
-            .to_le_bytes()
-            .to_vec();
-        bytes.extend_from_slice(&capnp::serialize::write_message_to_words(&message));
+        let bytes = encode_value::<T>(p.get_value()?)?;
         {
             let store = self.state.store.borrow();
             let head = store.head(ObjectKey::from(self.state.object));
@@ -307,6 +293,38 @@ impl subscription::Server for Subscription {
         self.stop();
         Ok(())
     }
+}
+
+// Shared typed envelope for whole entries and individual components.
+fn encode_value<T: Owned>(value: T::Reader<'_>) -> capnp::Result<Vec<u8>>
+where
+    for<'a> T::Reader<'a>: SetterInput<T> + HasTypeId,
+{
+    let mut message = capnp::message::Builder::new_default();
+    // Copy through a capability-aware temporary root so hostile values are
+    // rejected with an error instead of panicking on a null capability table.
+    let mut caps = capnp::private::layout::CapTable::new();
+    {
+        use capnp::traits::ImbueMut;
+        let mut root = message.init_root::<capnp::any_pointer::Builder<'_>>();
+        root.imbue_mut(&mut caps);
+        root.set_as::<T>(value)?;
+    }
+    if message
+        .get_root_as_reader::<capnp::any_pointer::Reader<'_>>()?
+        .target_size()?
+        .cap_count
+        != 0
+    {
+        return Err(failure(
+            "persistent values cannot contain live connection capabilities",
+        ));
+    }
+    let mut bytes = <T::Reader<'static> as HasTypeId>::TYPE_ID
+        .to_le_bytes()
+        .to_vec();
+    bytes.extend_from_slice(&capnp::serialize::write_message_to_words(&message));
+    Ok(bytes)
 }
 
 fn typed_bytes<T: Owned>(snapshot: &crate::storage::Snapshot) -> capnp::Result<&[u8]>

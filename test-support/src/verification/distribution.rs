@@ -40,7 +40,7 @@ const FILES: &[&str] = &[
     "vendor/quiche/Cargo.toml",
     "vendor/quiche/Cargo.lock",
     "vendor/provenance/quiche-revision.json",
-    "vendor/provenance/quiche-noise.patch",
+    "vendor/provenance/quiche-native.patch",
 ];
 const EXCLUDE: &[&str] = &[
     ".git",
@@ -108,6 +108,10 @@ pub fn sources(base: &Path) -> Result<BTreeSet<PathBuf>> {
     for folder in [
         "research/reports/storage-benchmark",
         "research/reports/eae-integration",
+        "research/reports/storage-next/2026-10-01",
+        "research/reports/storage-resilience/2026-10-01",
+        "research/reports/concurrency/2026-10-01",
+        "research/reports/rpc-pipeline/2026-10-01",
     ] {
         let folder = base.join(folder);
         if folder.is_dir() {

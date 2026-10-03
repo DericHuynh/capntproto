@@ -82,10 +82,10 @@ async fn exchange(fixture: &mut Fixture, byte: u8) {
 #[test]
 fn replay_tlc_candidate_io_through_encrypted_driver() {
     use reproto_test_support::verification::exploration;
-    let config = include_str!("../../../../verification/NoiseCandidateIo.cfg");
+    let config = include_str!("../../../../verification/NativeCandidateIo.cfg");
     exploration::controls(
-        "verification/NoiseCandidateIo.tla",
-        "noise-candidate-io",
+        "verification/NativeCandidateIo.tla",
+        "native-candidate-io",
         config,
         &[
             ("stall", "ActiveProgress"),
@@ -98,12 +98,12 @@ fn replay_tlc_candidate_io_through_encrypted_driver() {
     )
     .unwrap();
     let traces = exploration::traces(
-        "verification/NoiseCandidateIo.tla",
-        "noise-candidate-io",
+        "verification/NativeCandidateIo.tla",
+        "native-candidate-io",
         config,
     )
     .unwrap();
-    // Both configured Noise patterns must obey the same path lifecycle.
+    // Both configured Native patterns must obey the same path lifecycle.
     for psk in [false, true] {
         for trace in &traces {
             tokio::runtime::Builder::new_current_thread()

@@ -1,0 +1,33 @@
+{
+  "started_utc": "2026-10-02T00:37:25.491640+00:00",
+  "platform": "Linux-7.2.8-1-cachyos-x86_64-with-glibc2.44",
+  "filesystem": {
+    "filesystems": [
+      {
+        "target": "/home",
+        "source": "/dev/nvme0n1p2[/@home]",
+        "fstype": "btrfs",
+        "options": "rw,noatime,compress=zstd:3,ssd,discard=async,space_cache=v2,subvolid=257,subvol=/@home"
+      }
+    ]
+  },
+  "binary_sha256": "23b4e322030ea8af243bd218c371634740551802a086b5663f1f3ffc0d7793d5",
+  "sources_sha256": {
+    "examples/storage_resilience.rs": "175d24ce45ed3d9a3e84790aa709a634693dec1017a57931446ef47b47134268",
+    "scripts/storage_resilience.py": "a5ed8f2af892025448b825b11030fb80c21513f615e5106dc154dd3abbdb3c0f",
+    "src/storage.rs": "cb6789b022f6fd6239a65ce7604002d60d518509d023497043189914595503f5",
+    "src/storage/components.rs": "6189c44c9796c24fd7d6c6cbc9d6e0ed27e75a97e1ba635d763d9c777d0ef97e",
+    "src/storage/components/crash_tests.rs": "a6c0edbaae6aa22676a2bfb6e23181c9ec7fc379e16a29f170097d7d81e82cd8",
+    "src/storage/history.rs": "1ccc05a256e29bb2fe63ae29338146f75d228356227578e3933196b29b853473",
+    "src/storage/io.rs": "1893a3c6a65e9a33b0b92b5ea4514328dd2f463ffb57de51c59c7a58b37089d5",
+    "Cargo.toml": "59e86c548816cc451ff79d8570f44063a064d614656d239cd5576b045979dd09",
+    "Cargo.lock": "30e91684702313b3f70e651cd30ca1517cb40e67224d542121c0b6fbc6fa249f"
+  },
+  "git_head": "05055dab033fd8b60d3ae0edc8c4f388e832cdcd",
+  "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+  "trials": 3,
+  "order_seed": 20261002,
+  "notes": "Uncontrolled shared host. One-second fixed-rate arrival window, no client retries. Real fsync per commit; one injected worker sleep, not disk EIO. Byte credits account for queued/executing payloads, not RSS or history/index bytes. Git HEAD alone does not identify this dirty checkout; source hashes are included.",
+  "cpu_model": "AMD Ryzen 7 5800H with Radeon Graphics",
+  "cpu0_governor": "powersave"
+}

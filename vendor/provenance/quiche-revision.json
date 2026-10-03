@@ -2,7 +2,7 @@
   "repository": "https://github.com/cloudflare/quiche.git",
   "revision": "1b5e3e2495f679611476a0bb28604c59f14f9abc",
   "version": "0.29.3",
-  "patch": "quiche-noise.patch",
-  "patch_sha256": "cf70b795ddb2beeb09ee70223ed32662df6a477580dee1599f5937158a9d0a34",
-  "profile": "experimental Noise IK / IKpsk2 with Curve25519, ChaChaPoly and upstream Snow use-blake3; default TLS backend replaced in this build"
+  "patch": "quiche-native.patch",
+  "patch_sha256": "979fe2ab5546a6a8cbea0c3f2dadf82bf2c455cbdfea1a5b4b508436241ee371",
+  "profile": "Standard TLS 1.3 QUIC v1/v2 with authenticated version information, Tokio clock and explicit stream receipts"
 }

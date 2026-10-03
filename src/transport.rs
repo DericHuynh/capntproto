@@ -1,4 +1,6 @@
-//! Quiche stream engine with the fork's pinned Noise IK/IKpsk2 backend.
+//! Authenticated TCP/TLS and QUIC sessions for native capability RPC.
+#[cfg(test)]
+mod backend_tests;
 #[cfg(test)]
 mod clock_tests;
 #[cfg(test)]
@@ -16,7 +18,9 @@ pub(crate) mod socket;
 mod stream;
 #[cfg(test)]
 mod stream_tests;
-use crate::noise_shutdown::{Control, DriverGuard, Receipt};
+pub mod tcp;
+use crate::native_shutdown::{Control, DriverGuard, Receipt};
+pub use crate::rpc::QuicVersion;
 pub use identity::{Identity, IdentityError};
 pub use mobility::{Mobility, Path};
 pub use scheduling::{DatagramPacing, Schedule, ScheduleStats, Scheduling};
@@ -34,9 +38,18 @@ pub fn config(
     psk: Option<[u8; 32]>,
     context: &[u8],
 ) -> quiche::Result<quiche::Config> {
-    let mut c = quiche::Config::new(quiche::PROTOCOL_VERSION)?;
-    identity.configure(&mut c, peer, psk, context)?;
-    c.set_application_protos(&[b"reproto/1"])?;
+    config_for_version(identity, peer, psk, context, QuicVersion::V1)
+}
+/// Select a standard QUIC version for the quiche backend.
+pub fn config_for_version(
+    identity: &Identity,
+    peer: [u8; 32],
+    psk: Option<[u8; 32]>,
+    context: &[u8],
+    version: QuicVersion,
+) -> quiche::Result<quiche::Config> {
+    let mut c = identity.quiche_config(peer, psk, context, version)?;
+    c.set_application_protos(&[b"reproto/2"])?;
     c.set_max_idle_timeout(10_000);
     c.set_initial_max_data(2 * 1024 * 1024);
     c.set_initial_max_stream_data_bidi_local(1024 * 1024);
@@ -255,7 +268,7 @@ fn datagram_pair() -> (DatagramPort, DatagramDriver) {
 // reservations. Only authenticated() can construct a published session.
 pub(crate) enum PacketSocket {
     Dedicated(socket::DatagramSocket),
-    Shared(crate::noise_listener::SharedSocket),
+    Shared(crate::native_listener::SharedSocket),
 }
 impl PacketSocket {
     pub(crate) fn local_addr(&self) -> io::Result<SocketAddr> {
@@ -318,7 +331,7 @@ async fn drive(
     let result = tokio::select! {
         biased;
         _ = stopped => Err(io::Error::new(io::ErrorKind::BrokenPipe,"shared listener route closed")),
-        _ = expired => Err(io::Error::new(io::ErrorKind::TimedOut,"Noise shutdown acknowledgement timed out")),
+        _ = expired => Err(io::Error::new(io::ErrorKind::TimedOut,"Native shutdown acknowledgement timed out")),
         result = drive_packets(socket,conn,io,drivers) => result,
     };
     if let (Some(control), Err(error)) = (&control, &result) {
@@ -460,7 +473,7 @@ async fn drive_packets(
     }
 }
 
-/// A session whose pinned Noise handshake has completed. Its peer identity
+/// A session whose pinned Native handshake has completed. Its peer identity
 /// cannot be supplied separately when attaching it to the multiparty network.
 pub struct AuthenticatedSession {
     pub(crate) peer: [u8; 32],
@@ -502,7 +515,7 @@ impl Drop for AuthenticatedSession {
     fn drop(&mut self) {
         self.shutdown.finish(Err(io::Error::new(
             io::ErrorKind::ConnectionAborted,
-            "Noise session dropped",
+            "Native session dropped",
         )));
         self.driver.abort();
     }
@@ -546,7 +559,7 @@ pub(crate) async fn authenticated(
         .map_err(|_| {
             io::Error::new(
                 io::ErrorKind::PermissionDenied,
-                "Noise authentication failed",
+                "Native authentication failed",
             )
         })?;
     Ok(session)
@@ -561,9 +574,30 @@ pub async fn connect_authenticated(
     psk: Option<[u8; 32]>,
     context: &[u8],
 ) -> io::Result<AuthenticatedSession> {
+    connect_for_version(
+        socket,
+        remote,
+        identity,
+        peer,
+        psk,
+        context,
+        QuicVersion::V1,
+    )
+    .await
+}
+/// Dial a pinned peer using an explicitly selected quiche wire version.
+pub async fn connect_for_version(
+    socket: UdpSocket,
+    remote: SocketAddr,
+    identity: &Identity,
+    peer: [u8; 32],
+    psk: Option<[u8; 32]>,
+    context: &[u8],
+    version: QuicVersion,
+) -> io::Result<AuthenticatedSession> {
     let mut binding = b"ReProto native RPC v1\0".to_vec();
     binding.extend_from_slice(context);
-    let mut config = config(identity, peer, psk, &binding).map_err(error)?;
+    let mut config = config_for_version(identity, peer, psk, &binding, version).map_err(error)?;
     let conn = quiche::connect(
         None,
         &quiche::ConnectionId::from_ref(&cid()),
@@ -580,7 +614,7 @@ pub async fn connect_authenticated(
     )
     .await
 }
-/// Accept a pinned peer on a dedicated socket, waiting for its Noise proof.
+/// Accept a pinned peer on a dedicated socket, waiting for its Native proof.
 /// Run inside a Tokio `LocalSet`. Cancellation closes the pending session.
 pub async fn accept_authenticated(
     socket: UdpSocket,

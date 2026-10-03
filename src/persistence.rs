@@ -615,7 +615,7 @@ impl Realm {
         core.commit(next)
     }
     /// The peer argument is trusted transport context, never an RPC parameter.
-    /// Prefer bootstrap_factory() on an authenticated Noise network.
+    /// Prefer bootstrap_factory() on an authenticated Native network.
     pub fn restore(
         &self,
         reference: SturdyRef,

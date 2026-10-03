@@ -15,8 +15,22 @@ fn source_bundle_roundtrip() {
     // Source bundles remain self-contained when the reference is a submodule.
     assert!(extracted.join(".gitmodules").is_file());
     assert!(extracted.join("vendor/capnproto/CMakeLists.txt").is_file());
-    assert!(extracted.join("vendor/capnproto/c++/src/capnp/rpc.c++").is_file());
+    assert!(extracted
+        .join("vendor/capnproto/c++/src/capnp/rpc.c++")
+        .is_file());
     assert!(!extracted.join("vendor/capnproto/.git").exists());
+    for report in ["storage-next", "storage-resilience", "concurrency"] {
+        for file in ["environment.json", "runs.jsonl", "summary.json"] {
+            assert!(extracted
+                .join(format!("research/reports/{report}/2026-10-01/{file}"))
+                .is_file());
+        }
+    }
+    for file in ["environment.json", "results.json"] {
+        assert!(extracted
+            .join(format!("research/reports/rpc-pipeline/2026-10-01/{file}"))
+            .is_file());
+    }
     assert_eq!(
         d::source_hashes(&root()).unwrap(),
         d::source_hashes(&extracted).unwrap()

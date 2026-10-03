@@ -252,38 +252,14 @@ fn installed_cpp_rpc_interoperability() {
 }
 
 #[test]
-fn pinned_noise_profile() {
-    let pin: Value = serde_json::from_slice(
-        &fs::read(root().join("vendor/provenance/snow-revision.json")).unwrap(),
-    )
-    .unwrap();
+fn pinned_native_profile() {
     let graph = cargo(
-        &["tree", "--locked", "-e", "features", "-i", "snow"],
-        "noise/features",
+        &["tree", "--locked", "-e", "normal,build"],
+        "native/dependencies",
     );
-    assert!(graph.contains(pin["revision"].as_str().unwrap()));
-    let enabled: BTreeSet<_> = graph
-        .lines()
-        .filter_map(|l| {
-            l.split_once("snow feature \"")
-                .and_then(|(_, s)| s.split_once('"').map(|(s, _)| s))
-        })
-        .collect();
-    let mut expected: BTreeSet<_> = pin["features"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap())
-        .collect();
-    expected.extend([
-        "default-resolver",
-        "blake3",
-        "chacha20poly1305",
-        "curve25519-dalek",
-        "getrandom",
-    ]);
-    assert_eq!(enabled, expected);
-    assert_eq!(pin["default_features"], false);
+    assert!(!graph.contains("snow v"));
+    assert!(graph.contains("rustls v"));
+    assert!(graph.contains("boring v"));
     let runtime = cargo(
         &[
             "tree",
@@ -293,35 +269,21 @@ fn pinned_noise_profile() {
             "-i",
             "tokio",
         ],
-        "noise/runtime-clock",
+        "native/runtime-clock",
     );
     assert!(runtime.contains("quiche feature \"tokio-clock\""));
     assert!(!runtime.contains("tokio feature \"test-util\""));
     let output = cargo(
-        &[
-            "test",
-            "--locked",
-            "--manifest-path",
-            "vendor/quiche/Cargo.toml",
-            "-p",
-            "quiche",
-            "--no-default-features",
-            "--features",
-            "noise",
-            "--lib",
-            "tls::tests::noise_blake3_profile",
-            "--",
-            "--exact",
-        ],
-        "noise/backend",
+        &["test", "--locked", "-p", "reproto", "--test", "native"],
+        "native/backend",
     );
-    assert!(output.contains("1 passed; 0 failed"));
+    assert!(output.contains("0 failed"));
     let provenance: Value = serde_json::from_slice(
         &fs::read(root().join("vendor/provenance/quiche-revision.json")).unwrap(),
     )
     .unwrap();
     assert_eq!(
-        v::sha256(fs::read(root().join("vendor/provenance/quiche-noise.patch")).unwrap()),
+        v::sha256(fs::read(root().join("vendor/provenance/quiche-native.patch")).unwrap()),
         provenance["patch_sha256"].as_str().unwrap()
     );
     run(
@@ -329,16 +291,19 @@ fn pinned_noise_profile() {
             .arg("-C")
             .arg(root())
             .args(["apply", "--directory=vendor/quiche", "--reverse", "--check"])
-            .arg(root().join("vendor/provenance/quiche-noise.patch")),
-        &log("noise/patch"),
+            .arg(root().join("vendor/provenance/quiche-native.patch")),
+        &log("native/patch"),
         0,
     )
     .unwrap();
 }
 
 #[test]
-fn quiche_noise_regressions() {
-    quiche_regressions("noise,custom-client-dcid,tokio-clock", "noise");
+fn quiche_native_regressions() {
+    quiche_regressions(
+        "boringssl-boring-crate,custom-client-dcid,tokio-clock",
+        "native",
+    );
 }
 
 fn quiche_regressions(features: &str, report: &str) {
@@ -365,10 +330,10 @@ fn quiche_regressions(features: &str, report: &str) {
     let selected = all.len();
     assert!(
         selected >= 1104,
-        "Noise regression selection unexpectedly shrank"
+        "Native regression selection unexpectedly shrank"
     );
     for required in [
-        "noise_tests::",
+        "v2_tests::",
         "tests::handshake::",
         "tests::update_key_request::",
         "tests::update_key_request_twice_error::",
@@ -382,9 +347,6 @@ fn quiche_regressions(features: &str, report: &str) {
         "tests::stop_sending_before_flushed_packets::",
         "tests::pmtud_probe_retry_after_loss::",
         "tests::initial_cwnd::",
-        "simulation::packet::",
-        "simulation::packet::lifecycle::",
-        "simulation::packet::property::",
     ] {
         assert!(
             all.iter().any(|name| name.starts_with(required)),
@@ -395,438 +357,13 @@ fn quiche_regressions(features: &str, report: &str) {
     assert!(output.contains(&format!("{selected} passed; 0 failed; 0 ignored")));
     assert!(output.contains("0 filtered out"));
     eprintln!(
-        "Noise regression gate ({features}): {selected} passed; no ignored or filtered cases"
+        "Native regression gate ({features}): {selected} passed; no ignored or filtered cases"
     );
 }
 
-#[test]
-fn quiche_noise_handshake_model() {
-    let model = "verification/NoiseHandshakeConfirmation.tla";
-    let config = include_str!("../verification/NoiseHandshakeConfirmation.cfg");
-    let traces = v::exploration::traces(model, "noise-confirmation", config).unwrap();
-    v::exploration::controls(
-        model,
-        "noise-confirmation",
-        config,
-        &[
-            ("earlyRetire", "RetainUntilProof"),
-            ("noRetire", "RetireAfterProof"),
-            ("clientRetain", "ClientRetires"),
-            ("forgedVerify", "OriginalAddressOnly"),
-            ("migratedVerify", "OriginalAddressOnly"),
-            ("forgedData", "AuthenticatedOnce"),
-            ("duplicateData", "AuthenticatedOnce"),
-        ],
-        None,
-    )
-    .unwrap();
-    let fields = [
-        "event",
-        "client",
-        "server",
-        "clientKeys",
-        "serverKeys",
-        "verified",
-        "otherVerified",
-        "confirmed",
-        "received",
-    ];
-    let replay = traces
-        .iter()
-        .map(|trace| {
-            trace
-                .iter()
-                .map(|state| {
-                    fields
-                        .iter()
-                        .map(|field| state[*field].to_string())
-                        .collect::<Vec<_>>()
-                        .join(",")
-                })
-                .collect::<Vec<_>>()
-                .join(";")
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let path = root().join("target/verification/noise-confirmation/traces.txt");
-    fs::write(&path, replay).unwrap();
-    let output = run(
-        command("cargo")
-            .args([
-                "test",
-                "--locked",
-                "--manifest-path",
-                "vendor/quiche/Cargo.toml",
-                "-p",
-                "quiche",
-                "--no-default-features",
-                "--features",
-                "noise",
-                "--lib",
-                "noise_tests::handshake_confirmation_trace_replay",
-                "--",
-                "--exact",
-                "--nocapture",
-            ])
-            .env("REPROTO_NOISE_CONFIRMATION_TRACES", &path),
-        &log("noise/confirmation-replay"),
-        0,
-    )
-    .unwrap();
-    assert!(output.contains(&format!(
-        "Noise confirmation replay: {} traces",
-        traces.len()
-    )));
-    assert!(output.contains("1 passed; 0 failed"));
-}
-
-#[test]
-fn quiche_noise_packet_simulation() {
-    let destination = root().join("target/verification/noise-simulation");
-    fs::create_dir_all(&destination).unwrap();
-    let build = cargo(
-        &[
-            "test",
-            "--locked",
-            "--manifest-path",
-            "vendor/quiche/Cargo.toml",
-            "-p",
-            "quiche",
-            "--no-default-features",
-            "--features",
-            "noise",
-            "--lib",
-            "--no-run",
-            "--message-format=json",
-        ],
-        "noise/simulation-build",
-    );
-    let executables: Vec<PathBuf> = build
-        .lines()
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .filter(|artifact| {
-            artifact["reason"] == "compiler-artifact"
-                && artifact["target"]["name"] == "quiche"
-                && artifact["profile"]["test"] == true
-        })
-        .filter_map(|artifact| artifact["executable"].as_str().map(PathBuf::from))
-        .collect();
-    assert_eq!(executables.len(), 1);
-    let binary = fs::read(&executables[0]).unwrap();
-    let binary_sha256 = v::sha256(&binary);
-    let mut previous: Option<std::collections::BTreeMap<std::ffi::OsString, Vec<u8>>> = None;
-    // Independent processes detect entropy/hash-order or wall-clock inputs
-    // that an in-process replay can miss. Keep all artifacts for diagnosis.
-    for pass in 0..2 {
-        let directory = tempfile::tempdir_in(&destination).unwrap().keep();
-        let output = run(
-            command("cargo")
-                .args([
-                    "test",
-                    "--locked",
-                    "--manifest-path",
-                    "vendor/quiche/Cargo.toml",
-                    "-p",
-                    "quiche",
-                    "--no-default-features",
-                    "--features",
-                    "noise",
-                    "--lib",
-                    "--",
-                    "--exact",
-                    "simulation::packet::seeded_packet_replay",
-                    "simulation::packet::lifecycle::lifecycle_packet_replay",
-                    "simulation::packet::property::generated_packet_properties",
-                    "--nocapture",
-                ])
-                .env("REPROTO_NOISE_SIM_REPORT_DIR", &directory)
-                .env(
-                    "REPROTO_NOISE_PROPERTY_REPORT",
-                    directory.join("properties.json"),
-                )
-                .env("REPROTO_NOISE_PROPERTY_CASES", "16")
-                .env_remove("REPROTO_NOISE_SIM_REPLAY")
-                .env_remove("REPROTO_NOISE_PROPERTY_REPLAY"),
-            &log(&format!("noise/simulation-{pass}")),
-            0,
-        )
-        .unwrap();
-        assert!(output.contains("Noise packet simulation: 16 schedules replayed"));
-        assert!(output.contains("Noise lifecycle simulation: 16 schedules replayed"));
-        assert!(output.contains("Noise packet properties: 128 generated cases replayed"));
-        let reports: std::collections::BTreeMap<_, _> = fs::read_dir(&directory)
-            .unwrap()
-            .map(|entry| {
-                let entry = entry.unwrap();
-                (entry.file_name(), fs::read(entry.path()).unwrap())
-            })
-            .collect();
-        assert_eq!(reports.len(), 33);
-        let properties: Value =
-            serde_json::from_slice(&reports[std::ffi::OsStr::new("properties.json")]).unwrap();
-        let cases = properties.as_array().unwrap();
-        assert_eq!(cases.len(), 128);
-        for cc in ["cubic", "bbr2_gcongestion"] {
-            for psk in [false, true] {
-                for authenticated in [false, true] {
-                    let group: Vec<_> = cases
-                        .iter()
-                        .filter(|c| {
-                            c["case"]["cc"] == cc
-                                && c["case"]["psk"] == psk
-                                && c["case"]["after_handshake"] == authenticated
-                        })
-                        .collect();
-                    assert_eq!(group.len(), 16);
-                    for treatment in 0..5 {
-                        assert!(group.iter().any(|c| c["treatments"][treatment].as_u64().unwrap() > 0),
-                            "untested packet treatment {treatment}: {cc}, psk={psk}, authenticated={authenticated}");
-                    }
-                }
-            }
-        }
-        if let Some(previous) = &previous {
-            for (case, bytes) in &reports {
-                assert!(
-                    previous.get(case) == Some(bytes),
-                    "separate processes diverged for {case:?}; inspect {}",
-                    destination.display()
-                );
-            }
-        }
-        previous = Some(reports);
-    }
-    let provenance: Value = serde_json::from_str(
-        &fs::read_to_string(root().join("vendor/provenance/quiche-revision.json")).unwrap(),
-    )
-    .unwrap();
-    let toolchain = run(
-        command("rustc").args(["--version", "--verbose"]),
-        &log("noise/simulation-toolchain"),
-        0,
-    )
-    .unwrap();
-    let mut previous = previous.unwrap();
-    let properties: Value = serde_json::from_slice(
-        &previous
-            .remove(std::ffi::OsStr::new("properties.json"))
-            .unwrap(),
-    )
-    .unwrap();
-    // Exercise the documented disk replay entry point, including rejection of
-    // unsupported input formats. A seed alone is not a persisted regression.
-    let replay = destination.join("property-replay.json");
-    let mut input = properties[0]["case"].clone();
-    for (valid, expected_exit) in [(true, 0), (false, 101)] {
-        if !valid {
-            input["format"] = 0.into();
-        }
-        fs::write(&replay, serde_json::to_vec_pretty(&input).unwrap()).unwrap();
-        let output = run(
-            command("cargo")
-                .args([
-                    "test",
-                    "--locked",
-                    "--manifest-path",
-                    "vendor/quiche/Cargo.toml",
-                    "-p",
-                    "quiche",
-                    "--no-default-features",
-                    "--features",
-                    "noise",
-                    "--lib",
-                    "simulation::packet::property::generated_packet_properties",
-                    "--",
-                    "--exact",
-                    "--nocapture",
-                ])
-                .env("REPROTO_NOISE_PROPERTY_REPLAY", &replay)
-                .env_remove("REPROTO_NOISE_SIM_REPORT_DIR")
-                .env_remove("REPROTO_NOISE_PROPERTY_REPORT"),
-            &log(&format!("noise/property-replay-{valid}")),
-            expected_exit,
-        )
-        .unwrap();
-        assert!(output.contains(if valid {
-            "1 passed; 0 failed"
-        } else {
-            "unsupported packet property format"
-        }));
-    }
-    fs::write(
-        &replay,
-        serde_json::to_vec_pretty(&properties[0]["case"]).unwrap(),
-    )
-    .unwrap();
-    let reports: Vec<Value> = previous
-        .into_values()
-        .map(|bytes| serde_json::from_slice(&bytes).unwrap())
-        .collect();
-    fs::write(destination.join("checked.json"), serde_json::to_vec_pretty(&serde_json::json!({
-        "format": 3, "quiche": provenance, "toolchain": toolchain, "executable_sha256": binary_sha256,
-        "features": ["noise"], "processes": 2, "schedules": reports, "properties": properties,
-        "scope": "two peers, IK/IKpsk2, Cubic/BBR2; packet faults, one alternate path, bounded partition, endpoint replacement, reused CIDs and stale ciphertext; one bidirectional stream per generation; no runtime executor or OS sockets"
-    })).unwrap()).unwrap();
-    eprintln!("Noise simulation: 32 fixed schedules and 128 generated cases matched across two processes, including ciphertext and timers");
-}
-
-#[test]
-fn quiche_noise_recovery_model() {
-    let model = "verification/NoiseHandshakeRecovery.tla";
-    let config = include_str!("../verification/NoiseHandshakeRecovery.cfg");
-    let traces = v::exploration::traces(model, "noise-recovery", config).unwrap();
-    let live = format!(
-        "{}\nPROPERTY EventuallyConfirmed\n",
-        config.replace("SPECIFICATION Spec", "SPECIFICATION LiveSpec")
-    );
-    v::exploration::controls(
-        model,
-        "noise-recovery",
-        config,
-        &[
-            ("initialAuthenticates", "DeliveredAuthentication"),
-            ("replyAuthenticates", "DeliveredAuthentication"),
-            ("dropReplyKeys", "RetainForRecovery"),
-            ("retryVerifies", "ConfirmedAddress"),
-        ],
-        Some(&live),
-    )
-    .unwrap();
-    let fields = ["event", "client", "server", "verified", "serverKeys"];
-    let replay = traces
-        .iter()
-        .map(|trace| {
-            trace
-                .iter()
-                .map(|state| {
-                    fields
-                        .iter()
-                        .map(|field| state[*field].to_string())
-                        .collect::<Vec<_>>()
-                        .join(",")
-                })
-                .collect::<Vec<_>>()
-                .join(";")
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let path = root().join("target/verification/noise-recovery/traces.txt");
-    fs::write(&path, replay).unwrap();
-    let output = run(
-        command("cargo")
-            .args([
-                "test",
-                "--locked",
-                "--manifest-path",
-                "vendor/quiche/Cargo.toml",
-                "-p",
-                "quiche",
-                "--no-default-features",
-                "--features",
-                "noise",
-                "--lib",
-                "simulation::packet::handshake_recovery_trace_replay",
-                "--",
-                "--exact",
-                "--nocapture",
-            ])
-            .env("REPROTO_NOISE_RECOVERY_TRACES", &path),
-        &log("noise/recovery-replay"),
-        0,
-    )
-    .unwrap();
-    assert!(output.contains(&format!(
-        "Noise recovery replay: {} traces",
-        traces.len() * 4
-    )));
-    assert!(output.contains("1 passed; 0 failed"));
-}
-
-#[test]
-fn quiche_noise_lifecycle_model() {
-    let model = "verification/NoisePathLifecycle.tla";
-    let config = include_str!("../verification/NoisePathLifecycle.cfg");
-    let traces = v::exploration::traces(model, "noise-lifecycle", config).unwrap();
-    let live = format!(
-        "{}\nPROPERTY EventuallyTransferred\n",
-        config.replace("SPECIFICATION Spec", "SPECIFICATION LiveSpec")
-    );
-    v::exploration::controls(
-        model,
-        "noise-lifecycle",
-        config,
-        &[
-            ("timeoutValidates", "ValidationProof"),
-            ("forgedValidates", "ValidationProof"),
-            ("missingMigration", "ActiveRoute"),
-            ("restartKeepsAuth", "AuthenticationState"),
-            ("restartCarriesStream", "StreamGeneration"),
-            ("staleDelivers", "StreamGeneration"),
-        ],
-        Some(&live),
-    )
-    .unwrap();
-    let fields = [
-        "event",
-        "client",
-        "server",
-        "clientGen",
-        "serverGen",
-        "validated",
-        "active",
-        "clientData",
-        "serverData",
-        "blocked",
-        "oldBlocked",
-    ];
-    let replay = traces
-        .iter()
-        .map(|trace| {
-            trace
-                .iter()
-                .map(|state| {
-                    fields
-                        .iter()
-                        .map(|field| state[*field].to_string())
-                        .collect::<Vec<_>>()
-                        .join(",")
-                })
-                .collect::<Vec<_>>()
-                .join(";")
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let path = root().join("target/verification/noise-lifecycle/traces.txt");
-    fs::write(&path, replay).unwrap();
-    let output = run(
-        command("cargo")
-            .args([
-                "test",
-                "--locked",
-                "--manifest-path",
-                "vendor/quiche/Cargo.toml",
-                "-p",
-                "quiche",
-                "--no-default-features",
-                "--features",
-                "noise",
-                "--lib",
-                "simulation::packet::lifecycle::lifecycle_trace_replay",
-                "--",
-                "--exact",
-                "--nocapture",
-            ])
-            .env("REPROTO_NOISE_LIFECYCLE_TRACES", &path),
-        &log("noise/lifecycle-replay"),
-        0,
-    )
-    .unwrap();
-    assert!(output.contains(&format!(
-        "Noise lifecycle replay: {} traces",
-        traces.len() * 4
-    )));
-    assert!(output.contains("1 passed; 0 failed"));
-}
+// The removed private Noise handshake and byte-deterministic Snow simulator
+// have no TLS equivalent. Standard QUIC recovery/handshake regressions above,
+// transport::backend_tests, and runtime_simulation exercise their replacements.
 
 #[test]
 fn nightly_rpc_try_contracts() {
@@ -975,7 +512,7 @@ fn optimized_runtime() {
             "--test",
             "field_api_rpc",
             "--test",
-            "noise",
+            "native",
         ],
         "optimized",
     );
@@ -988,8 +525,9 @@ fn storage_crashes_in_isolated_process() {
             "test",
             "--locked",
             "--lib",
-            "storage::fault_tests",
             "--",
+            "storage::fault_tests",
+            "storage::components::crash_tests",
             "--test-threads=1",
             "--include-ignored",
         ],
@@ -997,6 +535,9 @@ fn storage_crashes_in_isolated_process() {
     );
     assert!(output.contains(
         "child_process_crashes_preserve_batch_atomicity_across_recovery_and_second_crash ... ok"
+    ));
+    assert!(output.contains(
+        "child_process_crashes_preserve_components_across_recovery_and_second_crash ... ok"
     ));
 }
 
@@ -1331,7 +872,7 @@ fn cpp_decodes_durable_payloads() {
                     "--locked",
                     "--quiet",
                     "--example",
-                    "noise_store",
+                    "native_store",
                     "--",
                 ])
                 .arg(&path),
@@ -1362,7 +903,7 @@ fn cpp_decodes_durable_payloads() {
                 0,
             )
             .unwrap();
-            assert!(output.contains("Hello from Noise-backed"));
+            assert!(output.contains("Hello from Native-backed"));
             decoded += 1;
         }
         offset += 80 + ((length + 7) & !7) + 16;

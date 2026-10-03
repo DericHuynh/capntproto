@@ -17,7 +17,7 @@ const BLUE: [u8; 3] = [0, 114, 178];
 const GRAY: [u8; 3] = [148, 163, 184];
 const COLORS: [[u8; 3]; 4] = [BLUE, [230, 159, 0], [0, 158, 115], [204, 121, 167]];
 const LABELS: [&str; 4] = [
-    "Capn't Proto / Noise",
+    "Capn't Proto / Native",
     "Cap'n Proto C++",
     "gRPC (tonic)",
     "WebSockets",
@@ -157,7 +157,7 @@ pub(crate) fn performance(rows: &[Value]) -> Result<Vec<Chart>> {
                 }
                 Ok(value)
             };
-            let reference = cell("noise")?;
+            let reference = cell("native")?;
             let mut bars = vec![];
             for (index, protocol) in benchmark::PROTOCOLS.iter().enumerate() {
                 let value = cell(protocol)?;
@@ -181,7 +181,7 @@ pub(crate) fn performance(rows: &[Value]) -> Result<Vec<Chart>> {
             });
         }
         charts.push(Chart { name: name.into(), title: title.into(), unit: unit.into(),
-            note: "Each panel uses a linear axis including zero. Noise is encrypted; other baselines are plaintext.".into(),
+            note: "Each panel uses a linear axis including zero. Native is encrypted; other baselines are plaintext.".into(),
             coverage: false, panels });
     }
     Ok(charts)

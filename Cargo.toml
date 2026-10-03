@@ -25,19 +25,26 @@ exclude = [
     "benchmarks/rpc",
     "benchmarks/storage",
     "benchmarks/instructions",
+    "benchmarks/concurrency",
     "examples/downstream",
     "fuzz",
     "verification/miri",
 ]
 
 [features]
-default = ["noise", "services", "storage"]
-noise = ["dep:quiche", "dep:snow", "dep:zeroize", "dep:capnpc", "dep:capnp-compiler"]
+default = ["quic-quiche", "services", "storage"]
+native = ["tls", "dep:rcgen", "dep:x509-parser", "dep:boring", "dep:quiche", "dep:zeroize", "dep:capnpc", "dep:capnp-compiler"]
 services = ["dep:capnpc", "dep:capnp-compiler"]
 storage = ["dep:memmap2", "dep:fs2", "dep:capnpc", "dep:capnp-compiler"]
+tls = ["dep:rustls", "dep:tokio-rustls"]
+quic = ["native"]
+quic-quiche = ["quic"]
 
 [dependencies]
-quiche = { version = "0.29.3", optional = true, path = "vendor/quiche/quiche", default-features = false, features = ["noise", "custom-client-dcid", "tokio-clock"] }
+boring = { version = "5", optional = true }
+x509-parser = { version = "0.18", optional = true }
+rcgen = { version = "0.14", optional = true, default-features = false, features = ["crypto", "ring"] }
+quiche = { version = "0.29.3", optional = true, path = "vendor/quiche/quiche", default-features = false, features = ["authenticated", "boringssl-boring-crate", "custom-client-dcid", "tokio-clock"] }
 capnp = { version = "0.25", path = "vendor/capnp" }
 capnp-rpc = { version = "0.25.1", path = "vendor/capnp-rpc" }
 capnp-futures = { version = "0.25", path = "vendor/capnp-futures" }
@@ -45,7 +52,8 @@ futures = "0.3"
 tokio = { version = "1", features = ["rt", "macros", "net", "time", "io-util", "sync"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 socket2 = "0.6"
-snow = { optional = true, git = "https://github.com/mcginty/snow", rev = "8ac60f51cfe3e010c84f0a454cc575ad9204fa12", default-features = false, features = ["std", "use-curve25519", "use-chacha20poly1305", "use-blake3", "use-getrandom", "risky-raw-split"] }
+rustls = { version = "0.23.40", optional = true, default-features = false, features = ["ring", "std"] }
+tokio-rustls = { version = "0.26.4", optional = true, default-features = false, features = ["ring"] }
 ring = "0.17"
 memmap2 = { version = "0.9", optional = true }
 fs2 = { version = "0.4", optional = true }
@@ -62,6 +70,7 @@ capnp = { version = "0.25", path = "vendor/capnp" }
 
 [dev-dependencies]
 allocation-counter = "=0.8.1"
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring"] }
 proptest = { version = "=1.11.0", default-features = false, features = ["std"] }
 tokio = { version = "1", features = ["test-util"] }
 reproto-test-support = { path = "test-support" }
@@ -71,6 +80,27 @@ capnpc = { version = "0.25", path = "vendor/capnpc" }
 [[bin]]
 name = "reproto-model"
 path = "src/bin/model.rs"
+
+[[example]]
+name = "storage_probe"
+required-features = ["storage"]
+
+[[example]]
+name = "storage_resilience"
+required-features = ["storage"]
+
+[[example]]
+name = "async_storage"
+required-features = ["storage"]
+
+[[example]]
+name = "component_store"
+required-features = ["storage"]
+
+[[example]]
+name = "quic-interop"
+path = "tests/interop/quic_peer.rs"
+required-features = ["quic"]
 
 
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]

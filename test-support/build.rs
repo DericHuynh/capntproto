@@ -1,4 +1,4 @@
-fn compile(files: &[&str], facade: bool) {
+fn compile(files: &[&str], facade: bool, structured: bool) {
     let requested: Vec<_> = files
         .iter()
         .map(|s| format!("../schemas/{s}.capnp"))
@@ -13,8 +13,17 @@ fn compile(files: &[&str], facade: bool) {
         println!("cargo:rerun-if-changed={}", dependency.display());
     }
     let bytes = capnp::serialize::write_message_to_words(&compiled.message);
-    capnpc::codegen::CodeGenerationCommand::new()
-        .output_directory(std::env::var_os("OUT_DIR").expect("Cargo sets OUT_DIR"))
+    let mut output =
+        std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo sets OUT_DIR"));
+    let mut command = capnpc::codegen::CodeGenerationCommand::new();
+    if structured {
+        output.push("structured");
+        std::fs::create_dir_all(&output).unwrap();
+        command.default_parent_module(vec!["structured".into()]);
+    }
+    command
+        .structured_replies(structured)
+        .output_directory(output)
         .field_api_values(facade)
         .field_api_projections(facade)
         .run(bytes.as_slice())
@@ -22,10 +31,12 @@ fn compile(files: &[&str], facade: bool) {
 }
 
 fn main() {
-    compile(&["field-api", "enum-brand"], true);
+    compile(&["field-api", "enum-brand"], true, false);
+    compile(&["runtime-test", "rpc-api"], true, true);
     compile(
         &[
             "runtime-test",
+            "rpc-api",
             "cancellation-policy",
             "dynamic-test",
             "presence",
@@ -35,6 +46,7 @@ fn main() {
             "native-rpc",
             "membrane-copy",
         ],
+        false,
         false,
     );
 }

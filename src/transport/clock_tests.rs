@@ -1,6 +1,6 @@
 //! One Tokio time domain for the production transport and its runtime controls.
 use super::{engine::Engine, engine_tests, mobility, scheduling, PacketSocket};
-use crate::noise_shutdown::Control;
+use crate::native_shutdown::Control;
 use futures::FutureExt;
 use std::{io, time::Duration};
 use tokio::{net::UdpSocket, sync::oneshot, time::Instant};
@@ -207,9 +207,9 @@ async fn outer_driver_observes_virtual_idle_and_shutdown_deadline_precedence() {
         assert_eq!(
             error.to_string(),
             if shutdown {
-                "Noise shutdown acknowledgement timed out"
+                "Native shutdown acknowledgement timed out"
             } else {
-                "Noise session timed out"
+                "Native session timed out"
             }
         );
         assert_eq!(
@@ -222,10 +222,10 @@ async fn outer_driver_observes_virtual_idle_and_shutdown_deadline_precedence() {
 #[test]
 fn replay_tlc_runtime_clock_and_replacement_deadlines() {
     use reproto_test_support::verification::exploration;
-    let config = include_str!("../../verification/NoiseClockDomains.cfg");
+    let config = include_str!("../../verification/NativeClockDomains.cfg");
     exploration::controls(
-        "verification/NoiseClockDomains.tla",
-        "noise-clock-domains",
+        "verification/NativeClockDomains.tla",
+        "native-clock-domains",
         config,
         &[
             ("wallClock", "OldDeadline"),
@@ -236,8 +236,8 @@ fn replay_tlc_runtime_clock_and_replacement_deadlines() {
     )
     .unwrap();
     let traces = exploration::traces(
-        "verification/NoiseClockDomains.tla",
-        "noise-clock-domains",
+        "verification/NativeClockDomains.tla",
+        "native-clock-domains",
         config,
     )
     .unwrap();

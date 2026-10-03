@@ -112,6 +112,7 @@ pub struct CompilerCommand {
     field_api: bool,
     field_api_values: bool,
     field_api_projections: bool,
+    structured_replies: bool,
     src_prefixes: Vec<PathBuf>,
     import_paths: Vec<PathBuf>,
     no_standard_import: bool,
@@ -160,6 +161,13 @@ impl CompilerCommand {
         if enabled {
             self.field_api = true;
         }
+        self
+    }
+
+    /// Generate affine server reply contexts. See
+    /// [`codegen::CodeGenerationCommand::structured_replies`].
+    pub fn structured_replies(&mut self, enabled: bool) -> &mut Self {
+        self.structured_replies = enabled;
         self
     }
 
@@ -411,6 +419,7 @@ impl CompilerCommand {
 
         let mut code_generation_command = crate::codegen::CodeGenerationCommand::new();
         code_generation_command
+            .structured_replies(self.structured_replies)
             .field_api(self.field_api)
             .field_api_values(self.field_api_values)
             .field_api_projections(self.field_api_projections)

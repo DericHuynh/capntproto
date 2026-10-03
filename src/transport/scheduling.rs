@@ -43,7 +43,7 @@ impl Schedule {
         {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "invalid Noise scheduling policy",
+                "invalid Native scheduling policy",
             ));
         }
         Ok(())
@@ -133,7 +133,10 @@ pub struct Scheduling(Weak<State>);
 impl Scheduling {
     fn state(&self) -> io::Result<Rc<State>> {
         self.0.upgrade().filter(|s| !s.closed.get()).ok_or_else(|| {
-            io::Error::new(io::ErrorKind::BrokenPipe, "Noise scheduling session closed")
+            io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "Native scheduling session closed",
+            )
         })
     }
     /// Synchronous policy update; wake the driver even when datagrams are waiting
@@ -228,10 +231,10 @@ mod tests {
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn replay_tlc_scheduling() {
         use reproto_test_support::verification::exploration;
-        let config = include_str!("../../verification/NoiseScheduling.cfg");
+        let config = include_str!("../../verification/NativeScheduling.cfg");
         exploration::controls(
-            "verification/NoiseScheduling.tla",
-            "noise-scheduling",
+            "verification/NativeScheduling.tla",
+            "native-scheduling",
             config,
             &[
                 ("freeCredit", "CreditBound"),
@@ -242,8 +245,8 @@ mod tests {
         )
         .unwrap();
         let traces = exploration::traces(
-            "verification/NoiseScheduling.tla",
-            "noise-scheduling",
+            "verification/NativeScheduling.tla",
+            "native-scheduling",
             config,
         )
         .unwrap();

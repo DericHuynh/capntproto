@@ -8,10 +8,12 @@ publish = false
 resolver = "2"
 
 [features]
-default = ["noise", "storage", "services"]
-noise = ["reproto/noise"]
+default = ["native", "storage", "services", "tls", "quic"]
+native = ["reproto/native"]
 storage = ["reproto/storage"]
 services = ["reproto/services"]
+tls = ["reproto/tls"]
+quic = ["reproto/quic"]
 
 [dependencies]
 reproto = { path = "../..", default-features = false }

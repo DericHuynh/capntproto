@@ -108,8 +108,8 @@ jobs:
           mkdir -p target/extended/llvm-lines
           rustc -vV > target/extended/llvm-lines/compiler.txt
           cargo llvm-lines --locked --release -p reproto --lib > target/extended/llvm-lines/runtime.txt
-          cargo llvm-lines --locked --release -p reproto --example noise_store > target/extended/llvm-lines/consumer.txt
-          printf '# LLVM IR size\n\nCommit: `%s`\n\nReports include the default-feature runtime and the noise_store consumer, where generic bindings are instantiated. Counts measure IR size and instantiations, not compilation time. No regression baseline is established.\n\n- [Runtime](runtime.txt)\n- [Consumer](consumer.txt)\n- [Compiler](compiler.txt)\n' "$GITHUB_SHA" > target/extended/llvm-lines/README.md
+          cargo llvm-lines --locked --release -p reproto --example native_store > target/extended/llvm-lines/consumer.txt
+          printf '# LLVM IR size\n\nCommit: `%s`\n\nReports include the default-feature runtime and the native_store consumer, where generic bindings are instantiated. Counts measure IR size and instantiations, not compilation time. No regression baseline is established.\n\n- [Runtime](runtime.txt)\n- [Consumer](consumer.txt)\n- [Compiler](compiler.txt)\n' "$GITHUB_SHA" > target/extended/llvm-lines/README.md
           cat target/extended/llvm-lines/README.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()

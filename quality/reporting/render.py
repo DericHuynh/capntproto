@@ -185,7 +185,7 @@ def waiting_chart(path):
     ax.axis('off')
     ax.text(.03, .78, f'{NAME} — Linux Loopback Benchmarks', fontsize=23, weight='bold', transform=ax.transAxes)
     ax.text(.03, .43, 'Awaiting a validated dedicated-host benchmark run', fontsize=16, color='#64748b', transform=ax.transAxes)
-    ax.text(.03, .16, "Capn't Proto / Noise · C++ Cap'n Proto · gRPC (tonic) · WebSockets\nLabelled latency, request-rate and relative-difference bars appear after measurements arrive.", fontsize=11, transform=ax.transAxes)
+    ax.text(.03, .16, "Capn't Proto / Native · C++ Cap'n Proto · gRPC (tonic) · WebSockets\nLabelled latency, request-rate and relative-difference bars appear after measurements arrive.", fontsize=11, transform=ax.transAxes)
     save(plt, fig, path)
 
 
@@ -218,7 +218,7 @@ def render(template, history, output):
         t = full['data']['tests']
         section += '| Total | Passed | Failed | Errors | Skipped | Workspace command |\n| ---: | ---: | ---: | ---: | ---: | --- |\n'
         section += f"| {t['total']:,} | {t['passed']:,} | {t['failed']:,} | {t['errors']:,} | {t['skipped']:,} | {'Passed' if t['command_passed'] else 'Failed / incomplete'} |\n\n"
-    section += 'Counts are outer workspace libtest cases and doctests. Nested C++/model/fuzz checks are represented by their parent test, without double-counting their internal cases. Skipped means ignored; errors mean announced tests that never returned a result. Build failures and missing reports have unknown totals. [Reporting contract and setup](docs/REPORTING.md).\n\n'
+    section += 'Counts are outer workspace libtest cases and doctests. Nested C++/model/fuzz checks are represented by their parent test, without double-counting their internal cases. Skipped means ignored; errors mean announced tests that never returned a result. Build failures and missing reports have unknown totals. [Reporting contract and setup](docs/wiki/README-Reports.md).\n\n'
     section += '### LLVM coverage\n\n'
     coverage = full['data']['charts'] if full else []
     for chart in coverage:
@@ -228,7 +228,7 @@ def render(template, history, output):
         section += 'No validated coverage/baseline comparison is available for the latest run. Missing or unmapped counters are never presented as 100% coverage.\n\n'
     section += '### Linux loopback benchmark comparisons\n\n'
     section += ('Latest benchmark run: ' + run_text(benchmark) + '\n\n') if benchmark else 'Awaiting the first dedicated DigitalOcean benchmark run.\n\n'
-    section += "Separate client/server processes, one outstanding request, several payload sizes and five repetitions. Capn't Proto uses encrypted Noise/UDP; C++ Cap'n Proto, gRPC and WebSocket baselines use plaintext TCP. Bars compare this workload, not universal protocol performance.\n\n"
+    section += "Separate client/server processes, one outstanding request, several payload sizes and five repetitions. Capn't Proto uses encrypted Native/UDP; C++ Cap'n Proto, gRPC and WebSocket baselines use plaintext TCP. Bars compare this workload, not universal protocol performance.\n\n"
     charts = benchmark['data']['charts'] if benchmark else []
     for chart in charts:
         bar_chart(chart, assets / f"{chart['name']}.svg", f"Measured {benchmark['date']} | commit {benchmark['commit'][:12]} | dedicated Linux loopback")

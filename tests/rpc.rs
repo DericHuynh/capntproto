@@ -53,7 +53,7 @@ async fn network(
     )
 }
 #[tokio::test(flavor = "current_thread")]
-async fn typed_orm_over_noise_udp() {
+async fn typed_orm_over_native_udp() {
     tokio::task::LocalSet::new()
         .run_until(async {
             tokio::time::timeout(Duration::from_secs(10), async {
@@ -90,7 +90,7 @@ async fn typed_orm_over_noise_udp() {
                 let first_event = history.next_request().send().promise;
                 let mut put = client.put_request();
                 put.get().set_expected_head(0);
-                put.get().init_value().set_text("stored over Noise");
+                put.get().init_value().set_text("stored over Native");
                 let rev = put
                     .send()
                     .promise
@@ -125,12 +125,12 @@ async fn typed_orm_over_noise_udp() {
                 let get = client.get_request().send().promise.await.unwrap();
                 assert_eq!(
                     get.get().unwrap().get_value().unwrap().get_text().unwrap(),
-                    "stored over Noise"
+                    "stored over Native"
                 );
                 while observed.borrow().is_empty() {
                     tokio::task::yield_now().await;
                 }
-                assert_eq!(observed.borrow()[0], (1, "stored over Noise".into()));
+                assert_eq!(observed.borrow()[0], (1, "stored over Native".into()));
                 let response = first_event.await.unwrap();
                 let result = response.get().unwrap().get_result().unwrap();
                 assert_eq!(result.get_floor(), 0);
@@ -139,10 +139,10 @@ async fn typed_orm_over_noise_udp() {
                         assert_eq!(event.get_revision(), 1);
                         assert_eq!(
                             event.get_value().unwrap().get_text().unwrap(),
-                            "stored over Noise"
+                            "stored over Native"
                         );
                     }
-                    _ => panic!("initial Noise history read lost its event"),
+                    _ => panic!("initial Native history read lost its event"),
                 }
                 let mut pending = history.next_request();
                 pending.get().set_after(1);
@@ -206,7 +206,7 @@ async fn three_party_introduction_preserves_rights_and_order() {
                 let b = UdpSocket::bind("127.0.0.1:0").await.unwrap();
                 let remote = b.local_addr().unwrap();
                 // Independent wire peer: the authenticated serving API requires
-                // the native Noise prologue and stream-opening preface.
+                // the native Native prologue and stream-opening preface.
                 let mut context = b"ReProto native RPC v1\0".to_vec();
                 context.extend_from_slice(&package.context);
                 let mut ac =

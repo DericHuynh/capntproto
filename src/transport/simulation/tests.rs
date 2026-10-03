@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    noise_shutdown::Control,
+    native_shutdown::Control,
     transport::{
         self, scheduling, shutdown::ShutdownDriver, Identity, PacketSocket, SessionDrivers,
     },
@@ -559,7 +559,7 @@ async fn partition_and_stale_packets_cannot_deliver_into_a_replacement_generatio
             .peers
             .iter()
             .all(|p| p.received.is_empty() && p.driver.result.is_none()));
-        old_control.finish(Ok(crate::noise_shutdown::Receipt { bytes: 5 }));
+        old_control.finish(Ok(crate::native_shutdown::Receipt { bytes: 5 }));
         assert_eq!(
             old_control.wait().await.unwrap_err().kind(),
             io::ErrorKind::ConnectionAborted
@@ -589,10 +589,10 @@ async fn partition_and_stale_packets_cannot_deliver_into_a_replacement_generatio
 #[test]
 fn replay_tlc_socket_driver_terminal_races() {
     use reproto_test_support::verification::exploration;
-    let config = include_str!("../../../verification/NoiseSocketDriver.cfg");
+    let config = include_str!("../../../verification/NativeSocketDriver.cfg");
     exploration::controls(
-        "verification/NoiseSocketDriver.tla",
-        "noise-socket-driver",
+        "verification/NativeSocketDriver.tla",
+        "native-socket-driver",
         config,
         &[
             ("missClose", "TerminalCause"),
@@ -604,8 +604,8 @@ fn replay_tlc_socket_driver_terminal_races() {
     )
     .unwrap();
     let traces = exploration::traces(
-        "verification/NoiseSocketDriver.tla",
-        "noise-socket-driver",
+        "verification/NativeSocketDriver.tla",
+        "native-socket-driver",
         config,
     )
     .unwrap();

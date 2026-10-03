@@ -57,6 +57,7 @@ extern "C" {
 
 // The current QUIC wire version.
 #define QUICHE_PROTOCOL_VERSION 0x00000001
+#define QUICHE_PROTOCOL_VERSION_V2 0x6b3343cf
 
 // The maximum length of a connection ID.
 #define QUICHE_MAX_CONN_ID_LEN 20
@@ -137,6 +138,9 @@ enum quiche_error {
 
     /// An invalid DCID was used when connecting to a remote peer.
     QUICHE_ERR_INVALID_DCID_INITIALIZATION = -23,
+
+    // Authenticated version information does not match the connection.
+    QUICHE_ERR_VERSION_NEGOTIATION = -24,
 };
 
 // Returns a human readable string with the quiche version number.

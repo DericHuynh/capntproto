@@ -16,9 +16,9 @@ use std::{
 #[derive(Clone, Debug)]
 #[must_use]
 pub struct PublicationCursor {
-    owner: Arc<()>,
-    object: ObjectKey,
-    after: Revision,
+    pub(super) owner: Arc<()>,
+    pub(super) object: ObjectKey,
+    pub(super) after: Revision,
 }
 impl PublicationCursor {
     #[must_use]
@@ -95,7 +95,11 @@ impl Store {
             .transpose()
     }
 
-    fn check_publication_position(&self, object: ObjectKey, after: Revision) -> Result<()> {
+    pub(super) fn check_publication_position(
+        &self,
+        object: ObjectKey,
+        after: Revision,
+    ) -> Result<()> {
         let (floor, published) = self.history_bounds(object)?;
         if after < floor {
             return Err(Error::HistoryExpired { floor });

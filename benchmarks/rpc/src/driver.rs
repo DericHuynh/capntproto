@@ -9,7 +9,7 @@ use std::{
     sync::mpsc,
     time::Duration,
 };
-const PROTOCOLS: [&str; 4] = ["noise", "capnp-cpp", "grpc", "websocket"];
+const PROTOCOLS: [&str; 4] = ["native", "capnp-cpp", "grpc", "websocket"];
 const PAYLOADS: [usize; 4] = [0, 64, 1024, 65536];
 struct Server(Child);
 impl Drop for Server {
@@ -120,7 +120,7 @@ pub fn compare(directory: &Path, destination: &Path) -> Result<()> {
     let mut hashes = serde_json::Map::new();
     for (name, expected) in manifest["binaries"].as_object().ok_or("missing binaries")? {
         if ![
-            "noise",
+            "native",
             "grpc",
             "websocket",
             "capnp_cpp",
@@ -147,7 +147,7 @@ pub fn compare(directory: &Path, destination: &Path) -> Result<()> {
         "valgrind":output("valgrind", &["--version"])? ,
         "uname":output("uname", &["-a"])? , "cpu":output("lscpu", &[])?,
         "governor":fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor").ok(),
-        "scope":"Linux IPv4 loopback; sequential validated echo; 100 warmups/1000 samples; 5 repetitions; Noise encrypted/authenticated, other protocols plaintext"});
+        "scope":"Linux IPv4 loopback; sequential validated echo; 100 warmups/1000 samples; 5 repetitions; Native encrypted/authenticated, other protocols plaintext"});
     fs::write(
         destination.join("environment.json"),
         serde_json::to_vec_pretty(&environment)?,

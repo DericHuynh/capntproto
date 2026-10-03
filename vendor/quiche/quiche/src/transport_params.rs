@@ -153,6 +153,8 @@ impl<'a> Iterator for UnknownTransportParameterIterator<'a> {
 /// QUIC Transport Parameters
 #[derive(Clone, Debug, PartialEq)]
 pub struct TransportParams {
+    /// RFC 9368 chosen version followed by available versions.
+    pub version_information: Option<Vec<u32>>,
     /// Value of Destination CID field from first Initial packet sent by client
     pub original_destination_connection_id: Option<ConnectionId<'static>>,
     /// The maximum idle timeout.
@@ -197,6 +199,7 @@ pub struct TransportParams {
 impl Default for TransportParams {
     fn default() -> TransportParams {
         TransportParams {
+            version_information: None,
             original_destination_connection_id: None,
             max_idle_timeout: 0,
             stateless_reset_token: None,
@@ -370,6 +373,23 @@ impl TransportParams {
                     tp.retry_source_connection_id = Some(val.to_vec().into());
                 },
 
+                0x0011 => {
+                    if val.cap() < 4 || val.cap() % 4 != 0 {
+                        return Err(Error::InvalidTransportParam);
+                    }
+                    let mut versions = Vec::new();
+                    while val.cap() > 0 {
+                        let version = val.get_u32()?;
+                        if version == 0 {
+                            return Err(Error::InvalidTransportParam);
+                        }
+                        versions.push(version);
+                    }
+                    if is_server && !versions[1..].contains(&versions[0]) {
+                        return Err(Error::InvalidTransportParam);
+                    }
+                    tp.version_information = Some(versions);
+                },
                 0x0020 => {
                     tp.max_datagram_frame_size = Some(val.get_varint()?);
                 },
@@ -526,6 +546,12 @@ impl TransportParams {
 
         // TODO: encode preferred_address
 
+        if let Some(versions) = &tp.version_information {
+            TransportParams::encode_param(&mut b, 0x0011, 4 * versions.len())?;
+            for version in versions {
+                b.put_u32(*version)?;
+            }
+        }
         if tp.active_conn_id_limit != 2 {
             assert!(tp.active_conn_id_limit <= octets::MAX_VAR_INT);
             TransportParams::encode_param(

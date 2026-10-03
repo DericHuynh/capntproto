@@ -1,0 +1,606 @@
+{
+  "aggregation": "Median of per-run statistics; p99 values are not pooled; ranges show run-to-run variation.",
+  "scenarios": [
+    {
+      "mode": "batch",
+      "size": 1,
+      "held_snapshots": false,
+      "trials": 3,
+      "metrics": {
+        "mean_us_per_object_update": {
+          "median": 2845.63876953125,
+          "min": 2739.0985078125,
+          "max": 3006.82444921875
+        },
+        "batch_commit.p50_us": {
+          "median": 2715.921,
+          "min": 2708.239,
+          "max": 2988.092
+        },
+        "batch_commit.p99_us": {
+          "median": 3353.014,
+          "min": 2966.5820000000003,
+          "max": 8921.186
+        },
+        "syncs": {
+          "median": 256,
+          "min": 256,
+          "max": 256
+        }
+      }
+    },
+    {
+      "mode": "batch",
+      "size": 4,
+      "held_snapshots": false,
+      "trials": 3,
+      "metrics": {
+        "mean_us_per_object_update": {
+          "median": 743.2569453125,
+          "min": 738.520828125,
+          "max": 771.11327734375
+        },
+        "batch_commit.p50_us": {
+          "median": 2952.823,
+          "min": 2820.8920000000003,
+          "max": 2975.731
+        },
+        "batch_commit.p99_us": {
+          "median": 3428.163,
+          "min": 3181.8329999999996,
+          "max": 5997.418
+        },
+        "syncs": {
+          "median": 64,
+          "min": 64,
+          "max": 64
+        }
+      }
+    },
+    {
+      "mode": "batch",
+      "size": 16,
+      "held_snapshots": false,
+      "trials": 3,
+      "metrics": {
+        "mean_us_per_object_update": {
+          "median": 174.62550390625,
+          "min": 173.40518359375,
+          "max": 188.61532421874998
+        },
+        "batch_commit.p50_us": {
+          "median": 2788.835,
+          "min": 2742.67,
+          "max": 3002.34
+        },
+        "batch_commit.p99_us": {
+          "median": 3002.2,
+          "min": 2907.4959999999996,
+          "max": 3369.9849999999997
+        },
+        "syncs": {
+          "median": 16,
+          "min": 16,
+          "max": 16
+        }
+      }
+    },
+    {
+      "mode": "components",
+      "size": 2,
+      "held_snapshots": false,
+      "trials": 3,
+      "metrics": {
+        "bytes_per_update": {
+          "median": 216,
+          "min": 216,
+          "max": 216
+        },
+        "warm_acquire_and_hot_read_mean_us": {
+          "median": 0.20795270000000002,
+          "min": 0.2079107,
+          "max": 0.21072529999999998
+        },
+        "warm_reopen_us": {
+          "median": 2947.724,
+          "min": 2886.544,
+          "max": 3197.128
+        },
+        "history_checkpoint_bytes": {
+          "median": 105904,
+          "min": 105904,
+          "max": 105904
+        },
+        "history_compact_us": {
+          "median": 7688.067,
+          "min": 7374.34,
+          "max": 7879.782
+        },
+        "commit_including_encode.p50_us": {
+          "median": 2741.343,
+          "min": 2729.1910000000003,
+          "max": 2990.398
+        },
+        "commit_including_encode.p99_us": {
+          "median": 3216.125,
+          "min": 3110.2450000000003,
+          "max": 5893.423
+        },
+        "mapped_before.mappings": {
+          "median": 1,
+          "min": 1,
+          "max": 1
+        },
+        "mapped_before.virtual_bytes": {
+          "median": 94208,
+          "min": 94208,
+          "max": 94208
+        },
+        "mapped_after_compact.mappings": {
+          "median": 1,
+          "min": 1,
+          "max": 1
+        },
+        "mapped_after_release.mappings": {
+          "median": 1,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "mode": "components",
+      "size": 2,
+      "held_snapshots": true,
+      "trials": 3,
+      "metrics": {
+        "bytes_per_update": {
+          "median": 216,
+          "min": 216,
+          "max": 216
+        },
+        "warm_acquire_and_hot_read_mean_us": {
+          "median": 0.1896612,
+          "min": 0.1585888,
+          "max": 0.26986
+        },
+        "warm_reopen_us": {
+          "median": 2873.064,
+          "min": 2823.547,
+          "max": 2963.0899999999997
+        },
+        "history_checkpoint_bytes": {
+          "median": 105904,
+          "min": 105904,
+          "max": 105904
+        },
+        "history_compact_us": {
+          "median": 7270.346,
+          "min": 7004.809,
+          "max": 7303.311
+        },
+        "commit_including_encode.p50_us": {
+          "median": 2989.42,
+          "min": 2930.7529999999997,
+          "max": 2996.963
+        },
+        "commit_including_encode.p99_us": {
+          "median": 6058.249,
+          "min": 3627.839,
+          "max": 6072.566
+        },
+        "mapped_before.mappings": {
+          "median": 129,
+          "min": 129,
+          "max": 129
+        },
+        "mapped_before.virtual_bytes": {
+          "median": 10543104,
+          "min": 10543104,
+          "max": 10543104
+        },
+        "mapped_after_compact.mappings": {
+          "median": 130,
+          "min": 130,
+          "max": 130
+        },
+        "mapped_after_release.mappings": {
+          "median": 1,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "mode": "components",
+      "size": 16,
+      "held_snapshots": false,
+      "trials": 3,
+      "metrics": {
+        "bytes_per_update": {
+          "median": 552,
+          "min": 552,
+          "max": 552
+        },
+        "warm_acquire_and_hot_read_mean_us": {
+          "median": 0.2060949,
+          "min": 0.1929787,
+          "max": 0.2468683
+        },
+        "warm_reopen_us": {
+          "median": 3194.823,
+          "min": 2988.372,
+          "max": 3223.389
+        },
+        "history_checkpoint_bytes": {
+          "median": 149776,
+          "min": 149776,
+          "max": 149776
+        },
+        "history_compact_us": {
+          "median": 8692.666,
+          "min": 7881.388,
+          "max": 8735.199
+        },
+        "commit_including_encode.p50_us": {
+          "median": 3007.509,
+          "min": 2901.21,
+          "max": 3011.56
+        },
+        "commit_including_encode.p99_us": {
+          "median": 9053.046,
+          "min": 6085.557,
+          "max": 9120.653
+        },
+        "mapped_before.mappings": {
+          "median": 1,
+          "min": 1,
+          "max": 1
+        },
+        "mapped_before.virtual_bytes": {
+          "median": 139264,
+          "min": 139264,
+          "max": 139264
+        },
+        "mapped_after_compact.mappings": {
+          "median": 1,
+          "min": 1,
+          "max": 1
+        },
+        "mapped_after_release.mappings": {
+          "median": 1,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "mode": "components",
+      "size": 64,
+      "held_snapshots": false,
+      "trials": 3,
+      "metrics": {
+        "bytes_per_update": {
+          "median": 1704,
+          "min": 1704,
+          "max": 1704
+        },
+        "warm_acquire_and_hot_read_mean_us": {
+          "median": 0.2107183,
+          "min": 0.1436427,
+          "max": 0.21072539999999998
+        },
+        "warm_reopen_us": {
+          "median": 3521.471,
+          "min": 3153.827,
+          "max": 3940.45
+        },
+        "history_checkpoint_bytes": {
+          "median": 300304,
+          "min": 300304,
+          "max": 300304
+        },
+        "history_compact_us": {
+          "median": 9539.351999999999,
+          "min": 9122.05,
+          "max": 10117.918
+        },
+        "commit_including_encode.p50_us": {
+          "median": 3048.505,
+          "min": 3006.74,
+          "max": 3087.4069999999997
+        },
+        "commit_including_encode.p99_us": {
+          "median": 6379.1,
+          "min": 3391.496,
+          "max": 9226.812
+        },
+        "mapped_before.mappings": {
+          "median": 1,
+          "min": 1,
+          "max": 1
+        },
+        "mapped_before.virtual_bytes": {
+          "median": 290816,
+          "min": 290816,
+          "max": 290816
+        },
+        "mapped_after_compact.mappings": {
+          "median": 1,
+          "min": 1,
+          "max": 1
+        },
+        "mapped_after_release.mappings": {
+          "median": 1,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "mode": "components",
+      "size": 256,
+      "held_snapshots": false,
+      "trials": 3,
+      "metrics": {
+        "bytes_per_update": {
+          "median": 6312,
+          "min": 6312,
+          "max": 6312
+        },
+        "warm_acquire_and_hot_read_mean_us": {
+          "median": 0.1588263,
+          "min": 0.1449418,
+          "max": 0.2101387
+        },
+        "warm_reopen_us": {
+          "median": 4616.025000000001,
+          "min": 4603.453,
+          "max": 5178.807
+        },
+        "history_checkpoint_bytes": {
+          "median": 902176,
+          "min": 902176,
+          "max": 902176
+        },
+        "history_compact_us": {
+          "median": 14951.987,
+          "min": 13751.414,
+          "max": 15134.134
+        },
+        "commit_including_encode.p50_us": {
+          "median": 3176.036,
+          "min": 3173.3120000000004,
+          "max": 3207.045
+        },
+        "commit_including_encode.p99_us": {
+          "median": 6160.847,
+          "min": 3407.42,
+          "max": 8783.319
+        },
+        "mapped_before.mappings": {
+          "median": 1,
+          "min": 1,
+          "max": 1
+        },
+        "mapped_before.virtual_bytes": {
+          "median": 892928,
+          "min": 892928,
+          "max": 892928
+        },
+        "mapped_after_compact.mappings": {
+          "median": 1,
+          "min": 1,
+          "max": 1
+        },
+        "mapped_after_release.mappings": {
+          "median": 1,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "mode": "direct",
+      "size": 0,
+      "held_snapshots": false,
+      "trials": 3,
+      "metrics": {
+        "raw_component_commit.p50_us": {
+          "median": 2997.731,
+          "min": 2793.794,
+          "max": 3065.827
+        },
+        "raw_component_commit.p99_us": {
+          "median": 3836.3160000000003,
+          "min": 3662.9,
+          "max": 6400.891
+        },
+        "timer_lateness.p99_us": {
+          "median": 8826.677,
+          "min": 8510.957,
+          "max": 11766.283000000001
+        },
+        "timer_lateness.max_us": {
+          "median": 15350.614,
+          "min": 9008.158000000001,
+          "max": 44932.459
+        },
+        "timer_lateness.count": {
+          "median": 130,
+          "min": 129,
+          "max": 187
+        },
+        "elapsed_us": {
+          "median": 798262.448,
+          "min": 773543.494,
+          "max": 814491.975
+        }
+      }
+    },
+    {
+      "mode": "whole",
+      "size": 2,
+      "held_snapshots": false,
+      "trials": 3,
+      "metrics": {
+        "bytes_per_update": {
+          "median": 65736,
+          "min": 65736,
+          "max": 65736
+        },
+        "warm_acquire_and_hot_read_mean_us": {
+          "median": 0.1706015,
+          "min": 0.1237799,
+          "max": 0.2005984
+        },
+        "warm_reopen_us": {
+          "median": 7536.371,
+          "min": 7245.411999999999,
+          "max": 7751.484
+        },
+        "history_checkpoint_bytes": {
+          "median": 8487232,
+          "min": 8487232,
+          "max": 8487232
+        },
+        "history_compact_us": {
+          "median": 22034.600000000002,
+          "min": 18536.734999999997,
+          "max": 22189.928
+        },
+        "commit_including_encode.p50_us": {
+          "median": 3291.833,
+          "min": 3285.408,
+          "max": 3391.497
+        },
+        "commit_including_encode.p99_us": {
+          "median": 3705.224,
+          "min": 3626.442,
+          "max": 6390.6939999999995
+        },
+        "mapped_before.mappings": {
+          "median": 1,
+          "min": 1,
+          "max": 1
+        },
+        "mapped_before.virtual_bytes": {
+          "median": 8482816,
+          "min": 8482816,
+          "max": 8482816
+        },
+        "mapped_after_compact.mappings": {
+          "median": 1,
+          "min": 1,
+          "max": 1
+        },
+        "mapped_after_release.mappings": {
+          "median": 1,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "mode": "whole",
+      "size": 2,
+      "held_snapshots": true,
+      "trials": 3,
+      "metrics": {
+        "bytes_per_update": {
+          "median": 65736,
+          "min": 65736,
+          "max": 65736
+        },
+        "warm_acquire_and_hot_read_mean_us": {
+          "median": 0.1725361,
+          "min": 0.1584979,
+          "max": 0.20053549999999998
+        },
+        "warm_reopen_us": {
+          "median": 7218.734,
+          "min": 7076.6759999999995,
+          "max": 7387.679
+        },
+        "history_checkpoint_bytes": {
+          "median": 8487232,
+          "min": 8487232,
+          "max": 8487232
+        },
+        "history_compact_us": {
+          "median": 21405.608,
+          "min": 20279.138,
+          "max": 21727.507999999998
+        },
+        "commit_including_encode.p50_us": {
+          "median": 3391.357,
+          "min": 3280.379,
+          "max": 3405.2560000000003
+        },
+        "commit_including_encode.p99_us": {
+          "median": 6502.301,
+          "min": 3584.538,
+          "max": 6604.688
+        },
+        "mapped_before.mappings": {
+          "median": 129,
+          "min": 129,
+          "max": 129
+        },
+        "mapped_before.virtual_bytes": {
+          "median": 551473152,
+          "min": 551473152,
+          "max": 551473152
+        },
+        "mapped_after_compact.mappings": {
+          "median": 130,
+          "min": 130,
+          "max": 130
+        },
+        "mapped_after_release.mappings": {
+          "median": 1,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "mode": "worker",
+      "size": 0,
+      "held_snapshots": false,
+      "trials": 3,
+      "metrics": {
+        "raw_component_commit.p50_us": {
+          "median": 2987.744,
+          "min": 2787.159,
+          "max": 3030.976
+        },
+        "raw_component_commit.p99_us": {
+          "median": 3954.837,
+          "min": 3281.915,
+          "max": 5969.272
+        },
+        "timer_lateness.p99_us": {
+          "median": 1714.748,
+          "min": 1585.6,
+          "max": 1768.47
+        },
+        "timer_lateness.max_us": {
+          "median": 1721.534,
+          "min": 1600.488,
+          "max": 1778.931
+        },
+        "timer_lateness.count": {
+          "median": 774,
+          "min": 747,
+          "max": 788
+        },
+        "elapsed_us": {
+          "median": 773232.632,
+          "min": 746209.192,
+          "max": 787215.9199999999
+        }
+      }
+    }
+  ]
+}

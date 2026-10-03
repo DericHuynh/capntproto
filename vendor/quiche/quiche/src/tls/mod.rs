@@ -410,6 +410,18 @@ impl Handshake {
         Ok(())
     }
 
+    pub fn set_version_context(&mut self, version: u32) -> Result<()> {
+        let context = version.to_be_bytes();
+        map_result(unsafe {
+            SSL_set_session_id_context(
+                self.as_mut_ptr(),
+                context.as_ptr(),
+                context.len() as u32,
+            )
+        })?;
+        self.set_quic_early_data_context(&context)
+    }
+
     pub fn use_legacy_codepoint(&mut self, use_legacy: bool) {
         unsafe {
             SSL_set_quic_use_legacy_codepoint(
@@ -471,10 +483,20 @@ impl Handshake {
         })
     }
 
+    pub fn set_peer_ip(&mut self, ip: std::net::IpAddr) -> Result<()> {
+        let address =
+            ffi::CString::new(ip.to_string()).map_err(|_| Error::TlsFail)?;
+        let param = unsafe { SSL_get0_param(self.as_mut_ptr()) };
+        map_result(unsafe {
+            X509_VERIFY_PARAM_set1_ip_asc(param, address.as_ptr())
+        })
+    }
+
     pub fn set_quic_transport_params(
         &mut self, params: &crate::TransportParams, is_server: bool,
     ) -> Result<()> {
-        let mut raw_params = [0; 128];
+        // Includes the RFC 9368 version list in the largest parameter set.
+        let mut raw_params = [0; 512];
 
         let raw_params =
             crate::TransportParams::encode(params, is_server, &mut raw_params)?;
@@ -705,6 +727,7 @@ impl Drop for Handshake {
 }
 
 pub struct ExData<'a> {
+    pub version: u32,
     pub application_protos: &'a Vec<Vec<u8>>,
 
     pub crypto_ctx: &'a mut [packet::CryptoContext; packet::Epoch::count()],
@@ -799,7 +822,8 @@ extern "C" fn set_read_secret(
     if level != crypto::Level::ZeroRTT || ex_data.is_server {
         let secret = unsafe { slice::from_raw_parts(secret, secret_len) };
 
-        let open = match crypto::Open::from_secret(aead, secret) {
+        let open = match crypto::Open::from_secret(aead, secret, ex_data.version)
+        {
             Ok(v) => v,
 
             Err(_) => return 0,
@@ -848,7 +872,8 @@ extern "C" fn set_write_secret(
     if level != crypto::Level::ZeroRTT || !ex_data.is_server {
         let secret = unsafe { slice::from_raw_parts(secret, secret_len) };
 
-        let seal = match crypto::Seal::from_secret(aead, secret) {
+        let seal = match crypto::Seal::from_secret(aead, secret, ex_data.version)
+        {
             Ok(v) => v,
 
             Err(_) => return 0,
@@ -1029,6 +1054,9 @@ extern "C" fn new_session(ssl: *mut SSL, session: *mut SSL_SESSION) -> c_int {
     let mut buffer =
         Vec::with_capacity(8 + peer_params.len() + 8 + session_bytes.len());
 
+    if buffer.write_all(&ex_data.version.to_be_bytes()).is_err() {
+        return 0;
+    }
     let session_bytes_len = session_bytes.len() as u64;
 
     if buffer.write(&session_bytes_len.to_be_bytes()).is_err() {
@@ -1180,6 +1208,9 @@ extern "C" {
 
     fn SSL_get_current_cipher(ssl: *const SSL) -> *const SSL_CIPHER;
 
+    fn SSL_set_session_id_context(
+        ssl: *mut SSL, context: *const u8, len: u32,
+    ) -> c_int;
     fn SSL_set_session(ssl: *mut SSL, session: *mut SSL_SESSION) -> c_int;
 
     fn SSL_get_SSL_CTX(ssl: *const SSL) -> *mut SSL_CTX;
@@ -1237,6 +1268,10 @@ extern "C" {
     // X509_VERIFY_PARAM
     fn X509_VERIFY_PARAM_set1_host(
         param: *mut X509_VERIFY_PARAM, name: *const c_char, namelen: usize,
+    ) -> c_int;
+
+    fn X509_VERIFY_PARAM_set1_ip_asc(
+        param: *mut X509_VERIFY_PARAM, ipasc: *const c_char,
     ) -> c_int;
 
     // X509_STORE

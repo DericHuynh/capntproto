@@ -118,6 +118,10 @@ impl<I: LocalId, T> LocalTable<I, T> {
         self.slots.len() == self.free_ids.len() && self.high.is_empty() && self.adopted.is_empty()
     }
 
+    pub(super) fn len(&self) -> usize {
+        self.slots.len() - self.free_ids.len() + self.high.len() + self.adopted.len()
+    }
+
     pub(super) fn iter(&self) -> impl Iterator<Item = &T> {
         self.slots
             .iter()

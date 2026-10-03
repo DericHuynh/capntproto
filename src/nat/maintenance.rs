@@ -388,12 +388,12 @@ mod tests {
     #[tokio::test]
     async fn replay_tlc_mapping_refresh() {
         use reproto_test_support::verification::exploration;
-        let config = include_str!("../../verification/NoiseMappingRefresh.cfg");
+        let config = include_str!("../../verification/NativeMappingRefresh.cfg");
         let live = config.replace("SPECIFICATION Spec", "SPECIFICATION LiveSpec")
             + "\nPROPERTY ProbeSettles\n";
         exploration::controls(
-            "verification/NoiseMappingRefresh.tla",
-            "noise-mapping-refresh",
+            "verification/NativeMappingRefresh.tla",
+            "native-mapping-refresh",
             config,
             &[
                 ("oldResponse", "Transaction"),
@@ -404,8 +404,8 @@ mod tests {
         )
         .unwrap();
         let traces = exploration::traces(
-            "verification/NoiseMappingRefresh.tla",
-            "noise-mapping-refresh",
+            "verification/NativeMappingRefresh.tla",
+            "native-mapping-refresh",
             config,
         )
         .unwrap();

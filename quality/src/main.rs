@@ -36,7 +36,7 @@ fn main() -> Result<()> {
             )
             .map(|_| ()),
         "fuzz" => r
-            .cargo("asan", &["test", "--locked", "--test", "noise_fuzz"])
+            .cargo("asan", &["test", "--locked", "--test", "native_fuzz"])
             .map(|_| ()),
         "security" => (|| {
             for (name, manifest) in [

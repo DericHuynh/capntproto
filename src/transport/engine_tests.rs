@@ -69,7 +69,7 @@ pub(super) fn packets(from: &mut Engine, to: &mut Engine) {
 }
 
 #[test]
-fn noise_engine_preserves_bidirectional_bytes_preface_and_fin_under_backpressure() {
+fn native_engine_preserves_bidirectional_bytes_preface_and_fin_under_backpressure() {
     let (mut a, mut b) = pair();
     let inputs: [Vec<u8>; 2] = [
         (0..511).map(|n| (n % 251) as u8).collect(),
@@ -136,7 +136,7 @@ fn queued_datagram_after_shutdown_request_is_discarded_without_failing_rpc() {
         }
     }
     assert!(a.can_accept_datagram());
-    let control = crate::noise_shutdown::Control::new();
+    let control = crate::native_shutdown::Control::new();
     a.shutdown = Some(super::shutdown::ShutdownDriver::new(control.clone(), false));
     control.begin(Duration::from_secs(1)).unwrap();
     a.datagram(b"late queued packet".to_vec()).unwrap();
@@ -147,10 +147,10 @@ fn queued_datagram_after_shutdown_request_is_discarded_without_failing_rpc() {
 fn replay_tlc_receipt_survives_close_packet_burst_yield() {
     use futures::FutureExt;
     use reproto_test_support::verification::exploration;
-    let config = include_str!("../../verification/NoiseCloseFlush.cfg");
+    let config = include_str!("../../verification/NativeCloseFlush.cfg");
     exploration::controls(
-        "verification/NoiseCloseFlush.tla",
-        "noise-close-flush",
+        "verification/NativeCloseFlush.tla",
+        "native-close-flush",
         config,
         &[
             ("forgetReceipt", "ReceiptRetained"),
@@ -160,8 +160,8 @@ fn replay_tlc_receipt_survives_close_packet_burst_yield() {
     )
     .unwrap();
     let traces = exploration::traces(
-        "verification/NoiseCloseFlush.tla",
-        "noise-close-flush",
+        "verification/NativeCloseFlush.tla",
+        "native-close-flush",
         config,
     )
     .unwrap();
@@ -178,10 +178,10 @@ fn replay_tlc_receipt_survives_close_packet_burst_yield() {
             }
         }
         assert!(a.ready() && b.ready());
-        let control = crate::noise_shutdown::Control::new();
+        let control = crate::native_shutdown::Control::new();
         a.shutdown = Some(super::shutdown::ShutdownDriver::new(control.clone(), false));
         b.shutdown = Some(super::shutdown::ShutdownDriver::new(
-            crate::noise_shutdown::Control::new(),
+            crate::native_shutdown::Control::new(),
             true,
         ));
         for state in trace {

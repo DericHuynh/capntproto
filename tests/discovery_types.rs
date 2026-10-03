@@ -1,10 +1,10 @@
 use futures::FutureExt;
 use reproto::{
-    noise_discovery::{
+    native_discovery::{
         Binding, Directory, Discovery, DiscoveryConnector, DiscoveryGeneration, DiscoveryOptions,
     },
-    noise_discovery_capnp::directory,
-    noise_provisioning_capnp::provisioner,
+    native_discovery_capnp::directory,
+    native_provisioning_capnp::provisioner,
     transport::Identity,
 };
 use std::{cell::Cell, net::SocketAddr, rc::Rc, time::Duration};
@@ -166,9 +166,9 @@ impl<T> Drop for Task<T> {
 #[tokio::test(flavor = "current_thread")]
 async fn captured_bindings_connect_their_original_authenticated_hosts_after_rotation() {
     use reproto::{
-        noise_listener::{Limits, Listener},
-        noise_provisioning::Provisioner,
-        noise_rpc::Network,
+        native_listener::{Limits, Listener},
+        native_provisioning::Provisioner,
+        native_rpc::Network,
     };
     use reproto_test_support::runtime_test_capnp::harness;
     struct Echo;

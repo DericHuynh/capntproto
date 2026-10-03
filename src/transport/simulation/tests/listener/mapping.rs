@@ -4,7 +4,7 @@ use super::super::nat::response;
 use super::*;
 use crate::{
     nat::{MappingOptions, MappingStatus},
-    noise_discovery::{
+    native_discovery::{
         self, Advertisement, AdvertisementOptions, AdvertisementStatus, AdvertisementStop,
         Directory, MappedService,
     },
@@ -132,10 +132,10 @@ async fn blocked_mapping_expiry_and_replacement_preserve_shared_sessions() {
 #[test]
 fn replay_tlc_mapping_packets_and_discovery_publications() {
     use reproto_test_support::verification::exploration;
-    let config = include_str!("../../../../../verification/NoiseMappingRefresh.cfg");
+    let config = include_str!("../../../../../verification/NativeMappingRefresh.cfg");
     let traces = exploration::traces(
-        "verification/NoiseMappingRefresh.tla",
-        "noise-mapping-socket",
+        "verification/NativeMappingRefresh.tla",
+        "native-mapping-socket",
         config,
     )
     .unwrap();
@@ -153,7 +153,7 @@ fn replay_tlc_mapping_packets_and_discovery_publications() {
                     let mapping = listener
                         .maintain_mapping(server.local_addr().unwrap(), MappingOptions::default())
                         .unwrap();
-                    let (_network, handle) = crate::noise_rpc::Network::new(listener.identity());
+                    let (_network, handle) = crate::native_rpc::Network::new(listener.identity());
                     let service = MappedService::new(listener.clone(), handle, &mapping).unwrap();
                     let directory = Directory::default();
                     let recipient = h.routes[0].client.local;
@@ -258,7 +258,7 @@ fn replay_tlc_mapping_packets_and_discovery_publications() {
                             }
                         }
                         let resolved =
-                            noise_discovery::resolve(&reader, recipient, "service").await;
+                            native_discovery::resolve(&reader, recipient, "service").await;
                         if let Some(address) = address {
                             let resolved = resolved.unwrap();
                             assert_eq!(resolved.binding().address, address);
@@ -267,7 +267,7 @@ fn replay_tlc_mapping_packets_and_discovery_publications() {
                             assert_eq!(resolved.generation(), ad.as_ref().unwrap().generation());
                             if prior_address != Some(address) {
                                 if let Some(old) = prior.take() {
-                                    let old: crate::noise_provisioning_capnp::provisioner::Client =
+                                    let old: crate::native_provisioning_capnp::provisioner::Client =
                                         old;
                                     assert!(
                                         old.reserve_request().send().promise.await.is_err(),
@@ -285,7 +285,7 @@ fn replay_tlc_mapping_packets_and_discovery_publications() {
                         prior_address = address;
                         assert_eq!(listener.stats().authenticated, 2);
                     }
-                    assert!(noise_discovery::resolve(
+                    assert!(native_discovery::resolve(
                         &directory.client([99; 32]),
                         [99; 32],
                         "service"

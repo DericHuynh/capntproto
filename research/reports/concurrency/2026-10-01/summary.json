@@ -1,0 +1,1437 @@
+{
+  "aggregation": "Median and range of per-run statistics, never pooled percentiles. Snapshot cases have no latency samples (zero fields mean not measured). Process CPU includes setup and verification; elapsed_ns is the timed region.",
+  "scenarios": [
+    {
+      "kind": "queue",
+      "variant": "array",
+      "threads": 1,
+      "batch": 1,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 20097106.165134452,
+          "min": 17108573.76166725,
+          "max": 21174154.9691221
+        },
+        "ns_per_operation": {
+          "median": 49.75840759277344,
+          "min": 47.227386474609375,
+          "max": 58.450225830078125
+        },
+        "elapsed_ns": {
+          "median": 3260967,
+          "min": 3095094,
+          "max": 3830594
+        },
+        "latency_p50_ns": {
+          "median": 2864,
+          "min": 2863,
+          "max": 3352
+        },
+        "latency_p99_ns": {
+          "median": 5169,
+          "min": 5169,
+          "max": 6146
+        },
+        "latency_max_ns": {
+          "median": 15644,
+          "min": 14946,
+          "max": 21092
+        },
+        "full_retries": {
+          "median": 865,
+          "min": 466,
+          "max": 943
+        },
+        "empty_polls": {
+          "median": 59,
+          "min": 13,
+          "max": 67
+        },
+        "process_cpu_seconds": {
+          "median": 0.0072990000000006106,
+          "min": 0.007073000000000107,
+          "max": 0.00878499999999982
+        }
+      }
+    },
+    {
+      "kind": "queue",
+      "variant": "array",
+      "threads": 1,
+      "batch": 16,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 24905884.66891089,
+          "min": 22656245.678664077,
+          "max": 26319076.229981884
+        },
+        "ns_per_operation": {
+          "median": 40.151153564453125,
+          "min": 37.99525451660156,
+          "max": 44.137939453125
+        },
+        "elapsed_ns": {
+          "median": 2631346,
+          "min": 2490057,
+          "max": 2892624
+        },
+        "latency_p50_ns": {
+          "median": 2374,
+          "min": 1955,
+          "max": 2375
+        },
+        "latency_p99_ns": {
+          "median": 4888,
+          "min": 4819,
+          "max": 5168
+        },
+        "latency_max_ns": {
+          "median": 49238,
+          "min": 31498,
+          "max": 61320
+        },
+        "full_retries": {
+          "median": 334,
+          "min": 318,
+          "max": 353
+        },
+        "empty_polls": {
+          "median": 115,
+          "min": 44,
+          "max": 272
+        },
+        "process_cpu_seconds": {
+          "median": 0.006215999999999333,
+          "min": 0.005956000000000003,
+          "max": 0.006505000000000205
+        }
+      }
+    },
+    {
+      "kind": "queue",
+      "variant": "array",
+      "threads": 8,
+      "batch": 1,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 20702336.625881772,
+          "min": 17870343.481112152,
+          "max": 21462808.845548734
+        },
+        "ns_per_operation": {
+          "median": 48.30372619628906,
+          "min": 46.59222412109375,
+          "max": 55.95863342285156
+        },
+        "elapsed_ns": {
+          "median": 3165633,
+          "min": 3053468,
+          "max": 3667305
+        },
+        "latency_p50_ns": {
+          "median": 3353,
+          "min": 3352,
+          "max": 4261
+        },
+        "latency_p99_ns": {
+          "median": 22977,
+          "min": 22908,
+          "max": 23396
+        },
+        "latency_max_ns": {
+          "median": 72985,
+          "min": 62089,
+          "max": 433925
+        },
+        "full_retries": {
+          "median": 4894,
+          "min": 3705,
+          "max": 7553
+        },
+        "empty_polls": {
+          "median": 120,
+          "min": 91,
+          "max": 161
+        },
+        "process_cpu_seconds": {
+          "median": 0.02331399999999917,
+          "min": 0.021265999999999896,
+          "max": 0.02629400000000004
+        }
+      }
+    },
+    {
+      "kind": "queue",
+      "variant": "array",
+      "threads": 8,
+      "batch": 16,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 21439757.441806678,
+          "min": 20646305.994788017,
+          "max": 23214517.858452227
+        },
+        "ns_per_operation": {
+          "median": 46.64231872558594,
+          "min": 43.07649230957031,
+          "max": 48.434814453125
+        },
+        "elapsed_ns": {
+          "median": 3056751,
+          "min": 2823061,
+          "max": 3174224
+        },
+        "latency_p50_ns": {
+          "median": 3422,
+          "min": 2933,
+          "max": 3772
+        },
+        "latency_p99_ns": {
+          "median": 23816,
+          "min": 21092,
+          "max": 26679
+        },
+        "latency_max_ns": {
+          "median": 65861,
+          "min": 40508,
+          "max": 66698
+        },
+        "full_retries": {
+          "median": 3484,
+          "min": 2311,
+          "max": 4162
+        },
+        "empty_polls": {
+          "median": 120,
+          "min": 103,
+          "max": 131
+        },
+        "process_cpu_seconds": {
+          "median": 0.0242730000000001,
+          "min": 0.0201699999999998,
+          "max": 0.02641199999999999
+        }
+      }
+    },
+    {
+      "kind": "queue",
+      "variant": "parking",
+      "threads": 1,
+      "batch": 1,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 12135352.435551308,
+          "min": 10785675.99820085,
+          "max": 12368568.857538002
+        },
+        "ns_per_operation": {
+          "median": 82.40386962890625,
+          "min": 80.85009765625,
+          "max": 92.71556091308594
+        },
+        "elapsed_ns": {
+          "median": 5400420,
+          "min": 5298592,
+          "max": 6076207
+        },
+        "latency_p50_ns": {
+          "median": 5168,
+          "min": 4819,
+          "max": 5239
+        },
+        "latency_p99_ns": {
+          "median": 8939,
+          "min": 7264,
+          "max": 9009
+        },
+        "latency_max_ns": {
+          "median": 57759,
+          "min": 43930,
+          "max": 255969
+        },
+        "full_retries": {
+          "median": 3374,
+          "min": 3058,
+          "max": 4786
+        },
+        "empty_polls": {
+          "median": 99,
+          "min": 72,
+          "max": 228
+        },
+        "process_cpu_seconds": {
+          "median": 0.011587000000000014,
+          "min": 0.011096999999999912,
+          "max": 0.012519000000000169
+        }
+      }
+    },
+    {
+      "kind": "queue",
+      "variant": "parking",
+      "threads": 1,
+      "batch": 16,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 22900648.658357307,
+          "min": 21416762.49896651,
+          "max": 23157220.766022883
+        },
+        "ns_per_operation": {
+          "median": 43.66688537597656,
+          "min": 43.183074951171875,
+          "max": 46.69239807128906
+        },
+        "elapsed_ns": {
+          "median": 2861753,
+          "min": 2830046,
+          "max": 3060033
+        },
+        "latency_p50_ns": {
+          "median": 2375,
+          "min": 2375,
+          "max": 2794
+        },
+        "latency_p99_ns": {
+          "median": 4260,
+          "min": 3911,
+          "max": 10337
+        },
+        "latency_max_ns": {
+          "median": 24374,
+          "min": 14666,
+          "max": 32406
+        },
+        "full_retries": {
+          "median": 423,
+          "min": 356,
+          "max": 656
+        },
+        "empty_polls": {
+          "median": 618,
+          "min": 418,
+          "max": 732
+        },
+        "process_cpu_seconds": {
+          "median": 0.006678000000000073,
+          "min": 0.006526000000000032,
+          "max": 0.00677999999999912
+        }
+      }
+    },
+    {
+      "kind": "queue",
+      "variant": "parking",
+      "threads": 8,
+      "batch": 1,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 2047609.5464546103,
+          "min": 1652782.2633382299,
+          "max": 2154010.8559044437
+        },
+        "ns_per_operation": {
+          "median": 488.3743591308594,
+          "min": 464.2502136230469,
+          "max": 605.0403747558594
+        },
+        "elapsed_ns": {
+          "median": 32006102,
+          "min": 30425102,
+          "max": 39651926
+        },
+        "latency_p50_ns": {
+          "median": 30521,
+          "min": 30102,
+          "max": 38553
+        },
+        "latency_p99_ns": {
+          "median": 133886,
+          "min": 128229,
+          "max": 213366
+        },
+        "latency_max_ns": {
+          "median": 338172,
+          "min": 243258,
+          "max": 1729693
+        },
+        "full_retries": {
+          "median": 187380,
+          "min": 168157,
+          "max": 291241
+        },
+        "empty_polls": {
+          "median": 67,
+          "min": 54,
+          "max": 4357
+        },
+        "process_cpu_seconds": {
+          "median": 0.20823899999999995,
+          "min": 0.20785399999999998,
+          "max": 0.2800530000000001
+        }
+      }
+    },
+    {
+      "kind": "queue",
+      "variant": "parking",
+      "threads": 8,
+      "batch": 16,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 5881879.90395993,
+          "min": 5665533.31794538,
+          "max": 7914324.920860978
+        },
+        "ns_per_operation": {
+          "median": 170.013671875,
+          "min": 126.35316467285156,
+          "max": 176.50588989257812
+        },
+        "elapsed_ns": {
+          "median": 11142016,
+          "min": 8280681,
+          "max": 11567490
+        },
+        "latency_p50_ns": {
+          "median": 11803,
+          "min": 8032,
+          "max": 11873
+        },
+        "latency_p99_ns": {
+          "median": 65371,
+          "min": 64184,
+          "max": 66280
+        },
+        "latency_max_ns": {
+          "median": 210433,
+          "min": 193251,
+          "max": 347741
+        },
+        "full_retries": {
+          "median": 31338,
+          "min": 19594,
+          "max": 32480
+        },
+        "empty_polls": {
+          "median": 369,
+          "min": 295,
+          "max": 447
+        },
+        "process_cpu_seconds": {
+          "median": 0.06949500000000008,
+          "min": 0.049259999999999915,
+          "max": 0.07023900000000038
+        }
+      }
+    },
+    {
+      "kind": "queue",
+      "variant": "std",
+      "threads": 1,
+      "batch": 1,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 9560016.909746706,
+          "min": 9199278.44282673,
+          "max": 9619408.377615793
+        },
+        "ns_per_operation": {
+          "median": 104.60232543945312,
+          "min": 103.95649719238281,
+          "max": 108.70417785644531
+        },
+        "elapsed_ns": {
+          "median": 6855218,
+          "min": 6812893,
+          "max": 7124037
+        },
+        "latency_p50_ns": {
+          "median": 6635,
+          "min": 6565,
+          "max": 6774
+        },
+        "latency_p99_ns": {
+          "median": 12362,
+          "min": 11315,
+          "max": 12432
+        },
+        "latency_max_ns": {
+          "median": 17670,
+          "min": 16762,
+          "max": 23397
+        },
+        "full_retries": {
+          "median": 1391,
+          "min": 1371,
+          "max": 1494
+        },
+        "empty_polls": {
+          "median": 138,
+          "min": 100,
+          "max": 209
+        },
+        "process_cpu_seconds": {
+          "median": 0.014624000000000081,
+          "min": 0.01438999999999968,
+          "max": 0.01516800000000007
+        }
+      }
+    },
+    {
+      "kind": "queue",
+      "variant": "std",
+      "threads": 1,
+      "batch": 16,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 20646299.490426797,
+          "min": 17788359.88314446,
+          "max": 20789015.72562661
+        },
+        "ns_per_operation": {
+          "median": 48.43482971191406,
+          "min": 48.102325439453125,
+          "max": 56.21653747558594
+        },
+        "elapsed_ns": {
+          "median": 3174225,
+          "min": 3152434,
+          "max": 3684207
+        },
+        "latency_p50_ns": {
+          "median": 2793,
+          "min": 2445,
+          "max": 2794
+        },
+        "latency_p99_ns": {
+          "median": 5238,
+          "min": 4330,
+          "max": 5308
+        },
+        "latency_max_ns": {
+          "median": 15715,
+          "min": 13899,
+          "max": 62997
+        },
+        "full_retries": {
+          "median": 37,
+          "min": 14,
+          "max": 139
+        },
+        "empty_polls": {
+          "median": 381,
+          "min": 244,
+          "max": 923
+        },
+        "process_cpu_seconds": {
+          "median": 0.007384000000000002,
+          "min": 0.0073510000000001074,
+          "max": 0.00850599999999968
+        }
+      }
+    },
+    {
+      "kind": "queue",
+      "variant": "std",
+      "threads": 8,
+      "batch": 1,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 1909085.9569331228,
+          "min": 1869651.757104918,
+          "max": 1909579.310085802
+        },
+        "ns_per_operation": {
+          "median": 523.8108825683594,
+          "min": 523.6755523681641,
+          "max": 534.8589630126953
+        },
+        "elapsed_ns": {
+          "median": 34328470,
+          "min": 34319601,
+          "max": 35052517
+        },
+        "latency_p50_ns": {
+          "median": 35479,
+          "min": 35479,
+          "max": 36877
+        },
+        "latency_p99_ns": {
+          "median": 87721,
+          "min": 87720,
+          "max": 88070
+        },
+        "latency_max_ns": {
+          "median": 1026878,
+          "min": 523042,
+          "max": 1055514
+        },
+        "full_retries": {
+          "median": 182375,
+          "min": 165986,
+          "max": 186381
+        },
+        "empty_polls": {
+          "median": 16,
+          "min": 6,
+          "max": 16
+        },
+        "process_cpu_seconds": {
+          "median": 0.27043300000000015,
+          "min": 0.2631739999999999,
+          "max": 0.27658799999999983
+        }
+      }
+    },
+    {
+      "kind": "queue",
+      "variant": "std",
+      "threads": 8,
+      "batch": 16,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 7021137.549415584,
+          "min": 6826377.967765112,
+          "max": 7159236.311712992
+        },
+        "ns_per_operation": {
+          "median": 142.42706298828125,
+          "min": 139.67970275878906,
+          "max": 146.49057006835938
+        },
+        "elapsed_ns": {
+          "median": 9334100,
+          "min": 9154049,
+          "max": 9600406
+        },
+        "latency_p50_ns": {
+          "median": 7612,
+          "min": 7124,
+          "max": 7752
+        },
+        "latency_p99_ns": {
+          "median": 31987,
+          "min": 26750,
+          "max": 33733
+        },
+        "latency_max_ns": {
+          "median": 61041,
+          "min": 47632,
+          "max": 391182
+        },
+        "full_retries": {
+          "median": 15562,
+          "min": 13214,
+          "max": 19749
+        },
+        "empty_polls": {
+          "median": 316,
+          "min": 309,
+          "max": 348
+        },
+        "process_cpu_seconds": {
+          "median": 0.06928399999999968,
+          "min": 0.06845400000000024,
+          "max": 0.07111099999999998
+        }
+      }
+    },
+    {
+      "kind": "queue",
+      "variant": "tokio",
+      "threads": 1,
+      "batch": 1,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 8537708.909149272,
+          "min": 7934400.753341907,
+          "max": 8761147.114573896
+        },
+        "ns_per_operation": {
+          "median": 117.12744140625,
+          "min": 114.14030456542969,
+          "max": 126.03346252441406
+        },
+        "elapsed_ns": {
+          "median": 7676064,
+          "min": 7480299,
+          "max": 8259729
+        },
+        "latency_p50_ns": {
+          "median": 7193,
+          "min": 7123,
+          "max": 7263
+        },
+        "latency_p99_ns": {
+          "median": 11943,
+          "min": 11873,
+          "max": 12362
+        },
+        "latency_max_ns": {
+          "median": 50426,
+          "min": 20114,
+          "max": 535404
+        },
+        "full_retries": {
+          "median": 2376,
+          "min": 2185,
+          "max": 3254
+        },
+        "empty_polls": {
+          "median": 69,
+          "min": 39,
+          "max": 74
+        },
+        "process_cpu_seconds": {
+          "median": 0.016125999999999863,
+          "min": 0.01588300000000009,
+          "max": 0.016769000000000145
+        }
+      }
+    },
+    {
+      "kind": "queue",
+      "variant": "tokio",
+      "threads": 1,
+      "batch": 16,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 8614125.53074283,
+          "min": 8317339.182477746,
+          "max": 8661594.861618811
+        },
+        "ns_per_operation": {
+          "median": 116.08839416503906,
+          "min": 115.45217895507812,
+          "max": 120.23075866699219
+        },
+        "elapsed_ns": {
+          "median": 7607969,
+          "min": 7566274,
+          "max": 7879443
+        },
+        "latency_p50_ns": {
+          "median": 7124,
+          "min": 7054,
+          "max": 7193
+        },
+        "latency_p99_ns": {
+          "median": 12850,
+          "min": 9150,
+          "max": 16832
+        },
+        "latency_max_ns": {
+          "median": 112584,
+          "min": 17669,
+          "max": 275035
+        },
+        "full_retries": {
+          "median": 1795,
+          "min": 1035,
+          "max": 1993
+        },
+        "empty_polls": {
+          "median": 109,
+          "min": 19,
+          "max": 155
+        },
+        "process_cpu_seconds": {
+          "median": 0.016016999999999997,
+          "min": 0.01600600000000041,
+          "max": 0.016145999999999994
+        }
+      }
+    },
+    {
+      "kind": "queue",
+      "variant": "tokio",
+      "threads": 8,
+      "batch": 1,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 5719752.215055562,
+          "min": 5514441.541206306,
+          "max": 5965946.512762434
+        },
+        "ns_per_operation": {
+          "median": 174.83274841308594,
+          "min": 167.6179962158203,
+          "max": 181.34202575683594
+        },
+        "elapsed_ns": {
+          "median": 11457839,
+          "min": 10985013,
+          "max": 11884431
+        },
+        "latency_p50_ns": {
+          "median": 12850,
+          "min": 12152,
+          "max": 13480
+        },
+        "latency_p99_ns": {
+          "median": 22559,
+          "min": 21581,
+          "max": 23187
+        },
+        "latency_max_ns": {
+          "median": 62997,
+          "min": 32406,
+          "max": 88908
+        },
+        "full_retries": {
+          "median": 86622,
+          "min": 67442,
+          "max": 101166
+        },
+        "empty_polls": {
+          "median": 2,
+          "min": 1,
+          "max": 3
+        },
+        "process_cpu_seconds": {
+          "median": 0.09660100000000038,
+          "min": 0.08079999999999998,
+          "max": 0.10195099999999999
+        }
+      }
+    },
+    {
+      "kind": "queue",
+      "variant": "tokio",
+      "threads": 8,
+      "batch": 16,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 5899816.017852849,
+          "min": 5820837.471925446,
+          "max": 6021342.247742364
+        },
+        "ns_per_operation": {
+          "median": 169.49681091308594,
+          "min": 166.075927734375,
+          "max": 171.7965850830078
+        },
+        "elapsed_ns": {
+          "median": 11108143,
+          "min": 10883952,
+          "max": 11258861
+        },
+        "latency_p50_ns": {
+          "median": 13340,
+          "min": 13270,
+          "max": 14038
+        },
+        "latency_p99_ns": {
+          "median": 23607,
+          "min": 23188,
+          "max": 25352
+        },
+        "latency_max_ns": {
+          "median": 48121,
+          "min": 35200,
+          "max": 67258
+        },
+        "full_retries": {
+          "median": 67318,
+          "min": 46131,
+          "max": 83167
+        },
+        "empty_polls": {
+          "median": 12,
+          "min": 2,
+          "max": 29
+        },
+        "process_cpu_seconds": {
+          "median": 0.08417799999999998,
+          "min": 0.07258900000000013,
+          "max": 0.08889899999999962
+        }
+      }
+    },
+    {
+      "kind": "snapshot",
+      "variant": "guard",
+      "threads": 1,
+      "batch": 1,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 117433717.75482558,
+          "min": 105611029.08146718,
+          "max": 127636783.60602736
+        },
+        "ns_per_operation": {
+          "median": 8.51544189453125,
+          "min": 7.8347320556640625,
+          "max": 9.468708038330078
+        },
+        "elapsed_ns": {
+          "median": 2232272,
+          "min": 2053828,
+          "max": 2482165
+        },
+        "latency_p50_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "latency_p99_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "latency_max_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "publications": {
+          "median": 14,
+          "min": 13,
+          "max": 15
+        },
+        "process_cpu_seconds": {
+          "median": 0.003337000000000003,
+          "min": 0.003128999999999049,
+          "max": 0.0034130000000001104
+        }
+      }
+    },
+    {
+      "kind": "snapshot",
+      "variant": "guard",
+      "threads": 8,
+      "batch": 1,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 351871613.25048757,
+          "min": 348215578.470845,
+          "max": 576827781.6651924
+        },
+        "ns_per_operation": {
+          "median": 2.8419456481933594,
+          "min": 1.7336196899414062,
+          "max": 2.871784210205078
+        },
+        "elapsed_ns": {
+          "median": 744999,
+          "min": 454458,
+          "max": 752821
+        },
+        "latency_p50_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "latency_p99_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "latency_max_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "publications": {
+          "median": 5,
+          "min": 3,
+          "max": 5
+        },
+        "process_cpu_seconds": {
+          "median": 0.0040600000000000636,
+          "min": 0.003797999999999746,
+          "max": 0.00500899999999993
+        }
+      }
+    },
+    {
+      "kind": "snapshot",
+      "variant": "mutex",
+      "threads": 1,
+      "batch": 1,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 84511655.55723196,
+          "min": 84500241.27361524,
+          "max": 94749701.81082156
+        },
+        "ns_per_operation": {
+          "median": 11.832687377929688,
+          "min": 10.554122924804688,
+          "max": 11.834285736083984
+        },
+        "elapsed_ns": {
+          "median": 3101868,
+          "min": 2766700,
+          "max": 3102287
+        },
+        "latency_p50_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "latency_p99_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "latency_max_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "publications": {
+          "median": 19,
+          "min": 17,
+          "max": 20
+        },
+        "process_cpu_seconds": {
+          "median": 0.00384499999999921,
+          "min": 0.0037330000000000037,
+          "max": 0.003845999999999905
+        }
+      }
+    },
+    {
+      "kind": "snapshot",
+      "variant": "mutex",
+      "threads": 8,
+      "batch": 1,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 13922371.561788596,
+          "min": 13307341.754622433,
+          "max": 15253199.303044047
+        },
+        "ns_per_operation": {
+          "median": 71.82684326171875,
+          "min": 65.56001663208008,
+          "max": 75.14648818969727
+        },
+        "elapsed_ns": {
+          "median": 18828976,
+          "min": 17186165,
+          "max": 19699201
+        },
+        "latency_p50_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "latency_p99_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "latency_max_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "publications": {
+          "median": 118,
+          "min": 105,
+          "max": 124
+        },
+        "process_cpu_seconds": {
+          "median": 0.12035300000000015,
+          "min": 0.10183699999999996,
+          "max": 0.12976800000000033
+        }
+      }
+    },
+    {
+      "kind": "snapshot",
+      "variant": "owned",
+      "threads": 1,
+      "batch": 1,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 118662565.55108175,
+          "min": 111513008.58901656,
+          "max": 121702151.36630796
+        },
+        "ns_per_operation": {
+          "median": 8.427257537841797,
+          "min": 8.216781616210938,
+          "max": 8.96756362915039
+        },
+        "elapsed_ns": {
+          "median": 2209155,
+          "min": 2153980,
+          "max": 2350793
+        },
+        "latency_p50_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "latency_p99_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "latency_max_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "publications": {
+          "median": 13,
+          "min": 13,
+          "max": 15
+        },
+        "process_cpu_seconds": {
+          "median": 0.003316000000000003,
+          "min": 0.0029970000000001384,
+          "max": 0.0034769999999999524
+        }
+      }
+    },
+    {
+      "kind": "snapshot",
+      "variant": "owned",
+      "threads": 8,
+      "batch": 1,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 27154783.738247376,
+          "min": 26730302.864373263,
+          "max": 27818946.775931533
+        },
+        "ns_per_operation": {
+          "median": 36.825923919677734,
+          "min": 35.94672393798828,
+          "max": 37.41072463989258
+        },
+        "elapsed_ns": {
+          "median": 9653695,
+          "min": 9423218,
+          "max": 9806997
+        },
+        "latency_p50_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "latency_p99_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "latency_max_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "publications": {
+          "median": 59,
+          "min": 59,
+          "max": 62
+        },
+        "process_cpu_seconds": {
+          "median": 0.07182700000000009,
+          "min": 0.07159200000000032,
+          "max": 0.07377600000000006
+        }
+      }
+    },
+    {
+      "kind": "snapshot",
+      "variant": "rwlock",
+      "threads": 1,
+      "batch": 1,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 108292418.94406794,
+          "min": 106697838.96825325,
+          "max": 114367135.85242003
+        },
+        "ns_per_operation": {
+          "median": 9.234256744384766,
+          "min": 8.743770599365234,
+          "max": 9.372261047363281
+        },
+        "elapsed_ns": {
+          "median": 2420705,
+          "min": 2292127,
+          "max": 2456882
+        },
+        "latency_p50_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "latency_p99_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "latency_max_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "publications": {
+          "median": 15,
+          "min": 15,
+          "max": 16
+        },
+        "process_cpu_seconds": {
+          "median": 0.003618999999999817,
+          "min": 0.0034279999999995425,
+          "max": 0.00366099999999997
+        }
+      }
+    },
+    {
+      "kind": "snapshot",
+      "variant": "rwlock",
+      "threads": 8,
+      "batch": 1,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 11673319.475541353,
+          "min": 11397057.305054883,
+          "max": 11674626.436804645
+        },
+        "ns_per_operation": {
+          "median": 85.66543579101562,
+          "min": 85.65584564208984,
+          "max": 87.74194717407227
+        },
+        "elapsed_ns": {
+          "median": 22456680,
+          "min": 22454166,
+          "max": 23001025
+        },
+        "latency_p50_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "latency_p99_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "latency_max_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "publications": {
+          "median": 121,
+          "min": 120,
+          "max": 129
+        },
+        "process_cpu_seconds": {
+          "median": 0.14224300000000056,
+          "min": 0.13528399999999996,
+          "max": 0.14717800000000025
+        }
+      }
+    },
+    {
+      "kind": "worker",
+      "variant": "status",
+      "threads": 1,
+      "batch": 1,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 59761.34054783247,
+          "min": 55856.129229700615,
+          "max": 60990.909372709124
+        },
+        "ns_per_operation": {
+          "median": 16733.225708007812,
+          "min": 16395.88604736328,
+          "max": 17903.13818359375
+        },
+        "elapsed_ns": {
+          "median": 274157170,
+          "min": 268630197,
+          "max": 293325016
+        },
+        "latency_p50_ns": {
+          "median": 14247,
+          "min": 13969,
+          "max": 14248
+        },
+        "latency_p99_ns": {
+          "median": 24305,
+          "min": 23886,
+          "max": 34362
+        },
+        "latency_max_ns": {
+          "median": 1621579,
+          "min": 1251349,
+          "max": 1622976
+        },
+        "process_cpu_seconds": {
+          "median": 0.19107099999999977,
+          "min": 0.1904009999999996,
+          "max": 0.19767899999999994
+        }
+      }
+    },
+    {
+      "kind": "worker",
+      "variant": "status",
+      "threads": 8,
+      "batch": 1,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 205748.68661913218,
+          "min": 198221.72944248663,
+          "max": 206913.2176236666
+        },
+        "ns_per_operation": {
+          "median": 4860.29833984375,
+          "min": 4832.944030761719,
+          "max": 5044.8555908203125
+        },
+        "elapsed_ns": {
+          "median": 79631128,
+          "min": 79182955,
+          "max": 82654914
+        },
+        "latency_p50_ns": {
+          "median": 34432,
+          "min": 34292,
+          "max": 34432
+        },
+        "latency_p99_ns": {
+          "median": 78362,
+          "min": 76686,
+          "max": 86255
+        },
+        "latency_max_ns": {
+          "median": 776497,
+          "min": 654484,
+          "max": 1463318
+        },
+        "process_cpu_seconds": {
+          "median": 0.22116500000000006,
+          "min": 0.22116400000000036,
+          "max": 0.22492100000000004
+        }
+      }
+    },
+    {
+      "kind": "worker",
+      "variant": "write",
+      "threads": 1,
+      "batch": 1,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 331.45495651566034,
+          "min": 306.1509590435911,
+          "max": 349.6978102764581
+        },
+        "ns_per_operation": {
+          "median": 3017001.1953125,
+          "min": 2859611.84375,
+          "max": 3266362.4609375
+        },
+        "elapsed_ns": {
+          "median": 386176153,
+          "min": 366030316,
+          "max": 418094395
+        },
+        "latency_p50_ns": {
+          "median": 2990680,
+          "min": 2774941,
+          "max": 3077913
+        },
+        "latency_p99_ns": {
+          "median": 3705717,
+          "min": 3632734,
+          "max": 6235724
+        },
+        "latency_max_ns": {
+          "median": 6330290,
+          "min": 3792461,
+          "max": 6449159
+        },
+        "process_cpu_seconds": {
+          "median": 0.03537600000000052,
+          "min": 0.03299500000000011,
+          "max": 0.04864399999999991
+        }
+      }
+    },
+    {
+      "kind": "worker",
+      "variant": "write",
+      "threads": 8,
+      "batch": 1,
+      "trials": 3,
+      "metrics": {
+        "operations_per_second": {
+          "median": 333.2344520842637,
+          "min": 287.364041393048,
+          "max": 357.4218107048687
+        },
+        "ns_per_operation": {
+          "median": 3000890.1953125,
+          "min": 2797814.7109375,
+          "max": 3479906.515625
+        },
+        "elapsed_ns": {
+          "median": 384113945,
+          "min": 358120283,
+          "max": 445428034
+        },
+        "latency_p50_ns": {
+          "median": 24051370,
+          "min": 22190026,
+          "max": 26842165
+        },
+        "latency_p99_ns": {
+          "median": 25272409,
+          "min": 24636711,
+          "max": 44741970
+        },
+        "latency_max_ns": {
+          "median": 25299228,
+          "min": 24637689,
+          "max": 44822986
+        },
+        "process_cpu_seconds": {
+          "median": 0.0440400000000003,
+          "min": 0.032824999999999986,
+          "max": 0.045697999999999794
+        }
+      }
+    }
+  ]
+}

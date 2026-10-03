@@ -35,7 +35,7 @@ z
     <text style="font-size: 16px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #64748b" x="160.11" y="120.7224" transform="rotate(-0 160.11 120.7224)">Awaiting a validated dedicated-host benchmark run</text>
    </g>
    <g id="text_3">
-    <text style="font-size: 11px; font-family: 'DejaVu Sans'; fill: #1e293b" transform="translate(160.11 152.425792)">Capn't Proto / Noise · C++ Cap'n Proto · gRPC (tonic) · WebSockets</text>
+    <text style="font-size: 11px; font-family: 'DejaVu Sans'; fill: #1e293b" transform="translate(160.11 152.425792)">Capn't Proto / Native · C++ Cap'n Proto · gRPC (tonic) · WebSockets</text>
     <text style="font-size: 11px; font-family: 'DejaVu Sans'; fill: #1e293b" transform="translate(160.11 165.6288)">Labelled latency, request-rate and relative-difference bars appear after measurements arrive.</text>
    </g>
   </g>

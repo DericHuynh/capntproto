@@ -50,7 +50,7 @@ impl harness::Server for Tail {
         _: harness::PendingParams,
         r: harness::PendingResults,
     ) -> capnp::Result<()> {
-        r.hook.tail_call(self.0.pending_request().hook).await
+        r.tail_call(self.0.pending_request()).await
     }
 }
 struct Gated(RefCell<Option<oneshot::Receiver<()>>>, Rc<Cell<u32>>);
@@ -1066,9 +1066,9 @@ async fn canceled_and_disconnected_adoptions_settle_without_losing_authority_che
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn third_party_tail_returns_over_authenticated_noise() {
+async fn third_party_tail_returns_over_authenticated_native() {
     use reproto::{
-        noise_rpc::{Handle, Network},
+        native_rpc::{Handle, Network},
         transport::{self, Identity},
     };
     async fn pair(a: &Identity, b: &Identity, ah: &Handle, bh: &Handle) {

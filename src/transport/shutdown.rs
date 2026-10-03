@@ -1,4 +1,4 @@
-use crate::noise_shutdown::{Control, Frame, Protocol, FRAME_BYTES};
+use crate::native_shutdown::{Control, Frame, Protocol, FRAME_BYTES};
 use std::{collections::VecDeque, io};
 
 pub(super) const ACKNOWLEDGED_CLOSE: u64 = 0x525053;
@@ -61,7 +61,7 @@ impl ShutdownDriver {
             && (!self.protocol.expects_peer
                 || conn.stream_send_acknowledged(self.outgoing_id + 4).is_ok())
         {
-            self.control.finish(Ok(crate::noise_shutdown::Receipt {
+            self.control.finish(Ok(crate::native_shutdown::Receipt {
                 bytes: self.protocol.sent.unwrap().bytes,
             }));
         }
@@ -96,7 +96,7 @@ impl ShutdownDriver {
                         {
                             return Err(io::Error::new(
                                 io::ErrorKind::InvalidData,
-                                "invalid Noise shutdown control stream",
+                                "invalid Native shutdown control stream",
                             ));
                         }
                         if fin {
@@ -106,7 +106,7 @@ impl ShutdownDriver {
                             if (frame.kind == 1) != (index == 0) {
                                 return Err(io::Error::new(
                                     io::ErrorKind::InvalidData,
-                                    "wrong Noise shutdown stream",
+                                    "wrong Native shutdown stream",
                                 ));
                             }
                             self.protocol.receive(frame)?;
@@ -409,7 +409,7 @@ mod tests {
         pump(&mut b, &mut a, &mut false);
         assert!(a.is_draining());
         driver.finish_on_close(&a);
-        drop(crate::noise_shutdown::DriverGuard(control.clone()));
+        drop(crate::native_shutdown::DriverGuard(control.clone()));
         assert!(control.wait().now_or_never().unwrap().is_err());
     }
 }

@@ -3,12 +3,12 @@ use reproto_test_support::verification::{self as v, root};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{fs, path::Path};
-pub const PROTOCOLS: [&str; 4] = ["noise", "capnp-cpp", "grpc", "websocket"];
+pub const PROTOCOLS: [&str; 4] = ["native", "capnp-cpp", "grpc", "websocket"];
 pub const PAYLOADS: [usize; 4] = [0, 64, 1024, 65536];
 const REPETITIONS: usize = 5;
 // capnp-reference is C++; its pinned sources/compiler are recorded separately.
 const RUST_BINARIES: [&str; 7] = [
-    "noise",
+    "native",
     "grpc",
     "websocket",
     "capnp_cpp",
@@ -162,7 +162,7 @@ pub fn bundle(r: &mut Runner) -> Result<()> {
     if version.trim() != "gungraun-runner 0.20.0" {
         return Err("instruction harness requires gungraun-runner 0.20.0".into());
     }
-    for name in ["noise", "grpc", "websocket", "capnp_cpp"] {
+    for name in ["native", "grpc", "websocket", "capnp_cpp"] {
         let output = r.cargo(
             &format!("compile-{name}").replace('_', "-"),
             &[
@@ -248,7 +248,7 @@ pub fn bundle(r: &mut Runner) -> Result<()> {
     fs::copy(cpp, bundle.join("capnp-reference"))?;
     let mut hashes = std::collections::BTreeMap::new();
     for name in [
-        "noise",
+        "native",
         "grpc",
         "websocket",
         "capnp_cpp",
@@ -325,18 +325,18 @@ mod tests {
     fn incomplete_or_impossible_benchmark_measurements_fail() {
         assert!(matrix(&[]).is_err());
         let mut t = Trial {
-            protocol: "noise".into(),
+            protocol: "native".into(),
             payload_bytes: 64,
             warmup: 10,
             iterations: 2,
             elapsed_ns: 100,
             latency_ns: vec![40, 40],
         };
-        assert!(validate(&t, "noise", 64, 10, 2).is_ok());
+        assert!(validate(&t, "native", 64, 10, 2).is_ok());
         t.latency_ns[1] = 70;
-        assert!(validate(&t, "noise", 64, 10, 2).is_err());
+        assert!(validate(&t, "native", 64, 10, 2).is_err());
         t.latency_ns[1] = 0;
-        assert!(validate(&t, "noise", 64, 10, 2).is_err());
+        assert!(validate(&t, "native", 64, 10, 2).is_err());
         assert_eq!(percentile(&mut [3, 1, 2, 4, 5], 95), 5);
     }
 }

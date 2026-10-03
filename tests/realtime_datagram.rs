@@ -1,5 +1,5 @@
 use reproto::{
-    noise_rpc::Network,
+    native_rpc::Network,
     realtime::{Clock, Config, Outcome},
     realtime_datagram::{Router, Sender, Status, MAX_PAYLOAD_BYTES, MAX_SNAPSHOT_BYTES},
     transport::{self, AuthenticatedSession, Identity, MAX_DATAGRAM_BYTES},
@@ -49,7 +49,7 @@ async fn until(mut p: impl FnMut() -> bool) {
     .unwrap();
 }
 #[tokio::test(flavor = "current_thread")]
-async fn large_fragmented_snapshots_over_noise_with_reliable_capability_control() {
+async fn large_fragmented_snapshots_over_native_with_reliable_capability_control() {
     tokio::task::LocalSet::new()
         .run_until(async {
             tokio::time::timeout(Duration::from_secs(15), async {
@@ -126,7 +126,7 @@ async fn large_fragmented_snapshots_over_noise_with_reliable_capability_control(
         .await;
 }
 #[tokio::test(flavor = "current_thread")]
-async fn noise_datagrams_with_rpc_receipts_cancellation_deadlines_and_revocation() {
+async fn native_datagrams_with_rpc_receipts_cancellation_deadlines_and_revocation() {
     tokio::task::LocalSet::new()
         .run_until(async {
             tokio::time::timeout(Duration::from_secs(10), async {
@@ -260,7 +260,7 @@ async fn tokens_are_session_local_and_router_drop_revokes_pending_work() {
                 let other_task = tokio::task::spawn_local(other_driver);
                 let _tasks = Tasks(vec![task, other_task]);
                 // Same pinned identities, different sessions. No capability authority
-                // crosses the session boundary merely because Noise peers match.
+                // crosses the session boundary merely because Native peers match.
                 let wrong = Sender::connect(control.clone(), cport.sender())
                     .await
                     .unwrap();

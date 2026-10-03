@@ -248,7 +248,7 @@ class Rendering(unittest.TestCase):
             benchmark['data']['charts'] = [dict(name='latency-p50', title='Synthetic renderer data — Median latency',
                 unit='Microseconds — lower is better', note='Test fixture, not a performance claim.', coverage=False,
                 panels=[dict(title=f'{size} byte payload', bars=[dict(label=label, value=10.0 * (i + 1))
-                        for i, label in enumerate(["Capn't Proto / Noise", "Cap'n Proto C++", 'gRPC (tonic)', 'WebSockets'])])
+                        for i, label in enumerate(["Capn't Proto / Native", "Cap'n Proto C++", 'gRPC (tonic)', 'WebSockets'])])
                         for size in (0, 64, 1024, 65536)])]
             history = merge(history, benchmark)
             render(template, history, output)

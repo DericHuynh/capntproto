@@ -371,9 +371,9 @@ async fn disconnect_settles_outstanding_calls_without_claiming_completion() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn bulk_over_authenticated_blake3_noise() {
+async fn bulk_over_authenticated_blake3_native() {
     use reproto::{
-        noise_rpc::Network,
+        native_rpc::Network,
         transport::{self, Identity},
     };
     tokio::task::LocalSet::new()

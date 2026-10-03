@@ -29,7 +29,16 @@ interface Observer(T) {
 }
 interface Subscription { cancel @0 () -> (); }
 struct Document { text @0 :Text; }
-# Acceptance is served only on the Noise session bound to this introduction.
+# A facet bound to one component ID and schema. Revisions/CAS belong to the
+# entire object. put stages a new root; commit publishes the entire new root,
+# including other components inherited from its head. No raw byte patching.
+interface Component(T) {
+  get @0 () -> (value :T, revision :UInt64);
+  put @1 (expectedHead :UInt64, value :T) -> (revision :UInt64);
+  commit @2 (expectedHead :UInt64, expectedPublished :UInt64, value :T)
+      -> (revision :UInt64);
+}
+# Acceptance is served only on the Native session bound to this introduction.
 interface Handoff(T) {
   accept @0 (id :Data) -> (object :Object(T));
 }

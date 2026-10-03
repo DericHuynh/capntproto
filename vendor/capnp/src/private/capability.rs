@@ -301,6 +301,15 @@ pub fn internal_get_typed_results<T>(typeless: Results<any_pointer::Owned>) -> R
     }
 }
 
+/// Generated dispatcher boundary. Runtime implementors must supply a fresh,
+/// unpublished results context, just as for internal_get_typed_results().
+#[doc(hidden)]
+pub fn internal_get_typed_reply<T>(
+    typeless: Results<any_pointer::Owned>,
+) -> crate::capability::Reply<T> {
+    crate::capability::Reply::new(typeless.hook)
+}
+
 pub fn internal_get_untyped_results<T>(typeful: Results<T>) -> Results<any_pointer::Owned> {
     Results {
         hook: typeful.hook,

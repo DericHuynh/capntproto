@@ -44,6 +44,7 @@ pub struct CodeGenerationCommand {
     field_api: bool,
     field_api_values: bool,
     field_api_projections: bool,
+    structured_replies: bool,
 }
 
 impl Default for CodeGenerationCommand {
@@ -57,6 +58,7 @@ impl Default for CodeGenerationCommand {
             field_api: false,
             field_api_values: false,
             field_api_projections: false,
+            structured_replies: false,
         }
     }
 }
@@ -88,6 +90,15 @@ impl CodeGenerationCommand {
         if enabled {
             self.field_api = true;
         }
+        self
+    }
+
+    /// Generate server Results aliases as affine `capability::Reply` contexts.
+    /// Choosing editing or tail forwarding consumes the fresh context; publishing
+    /// consumes and freezes the editor. This changes Rust server signatures only,
+    /// not the wire schema, clients, dispatch or cancellation policy.
+    pub fn structured_replies(&mut self, enabled: bool) -> &mut Self {
+        self.structured_replies = enabled;
         self
     }
 
@@ -251,6 +262,7 @@ pub struct GeneratorContext<'a> {
     field_api: bool,
     field_api_values: bool,
     field_api_projections: bool,
+    structured_replies: bool,
 }
 
 impl<'a> GeneratorContext<'a> {
@@ -278,6 +290,7 @@ impl<'a> GeneratorContext<'a> {
             field_api: code_generation_command.field_api,
             field_api_values: code_generation_command.field_api_values,
             field_api_projections: code_generation_command.field_api_projections,
+            structured_replies: code_generation_command.structured_replies,
         };
 
         let crates_provide = &code_generation_command.crates_provide_map;
@@ -2848,9 +2861,14 @@ fn generate_node(
                 let result_id = method.get_result_struct_type();
                 let no_promise_pipelining = !schema_may_contain_capabilities(ctx, result_id)?;
                 if result_id != STREAM_RESULT_ID {
+                    let (reply_type, reply_conversion) = if ctx.structured_replies {
+                        ("Reply", "internal_get_typed_reply")
+                    } else {
+                        ("Results", "internal_get_typed_results")
+                    };
                     dispatch_arms.push(
                         Line(fmt!(ctx,
-                                  "{ordinal} => {capnp}::capability::DispatchCallResult::with_cancellation_policy({capnp}::capability::Promise::from_future(<_T as Server{bracketed_params}>::{}(this, {capnp}::private::capability::internal_get_typed_params(params), {capnp}::private::capability::internal_get_typed_results(results))), false, {allow_cancellation}),",
+                                  "{ordinal} => {capnp}::capability::DispatchCallResult::with_cancellation_policy({capnp}::capability::Promise::from_future(<_T as Server{bracketed_params}>::{}(this, {capnp}::private::capability::internal_get_typed_params(params), {capnp}::private::capability::{reply_conversion}(results))), false, {allow_cancellation}),",
                                   module_name(name))));
 
                     let result_node = &ctx.node_map[&result_id];
@@ -2880,7 +2898,7 @@ fn generate_node(
                     method_type_arms.push(Line(fmt!(ctx, "{ordinal} => {capnp}::introspect::MethodTypes {{ params: <{param_type} as {capnp}::introspect::Introspect>::introspect(), results: ::core::option::Option::Some(<{result_type} as {capnp}::introspect::Introspect>::introspect()), no_promise_pipelining: {no_promise_pipelining} }},")));
                     mod_interior.push(Line(fmt!(
                         ctx,
-                        "pub type {}Results<{}> = {capnp}::capability::Results<{}>;",
+                        "pub type {}Results<{}> = {capnp}::capability::{reply_type}<{}>;",
                         capitalize_first_letter(name),
                         results_ty_params,
                         result_type

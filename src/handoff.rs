@@ -1,4 +1,4 @@
-//! Owner-mediated three-party introduction with a Noise PSK and ordering barrier.
+//! Owner-mediated three-party introduction with a Native PSK and ordering barrier.
 //! Packages must travel over existing authenticated capability connections.
 #![forbid(unsafe_code)]
 use crate::{

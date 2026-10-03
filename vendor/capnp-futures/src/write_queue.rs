@@ -39,11 +39,39 @@ pub struct QueueSnapshot {
     pub wait_time: Duration,
 }
 
+/// Output still owned by the writer. Ages start at enqueue time; bytes exclude
+/// framing and count whole messages, including bytes already partially written.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct OutputSnapshot {
+    pub queued: QueueSnapshot,
+    /// The batch being written or flushed. Cleared only after flush succeeds,
+    /// or when the driver fails or is dropped.
+    pub active: QueueSnapshot,
+}
+
 #[derive(Default)]
-struct Metrics {
+struct BatchMetrics {
     count: usize,
     bytes: usize,
     oldest: Option<Duration>,
+}
+
+impl BatchMetrics {
+    fn snapshot(&self, now: Duration) -> QueueSnapshot {
+        QueueSnapshot {
+            message_count: self.count,
+            bytes: self.bytes,
+            wait_time: self
+                .oldest
+                .map_or(Duration::ZERO, |t| now.saturating_sub(t)),
+        }
+    }
+}
+
+#[derive(Default)]
+struct Metrics {
+    queued: BatchMetrics,
+    active: BatchMetrics,
 }
 
 /// Cloneable diagnostics which do not keep the queue, writer or connection alive.
@@ -54,14 +82,16 @@ pub struct OutgoingQueue {
 }
 impl OutgoingQueue {
     pub fn snapshot(&self) -> QueueSnapshot {
-        let (message_count, bytes, oldest) = {
-            let metrics = self.metrics.lock().unwrap();
-            (metrics.count, metrics.bytes, metrics.oldest)
-        };
-        QueueSnapshot {
-            message_count,
-            bytes,
-            wait_time: oldest.map_or(Duration::ZERO, |t| (self.clock)().saturating_sub(t)),
+        self.output_snapshot().queued
+    }
+
+    pub fn output_snapshot(&self) -> OutputSnapshot {
+        // A user-provided clock must never run under the metrics lock.
+        let now = (self.clock)();
+        let metrics = self.metrics.lock().unwrap();
+        OutputSnapshot {
+            queued: metrics.queued.snapshot(now),
+            active: metrics.active.snapshot(now),
         }
     }
 }
@@ -126,7 +156,8 @@ impl<M> Receiver<M> {
             self.0.ready.register(cx.waker());
             let mut queue = self.0.queue.lock().unwrap();
             if !queue.messages.is_empty() {
-                *self.0.diagnostics.metrics.lock().unwrap() = Metrics::default();
+                let mut metrics = self.0.diagnostics.metrics.lock().unwrap();
+                metrics.active = std::mem::take(&mut metrics.queued);
                 Poll::Ready(Batch::Messages(std::mem::take(&mut queue.messages)))
             } else if queue.terminal.is_some() || !queue.accepting || queue.senders == 0 {
                 queue.accepting = false;
@@ -185,6 +216,7 @@ where
                     let (messages, completions): (Vec<_>, Vec<_>) = batch.into_iter().unzip();
                     crate::serialize::write_messages(&mut writer, &messages).await?;
                     writer.flush().await?;
+                    receiver.0.diagnostics.metrics.lock().unwrap().active = BatchMetrics::default();
                     for (message, completion) in messages.into_iter().zip(completions) {
                         let _ = completion.send(message);
                     }
@@ -219,6 +251,7 @@ impl<M: AsOutputSegments> Sender<M> {
             let mut queue = self.shared.queue.lock().unwrap();
             if queue.accepting {
                 let mut metrics = self.shared.diagnostics.metrics.lock().unwrap();
+                let metrics = &mut metrics.queued;
                 metrics.count += 1;
                 metrics.bytes += bytes;
                 if metrics.oldest.is_none() {
@@ -238,7 +271,7 @@ impl<M: AsOutputSegments> Sender<M> {
 
     /// Number of messages waiting for the next batch, excluding the active batch.
     pub fn len(&self) -> usize {
-        self.shared.diagnostics.metrics.lock().unwrap().count
+        self.shared.diagnostics.metrics.lock().unwrap().queued.count
     }
 
     pub fn is_empty(&self) -> bool {

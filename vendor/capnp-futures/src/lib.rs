@@ -20,7 +20,9 @@
 
 pub use buffered_read::{BufferedRead, BufferedScratchSegments, BufferedSegments};
 pub use read_stream::ReadStream;
-pub use write_queue::{write_queue, write_queue_with_clock, OutgoingQueue, QueueSnapshot, Sender};
+pub use write_queue::{
+    write_queue, write_queue_with_clock, OutgoingQueue, OutputSnapshot, QueueSnapshot, Sender,
+};
 
 mod buffered_read;
 mod read_stream;

@@ -68,7 +68,7 @@ where
             .get()?
             .get_recipient()?
             .try_into()
-            .map_err(|_| capnp::Error::failed("recipient must be X25519 key".into()))?;
+            .map_err(|_| capnp::Error::failed("recipient must be Ed25519 key".into()))?;
         if self.active.get() >= 64 {
             return Err(capnp::Error::overloaded("introduction limit".into()));
         }

@@ -1,4 +1,4 @@
-//! Serialization, RPC and Noise fuzz harnesses shared with native Cargo tests.
+//! Serialization, RPC and Native fuzz harnesses shared with native Cargo tests.
 //! Cryptography and OS entropy remain enabled; no quiche `fuzzing` feature.
 #![forbid(unsafe_code)]
 
@@ -13,13 +13,10 @@ pub mod lifecycle_capnp {
 }
 
 use quiche::{Connection, ConnectionId, Error, RecvInfo};
-use snow::{
-    params::DHChoice,
-    resolvers::{CryptoResolver, DefaultResolver},
-};
+use reproto::transport::{config, Identity};
 use std::net::SocketAddr;
 
-const MARKER: &[u8] = b"authenticated Noise fuzz payload";
+const MARKER: &[u8] = b"authenticated Native fuzz payload";
 pub const MAX_INPUT: usize = 4096;
 
 struct Packet {
@@ -41,18 +38,15 @@ impl Pair {
             let index = usize::from(server);
             let private = if server { [0x22; 32] } else { [0x11; 32] };
             let remote = if server { [0x11; 32] } else { [0x22; 32] };
-            let mut dh = DefaultResolver.resolve_dh(&DHChoice::Curve25519).unwrap();
-            dh.set(&remote);
-            let mut config = quiche::Config::new(quiche::PROTOCOL_VERSION).unwrap();
-            config
-                .set_noise_identity(
-                    private,
-                    dh.pubkey().try_into().unwrap(),
-                    (flags & 1 != 0).then_some([7; 32]),
-                    b"noise-fuzz/v1",
-                )
-                .unwrap();
-            config.set_application_protos(&[b"reproto/1"]).unwrap();
+            let identity = Identity::from_private_key(private).unwrap();
+            let remote = Identity::from_private_key(remote).unwrap();
+            let mut config = config(
+                &identity,
+                remote.public_key(),
+                (flags & 1 != 0).then_some([7; 32]),
+                b"native-fuzz/v2",
+            )
+            .unwrap();
             config
                 .set_cc_algorithm_name(if flags & 8 == 0 {
                     "cubic"
@@ -336,17 +330,17 @@ mod tests {
     use super::*;
 
     fn seed(target: &str, index: usize, input: &[u8]) -> usize {
-        if let Some(directory) = std::env::var_os("REPROTO_NOISE_FUZZ_CORPUS") {
+        if let Some(directory) = std::env::var_os("REPROTO_NATIVE_FUZZ_CORPUS") {
             let directory = std::path::PathBuf::from(directory).join(target);
             std::fs::create_dir_all(&directory).unwrap();
             std::fs::write(directory.join(format!("seed-{index}")), input).unwrap();
         }
         match target {
-            "noise_packet" => {
+            "native_packet" => {
                 packet(input);
                 0
             }
-            "noise_stream" => stream_with_stats(input),
+            "native_stream" => stream_with_stats(input),
             "capnp_framing" => {
                 framing::check(input);
                 0
@@ -372,29 +366,29 @@ mod tests {
         for flags in 0..16 {
             for mode in 0..4 {
                 let index = usize::from(flags) * 8 + usize::from(mode) * 2;
-                seed("noise_packet", index, &[flags, mode, 0, 0xff, 0, 0x80]);
-                seed("noise_packet", index + 1, &[flags, mode, 255]);
+                seed("native_packet", index, &[flags, mode, 0, 0xff, 0, 0x80]);
+                seed("native_packet", index + 1, &[flags, mode, 255]);
             }
         }
         for (index, (flags, mode)) in [(0, 0), (15, 1), (4, 3)].into_iter().enumerate() {
             let mut input = vec![0xff; MAX_INPUT];
             input[..3].copy_from_slice(&[flags, mode, 255]);
-            seed("noise_packet", 128 + index, &input);
+            seed("native_packet", 128 + index, &input);
         }
     }
 
     #[test]
     fn stream_fragment_and_fault_matrix() {
         for flags in 0..128 {
-            seed("noise_stream", usize::from(flags) * 2, &[flags]);
+            seed("native_stream", usize::from(flags) * 2, &[flags]);
             let mut input = vec![flags, 3];
             input.extend((0..1024).map(|n| (n % 251) as u8));
-            seed("noise_stream", usize::from(flags) * 2 + 1, &input);
+            seed("native_stream", usize::from(flags) * 2 + 1, &input);
         }
         for (index, flags) in [0, 127].into_iter().enumerate() {
             let mut input = vec![0x5a; MAX_INPUT];
             input[..2].copy_from_slice(&[flags, 0]);
-            let reversed = seed("noise_stream", 256 + index, &input);
+            let reversed = seed("native_stream", 256 + index, &input);
             if flags & 16 != 0 {
                 assert!(reversed > 0, "reordering scenario was not exercised");
             }
@@ -452,15 +446,18 @@ mod tests {
 
     #[test]
     fn replay_saved_fuzz_input() {
-        let Some(path) = std::env::var_os("REPROTO_NOISE_FUZZ_REPLAY") else {
+        let Some(path) = std::env::var_os("REPROTO_NATIVE_FUZZ_REPLAY") else {
             packet(&[5, 1, 0]);
             stream(&[127, 0, 1, 2, 3]);
             return;
         };
         let input = std::fs::read(path).unwrap();
-        match std::env::var("REPROTO_NOISE_FUZZ_TARGET").unwrap().as_str() {
-            "noise_packet" => packet(&input),
-            "noise_stream" => stream(&input),
+        match std::env::var("REPROTO_NATIVE_FUZZ_TARGET")
+            .unwrap()
+            .as_str()
+        {
+            "native_packet" => packet(&input),
+            "native_stream" => stream(&input),
             "capnp_framing" => framing::check(&input),
             "capnp_pointers" => pointers::check(&input),
             "capnp_schema" => schema::check(&input),

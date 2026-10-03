@@ -1,0 +1,442 @@
+{
+  "clock": "Tokio paused virtual clock; microseconds are simulated, not CPU or network measurements",
+  "scenarios": [
+    {
+      "all_observed_replies_virtual_us": 0,
+      "child_before_parent_completion": false,
+      "client_to_server": {
+        "framed_bytes": 704,
+        "messages": {
+          "bootstrap": 0,
+          "call": 5,
+          "finish": 0
+        },
+        "no_pipeline_calls": 1,
+        "pipeline_only_calls": 0,
+        "promised_targets": 0
+      },
+      "configured_rtt_ms": 0,
+      "depth": 4,
+      "mode": "sequential",
+      "server_to_client": {
+        "framed_bytes": 704,
+        "messages": {
+          "return": 5
+        },
+        "no_pipeline_calls": 0,
+        "pipeline_only_calls": 0,
+        "promised_targets": 0
+      },
+      "terminal_reply_virtual_us": 0,
+      "validated": true
+    },
+    {
+      "all_observed_replies_virtual_us": 0,
+      "child_before_parent_completion": false,
+      "client_to_server": {
+        "framed_bytes": 832,
+        "messages": {
+          "bootstrap": 0,
+          "call": 5,
+          "finish": 0
+        },
+        "no_pipeline_calls": 1,
+        "pipeline_only_calls": 0,
+        "promised_targets": 4
+      },
+      "configured_rtt_ms": 0,
+      "depth": 4,
+      "mode": "pipelined",
+      "server_to_client": {
+        "framed_bytes": 704,
+        "messages": {
+          "return": 5
+        },
+        "no_pipeline_calls": 0,
+        "pipeline_only_calls": 0,
+        "promised_targets": 0
+      },
+      "terminal_reply_virtual_us": 0,
+      "validated": true
+    },
+    {
+      "all_observed_replies_virtual_us": 0,
+      "child_before_parent_completion": false,
+      "client_to_server": {
+        "framed_bytes": 832,
+        "messages": {
+          "bootstrap": 0,
+          "call": 5,
+          "finish": 0
+        },
+        "no_pipeline_calls": 1,
+        "pipeline_only_calls": 4,
+        "promised_targets": 4
+      },
+      "configured_rtt_ms": 0,
+      "depth": 4,
+      "mode": "pipeline-only",
+      "server_to_client": {
+        "framed_bytes": 128,
+        "messages": {
+          "return": 1
+        },
+        "no_pipeline_calls": 0,
+        "pipeline_only_calls": 0,
+        "promised_targets": 0
+      },
+      "terminal_reply_virtual_us": 0,
+      "validated": true
+    },
+    {
+      "all_observed_replies_virtual_us": 50000,
+      "child_before_parent_completion": false,
+      "client_to_server": {
+        "framed_bytes": 280,
+        "messages": {
+          "bootstrap": 0,
+          "call": 2,
+          "finish": 0
+        },
+        "no_pipeline_calls": 1,
+        "pipeline_only_calls": 0,
+        "promised_targets": 1
+      },
+      "configured_rtt_ms": 0,
+      "depth": 1,
+      "mode": "late-publication",
+      "server_to_client": {
+        "framed_bytes": 272,
+        "messages": {
+          "return": 2
+        },
+        "no_pipeline_calls": 0,
+        "pipeline_only_calls": 0,
+        "promised_targets": 0
+      },
+      "terminal_reply_virtual_us": 50000,
+      "validated": true
+    },
+    {
+      "all_observed_replies_virtual_us": 50000,
+      "child_before_parent_completion": true,
+      "client_to_server": {
+        "framed_bytes": 280,
+        "messages": {
+          "bootstrap": 0,
+          "call": 2,
+          "finish": 0
+        },
+        "no_pipeline_calls": 1,
+        "pipeline_only_calls": 0,
+        "promised_targets": 1
+      },
+      "configured_rtt_ms": 0,
+      "depth": 1,
+      "mode": "early-publication",
+      "server_to_client": {
+        "framed_bytes": 272,
+        "messages": {
+          "return": 2
+        },
+        "no_pipeline_calls": 0,
+        "pipeline_only_calls": 0,
+        "promised_targets": 0
+      },
+      "terminal_reply_virtual_us": 0,
+      "validated": true
+    },
+    {
+      "all_observed_replies_virtual_us": 10000,
+      "child_before_parent_completion": false,
+      "client_to_server": {
+        "framed_bytes": 704,
+        "messages": {
+          "bootstrap": 0,
+          "call": 5,
+          "finish": 0
+        },
+        "no_pipeline_calls": 1,
+        "pipeline_only_calls": 0,
+        "promised_targets": 0
+      },
+      "configured_rtt_ms": 2,
+      "depth": 4,
+      "mode": "sequential",
+      "server_to_client": {
+        "framed_bytes": 704,
+        "messages": {
+          "return": 5
+        },
+        "no_pipeline_calls": 0,
+        "pipeline_only_calls": 0,
+        "promised_targets": 0
+      },
+      "terminal_reply_virtual_us": 10000,
+      "validated": true
+    },
+    {
+      "all_observed_replies_virtual_us": 2000,
+      "child_before_parent_completion": false,
+      "client_to_server": {
+        "framed_bytes": 832,
+        "messages": {
+          "bootstrap": 0,
+          "call": 5,
+          "finish": 0
+        },
+        "no_pipeline_calls": 1,
+        "pipeline_only_calls": 0,
+        "promised_targets": 4
+      },
+      "configured_rtt_ms": 2,
+      "depth": 4,
+      "mode": "pipelined",
+      "server_to_client": {
+        "framed_bytes": 704,
+        "messages": {
+          "return": 5
+        },
+        "no_pipeline_calls": 0,
+        "pipeline_only_calls": 0,
+        "promised_targets": 0
+      },
+      "terminal_reply_virtual_us": 2000,
+      "validated": true
+    },
+    {
+      "all_observed_replies_virtual_us": 2000,
+      "child_before_parent_completion": false,
+      "client_to_server": {
+        "framed_bytes": 832,
+        "messages": {
+          "bootstrap": 0,
+          "call": 5,
+          "finish": 0
+        },
+        "no_pipeline_calls": 1,
+        "pipeline_only_calls": 4,
+        "promised_targets": 4
+      },
+      "configured_rtt_ms": 2,
+      "depth": 4,
+      "mode": "pipeline-only",
+      "server_to_client": {
+        "framed_bytes": 128,
+        "messages": {
+          "return": 1
+        },
+        "no_pipeline_calls": 0,
+        "pipeline_only_calls": 0,
+        "promised_targets": 0
+      },
+      "terminal_reply_virtual_us": 2000,
+      "validated": true
+    },
+    {
+      "all_observed_replies_virtual_us": 52000,
+      "child_before_parent_completion": false,
+      "client_to_server": {
+        "framed_bytes": 280,
+        "messages": {
+          "bootstrap": 0,
+          "call": 2,
+          "finish": 0
+        },
+        "no_pipeline_calls": 1,
+        "pipeline_only_calls": 0,
+        "promised_targets": 1
+      },
+      "configured_rtt_ms": 2,
+      "depth": 1,
+      "mode": "late-publication",
+      "server_to_client": {
+        "framed_bytes": 272,
+        "messages": {
+          "return": 2
+        },
+        "no_pipeline_calls": 0,
+        "pipeline_only_calls": 0,
+        "promised_targets": 0
+      },
+      "terminal_reply_virtual_us": 52000,
+      "validated": true
+    },
+    {
+      "all_observed_replies_virtual_us": 52000,
+      "child_before_parent_completion": true,
+      "client_to_server": {
+        "framed_bytes": 280,
+        "messages": {
+          "bootstrap": 0,
+          "call": 2,
+          "finish": 0
+        },
+        "no_pipeline_calls": 1,
+        "pipeline_only_calls": 0,
+        "promised_targets": 1
+      },
+      "configured_rtt_ms": 2,
+      "depth": 1,
+      "mode": "early-publication",
+      "server_to_client": {
+        "framed_bytes": 272,
+        "messages": {
+          "return": 2
+        },
+        "no_pipeline_calls": 0,
+        "pipeline_only_calls": 0,
+        "promised_targets": 0
+      },
+      "terminal_reply_virtual_us": 2000,
+      "validated": true
+    },
+    {
+      "all_observed_replies_virtual_us": 100000,
+      "child_before_parent_completion": false,
+      "client_to_server": {
+        "framed_bytes": 704,
+        "messages": {
+          "bootstrap": 0,
+          "call": 5,
+          "finish": 0
+        },
+        "no_pipeline_calls": 1,
+        "pipeline_only_calls": 0,
+        "promised_targets": 0
+      },
+      "configured_rtt_ms": 20,
+      "depth": 4,
+      "mode": "sequential",
+      "server_to_client": {
+        "framed_bytes": 704,
+        "messages": {
+          "return": 5
+        },
+        "no_pipeline_calls": 0,
+        "pipeline_only_calls": 0,
+        "promised_targets": 0
+      },
+      "terminal_reply_virtual_us": 100000,
+      "validated": true
+    },
+    {
+      "all_observed_replies_virtual_us": 20000,
+      "child_before_parent_completion": false,
+      "client_to_server": {
+        "framed_bytes": 832,
+        "messages": {
+          "bootstrap": 0,
+          "call": 5,
+          "finish": 0
+        },
+        "no_pipeline_calls": 1,
+        "pipeline_only_calls": 0,
+        "promised_targets": 4
+      },
+      "configured_rtt_ms": 20,
+      "depth": 4,
+      "mode": "pipelined",
+      "server_to_client": {
+        "framed_bytes": 704,
+        "messages": {
+          "return": 5
+        },
+        "no_pipeline_calls": 0,
+        "pipeline_only_calls": 0,
+        "promised_targets": 0
+      },
+      "terminal_reply_virtual_us": 20000,
+      "validated": true
+    },
+    {
+      "all_observed_replies_virtual_us": 20000,
+      "child_before_parent_completion": false,
+      "client_to_server": {
+        "framed_bytes": 832,
+        "messages": {
+          "bootstrap": 0,
+          "call": 5,
+          "finish": 0
+        },
+        "no_pipeline_calls": 1,
+        "pipeline_only_calls": 4,
+        "promised_targets": 4
+      },
+      "configured_rtt_ms": 20,
+      "depth": 4,
+      "mode": "pipeline-only",
+      "server_to_client": {
+        "framed_bytes": 128,
+        "messages": {
+          "return": 1
+        },
+        "no_pipeline_calls": 0,
+        "pipeline_only_calls": 0,
+        "promised_targets": 0
+      },
+      "terminal_reply_virtual_us": 20000,
+      "validated": true
+    },
+    {
+      "all_observed_replies_virtual_us": 70000,
+      "child_before_parent_completion": false,
+      "client_to_server": {
+        "framed_bytes": 280,
+        "messages": {
+          "bootstrap": 0,
+          "call": 2,
+          "finish": 0
+        },
+        "no_pipeline_calls": 1,
+        "pipeline_only_calls": 0,
+        "promised_targets": 1
+      },
+      "configured_rtt_ms": 20,
+      "depth": 1,
+      "mode": "late-publication",
+      "server_to_client": {
+        "framed_bytes": 272,
+        "messages": {
+          "return": 2
+        },
+        "no_pipeline_calls": 0,
+        "pipeline_only_calls": 0,
+        "promised_targets": 0
+      },
+      "terminal_reply_virtual_us": 70000,
+      "validated": true
+    },
+    {
+      "all_observed_replies_virtual_us": 70000,
+      "child_before_parent_completion": true,
+      "client_to_server": {
+        "framed_bytes": 280,
+        "messages": {
+          "bootstrap": 0,
+          "call": 2,
+          "finish": 0
+        },
+        "no_pipeline_calls": 1,
+        "pipeline_only_calls": 0,
+        "promised_targets": 1
+      },
+      "configured_rtt_ms": 20,
+      "depth": 1,
+      "mode": "early-publication",
+      "server_to_client": {
+        "framed_bytes": 272,
+        "messages": {
+          "return": 2
+        },
+        "no_pipeline_calls": 0,
+        "pipeline_only_calls": 0,
+        "promised_targets": 0
+      },
+      "terminal_reply_virtual_us": 20000,
+      "validated": true
+    }
+  ],
+  "transport": "two in-memory byte streams with bounded per-frame delayed relays; real bilateral RPC framing",
+  "wire_scope": "after bootstrap resolution through terminal/observed parent replies, before final cleanup; framing included, encryption absent"
+}

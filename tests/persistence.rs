@@ -493,11 +493,11 @@ async fn every_torn_ledger_transaction_recovers_last_committed_authority() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn realm_bootstrap_uses_authenticated_noise_identity() {
+async fn realm_bootstrap_uses_authenticated_native_identity() {
     tokio::task::LocalSet::new()
         .run_until(async {
             use reproto::{
-                noise_rpc::{Handle, Network},
+                native_rpc::{Handle, Network},
                 transport::{self, Identity},
             };
             async fn pair(a: &Identity, b: &Identity, ah: &Handle, bh: &Handle) {

@@ -1,5 +1,5 @@
 //! Bounded STUN address discovery for an owned UDP socket (RFC 8489).
-//! An observed address is routing data. Only the subsequent Noise handshake
+//! An observed address is routing data. Only the subsequent Native handshake
 //! authenticates a peer. This is not a complete ICE/TURN implementation.
 use crate::transport::socket::DatagramIo;
 use ring::rand::SecureRandom;
@@ -193,7 +193,7 @@ pub(crate) async fn punch(
 
 pub(crate) fn is_binding_message(packet: &[u8]) -> bool {
     // Discovery retransmissions can leave delayed/duplicate replies on the
-    // socket after Noise starts. They are not transport frames or authority.
+    // socket after Native starts. They are not transport frames or authority.
     packet.len() >= 20
         && packet[4..8] == COOKIE
         && matches!(

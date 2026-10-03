@@ -40,6 +40,11 @@ use crate::traits::{Owned, Pipelined};
 #[cfg(feature = "alloc")]
 use crate::{Error, MessageSize};
 
+#[cfg(feature = "alloc")]
+mod reply;
+#[cfg(feature = "alloc")]
+pub use reply::{PublishedReply, Reply, ReplyBuilder};
+
 /// Type alias for `dyn ClientHook`. We define this here because so that generated code
 /// can avoid needing to refer to `dyn` types directly; in Rust 2015 the syntax for
 /// `dyn` types requires extra parentheses that trigger warnings in newer editions.
@@ -168,6 +173,28 @@ where
     pub pipeline: Results::Pipeline,
 }
 
+// Only Promise is polled, and it is Unpin independently of its output. There
+// is no pinned projection into the pipeline.
+#[cfg(feature = "alloc")]
+impl<T: Pipelined + Owned + 'static> Unpin for RemotePromise<T> {}
+
+#[cfg(feature = "alloc")]
+impl<T: Pipelined + Owned + 'static> Future for RemotePromise<T> {
+    type Output = crate::Result<Response<T>>;
+    fn poll(self: Pin<&mut Self>, cx: &mut core::task::Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut self.get_mut().promise).poll(cx)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<T: Pipelined + Owned + 'static> RemotePromise<T> {
+    /// Split completion and pipeline ownership explicitly. A derived pipeline
+    /// capability owns its own reference and can outlive either returned part.
+    pub fn into_parts(self) -> (Promise<Response<T>, Error>, T::Pipeline) {
+        (self.promise, self.pipeline)
+    }
+}
+
 /// A response from a method call, as seen by the client.
 #[cfg(feature = "alloc")]
 pub struct Response<Results> {
@@ -193,6 +220,7 @@ where
 
 /// A method call that has not been sent yet.
 #[cfg(feature = "alloc")]
+#[must_use = "an unsent request does nothing; send or forward it"]
 pub struct Request<Params, Results> {
     pub marker: PhantomData<(Params, Results)>,
     pub hook: alloc::boxed::Box<dyn RequestHook>,
@@ -231,6 +259,16 @@ where
     pub fn set(&mut self, from: Params::Reader<'_>) -> crate::Result<()> {
         self.hook.get().set_as(from)
     }
+
+    /// Fill parameters before sending. On error this consumes and drops the
+    /// request, so the partially filled request cannot accidentally be sent.
+    pub fn with_params(
+        mut self,
+        fill: impl for<'a> FnOnce(Params::Builder<'a>) -> crate::Result<()>,
+    ) -> crate::Result<Self> {
+        fill(self.hook.get().get_as()?)?;
+        Ok(self)
+    }
 }
 
 #[cfg(feature = "alloc")]
@@ -264,6 +302,7 @@ where
 
 /// A method call that has not been sent yet.
 #[cfg(feature = "alloc")]
+#[must_use = "an unsent streaming request does nothing; send it"]
 pub struct StreamingRequest<Params> {
     pub marker: PhantomData<Params>,
     pub hook: alloc::boxed::Box<dyn RequestHook>,
@@ -274,6 +313,15 @@ impl<Params> StreamingRequest<Params>
 where
     Params: Owned,
 {
+    /// Fill parameters before sending; failure drops the unsent request.
+    pub fn with_params(
+        mut self,
+        fill: impl for<'a> FnOnce(Params::Builder<'a>) -> crate::Result<()>,
+    ) -> crate::Result<Self> {
+        fill(self.hook.get().get_as()?)?;
+        Ok(self)
+    }
+
     pub fn get(&mut self) -> Params::Builder<'_> {
         self.hook.get().get_as().unwrap()
     }
@@ -318,6 +366,13 @@ impl<T> Results<T>
 where
     T: Owned,
 {
+    /// Forward a request with exactly this result schema. Legacy Results still
+    /// checks initialization at runtime; generated [`Reply`] contexts prevent
+    /// mixing writing and forwarding at compile time.
+    pub fn tail_call<P>(self, request: Request<P, T>) -> Promise<(), Error> {
+        self.hook.tail_call(request.hook)
+    }
+
     pub fn new(hook: alloc::boxed::Box<dyn ResultsHook>) -> Self {
         Self {
             marker: PhantomData,

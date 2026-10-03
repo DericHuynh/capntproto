@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 use futures::{SinkExt, StreamExt};
 use reproto::{
-    noise_rpc::Network,
+    native_rpc::Network,
     transport::{self, Identity},
 };
 use serde_json::json;
@@ -55,7 +55,7 @@ fn ready(address: std::net::SocketAddr, public: Option<[u8; 32]>) -> Result<()> 
     Ok(())
 }
 async fn serve(protocol: &str) -> Result<()> {
-    if protocol == "noise" {
+    if protocol == "native" {
         // Only this benchmark's loopback client uses the published fixture key.
         // The server gets a fresh key and the client pins it from the readiness pipe.
         let identity = Identity::generate();
@@ -106,14 +106,14 @@ async fn serve(protocol: &str) -> Result<()> {
 }
 
 enum Client {
-    Noise(echo_capnp::echo::Client),
+    Native(echo_capnp::echo::Client),
     Grpc(grpc::echo_client::EchoClient<tonic::transport::Channel>),
     WebSocket(Box<WebSocketStream<TcpStream>>),
 }
 impl Client {
     async fn connect(protocol: &str, address: &str, public: &str) -> Result<Self> {
         match protocol {
-            "noise" => {
+            "native" => {
                 let identity = Identity::from_private_key([1; 32])?;
                 let public: [u8; 32] = serde_json::from_str(public)?;
                 let session = transport::connect_authenticated(
@@ -130,7 +130,7 @@ impl Client {
                 let mut system = capnp_rpc::RpcSystem::new(Box::new(network), None);
                 let client = system.bootstrap(public);
                 tokio::task::spawn_local(system);
-                Ok(Self::Noise(client))
+                Ok(Self::Native(client))
             }
             "grpc" => Ok(Self::Grpc(
                 grpc::echo_client::EchoClient::connect(format!("http://{address}")).await?,
@@ -147,14 +147,14 @@ impl Client {
     }
     async fn roundtrip(&mut self, sequence: u64, payload: &[u8]) -> Result<()> {
         match self {
-            Self::Noise(client) => {
+            Self::Native(client) => {
                 let mut request = client.echo_request();
                 request.get().set_sequence(sequence);
                 request.get().set_payload(payload);
                 let response = request.send().promise.await?;
                 let response = response.get()?;
                 if response.get_sequence() != sequence || response.get_payload()? != payload {
-                    return Err("Noise response mismatch".into());
+                    return Err("Native response mismatch".into());
                 }
             }
             Self::Grpc(client) => {

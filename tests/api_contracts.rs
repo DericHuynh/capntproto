@@ -5,13 +5,16 @@ use reproto_test_support::verification::{self as v, command, root, run};
 use serde_json::{json, Value};
 use std::{collections::BTreeSet, fs};
 
+#[path = "api_contracts/rpc_reply.rs"]
+mod rpc_reply;
+
 #[test]
 fn authority_bindings_and_route_generation_compile_contracts() {
     let mut cases = vec![(
         "positive".to_owned(),
         r#"
 use reproto::authority::{Grant, ObjectGeneration, ObjectId, Rights};
-use reproto::noise_rpc::{RouteGeneration, RouteObserver};
+use reproto::native_rpc::{RouteGeneration, RouteObserver};
 fn observe(route: &RouteObserver) -> RouteGeneration {
     let id = route.generation();
     let _: u64 = id.get();
@@ -42,23 +45,23 @@ fn main() {
         ), Some("E0616")));
     }
     for (name, source, diagnostic) in [
-        ("generation-from-count", "fn main() { let _: reproto::noise_rpc::RouteGeneration = 1u64; }", "E0308"),
-        ("generation-as-count", "fn wrong(g: reproto::noise_rpc::RouteGeneration) { let _: u64 = g; } fn main() {}", "E0308"),
-        ("generation-private-constructor", "use reproto::noise_rpc::RouteGeneration; fn main() { let _ = RouteGeneration(std::num::NonZeroU64::new(1).unwrap()); }", "E0423"),
-        ("generation-from-conversion", "fn main() { let _: reproto::noise_rpc::RouteGeneration = 1u64.into(); }", "E0277"),
-        ("generation-default", "fn main() { let _: reproto::noise_rpc::RouteGeneration = Default::default(); }", "E0277"),
-        ("generation-arithmetic", "fn wrong(g: reproto::noise_rpc::RouteGeneration) { let _ = g + 1; } fn main() {}", "E0369"),
-        ("generation-deserialize", "fn main() { let _ = serde_json::from_str::<reproto::noise_rpc::RouteGeneration>(\"1\"); }", "E0277"),
+        ("generation-from-count", "fn main() { let _: reproto::native_rpc::RouteGeneration = 1u64; }", "E0308"),
+        ("generation-as-count", "fn wrong(g: reproto::native_rpc::RouteGeneration) { let _: u64 = g; } fn main() {}", "E0308"),
+        ("generation-private-constructor", "use reproto::native_rpc::RouteGeneration; fn main() { let _ = RouteGeneration(std::num::NonZeroU64::new(1).unwrap()); }", "E0423"),
+        ("generation-from-conversion", "fn main() { let _: reproto::native_rpc::RouteGeneration = 1u64.into(); }", "E0277"),
+        ("generation-default", "fn main() { let _: reproto::native_rpc::RouteGeneration = Default::default(); }", "E0277"),
+        ("generation-arithmetic", "fn wrong(g: reproto::native_rpc::RouteGeneration) { let _ = g + 1; } fn main() {}", "E0369"),
+        ("generation-deserialize", "fn main() { let _ = serde_json::from_str::<reproto::native_rpc::RouteGeneration>(\"1\"); }", "E0277"),
         ("grant-deserialize", "fn main() { let _ = serde_json::from_str::<reproto::authority::Grant>(\"{}\"); }", "E0277"),
         ("grant-send", "fn require<T: Send>() {} fn main() { require::<reproto::authority::Grant>(); }", "E0277"),
         ("grant-sync", "fn require<T: Sync>() {} fn main() { require::<reproto::authority::Grant>(); }", "E0277"),
-        ("observer-send", "fn require<T: Send>() {} fn main() { require::<reproto::noise_rpc::RouteObserver>(); }", "E0277"),
+        ("observer-send", "fn require<T: Send>() {} fn main() { require::<reproto::native_rpc::RouteObserver>(); }", "E0277"),
         ("grant-must-use", "#![deny(unused_must_use)]\nfn main() { reproto::authority::Grant::root(reproto::authority::ObjectId::new(7).unwrap(), reproto::authority::ObjectGeneration::new(11).unwrap(), [1;32], reproto::authority::Rights::ALL); }", "unused_must_use"),
     ] {
         cases.push((name.to_owned(), source.to_owned(), Some(diagnostic)));
     }
     check_contracts("api-contracts", &format!(
-        "reproto = {{ path = {:?}, default-features = false, features = [\"noise\"] }}\nserde_json = \"1\"\n", root()
+        "reproto = {{ path = {:?}, default-features = false, features = [\"native\"] }}\nserde_json = \"1\"\n", root()
     ), cases,
         "external Rust API construction, domain separation, immutable grant fields, local thread affinity and must-use checks",
         "not a proof of runtime authority, authentication or cross-network generation uniqueness");
@@ -392,14 +395,14 @@ fn main() {
         ("factory-wrong-generation", "fn wrong(s: std::rc::Rc<std::cell::RefCell<reproto::storage::Store>>, k: ObjectKind) { let _ = reproto::persistence::ObjectFactory::<reproto::store_capnp::document::Owned>::new(s, k); } fn main() {}", "E0308"),
         ("factory-wrong-object", "fn wrong(f: &reproto::persistence::ObjectFactory<reproto::store_capnp::document::Owned>, g: ObjectGeneration) { let _ = f.state(g); } fn main() {}", "E0308"),
         ("orm-binding-wrong-kind", "fn wrong(r: &reproto::persistence::Realm, s: std::rc::Rc<reproto::orm::ObjectState>, g: reproto::authority::Grant, o: ObjectId) { let _ = r.persistent_object::<reproto::store_capnp::document::Owned>(s, g, o); } fn main() {}", "E0308"),
-        ("route-as-object-generation", "fn wrong(g: reproto::noise_rpc::RouteGeneration) { let _: ObjectGeneration = g; } fn main() {}", "E0308"),
-        ("object-as-route-generation", "fn wrong(g: ObjectGeneration) { let _: reproto::noise_rpc::RouteGeneration = g; } fn main() {}", "E0308"),
+        ("route-as-object-generation", "fn wrong(g: reproto::native_rpc::RouteGeneration) { let _: ObjectGeneration = g; } fn main() {}", "E0308"),
+        ("object-as-route-generation", "fn wrong(g: ObjectGeneration) { let _: reproto::native_rpc::RouteGeneration = g; } fn main() {}", "E0308"),
     ] {
         cases.push((name.to_owned(), format!("{prelude}{code}"), Some(diagnostic)));
     }
     cases.push(("descriptor-must-use".to_owned(), format!("#![deny(unused_must_use)]\n{prelude}fn main() {{ Descriptor::new(ObjectKind::new(1).unwrap(), ObjectId::new(1).unwrap(), ObjectGeneration::new(1).unwrap(), Rights::ALL); }}"), Some("unused_must_use")));
     check_contracts("persistent-descriptor-contracts", &format!(
-        "reproto = {{ path = {:?}, default-features = false, features = [\"storage\", \"noise\"] }}\nserde_json = \"1\"\n", root()
+        "reproto = {{ path = {:?}, default-features = false, features = [\"storage\", \"native\"] }}\nserde_json = \"1\"\n", root()
     ), cases,
         "external persistent metadata consumers: distinct nonzero identifier domains, immutable descriptor bindings, typed factory registry/cache/generation and ORM binding, checked serialization, must-use descriptors",
         "metadata does not confer authority or brand IDs to a realm; hosts and factories still enforce object meaning, authorization, generation and exact restored rights");
@@ -700,7 +703,7 @@ fn main() { thread_safe::<Revision>(); thread_safe::<Revisions>(); }
 
 #[test]
 fn discovery_generation_and_resolved_compile_contracts() {
-    let prelude = "use reproto::noise_discovery::{Binding, Directory, DiscoveryGeneration, Resolved, Publication, AdvertisementOptions};\n";
+    let prelude = "use reproto::native_discovery::{Binding, Directory, DiscoveryGeneration, Resolved, Publication, AdvertisementOptions};\n";
     let mut cases = vec![(
         "positive".to_owned(),
         format!(
@@ -739,7 +742,7 @@ fn main() {
         ("generation-arithmetic", "fn wrong(g: DiscoveryGeneration) { let _ = g + 1; }", "E0369"),
         ("generation-deserialize", "fn wrong() { let _ = serde_json::from_str::<DiscoveryGeneration>(\"1\"); }", "E0277"),
         ("object-generation", "fn wrong(g: reproto::authority::ObjectGeneration) { let _: DiscoveryGeneration = g; }", "E0308"),
-        ("route-generation", "fn wrong(g: reproto::noise_rpc::RouteGeneration) { let _: DiscoveryGeneration = g; }", "E0308"),
+        ("route-generation", "fn wrong(g: reproto::native_rpc::RouteGeneration) { let _: DiscoveryGeneration = g; }", "E0308"),
         ("revision-generation", "fn wrong(g: reproto::semantics::Revision) { let _: DiscoveryGeneration = g; }", "E0308"),
         ("raw-create", "fn wrong(d: &Directory, b: Binding) { let _ = d.publish(\"service\", b, 0, std::time::Duration::from_secs(1)); }", "E0308"),
         ("raw-renew", "fn wrong(d: &Directory, b: Binding) { let _ = d.maintain(\"service\", b, Some(1u64), std::time::Duration::from_secs(1)); }", "E0308"),
@@ -758,15 +761,15 @@ fn main() {
         ("resolved-send", "fn send<T: Send>() {} fn wrong() { send::<Resolved>(); }", "E0277"),
         ("resolved-sync", "fn sync<T: Sync>() {} fn wrong() { sync::<Resolved>(); }", "E0277"),
         ("generation-must-use", "fn wrong() { DiscoveryGeneration::new(1).unwrap(); }", "unused_must_use"),
-        ("resolved-must-use", "async fn wrong(d: &reproto::noise_discovery::Discovery) { d.resolve([1;32], \"service\").await.unwrap(); }", "unused_must_use"),
+        ("resolved-must-use", "async fn wrong(d: &reproto::native_discovery::Discovery) { d.resolve([1;32], \"service\").await.unwrap(); }", "unused_must_use"),
     ] {
         cases.push((name.to_owned(), format!("#![deny(unused_must_use)]\n{prelude}{code}\nfn main() {{}}"), Some(diagnostic)));
     }
     check_contracts("discovery-type-contracts", &format!(
-        "reproto = {{ path = {:?}, default-features = false, features = [\"noise\"] }}\nserde_json = \"1\"\ntokio = {{ version = \"1\", features = [\"time\"] }}\n", root()
+        "reproto = {{ path = {:?}, default-features = false, features = [\"native\"] }}\nserde_json = \"1\"\ntokio = {{ version = \"1\", features = [\"time\"] }}\n", root()
     ), cases,
         "nonzero discovery generation domain across administrative APIs and immutable recipient/host/provider/context/expiry lookup bindings; explicit numeric imports and local capability ownership",
-        "generations are directory-local metadata, not branded ownership or authentication; expiry, CAS, provider authority and Noise authentication remain runtime checks");
+        "generations are directory-local metadata, not branded ownership or authentication; expiry, CAS, provider authority and Native authentication remain runtime checks");
 }
 
 #[test]

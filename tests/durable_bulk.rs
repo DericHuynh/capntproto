@@ -843,14 +843,14 @@ fn invalid_values_digest_and_retired_staging_cannot_publish() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn completion_notifies_orm_history_and_push_subscribers_over_noise() {
+async fn completion_notifies_orm_history_and_push_subscribers_over_native() {
     tokio::task::LocalSet::new()
         .run_until(async {
             tokio::time::timeout(Duration::from_secs(10), async {
                 let dir = tempfile::tempdir().unwrap();
                 let db = Rc::new(RefCell::new(Store::open(dir.path().join("db")).unwrap()));
                 let state = ObjectState::new(db.clone(), ObjectId::new(7).unwrap());
-                let bytes = message("Noise file");
+                let bytes = message("Native file");
                 let receiver = Receiver::<document::Owned>::create(
                     state.clone(),
                     JournalId::new(99),
@@ -933,7 +933,7 @@ async fn completion_notifies_orm_history_and_push_subscribers_over_noise() {
                     tokio::task::yield_now().await;
                 }
                 assert_eq!(&*observations.borrow(), &[1]);
-                assert_eq!(text(&db.borrow()), Some("Noise file".into()));
+                assert_eq!(text(&db.borrow()), Some("Native file".into()));
                 subscription.cancel_request().send().promise.await.unwrap();
                 server.abort();
                 driver.abort();

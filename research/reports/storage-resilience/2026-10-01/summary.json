@@ -1,0 +1,864 @@
+{
+  "aggregation": "Median and range of per-run statistics, never pooled percentiles. Rejections and expiries are separate outcomes, not successful latencies.",
+  "scenarios": [
+    {
+      "scenario": "baseline",
+      "trials": 3,
+      "metrics": {
+        "committed": {
+          "median": 100,
+          "min": 100,
+          "max": 100
+        },
+        "admitted": {
+          "median": 100,
+          "min": 100,
+          "max": 100
+        },
+        "rejected_count": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "rejected_bytes": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "rejected_large": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "committed_large": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "expired_before_execution": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "committed_after_deadline": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "peak_outstanding_count": {
+          "median": 1,
+          "min": 1,
+          "max": 1
+        },
+        "peak_outstanding_payload_bytes": {
+          "median": 8,
+          "min": 8,
+          "max": 8
+        },
+        "pause_us": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "drain_after_arrival_window_us": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "total_elapsed_us": {
+          "median": 993256.734,
+          "min": 993003.0989999999,
+          "max": 996315.568
+        },
+        "generator_lateness.p99_us": {
+          "median": 89.34599999999999,
+          "min": 84.112,
+          "max": 98.66799999999999
+        },
+        "generator_lateness.max_us": {
+          "median": 89.34599999999999,
+          "min": 84.112,
+          "max": 98.66799999999999
+        },
+        "success_latency.p50_us": {
+          "median": 3136.627,
+          "min": 2855.569,
+          "max": 3153.592
+        },
+        "success_latency.p99_us": {
+          "median": 6254.187,
+          "min": 3185.62,
+          "max": 6314.528
+        },
+        "queue_age_at_dequeue.p99_us": {
+          "median": 35.759,
+          "min": 31.219,
+          "max": 72.566
+        },
+        "commit_service.p50_us": {
+          "median": 3046.7,
+          "min": 2773.48,
+          "max": 3060.04
+        },
+        "commit_service.p99_us": {
+          "median": 6177.21,
+          "min": 3086.79,
+          "max": 6233.013
+        }
+      }
+    },
+    {
+      "scenario": "deadline-25ms",
+      "trials": 3,
+      "metrics": {
+        "committed": {
+          "median": 304,
+          "min": 295,
+          "max": 315
+        },
+        "admitted": {
+          "median": 938,
+          "min": 938,
+          "max": 939
+        },
+        "rejected_count": {
+          "median": 62,
+          "min": 61,
+          "max": 62
+        },
+        "rejected_bytes": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "rejected_large": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "committed_large": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "expired_before_execution": {
+          "median": 635,
+          "min": 623,
+          "max": 643
+        },
+        "committed_after_deadline": {
+          "median": 280,
+          "min": 278,
+          "max": 300
+        },
+        "peak_outstanding_count": {
+          "median": 64,
+          "min": 64,
+          "max": 64
+        },
+        "peak_outstanding_payload_bytes": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "pause_us": {
+          "median": 100066.674,
+          "min": 100063.802,
+          "max": 100075.888
+        },
+        "drain_after_arrival_window_us": {
+          "median": 24738.091,
+          "min": 24545.793,
+          "max": 27005.036
+        },
+        "total_elapsed_us": {
+          "median": 1024738.0909999999,
+          "min": 1024545.793,
+          "max": 1027005.0360000001
+        },
+        "generator_lateness.p99_us": {
+          "median": 81.02199999999999,
+          "min": 76.862,
+          "max": 84.637
+        },
+        "generator_lateness.max_us": {
+          "median": 165.79100000000003,
+          "min": 152.074,
+          "max": 530.2139999999999
+        },
+        "success_latency.p50_us": {
+          "median": 27436.082000000002,
+          "min": 27291.752999999997,
+          "max": 27514.314000000002
+        },
+        "success_latency.p99_us": {
+          "median": 30480.494,
+          "min": 28323.023,
+          "max": 30867.638
+        },
+        "queue_age_at_dequeue.p99_us": {
+          "median": 116102.925,
+          "min": 115828.033,
+          "max": 116410.936
+        },
+        "commit_service.p50_us": {
+          "median": 2994.11,
+          "min": 2770.337,
+          "max": 2996.763
+        },
+        "commit_service.p99_us": {
+          "median": 6268.214,
+          "min": 3622.684,
+          "max": 8915.630000000001
+        }
+      }
+    },
+    {
+      "scenario": "lost-reply",
+      "trials": 3,
+      "metrics": {
+        "committed": {
+          "median": 1,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "scenario": "mixed-128kib",
+      "trials": 3,
+      "metrics": {
+        "committed": {
+          "median": 359,
+          "min": 339,
+          "max": 363
+        },
+        "admitted": {
+          "median": 359,
+          "min": 339,
+          "max": 363
+        },
+        "rejected_count": {
+          "median": 553,
+          "min": 548,
+          "max": 577
+        },
+        "rejected_bytes": {
+          "median": 88,
+          "min": 84,
+          "max": 89
+        },
+        "rejected_large": {
+          "median": 242,
+          "min": 242,
+          "max": 242
+        },
+        "committed_large": {
+          "median": 8,
+          "min": 8,
+          "max": 8
+        },
+        "expired_before_execution": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "committed_after_deadline": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "peak_outstanding_count": {
+          "median": 64,
+          "min": 64,
+          "max": 64
+        },
+        "peak_outstanding_payload_bytes": {
+          "median": 66040,
+          "min": 66040,
+          "max": 66040
+        },
+        "pause_us": {
+          "median": 100068.06999999999,
+          "min": 100067.01699999999,
+          "max": 100074.836
+        },
+        "drain_after_arrival_window_us": {
+          "median": 207532.527,
+          "min": 191129.565,
+          "max": 210806.076
+        },
+        "total_elapsed_us": {
+          "median": 1207532.527,
+          "min": 1191129.565,
+          "max": 1210806.076
+        },
+        "generator_lateness.p99_us": {
+          "median": 77.391,
+          "min": 73.865,
+          "max": 111.51599999999999
+        },
+        "generator_lateness.max_us": {
+          "median": 224.281,
+          "min": 103.727,
+          "max": 613.337
+        },
+        "success_latency.p50_us": {
+          "median": 192395.447,
+          "min": 190453.047,
+          "max": 209078.628
+        },
+        "success_latency.p99_us": {
+          "median": 265408.36299999995,
+          "min": 262204.811,
+          "max": 271237.935
+        },
+        "queue_age_at_dequeue.p99_us": {
+          "median": 262268.603,
+          "min": 259141.036,
+          "max": 268202.298
+        },
+        "commit_service.p50_us": {
+          "median": 2984.75,
+          "min": 2970.014,
+          "max": 3066.046
+        },
+        "commit_service.p99_us": {
+          "median": 6117.844,
+          "min": 3594.817,
+          "max": 6242.582
+        }
+      }
+    },
+    {
+      "scenario": "mixed-4mib",
+      "trials": 3,
+      "metrics": {
+        "committed": {
+          "median": 344,
+          "min": 343,
+          "max": 354
+        },
+        "admitted": {
+          "median": 344,
+          "min": 343,
+          "max": 354
+        },
+        "rejected_count": {
+          "median": 656,
+          "min": 646,
+          "max": 657
+        },
+        "rejected_bytes": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "rejected_large": {
+          "median": 165,
+          "min": 163,
+          "max": 166
+        },
+        "committed_large": {
+          "median": 85,
+          "min": 84,
+          "max": 87
+        },
+        "expired_before_execution": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "committed_after_deadline": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "peak_outstanding_count": {
+          "median": 64,
+          "min": 64,
+          "max": 64
+        },
+        "peak_outstanding_payload_bytes": {
+          "median": 1114488,
+          "min": 1114488,
+          "max": 1114488
+        },
+        "pause_us": {
+          "median": 100066.741,
+          "min": 100064.084,
+          "max": 100090.83200000001
+        },
+        "drain_after_arrival_window_us": {
+          "median": 196345.771,
+          "min": 190390.69,
+          "max": 216528.877
+        },
+        "total_elapsed_us": {
+          "median": 1196345.771,
+          "min": 1190390.6900000002,
+          "max": 1216528.877
+        },
+        "generator_lateness.p99_us": {
+          "median": 77.47,
+          "min": 75.578,
+          "max": 98.78
+        },
+        "generator_lateness.max_us": {
+          "median": 406.515,
+          "min": 382.144,
+          "max": 681.753
+        },
+        "success_latency.p50_us": {
+          "median": 196147.393,
+          "min": 196132.492,
+          "max": 206877.20200000002
+        },
+        "success_latency.p99_us": {
+          "median": 301997.682,
+          "min": 292204.43299999996,
+          "max": 303048.05299999996
+        },
+        "queue_age_at_dequeue.p99_us": {
+          "median": 298542.098,
+          "min": 288825.324,
+          "max": 299744.36799999996
+        },
+        "commit_service.p50_us": {
+          "median": 3024.9790000000003,
+          "min": 3006.821,
+          "max": 3105.9260000000004
+        },
+        "commit_service.p99_us": {
+          "median": 6212.4800000000005,
+          "min": 6165.826,
+          "max": 6313.541
+        }
+      }
+    },
+    {
+      "scenario": "overload-256",
+      "trials": 3,
+      "metrics": {
+        "committed": {
+          "median": 552,
+          "min": 533,
+          "max": 553
+        },
+        "admitted": {
+          "median": 552,
+          "min": 533,
+          "max": 553
+        },
+        "rejected_count": {
+          "median": 448,
+          "min": 447,
+          "max": 467
+        },
+        "rejected_bytes": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "rejected_large": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "committed_large": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "expired_before_execution": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "committed_after_deadline": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "peak_outstanding_count": {
+          "median": 256,
+          "min": 256,
+          "max": 256
+        },
+        "peak_outstanding_payload_bytes": {
+          "median": 2048,
+          "min": 2048,
+          "max": 2048
+        },
+        "pause_us": {
+          "median": 100065.69499999999,
+          "min": 100061.85200000001,
+          "max": 100073.579
+        },
+        "drain_after_arrival_window_us": {
+          "median": 788934.6969999999,
+          "min": 782487.719,
+          "max": 873691.542
+        },
+        "total_elapsed_us": {
+          "median": 1788934.697,
+          "min": 1782487.719,
+          "max": 1873691.542
+        },
+        "generator_lateness.p99_us": {
+          "median": 82.007,
+          "min": 73.21499999999999,
+          "max": 90.701
+        },
+        "generator_lateness.max_us": {
+          "median": 192.157,
+          "min": 80.602,
+          "max": 822.802
+        },
+        "success_latency.p50_us": {
+          "median": 660908.1,
+          "min": 658959.6749999999,
+          "max": 703020.015
+        },
+        "success_latency.p99_us": {
+          "median": 789412.316,
+          "min": 776739.38,
+          "max": 881912.835
+        },
+        "queue_age_at_dequeue.p99_us": {
+          "median": 786339.957,
+          "min": 773663.483,
+          "max": 879034.144
+        },
+        "commit_service.p50_us": {
+          "median": 2998.161,
+          "min": 2989.22,
+          "max": 3077.36
+        },
+        "commit_service.p99_us": {
+          "median": 6003.095,
+          "min": 5969.849999999999,
+          "max": 6238.879
+        }
+      }
+    },
+    {
+      "scenario": "overload-64",
+      "trials": 3,
+      "metrics": {
+        "committed": {
+          "median": 355,
+          "min": 355,
+          "max": 372
+        },
+        "admitted": {
+          "median": 355,
+          "min": 355,
+          "max": 372
+        },
+        "rejected_count": {
+          "median": 645,
+          "min": 628,
+          "max": 645
+        },
+        "rejected_bytes": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "rejected_large": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "committed_large": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "expired_before_execution": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "committed_after_deadline": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "peak_outstanding_count": {
+          "median": 64,
+          "min": 64,
+          "max": 64
+        },
+        "peak_outstanding_payload_bytes": {
+          "median": 512,
+          "min": 512,
+          "max": 512
+        },
+        "pause_us": {
+          "median": 100070.924,
+          "min": 100064.788,
+          "max": 100072.18599999999
+        },
+        "drain_after_arrival_window_us": {
+          "median": 189424.716,
+          "min": 174690.025,
+          "max": 209916.855
+        },
+        "total_elapsed_us": {
+          "median": 1189424.716,
+          "min": 1174690.0250000001,
+          "max": 1209916.855
+        },
+        "generator_lateness.p99_us": {
+          "median": 74.628,
+          "min": 71.848,
+          "max": 94.683
+        },
+        "generator_lateness.max_us": {
+          "median": 122.81299999999999,
+          "min": 78.991,
+          "max": 919.88
+        },
+        "success_latency.p50_us": {
+          "median": 190708.878,
+          "min": 176894.466,
+          "max": 193937.97400000002
+        },
+        "success_latency.p99_us": {
+          "median": 292513.799,
+          "min": 288984.087,
+          "max": 301549.385
+        },
+        "queue_age_at_dequeue.p99_us": {
+          "median": 289442.375,
+          "min": 285872.33499999996,
+          "max": 298486.458
+        },
+        "commit_service.p50_us": {
+          "median": 2972.389,
+          "min": 2804.629,
+          "max": 3005.284
+        },
+        "commit_service.p99_us": {
+          "median": 6005.817999999999,
+          "min": 4124.915,
+          "max": 6265.351
+        }
+      }
+    },
+    {
+      "scenario": "overload-8",
+      "trials": 3,
+      "metrics": {
+        "committed": {
+          "median": 297,
+          "min": 288,
+          "max": 304
+        },
+        "admitted": {
+          "median": 297,
+          "min": 288,
+          "max": 304
+        },
+        "rejected_count": {
+          "median": 703,
+          "min": 696,
+          "max": 712
+        },
+        "rejected_bytes": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "rejected_large": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "committed_large": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "expired_before_execution": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "committed_after_deadline": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "peak_outstanding_count": {
+          "median": 8,
+          "min": 8,
+          "max": 8
+        },
+        "peak_outstanding_payload_bytes": {
+          "median": 64,
+          "min": 64,
+          "max": 64
+        },
+        "pause_us": {
+          "median": 100071.35,
+          "min": 100068.133,
+          "max": 100074.28
+        },
+        "drain_after_arrival_window_us": {
+          "median": 20646.806,
+          "min": 20239.4,
+          "max": 21311.018
+        },
+        "total_elapsed_us": {
+          "median": 1020646.806,
+          "min": 1020239.3999999999,
+          "max": 1021311.018
+        },
+        "generator_lateness.p99_us": {
+          "median": 75.96499999999999,
+          "min": 75.388,
+          "max": 95.585
+        },
+        "generator_lateness.max_us": {
+          "median": 103.484,
+          "min": 102.879,
+          "max": 1141.131
+        },
+        "success_latency.p50_us": {
+          "median": 23718.877,
+          "min": 23711.745,
+          "max": 25017.333
+        },
+        "success_latency.p99_us": {
+          "median": 124608.241,
+          "min": 124127.61499999999,
+          "max": 125467.34800000001
+        },
+        "queue_age_at_dequeue.p99_us": {
+          "median": 121537.86099999999,
+          "min": 121067.762,
+          "max": 122392.65000000001
+        },
+        "commit_service.p50_us": {
+          "median": 2994.319,
+          "min": 2989.43,
+          "max": 3126.11
+        },
+        "commit_service.p99_us": {
+          "median": 4302.661999999999,
+          "min": 3385.7110000000002,
+          "max": 6161.565
+        }
+      }
+    },
+    {
+      "scenario": "steady-stall",
+      "trials": 3,
+      "metrics": {
+        "committed": {
+          "median": 97,
+          "min": 96,
+          "max": 97
+        },
+        "admitted": {
+          "median": 97,
+          "min": 96,
+          "max": 97
+        },
+        "rejected_count": {
+          "median": 3,
+          "min": 3,
+          "max": 4
+        },
+        "rejected_bytes": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "rejected_large": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "committed_large": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "expired_before_execution": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "committed_after_deadline": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "peak_outstanding_count": {
+          "median": 8,
+          "min": 8,
+          "max": 8
+        },
+        "peak_outstanding_payload_bytes": {
+          "median": 64,
+          "min": 64,
+          "max": 64
+        },
+        "pause_us": {
+          "median": 100066.186,
+          "min": 100066.178,
+          "max": 100094.324
+        },
+        "drain_after_arrival_window_us": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "total_elapsed_us": {
+          "median": 993336.655,
+          "min": 992905.736,
+          "max": 993390.987
+        },
+        "generator_lateness.p99_us": {
+          "median": 92.766,
+          "min": 84.477,
+          "max": 99.07300000000001
+        },
+        "generator_lateness.max_us": {
+          "median": 92.766,
+          "min": 84.477,
+          "max": 99.07300000000001
+        },
+        "success_latency.p50_us": {
+          "median": 3184.445,
+          "min": 2937.976,
+          "max": 3332.994
+        },
+        "success_latency.p99_us": {
+          "median": 103678.97,
+          "min": 103582.028,
+          "max": 115909.663
+        },
+        "queue_age_at_dequeue.p99_us": {
+          "median": 100114.85800000001,
+          "min": 100080.844,
+          "max": 105839.64199999999
+        },
+        "commit_service.p50_us": {
+          "median": 3038.3889999999997,
+          "min": 2827.956,
+          "max": 3162.707
+        },
+        "commit_service.p99_us": {
+          "median": 4749.228,
+          "min": 4046.623,
+          "max": 15739.783
+        }
+      }
+    }
+  ]
+}

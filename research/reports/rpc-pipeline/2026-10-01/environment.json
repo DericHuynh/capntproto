@@ -1,0 +1,29 @@
+{
+  "captured_utc": "2026-10-02T01:35:10.609657+00:00",
+  "platform": "Linux-7.2.8-1-cachyos-x86_64-with-glibc2.44",
+  "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+  "git_head": "05055dab033fd8b60d3ae0edc8c4f388e832cdcd",
+  "binary_sha256": "677ffe358cf75936ee308bf12ba8ed5c85d87a6e615303a50333f126c5e18853",
+  "sources_sha256": {
+    "examples/rpc_pipeline_probe.rs": "0a73695cab841f1e90dc0e255ceec7411724fc5782ff6c4d8d8c31cbd8108afe",
+    "scripts/rpc_pipeline_probe.py": "76b0dac97c62ab8d2772e97f45a68cbd9e6d13cd3b7be9b93fdfdb469e0f27f9",
+    "Cargo.toml": "db946d8e581024589ead2d1db6b8275da37be4709539f1f70c382a935b4087e9",
+    "Cargo.lock": "30e91684702313b3f70e651cd30ca1517cb40e67224d542121c0b6fbc6fa249f",
+    "schemas/runtime-test.capnp": "1722d5daba7270b77b0786fca3efa5107b186360a426d5136bb6e331824d5326",
+    "test-support/build.rs": "702f6b42adc6826cfb28e1609556492873f39ddab4610651c4960c0560209b87",
+    "vendor/provenance/revision.json": "a6477c31c22cd892515cb88bbedf4c1faf7c1afed2796dbb664cb331f234fc51",
+    "vendor/provenance/capnp-rpc-revision.json": "fddf5612e54df9561d324a94a9027dee516066fa1a8f0d7b8f104a3253dcae22",
+    "vendor/capnp-rpc/src/rpc.rs": "216937b7e6d4ab602c9480dd95bc2441c5356421cbc9875123f4a018851272fa",
+    "vendor/capnp-rpc/src/queued.rs": "72a6a0f8ac5d4f3f45e641981ab13c814fb0feeabc50145ba39c5d7e5bedc507",
+    "vendor/capnp-rpc/src/local.rs": "4268e1c21273da6c4adbf97d466eb20d3f7dc9469e33c9ae578a8c5ac3facebd",
+    "vendor/capnp-rpc/src/pipeline_builder.rs": "d2f249032e1bea74babde8b1481b547ead86c6e5e0af404cced07b7766794684",
+    "vendor/capnp-rpc/src/twoparty.rs": "d3876ec2974f9e8d87a3102d8f613fffa1b78d7c040a1601da76b395303ef9c2",
+    "vendor/capnp-futures/src/write_queue.rs": "6225f212a6c7d0080226041bed688bf111496d39181240daa5e8fad322f0ff1d",
+    "vendor/capnp-futures/src/serialize.rs": "9a3dc77953f3099211be226773c7dbdbee42e28dfa7fcd76880ed22e06d60730",
+    "vendor/capnp-futures/src/buffered_read.rs": "6cf3b1b7b5fdc1c773cd878943380fb2c48784db05ad667b8ea1352b6dd358fc",
+    "vendor/capnp/src/capability.rs": "3e9ecf8c0e5b40b51792e83f1b9efb086770d534faeed6c31b4de6fe18c64b03",
+    "vendor/capnpc/src/codegen.rs": "2fa8a892beddb8354ba5923fae3b8f67709ca627bb5bfbdb6d04a9323f214619"
+  },
+  "identical_repetitions": 3,
+  "notes": "Finite protocol scenarios, not wall-clock benchmarks. Tokio paused time advances only when execution has no ready work. Per-frame delays overlap, preserve order and model propagation without bandwidth, loss, jitter, TLS or QUIC. Zero-delay virtual durations do not measure CPU cost. Sources are selected central inputs, not every transitive file; Git HEAD alone does not identify this dirty checkout."
+}

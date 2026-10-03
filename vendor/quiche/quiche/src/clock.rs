@@ -32,10 +32,6 @@ use std::time::Instant;
 // test builds.
 #[inline]
 pub(crate) fn now() -> Instant {
-    #[cfg(all(test, feature = "noise"))]
-    if let Some(now) = crate::simulation::now() {
-        return now;
-    }
     #[cfg(feature = "tokio-clock")]
     {
         tokio::time::Instant::now().into_std()

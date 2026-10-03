@@ -205,7 +205,7 @@ def run(api, bundle, destination, state):
         command(["scp", *options, str(archive), f"root@{address}:/root/bundle.tar.gz"], timeout=300)
         # Matching Ubuntu versions preserve glibc compatibility. Only runtime tools
         # and precompiled binaries are needed; no Cargo/Rust/compiler on this host.
-        command([*ssh, "tar -xzf /root/bundle.tar.gz -C /root/bench && chmod +x /root/bench/noise /root/bench/grpc /root/bench/websocket /root/bench/capnp_cpp /root/bench/capnp-reference /root/bench/driver /root/bench/hot_paths /root/bench/gungraun-runner && timeout --kill-after=10s 20m /root/bench/driver compare /root/bench /root/results > /root/results/runner.log 2>&1"], timeout=1250)
+        command([*ssh, "tar -xzf /root/bundle.tar.gz -C /root/bench && chmod +x /root/bench/native /root/bench/grpc /root/bench/websocket /root/bench/capnp_cpp /root/bench/capnp-reference /root/bench/driver /root/bench/hot_paths /root/bench/gungraun-runner && timeout --kill-after=10s 20m /root/bench/driver compare /root/bench /root/results > /root/results/runner.log 2>&1"], timeout=1250)
         for filename in ("trials.json", "environment.json", "instructions.jsonl", "runner.log"):
             command(["scp", *options, f"root@{address}:/root/results/{filename}", str(destination / filename)])
     finally:

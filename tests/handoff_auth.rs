@@ -1,4 +1,4 @@
-#![cfg(all(feature = "noise", feature = "storage"))]
+#![cfg(all(feature = "native", feature = "storage"))]
 use reproto::{
     authority::{Grant, ObjectGeneration, ObjectId, Rights},
     handoff::{self, Introduction, Package, Serving},
@@ -439,5 +439,8 @@ async fn tlc_authenticated_handoff_traces() {
         None,
     )
     .unwrap();
-    eprintln!("{} real UDP/Noise handoff edge-prefix replays", paths.len());
+    eprintln!(
+        "{} real UDP/Native handoff edge-prefix replays",
+        paths.len()
+    );
 }

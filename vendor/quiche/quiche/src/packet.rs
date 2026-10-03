@@ -380,7 +380,14 @@ impl<'a> Header<'a> {
         let ty = if version == 0 {
             Type::VersionNegotiation
         } else {
-            match (first & TYPE_MASK) >> 4 {
+            match (((first & TYPE_MASK) >> 4) +
+                if version == crate::PROTOCOL_VERSION_V2 {
+                    3
+                } else {
+                    0
+                }) &
+                3
+            {
                 0x00 => Type::Initial,
                 0x01 => Type::ZeroRTT,
                 0x02 => Type::Handshake,
@@ -486,6 +493,11 @@ impl<'a> Header<'a> {
             _ => return Err(Error::InvalidPacket),
         };
 
+        let ty = if self.version == crate::PROTOCOL_VERSION_V2 {
+            (ty + 1) & 3
+        } else {
+            ty
+        };
         first |= FORM_BIT | FIXED_BIT | (ty << 4);
 
         out.put_u8(first)?;
@@ -749,6 +761,7 @@ pub fn negotiate_version(
     b.put_u8(dcid.len() as u8)?;
     b.put_bytes(dcid)?;
     b.put_u32(crate::PROTOCOL_VERSION_V1)?;
+    b.put_u32(crate::PROTOCOL_VERSION_V2)?;
 
     Ok(b.off())
 }
@@ -810,6 +823,16 @@ fn compute_retry_integrity_tag(
     ];
 
     let (key, nonce) = match version {
+        crate::PROTOCOL_VERSION_V2 => (
+            &[
+                0x8f, 0xb4, 0xb0, 0x1b, 0x56, 0xac, 0x48, 0xe2, 0x60, 0xfb, 0xcb,
+                0xce, 0xad, 0x7c, 0xcc, 0x92,
+            ],
+            [
+                0xd8, 0x69, 0x69, 0xbc, 0x2d, 0x7c, 0x6d, 0x99, 0x90, 0xef, 0xb0,
+                0x4a,
+            ],
+        ),
         crate::PROTOCOL_VERSION_V1 =>
             (&RETRY_INTEGRITY_KEY_V1, RETRY_INTEGRITY_NONCE_V1),
 
@@ -1732,7 +1755,9 @@ mod tests {
 
         let alg = crypto::Algorithm::ChaCha20_Poly1305;
 
-        let aead = crypto::Open::from_secret(alg, &secret).unwrap();
+        let aead =
+            crypto::Open::from_secret(alg, &secret, crate::PROTOCOL_VERSION_V1)
+                .unwrap();
 
         let mut hdr = Header::from_bytes(&mut b, 0).unwrap();
         assert_eq!(hdr.ty, Type::Short);
@@ -2104,7 +2129,9 @@ mod tests {
 
         let alg = crypto::Algorithm::ChaCha20_Poly1305;
 
-        let mut aead = crypto::Seal::from_secret(alg, &secret).unwrap();
+        let mut aead =
+            crypto::Seal::from_secret(alg, &secret, crate::PROTOCOL_VERSION_V1)
+                .unwrap();
 
         let pn = 654_360_564;
         let pn_len = 3;

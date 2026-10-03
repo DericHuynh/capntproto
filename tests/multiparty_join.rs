@@ -2,7 +2,7 @@ use capnp::{capability::Promise, Error};
 use capnp_rpc::{Connection, IncomingMessage, OutgoingMessage, RpcSystem, VatNetwork};
 use futures::TryFutureExt;
 use reproto::{
-    noise_rpc::{DirectoryConnector, Handle, Network},
+    native_rpc::{DirectoryConnector, Handle, Network},
     transport::{self, Identity},
 };
 use reproto_test_support::runtime_test_capnp::harness;
@@ -97,7 +97,7 @@ impl capnp_rpc::membrane::Policy for JoinBoundary {
     ) -> capnp::Result<Option<capnp::capability::Client>> {
         self.calls.set(self.calls.get() + 1);
         if self.blocked.get() {
-            Err(Error::failed("joined Noise capability blocked".into()))
+            Err(Error::failed("joined Native capability blocked".into()))
         } else {
             Ok(None)
         }
@@ -164,7 +164,7 @@ async fn drain() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn independent_paths_join_over_noise_and_keep_the_direct_capability() {
+async fn independent_paths_join_over_native_and_keep_the_direct_capability() {
     tokio::task::LocalSet::new()
         .run_until(async {
             tokio::time::timeout(Duration::from_secs(30), async {
@@ -356,9 +356,9 @@ async fn independent_paths_join_over_noise_and_keep_the_direct_capability() {
                                     .err()
                                     .unwrap()
                                     .extra,
-                                "joined Noise capability blocked"
+                                "joined Native capability blocked"
                             );
-                            membrane.revoke(Error::failed("Noise Join revoked".into()));
+                            membrane.revoke(Error::failed("Native Join revoked".into()));
                             assert!(joiner.join(vec![joined.clone(), joined]).await.is_err());
                         }
                     } else {

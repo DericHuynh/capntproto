@@ -188,9 +188,9 @@ async fn receiver_owner_drop_closes_pending_receipts() {
     assert_eq!(receipt.outcome().await.unwrap(), Outcome::Closed);
 }
 #[tokio::test(flavor = "current_thread")]
-async fn authenticated_noise_realtime_worker() {
+async fn authenticated_native_realtime_worker() {
     use reproto::{
-        noise_rpc::Network,
+        native_rpc::Network,
         transport::{self, Identity},
     };
     tokio::task::LocalSet::new()

@@ -51,6 +51,7 @@ impl Fixture {
         let network = Hub::network(&hub, 1);
         let service: harness::Client = capnp_rpc::new_client(Tail);
         let mut system = RpcSystem::new(Box::new(network), Some(service.client));
+        system.set_outgoing_call_limit(2);
         if !only_pipeline {
             system.set_flow_limit(1);
         }

@@ -106,7 +106,11 @@ macro_rules! pry {
     };
 }
 
+mod admission;
 mod attach;
+pub use admission::{ConnectionSnapshot, RpcDiagnostics};
+mod bootstrap;
+pub use bootstrap::Bootstrapper;
 mod broken;
 mod fd;
 mod flow_control;
@@ -609,24 +613,18 @@ impl<VatId> RpcSystem<VatId> {
     where
         T: ::capnp::capability::FromClientHook,
     {
-        if self.connections.borrow().closing {
-            return T::new(broken::new_cap(Error::disconnected(
-                "RPC system is closing".into(),
-            )));
-        }
-        let connection = self.network.borrow_mut().connect(vat_id);
-        let Some(connection) = connection else {
-            return T::new(self.bootstrap.local().unwrap_or_else(broken::new_cap));
-        };
-        let connection_state = Self::get_connection_state(
-            &self.connections,
-            self.bootstrap.clone(),
-            connection,
-            self.handle.clone(),
-        );
+        self.get_bootstrapper().bootstrap(vat_id)
+    }
 
-        let hook = rpc::ConnectionState::bootstrap(&connection_state);
-        T::new(hook)
+    /// Obtain typed bootstraps while the system is running on another local
+    /// task. The handle does not keep the system, transport or bootstrap alive.
+    /// After shutdown, requests return broken clients with Disconnected errors.
+    pub fn get_bootstrapper(&self) -> Bootstrapper<VatId> {
+        Bootstrapper {
+            network: Rc::downgrade(&self.network),
+            connections: Rc::downgrade(&self.connections),
+            context: Rc::downgrade(&self.join_context),
+        }
     }
 
     /// A handle for capability equality through local resolution, bilateral
@@ -678,6 +676,7 @@ impl<VatId> RpcSystem<VatId> {
             Rc::downgrade(connections),
             handle.clone(),
             connections.borrow().flow_limit,
+            connections.borrow().outgoing_call_limit,
         );
         connections.borrow_mut().states.insert(id, state.clone());
         let registry = connections.clone();
@@ -734,6 +733,44 @@ impl<VatId> RpcSystem<VatId> {
         for state in states {
             state.set_flow_limit(words);
         }
+    }
+
+    /// Limit outgoing Calls per connection, for existing and future connections.
+    /// Default: unlimited. Zero rejects new calls. Reducing the limit does not
+    /// cancel accepted work. Excess requests fail locally with Overloaded before
+    /// a Call is sent; there is no hidden admission wait queue.
+    ///
+    /// Credit is reserved when a wire request is created and retained through
+    /// its question lifetime and local write completion. Holding a response or
+    /// pipeline can therefore hold credit. Streaming and tail calls share this
+    /// limit. Bootstrap and protocol progress messages remain unrestricted.
+    ///
+    /// This is a count limit, not a memory bound: unsent payload allocation,
+    /// incoming work and purely local unresolved capabilities need separate
+    /// budgets. Apply a limit to every RPC system used by the application.
+    pub fn set_outgoing_call_limit(&mut self, calls: usize) {
+        let registry = &mut *self.connections.borrow_mut();
+        registry.outgoing_call_limit = calls;
+        for state in registry.states.values() {
+            state.set_outgoing_call_limit(calls);
+        }
+    }
+
+    pub fn diagnostics(&self) -> RpcDiagnostics {
+        let registry = Rc::downgrade(&self.connections);
+        RpcDiagnostics(Rc::new(move || {
+            let Some(registry) = registry.upgrade() else {
+                return Vec::new();
+            };
+            let mut snapshots = registry
+                .borrow()
+                .states
+                .values()
+                .map(|state| state.snapshot())
+                .collect::<Vec<_>>();
+            snapshots.sort_by_key(|snapshot| snapshot.connection_id);
+            snapshots
+        }))
     }
 
     /// Returns a `Disconnector` future that can be run to cleanly close the connection to this `RpcSystem`'s network.

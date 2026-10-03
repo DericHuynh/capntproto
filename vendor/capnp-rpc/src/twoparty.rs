@@ -30,7 +30,7 @@ use futures::{AsyncRead, AsyncWrite, FutureExt, TryFutureExt};
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
-pub use capnp_futures::{OutgoingQueue, QueueSnapshot};
+pub use capnp_futures::{OutgoingQueue, OutputSnapshot, QueueSnapshot};
 
 mod facade;
 mod send_buffer;

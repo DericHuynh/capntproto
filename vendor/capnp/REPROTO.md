@@ -31,10 +31,10 @@ ClientHook also has a default-rejecting join_capabilities hook and an erased
 JoinedCapability response guard. The RPC runtime uses it to forward standard
 bilateral Join across independent systems without bypassing opaque wrappers.
 ClientHook also has a default opaque-endpoint forward_join hook for independent
-multiparty shares; transparent RPC clients forward it explicitly. The Noise
+multiparty shares; transparent RPC clients forward it explicitly. The native TLS
 profile authenticates the joined object before direct acquisition.
 The guard retains downstream results until the joined authority is acquired or
-all upstream parts have been finished. See docs/JOIN.md for scope and checks.
+all upstream parts have been finished. See docs/wiki/Capability-Join.md for scope and checks.
 
 ClientHook's default `delegate_join` keeps opaque hooks as equality endpoints.
 Explicit implementations can return a `JoinDelegation` for a complete batch,
@@ -47,7 +47,7 @@ RequestHook has default private third-party tail-target hooks. The runtime uses
 an erased connection context only for direct requests on the same RPC system;
 wrappers keep ordinary forwarding unless they explicitly support the hook.
 Authenticated answer adoption is enabled separately by the network. See
-docs/ANSWER_ADOPTION.md for protocol and verification scope.
+docs/wiki/Third-Party-Answers.md for protocol and verification scope.
 
 Dynamic capability values own their hooks; dynamic Reader is Clone instead of Copy.
 Compiled interface reflection supports inherited generic methods, reflected
@@ -63,7 +63,7 @@ and staged pointer publication. Union-group replace_with constructs detached
 storage before publishing schema-masked data and moving descendant pointers;
 callback failure/unwinding preserves the old arm and sibling fields. Layout adds private staging and checked view
 helpers; recoverable operation errors have dedicated ErrorKind variants.
-See docs/RUST_GENERATOR.md for scope and remaining design work.
+See docs/wiki/Rust-Generator.md for scope and remaining design work.
 
 Field ownership adds detached pointer slots with context identity, capability
 ownership transfer, strict fixed-layout copy, checked generic editing, branded
@@ -90,7 +90,7 @@ word/mmap owners back zero-copy read-only segments retained by the arena.
 Tail shrinking reclaims words and growth uses available capacity in place;
 otherwise growth relocates shallowly. Scalar builders expose values by copy,
 matching C++.
-See docs/DYNAMIC_ORPHANS.md for remaining APIs and differences from C++.
+See docs/wiki/Dynamic-Orphans.md for remaining APIs and differences from C++.
 
 The alloc-enabled schema_loader module owns runtime-loaded schema arenas and
 uses borrowed schema handles with separate schema/message lifetimes. It adds
@@ -103,7 +103,7 @@ copy/concatenation, scoped and fieldwise group access, resizing, immutable
 external data and registered native conversion with exact generic arguments.
 It reuses the existing arena and detached capability guards, with no additional
 unsafe implementation. See
-docs/SCHEMA_LOADER.md for verification and remaining reflection differences.
+docs/wiki/Schema-Loader.md for verification and remaining reflection differences.
 
 Loaded group initialization and clearing match C++ and compiled reflection:
 reset the default union alternative and non-union fields recursively, preserving
@@ -160,21 +160,21 @@ hooks acquired during inspection. Consumption avoids another arena acquisition;
 undersized layouts retain the slot and require explicit ensure/upgrade. Readonly
 failures are cached without copying external storage, and custom PointerType
 implementations retain a default compatibility path. The cache adds no unsafe
-code. See docs/RUST_GENERATOR.md#cached-occupied-entries for measured operation
+code. See docs/wiki/Rust-Generator.md#cached-occupied-entries for measured operation
 counts, TLC replay and borrowing checks.
 
 Field-operation handles, cached entries and staging retain static diagnostic
 locations. Failure annotates the existing error without altering its kind or
 exception metadata; success does not allocate diagnostic strings or inspect the
 payload again. Native conversion and list iteration add enclosing fields and
-indices. See docs/RUST_GENERATOR.md#field-diagnostics for scope and verification.
+indices. See docs/wiki/Rust-Generator.md#field-diagnostics for scope and verification.
 
 Typed Message owners now parameterize capability-context ownership via Borrow /
 BorrowMut. MessageReader owns arbitrary ReaderSegments providers and matching
 capability contexts; MessageView is its borrowed-frame alias. Root caching pins
 inline segment providers, while capability tables are attached only to borrowed
 views. Consuming transfers retain capabilities and existing reader budgets;
-compact copies own independent hooks. See docs/RUST_GENERATOR.md#custom-message-owners.
+compact copies own independent hooks. See docs/wiki/Rust-Generator.md#custom-message-owners.
 
 The 0.x architecture consolidation moves cached struct-root ownership into
 `message::CheckedStructReader`. The field facade delegates to this core boundary;
@@ -194,3 +194,10 @@ The source bundle also includes unmodified stream.capnp from the pinned C++
 reference (0de72d8d8cec6b69edaa29de51d3bd490341f9c2), retaining its MIT header.
 Together with c++.capnp it supplies the first-party Rust schema build's standard
 imports without relying on an installed compiler include directory.
+
+RPC ergonomics also include directly awaitable RemotePromise, consuming
+`into_parts()` / `with_params()` helpers and typed legacy tail calls. The opt-in
+structured-reply generator profile uses consuming Reply, ReplyBuilder and
+PublishedReply stages to prevent writing before forwarding or editing after
+publication. See the [current RPC contract](../../docs/wiki/RPC-Applications.md#structured-server-replies)
+and the compile-time acceptance tests before selecting that profile.

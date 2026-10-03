@@ -1,0 +1,18 @@
+[package]
+name = "reproto-concurrency-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# Experiments must not add dependencies to the production workspace.
+[workspace]
+
+[dependencies]
+arc-swap = "=1.9.2"
+crossbeam-queue = "=0.3.14"
+parking_lot = "=0.12.5"
+tokio = { version = "=1.53.1", features = ["sync"] }
+futures = "=0.3.34"
+serde_json = "1"
+tempfile = "3"
+reproto = { path = "../..", default-features = false, features = ["storage"] }

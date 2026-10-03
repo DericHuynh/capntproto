@@ -75,7 +75,7 @@ impl SendStream {
         let written = self
             .written
             .checked_add(count as u64)
-            .ok_or_else(|| io::Error::other("Noise stream counter exhausted"))?;
+            .ok_or_else(|| io::Error::other("Native stream counter exhausted"))?;
         self.phase = next;
         self.written = written;
         Ok(())

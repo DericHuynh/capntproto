@@ -15,12 +15,12 @@ use std::{
 const CASES: &[(&str, &str, &str)] = &[
     (
         "reproto",
-        "noise_shutdown::schedule_tests::shuttle_shutdown_first_completion_wakes_all_waiters",
+        "native_shutdown::schedule_tests::shuttle_shutdown_first_completion_wakes_all_waiters",
         "shutdown-completion",
     ),
     (
         "reproto",
-        "noise_shutdown::schedule_tests::shuttle_shutdown_cancellation_and_generation_isolation",
+        "native_shutdown::schedule_tests::shuttle_shutdown_cancellation_and_generation_isolation",
         "shutdown-cancellation",
     ),
     (
@@ -30,27 +30,27 @@ const CASES: &[(&str, &str, &str)] = &[
     ),
     (
         "reproto",
-        "noise_rpc::session::schedule_tests::shuttle_route_owners_cancel_pending_tasks_and_isolate_generations",
+        "native_rpc::session::schedule_tests::shuttle_route_owners_cancel_pending_tasks_and_isolate_generations",
         "route-owners",
     ),
     (
         "reproto",
-        "noise_rpc::session::output_tests::shuttle_output_fences_cancel_replace_and_preserve_order",
+        "native_rpc::session::output_tests::shuttle_output_fences_cancel_replace_and_preserve_order",
         "route-output-success",
     ),
     (
         "reproto",
-        "noise_rpc::session::output_tests::shuttle_output_failures_race_drain_and_owner_stop",
+        "native_rpc::session::output_tests::shuttle_output_failures_race_drain_and_owner_stop",
         "route-output-errors",
     ),
     (
         "reproto",
-        "noise_rpc::session::shutdown_tests::shuttle_shutdown_fences_compete_with_deadline",
+        "native_rpc::session::shutdown_tests::shuttle_shutdown_fences_compete_with_deadline",
         "shutdown-fences",
     ),
     (
         "reproto",
-        "noise_rpc::session::shutdown_tests::shuttle_shutdown_terminal_causes_and_cancellation_wake_blocked_fences",
+        "native_rpc::session::shutdown_tests::shuttle_shutdown_terminal_causes_and_cancellation_wake_blocked_fences",
         "shutdown-terminal",
     ),
 ];
@@ -94,7 +94,7 @@ fn recorded_async_schedules_replay_across_processes() {
             "--locked",
             "--no-default-features",
             "--features",
-            "noise",
+            "native",
             "--lib",
             "--test",
             "authority_schedules",
@@ -189,12 +189,12 @@ fn recorded_async_schedules_replay_across_processes() {
     }
     for (test, name, markers) in [
         (
-            "noise_shutdown::schedule_tests::shuttle_detects_lost_wakeup",
+            "native_shutdown::schedule_tests::shuttle_detects_lost_wakeup",
             "lost-wakeup-control",
             ["registered-with-lost-waker", "finished-without-wakeup"],
         ),
         (
-            "noise_rpc::session::shutdown_tests::shuttle_detects_lost_shutdown_terminal_wakeup",
+            "native_rpc::session::shutdown_tests::shuttle_detects_lost_shutdown_terminal_wakeup",
             "shutdown-terminal-lost-wakeup",
             ["blocked-with-receipt", "terminal-canceled"],
         ),
@@ -237,7 +237,7 @@ fn recorded_async_schedules_replay_across_processes() {
     );
     fs::write(base.join("checked.json"), serde_json::to_vec_pretty(&json!({
         "format":1,"tool":"shuttle 0.9.4", "compiler":compiler,"inputs":inputs,"seed":SEED,
-        "iterations_per_case":ITERATIONS,"processes":2,"same_process_replays":true,"features":["noise"],
+        "iterations_per_case":ITERATIONS,"processes":2,"same_process_replays":true,"features":["native"],
         "cases":evidence,"artifacts":directory,"controls":["lost-wakeup","replayed-lost-wakeup","terminal-lost-wakeup","replayed-terminal-lost-wakeup","truncated-decisions","changed-events"],
         "limits":"bounded single-thread polling of real watch/Notify futures, route workers, serializer/two-party output fences and shutdown completion with scheduled receipt/deadline signals; no instrumentation inside Tokio atomics, no weak-memory, actual clock/socket, authenticated route-installation, receipt-frame authentication or whole-runtime claim"
     })).unwrap()).unwrap();

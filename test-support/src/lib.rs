@@ -1,4 +1,20 @@
 //! Generated fixtures for integration tests and interoperability tools.
+/// The same wire schema with affine server reply signatures and field editors.
+pub mod structured {
+    #[allow(clippy::extra_unused_type_parameters)]
+    pub mod runtime_test_capnp {
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/structured/runtime_test_capnp.rs"
+        ));
+    }
+    pub mod rpc_api_capnp {
+        include!(concat!(env!("OUT_DIR"), "/structured/rpc_api_capnp.rs"));
+    }
+}
+pub mod rpc_api_capnp {
+    include!(concat!(env!("OUT_DIR"), "/rpc_api_capnp.rs"));
+}
 #[allow(clippy::extra_unused_type_parameters)] // Generated test schema helpers.
 pub mod runtime_test_capnp {
     include!(concat!(env!("OUT_DIR"), "/runtime_test_capnp.rs"));

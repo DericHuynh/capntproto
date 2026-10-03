@@ -1,7 +1,7 @@
 //! Executor-neutral conveniences for a single peer and a collection of peers.
 mod borrowed;
 
-use super::{QueueSnapshot, VatId, VatNetwork};
+use super::{OutputSnapshot, QueueSnapshot, VatId, VatNetwork};
 use crate::{task_set, RpcSystem};
 use capnp::{capability::Client, capability::Promise, message::ReaderOptions, Error};
 use futures::{channel::oneshot, future::Shared, AsyncRead, AsyncReadExt, AsyncWrite, FutureExt};
@@ -10,13 +10,32 @@ use std::{cell::RefCell, future::Future, pin::Pin, rc::Rc, task::Context, task::
 /// Snapshot provider independent of the stream or network's lifetime. Providers
 /// must retain only diagnostic state, not connections, messages or descriptors.
 #[derive(Clone)]
-pub struct QueueDiagnostics(std::sync::Arc<dyn Fn() -> QueueSnapshot + Send + Sync>);
+pub struct QueueDiagnostics {
+    queued: std::sync::Arc<dyn Fn() -> QueueSnapshot + Send + Sync>,
+    output: Option<std::sync::Arc<dyn Fn() -> OutputSnapshot + Send + Sync>>,
+}
 impl QueueDiagnostics {
     pub fn new(snapshot: impl Fn() -> QueueSnapshot + Send + Sync + 'static) -> Self {
-        Self(std::sync::Arc::new(snapshot))
+        Self {
+            queued: std::sync::Arc::new(snapshot),
+            output: None,
+        }
+    }
+    /// Provide both pending-only and complete byte-stream output diagnostics.
+    pub fn with_output(snapshot: impl Fn() -> OutputSnapshot + Send + Sync + 'static) -> Self {
+        let output = std::sync::Arc::new(snapshot);
+        let queued = output.clone();
+        Self {
+            queued: std::sync::Arc::new(move || queued().queued),
+            output: Some(output),
+        }
     }
     pub fn snapshot(&self) -> QueueSnapshot {
-        (self.0)()
+        (self.queued)()
+    }
+    /// None means this transport only supplies pending-queue diagnostics.
+    pub fn output_snapshot(&self) -> Option<OutputSnapshot> {
+        self.output.as_ref().map(|snapshot| snapshot())
     }
 }
 
@@ -35,7 +54,7 @@ impl<T: AsyncRead + Unpin + 'static> TwoPartyNetwork for VatNetwork<T> {
     }
     fn outgoing_queue(&self) -> QueueDiagnostics {
         let queue = self.outgoing_queue();
-        QueueDiagnostics::new(move || queue.snapshot())
+        QueueDiagnostics::with_output(move || queue.output_snapshot())
     }
     fn output_closed(&self) -> Shared<Promise<(), Error>> {
         self.output_closed()
@@ -191,6 +210,21 @@ impl<'a> TwoPartyClient<'a> {
 
     pub fn outgoing_queue(&self) -> QueueDiagnostics {
         self.queue.clone()
+    }
+
+    /// Configure per-connection outgoing Call admission before spawning the driver.
+    /// See [`RpcSystem::set_outgoing_call_limit`] for credit lifetimes and scope.
+    pub fn set_outgoing_call_limit(&mut self, calls: usize) {
+        if let Some(system) = &mut self.system {
+            system.set_outgoing_call_limit(calls);
+        }
+    }
+
+    pub fn diagnostics(&self) -> crate::RpcDiagnostics {
+        self.system.as_ref().map_or_else(
+            || crate::RpcDiagnostics(Rc::new(Vec::new)),
+            RpcSystem::diagnostics,
+        )
     }
     pub fn get_current_queue_size(&self) -> usize {
         self.queue.snapshot().bytes

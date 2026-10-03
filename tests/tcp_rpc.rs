@@ -1,4 +1,4 @@
-use capnp_rpc::{rpc_twoparty_capnp::Side, twoparty::TwoPartyServer};
+use capnp_rpc::twoparty::TwoPartyServer;
 use futures::FutureExt;
 use reproto::rpc::tcp;
 use reproto_test_support::runtime_test_capnp::harness;
@@ -41,10 +41,10 @@ async fn tcp_listener_preserves_capabilities_drain_and_existing_connections_afte
                 let server_task = tokio::task::spawn_local(driver);
                 let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
                 let mut listening = Box::pin(tcp::listen(&server, &listener, Default::default()));
-                let socket = tokio::net::TcpStream::connect(listener.local_addr().unwrap())
-                    .await
-                    .unwrap();
-                let mut driver = tcp::client(socket, None, Side::Client, Default::default());
+                let mut driver =
+                    tcp::connect(listener.local_addr().unwrap(), None, Default::default())
+                        .await
+                        .unwrap();
                 let cap: harness::Client = driver.bootstrap();
                 let disconnected = driver.on_disconnect();
                 let close = driver.get_disconnector();

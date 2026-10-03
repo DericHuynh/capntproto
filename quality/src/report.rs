@@ -202,7 +202,7 @@ pub fn generate(base: &Path, lanes: &str) -> Result<()> {
         readme
             .push_str("No validated coverage was supplied to this report; see the separate Full quality artifact. No percentage is reported.\n");
     }
-    readme.push_str("\n## Linux loopback performance\n\nOne outstanding request, separate server/client processes, five repetitions per cell, rotated protocol order, validated sequence numbers and full payloads. Setup and warmup are excluded; latency includes serialization, transport, scheduling, and response validation. These are sequential round trips, not maximum concurrent throughput. Host load and CPU scheduling affect results.\n\n| Implementation | Transport in this run | Application contract |\n| --- | --- | --- |\n| Capn't Proto | Authenticated, encrypted Noise IK / UDP | Cap’n Proto capability RPC |\n| C++ Cap’n Proto | Plaintext TCP | Cap’n Proto capability RPC |\n| tonic gRPC | Plaintext HTTP/2 / TCP | Protobuf unary service RPC |\n| tokio-tungstenite | Plaintext WebSocket / TCP | Binary echo with an application sequence header |\n\nEncryption and protocol semantics differ. WebSockets alone do not supply the capability or RPC semantics of the other implementations. No result establishes a universal fastest protocol.\n\n");
+    readme.push_str("\n## Linux loopback performance\n\nOne outstanding request, separate server/client processes, five repetitions per cell, rotated protocol order, validated sequence numbers and full payloads. Setup and warmup are excluded; latency includes serialization, transport, scheduling, and response validation. These are sequential round trips, not maximum concurrent throughput. Host load and CPU scheduling affect results.\n\n| Implementation | Transport in this run | Application contract |\n| --- | --- | --- |\n| Capn't Proto | Authenticated, encrypted Native IK / UDP | Cap’n Proto capability RPC |\n| C++ Cap’n Proto | Plaintext TCP | Cap’n Proto capability RPC |\n| tonic gRPC | Plaintext HTTP/2 / TCP | Protobuf unary service RPC |\n| tokio-tungstenite | Plaintext WebSocket / TCP | Binary echo with an application sequence header |\n\nEncryption and protocol semantics differ. WebSockets alone do not supply the capability or RPC semantics of the other implementations. No result establishes a universal fastest protocol.\n\n");
     let mut instruction_counts = None;
     if let Some(e) = evidence.get("benchmark") {
         let results = benchmark_rows(e, &base.join("benchmark")).and_then(|rows| {
@@ -214,12 +214,12 @@ pub fn generate(base: &Path, lanes: &str) -> Result<()> {
                 figures.extend(charts::performance(&rows)?);
                 readme.push_str("| Payload bytes | Implementation | p50 µs | p95 µs | p99 µs | Sequential req/s | p50 / Capn't Proto |\n| --- | --- | --- | --- | --- | --- | --- |\n");
                 for row in &rows {
-                    let noise = rows
+                    let native = rows
                         .iter()
                         .find(|r| {
-                            r["protocol"] == "noise" && r["payload_bytes"] == row["payload_bytes"]
+                            r["protocol"] == "native" && r["payload_bytes"] == row["payload_bytes"]
                         })
-                        .ok_or("missing Noise comparison")?;
+                        .ok_or("missing Native comparison")?;
                     let p50 = row["p50_ns"].as_f64().ok_or("missing latency")?;
                     writeln!(
                         readme,
@@ -230,7 +230,7 @@ pub fn generate(base: &Path, lanes: &str) -> Result<()> {
                         row["p95_ns"].as_f64().unwrap() / 1000.0,
                         row["p99_ns"].as_f64().unwrap() / 1000.0,
                         row["sequential_requests_per_second"].as_f64().unwrap(),
-                        p50 / noise["p50_ns"].as_f64().unwrap()
+                        p50 / native["p50_ns"].as_f64().unwrap()
                     )?;
                 }
                 readme.push_str("\nThe last column compares each implementation’s median latency with Capn't Proto at the same payload size; lower is less latency. [Raw per-request samples](benchmark/trials.json) and [environment, compiler/binary identities, repetition ranges and source pins](benchmark/evidence.json) accompany the results.\n");
@@ -268,7 +268,7 @@ pub fn generate(base: &Path, lanes: &str) -> Result<()> {
             writeln!(readme, "- {}", text(failure))?;
         }
     }
-    readme.push_str("\n## Scope\n\nThis is bounded automated evidence for the tested source and environment. It includes independent C++ comparisons, model checks, compiler contracts, Miri, sanitizers, implementation mutation tests, default-feature tests, provenance and known-advisory checks. It is not an independent cryptographic audit or an unbounded protocol proof. Ignored diagnostic/full-release tests retain their documented scope in docs/TESTING.md and docs/RELEASE_ACCEPTANCE.md.\n");
+    readme.push_str("\n## Scope\n\nThis is bounded automated evidence for the tested source and environment. It includes independent C++ comparisons, model checks, compiler contracts, Miri, sanitizers, implementation mutation tests, default-feature tests, provenance and known-advisory checks. It is not an independent cryptographic audit or an unbounded protocol proof. Ignored diagnostic/full-release tests retain their documented scope in docs/wiki/Testing.md and docs/wiki/Release-Acceptance.md.\n");
     charts::append(&mut readme, base, &id, &figures)?;
     fs::write(base.join("README.md"), readme)?;
     if failures.is_empty() {

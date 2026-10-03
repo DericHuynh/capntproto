@@ -1572,11 +1572,20 @@ impl<'a, E: NativeElement> ListRef<'a, E> {
 }
 
 /// Unsent RPC request with the generated field-operation parameter editor.
+#[must_use = "an unsent request does nothing; send or forward it"]
 pub struct Request<P: Schema, R: Schema + crate::traits::Pipelined> {
     hook: alloc::boxed::Box<dyn crate::private::capability::RequestHook>,
     marker: PhantomData<(P, R)>,
 }
 impl<P: Schema, R: Schema + crate::traits::Pipelined> Request<P, R> {
+    /// Fill parameters before sending; failure drops the unsent request.
+    pub fn with_params(
+        mut self,
+        fill: impl for<'a> FnOnce(P::Mut<'a>) -> Result<()>,
+    ) -> Result<Self> {
+        fill(self.edit())?;
+        Ok(self)
+    }
     #[doc(hidden)]
     pub fn new(hook: alloc::boxed::Box<dyn crate::private::capability::RequestHook>) -> Self {
         Self {
@@ -1662,11 +1671,20 @@ impl<R: Schema + crate::traits::Pipelined> PendingCall<R> {
         (self.response, self.pipeline)
     }
 }
+#[must_use = "an unsent streaming request does nothing; send it"]
 pub struct StreamingRequest<P: Schema> {
     hook: alloc::boxed::Box<dyn crate::private::capability::RequestHook>,
     marker: PhantomData<P>,
 }
 impl<P: Schema> StreamingRequest<P> {
+    /// Fill parameters before sending; failure drops the unsent request.
+    pub fn with_params(
+        mut self,
+        fill: impl for<'a> FnOnce(P::Mut<'a>) -> Result<()>,
+    ) -> Result<Self> {
+        fill(self.edit())?;
+        Ok(self)
+    }
     #[doc(hidden)]
     pub fn new(hook: alloc::boxed::Box<dyn crate::private::capability::RequestHook>) -> Self {
         Self {

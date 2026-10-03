@@ -64,6 +64,9 @@ pub enum Error {
     /// The peer's transport params cannot be parsed.
     InvalidTransportParam,
 
+    /// Authenticated version information does not match the connection.
+    VersionNegotiation,
+
     /// A cryptographic operation failed.
     CryptoFail,
 
@@ -188,6 +191,7 @@ impl Error {
             Error::InvalidFrame => WireErrorCode::FrameEncodingError as u64,
             Error::InvalidStreamState(..) =>
                 WireErrorCode::StreamStateError as u64,
+            Error::VersionNegotiation => 0x11,
             Error::InvalidTransportParam =>
                 WireErrorCode::TransportParameterError as u64,
             Error::FlowControl => WireErrorCode::FlowControlError as u64,
@@ -211,6 +215,7 @@ impl Error {
             Error::InvalidPacket => -5,
             Error::InvalidState => -6,
             Error::InvalidStreamState(_) => -7,
+            Error::VersionNegotiation => -24,
             Error::InvalidTransportParam => -8,
             Error::CryptoFail => -9,
             Error::TlsFail => -10,

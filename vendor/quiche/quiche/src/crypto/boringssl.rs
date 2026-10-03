@@ -54,15 +54,17 @@ impl PacketKey {
         })
     }
 
-    pub fn from_secret(aead: Algorithm, secret: &[u8], enc: u32) -> Result<Self> {
+    pub fn from_secret(
+        aead: Algorithm, secret: &[u8], enc: u32, version: u32,
+    ) -> Result<Self> {
         let key_len = aead.key_len();
         let nonce_len = aead.nonce_len();
 
         let mut key = vec![0; key_len];
         let mut iv = vec![0; nonce_len];
 
-        derive_pkt_key(aead, secret, &mut key)?;
-        derive_pkt_iv(aead, secret, &mut iv)?;
+        derive_pkt_key_version(aead, secret, &mut key, version)?;
+        derive_pkt_iv_version(aead, secret, &mut iv, version)?;
 
         let mut pkt_key = Self::new(aead, key, iv, enc)?;
 

@@ -418,9 +418,9 @@ async fn replay(trace: Trace) {
     }
 }
 #[tokio::test(flavor = "current_thread")]
-async fn schema_service_over_authenticated_noise() {
+async fn schema_service_over_authenticated_native() {
     use reproto::{
-        noise_rpc::Network,
+        native_rpc::Network,
         transport::{self, Identity},
     };
     tokio::task::LocalSet::new()

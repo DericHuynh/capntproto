@@ -1,4 +1,4 @@
-//! Experimental capability RPC with Noise transport and whole-entry storage.
+//! Capability RPC over TCP/TLS and standard quiche QUIC, with whole-entry storage.
 // capnpc emits generic reflection helpers whose type parameter is unused.
 #[allow(clippy::extra_unused_type_parameters)]
 #[cfg(feature = "storage")]
@@ -6,35 +6,35 @@ pub mod store_capnp {
     include!(concat!(env!("OUT_DIR"), "/store_capnp.rs"));
 }
 pub mod authority;
-#[cfg(all(feature = "noise", feature = "storage"))]
+#[cfg(all(feature = "native", feature = "storage"))]
 pub mod handoff;
-#[cfg(all(feature = "noise", feature = "storage"))]
+#[cfg(all(feature = "native", feature = "storage"))]
 pub mod introduction;
-#[cfg(feature = "noise")]
+#[cfg(feature = "native")]
 pub mod nat;
-#[cfg(feature = "noise")]
-pub mod noise_arbitration;
-#[cfg(feature = "noise")]
-pub mod noise_discovery;
-#[cfg(feature = "noise")]
-pub mod noise_listener;
+#[cfg(feature = "native")]
+pub mod native_arbitration;
+#[cfg(feature = "native")]
+pub mod native_discovery;
+#[cfg(feature = "native")]
+pub mod native_listener;
 mod object_ids;
 #[allow(clippy::extra_unused_type_parameters)]
-#[cfg(feature = "noise")]
-pub mod noise_discovery_capnp {
-    include!(concat!(env!("OUT_DIR"), "/noise_discovery_capnp.rs"));
+#[cfg(feature = "native")]
+pub mod native_discovery_capnp {
+    include!(concat!(env!("OUT_DIR"), "/native_discovery_capnp.rs"));
 }
-#[cfg(feature = "noise")]
-pub mod noise_provisioning;
+#[cfg(feature = "native")]
+pub mod native_provisioning;
 #[allow(clippy::extra_unused_type_parameters)]
-#[cfg(feature = "noise")]
-pub mod noise_provisioning_capnp {
-    include!(concat!(env!("OUT_DIR"), "/noise_provisioning_capnp.rs"));
+#[cfg(feature = "native")]
+pub mod native_provisioning_capnp {
+    include!(concat!(env!("OUT_DIR"), "/native_provisioning_capnp.rs"));
 }
-#[cfg(feature = "noise")]
-pub mod noise_rpc;
-#[cfg(feature = "noise")]
-pub mod noise_shutdown;
+#[cfg(feature = "native")]
+pub mod native_rpc;
+#[cfg(feature = "native")]
+pub mod native_shutdown;
 #[cfg(feature = "storage")]
 pub mod orm;
 #[cfg(feature = "storage")]
@@ -48,7 +48,7 @@ pub mod rpc;
 pub mod semantics;
 #[cfg(feature = "storage")]
 pub mod storage;
-#[cfg(feature = "noise")]
+#[cfg(feature = "native")]
 pub mod transport;
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -73,7 +73,7 @@ pub mod bulk_capnp {
 }
 #[cfg(feature = "services")]
 pub mod realtime;
-#[cfg(all(feature = "services", feature = "noise"))]
+#[cfg(all(feature = "services", feature = "native"))]
 pub mod realtime_datagram;
 #[allow(clippy::extra_unused_type_parameters)]
 #[cfg(feature = "services")]

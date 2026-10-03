@@ -1,5 +1,5 @@
 [package]
-name = "reproto-noise-fuzz"
+name = "reproto-native-fuzz"
 version = "0.1.0"
 edition = "2021"
 publish = false
@@ -14,12 +14,12 @@ default = ["fuzz-targets"]
 fuzz-targets = ["dep:libfuzzer-sys"]
 
 [dependencies]
+reproto = { path = "..", default-features = false, features = ["native"] }
 capnp = { path = "../vendor/capnp" }
 capnp-rpc = { path = "../vendor/capnp-rpc" }
 futures = "0.3"
 libfuzzer-sys = { version = "=0.4.13", optional = true }
-quiche = { path = "../vendor/quiche/quiche", default-features = false, features = ["noise"] }
-snow = { git = "https://github.com/mcginty/snow", rev = "8ac60f51cfe3e010c84f0a454cc575ad9204fa12", default-features = false, features = ["std", "use-curve25519", "use-chacha20poly1305", "use-blake3", "use-getrandom", "risky-raw-split"] }
+quiche = { path = "../vendor/quiche/quiche", default-features = false, features = ["boringssl-boring-crate"] }
 
 [build-dependencies]
 capnpc = { path = "../vendor/capnpc" }
@@ -57,16 +57,16 @@ bench = false
 required-features = ["fuzz-targets"]
 
 [[bin]]
-name = "noise_packet"
-path = "fuzz_targets/noise_packet.rs"
+name = "native_packet"
+path = "fuzz_targets/native_packet.rs"
 test = false
 doc = false
 bench = false
 required-features = ["fuzz-targets"]
 
 [[bin]]
-name = "noise_stream"
-path = "fuzz_targets/noise_stream.rs"
+name = "native_stream"
+path = "fuzz_targets/native_stream.rs"
 test = false
 doc = false
 bench = false

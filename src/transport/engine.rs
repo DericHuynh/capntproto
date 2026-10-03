@@ -6,7 +6,7 @@ use super::{
     error, scheduling, shutdown,
     stream::{ReceiveStream, SendStream},
 };
-use crate::noise_shutdown::{Control, Receipt};
+use crate::native_shutdown::{Control, Receipt};
 use crate::semantics::{NativeStreamGate, StreamRole};
 use std::io;
 use tokio::time::Instant;
@@ -103,7 +103,7 @@ impl Engine {
             return if self.conn.is_timed_out() {
                 Err(io::Error::new(
                     io::ErrorKind::TimedOut,
-                    "Noise session timed out",
+                    "Native session timed out",
                 ))
             } else {
                 Ok(false)
