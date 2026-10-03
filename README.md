@@ -1,5 +1,5 @@
 <!-- Generated README: edit docs/README.template.md, then run python3 scripts/update_readme.py render. -->
-# Capn't Proto
+# Capntproto
 
 [![CI](https://github.com/DericHuynh/capntproto/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/ci.yml)
 [![Cargo tests and coverage](https://github.com/DericHuynh/capntproto/actions/workflows/verification-tests.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/verification-tests.yml)
@@ -115,7 +115,19 @@ Awaiting the first dedicated CI run; no measurements have been invented.
 
 ### Fuzzing: libFuzzer and AFL++
 
-[2026-10-03T09:31:56Z · run 37113363112 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37113363112) · commit `7b0a5aafb6a5` · **failure**
+[2026-10-03T23:12:46Z · run 37161030846 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37161030846) · commit `ed95a35ac251` · **success**
+
+![Fuzzing executions by engine](docs/reports/fuzz-executions.svg)
+
+Bounded campaigns including seed calibration; execution counts are not comparable performance benchmarks.
+
+![Fuzzer feedback by engine](docs/reports/fuzz-coverage.svg)
+
+Engine-local counters, not LLVM source coverage. Do not compare counts across engines or builds.
+
+![Saved fuzzing findings](docs/reports/fuzz-findings.svg)
+
+Saved crashes/hangs are findings requiring triage, not confirmed unique bugs. Missing results remain unknown.
 
 AFL++ guides the RPC lifecycle oracle with IJON state and progress annotations. Corpus inputs, crashes, hangs, logs and engine statistics are retained in the linked run. Fuzzer counters are not source coverage percentages.
 
