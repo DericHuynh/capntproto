@@ -535,6 +535,10 @@ pub fn collect(r: &mut Runner) -> Result<()> {
     // Never certify the old three-file report or lose an entire maintained crate.
     for prefix in [
         "src/",
+        "crates/capntproto-core/src/",
+        "crates/capntproto-rpc/src/",
+        "crates/capntproto-futures/src/",
+        "crates/capntproto-codegen/src/",
         "crates/capntproto-compiler/src/",
         "crates/capntproto-compat/src/",
         "fuzz/src/",

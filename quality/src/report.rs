@@ -281,8 +281,9 @@ pub fn generate(base: &Path, lanes: &str) -> Result<()> {
         Ok(())
     } else {
         Err(format!(
-            "{} quality requirements failed; see {}/README.md",
+            "{} quality requirements failed:\n- {}\nSee {}/README.md",
             failures.len(),
+            failures.join("\n- "),
             base.display()
         )
         .into())
@@ -427,7 +428,9 @@ mod tests {
             serde_json::to_vec(&trials).unwrap(),
         )
         .unwrap();
-        assert!(generate(dir.path(), "benchmark").is_err());
+        let error = generate(dir.path(), "benchmark").unwrap_err().to_string();
+        assert!(error.contains("benchmark trial hash mismatch"), "{error}");
+        assert!(error.contains("README.md"), "{error}");
         let readme = fs::read_to_string(dir.path().join("README.md")).unwrap();
         assert!(!readme.contains("!["));
         assert!(readme.contains("No validated coverage or benchmark measurements"));

@@ -266,14 +266,29 @@ pub fn command(program: impl AsRef<std::ffi::OsStr>) -> Command {
 }
 /// Execute without a shell, capturing a durable combined log and enforcing a timeout.
 pub fn run(cmd: &mut Command, log: &Path, expected: i32) -> Result<String> {
-    let timeout = Duration::from_secs(
+    run_with_timeout(cmd, log, expected, check_timeout()?)
+}
+
+/// Like `run`, but return only stdout for JSON and other structured output.
+/// Stderr remains available in `log`, including on failure.
+pub fn run_stdout(cmd: &mut Command, log: &Path, expected: i32) -> Result<String> {
+    run_stdout_with_timeout(
+        cmd,
+        &log.with_extension("stdout"),
+        log,
+        expected,
+        check_timeout()?,
+    )
+}
+
+fn check_timeout() -> Result<Duration> {
+    Ok(Duration::from_secs(
         std::env::var("CAPNTPROTO_CHECK_TIMEOUT")
             .ok()
             .map(|s| s.parse())
             .transpose()?
             .unwrap_or(600),
-    );
-    run_with_timeout(cmd, log, expected, timeout)
+    ))
 }
 
 pub fn run_with_timeout(
@@ -656,19 +671,15 @@ mod tests {
         let stdout = directory.path().join("export.json");
         let log = directory.path().join("export.log");
         let script = "printf 'warning: mismatched data\\n' >&2; printf '{\"data\":[]}'";
-        let output = run_stdout_with_timeout(
-            Command::new("sh").args(["-c", script]),
-            &stdout,
-            &log,
-            0,
-            Duration::from_secs(5),
-        )
-        .unwrap();
+        let output = run_stdout(Command::new("sh").args(["-c", script]), &log, 0).unwrap();
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&output).unwrap(),
             serde_json::json!({"data": []})
         );
-        assert_eq!(fs::read_to_string(&stdout).unwrap(), output);
+        assert_eq!(
+            fs::read_to_string(log.with_extension("stdout")).unwrap(),
+            output
+        );
         assert_eq!(
             fs::read_to_string(&log).unwrap(),
             "warning: mismatched data\n"

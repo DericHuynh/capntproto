@@ -291,11 +291,18 @@ rejected and must be reviewed again. Linux coverage does not qualify other OSes.
 Per-file and aggregate **line, region, function and branch ratios** must not
 regress against `quality/coverage-baseline.json`. Lost instrumentation, changed
 compiler/options, stale source hashes and inconsistent raw counters fail checks.
-There is currently no reviewed baseline for this simplified scope: after the
-first successful collection, inspect its files/counters and commit its
-`coverage/summary.json` as `quality/coverage-baseline.json`. The initial collection
-can emit measurements; the final regression report deliberately fails until a
-baseline exists. Changes to a baseline require review.
+The initial baseline is a complete `coverage/summary.json` from a successful
+collection of this scope, committed as `quality/coverage-baseline.json` after
+inspecting its files and counters. Changes to a baseline require review. Missing
+baselines still fail the final report; CI never creates one automatically or
+substitutes the current run for a missing comparison.
+
+The Fuzzing job packages its reports, logs, queues, crashes and hangs in
+`fuzz-report.tar.gz` before artifact upload. This preserves AFL's colon-containing
+filenames, which GitHub's artifact uploader rejects as individual files. Extract
+the archive to inspect `target/quality/fuzz/README.md` and `FAILED-TESTS.md`, graphs,
+`target/verification/native-fuzz/` logs, and `fuzz/artifacts/` reproducer inputs.
+Packaging runs even when a campaign fails, and retains the failing run's evidence.
 
 ## Dedicated Linux loopback benchmarks
 

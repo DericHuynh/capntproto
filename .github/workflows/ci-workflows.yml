@@ -29,11 +29,13 @@ jobs:
         run: |
           python3 -m unittest discover -s scripts/tests -p 'test_workflow_triggers.py' -v
           python3 -m unittest discover -s scripts/tests -p 'test_afl_fuzz.py' -v
+          python3 -m unittest discover -s scripts/tests -p 'test_package_fuzz_report.py' -v
       - name: Check auditable build scripts
         run: |
           shellcheck scripts/setup-auditable.sh scripts/auditable-cargo.sh scripts/auditable-bench-rustc.sh scripts/test-auditable-cargo.sh
           bash scripts/test-auditable-cargo.sh
           pyflakes3 scripts/check_auditable.py scripts/tests/test_workflow_triggers.py scripts/afl_fuzz.py scripts/tests/test_afl_fuzz.py
+          pyflakes3 scripts/package_fuzz_report.py scripts/tests/test_package_fuzz_report.py
       - name: Check cloud capacity selection and cleanup
         run: |
           python3 quality/tests/digitalocean_checks.py

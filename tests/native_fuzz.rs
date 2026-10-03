@@ -294,17 +294,21 @@ fn native_fuzz_smoke() {
         inputs,
         "fuzz sources changed during qualification"
     );
-    let metadata: Value = serde_json::from_str(&cargo(
-        &[
-            "metadata",
-            "--locked",
-            "--manifest-path",
-            "fuzz/Cargo.toml",
-            "--format-version",
-            "1",
-        ],
-        "metadata",
-    ))
+    let metadata: Value = serde_json::from_str(
+        &v::run_stdout(
+            command("cargo").args([
+                "metadata",
+                "--locked",
+                "--manifest-path",
+                "fuzz/Cargo.toml",
+                "--format-version",
+                "1",
+            ]),
+            &log("metadata"),
+            0,
+        )
+        .unwrap(),
+    )
     .unwrap();
     let provenance = metadata["packages"]
         .as_array()

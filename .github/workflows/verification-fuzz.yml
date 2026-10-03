@@ -45,23 +45,26 @@ jobs:
           if-no-files-found: warn
           overwrite: true
           retention-days: 90
+      # AFL's queue/crash names contain colons, which upload-artifact rejects.
+      # Archive all raw evidence even when the fuzzer or report step fails.
+      - name: Package fuzz reports and raw findings
+        if: always()
+        run: python3 scripts/package_fuzz_report.py
       - id: report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
           name: fuzz-report
-          path: |
-            target/quality/fuzz/
-            target/verification/native-fuzz/
-            fuzz/artifacts/
-          if-no-files-found: warn
+          path: target/fuzz-report.tar.gz
+          if-no-files-found: error
+          compression-level: 0
           retention-days: 30
       - name: Link all results and diagnostics
         if: always()
         env:
           REPORT_URL: ${{ steps.report.outputs.artifact-url }}
         run: |
-          printf '[Download all results, graphs and diagnostics](%s)\n' "$REPORT_URL" >> "$GITHUB_STEP_SUMMARY"
+          printf '[Download all results, graphs and diagnostics (fuzz-report.tar.gz)](%s)\n' "$REPORT_URL" >> "$GITHUB_STEP_SUMMARY"
           if test -f target/quality/fuzz/FAILED-TESTS.md; then
             cat target/quality/fuzz/FAILED-TESTS.md >> "$GITHUB_STEP_SUMMARY"
           fi

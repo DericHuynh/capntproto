@@ -41,7 +41,13 @@ fn cargo_with_toolchain(toolchain: Option<&str>, args: &[&str], name: &str) -> S
     if let Some(toolchain) = toolchain {
         cmd.arg(toolchain);
     }
-    run(cmd.args(args), &log(name), 0).unwrap()
+    if args.first() == Some(&"metadata") {
+        // Cargo can download target-specific dependencies on a cold runner.
+        // Its progress and warnings belong to stderr, never the JSON payload.
+        v::run_stdout(cmd.args(args), &log(name), 0).unwrap()
+    } else {
+        run(cmd.args(args), &log(name), 0).unwrap()
+    }
 }
 
 #[test]
@@ -560,7 +566,12 @@ fn external_consumer_default_features() {
     fs::write(app.join("Cargo.toml"), manifest).unwrap();
     fs::copy(root().join("Cargo.lock"), app.join("Cargo.lock")).unwrap();
     let run_consumer = |args: &[&str], name: &str| {
-        run(
+        let runner = if args.first() == Some(&"metadata") {
+            v::run_stdout
+        } else {
+            run
+        };
+        runner(
             command("cargo")
                 .args(args)
                 .arg("--manifest-path")
@@ -617,7 +628,7 @@ fn rust_guard_graph_equals_tlc() {
     )
     .unwrap();
     let rust: Value = serde_json::from_str(
-        &run(
+        &v::run_stdout(
             &mut command(env!("CARGO_BIN_EXE_capntproto-model")),
             &log("guard/rust"),
             0,
