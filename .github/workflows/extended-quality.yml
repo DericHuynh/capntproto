@@ -27,7 +27,7 @@ jobs:
       - name: Memory-check prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y capnproto
+          sudo apt-get install --no-install-recommends -y capnproto libcapnp-dev
           rustup toolchain install 1.97.0 --profile minimal --component rustfmt,clippy
           rustup toolchain install nightly-2026-08-29 --profile minimal --component miri,rust-src
           git submodule update --init --depth 1 -- vendor/capnproto
@@ -42,6 +42,8 @@ jobs:
           RESULT: ${{ steps.checks.outcome }}
         run: |
           mkdir -p target/verification/memory-safety
+          # Markdown backticks in the format string are literal.
+          # shellcheck disable=SC2016
           printf '# Extended Miri\n\nCommit: `%s`\n\nResult: **%s**. The ordinary 23-test ownership suite covers aligned/unaligned readers and both aliasing models. The extension runs six wire tests with seeds 2–5 on x86-64 and big-endian s390x: 48 additional interpreted executions. Only recorded executions are qualified; this is not native s390x platform support.\n\n[Source-bound results and log paths](checked.json). A failed run does not retain a prior checked.json.\n' "$GITHUB_SHA" "$RESULT" > target/verification/memory-safety/README.md
           cat target/verification/memory-safety/README.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -62,7 +64,7 @@ jobs:
       - name: Native-check prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y capnproto
+          sudo apt-get install --no-install-recommends -y capnproto libcapnp-dev
           rustup toolchain install nightly-2026-08-29 --profile minimal --component rust-src
           cargo +nightly-2026-08-29 install cargo-careful --version 0.4.10 --locked
       - name: Native storage and descriptor checks
@@ -80,6 +82,8 @@ jobs:
           RESULT: ${{ steps.checks.outcome }}
         run: |
           mkdir -p target/extended/careful
+          # Markdown backticks in the format string are literal.
+          # shellcheck disable=SC2016
           printf '# Native memory checks\n\nCommit: `%s`\n\nResult: **%s**. cargo-careful 0.4.10 on nightly-2026-08-29 checks storage fault recovery, native descriptor/RPC behavior, framing, and allocation budgets. The TLC replay remains in the full workspace gate and is excluded from this native-only run. These checks detect selected unsafe-precondition violations; C++ internals are not instrumented by cargo-careful.\n\n- [Storage fault tests](storage.log)\n- [Native tests](native.log)\n- [Compiler](compiler.txt)\n' "$GITHUB_SHA" "$RESULT" > target/extended/careful/README.md
           cat target/extended/careful/README.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -100,7 +104,7 @@ jobs:
       - name: IR-report prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y capnproto
+          sudo apt-get install --no-install-recommends -y capnproto libcapnp-dev
           rustup toolchain install 1.97.0 --profile minimal
           cargo install cargo-llvm-lines --version 0.4.48 --locked
       - name: Report generated and runtime IR
@@ -109,6 +113,8 @@ jobs:
           rustc -vV > target/extended/llvm-lines/compiler.txt
           cargo llvm-lines --locked --release -p reproto --lib > target/extended/llvm-lines/runtime.txt
           cargo llvm-lines --locked --release -p reproto --example native_store > target/extended/llvm-lines/consumer.txt
+          # Markdown backticks in the format string are literal.
+          # shellcheck disable=SC2016
           printf '# LLVM IR size\n\nCommit: `%s`\n\nReports include the default-feature runtime and the native_store consumer, where generic bindings are instantiated. Counts measure IR size and instantiations, not compilation time. No regression baseline is established.\n\n- [Runtime](runtime.txt)\n- [Consumer](consumer.txt)\n- [Compiler](compiler.txt)\n' "$GITHUB_SHA" > target/extended/llvm-lines/README.md
           cat target/extended/llvm-lines/README.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
