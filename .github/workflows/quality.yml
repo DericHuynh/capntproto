@@ -1,12 +1,14 @@
 name: Quality
 on:
+  # Branch work is checked through pull_request; only main needs push checks.
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: quality-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 env:
   CARGO_TERM_COLOR: never
@@ -28,9 +30,15 @@ jobs:
       - name: Keep generated output and large files out of Git
         shell: bash
         run: python scripts/check_repository.py
+      - name: Check Cargo wrapper argument forwarding
+        shell: bash
+        run: bash scripts/test-auditable-cargo.sh
+      - name: Pinned schema fixtures for compiler tests
+        shell: bash
+        run: git submodule update --init --depth 1 -- vendor/capnproto
       - name: Linux schema compiler
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y capnproto cmake clang libclang-dev pkg-config
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y capnproto libcapnp-dev cmake clang libclang-dev pkg-config
       - name: macOS schema compiler
         if: runner.os == 'macOS'
         run: |
@@ -160,6 +168,8 @@ jobs:
         env:
           RESULT: ${{ needs.platforms.result }}
         run: |
+          # Markdown backticks in the format string are literal.
+          # shellcheck disable=SC2016
           printf '# Platform checks\n\nCommit: `%s`\n\nDefault features: Native, services, storage, TLS and standard QUIC. Smoke checks exercise TCP, TLS/mTLS, QUIC/mTLS, the Rust schema compiler, generated capability RPC and pipelining; Linux/macOS also check storage reopen and descriptor-aware Unix RPC (ownership, limits, cancellation and scratch slots). Linux also enforces allocation budgets. All platforms require embedded cargo-auditable inventories in the application and schema-compiler binaries. Windows compiles storage, but directory-sync durability is not qualified.\n\n| Platform | Compile | Smoke | Allocation budgets (Linux) | Embedded dependency metadata |\n| --- | --- | --- | --- | --- |\n' "$GITHUB_SHA" > README.md
           for platform in ubuntu-24.04 macos-15 windows-2025; do
             if test -f "platforms/$platform.md"; then cat "platforms/$platform.md" >> README.md; else printf '| %s | missing | missing | missing | missing |\n' "$platform" >> README.md; fi
