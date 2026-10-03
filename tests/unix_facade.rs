@@ -3,7 +3,7 @@ use capnp::{
     capability::{Client, FromClientHook},
     ErrorKind,
 };
-use capnp_rpc::{rpc_twoparty_capnp::Side, twoparty::TwoPartyClient};
+use capnp_rpc::rpc_twoparty_capnp::Side;
 use futures::FutureExt;
 use reproto::unix_rpc::{self, Options, TwoPartyServer};
 use reproto_test_support::runtime_test_capnp::harness;
@@ -127,11 +127,6 @@ async fn exchange(remote: &harness::Client, calls: &Rc<Cell<u64>>) -> Received {
         );
     }
     (caps, fds)
-}
-async fn settle() {
-    for _ in 0..24 {
-        tokio::task::yield_now().await;
-    }
 }
 async fn local(task: impl Future<Output = ()>) {
     tokio::task::LocalSet::new()

@@ -1,6 +1,13 @@
 use super::*;
+use capnp_rpc::twoparty::TwoPartyClient;
 use reproto_test_support::verification::{command, cpp, exploration, root, run};
 use std::{pin::Pin, task::Poll};
+
+async fn settle() {
+    for _ in 0..24 {
+        tokio::task::yield_now().await;
+    }
+}
 
 async fn drive<T>(borrowed: &mut Option<TwoPartyClient<'_>>, task: impl Future<Output = T>) -> T {
     futures::pin_mut!(task);
