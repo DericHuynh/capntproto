@@ -111,7 +111,7 @@ Awaiting the first dedicated CI run; no measurements have been invented.
 
 ### Fuzzing: libFuzzer and AFL++
 
-Awaiting the first dedicated CI run; no measurements have been invented.
+[2026-10-03T09:31:56Z · run 37113363112 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37113363112) · commit `7b0a5aafb6a5` · **failure**
 
 AFL++ guides the RPC lifecycle oracle with IJON state and progress annotations. Corpus inputs, crashes, hangs, logs and engine statistics are retained in the linked run. Fuzzer counters are not source coverage percentages.
 

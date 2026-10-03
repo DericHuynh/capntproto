@@ -1236,5 +1236,30 @@
       "status": "passed",
       "note": "Evidence passed."
     }
-  }
+  },
+  "fuzz": [
+    {
+      "run_id": 37113363112,
+      "attempt": 1,
+      "commit": "7b0a5aafb6a58f6216979c7c9517739a5687428e",
+      "date": "2026-10-03T09:31:56Z",
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/37113363112",
+      "conclusion": "failure",
+      "data": {
+        "format": 1,
+        "kind": "fuzz",
+        "origin": {
+          "repository": "DericHuynh/capntproto",
+          "run_id": 37113363112,
+          "attempt": 1,
+          "commit": "7b0a5aafb6a58f6216979c7c9517739a5687428e"
+        },
+        "source_id": "6377e481282367b17b8327eeb5a9f08f432dcc5dea2172125b45dd02b273cdf3",
+        "tests": null,
+        "charts": [],
+        "status": "failed",
+        "note": "Workflow failed after measurement; see the CI run."
+      }
+    }
+  ]
 }
