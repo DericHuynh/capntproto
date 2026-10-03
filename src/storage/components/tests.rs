@@ -5,6 +5,19 @@ const OBJECT: ObjectKey = ObjectKey::new(7);
 const HOT: ComponentId = ComponentId::new(1);
 const COLD: ComponentId = ComponentId::new(2);
 
+fn disk_bytes(store: &Store) -> Vec<u8> {
+    use std::io::Read;
+    // Inspect through the lock-owning handle: Windows byte-range locks also
+    // block reads through a separately opened handle in the same process.
+    let mut file = &*store.file;
+    let position = file.stream_position().unwrap();
+    file.rewind().unwrap();
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).unwrap();
+    file.seek(SeekFrom::Start(position)).unwrap();
+    bytes
+}
+
 #[test]
 fn component_count_and_file_quotas_are_checked_before_io() {
     let dir = tempfile::tempdir().unwrap();
@@ -28,7 +41,7 @@ fn component_count_and_file_quotas_are_checked_before_io() {
         1
     );
     drop(guard);
-    let before = fs::read(&path).unwrap();
+    let before = disk_bytes(&store);
     updates.push(ComponentUpdate {
         id: ComponentId::new(256),
         value: Some(b"x"),
@@ -47,7 +60,7 @@ fn component_count_and_file_quotas_are_checked_before_io() {
         .unwrap();
     assert!(matches!(edit(&mut store, b"new", None), Err(Error::Limit)));
     assert!(!store.poisoned);
-    assert_eq!(fs::read(&path).unwrap(), before);
+    assert_eq!(disk_bytes(&store), before);
     assert_eq!(
         store.get_components(OBJECT).unwrap().components().len(),
         256

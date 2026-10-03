@@ -783,7 +783,7 @@ impl Store {
         // durability outcome. Quarantine appends and require reopen/recovery.
         self.poisoned = true;
         io::point(Point::CompactRename)?;
-        let file = temporary.persist(&self.path).map_err(|e| e.error)?;
+        let file = io::persist(temporary, &self.path)?;
         self.file = Arc::new(file);
         self.map = map;
         self.entries = entries;

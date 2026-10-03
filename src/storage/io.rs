@@ -19,6 +19,23 @@ pub(super) fn directory(path: &Path) -> io::Result<File> {
     options.open(path)
 }
 
+pub(super) fn persist(temporary: tempfile::NamedTempFile, path: &Path) -> io::Result<File> {
+    #[cfg(windows)]
+    {
+        // Clear FILE_ATTRIBUTE_TEMPORARY before replacement, preserving the
+        // original locked handle. Rust's rename has a FileRenameInfoEx/POSIX
+        // fallback for destinations held open by immutable mmap snapshots;
+        // tempfile::persist currently only tries MoveFileExW.
+        let (file, source) = temporary.keep().map_err(|error| error.error)?;
+        let mut cleanup = tempfile::TempPath::try_from_path(source)?;
+        std::fs::rename(&cleanup, path)?;
+        cleanup.disable_cleanup(true);
+        Ok(file)
+    }
+    #[cfg(not(windows))]
+    temporary.persist(path).map_err(|error| error.error)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Point {
     AppendWrite,

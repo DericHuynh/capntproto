@@ -111,6 +111,11 @@ access so `sync_all` can call `FlushFileBuffers`. Directory open/flush failures
 remain errors; the durability barrier is never silently skipped. See Microsoft's
 [directory-handle requirements](https://learn.microsoft.com/en-us/windows/win32/fileio/obtaining-a-handle-to-a-directory)
 and [flush access requirements](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers).
+Windows compaction uses Rust's `rename` path, including its POSIX replacement
+fallback, so retained file handles and mappings can continue reading the old
+generation. It retains the checkpoint's original lock-owning handle. Raw-file
+inspection in tests uses that handle because Windows byte-range locks also block
+other handles opened by the same process.
 
 This is a mutable store through whole-entry replacement, not arbitrary in-place
 mutation of serialized pointers. Explicit compaction atomically replaces a file
