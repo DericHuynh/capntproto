@@ -223,7 +223,7 @@ async fn tcp_network_automatically_samples_live_send_buffer_and_releases_output(
 }
 
 #[test]
-fn socket_window_model_matches_rust_network_and_pinned_cpp() {
+fn tlc_socket_window_model_matches_rust_network_and_pinned_cpp() {
     const MODEL: &str = "verification/RpcSocketWindow.tla";
     const CONFIG: &str = include_str!("../../verification/RpcSocketWindow.cfg");
     exploration::controls(

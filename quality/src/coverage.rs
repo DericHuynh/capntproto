@@ -10,7 +10,7 @@ use std::{
     process::Command,
 };
 pub const NIGHTLY: &str = "nightly-2026-03-05";
-pub const SCOPE: &str = "first-party-rust-v1";
+pub const SCOPE: &str = "first-party-cargo-rust-v2";
 const FLAGS: &str = "-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch";
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -376,35 +376,36 @@ pub fn collect(r: &mut Runner) -> Result<()> {
         v::command("rustc").args([&format!("+{NIGHTLY}"), "--print", "sysroot"]),
     )?;
     let llvm = Path::new(sysroot.trim()).join("lib/rustlib/x86_64-unknown-linux-gnu/bin");
-    // One entry point also runs integration, model, memory and fuzz controls.
-    // Instrument ordinary child workspaces; special toolchains stay isolated.
+    // Instrument the Cargo partition once. Models, fuzz campaigns and extended
+    // memory/mutation controls have independent jobs and reports.
+    let mut test_args = vec![
+        "test",
+        "--locked",
+        "--ignore-rust-version",
+        "--workspace",
+        "--no-fail-fast",
+        "--",
+        "-Z",
+        "unstable-options",
+        "--format=json",
+    ];
+    for skip in crate::lanes::CARGO_SKIPS {
+        test_args.extend(["--skip", *skip]);
+    }
     r.run(
         "workspace-tests",
-        instrumented(
-            &[
-                "test",
-                "--locked",
-                "--ignore-rust-version",
-                "--workspace",
-                "--no-fail-fast",
-                "--",
-                "-Z",
-                "unstable-options",
-                "--format=json",
-            ],
-            &build,
-            &profiles,
-        )
-        .env("CAPNTPROTO_FULL_COVERAGE_BUILD", &build)
-        .env("CAPNTPROTO_FULL_COVERAGE_PROFILES", &profiles)
-        .env("CAPNTPROTO_FULL_COVERAGE_FLAGS", FLAGS)
-        .env(
-            "RUSTDOCFLAGS",
-            format!(
-                "{FLAGS} -Z unstable-options --persist-doctests {}",
-                build.join("doctests").display()
+        instrumented(&test_args, &build, &profiles)
+            .env("CAPNTPROTO_CI_LANE", "cargo")
+            .env("CAPNTPROTO_FULL_COVERAGE_BUILD", &build)
+            .env("CAPNTPROTO_FULL_COVERAGE_PROFILES", &profiles)
+            .env("CAPNTPROTO_FULL_COVERAGE_FLAGS", FLAGS)
+            .env(
+                "RUSTDOCFLAGS",
+                format!(
+                    "{FLAGS} -Z unstable-options --persist-doctests {}",
+                    build.join("doctests").display()
+                ),
             ),
-        ),
     )?;
 
     let mut objects = vec![];

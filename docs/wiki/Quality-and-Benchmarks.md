@@ -24,11 +24,13 @@ records their rationale.
 | [CI](../../.github/workflows/ci.yml) | PR; push to `main`; manual | Library/binary builds and RPC/pipelining, transport and selected feature checks on all three OSes. Linux/macOS also test storage reopen; Linux enforces allocation budgets and QUIC v2 interoperability. `platform-report` |
 | [CI / Workflow validation](../../.github/workflows/ci-workflows.yml) | Called once by CI; manual | Workflow, auditable-build, trigger-test and README-reporting changes: actionlint with ShellCheck/Pyflakes, trigger regression tests, reporting tests and Zizmor |
 | [CI / Documentation](../../.github/workflows/ci-docs.yml) | Called once by CI; Tuesday 05:43 UTC; manual | Documentation/workflow/wiki-tool changes: wiki validation/export and local links. External checks are advisory and run only weekly/manually. `github-wiki`, `documentation-links` |
-| [Verification / Extended](../../.github/workflows/verification-extended.yml) | Wednesday 04:37 UTC; manual | Bounded Miri endian/seed sweep, native cargo-careful checks, and LLVM IR size reports in independent jobs |
-| [Verification / Coverage](../../.github/workflows/verification-coverage.yml) | Monday 03:19 UTC; manual | One LLVM-instrumented workspace test invocation, un-instrumented C++ reference suites, advisory checks, coverage regression report. `full-quality-report` |
+| [Verification / Extended](../../.github/workflows/verification-extended.yml) | Wednesday 04:37 UTC; manual | Bounded Miri endian/seed sweep, native cargo-careful checks, LLVM IR size reports, and guard mutation/coverage controls in independent jobs |
+| [Verification / Cargo tests](../../.github/workflows/verification-tests.yml) | Monday 03:19 UTC; manual | One LLVM-instrumented Cargo partition, un-instrumented C++ reference suites, advisory checks, coverage regression report. `cargo-test-report` |
+| [Verification / TLA+ models](../../.github/workflows/verification-models.yml) | Monday 03:29 UTC; manual | Bounded model checks, expected counterexamples and Rust trace replays. Independent replay history, check outcomes and explored-state graphs. `models-report` |
+| [Verification / Fuzzing](../../.github/workflows/verification-fuzz.yml) | Monday 03:39 UTC; manual | Six libFuzzer/ASan targets and four AFL++ targets with RPC IJON guidance. Engine-specific execution, feedback and finding graphs. `fuzz-report` |
 | [Performance / Dedicated benchmarks](../../.github/workflows/performance.yml) | Manual | Compile release artifacts on Actions, measure on a temporary dedicated CPU Linux droplet, validate downloaded samples. `dedicated-benchmark-report` |
 | [Benchmark droplet cleanup](../../.github/workflows/maintenance-benchmarks.yml) | Every hour at :17 UTC; manual | Destroy this repository's abandoned benchmark resources older than two hours |
-| [Reports / Publish](../../.github/workflows/reports.yml) | Coverage or dedicated benchmark completion; manual run ID | Validate trusted default-branch producer artifacts and publish reports; it does not rerun their tests |
+| [Reports / Publish](../../.github/workflows/reports.yml) | Cargo, TLA+, fuzzing or benchmark completion; manual run ID | Validate trusted default-branch producer artifacts and publish reports; it does not rerun their tests |
 
 ## Trigger and concurrency policy
 
@@ -85,7 +87,9 @@ flowchart TD
   checks --> result[Required CI result]
   docs --> result
   platforms --> result
-  coverage[Weekly / manual Coverage verification] --> publish[Reports: validate evidence and publish]
+  cargo[Weekly / manual Cargo tests + LLVM coverage] --> publish[Reports: validate evidence and publish]
+  models[Weekly / manual TLA+ checks + Rust replays] --> publish
+  fuzz[Weekly / manual libFuzzer + AFL++ IJON] --> publish
   benchmark[Manual Dedicated benchmarks] --> publish
   cleanup[Hourly / manual Benchmark cleanup]
   extended[Weekly / manual Extended verification]
@@ -96,6 +100,35 @@ Solid edges are `needs`, reusable-workflow calls, or report-producer completion
 triggers. Extended verification, CodeQL and cleanup run independently. Benchmark
 cleanup also runs inside its producing job; the hourly workflow recovers abandoned
 resources. Report publication never launches another verification or benchmark run.
+
+## Independent verification partitions
+
+The local `cargo test --workspace` entry point remains comprehensive. CI gives
+expensive campaigns explicit owners:
+
+- Cargo selects all ordinary tests/doctests, filtering `tlc`, `native_fuzz_smoke`,
+  `serialization_and_ownership_miri`, and the two `authority_and_transition_*`
+  controls. It collects LLVM coverage from this same invocation.
+- TLA+ selects tests containing `tlc`, including the bounded catalog, negative
+  controls, and Rust trace replays. Helpers reject TLC calls from the Cargo
+  partition, so an incorrectly named new test fails visibly. Each model job uses
+  a fresh session identity; repeated readers reuse only checks from that session.
+- Fuzzing owns both mutation engines. Extended verification owns Miri and guard
+  mutation/coverage controls. The platform CI matrix retains its fast regression
+  subsets; these are distinct platform qualifications, not full campaign reruns.
+
+`quality/src/lanes.rs` is the shared partition policy. Expected mutation violations
+are successful controls only when both TLC's exit status and the named invariant
+match. TLA+ reports retain separate libtest replay counts and unique
+module/configuration/expected-exit checks; state totals across configurations
+are not a claim of globally distinct states. Fuzz feedback and source coverage
+have different units and are never combined. The new Cargo coverage scope is
+`first-party-cargo-rust-v2`: old combined-suite baselines need explicit review.
+
+Every producer uploads a README, SVGs, measured counters and diagnostics and
+publishes its own measured commit through the trusted report publisher. Cancelled
+or missing measurements cannot reuse an earlier green report. No new histories
+are invented when migrating the combined reports.
 
 ## Rust dependency caching
 
@@ -230,7 +263,7 @@ cargo run --locked -p capntproto-quality -- security target/quality/security
 cargo run --locked -p capntproto-quality -- report target/quality coverage,security
 ```
 
-The collector uses pinned nightly Rust/LLVM 22. It runs the workspace tests once
+The collector uses pinned nightly Rust/LLVM 22. It runs the Cargo partition once
 with default features and collects ordinary nested Rust crate profiles. Miri,
 sanitizer and mutation subprocesses retain their own toolchains. The independent
 C++ reference suites still execute, without coverage instrumentation or counters
@@ -252,7 +285,7 @@ nonzero exit statuses, deadlines and cancellation still fail the collection.
 
 Zero-hit owned code remains in the denominator. Owned files without executable
 mappings are explicit N/A, never counted as covered. The scope is versioned as
-`first-party-rust-v1`; a baseline from the former vendor-inclusive scope is
+`first-party-cargo-rust-v2`; a baseline from the former vendor-inclusive scope is
 rejected and must be reviewed again. Linux coverage does not qualify other OSes.
 
 Per-file and aggregate **line, region, function and branch ratios** must not

@@ -170,33 +170,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "capntproto-compat"
-version = "0.1.0"
-dependencies = [
- "base64",
- "capnp",
- "capntproto-compiler",
- "capnp-rpc",
- "capnpc",
- "futures",
- "capntproto-test-support",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-util",
-]
-
-[[package]]
-name = "capntproto-compiler"
-version = "0.1.0"
-dependencies = [
- "capnp",
- "getrandom 0.4.3",
- "md5",
- "tempfile",
-]
-
-[[package]]
 name = "capnp-futures"
 version = "0.25.2"
 dependencies = [
@@ -222,6 +195,97 @@ dependencies = [
  "capnp",
  "pulldown-cmark",
  "pulldown-cmark-to-cmark",
+]
+
+[[package]]
+name = "capntproto"
+version = "0.1.0"
+dependencies = [
+ "allocation-counter",
+ "boring",
+ "capnp",
+ "capnp-futures",
+ "capnp-rpc",
+ "capnpc",
+ "capntproto-compiler",
+ "capntproto-test-support",
+ "fs2",
+ "futures",
+ "libc",
+ "memmap2",
+ "proptest",
+ "quiche",
+ "rcgen",
+ "ring",
+ "rustls",
+ "serde",
+ "serde_json",
+ "socket2",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-rustls",
+ "tokio-util",
+ "x509-parser",
+ "zeroize",
+]
+
+[[package]]
+name = "capntproto-compat"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "capnp",
+ "capnp-rpc",
+ "capnpc",
+ "capntproto-compiler",
+ "capntproto-test-support",
+ "futures",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "capntproto-compiler"
+version = "0.1.0"
+dependencies = [
+ "capnp",
+ "getrandom 0.4.3",
+ "md5",
+ "tempfile",
+]
+
+[[package]]
+name = "capntproto-quality"
+version = "0.1.0"
+dependencies = [
+ "capntproto-test-support",
+ "fs2",
+ "plotters",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "capntproto-test-support"
+version = "0.1.0"
+dependencies = [
+ "capnp",
+ "capnp-rpc",
+ "capnpc",
+ "capntproto-compiler",
+ "flate2",
+ "fs2",
+ "ring",
+ "serde",
+ "serde_json",
+ "shuttle",
+ "signal-hook",
+ "tar",
+ "tempfile",
 ]
 
 [[package]]
@@ -1072,70 +1136,6 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
-
-[[package]]
-name = "capntproto"
-version = "0.1.0"
-dependencies = [
- "allocation-counter",
- "boring",
- "capnp",
- "capntproto-compiler",
- "capnp-futures",
- "capnp-rpc",
- "capnpc",
- "fs2",
- "futures",
- "libc",
- "memmap2",
- "proptest",
- "quiche",
- "rcgen",
- "capntproto-test-support",
- "ring",
- "rustls",
- "serde",
- "serde_json",
- "socket2",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-rustls",
- "tokio-util",
- "x509-parser",
- "zeroize",
-]
-
-[[package]]
-name = "capntproto-quality"
-version = "0.1.0"
-dependencies = [
- "fs2",
- "plotters",
- "capntproto-test-support",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "capntproto-test-support"
-version = "0.1.0"
-dependencies = [
- "capnp",
- "capntproto-compiler",
- "capnp-rpc",
- "capnpc",
- "flate2",
- "fs2",
- "ring",
- "serde",
- "serde_json",
- "shuttle",
- "signal-hook",
- "tar",
- "tempfile",
-]
 
 [[package]]
 name = "ring"

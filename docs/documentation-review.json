@@ -686,6 +686,7 @@
     "docs/archive/Runtime-Status-History.md",
     "docs/archive/Rust-API-Design.md",
     "docs/archive/Testing-History.md",
+    "docs/reports/failed-models.md",
     "docs/reports/failed-tests.md",
     "docs/wiki/ActorDB-Checklist.md",
     "docs/wiki/ActorDB-Proposal.md",

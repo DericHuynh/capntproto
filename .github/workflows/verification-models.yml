@@ -1,0 +1,63 @@
+name: Verification / TLA+ models
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '29 3 * * 1'
+permissions:
+  contents: read
+concurrency:
+  group: verification-models-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_BUILD_JOBS: '2'
+  CARGO_INCREMENTAL: '0'
+  RUST_BACKTRACE: '1'
+jobs:
+  models:
+    name: TLA+ models and independent reporting
+    runs-on: ubuntu-26.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      # actionlint 1.7.12 requires checked-out local action syntax.
+      - uses: ./.github/actions/quality-setup # zizmor: ignore[self-repository]
+        with:
+          lane: models
+      - name: Run TLA+ models
+        env:
+          TLA2TOOLS_JAR: ${{ runner.temp }}/tla2tools.jar
+        run: cargo run --locked -p capntproto-quality -- models target/quality/models
+      - name: Collect counts, graphs and failed tests
+        if: success() || failure()
+        run: python3 scripts/update_readme.py collect --input target/quality --kind models --output target/readme-data/publication.json --failures-output target/quality/models/FAILED-TESTS.md --report-output target/quality/models
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: readme-data
+          path: target/readme-data/publication.json
+          if-no-files-found: warn
+          overwrite: true
+          retention-days: 90
+      - id: report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: models-report
+          path: |
+            target/quality/models/
+            target/verification/**/tlc.log
+            target/verification/**/model.cfg
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Link all results and diagnostics
+        if: always()
+        env:
+          REPORT_URL: ${{ steps.report.outputs.artifact-url }}
+        run: |
+          printf '[Download all results, graphs and diagnostics](%s)\n' "$REPORT_URL" >> "$GITHUB_STEP_SUMMARY"
+          if test -f target/quality/models/FAILED-TESTS.md; then
+            cat target/quality/models/FAILED-TESTS.md >> "$GITHUB_STEP_SUMMARY"
+          fi

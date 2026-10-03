@@ -34,7 +34,10 @@ runs:
           rustup toolchain install nightly-2026-03-05 --profile minimal --component rustfmt,clippy,llvm-tools-preview,rust-src
         fi
         case "$QUALITY_LANE" in
-          coverage|memory|fuzz)
+          coverage|models|fuzz)
+            rustup toolchain install nightly-2026-08-29 --profile minimal --component rustfmt,clippy,rust-src
+            ;;
+          memory)
             rustup toolchain install nightly-2026-08-29 --profile minimal --component rustfmt,clippy,rust-src,miri
             ;;
         esac
@@ -44,13 +47,28 @@ runs:
         # Coverage targets are source-bound and include nested instrumented
         # workspaces. Cache tools/registries without accumulating those trees.
         cache-targets: ${{ inputs.lane != 'coverage' }}
+        workspaces: |
+          . -> target
+          fuzz -> target
     - name: Install pinned quality tools
       shell: bash
+      env:
+        QUALITY_LANE: ${{ inputs.lane }}
       run: |
-        cargo install cargo-llvm-cov --version 0.8.6 --locked
-        cargo install cargo-mutants --version 27.1.0 --locked
-        cargo install cargo-fuzz --version 0.13.1 --locked
-        cargo install cargo-audit --version 0.22.2 --locked
+        case "$QUALITY_LANE" in
+          coverage)
+            cargo install cargo-llvm-cov --version 0.8.6 --locked
+            cargo install cargo-audit --version 0.22.2 --locked
+            ;;
+          memory)
+            cargo install cargo-mutants --version 27.1.0 --locked
+            cargo install cargo-llvm-cov --version 0.8.6 --locked
+            ;;
+          fuzz)
+            cargo install cargo-fuzz --version 0.13.1 --locked
+            cargo install cargo-afl --version 0.18.2 --locked
+            ;;
+        esac
     - name: Pinned C++ reference and model checker
       shell: bash
       run: |

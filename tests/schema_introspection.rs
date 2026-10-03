@@ -531,7 +531,7 @@ fn inactive_union_arms_cannot_expose_retained_capability_pointers() {
 }
 
 #[test]
-fn introspection_model_replays_brand_transitions_and_union_reads() {
+fn tlc_introspection_model_replays_brand_transitions_and_union_reads() {
     use capntproto_test_support::verification::exploration::{controls, traces};
     const MODEL: &str = "verification/RpcSchemaIntrospection.tla";
     const CFG: &str = include_str!("../verification/RpcSchemaIntrospection.cfg");

@@ -87,7 +87,7 @@ Some ignored negative controls and crash tests are invoked by ordinary parent
 gates. Full composed exploration and clean release qualification are explicit:
 
 ```sh
-cargo test --locked --test protocol_models protocol_reference -- --ignored --exact
+cargo test --locked --test protocol_models tlc_protocol_reference -- --ignored --exact
 cargo test --locked --test release isolated_release_qualification -- --ignored --exact
 ```
 
@@ -107,3 +107,54 @@ python3 scripts/wiki.py build --output target/wiki
 The check validates local links, anchors, navigation and the documentation
 inventory. The export rewrites wiki/source links without changing maintained
 pages. CI uploads the export for review. See [Wiki maintenance](Wiki-Maintenance.md).
+
+## AFL++ and IJON
+
+The dedicated [fuzz workflow](../../.github/workflows/verification-fuzz.yml) runs
+both engines. Existing libFuzzer targets retain ASan and their full seed matrices.
+Pinned `afl` / `cargo-afl` **0.18.2** bundles AFL++ **4.40c**. Four targets share
+those same framing, pointer, schema and RPC lifecycle oracles. The two Native
+crypto/clock targets remain in libFuzzer because they do not provide deterministic
+persistent inputs. Neither engine enables Quiche's crypto bypass.
+
+```sh
+cargo install cargo-afl --version 0.18.2 --locked
+AFL_NO_CFG_FUZZING=1 cargo afl build --locked --manifest-path fuzz/Cargo.toml \
+  --no-default-features --features afl-targets --bins --target-dir target/afl-build
+cargo run --locked --manifest-path fuzz/Cargo.toml --no-default-features \
+  --example afl_seeds -- target/afl-corpus
+python3 scripts/afl_fuzz.py --binaries target/afl-build/debug \
+  --corpus target/afl-corpus --output target/afl-results --seconds 120
+```
+
+Use a fresh output directory for each campaign. The CI job runs `cargo afl
+system-config` only on its disposable hosted Linux runner; this root-level system
+tuning is an explicit local administrator decision. See the [Rust Fuzz Book](https://rust-fuzz.github.io/book/afl.html)
+and [AFL++ IJON documentation](https://github.com/AFLplusplus/AFLplusplus/blob/stable/docs/IJON.md).
+
+Stable Rust uses cargo-afl's sanitizer-coverage instrumentation and comparison
+tracing; this job does not build the optional nightly LLVM CMPLOG plugins.
+`-c -` records that choice explicitly. AFL targets have debug assertions and
+overflow checks; ASan qualification comes from the separate libFuzzer campaigns.
+
+The RPC IJON observer reports bounded combinations of live capabilities, running
+calls, outstanding promises and pending questions. Two max-value channels reward
+actual completions and oracle effects. It never rewards input length or raw IDs.
+All per-input RPC state is constructed and dropped inside the existing oracle;
+immutable fixture caches are warmed before the forkserver. Persistent processes
+restart after 1,000 inputs. Shared-oracle tests compare repeated feedback and
+results; instability percentages are retained, not hidden.
+
+The AFL++ runtime's IJON flag must be supplied explicitly for the stable sancov
+build. CI requires its **Using IJON feature** handshake; merely linking annotation
+calls is insufficient. Findings, seed corpus, queue, raw `fuzzer_stats`, logs,
+IJON max-input corpus and graph data are retained in `fuzz-report`. Any saved
+crash or hang fails CI even if AFL exits successfully. Replay a retained input
+with the existing shared-oracle entry point:
+
+```sh
+CAPNTPROTO_NATIVE_FUZZ_TARGET=rpc_lifecycle \
+CAPNTPROTO_NATIVE_FUZZ_REPLAY=target/afl-results/rpc_lifecycle/default/queue/INPUT \
+cargo test --locked --manifest-path fuzz/Cargo.toml --no-default-features \
+  --lib tests::replay_saved_fuzz_input -- --exact
+```

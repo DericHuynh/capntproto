@@ -304,7 +304,7 @@ async fn replay(path: &[exploration::State], yields: &[u8]) {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn replay_composed_wire_handler_traces() {
+async fn tlc_replay_composed_wire_handler_traces() {
     const MODEL: &str = "verification/ComposedWireBoundary.tla";
     const CONFIG: &str = include_str!("../verification/ComposedWireBoundary.cfg");
     let traces = exploration::traces(MODEL, "composed-wire-boundary", CONFIG).unwrap();

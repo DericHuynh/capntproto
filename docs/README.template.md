@@ -2,7 +2,9 @@
 # Capntproto
 
 [![CI](https://github.com/DericHuynh/capntproto/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/ci.yml)
-[![Coverage verification](https://github.com/DericHuynh/capntproto/actions/workflows/verification-coverage.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/verification-coverage.yml)
+[![Cargo tests and coverage](https://github.com/DericHuynh/capntproto/actions/workflows/verification-tests.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/verification-tests.yml)
+[![TLA+ models](https://github.com/DericHuynh/capntproto/actions/workflows/verification-models.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/verification-models.yml)
+[![Fuzzing](https://github.com/DericHuynh/capntproto/actions/workflows/verification-fuzz.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/verification-fuzz.yml)
 [![Dedicated benchmarks](https://github.com/DericHuynh/capntproto/actions/workflows/performance.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/performance.yml)
 [![Rust 1.97](https://img.shields.io/badge/rust-1.97-orange.svg)](rust-toolchain.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)

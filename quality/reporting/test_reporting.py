@@ -298,5 +298,57 @@ class Rendering(unittest.TestCase):
             self.assertTrue((output / 'docs/reports/benchmarks-pending.svg').exists())
 
 
+class VerificationReportingTests(unittest.TestCase):
+    def test_partitioned_results_allow_filtered_tests_without_inflating_totals(self):
+        log = suite(3, 0, 1).replace('"filtered_out": 0', '"filtered_out": 99')
+        self.assertEqual(test_counts(log, True, allow_filtered=True)['total'], 4)
+        # Keep the original full-workspace contract strict for historical data.
+        filtered = events(dict(type='suite', event='started', test_count=0),
+                          dict(type='suite', event='ok', passed=0, failed=0, ignored=0, measured=0, filtered_out=99))
+        with self.assertRaises(ValueError):
+            test_counts(filtered, True)
+        self.assertEqual(test_counts(filtered, True, allow_filtered=True)['total'], 0)
+
+    def test_new_histories_do_not_mix_with_legacy_workspace_counts(self):
+        history = merge(empty_history(), record())
+        for index, kind in enumerate(('cargo', 'models', 'fuzz'), 2):
+            history = merge(history, record(index, kind))
+        self.assertEqual(len(history['full']), 1)
+        self.assertEqual([len(history[k]) for k in ('cargo', 'models', 'fuzz')], [1, 1, 1])
+        wrong = publication('cargo')
+        wrong['charts'] = [dict(name='fuzz-executions', title='Wrong lane', unit='Executions', note='',
+                                panels=[dict(title='x', bars=[dict(label='x', value=10)])])]
+        with self.assertRaises(ValueError):
+            validate_publication(wrong)
+
+    def test_model_graphs_verify_logs_and_distinguish_expected_counterexamples(self):
+        from .verification import models
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'models').mkdir()
+            records = []
+            for index, exit_code in enumerate((0, 12)):
+                identity = str(index) * 64
+                log = b'1,024 states generated, 512 distinct states found, 0 states left on queue.\n'
+                (root / 'models' / f'{identity}.log').write_bytes(log)
+                records.append(dict(id=identity, expected_exit=exit_code, passed=True,
+                                    module='verification/Example.tla', log_sha256=hashlib.sha256(log).hexdigest()))
+            charts = models({'models': records}, root)
+            bars = charts[0]['panels'][0]['bars']
+            self.assertEqual([b['value'] for b in bars], [1, 1, 0])
+            self.assertEqual(charts[1]['panels'][1]['bars'][0]['value'], 1024)
+            (root / 'models' / ('0' * 64 + '.log')).write_text('changed')
+            with self.assertRaises(ValueError):
+                models({'models': records}, root)
+
+    def test_missing_engine_is_unknown_and_findings_are_not_hidden(self):
+        from .verification import fuzz
+        charts = fuzz({'afl': {'campaigns': [dict(target='rpc_lifecycle', statistics=dict(
+            execs_done=100, edges_found=20, saved_crashes=2, saved_hangs=1))]}})
+        self.assertEqual(len(charts[0]['panels']), 1)
+        self.assertEqual([b['value'] for b in charts[2]['panels'][0]['bars']], [2, 1])
+        self.assertEqual(fuzz({}), [])
+
+
 if __name__ == '__main__':
     unittest.main()

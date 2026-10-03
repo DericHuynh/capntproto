@@ -354,7 +354,7 @@ fn adaptive_estimates_clamp_to_minimum_and_maximum() {
 }
 
 #[test]
-fn variable_window_model_replays_credit_failure_cancellation_and_drain() {
+fn tlc_variable_window_model_replays_credit_failure_cancellation_and_drain() {
     use capntproto_test_support::verification::exploration::{controls, traces};
     const MODEL: &str = "verification/RpcVariableWindow.tla";
     const CFG: &str = include_str!("../verification/RpcVariableWindow.cfg");
@@ -412,7 +412,7 @@ fn variable_window_model_replays_credit_failure_cancellation_and_drain() {
 }
 
 #[test]
-fn adaptive_model_replays_timing_reordering_collar_and_startup_transitions() {
+fn tlc_adaptive_model_replays_timing_reordering_collar_and_startup_transitions() {
     use capntproto_test_support::verification::exploration::{controls, traces};
     const MODEL: &str = "verification/RpcAdaptiveWindow.tla";
     const CFG: &str = include_str!("../verification/RpcAdaptiveWindow.cfg");

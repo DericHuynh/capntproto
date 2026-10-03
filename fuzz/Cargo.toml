@@ -12,8 +12,10 @@ cargo-fuzz = true
 [features]
 default = ["fuzz-targets"]
 fuzz-targets = ["dep:libfuzzer-sys"]
+afl-targets = ["dep:afl"]
 
 [dependencies]
+afl = { version = "=0.18.2", optional = true, features = ["no_cfg_fuzzing"] }
 capntproto = { path = "..", default-features = false, features = ["native"] }
 capnp = { path = "../vendor/capnp" }
 capnp-rpc = { path = "../vendor/capnp-rpc" }
@@ -76,3 +78,35 @@ required-features = ["fuzz-targets"]
 debug = 1
 debug-assertions = true
 overflow-checks = true
+
+[[bin]]
+name = "afl_rpc_lifecycle"
+path = "afl_targets/rpc_lifecycle.rs"
+test = false
+doc = false
+bench = false
+required-features = ["afl-targets"]
+
+[[bin]]
+name = "afl_capnp_framing"
+path = "afl_targets/capnp_framing.rs"
+test = false
+doc = false
+bench = false
+required-features = ["afl-targets"]
+
+[[bin]]
+name = "afl_capnp_pointers"
+path = "afl_targets/capnp_pointers.rs"
+test = false
+doc = false
+bench = false
+required-features = ["afl-targets"]
+
+[[bin]]
+name = "afl_capnp_schema"
+path = "afl_targets/capnp_schema.rs"
+test = false
+doc = false
+bench = false
+required-features = ["afl-targets"]

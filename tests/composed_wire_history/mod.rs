@@ -15,7 +15,7 @@ use std::{cell::RefCell, fs, path::Path, time::Duration};
 const MODEL: &str = "verification/ComposedWireBoundary.tla";
 const CONFIG: &str = include_str!("../../verification/ComposedWireHistory.cfg");
 const SEED: u64 = 0x72706368697374;
-const TEST: &str = "composed_wire_history::generated_rpc_histories";
+const TEST: &str = "composed_wire_history::tlc_generated_rpc_histories";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -270,7 +270,7 @@ fn worker(report: &Path) {
 }
 
 #[test]
-fn generated_rpc_histories() {
+fn tlc_generated_rpc_histories() {
     if let Some(path) = std::env::var_os("CAPNTPROTO_RPC_HISTORY_REPLAY") {
         let graph = graph();
         let saved: Artifact = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
@@ -313,7 +313,7 @@ fn generated_rpc_histories() {
 }
 
 #[test]
-fn shrinking_and_saved_history_controls() {
+fn tlc_shrinking_and_saved_history_controls() {
     let graph = graph();
     let result = runner().run(&strategy(), |case| {
         let saved = artifact(&graph, case);

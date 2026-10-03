@@ -18,11 +18,15 @@ from .render import empty_history, merge, render
 WORKFLOWS = {'.github/workflows/full-quality.yml': 'full',
              '.github/workflows/benchmarks.yml': 'benchmark',
              '.github/workflows/verification-coverage.yml': 'full',
-             '.github/workflows/performance.yml': 'benchmark'}
+             '.github/workflows/performance.yml': 'benchmark',
+             '.github/workflows/verification-tests.yml': 'cargo',
+             '.github/workflows/verification-models.yml': 'models',
+             '.github/workflows/verification-fuzz.yml': 'fuzz'}
 MAX_ARTIFACT = 16 * 1024 * 1024
 OWNED = {f'docs/reports/{name}.svg' for name in CHARTS} | {
     'README.md', 'docs/reports/history.json', 'docs/reports/test-history.svg',
-    'docs/reports/benchmarks-pending.svg', 'docs/reports/failed-tests.md'}
+    'docs/reports/cargo-history.svg', 'docs/reports/tla-history.svg',
+    'docs/reports/failed-models.md', 'docs/reports/benchmarks-pending.svg', 'docs/reports/failed-tests.md'}
 
 
 class GitHub:

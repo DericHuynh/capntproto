@@ -78,9 +78,25 @@ class WorkflowTriggerTests(unittest.TestCase):
                 self.assertEqual(len(keys), len(set(keys)))
 
     def test_expensive_verification_stays_out_of_push_and_pr_events(self):
-        for name in ('verification-coverage', 'verification-extended'):
+        for name in ('verification-tests', 'verification-models', 'verification-fuzz', 'verification-extended'):
             self.assertEqual(set(self.workflows[name]['on']), {'schedule', 'workflow_dispatch'})
         self.assertEqual(set(self.workflows['performance']['on']), {'workflow_dispatch'})
+
+    def test_specialized_campaigns_have_one_explicit_owner(self):
+        files = ROOT / '.github/workflows'
+        cargo = (files / 'verification-tests.yml').read_text()
+        self.assertIn('--kind cargo', cargo)
+        self.assertNotIn('native_fuzz', cargo)
+        self.assertIn('-- models target/quality/models', (files / 'verification-models.yml').read_text())
+        self.assertIn('-- fuzz target/quality/fuzz', (files / 'verification-fuzz.yml').read_text())
+        self.assertIn('--test guard_quality', (files / 'verification-extended.yml').read_text())
+        # CI names the separation policy in one Rust constant, not per-workflow
+        # skip lists that drift independently.
+        policy = (ROOT / 'quality/src/lanes.rs').read_text()
+        for name in ('tlc', 'native_fuzz_smoke', 'serialization_and_ownership_miri',
+                     'authority_and_transition_mutations', 'authority_and_transition_coverage'):
+            self.assertIn(f'"{name}"', policy)
+        self.assertIn('crate::lanes::CARGO_SKIPS', (ROOT / 'quality/src/coverage.rs').read_text())
 
     def test_resource_cleanup_and_publication_are_serialized_independently(self):
         groups = set()
@@ -100,7 +116,7 @@ class WorkflowTriggerTests(unittest.TestCase):
         self.assertEqual(set(events), {'workflow_run', 'workflow_dispatch'})
         self.assertEqual(events['workflow_run']['types'], ['completed'])
         self.assertEqual(set(events['workflow_run']['workflows']), {
-            self.workflows[name]['name'] for name in ('verification-coverage', 'performance')})
+            self.workflows[name]['name'] for name in ('verification-tests', 'verification-models', 'verification-fuzz', 'performance')})
 
 
 if __name__ == '__main__':

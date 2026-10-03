@@ -10,6 +10,7 @@ FORMAT = 1
 CHARTS = {
     'latency-p50', 'latency-p95', 'latency-p99', 'request-rate',
     'latency-difference', 'request-rate-difference', 'instruction-counts',
+    'fuzz-executions', 'fuzz-coverage', 'fuzz-findings', 'tla-outcomes', 'tla-states',
     'coverage-lines', 'coverage-regions', 'coverage-functions', 'coverage-branches',
 }
 COUNTS = ('passed', 'failed', 'errors', 'skipped')
@@ -21,7 +22,7 @@ def integer(value):
     return value
 
 
-def test_counts(log, command_passed):
+def test_counts(log, command_passed, *, allow_filtered=False):
     """Count outer libtest events, never nested test output or benchmark iterations.
 
     Unfinished suites charge announced tests without terminal events to errors.
@@ -91,7 +92,7 @@ def test_counts(log, command_passed):
             for source, dest in [('passed', 'passed'), ('failed', 'failed'), ('ignored', 'skipped')]:
                 if integer(item[source]) != active['counts'][dest]:
                     raise ValueError('libtest summary disagrees with test events')
-            if integer(item.get('measured', 0)) or integer(item.get('filtered_out', 0)):
+            if integer(item.get('measured', 0)) or (integer(item.get('filtered_out', 0)) and not allow_filtered):
                 raise ValueError('filtered/benchmark-only execution is not a full workspace run')
             close(False)
     close(True)
@@ -131,12 +132,14 @@ def validate_charts(charts):
                 v = bar['value']
                 if v is not None and (type(v) not in (float, int) or not math.isfinite(v) or abs(v) > 1e20):
                     raise ValueError('invalid bar value')
+                if chart['name'].startswith(('fuzz-', 'tla-')) and v is not None and (type(v) is not int or v < 0):
+                    raise ValueError('verification counters must be nonnegative integers')
     return charts
 
 
 def collect(directory, kind):
     directory = Path(directory)
-    lane = 'coverage' if kind == 'full' else 'benchmark'
+    lane = {'full': 'coverage', 'cargo': 'coverage', 'models': 'models', 'fuzz': 'fuzz', 'benchmark': 'benchmark'}[kind]
     evidence_path = directory / lane / 'evidence.json'
     origin = None
     if os.environ.get("GITHUB_RUN_ID"):
@@ -162,11 +165,15 @@ def collect(directory, kind):
         log = (directory / lane / 'logs' / f'{name}.log').read_bytes()
         if hashlib.sha256(log).hexdigest() != step['log_sha256']:
             raise ValueError('evidence log hash mismatch')
-        if kind == 'full' and name == 'workspace-tests':
+        if (kind in ('full', 'cargo') and name == 'workspace-tests') or (kind == 'models' and name == 'model-tests'):
             command = step['command']
             if '--workspace' not in command or '--format=json' not in command or '--no-fail-fast' not in command:
                 raise ValueError('test evidence is not the complete workspace JSON invocation')
-            result['tests'] = test_counts(log.decode('utf-8'), step['passed'])
+            if kind == 'cargo' and '--skip' not in command:
+                raise ValueError('Cargo partition must exclude dedicated checks')
+            if kind == 'models' and 'tlc' not in command:
+                raise ValueError('model partition must select TLC tests')
+            result['tests'] = test_counts(log.decode('utf-8'), step['passed'], allow_filtered=kind != 'full')
     # The Rust reporter only emits these after validating raw counters, source
     # identities, regression gates and benchmark samples. Never reuse stale charts.
     path = directory / 'charts' / 'data.json'
@@ -175,15 +182,29 @@ def collect(directory, kind):
         if data['source_id'] != source or not evidence['passed']:
             raise ValueError('stale/failed chart evidence')
         result['charts'] = validate_charts(data['charts'])
-        if any((c['name'].startswith('coverage-')) != (kind == 'full') for c in result['charts']):
+        if any(not chart_kind(c['name'], kind) for c in result['charts']):
             raise ValueError('chart lane mismatch')
+    if kind in ('models', 'fuzz'):
+        from . import verification
+        result['charts'] = (verification.models(evidence['data'], directory / lane)
+                            if kind == 'models' else verification.fuzz(evidence['data']))
     return validate_publication(result)
+
+
+def chart_kind(name, kind):
+    if kind in ('full', 'cargo'):
+        return name.startswith('coverage-')
+    if kind == 'models':
+        return name.startswith('tla-')
+    if kind == 'fuzz':
+        return name.startswith('fuzz-')
+    return not name.startswith(('coverage-', 'tla-', 'fuzz-'))
 
 
 def validate_publication(value):
     if set(value) != {'format', 'kind', 'origin', 'source_id', 'tests', 'charts', 'status', 'note'}:
         raise ValueError('unexpected publication fields')
-    if value['format'] != FORMAT or value['kind'] not in ('full', 'benchmark'):
+    if value['format'] != FORMAT or value['kind'] not in ('full', 'cargo', 'models', 'fuzz', 'benchmark'):
         raise ValueError('invalid publication format/kind')
     if value['status'] not in ('passed', 'failed', 'unavailable'):
         raise ValueError('invalid publication status')
@@ -202,7 +223,7 @@ def validate_publication(value):
     tests = value['tests']
     if tests is not None:
         required = {*COUNTS, 'total', 'suites', 'complete', 'command_passed'}
-        if value['kind'] != 'full' or not required <= set(tests) or set(tests) - required - {'failures'}:
+        if value['kind'] not in ('full', 'cargo', 'models') or not required <= set(tests) or set(tests) - required - {'failures'}:
             raise ValueError('invalid test summary')
         if integer(tests['total']) != sum(integer(tests[k]) for k in COUNTS):
             raise ValueError('invalid aggregate test total')
@@ -228,10 +249,10 @@ def validate_publication(value):
             if sum(len(f['output']) for f in failures) > 256 * 1024:
                 raise ValueError('failed-test output exceeds budget')
     validate_charts(value['charts'])
-    if any(c['name'].startswith('coverage-') != (value['kind'] == 'full') for c in value['charts']):
+    if any(not chart_kind(c['name'], value['kind']) for c in value['charts']):
         raise ValueError('chart lane mismatch')
     if (tests is not None or value['status'] == 'passed') and source is None:
         raise ValueError('measured results require a source fingerprint')
-    if value['charts'] and (source is None or value['status'] != 'passed'):
+    if value['charts'] and (source is None or (value['status'] != 'passed' and value['kind'] not in ('models', 'fuzz'))):
         raise ValueError('charts require successful source-bound evidence')
     return value

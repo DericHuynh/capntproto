@@ -95,7 +95,7 @@ jobs:
           mkdir -p target/extended/careful
           # Markdown backticks in the format string are literal.
           # shellcheck disable=SC2016
-          printf '# Native memory checks\n\nCommit: `%s`\n\nResult: **%s**. cargo-careful 0.4.10 on nightly-2026-08-29 checks storage fault recovery, native descriptor/RPC behavior, framing, and allocation budgets. The TLC replay remains in the full workspace gate and is excluded from this native-only run. These checks detect selected unsafe-precondition violations; C++ internals are not instrumented by cargo-careful.\n\n- [Storage fault tests](storage.log)\n- [Native tests](native.log)\n- [Compiler](compiler.txt)\n' "$GITHUB_SHA" "$RESULT" > target/extended/careful/README.md
+          printf '# Native memory checks\n\nCommit: `%s`\n\nResult: **%s**. cargo-careful 0.4.10 on nightly-2026-08-29 checks storage fault recovery, native descriptor/RPC behavior, framing, and allocation budgets. The TLC replay runs in Verification / TLA+ models and is excluded from this native-only run. These checks detect selected unsafe-precondition violations; C++ internals are not instrumented by cargo-careful.\n\n- [Storage fault tests](storage.log)\n- [Native tests](native.log)\n- [Compiler](compiler.txt)\n' "$GITHUB_SHA" "$RESULT" > target/extended/careful/README.md
           cat target/extended/careful/README.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
@@ -139,3 +139,26 @@ jobs:
           name: llvm-ir-size
           path: target/extended/llvm-lines/
           if-no-files-found: error
+  mutations:
+    name: Guard mutations and focused coverage
+    runs-on: ubuntu-26.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/quality-setup # zizmor: ignore[self-repository]
+        with:
+          lane: memory
+      - name: Require guard mutations to be detected
+        env:
+          TLA2TOOLS_JAR: ${{ runner.temp }}/tla2tools.jar
+        run: cargo test --locked --test guard_quality
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: guard-mutation-report
+          path: |
+            target/verification/rust-mutations/
+            target/verification/guard-coverage/
+          if-no-files-found: warn

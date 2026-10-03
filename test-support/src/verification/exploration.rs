@@ -21,6 +21,7 @@ pub fn traces(module: &str, report: &str, config: &str) -> Result<Vec<Vec<State>
 /// Run a fresh exploration, retaining every successor so callers can test
 /// different histories through merged states and repeat modeled cycles.
 pub fn explore(module: &str, report: &str, config: &str) -> Result<Graph> {
+    require_model_lane()?;
     let destination = root().join("target/verification").join(report);
     fs::create_dir_all(&destination)?;
     let _jvm_lock = lock(&root().join("target/verification/tlc.lock"))?;
@@ -29,6 +30,8 @@ pub fn explore(module: &str, report: &str, config: &str) -> Result<Graph> {
     fs::write(&cfg, config)?;
     let metadir = tempfile::tempdir_in(&destination)?;
     let dot = destination.join("graph.dot");
+    let measurement =
+        measurement::Measurement::start(module, config, 0, &destination.join("tlc.log"))?;
     let output = run(
         command(java)
             .arg(format!(
@@ -36,7 +39,7 @@ pub fn explore(module: &str, report: &str, config: &str) -> Result<Graph> {
                 root().join("verification").display()
             ))
             .args(["-XX:+UseParallelGC", "-Xmx1g", "-cp"])
-            .arg(jar)
+            .arg(std::env::join_paths([jar, root().join("verification")])?)
             .args(["tlc2.TLC", "-workers", "2", "-fp", "0", "-config"])
             .arg(cfg)
             .arg("-metadir")
@@ -50,7 +53,9 @@ pub fn explore(module: &str, report: &str, config: &str) -> Result<Graph> {
     if !output.contains("Model checking completed. No error has been found.") {
         return Err("TLC did not finish exploration".into());
     }
-    parse(&fs::read_to_string(dot)?)
+    let graph = parse(&fs::read_to_string(dot)?)?;
+    measurement.finish()?;
+    Ok(graph)
 }
 
 /// Canonical scalar graph: successor order depends on state values, not TLC's

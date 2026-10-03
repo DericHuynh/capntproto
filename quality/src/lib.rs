@@ -4,6 +4,7 @@ pub mod benchmark;
 mod charts;
 pub mod coverage;
 pub mod instructions;
+pub mod lanes;
 pub mod report;
 use capntproto_test_support::verification::{self as v, root};
 use serde::{Deserialize, Serialize};

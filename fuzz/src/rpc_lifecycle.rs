@@ -1039,12 +1039,33 @@ pub fn check(input: &[u8]) {
     let _ = run(input);
 }
 pub fn run(input: &[u8]) -> Summary {
+    run_with_feedback(input, |_| {})
+}
+
+/// Progress from successful operations, shared with the AFL++ IJON observer.
+/// Counts are bounded by the command budget; no fuzz-engine dependency enters
+/// the oracle and ordinary/libFuzzer replays use exactly the same assertions.
+pub struct Progress {
+    pub state: u32,
+    pub completed: usize,
+    pub effects: usize,
+}
+pub fn run_with_feedback(input: &[u8], mut feedback: impl FnMut(Progress)) -> Summary {
     let input = &input[..input.len().min(MAX_INPUT)];
     let get = |i| input.get(i).copied().unwrap_or(0);
     let count = get(2) as usize % (MAX_COMMANDS + 1);
     let mut machine = Machine::new(get(0));
     for i in 0..count {
         machine.command(std::array::from_fn(|j| get(3 + i * 4 + j)));
+        let state = machine.state.borrow();
+        feedback(Progress {
+            state: (state.live.len().min(63) as u32)
+                | ((state.running.len().min(63) as u32) << 6)
+                | ((state.promises.len().min(63) as u32) << 12)
+                | ((machine.pending.len().min(63) as u32) << 18),
+            completed: state.completed.len(),
+            effects: machine.summary.effects.iter().sum(),
+        });
     }
     machine.ending(get(1), input.get(3 + count * 4..).unwrap_or_default());
     let state = machine.state.clone();
@@ -1170,7 +1191,22 @@ mod tests {
                 *total += count;
             }
             endings.insert(summary.ending);
-            assert_eq!(summary, run(input), "non-reproducible seed {index}");
+            let mut first = Vec::new();
+            let observed =
+                run_with_feedback(input, |p| first.push((p.state, p.completed, p.effects)));
+            let mut second = Vec::new();
+            assert_eq!(
+                observed,
+                run_with_feedback(input, |p| second.push((p.state, p.completed, p.effects)))
+            );
+            assert_eq!(
+                first, second,
+                "persistent feedback changed for seed {index}"
+            );
+            assert_eq!(
+                summary, observed,
+                "feedback changed oracle semantics for seed {index}"
+            );
         }
         assert!(commands.iter().all(|&count| count > 0));
         assert!(effects.iter().all(|&count| count > 0));

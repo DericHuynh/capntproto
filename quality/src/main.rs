@@ -17,6 +17,7 @@ fn main() -> Result<()> {
     let result = match args[0].as_str() {
         "coverage" => coverage::collect(&mut r),
         "qualification" => qualification(&mut r),
+        "models" => capntproto_quality::lanes::models(&mut r),
         "benchmark-build" => benchmark::bundle(&mut r),
         "benchmark" => benchmark::import(
             &mut r,
@@ -35,9 +36,7 @@ fn main() -> Result<()> {
                 ],
             )
             .map(|_| ()),
-        "fuzz" => r
-            .cargo("asan", &["test", "--locked", "--test", "native_fuzz"])
-            .map(|_| ()),
+        "fuzz" => capntproto_quality::lanes::fuzz(&mut r),
         "security" => (|| {
             for (name, manifest) in [
                 ("root", "Cargo.lock"),

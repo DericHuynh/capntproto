@@ -407,7 +407,7 @@ fn metadata_case(base: &SchemaLoader, payload: u64, bound: u64) -> SchemaLoader 
 }
 
 #[test]
-fn metadata_model_replays_lazy_resolution_type_checks_and_authority() {
+fn tlc_metadata_model_replays_lazy_resolution_type_checks_and_authority() {
     use capntproto_test_support::verification::exploration::{controls, traces};
     const MODEL: &str = "verification/RpcSchemaMetadata.tla";
     const CFG: &str = include_str!("../verification/RpcSchemaMetadata.cfg");

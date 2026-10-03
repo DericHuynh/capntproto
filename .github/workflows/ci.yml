@@ -189,7 +189,7 @@ jobs:
           for platform in ubuntu-24.04 macos-15 windows-2025; do
             if test -f "platforms/$platform.md"; then cat "platforms/$platform.md" >> README.md; else printf '| %s | missing | missing | missing | missing |\n' "$platform" >> README.md; fi
           done
-          printf '\nFull workspace tests and LLVM regression reporting run in Verification / Coverage. Performance runs separately in Performance / Dedicated benchmarks; unmeasured coverage/performance is not implied by a smoke pass.\n' >> README.md
+          printf '\nCargo tests and LLVM reporting run in Verification / Cargo tests. TLA+ models and fuzzing have independent Verification workflows. Performance runs separately in Performance / Dedicated benchmarks; unmeasured coverage/performance is not implied by a smoke pass.\n' >> README.md
           cat README.md >> "$GITHUB_STEP_SUMMARY"
           test "$RESULT" = success
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

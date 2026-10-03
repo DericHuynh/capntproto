@@ -50,7 +50,7 @@ The [wiki publishing guide](Wiki-Maintenance.md) covers initialization, export
 and the separate wiki Git repository.
 
 The generated README and initial report SVGs are checked in. Follow
-[README Reports](README-Reports.md) to enable automatic updates after full-quality and
+[README Reports](README-Reports.md) to enable automatic updates after Cargo, TLA+, fuzzing and
 benchmark runs. Edit [the template](../README.template.md) for prose changes.
 
 ## Community files

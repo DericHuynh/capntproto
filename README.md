@@ -2,7 +2,9 @@
 # Capntproto
 
 [![CI](https://github.com/DericHuynh/capntproto/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/ci.yml)
-[![Coverage verification](https://github.com/DericHuynh/capntproto/actions/workflows/verification-coverage.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/verification-coverage.yml)
+[![Cargo tests and coverage](https://github.com/DericHuynh/capntproto/actions/workflows/verification-tests.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/verification-tests.yml)
+[![TLA+ models](https://github.com/DericHuynh/capntproto/actions/workflows/verification-models.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/verification-models.yml)
+[![Fuzzing](https://github.com/DericHuynh/capntproto/actions/workflows/verification-fuzz.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/verification-fuzz.yml)
 [![Dedicated benchmarks](https://github.com/DericHuynh/capntproto/actions/workflows/performance.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/performance.yml)
 [![Rust 1.97](https://img.shields.io/badge/rust-1.97-orange.svg)](rust-toolchain.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -91,15 +93,27 @@ their own licenses and [third-party notices](THIRD_PARTY_NOTICES.md).
 
 Generated automatically from CI evidence. Each lane keeps its own measured commit and date; measurements from different commits are not combined into a single qualification claim.
 
-### Aggregate workspace tests
+### Cargo tests
 
-Latest full-quality run: [2026-10-03T08:26:31Z · run 37109708879 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37109708879) · commit `daf0a053060b` · **cancelled**
+Awaiting the first separate Cargo test run. Earlier combined runs remain in the history.
 
-![Aggregate test history: total, passed, failed, errored and skipped](docs/reports/test-history.svg)
+![Cargo test results](docs/reports/cargo-history.svg)
 
-[Show all failed tests and diagnostics](docs/reports/failed-tests.md).
+[Show all failed tests and diagnostics](docs/reports/failed-tests.md). Cargo tests and doctests exclude the dedicated TLA+, fuzz, Miri and mutation campaigns. Filtered tests are not counted as passes or skips. [Reporting contract](docs/wiki/README-Reports.md).
 
-Counts are outer workspace libtest cases and doctests. Nested C++/model/fuzz checks are represented by their parent test, without double-counting their internal cases. Skipped means ignored; errors mean announced tests that never returned a result. Build failures and missing reports have unknown totals. [Reporting contract and setup](docs/wiki/README-Reports.md).
+### TLA+ models and Rust trace replays
+
+Awaiting the first dedicated CI run; no measurements have been invented.
+
+![TLA+ Rust replay results](docs/reports/tla-history.svg)
+
+[Failed model replay tests](docs/reports/failed-models.md). Expected mutation counterexamples are successful checks, not unexpected failures.
+
+### Fuzzing: libFuzzer and AFL++
+
+Awaiting the first dedicated CI run; no measurements have been invented.
+
+AFL++ guides the RPC lifecycle oracle with IJON state and progress annotations. Corpus inputs, crashes, hangs, logs and engine statistics are retained in the linked run. Fuzzer counters are not source coverage percentages.
 
 ### LLVM coverage
 

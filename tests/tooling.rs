@@ -496,26 +496,35 @@ fn standalone_crate_tests() {
     );
 }
 
+fn optimized_checks(filters: &[&str], name: &str) {
+    let mut args = vec![
+        "test",
+        "--locked",
+        "--release",
+        "--test",
+        "storage",
+        "--test",
+        "durable_bulk",
+        "--test",
+        "persistence",
+        "--test",
+        "field_api_rpc",
+        "--test",
+        "native",
+        "--",
+    ];
+    args.extend(filters);
+    cargo(&args, name);
+}
+
 #[test]
 fn optimized_runtime() {
-    cargo(
-        &[
-            "test",
-            "--locked",
-            "--release",
-            "--test",
-            "storage",
-            "--test",
-            "durable_bulk",
-            "--test",
-            "persistence",
-            "--test",
-            "field_api_rpc",
-            "--test",
-            "native",
-        ],
-        "optimized",
-    );
+    optimized_checks(&["--skip", "tlc"], "optimized");
+}
+
+#[test]
+fn tlc_optimized_runtime() {
+    optimized_checks(&["tlc"], "optimized-models");
 }
 
 #[test]

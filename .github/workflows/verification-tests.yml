@@ -1,4 +1,4 @@
-name: Verification / Coverage
+name: Verification / Cargo tests
 on:
   workflow_dispatch:
   schedule:
@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: full-quality-${{ github.ref }}
+  group: cargo-verification-${{ github.ref }}
   cancel-in-progress: true
 env:
   CARGO_TERM_COLOR: never
@@ -17,7 +17,7 @@ env:
   RUST_BACKTRACE: '1'
 jobs:
   coverage:
-    name: Test workspace and collect first-party coverage
+    name: Cargo tests and first-party coverage
     runs-on: ubuntu-26.04
     timeout-minutes: 350
     steps:
@@ -28,7 +28,7 @@ jobs:
       - uses: ./.github/actions/quality-setup # zizmor: ignore[self-repository]
         with:
           lane: coverage
-      - name: Collect first-party LLVM coverage (one workspace test invocation)
+      - name: Run Cargo partition once with LLVM coverage
         env:
           TLA2TOOLS_JAR: ${{ runner.temp }}/tla2tools.jar
         run: cargo run --locked -p capntproto-quality -- coverage target/quality/coverage
@@ -40,7 +40,7 @@ jobs:
         run: cargo run --locked -p capntproto-quality -- report target/quality coverage,security
       - name: Export compact README data (including failed test runs)
         if: success() || failure()
-        run: python3 scripts/update_readme.py collect --input target/quality --kind full --output target/readme-data/publication.json --failures-output target/quality/FAILED-TESTS.md
+        run: python3 scripts/update_readme.py collect --input target/quality --kind cargo --output target/readme-data/publication.json --failures-output target/quality/FAILED-TESTS.md --report-output target/quality/cargo-tests
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
@@ -53,7 +53,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: full-quality-report
+          name: cargo-test-report
           path: target/quality/
           if-no-files-found: error
           retention-days: 30

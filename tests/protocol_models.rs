@@ -2,7 +2,7 @@
 use capntproto_test_support::verification::{catalog, verify};
 
 #[test]
-fn storage_recovery_model() {
+fn tlc_storage_recovery_model() {
     verify(
         catalog()
             .groups
@@ -14,7 +14,7 @@ fn storage_recovery_model() {
 }
 
 #[test]
-fn route_lifecycle_model() {
+fn tlc_route_lifecycle_model() {
     verify(
         catalog()
             .groups
@@ -26,7 +26,7 @@ fn route_lifecycle_model() {
 }
 
 #[test]
-fn schema_loader_model() {
+fn tlc_schema_loader_model() {
     verify(
         catalog()
             .groups
@@ -38,7 +38,7 @@ fn schema_loader_model() {
 }
 
 #[test]
-fn multiparty_join_model() {
+fn tlc_multiparty_join_model() {
     verify(
         catalog()
             .groups
@@ -50,7 +50,7 @@ fn multiparty_join_model() {
 }
 
 #[test]
-fn answer_adoption_model() {
+fn tlc_answer_adoption_model() {
     verify(
         catalog()
             .groups
@@ -62,7 +62,7 @@ fn answer_adoption_model() {
 }
 
 #[test]
-fn caller_pipeline_model() {
+fn tlc_caller_pipeline_model() {
     verify(
         catalog()
             .groups
@@ -74,7 +74,7 @@ fn caller_pipeline_model() {
 }
 
 #[test]
-fn two_party_join_model() {
+fn tlc_two_party_join_model() {
     verify(
         catalog()
             .groups
@@ -86,7 +86,7 @@ fn two_party_join_model() {
 }
 
 #[test]
-fn membrane_join_model() {
+fn tlc_membrane_join_model() {
     verify(
         catalog()
             .groups
@@ -98,7 +98,7 @@ fn membrane_join_model() {
 }
 
 #[test]
-fn storage_compaction_model() {
+fn tlc_storage_compaction_model() {
     verify(
         catalog()
             .groups
@@ -110,7 +110,7 @@ fn storage_compaction_model() {
 }
 
 #[test]
-fn orm_history_model() {
+fn tlc_orm_history_model() {
     verify(
         catalog()
             .groups
@@ -122,7 +122,7 @@ fn orm_history_model() {
 }
 
 #[test]
-fn persistence_model() {
+fn tlc_persistence_model() {
     verify(
         catalog()
             .groups
@@ -134,7 +134,7 @@ fn persistence_model() {
 }
 
 #[test]
-fn persistence_expiry_model() {
+fn tlc_persistence_expiry_model() {
     verify(
         catalog()
             .groups
@@ -146,7 +146,7 @@ fn persistence_expiry_model() {
 }
 
 #[test]
-fn generic_parameters_model() {
+fn tlc_generic_parameters_model() {
     verify(
         catalog()
             .groups
@@ -158,7 +158,7 @@ fn generic_parameters_model() {
 }
 
 #[test]
-fn dynamic_orphans_model() {
+fn tlc_dynamic_orphans_model() {
     verify(
         catalog()
             .groups
@@ -170,7 +170,7 @@ fn dynamic_orphans_model() {
 }
 
 #[test]
-fn orphan_access_model() {
+fn tlc_orphan_access_model() {
     verify(
         catalog()
             .groups
@@ -182,7 +182,7 @@ fn orphan_access_model() {
 }
 
 #[test]
-fn orphan_concat_model() {
+fn tlc_orphan_concat_model() {
     verify(
         catalog()
             .groups
@@ -194,7 +194,7 @@ fn orphan_concat_model() {
 }
 
 #[test]
-fn external_data_model() {
+fn tlc_external_data_model() {
     verify(
         catalog()
             .groups
@@ -206,7 +206,7 @@ fn external_data_model() {
 }
 
 #[test]
-fn arena_resize_model() {
+fn tlc_arena_resize_model() {
     verify(
         catalog()
             .groups
@@ -218,7 +218,7 @@ fn arena_resize_model() {
 }
 
 #[test]
-fn orphan_groups_model() {
+fn tlc_orphan_groups_model() {
     verify(
         catalog()
             .groups
@@ -230,7 +230,7 @@ fn orphan_groups_model() {
 }
 
 #[test]
-fn native_arbitration_model() {
+fn tlc_native_arbitration_model() {
     verify(
         catalog()
             .groups
@@ -242,7 +242,7 @@ fn native_arbitration_model() {
 }
 
 #[test]
-fn native_provisioning_model() {
+fn tlc_native_provisioning_model() {
     verify(
         catalog()
             .groups
@@ -254,7 +254,7 @@ fn native_provisioning_model() {
 }
 
 #[test]
-fn native_listener_model() {
+fn tlc_native_listener_model() {
     verify(
         catalog()
             .groups
@@ -266,7 +266,7 @@ fn native_listener_model() {
 }
 
 #[test]
-fn native_shutdown_model() {
+fn tlc_native_shutdown_model() {
     verify(
         catalog()
             .groups
@@ -278,7 +278,7 @@ fn native_shutdown_model() {
 }
 
 #[test]
-fn realtime_datagram_model() {
+fn tlc_realtime_datagram_model() {
     verify(
         catalog()
             .groups
@@ -290,7 +290,7 @@ fn realtime_datagram_model() {
 }
 
 #[test]
-fn realtime_fragments_model() {
+fn tlc_realtime_fragments_model() {
     verify(
         catalog()
             .groups
@@ -302,7 +302,7 @@ fn realtime_fragments_model() {
 }
 
 #[test]
-fn bulk_model() {
+fn tlc_bulk_model() {
     verify(
         catalog()
             .groups
@@ -314,7 +314,7 @@ fn bulk_model() {
 }
 
 #[test]
-fn durable_bulk_model() {
+fn tlc_durable_bulk_model() {
     verify(
         catalog()
             .groups
@@ -326,7 +326,7 @@ fn durable_bulk_model() {
 }
 
 #[test]
-fn realtime_model() {
+fn tlc_realtime_model() {
     verify(
         catalog()
             .groups
@@ -338,7 +338,7 @@ fn realtime_model() {
 }
 
 #[test]
-fn schema_exchange_model() {
+fn tlc_schema_exchange_model() {
     verify(
         catalog()
             .groups
@@ -350,7 +350,7 @@ fn schema_exchange_model() {
 }
 
 #[test]
-fn native_routes_model() {
+fn tlc_native_routes_model() {
     verify(
         catalog()
             .groups
@@ -362,7 +362,7 @@ fn native_routes_model() {
 }
 
 #[test]
-fn native_multiparty_model() {
+fn tlc_native_multiparty_model() {
     verify(
         catalog()
             .groups
@@ -374,7 +374,7 @@ fn native_multiparty_model() {
 }
 
 #[test]
-fn field_owners_model() {
+fn tlc_field_owners_model() {
     verify(
         catalog()
             .groups
@@ -386,7 +386,7 @@ fn field_owners_model() {
 }
 
 #[test]
-fn field_entry_model() {
+fn tlc_field_entry_model() {
     verify(
         catalog()
             .groups
@@ -398,7 +398,7 @@ fn field_entry_model() {
 }
 
 #[test]
-fn field_values_model() {
+fn tlc_field_values_model() {
     verify(
         catalog()
             .groups
@@ -410,7 +410,7 @@ fn field_values_model() {
 }
 
 #[test]
-fn field_ownership_model() {
+fn tlc_field_ownership_model() {
     verify(
         catalog()
             .groups
@@ -422,7 +422,7 @@ fn field_ownership_model() {
 }
 
 #[test]
-fn field_group_staging_model() {
+fn tlc_field_group_staging_model() {
     verify(
         catalog()
             .groups
@@ -434,7 +434,7 @@ fn field_group_staging_model() {
 }
 
 #[test]
-fn disconnect_cleanup_model() {
+fn tlc_disconnect_cleanup_model() {
     verify(
         catalog()
             .groups
@@ -446,7 +446,7 @@ fn disconnect_cleanup_model() {
 }
 
 #[test]
-fn idle_model() {
+fn tlc_idle_model() {
     verify(
         catalog()
             .groups
@@ -458,7 +458,7 @@ fn idle_model() {
 }
 
 #[test]
-fn deferred_handoff_model() {
+fn tlc_deferred_handoff_model() {
     verify(
         catalog()
             .groups
@@ -470,7 +470,7 @@ fn deferred_handoff_model() {
 }
 
 #[test]
-fn cancellation_model() {
+fn tlc_cancellation_model() {
     verify(
         catalog()
             .groups
@@ -482,7 +482,7 @@ fn cancellation_model() {
 }
 
 #[test]
-fn tail_adoption_model() {
+fn tlc_tail_adoption_model() {
     verify(
         catalog()
             .groups
@@ -494,7 +494,7 @@ fn tail_adoption_model() {
 }
 
 #[test]
-fn tail_transfer_model() {
+fn tlc_tail_transfer_model() {
     verify(
         catalog()
             .groups
@@ -506,7 +506,7 @@ fn tail_transfer_model() {
 }
 
 #[test]
-fn bootstrap_model() {
+fn tlc_bootstrap_model() {
     verify(
         catalog()
             .groups
@@ -518,7 +518,7 @@ fn bootstrap_model() {
 }
 
 #[test]
-fn incoming_flow_model() {
+fn tlc_incoming_flow_model() {
     verify(
         catalog()
             .groups
@@ -530,7 +530,7 @@ fn incoming_flow_model() {
 }
 
 #[test]
-fn reconnect_model() {
+fn tlc_reconnect_model() {
     verify(
         catalog()
             .groups
@@ -542,7 +542,7 @@ fn reconnect_model() {
 }
 
 #[test]
-fn streaming_model() {
+fn tlc_streaming_model() {
     verify(
         catalog()
             .groups
@@ -554,7 +554,7 @@ fn streaming_model() {
 }
 
 #[test]
-fn membrane_model() {
+fn tlc_membrane_model() {
     verify(
         catalog()
             .groups
@@ -566,7 +566,7 @@ fn membrane_model() {
 }
 
 #[test]
-fn exception_trace_model() {
+fn tlc_exception_trace_model() {
     verify(
         catalog()
             .groups
@@ -578,7 +578,7 @@ fn exception_trace_model() {
 }
 
 #[test]
-fn import_alias_model() {
+fn tlc_import_alias_model() {
     verify(
         catalog()
             .groups
@@ -590,7 +590,7 @@ fn import_alias_model() {
 }
 
 #[test]
-fn revoked_policy_model() {
+fn tlc_revoked_policy_model() {
     verify(
         catalog()
             .groups
@@ -602,7 +602,7 @@ fn revoked_policy_model() {
 }
 
 #[test]
-fn membrane_transform_model() {
+fn tlc_membrane_transform_model() {
     verify(
         catalog()
             .groups
@@ -614,7 +614,7 @@ fn membrane_transform_model() {
 }
 
 #[test]
-fn fd_framing_model() {
+fn tlc_fd_framing_model() {
     verify(
         catalog()
             .groups
@@ -626,7 +626,7 @@ fn fd_framing_model() {
 }
 
 #[test]
-fn queued_streaming_model() {
+fn tlc_queued_streaming_model() {
     verify(
         catalog()
             .groups
@@ -638,7 +638,7 @@ fn queued_streaming_model() {
 }
 
 #[test]
-fn exception_disconnect_model() {
+fn tlc_exception_disconnect_model() {
     verify(
         catalog()
             .groups
@@ -650,7 +650,7 @@ fn exception_disconnect_model() {
 }
 
 #[test]
-fn exception_metadata_model() {
+fn tlc_exception_metadata_model() {
     verify(
         catalog()
             .groups
@@ -662,7 +662,7 @@ fn exception_metadata_model() {
 }
 
 #[test]
-fn call_hints_model() {
+fn tlc_call_hints_model() {
     verify(
         catalog()
             .groups
@@ -674,7 +674,7 @@ fn call_hints_model() {
 }
 
 #[test]
-fn incoming_hints_model() {
+fn tlc_incoming_hints_model() {
     verify(
         catalog()
             .groups
@@ -686,7 +686,7 @@ fn incoming_hints_model() {
 }
 
 #[test]
-fn static_cancellation_model() {
+fn tlc_static_cancellation_model() {
     verify(
         catalog()
             .groups
@@ -698,7 +698,7 @@ fn static_cancellation_model() {
 }
 
 #[test]
-fn call_executor_model() {
+fn tlc_call_executor_model() {
     verify(
         catalog()
             .groups
@@ -710,7 +710,7 @@ fn call_executor_model() {
 }
 
 #[test]
-fn schema_hints_model() {
+fn tlc_schema_hints_model() {
     verify(
         catalog()
             .groups
@@ -722,7 +722,7 @@ fn schema_hints_model() {
 }
 
 #[test]
-fn fd_model() {
+fn tlc_fd_model() {
     verify(
         catalog()
             .groups
@@ -734,7 +734,7 @@ fn fd_model() {
 }
 
 #[test]
-fn revocable_server_model() {
+fn tlc_revocable_server_model() {
     verify(
         catalog()
             .groups
@@ -746,7 +746,7 @@ fn revocable_server_model() {
 }
 
 #[test]
-fn revocable_streaming_model() {
+fn tlc_revocable_streaming_model() {
     verify(
         catalog()
             .groups
@@ -758,7 +758,7 @@ fn revocable_streaming_model() {
 }
 
 #[test]
-fn server_set_model() {
+fn tlc_server_set_model() {
     verify(
         catalog()
             .groups
@@ -770,7 +770,7 @@ fn server_set_model() {
 }
 
 #[test]
-fn server_hooks_model() {
+fn tlc_server_hooks_model() {
     verify(
         catalog()
             .groups
@@ -782,7 +782,7 @@ fn server_hooks_model() {
 }
 
 #[test]
-fn self_capability_model() {
+fn tlc_self_capability_model() {
     verify(
         catalog()
             .groups
@@ -794,7 +794,7 @@ fn self_capability_model() {
 }
 
 #[test]
-fn shorten_lookup_model() {
+fn tlc_shorten_lookup_model() {
     verify(
         catalog()
             .groups
@@ -806,7 +806,7 @@ fn shorten_lookup_model() {
 }
 
 #[test]
-fn dynamic_capability_model() {
+fn tlc_dynamic_capability_model() {
     verify(
         catalog()
             .groups
@@ -818,7 +818,7 @@ fn dynamic_capability_model() {
 }
 
 #[test]
-fn dynamic_ownership_model() {
+fn tlc_dynamic_ownership_model() {
     verify(
         catalog()
             .groups
@@ -830,7 +830,7 @@ fn dynamic_ownership_model() {
 }
 
 #[test]
-fn dynamic_brand_model() {
+fn tlc_dynamic_brand_model() {
     verify(
         catalog()
             .groups
@@ -842,7 +842,7 @@ fn dynamic_brand_model() {
 }
 
 #[test]
-fn wire_model() {
+fn tlc_wire_model() {
     verify(
         catalog()
             .groups
@@ -854,7 +854,7 @@ fn wire_model() {
 }
 
 #[test]
-fn guard_model() {
+fn tlc_guard_model() {
     verify(
         catalog()
             .groups
@@ -866,8 +866,8 @@ fn guard_model() {
 }
 
 #[test]
-#[ignore = "full composed state-space exploration; cargo test --test protocol_models protocol_reference -- --ignored --exact"]
-fn protocol_reference() {
+#[ignore = "full composed state-space exploration; cargo test --test protocol_models tlc_protocol_reference -- --ignored --exact"]
+fn tlc_protocol_reference() {
     verify(
         catalog()
             .groups
@@ -879,7 +879,7 @@ fn protocol_reference() {
 }
 
 #[test]
-fn runtime_reference() {
+fn tlc_runtime_reference() {
     verify(
         catalog()
             .groups

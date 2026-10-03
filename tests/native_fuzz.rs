@@ -37,6 +37,11 @@ fn input_hashes() -> BTreeMap<String, String> {
 
 #[test]
 fn native_fuzz_smoke() {
+    assert_ne!(
+        std::env::var("CAPNTPROTO_CI_LANE").as_deref(),
+        Ok("cargo"),
+        "fuzz campaigns belong to the fuzz job"
+    );
     let base = root().join("target/verification/native-fuzz");
     fs::create_dir_all(&base).unwrap();
     // An interrupted or failed qualification must not leave a stale success.

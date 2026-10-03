@@ -8,19 +8,20 @@ rendered README lives.
 
 ## What updates automatically
 
-[Verification / Coverage](../../.github/workflows/verification-coverage.yml) runs the workspace tests
-once, collects LLVM coverage and checks its reviewed baseline. It exports a small
-`readme-data` artifact even when tests fail. [Performance / Dedicated benchmarks](../../.github/workflows/performance.yml)
-exports the same artifact after validating dedicated-host samples. Existing full
-reports retain raw samples, environment information and logs.
+[Verification / Cargo tests](../../.github/workflows/verification-tests.yml) runs
+ordinary workspace tests/doctests once with LLVM coverage. [TLA+ models](../../.github/workflows/verification-models.yml)
+owns the bounded model checks and Rust replays. [Fuzzing](../../.github/workflows/verification-fuzz.yml)
+owns libFuzzer/ASan and AFL++/IJON campaigns. [Dedicated benchmarks](../../.github/workflows/performance.yml)
+remains the performance producer. Each exports an identity-bound `readme-data`
+artifact and its own README, graphs and diagnostics, including on test failure.
 
-[Reports / Publish](../../.github/workflows/reports.yml) runs after either producer
+[Reports / Publish](../../.github/workflows/reports.yml) runs after each producer
 finishes. It updates only `README.md` and renderer-owned files in `docs/reports/`,
 using one atomic, non-forced commit to the default branch. A concurrent source
 commit causes a bounded retry against the new template/history. No source files
 are rewritten, and no PR code or executable artifact is run by the publisher.
 
-The publisher accepts only completed runs of the two named workflow files (plus their former filenames for manually publishing
+The publisher accepts only completed runs of the four named workflow files (plus their former filenames for manually publishing
 runs started before the workflow migration), from
 this repository's default branch, triggered by push, schedule or manual dispatch.
 It checks the measured commit's ancestry and the artifact's repository, run ID,
@@ -29,14 +30,13 @@ archive members cannot select output paths. Reruns replace their earlier attempt
 late-finishing older runs do not replace newer benchmark results. Failed or
 cancelled runs with missing data are recorded as unavailable, never as success.
 
-The history keeps the latest 365 full-workspace attempts (one entry per run ID)
-and the latest benchmark attempt. Historical entries keep test counts, commit,
+The history keeps the latest 365 attempts separately for Cargo, TLA+ and fuzzing (one entry per run ID), the legacy combined history, and the latest benchmark attempt. Historical entries keep test counts, commit,
 source fingerprint and CI links; only current coverage/benchmark bars retain
 plotted values. The generated report assets are excluded from executable source
 fingerprints, so a report-only commit does not invalidate its own evidence.
 They remain included in source archives.
 
-## Aggregate test history
+## Cargo and TLA+ test histories
 
 The coreutils-style figure plots **Total, Pass, Fail, Error and Skip** by UTC run
 date, with a latest-count/percentage box. A single run is a point, not invented
@@ -44,19 +44,18 @@ historical progress. Every line starts at measured data; missing reports never
 become zeroes. Failed/incomplete workspace commands receive dotted markers.
 
 The coverage lane uses its existing pinned nightly toolchain for JSON libtest
-output and `--no-fail-fast`, while keeping one `cargo test --workspace` invocation.
+output and `--no-fail-fast`, while keeping one instrumented invocation for the Cargo partition. The TLA+ job filters `tlc` tests and records separate JSON events.
 Ordinary users still run `cargo test --workspace` with the pinned stable toolchain.
 The public counters are computed from individual events and checked against suite
 summaries and the SHA-256-bound command log:
 
 - **Passed / failed:** terminal Rust libtest and doctest results.
-- **Skipped:** ignored tests. Filtered subsets are rejected as full-workspace data.
+- **Skipped:** ignored tests. Tests filtered into another partition are excluded from its totals. Legacy full-workspace data still rejects filtered subsets.
 - **Errors:** announced tests that never returned a terminal result when a harness
   aborts. This includes cases that were announced but not reached before the abort.
 - **Total:** passed + failed + skipped + errors across observed suites.
 
-Nested C++, TLC, Miri, fuzz and subprocess cases are represented by their parent
-Rust test, rather than counted twice. Build failures before harness execution have
+Nested C++ and subprocess cases are represented by their parent Rust test. TLA+ replay cases and actual TLC checks have separate figures; fuzz executions never count as Cargo test passes. Build failures before harness execution have
 unknown totals. A partially executed workspace is explicitly incomplete; these
 counts are not a claim that every possible test was discovered or run. Test
 success and whole-workflow success are shown separately: coverage/security gates
@@ -66,11 +65,29 @@ The README links its failed count and **Show all failed tests and diagnostics**
 to [the current failure report](../reports/failed-tests.md). Each completed failure
 includes its harness/test name and escaped diagnostic output, with the original
 run, commit and attempt linked above it. The job summary also displays these
-failures; `FAILED-TESTS.md` is included in the full-quality artifact. Excerpts are
+failures; `FAILED-TESTS.md` is included in the Cargo test artifact. Excerpts are
 limited to 4,096 characters per test and 262,144 characters total; every failed name is retained, and the
 full raw command log remains in the artifact. Diagnostic details are retained for
-the latest full run only. Older count-only records link to their original logs.
+the latest run in each partition only. Older count-only records link to their original logs.
 Build errors and tests without terminal results remain separate from named failures.
+
+## TLA+ and fuzzing graphs
+
+TLA+ graphs show successful invariant/liveness checks, expected counterexamples,
+unexpected failures, and generated/distinct states parsed from each final TLC
+summary. Logs are hashed; interrupted checks remain failed or unavailable.
+Counts sum independent bounded configurations, not unbounded proof coverage.
+
+Fuzzing graphs have separate panels for libFuzzer/ASan and AFL++: executions,
+engine-local feedback, and saved crash/hang inputs. An AFL process exiting zero
+with saved findings still fails the job. Missing engine results stay unknown.
+AFL++ records stability and corpus sizes in its artifact; RPC targets must
+acknowledge IJON at the forkserver handshake. These metrics do not substitute for
+LLVM source coverage or compare engine performance.
+
+Older combined results stay in `history.json` and `test-history.svg`. New Cargo
+and TLA+ histories start at their first measurements; historical totals are not
+relabeled as if the partitions had always existed.
 
 ## Labelled benchmark bar charts
 
@@ -112,11 +129,11 @@ python3 scripts/update_readme.py render --output target/readme-preview
 To create public data from an existing source-bound CI report:
 
 ```sh
-python3 scripts/update_readme.py collect --input target/quality --kind full \
+python3 scripts/update_readme.py collect --input target/quality --kind cargo \
   --output target/readme-data/publication.json
 ```
 
-Use `--kind benchmark` for dedicated benchmark evidence. The collector does not
+Use `--kind models`, `--kind fuzz`, or `--kind benchmark` for the other producers. `--report-output DIRECTORY` writes standalone SVG graphs and a report README. `--kind full` is retained for historical combined evidence. The collector does not
 run tests or benchmarks. It rejects changed logs, stale chart fingerprints,
 non-finite values and unexpected lanes/paths. Matplotlib is only needed to render;
 collection and validation use Python's standard library.
@@ -150,5 +167,5 @@ with `GITHUB_TOKEN` do not recursively trigger normal push workflows; see
 Keep `DIGITALOCEAN_ACCESS_TOKEN` in the **`Benchmarking`** GitHub environment
 for the benchmark producer and cleanup job, as described in
 [Quality and Benchmarks](Quality-and-Benchmarks.md). Publication does not receive
-that secret or create cloud resources. Coverage verification remains scheduled weekly;
+that secret or create cloud resources. Cargo, TLA+ and fuzzing verification remain scheduled weekly;
 dedicated benchmarks remain manually dispatched to control droplet spend.

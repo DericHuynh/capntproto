@@ -3,6 +3,18 @@
 version = 4
 
 [[package]]
+name = "afl"
+version = "0.18.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97f234ba65eadcb51ea4e5c33dfdf05d6c512e297b4fb8fd31159e2dac4e7cc8"
+dependencies = [
+ "home",
+ "libc",
+ "rustc_version",
+ "xdg",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -134,15 +146,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "capntproto-compiler"
-version = "0.1.0"
-dependencies = [
- "capnp",
- "getrandom 0.4.3",
- "md5",
-]
-
-[[package]]
 name = "capnp-futures"
 version = "0.25.2"
 dependencies = [
@@ -168,6 +171,57 @@ dependencies = [
  "capnp",
  "pulldown-cmark",
  "pulldown-cmark-to-cmark",
+]
+
+[[package]]
+name = "capntproto"
+version = "0.1.0"
+dependencies = [
+ "boring",
+ "capnp",
+ "capnp-futures",
+ "capnp-rpc",
+ "capnpc",
+ "capntproto-compiler",
+ "futures",
+ "libc",
+ "quiche",
+ "rcgen",
+ "ring",
+ "rustls",
+ "serde",
+ "serde_json",
+ "socket2",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-rustls",
+ "tokio-util",
+ "x509-parser",
+ "zeroize",
+]
+
+[[package]]
+name = "capntproto-compiler"
+version = "0.1.0"
+dependencies = [
+ "capnp",
+ "getrandom 0.4.3",
+ "md5",
+]
+
+[[package]]
+name = "capntproto-native-fuzz"
+version = "0.1.0"
+dependencies = [
+ "afl",
+ "capnp",
+ "capnp-rpc",
+ "capnpc",
+ "capntproto",
+ "futures",
+ "libfuzzer-sys",
+ "quiche",
 ]
 
 [[package]]
@@ -291,7 +345,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -464,6 +518,15 @@ name = "glob"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
+
+[[package]]
+name = "home"
+version = "0.5.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc627f471c528ff0c4a49e1d5e60450c8f6461dd6d10ba9dcd3a61d3dff7728d"
+dependencies = [
+ "windows-sys 0.61.2",
+]
 
 [[package]]
 name = "intrusive-collections"
@@ -782,47 +845,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
-name = "capntproto"
-version = "0.1.0"
-dependencies = [
- "boring",
- "capnp",
- "capntproto-compiler",
- "capnp-futures",
- "capnp-rpc",
- "capnpc",
- "futures",
- "libc",
- "quiche",
- "rcgen",
- "ring",
- "rustls",
- "serde",
- "serde_json",
- "socket2",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-rustls",
- "tokio-util",
- "x509-parser",
- "zeroize",
-]
-
-[[package]]
-name = "capntproto-native-fuzz"
-version = "0.1.0"
-dependencies = [
- "capnp",
- "capnp-rpc",
- "capnpc",
- "futures",
- "libfuzzer-sys",
- "quiche",
- "capntproto",
-]
-
-[[package]]
 name = "ring"
 version = "0.17.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -843,6 +865,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b1e7f9a428571be2dc5bc0505c13fb6bf936822b894ec87abf8a08a4e51742d"
 
 [[package]]
+name = "rustc_version"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92"
+dependencies = [
+ "semver",
+]
+
+[[package]]
 name = "rusticata-macros"
 version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -861,7 +892,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -897,6 +928,12 @@ dependencies = [
  "rustls-pki-types",
  "untrusted",
 ]
+
+[[package]]
+name = "semver"
+version = "1.0.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 
 [[package]]
 name = "serde"
@@ -1024,7 +1061,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1287,6 +1324,12 @@ dependencies = [
  "thiserror",
  "time",
 ]
+
+[[package]]
+name = "xdg"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2fb433233f2df9344722454bc7e96465c9d03bff9d77c248f9e7523fe79585b5"
 
 [[package]]
 name = "yasna"

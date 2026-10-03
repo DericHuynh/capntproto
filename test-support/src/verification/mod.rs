@@ -19,6 +19,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod measurement;
+
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 #[derive(Deserialize, Serialize)]
@@ -484,6 +486,8 @@ fn fingerprint(group: &Group, java: &Path, jar: &Path) -> Result<String> {
     for dir in [
         root().join("verification"),
         root().join("verification/configs"),
+        root().join("verification/audit"),
+        root().join("verification/audit/configs"),
     ] {
         for entry in fs::read_dir(dir)? {
             let path = entry?.path();
@@ -506,10 +510,19 @@ fn fingerprint(group: &Group, java: &Path, jar: &Path) -> Result<String> {
         version.stdout,
         version.stderr,
         include_str!("mod.rs"),
+        std::env::var("CAPNTPROTO_TLC_SESSION").ok(),
     ))?))
 }
 
+pub(super) fn require_model_lane() -> Result<()> {
+    if std::env::var("CAPNTPROTO_CI_LANE").as_deref() == Ok("cargo") {
+        return Err("TLC check reached the Cargo partition: name its test with tlc so the model job owns it".into());
+    }
+    Ok(())
+}
+
 pub fn verify(group: &Group) -> Result<()> {
+    require_model_lane()?;
     let dir = root().join("target/verification").join(&group.report);
     let _group_lock = lock(&dir.join("check.lock"))?;
     let (java, jar) = tools()?;
@@ -547,7 +560,10 @@ pub fn verify(group: &Group) -> Result<()> {
             root().join("verification").display()
         ))
         .args(["-XX:+UseParallelGC", "-Xmx1g", "-cp"])
-        .arg(&jar)
+        .arg(std::env::join_paths([
+            jar.clone(),
+            root().join("verification"),
+        ])?)
         .args(["tlc2.TLC", "-workers", "2", "-fp", "0", "-config"])
         .arg(&cfg)
         .arg("-metadir")
@@ -558,6 +574,8 @@ pub fn verify(group: &Group) -> Result<()> {
         }
         cmd.arg(&check.module);
         let log = destination.join("tlc.log");
+        let measurement =
+            measurement::Measurement::start(&check.module, &check.config, check.exit, &log)?;
         let output = run(&mut cmd, &log, check.exit)?;
         if !output.contains(&check.message) {
             return Err(format!(
@@ -573,6 +591,7 @@ pub fn verify(group: &Group) -> Result<()> {
                 return Err(format!("TLC graph changed for {}/{}: expected {expected:?}, got {actual:?}; update the reviewed trace corpus together with the model", group.report, check.id).into());
             }
         }
+        measurement.finish()?;
         logs.insert(
             log.strip_prefix(&dir)?.to_string_lossy().into_owned(),
             sha256(output),
