@@ -1,9 +1,10 @@
 ---
 name: Bug report
 about: Report a reproducible failure or incorrect behavior in Capn't Proto.
-title: ''
-labels: ''
+title: "[Bug]"
+labels: bug
 assignees: ''
+
 ---
 
 <!-- For suspected vulnerabilities, email huynhderic@gmail.com privately instead.

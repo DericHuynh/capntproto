@@ -1,9 +1,10 @@
 ---
 name: Usage question
 about: Ask for help with a Capn't Proto API, configuration, or supported workflow.
-title: ''
-labels: ''
+title: "[Question] "
+labels: question
 assignees: ''
+
 ---
 
 <!-- Check SUPPORT.md and existing issues first. Send security concerns and

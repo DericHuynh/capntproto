@@ -1,9 +1,10 @@
 ---
 name: Feature request
 about: Propose an improvement with a concrete use case and acceptance criteria.
-title: ''
-labels: ''
+title: "[Feature]"
+labels: enhancement
 assignees: ''
+
 ---
 
 ## Use case

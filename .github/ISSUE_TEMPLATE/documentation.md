@@ -1,9 +1,10 @@
 ---
 name: Documentation
 about: Report missing, confusing, or incorrect documentation.
-title: ''
-labels: ''
+title: "[Documentation]"
+labels: documentation
 assignees: ''
+
 ---
 
 ## Page or section
