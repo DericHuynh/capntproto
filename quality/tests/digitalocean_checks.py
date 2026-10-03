@@ -22,10 +22,13 @@ class API:
         self.price = 0.1
         self.creation_response_lost = False
         self.refuse_delete = False
+        self.regions = ['nyc3']
+        self.available = True
 
     def pages(self, path, key):
         if key == "sizes":
-            return [{"slug": "c-4", "available": True, "regions": ["nyc3"], "price_hourly": self.price}]
+            return [{"slug": "c-4", "available": self.available, "regions": self.regions,
+                     "price_hourly": self.price, "vcpus": 4}]
         if key == "droplets":
             return list(self.hosts)
         if key == "ssh_keys":
@@ -76,6 +79,53 @@ with tempfile.TemporaryDirectory() as directory:
         with patch.dict(os.environ, {"DO_SIZE": size, "DO_REGION": "nyc3"}):
             expect_error(lambda: cloud.run(api, base, base / "results", base / "state"), error)
         assert not api.calls
+
+# A failed preflight replaces previous capacity and invalidates old samples.
+with tempfile.TemporaryDirectory() as directory:
+    base = Path(directory)
+    api = API()
+    api.available = False
+    for name in ['trials.json', 'environment.json', 'instructions.jsonl', 'runner.log', 'capacity.json']:
+        (base / name).write_text('stale')
+    with patch.dict(os.environ, DO_SIZE='auto', DO_REGION='auto'):
+        expect_error(lambda: cloud.run(api, base, base, base / 'state'), 'No available dedicated plan')
+    assert not (base / 'trials.json').exists()
+    assert json.loads((base / 'capacity.json').read_text())['status'] == 'unavailable'
+    assert not api.calls
+
+# Auto chooses live capacity without downgrading or overriding explicit input.
+api = API()
+api.regions = ['lon1', 'tor1']
+with patch.dict(os.environ, DO_SIZE='auto', DO_REGION='auto'):
+    size, region = cloud.preflight(api)
+    assert size['slug'] == 'c-4' and region == 'tor1'
+with patch.dict(os.environ, DO_SIZE='c-4', DO_REGION='nyc3'):
+    expect_error(lambda: cloud.select_plan(api), 'c-4@tor1')
+assert not api.calls
+api.available = False
+with patch.dict(os.environ, DO_SIZE='auto', DO_REGION='auto'):
+    expect_error(lambda: cloud.select_plan(api), 'Available dedicated pairs: none')
+for invalid_price in ['NaN', 'Infinity', '-0.1', '0', 'not-a-price']:
+    api = API()
+    api.price = invalid_price
+    with patch.dict(os.environ, DO_SIZE='auto', DO_REGION='auto'):
+        expect_error(lambda: cloud.select_plan(api), 'No available dedicated plan')
+    assert not api.calls
+
+class MixedCapacity(API):
+    def pages(self, path, key):
+        assert key == 'sizes'
+        return [
+            dict(slug='s-4vcpu-8gb', available=True, regions=['nyc3'], price_hourly=.01, vcpus=4),
+            dict(slug='c-2', available=True, regions=['nyc3'], price_hourly=.05, vcpus=2),
+            dict(slug='c-8', available=True, regions=['nyc3'], price_hourly=.2, vcpus=8),
+            dict(slug='c-4', available=False, regions=['nyc3'], price_hourly=.1, vcpus=4),
+            dict(slug='c-4-intel', available=True, regions=['lon1'], price_hourly=.15, vcpus=4),
+        ]
+
+with patch.dict(os.environ, DO_SIZE='auto', DO_REGION='auto'):
+    size, region = cloud.select_plan(MixedCapacity())
+    assert (size['slug'], region) == ('c-4-intel', 'lon1')
 
 # Creation can succeed even if the response is lost. Cleanup finds the unique name.
 def fake_command(args, **kwargs):

@@ -39,7 +39,7 @@ jobs:
         run: cargo run --locked -p reproto-quality -- report target/quality coverage,security
       - name: Export compact README data (including failed test runs)
         if: success() || failure()
-        run: python3 scripts/update_readme.py collect --input target/quality --kind full --output target/readme-data/publication.json
+        run: python3 scripts/update_readme.py collect --input target/quality --kind full --output target/readme-data/publication.json --failures-output target/quality/FAILED-TESTS.md
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
@@ -61,6 +61,10 @@ jobs:
         env:
           REPORT_URL: ${{ steps.report.outputs.artifact-url }}
         run: |
+          printf '\n[Show all failed tests and diagnostics (FAILED-TESTS.md in report artifact)](%s)\n' "$REPORT_URL" >> "$GITHUB_STEP_SUMMARY"
+          if test -f target/quality/FAILED-TESTS.md; then
+            cat target/quality/FAILED-TESTS.md >> "$GITHUB_STEP_SUMMARY"
+          fi
           if test -f target/quality/README.md; then
             sed '/^## Comparison bar charts/,$d' target/quality/README.md >> "$GITHUB_STEP_SUMMARY"
             printf '\n## Comparison bar charts\n\n[Download the README, SVG chart suite and plotted values](%s).\n' "$REPORT_URL" >> "$GITHUB_STEP_SUMMARY"

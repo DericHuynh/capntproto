@@ -16,6 +16,7 @@ def main():
     command.add_argument('--input', type=Path, required=True)
     command.add_argument('--kind', choices=['full', 'benchmark'], required=True)
     command.add_argument('--output', type=Path, required=True)
+    command.add_argument('--failures-output', type=Path)
     command = commands.add_parser('render')
     command.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[1])
     command.add_argument('--output', type=Path)
@@ -26,8 +27,14 @@ def main():
         # Invalidate an earlier local success before parsing any current evidence.
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.unlink(missing_ok=True)
+        if args.failures_output:
+            args.failures_output.unlink(missing_ok=True)
         value = collect(args.input, args.kind)
         args.output.write_text(json.dumps(value, indent=2) + '\n')
+        if args.failures_output:
+            from reporting.render import failure_details
+            args.failures_output.parent.mkdir(parents=True, exist_ok=True)
+            args.failures_output.write_text('# Failed workspace tests\n\n' + failure_details(value))
     elif args.command == 'render':
         from reporting.render import render
         history = json.loads((args.root / 'docs/reports/history.json').read_text())

@@ -1,5 +1,6 @@
 """Generate the root README and accessible SVG plots from bounded report history."""
 from datetime import datetime, timezone
+import html
 import json
 from pathlib import Path
 import re
@@ -71,7 +72,41 @@ def merge(history, record):
         history['benchmark'] = record
     for old in history['full'][:-1]:
         old['data']['charts'] = []  # Keep historical test counts; only latest coverage needs bars.
+        if old['data']['tests']:
+            old['data']['tests'].pop('failures', None)
     return validate_history(history)
+
+
+def failure_report(record):
+    """Render validated names as escaped text, never executable Markdown/HTML."""
+    text = '# Failed workspace tests\n\n'
+    if record is None:
+        return text + 'No full-quality run has been recorded.\n'
+    validate_record(record)
+    text += f"[Workflow run and full logs]({record['url']}) · commit `{record['commit']}` · attempt {record['attempt']}\n\n"
+    return text + failure_details(record['data'])
+
+
+def failure_details(data):
+    validate_publication(data)
+    text = ''
+    tests = data['tests']
+    if tests is None:
+        return text + 'No test inventory was produced. A build or infrastructure failure is not a passing test run. Inspect the workflow logs.\n'
+    text += f"Recorded: **{tests['failed']} failed**, **{tests['errors']} without a terminal result**, {tests['passed']} passed and {tests['skipped']} skipped.\n\n"
+    if 'failures' not in tests:
+        return text + 'This older report contains counts only. Failed test names and output are in the workflow artifacts.\n'
+    if not tests['failures']:
+        text += 'No completed test reported a failure.\n\n'
+    for i, failure in enumerate(tests['failures'], 1):
+        text += f"<details open>\n<summary>{i}. <code>{html.escape(failure['name'])}</code></summary>\n\n"
+        text += f"<p>{html.escape(failure['suite'])}</p>\n<pre>{html.escape(failure['output'])}</pre>\n"
+        if failure['truncated']:
+            text += '\nDiagnostic excerpt truncated; full output is in the workflow artifact.\n'
+        text += '\n</details>\n\n'
+    if not tests['command_passed']:
+        text += 'The workspace command failed or was incomplete. Build/infrastructure errors and tests that never finished are not invented as named failures.\n'
+    return text
 
 
 def plotting():
@@ -217,7 +252,8 @@ def render(template, history, output):
     if full and full['data']['tests']:
         t = full['data']['tests']
         section += '| Total | Passed | Failed | Errors | Skipped | Workspace command |\n| ---: | ---: | ---: | ---: | ---: | --- |\n'
-        section += f"| {t['total']:,} | {t['passed']:,} | {t['failed']:,} | {t['errors']:,} | {t['skipped']:,} | {'Passed' if t['command_passed'] else 'Failed / incomplete'} |\n\n"
+        section += f"| {t['total']:,} | {t['passed']:,} | [{t['failed']:,}](docs/reports/failed-tests.md) | {t['errors']:,} | {t['skipped']:,} | {'Passed' if t['command_passed'] else 'Failed / incomplete'} |\n\n"
+    section += '[Show all failed tests and diagnostics](docs/reports/failed-tests.md).\n\n'
     section += 'Counts are outer workspace libtest cases and doctests. Nested C++/model/fuzz checks are represented by their parent test, without double-counting their internal cases. Skipped means ignored; errors mean announced tests that never returned a result. Build failures and missing reports have unknown totals. [Reporting contract and setup](docs/wiki/README-Reports.md).\n\n'
     section += '### LLVM coverage\n\n'
     coverage = full['data']['charts'] if full else []
@@ -238,5 +274,6 @@ def render(template, history, output):
         section += '![Benchmark measurements pending](docs/reports/benchmarks-pending.svg)\n\n'
     section += '[Machine-readable history and exact plotted values](docs/reports/history.json). Full logs, raw samples and LLVM exports are retained in the linked workflow artifacts.\n'
     (output / 'README.md').write_text(template.replace('{{REPORTS}}', section))
+    (assets / 'failed-tests.md').write_text(failure_report(full))
     (assets / 'history.json').write_text(json.dumps(history, indent=2) + '\n')
-    return [output / 'README.md', assets / 'history.json', *sorted(assets.glob('*.svg'))]
+    return [output / 'README.md', assets / 'history.json', assets / 'failed-tests.md', *sorted(assets.glob('*.svg'))]

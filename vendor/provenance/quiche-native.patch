@@ -754,7 +754,7 @@ index 1fb1cd2..08b8962 100644
              }; 3],
          }
 diff --git a/quiche/src/packet.rs b/quiche/src/packet.rs
-index c5c4819..622dc4d 100644
+index c5c481953..f5e051233 100644
 --- a/quiche/src/packet.rs
 +++ b/quiche/src/packet.rs
 @@ -380,7 +380,14 @@ impl<'a> Header<'a> {
@@ -785,7 +785,19 @@ index c5c4819..622dc4d 100644
          first |= FORM_BIT | FIXED_BIT | (ty << 4);
  
          out.put_u8(first)?;
-@@ -749,6 +761,7 @@ pub fn negotiate_version(
+@@ -548,10 +560,7 @@ impl std::fmt::Debug for Header<'_> {
+         }
+ 
+         if let Some(ref token) = self.token {
+-            write!(f, " token=")?;
+-            for b in token {
+-                write!(f, "{b:02x}")?;
+-            }
++            write!(f, " token=<redacted> len={}", token.len())?;
+         }
+ 
+         if let Some(ref versions) = self.versions {
+@@ -749,6 +758,7 @@ pub fn negotiate_version(
      b.put_u8(dcid.len() as u8)?;
      b.put_bytes(dcid)?;
      b.put_u32(crate::PROTOCOL_VERSION_V1)?;
@@ -793,7 +805,7 @@ index c5c4819..622dc4d 100644
  
      Ok(b.off())
  }
-@@ -810,6 +823,16 @@ fn compute_retry_integrity_tag(
+@@ -810,6 +820,16 @@ fn compute_retry_integrity_tag(
      ];
  
      let (key, nonce) = match version {
@@ -810,7 +822,7 @@ index c5c4819..622dc4d 100644
          crate::PROTOCOL_VERSION_V1 =>
              (&RETRY_INTEGRITY_KEY_V1, RETRY_INTEGRITY_NONCE_V1),
  
-@@ -888,7 +911,7 @@ impl PktNumSpace {
+@@ -888,7 +908,7 @@ impl PktNumSpace {
      pub fn new() -> PktNumSpace {
          PktNumSpace {
              largest_rx_pkt_num: 0,
@@ -819,7 +831,34 @@ index c5c4819..622dc4d 100644
              largest_rx_non_probing_pkt_num: 0,
              largest_tx_pkt_num: None,
              recv_pkt_need_ack: ranges::RangeSet::new(crate::MAX_ACK_RANGES),
-@@ -1732,7 +1755,9 @@ mod tests {
+@@ -1172,6 +1192,26 @@ mod tests {
+     use crate::test_utils;
+     use crate::MAX_SEND_UDP_PAYLOAD_SIZE;
+ 
++    #[test]
++    fn debug_redacts_address_validation_tokens() {
++        for ty in [Type::Initial, Type::Retry] {
++            let hdr = Header {
++                ty,
++                version: crate::PROTOCOL_VERSION,
++                dcid: vec![1; 8].into(),
++                scid: vec![2; 8].into(),
++                pkt_num: 0,
++                pkt_num_len: 0,
++                token: Some(vec![0xba; 24]),
++                versions: None,
++                key_phase: false,
++            };
++            let debug = format!("{hdr:?}");
++            assert!(debug.contains("token=<redacted> len=24"));
++            assert!(!debug.contains("babababa"));
++        }
++    }
++
+     #[test]
+     fn retry() {
+         let hdr = Header {
+@@ -1732,7 +1772,9 @@ mod tests {
  
          let alg = crypto::Algorithm::ChaCha20_Poly1305;
  
@@ -830,7 +869,7 @@ index c5c4819..622dc4d 100644
  
          let mut hdr = Header::from_bytes(&mut b, 0).unwrap();
          assert_eq!(hdr.ty, Type::Short);
-@@ -2104,7 +2129,9 @@ mod tests {
+@@ -2104,7 +2146,9 @@ mod tests {
  
          let alg = crypto::Algorithm::ChaCha20_Poly1305;
  
@@ -1201,19 +1240,76 @@ index b8e740e..71540c2 100644
      #[cfg(windows)]
      fn X509_STORE_add_cert(ctx: *mut X509_STORE, x: *mut X509) -> c_int;
 diff --git a/quiche/src/transport_params.rs b/quiche/src/transport_params.rs
-index 8807204..026191b 100644
+index 88072040f..a4ea75ff5 100644
 --- a/quiche/src/transport_params.rs
 +++ b/quiche/src/transport_params.rs
-@@ -153,6 +153,8 @@ impl<'a> Iterator for UnknownTransportParameterIterator<'a> {
+@@ -151,8 +151,10 @@ impl<'a> Iterator for UnknownTransportParameterIterator<'a> {
+ }
+ 
  /// QUIC Transport Parameters
- #[derive(Clone, Debug, PartialEq)]
+-#[derive(Clone, Debug, PartialEq)]
++#[derive(Clone, PartialEq)]
  pub struct TransportParams {
 +    /// RFC 9368 chosen version followed by available versions.
 +    pub version_information: Option<Vec<u32>>,
      /// Value of Destination CID field from first Initial packet sent by client
      pub original_destination_connection_id: Option<ConnectionId<'static>>,
      /// The maximum idle timeout.
-@@ -197,6 +199,7 @@ pub struct TransportParams {
+@@ -194,9 +196,61 @@ pub struct TransportParams {
+     // pub preferred_address: ...,
+ }
+ 
++// Tokens and unknown extension payloads can contain sensitive peer data.
++impl std::fmt::Debug for TransportParams {
++    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
++        f.debug_struct("TransportParams")
++            .field("version_information", &self.version_information)
++            .field(
++                "original_destination_connection_id",
++                &self.original_destination_connection_id,
++            )
++            .field("max_idle_timeout", &self.max_idle_timeout)
++            .field("max_udp_payload_size", &self.max_udp_payload_size)
++            .field("initial_max_data", &self.initial_max_data)
++            .field(
++                "initial_max_stream_data_bidi_local",
++                &self.initial_max_stream_data_bidi_local,
++            )
++            .field(
++                "initial_max_stream_data_bidi_remote",
++                &self.initial_max_stream_data_bidi_remote,
++            )
++            .field(
++                "initial_max_stream_data_uni",
++                &self.initial_max_stream_data_uni,
++            )
++            .field("initial_max_streams_bidi", &self.initial_max_streams_bidi)
++            .field("initial_max_streams_uni", &self.initial_max_streams_uni)
++            .field("ack_delay_exponent", &self.ack_delay_exponent)
++            .field("max_ack_delay", &self.max_ack_delay)
++            .field("disable_active_migration", &self.disable_active_migration)
++            .field("active_conn_id_limit", &self.active_conn_id_limit)
++            .field(
++                "initial_source_connection_id",
++                &self.initial_source_connection_id,
++            )
++            .field(
++                "retry_source_connection_id",
++                &self.retry_source_connection_id,
++            )
++            .field("max_datagram_frame_size", &self.max_datagram_frame_size)
++            .field(
++                "stateless_reset_token",
++                &self.stateless_reset_token.map(|_| "<redacted>"),
++            )
++            .field(
++                "unknown_params_count",
++                &self.unknown_params.as_ref().map(|p| p.parameters.len()),
++            )
++            .finish()
++    }
++}
++
  impl Default for TransportParams {
      fn default() -> TransportParams {
          TransportParams {
@@ -1221,7 +1317,7 @@ index 8807204..026191b 100644
              original_destination_connection_id: None,
              max_idle_timeout: 0,
              stateless_reset_token: None,
-@@ -370,6 +373,23 @@ impl TransportParams {
+@@ -370,6 +424,23 @@ impl TransportParams {
                      tp.retry_source_connection_id = Some(val.to_vec().into());
                  },
  
@@ -1245,7 +1341,7 @@ index 8807204..026191b 100644
                  0x0020 => {
                      tp.max_datagram_frame_size = Some(val.get_varint()?);
                  },
-@@ -526,6 +546,12 @@ impl TransportParams {
+@@ -526,6 +597,12 @@ impl TransportParams {
  
          // TODO: encode preferred_address
  
@@ -1258,6 +1354,37 @@ index 8807204..026191b 100644
          if tp.active_conn_id_limit != 2 {
              assert!(tp.active_conn_id_limit <= octets::MAX_VAR_INT);
              TransportParams::encode_param(
+@@ -625,3 +702,30 @@ impl TransportParams {
+         ))
+     }
+ }
++
++#[cfg(test)]
++mod debug_tests {
++    use super::*;
++
++    #[test]
++    fn debug_redacts_tokens_and_unknown_payloads() {
++        let secret = 0xbabababababababababababababababau128;
++        let params = TransportParams {
++            stateless_reset_token: Some(secret),
++            unknown_params: Some(UnknownTransportParameters {
++                capacity: 0,
++                parameters: vec![UnknownTransportParameter {
++                    id: 0x1234,
++                    value: b"sensitive-extension-payload".to_vec(),
++                }],
++            }),
++            ..Default::default()
++        };
++        let debug = format!("{params:?}");
++        assert!(debug.contains("<redacted>"));
++        assert!(debug.contains("unknown_params_count: Some(1)"));
++        assert!(!debug.contains(&secret.to_string()));
++        assert!(!debug.contains("sensitive-extension-payload"));
++        assert!(!debug.contains("115, 101, 110, 115"));
++    }
++}
 diff --git a/Cargo.lock b/Cargo.lock
 new file mode 100644
 index 0000000..65321e2
@@ -5989,3 +6116,32 @@ index 0000000..af841d1
 +        Err(Error::InvalidState)
 +    );
 +}
+diff --git a/quiche/src/frame.rs b/quiche/src/frame.rs
+index 04004f536..d5d8afcc1 100644
+--- a/quiche/src/frame.rs
++++ b/quiche/src/frame.rs
+@@ -1201,11 +1201,11 @@ impl std::fmt::Debug for Frame {
+                 seq_num,
+                 retire_prior_to,
+                 conn_id,
+-                reset_token,
++                reset_token: _,
+             } => {
+                 write!(
+                     f,
+-                    "NEW_CONNECTION_ID seq_num={seq_num} retire_prior_to={retire_prior_to} conn_id={conn_id:02x?} reset_token={reset_token:02x?}",
++                    "NEW_CONNECTION_ID seq_num={seq_num} retire_prior_to={retire_prior_to} conn_id={conn_id:02x?} reset_token=<redacted>",
+                 )?;
+             },
+ 
+@@ -1944,6 +1944,10 @@ mod tests {
+             reset_token: [0x42; 16],
+         };
+ 
++        let debug = format!("{frame:?}");
++        assert!(debug.contains("reset_token=<redacted>"));
++        assert!(!debug.contains("42, 42"));
++
+         let wire_len = {
+             let mut b = octets::OctetsMut::with_slice(&mut d);
+             frame.to_bytes(&mut b).unwrap()

@@ -3,13 +3,13 @@ on:
   workflow_dispatch:
     inputs:
       region:
-        description: DigitalOcean region for dedicated CPU loopback benchmarks
-        default: nyc3
+        description: DigitalOcean region, or auto to select an available region
+        default: auto
         required: true
         type: string
       size:
-        description: CPU-Optimized size (rate ceiling $0.50/hour)
-        default: c-4
+        description: CPU-Optimized size, or auto for four dedicated vCPUs (ceiling $0.50/hour)
+        default: auto
         required: true
         type: string
 permissions:
@@ -34,6 +34,12 @@ jobs:
         env:
           DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
         run: test -n "$DIGITALOCEAN_ACCESS_TOKEN"
+      - name: Check dedicated capacity before compiling
+        env:
+          DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          DO_REGION: ${{ inputs.region }}
+          DO_SIZE: ${{ inputs.size }}
+        run: python3 scripts/digitalocean_bench.py check --output target/quality/benchmark --state "$RUNNER_TEMP/reproto-do"
       # actionlint 1.7.12 requires the checked-out local action syntax.
       - uses: ./.github/actions/auditable-setup # zizmor: ignore[self-repository]
       - name: Build prerequisites
@@ -46,6 +52,7 @@ jobs:
       - name: Compile individual release benchmarks without running them
         run: cargo run --locked -p reproto-quality -- benchmark-build target/benchmark-build
       - name: Benchmark precompiled artifacts on a temporary dedicated droplet
+        id: measure
         env:
           DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
           DO_REGION: ${{ inputs.region }}
@@ -57,11 +64,11 @@ jobs:
           DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
         run: python3 scripts/digitalocean_bench.py cleanup --state "$RUNNER_TEMP/reproto-do"
       - name: Validate downloaded samples
-        if: success() || failure()
+        if: ${{ !cancelled() && steps.measure.outcome == 'success' }}
         run: |
           cargo run --locked -p reproto-quality -- benchmark target/quality/benchmark target/benchmark-build/bundle
       - name: Generate validated README and comparison bar charts
-        if: success() || failure()
+        if: ${{ !cancelled() && steps.measure.outcome == 'success' }}
         run: cargo run --locked -p reproto-quality -- report target/quality benchmark
       - name: Export compact README data (including failed test runs)
         if: success() || failure()

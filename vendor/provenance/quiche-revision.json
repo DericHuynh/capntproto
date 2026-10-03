@@ -3,6 +3,6 @@
   "revision": "1b5e3e2495f679611476a0bb28604c59f14f9abc",
   "version": "0.29.3",
   "patch": "quiche-native.patch",
-  "patch_sha256": "979fe2ab5546a6a8cbea0c3f2dadf82bf2c455cbdfea1a5b4b508436241ee371",
+  "patch_sha256": "3ae3f41a310ba7cb8253add1704f4fe466bcbade811489d64c238d4c3a69f8c4",
   "profile": "Standard TLS 1.3 QUIC v1/v2 with authenticated version information, Tokio clock and explicit stream receipts"
 }

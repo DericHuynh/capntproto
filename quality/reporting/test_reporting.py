@@ -12,7 +12,7 @@ import zipfile
 
 from reporting.data import collect, test_counts, validate_publication
 from reporting.publish import GitHub, OWNED, artifact_data, blob_sha, publish, trusted_run
-from reporting.render import empty_history, merge, render, validate_history
+from reporting.render import empty_history, failure_report, merge, render, validate_history
 
 
 def events(*items):
@@ -45,6 +45,36 @@ class Counts(unittest.TestCase):
         counts = test_counts('cargo output\n' + suite() + '\n' + suite(5, 0, 0), False)
         self.assertEqual([counts[k] for k in ('total', 'passed', 'failed', 'skipped', 'errors', 'suites')], [9, 7, 1, 1, 0, 2])
         self.assertFalse(counts['complete'])
+
+    def test_all_failures_keep_suite_identity_and_escape_diagnostics(self):
+        output = '    Running tests/a.rs (target/a)\n' + suite(0, 1, 0)
+        output += '\n   Doc-tests example\n' + suite(0, 1, 0)
+        counts = test_counts(output, False)
+        self.assertEqual(len(counts['failures']), 2)
+        self.assertNotEqual(counts['failures'][0]['suite'], counts['failures'][1]['suite'])
+        entry = record()
+        entry['data']['tests'] = counts
+        counts['failures'][0]['output'] = '<script>alert(1)</script> [click](javascript:x)'
+        report = failure_report(entry)
+        self.assertEqual(report.count('<details open>'), 2)
+        self.assertIn('&lt;script&gt;', report)
+        self.assertNotIn('<script>', report)
+        self.assertIn(entry['url'], report)
+        self.assertIn('**2 failed**', report)
+
+    def test_failure_diagnostics_are_bounded_and_validated(self):
+        counts = test_counts(suite(0, 80, 0).replace('test result: ok. 99 passed;', 'x' * 5000), False)
+        self.assertEqual(len(counts['failures']), 80)
+        self.assertTrue(all(f['truncated'] for f in counts['failures']))
+        self.assertLessEqual(sum(len(f['output']) for f in counts['failures']), 256 * 1024)
+        entry = publication()
+        entry['tests'] = counts
+        validate_publication(entry)
+        counts['failures'].pop()
+        with self.assertRaises(ValueError):
+            validate_publication(entry)
+        del counts['failures']  # Existing count-only history remains readable.
+        validate_publication(entry)
 
     def test_abort_and_build_failures_are_distinct(self):
         self.assertIsNone(test_counts('error: could not compile crate', False))
@@ -129,6 +159,8 @@ class History(unittest.TestCase):
             history = merge(history, record(i + 1))
         self.assertEqual(len(history['full']), 365)
         validate_history(history)
+        self.assertNotIn('failures', history['full'][0]['data']['tests'])
+        self.assertIn('failures', history['full'][-1]['data']['tests'])
 
 
 class Publishing(unittest.TestCase):

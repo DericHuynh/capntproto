@@ -143,6 +143,7 @@ fn annotations_match_pinned_cpp() {
             "Rust accepted {body}"
         );
     }
+    fs::create_dir_all(root().join("target/verification/schema-compiler")).unwrap();
     fs::write(root().join("target/verification/schema-compiler/annotations.txt"), format!(
         "reference: 0de72d8d8cec6b69edaa29de51d3bd490341f9c2\n{} accepted annotation schemas match all known request fields and canonical annotation/default/constant bytes\n{} shared rejections\n", cases.len(), invalid.len())).unwrap();
 }
@@ -305,6 +306,7 @@ fn annotation_imports_and_dependencies_match_pinned_cpp() {
             "Rust accepted {source}"
         );
     }
+    fs::create_dir_all(root().join("target/verification/schema-compiler")).unwrap();
     fs::write(root().join("target/verification/schema-compiler/annotation-imports.txt"), format!(
         "reference: 0de72d8d8cec6b69edaa29de51d3bd490341f9c2\n{} accepted annotation import graphs match all known request fields and canonical annotation/default/constant bytes\n{} shared rejections\n", cases.len() + 4, invalid.len())).unwrap();
 }

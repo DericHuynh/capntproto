@@ -61,6 +61,16 @@ counts are not a claim that every possible test was discovered or run. Test
 success and whole-workflow success are shown separately: coverage/security gates
 can fail even when all tests pass.
 
+The README links its failed count and **Show all failed tests and diagnostics**
+to [the current failure report](../reports/failed-tests.md). Each completed failure
+includes its harness/test name and escaped diagnostic output, with the original
+run, commit and attempt linked above it. The job summary also displays these
+failures; `FAILED-TESTS.md` is included in the full-quality artifact. Excerpts are
+limited to 4,096 characters per test and 262,144 characters total; every failed name is retained, and the
+full raw command log remains in the artifact. Diagnostic details are retained for
+the latest full run only. Older count-only records link to their original logs.
+Build errors and tests without terminal results remain separate from named failures.
+
 ## Labelled benchmark bar charts
 
 The README's final section includes horizontal bars for p50/p95/p99 round-trip

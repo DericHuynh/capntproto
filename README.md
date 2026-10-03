@@ -87,7 +87,9 @@ Latest full-quality run: [2026-10-03T00:30:50Z · run 37082380827 / attempt 1](h
 
 | Total | Passed | Failed | Errors | Skipped | Workspace command |
 | ---: | ---: | ---: | ---: | ---: | --- |
-| 1,371 | 1,354 | 6 | 0 | 11 | Failed / incomplete |
+| 1,371 | 1,354 | [6](docs/reports/failed-tests.md) | 0 | 11 | Failed / incomplete |
+
+[Show all failed tests and diagnostics](docs/reports/failed-tests.md).
 
 Counts are outer workspace libtest cases and doctests. Nested C++/model/fuzz checks are represented by their parent test, without double-counting their internal cases. Skipped means ignored; errors mean announced tests that never returned a result. Build failures and missing reports have unknown totals. [Reporting contract and setup](docs/wiki/README-Reports.md).
 

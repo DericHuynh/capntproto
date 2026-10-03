@@ -225,9 +225,15 @@ No local token or persistent SSH key is required. Run **Dedicated benchmarks**
 from a trusted revision. The workflow generates temporary client and host keys,
 pins the host key, and exposes the token only to the infrastructure steps.
 
-Defaults are `nyc3`, CPU-Optimized `c-4`, and `ubuntu-24-04-x64`. Only dedicated
-`c-N` / `c-N-intel` sizes are accepted; live availability and the hourly rate are
-checked before creation, with a **$0.50/hour rate ceiling**. Ubuntu 24.04 builds
+Region and size default to `auto`, with `ubuntu-24-04-x64`. A read-only capacity
+check runs before compilation and again before provisioning. Auto selection uses
+an available four-vCPU CPU-Optimized `c-4` or `c-4-intel` plan, preferring `c-4`
+and `nyc3` when available. Explicit region/size inputs are honored; unavailable
+choices fail with available alternatives rather than silently changing the host.
+Only dedicated `c-N` / `c-N-intel` sizes are accepted, with a **$0.50/hour rate ceiling**.
+Capacity can change between discovery and creation; a failed create still follows
+the receipt/tag cleanup path. A failed measurement does not run sample-validation
+steps or publish stale measurements. Ubuntu 24.04 builds
 run on Ubuntu 24.04 to preserve shared-library compatibility. The C++ reference
 uses Clang and its pinned upstream source. Nothing is compiled on the droplet.
 

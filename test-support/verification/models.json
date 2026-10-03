@@ -2367,7 +2367,7 @@
       "inputs": {
         "REPROTO_NATIVE_SHUTDOWN_TRACES": {
           "file": "native-shutdown/traces.json.gz",
-          "sha256": "3e148e46c67dd8ddde9def334940a8f8336175cec41ac9020cf1f5d8a13af509",
+          "sha256": "72e033c1ba86dd9ae9fe29762f4c71821fbf59c01cd20529b61dff1bd917ed49",
           "cases": 1496
         }
       },

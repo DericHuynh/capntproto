@@ -155,7 +155,7 @@ fn native_fuzz_smoke() {
         ("native_stream", 258, 1024),
         ("capnp_framing", 1478, wire_runs),
         ("capnp_pointers", 1754, wire_runs),
-        ("capnp_schema", 13321, wire_runs),
+        ("capnp_schema", 13552, wire_runs),
         ("rpc_lifecycle", 592, wire_runs),
     ] {
         let seed_directory = corpus.join(target);

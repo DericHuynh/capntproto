@@ -62,12 +62,9 @@ pub fn config_for_version(
     Ok(c)
 }
 pub(crate) fn cid() -> [u8; 16] {
-    use ring::rand::SecureRandom;
-    let mut id = [0; 16];
-    ring::rand::SystemRandom::new()
-        .fill(&mut id)
-        .expect("OS randomness");
-    id
+    ring::rand::generate(&ring::rand::SystemRandom::new())
+        .expect("OS randomness")
+        .expose()
 }
 pub(crate) fn error(e: quiche::Error) -> io::Error {
     io::Error::other(e.to_string())

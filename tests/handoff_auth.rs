@@ -355,10 +355,19 @@ async fn tlc_authenticated_handoff_traces() {
                                 )
                                 .await,
                             );
-                            serving = tokio::time::timeout(Duration::from_secs(2), f.serve(socket))
-                                .await
-                                .expect("authentication deadline")
-                                .ok();
+                            let accepted = tokio::time::timeout(
+                                Duration::from_secs(if state["result"] == 1 { 10 } else { 2 }),
+                                f.serve(socket),
+                            )
+                            .await;
+                            serving = if state["result"] == 1 {
+                                accepted.expect("live, bound authentication deadline").ok()
+                            } else {
+                                // QUIC may discard unauthenticated packets and
+                                // wait for another peer. A bounded cancellation
+                                // is also a rejection; it must never publish.
+                                accepted.ok().and_then(Result::ok)
+                            };
                             u64::from(serving.is_some())
                         }
                         3 => u64::from(f.intro.borrow_mut().finish_proxy()),

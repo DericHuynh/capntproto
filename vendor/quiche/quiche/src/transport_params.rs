@@ -151,7 +151,7 @@ impl<'a> Iterator for UnknownTransportParameterIterator<'a> {
 }
 
 /// QUIC Transport Parameters
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct TransportParams {
     /// RFC 9368 chosen version followed by available versions.
     pub version_information: Option<Vec<u32>>,
@@ -194,6 +194,57 @@ pub struct TransportParams {
     /// Unknown peer transport parameters and values, if any.
     pub unknown_params: Option<UnknownTransportParameters>,
     // pub preferred_address: ...,
+}
+
+// Tokens and unknown extension payloads can contain sensitive peer data.
+impl std::fmt::Debug for TransportParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_struct("TransportParams")
+            .field("version_information", &self.version_information)
+            .field(
+                "original_destination_connection_id",
+                &self.original_destination_connection_id,
+            )
+            .field("max_idle_timeout", &self.max_idle_timeout)
+            .field("max_udp_payload_size", &self.max_udp_payload_size)
+            .field("initial_max_data", &self.initial_max_data)
+            .field(
+                "initial_max_stream_data_bidi_local",
+                &self.initial_max_stream_data_bidi_local,
+            )
+            .field(
+                "initial_max_stream_data_bidi_remote",
+                &self.initial_max_stream_data_bidi_remote,
+            )
+            .field(
+                "initial_max_stream_data_uni",
+                &self.initial_max_stream_data_uni,
+            )
+            .field("initial_max_streams_bidi", &self.initial_max_streams_bidi)
+            .field("initial_max_streams_uni", &self.initial_max_streams_uni)
+            .field("ack_delay_exponent", &self.ack_delay_exponent)
+            .field("max_ack_delay", &self.max_ack_delay)
+            .field("disable_active_migration", &self.disable_active_migration)
+            .field("active_conn_id_limit", &self.active_conn_id_limit)
+            .field(
+                "initial_source_connection_id",
+                &self.initial_source_connection_id,
+            )
+            .field(
+                "retry_source_connection_id",
+                &self.retry_source_connection_id,
+            )
+            .field("max_datagram_frame_size", &self.max_datagram_frame_size)
+            .field(
+                "stateless_reset_token",
+                &self.stateless_reset_token.map(|_| "<redacted>"),
+            )
+            .field(
+                "unknown_params_count",
+                &self.unknown_params.as_ref().map(|p| p.parameters.len()),
+            )
+            .finish()
+    }
 }
 
 impl Default for TransportParams {
@@ -649,5 +700,32 @@ impl TransportParams {
                 ..Default::default()
             },
         ))
+    }
+}
+
+#[cfg(test)]
+mod debug_tests {
+    use super::*;
+
+    #[test]
+    fn debug_redacts_tokens_and_unknown_payloads() {
+        let secret = 0xbabababababababababababababababau128;
+        let params = TransportParams {
+            stateless_reset_token: Some(secret),
+            unknown_params: Some(UnknownTransportParameters {
+                capacity: 0,
+                parameters: vec![UnknownTransportParameter {
+                    id: 0x1234,
+                    value: b"sensitive-extension-payload".to_vec(),
+                }],
+            }),
+            ..Default::default()
+        };
+        let debug = format!("{params:?}");
+        assert!(debug.contains("<redacted>"));
+        assert!(debug.contains("unknown_params_count: Some(1)"));
+        assert!(!debug.contains(&secret.to_string()));
+        assert!(!debug.contains("sensitive-extension-payload"));
+        assert!(!debug.contains("115, 101, 110, 115"));
     }
 }

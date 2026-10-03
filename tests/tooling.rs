@@ -675,6 +675,10 @@ fn external_consumer_default_features() {
     run_consumer(&["check", "--offline"], "resolve");
     run_consumer(&["run", "--locked", "--offline"], "default");
     run_consumer(&["run", "--release", "--locked", "--offline"], "optimized");
+    // Metadata resolves every target, even dependencies not downloaded by the
+    // host-only build (for example r-efi). Fetch the resolved graph explicitly
+    // before requiring the subsequent metadata query to work offline.
+    run_consumer(&["fetch", "--locked"], "fetch-metadata-dependencies");
     let output = run_consumer(
         &["metadata", "--locked", "--offline", "--format-version", "1"],
         "metadata",

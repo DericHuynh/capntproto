@@ -17,10 +17,10 @@ from .render import empty_history, merge, render
 
 WORKFLOWS = {'.github/workflows/full-quality.yml': 'full',
              '.github/workflows/benchmarks.yml': 'benchmark'}
-MAX_ARTIFACT = 2 * 1024 * 1024
+MAX_ARTIFACT = 16 * 1024 * 1024
 OWNED = {f'docs/reports/{name}.svg' for name in CHARTS} | {
     'README.md', 'docs/reports/history.json', 'docs/reports/test-history.svg',
-    'docs/reports/benchmarks-pending.svg'}
+    'docs/reports/benchmarks-pending.svg', 'docs/reports/failed-tests.md'}
 
 
 class GitHub:

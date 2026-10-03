@@ -13,10 +13,13 @@ fn expected(paths: &[&Path]) -> Vec<std::path::PathBuf> {
 #[test]
 fn filesystem_compilation_reports_loaded_sources_and_embeds_per_invocation() {
     let directory = tempfile::tempdir().unwrap();
-    let main = directory.path().join("main.capnp");
-    let blob = directory.path().join("blob");
-    let first = directory.path().join("first");
-    let second = directory.path().join("second");
+    // Relative imports resolve beside the physical importing file. macOS /var
+    // and Windows short temporary paths can themselves be aliases.
+    let directory_path = directory.path().canonicalize().unwrap();
+    let main = directory_path.join("main.capnp");
+    let blob = directory_path.join("blob");
+    let first = directory_path.join("first");
+    let second = directory_path.join("second");
     fs::create_dir(&first).unwrap();
     fs::create_dir(&second).unwrap();
     let source = "@0xbbbbbbbbbbbbbbbb; struct Item { x @0 :Text; } using Missing = import \"missing.capnp\"; const unused :Data = embed \"unused\";";
@@ -53,9 +56,10 @@ fn filesystem_compilation_reports_loaded_sources_and_embeds_per_invocation() {
 #[test]
 fn dependency_paths_retain_symlinks_and_their_resolved_targets() {
     let directory = tempfile::tempdir().unwrap();
-    let main = directory.path().join("main.capnp");
-    let dep = directory.path().join("dep.capnp");
-    let alias = directory.path().join("alias.capnp");
+    let directory_path = directory.path().canonicalize().unwrap();
+    let main = directory_path.join("main.capnp");
+    let dep = directory_path.join("dep.capnp");
+    let alias = directory_path.join("alias.capnp");
     fs::write(&main, "@0xabcdefabcdefabcd; struct S { a @0 :import \"alias.capnp\".Item; b @1 :import \"dep.capnp\".Item; }").unwrap();
     fs::write(&dep, "@0xbbbbbbbbbbbbbbbb; struct Item {}").unwrap();
     std::os::unix::fs::symlink(&dep, &alias).unwrap();

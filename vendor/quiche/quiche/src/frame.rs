@@ -1201,11 +1201,11 @@ impl std::fmt::Debug for Frame {
                 seq_num,
                 retire_prior_to,
                 conn_id,
-                reset_token,
+                reset_token: _,
             } => {
                 write!(
                     f,
-                    "NEW_CONNECTION_ID seq_num={seq_num} retire_prior_to={retire_prior_to} conn_id={conn_id:02x?} reset_token={reset_token:02x?}",
+                    "NEW_CONNECTION_ID seq_num={seq_num} retire_prior_to={retire_prior_to} conn_id={conn_id:02x?} reset_token=<redacted>",
                 )?;
             },
 
@@ -1943,6 +1943,10 @@ mod tests {
             conn_id: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
             reset_token: [0x42; 16],
         };
+
+        let debug = format!("{frame:?}");
+        assert!(debug.contains("reset_token=<redacted>"));
+        assert!(!debug.contains("42, 42"));
 
         let wire_len = {
             let mut b = octets::OctetsMut::with_slice(&mut d);

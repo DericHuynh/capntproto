@@ -4,6 +4,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 
 FORMAT = 1
 CHARTS = {
@@ -30,6 +31,9 @@ def test_counts(log, command_passed):
     suites = 0
     unfinished = False
     active = None
+    failures = []
+    label = ''
+    output_budget = 256 * 1024
 
     def close(incomplete):
         nonlocal active, suites, unfinished
@@ -47,6 +51,9 @@ def test_counts(log, command_passed):
 
     for line in log.splitlines():
         if not line.startswith('{'):
+            match = re.match(r'^\s*(Running .+|Doc-tests .+)$', line)
+            if match:
+                label = match[1][:1024]
             continue
         try:
             item = json.loads(line)
@@ -61,12 +68,23 @@ def test_counts(log, command_passed):
         if kind == 'suite' and event == 'started':
             close(True)
             active = {'announced': integer(item['test_count']),
-                      'counts': dict.fromkeys(COUNTS, 0), 'names': set()}
+                      'counts': dict.fromkeys(COUNTS, 0), 'names': set(),
+                      'label': label or f'Suite {suites + 1}'}
         elif kind == 'test' and event in ('ok', 'failed', 'ignored'):
             if active is None or item.get('name') in active['names']:
                 raise ValueError('test result outside a suite or duplicate result')
             active['names'].add(item['name'])
             active['counts'][{'ok': 'passed', 'failed': 'failed', 'ignored': 'skipped'}[event]] += 1
+            if event == 'failed':
+                output = item.get('stdout', '')
+                if not isinstance(output, str):
+                    raise ValueError('invalid failed-test output')
+                output = re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', output)
+                limit = min(4096, output_budget)
+                excerpt = output[:limit]
+                output_budget -= len(excerpt)
+                failures.append(dict(suite=active['label'], name=item['name'],
+                                     output=excerpt, truncated=len(output) > limit))
         elif kind == 'suite' and event in ('ok', 'failed'):
             if active is None:
                 raise ValueError('suite result without start')
@@ -85,7 +103,8 @@ def test_counts(log, command_passed):
     if command_passed and (unfinished or totals['failed'] or totals['errors']):
         raise ValueError('successful command has failed/incomplete tests')
     return dict(totals, total=total, suites=suites,
-                complete=bool(command_passed and not unfinished), command_passed=command_passed)
+                complete=bool(command_passed and not unfinished), command_passed=command_passed,
+                failures=failures)
 
 
 def validate_charts(charts):
@@ -182,7 +201,8 @@ def validate_publication(value):
         raise ValueError('invalid source fingerprint')
     tests = value['tests']
     if tests is not None:
-        if value['kind'] != 'full' or set(tests) != {*COUNTS, 'total', 'suites', 'complete', 'command_passed'}:
+        required = {*COUNTS, 'total', 'suites', 'complete', 'command_passed'}
+        if value['kind'] != 'full' or not required <= set(tests) or set(tests) - required - {'failures'}:
             raise ValueError('invalid test summary')
         if integer(tests['total']) != sum(integer(tests[k]) for k in COUNTS):
             raise ValueError('invalid aggregate test total')
@@ -191,6 +211,22 @@ def validate_publication(value):
             raise ValueError('invalid test completion flag')
         if tests['complete'] and (not tests['command_passed'] or tests['errors'] or tests['failed']):
             raise ValueError('invalid successful test summary')
+        # Older history has counts only. New reports retain every failed name,
+        # with bounded diagnostic excerpts; full output remains in CI artifacts.
+        if 'failures' in tests:
+            failures = tests['failures']
+            if not isinstance(failures, list) or len(failures) != tests['failed'] or len(failures) > 4096:
+                raise ValueError('failed-test inventory disagrees with count or exceeds limit')
+            for failure in failures:
+                if not isinstance(failure, dict) or set(failure) != {'suite', 'name', 'output', 'truncated'}:
+                    raise ValueError('invalid failed-test details')
+                if any(not isinstance(failure[k], str) or len(failure[k]) > limit
+                       for k, limit in [('suite', 1024), ('name', 1024), ('output', 4096)]):
+                    raise ValueError('invalid failed-test text')
+                if not failure['name'] or type(failure['truncated']) is not bool:
+                    raise ValueError('invalid failed-test name or truncation flag')
+            if sum(len(f['output']) for f in failures) > 256 * 1024:
+                raise ValueError('failed-test output exceeds budget')
     validate_charts(value['charts'])
     if any(c['name'].startswith('coverage-') != (value['kind'] == 'full') for c in value['charts']):
         raise ValueError('chart lane mismatch')

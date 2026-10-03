@@ -6,6 +6,7 @@ No credential, private SSH key or cloud-init body is written to report artifacts
 """
 import argparse
 import datetime
+from decimal import Decimal, InvalidOperation
 import hashlib
 import ipaddress
 import json
@@ -23,6 +24,8 @@ import urllib.request
 
 API = "https://api.digitalocean.com/v2"
 TTL = 2 * 60 * 60
+MAX_HOURLY_PRICE = Decimal('0.50')
+PREFERRED_REGIONS = ('nyc3', 'nyc1', 'nyc2', 'tor1', 'sfo3', 'ams3', 'lon1', 'fra1', 'sgp1', 'blr1', 'syd1')
 
 
 class DigitalOcean:
@@ -132,24 +135,87 @@ def command(args, **kwargs):
     return subprocess.run(args, check=True, timeout=kwargs.pop("timeout", 120), **kwargs)
 
 
-def run(api, bundle, destination, state):
-    region = os.environ.get("DO_REGION", "nyc3")
-    size_slug = os.environ.get("DO_SIZE", "c-4")
-    if not re.fullmatch(r"c-[0-9]+(?:-intel)?", size_slug):
+def select_plan(api):
+    """Resolve explicit choices or a bounded four-vCPU dedicated alternative.
+
+    This is read-only: no keys or Droplets are created during preflight.
+    Explicit region/size inputs are never silently replaced.
+    """
+    region = os.environ.get("DO_REGION", "auto")
+    size_slug = os.environ.get("DO_SIZE", "auto")
+    if size_slug != 'auto' and not re.fullmatch(r"c-[0-9]+(?:-intel)?", size_slug):
         raise RuntimeError("Use a dedicated CPU-Optimized c-N plan (shared CPUs are rejected)")
+    if region != 'auto' and not re.fullmatch(r'[a-z]{3}[0-9]+', region):
+        raise RuntimeError('Invalid DigitalOcean region slug')
     sizes = api.pages("/sizes", "sizes")
-    size = next((s for s in sizes if s["slug"] == size_slug), None)
-    if size is None or not size["available"] or region not in size["regions"]:
-        raise RuntimeError("Dedicated size unavailable in requested region")
-    if not 0 < float(size["price_hourly"]) <= 0.50:
-        raise RuntimeError("Dedicated plan exceeds the $0.50/hour rate ceiling")
+    eligible = []
+    for size in sizes:
+        slug = size.get('slug', '')
+        if not re.fullmatch(r'c-[0-9]+(?:-intel)?', slug):
+            continue
+        try:
+            price = Decimal(str(size['price_hourly']))
+        except (KeyError, InvalidOperation):
+            continue
+        if not price.is_finite() or not 0 < price <= MAX_HOURLY_PRICE:
+            if slug == size_slug:
+                raise RuntimeError('Dedicated plan exceeds the $0.50/hour rate ceiling or has an invalid rate')
+            continue
+        if not size.get('available'):
+            continue
+        for candidate in size.get('regions', []):
+            if re.fullmatch(r'[a-z]{3}[0-9]+', candidate):
+                eligible.append((size, candidate, price))
+    candidates = [(s, r, price) for s, r, price in eligible
+                  if (region == 'auto' or r == region)
+                  and (s['slug'] == size_slug if size_slug != 'auto'
+                       else s['slug'] in ('c-4', 'c-4-intel') and s.get('vcpus') == 4)]
+    if not candidates:
+        alternatives = sorted({f'{s["slug"]}@{r}' for s, r, _ in eligible})
+        raise RuntimeError(
+            f'No available dedicated plan for size={size_slug}, region={region} under $0.50/hour. '
+            'Use region=auto and size=auto for four dedicated vCPUs, or select an available pair. '
+            'Available dedicated pairs: ' + (', '.join(alternatives[:40]) or 'none'))
+    # Prefer the established c-4 profile, then a stable regional order. Never
+    # silently shrink the host or substitute a shared-CPU plan.
+    def preference(candidate):
+        size, candidate_region, price = candidate
+        rank = PREFERRED_REGIONS.index(candidate_region) if candidate_region in PREFERRED_REGIONS else len(PREFERRED_REGIONS)
+        return (size['slug'] != 'c-4', rank, price, size['slug'], candidate_region)
+    size, region, _ = min(candidates, key=preference)
+    return size, region
+
+
+def preflight(api, destination=None):
+    if destination is not None:
+        destination.mkdir(parents=True, exist_ok=True)
+        (destination / 'capacity.json').unlink(missing_ok=True)
+    try:
+        size, region = select_plan(api)
+    except RuntimeError as error:
+        if destination is not None:
+            (destination / 'capacity.json').write_text(json.dumps(
+                dict(status='unavailable', reason=str(error)), indent=2) + '\n')
+        raise
+    plan = dict(size=size['slug'], region=region, price_hourly=size['price_hourly'],
+                vcpus=size.get('vcpus'), image='ubuntu-24-04-x64')
+    print('Available benchmark plan: ' + json.dumps(plan, sort_keys=True), flush=True)
+    if destination is not None:
+        destination.mkdir(parents=True, exist_ok=True)
+        (destination / 'capacity.json').write_text(json.dumps(plan, indent=2) + '\n')
+    return size, region
+
+
+def run(api, bundle, destination, state):
+    destination.mkdir(parents=True, exist_ok=True)
+    for filename in ("trials.json", "environment.json", "instructions.jsonl", "runner.log", "capacity.json"):
+        (destination / filename).unlink(missing_ok=True)
+    size, region = preflight(api, destination)
+    size_slug = size['slug']
     name = f'{owner_tag()}-{int(time.time())}-{os.environ["GITHUB_RUN_ID"]}-{os.environ.get("GITHUB_RUN_ATTEMPT", "1")}'
     state.mkdir(parents=True, exist_ok=True, mode=0o700)
     state.chmod(0o700)
     (state / "receipt.json").write_text(json.dumps({"name": name}))
-    destination.mkdir(parents=True, exist_ok=True)
-    for filename in ("trials.json", "environment.json", "instructions.jsonl", "runner.log"):
-        (destination / filename).unlink(missing_ok=True)
     client_key, host_key = state / "client", state / "host"
     for key in (client_key, host_key):
         command(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key)])
@@ -218,13 +284,15 @@ def run(api, bundle, destination, state):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("run", "cleanup", "janitor"))
+    parser.add_argument("action", choices=("check", "run", "cleanup", "janitor"))
     parser.add_argument("--bundle", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--state", type=Path, required=True)
     args = parser.parse_args()
     api = DigitalOcean()
-    if args.action == "janitor":
+    if args.action == "check":
+        preflight(api, args.output)
+    elif args.action == "janitor":
         janitor(api)
     elif args.action == "cleanup":
         receipt = args.state / "receipt.json"

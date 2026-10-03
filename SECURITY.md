@@ -60,3 +60,24 @@ GitHub's private reporting form. Follow the
 [repository setup guide](docs/wiki/GitHub-Setup.md) to enable that feature and its
 notifications after the repository is uploaded. GitHub documents the separate
 [private vulnerability reporting setting](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configure-for-a-repository).
+
+## Code scanning and diagnostics
+
+GitHub CodeQL default setup uses the extended security suite for Actions, C/C++,
+Python and Rust. The [review record](.github/codeql-review.json) documents the
+initial alert triage without suppressing queries. Maintain a
+single setup, including the vendored runtime code; do not add a second CodeQL
+workflow or blanket-exclude dependencies or security queries. Findings require
+source/data-flow review. Dismiss only confirmed false positives or test fixtures,
+with the precise reason recorded on the alert; revisit that conclusion when the
+relevant code or scanner model changes. Protocol-defined public salts must remain
+interoperable; initialized buffers filled by a checked CSPRNG/HKDF are not hard-coded
+traffic keys. Memory-safety findings require checking null guards, wire bounds and
+ownership invariants, alongside the Miri qualification suite.
+
+Ordinary QUIC debug formatting redacts address-validation tokens, stateless-reset
+tokens and unknown transport-parameter payloads. It retains public packet/stream
+IDs, lengths and flow-control counters. Explicit key logging and optional qlog
+traces can contain sensitive material: enable them only for controlled diagnostics,
+restrict access and retention, and never include them in public reports. The native
+backend does not enable qlog by default.

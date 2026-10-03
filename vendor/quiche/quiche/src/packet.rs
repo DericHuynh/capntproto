@@ -560,10 +560,7 @@ impl std::fmt::Debug for Header<'_> {
         }
 
         if let Some(ref token) = self.token {
-            write!(f, " token=")?;
-            for b in token {
-                write!(f, "{b:02x}")?;
-            }
+            write!(f, " token=<redacted> len={}", token.len())?;
         }
 
         if let Some(ref versions) = self.versions {
@@ -1194,6 +1191,26 @@ mod tests {
     use super::*;
     use crate::test_utils;
     use crate::MAX_SEND_UDP_PAYLOAD_SIZE;
+
+    #[test]
+    fn debug_redacts_address_validation_tokens() {
+        for ty in [Type::Initial, Type::Retry] {
+            let hdr = Header {
+                ty,
+                version: crate::PROTOCOL_VERSION,
+                dcid: vec![1; 8].into(),
+                scid: vec![2; 8].into(),
+                pkt_num: 0,
+                pkt_num_len: 0,
+                token: Some(vec![0xba; 24]),
+                versions: None,
+                key_phase: false,
+            };
+            let debug = format!("{hdr:?}");
+            assert!(debug.contains("token=<redacted> len=24"));
+            assert!(!debug.contains("babababa"));
+        }
+    }
 
     #[test]
     fn retry() {

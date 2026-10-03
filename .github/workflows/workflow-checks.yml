@@ -1,10 +1,10 @@
 name: Workflow checks
 on:
   pull_request:
-    paths: ['.github/**', 'scripts/*auditable*', 'scripts/update_readme.py', 'scripts/tests/test_workflow_triggers.py', 'quality/reporting/**', 'quality/reporting-requirements.txt', 'docs/README.template.md']
+    paths: ['.github/**', 'scripts/*auditable*', 'scripts/update_readme.py', 'scripts/digitalocean_bench.py', 'quality/tests/digitalocean_checks.py', 'scripts/tests/test_workflow_triggers.py', 'quality/reporting/**', 'quality/reporting-requirements.txt', 'docs/README.template.md']
   push:
     branches: [main]
-    paths: ['.github/**', 'scripts/*auditable*', 'scripts/update_readme.py', 'scripts/tests/test_workflow_triggers.py', 'quality/reporting/**', 'quality/reporting-requirements.txt', 'docs/README.template.md']
+    paths: ['.github/**', 'scripts/*auditable*', 'scripts/update_readme.py', 'scripts/digitalocean_bench.py', 'quality/tests/digitalocean_checks.py', 'scripts/tests/test_workflow_triggers.py', 'quality/reporting/**', 'quality/reporting-requirements.txt', 'docs/README.template.md']
   workflow_dispatch:
 permissions:
   contents: read
@@ -35,6 +35,10 @@ jobs:
           shellcheck scripts/setup-auditable.sh scripts/auditable-cargo.sh scripts/auditable-bench-rustc.sh scripts/test-auditable-cargo.sh
           bash scripts/test-auditable-cargo.sh
           pyflakes3 scripts/check_auditable.py scripts/tests/test_workflow_triggers.py
+      - name: Check cloud capacity selection and cleanup
+        run: |
+          python3 quality/tests/digitalocean_checks.py
+          pyflakes3 scripts/digitalocean_bench.py quality/tests/digitalocean_checks.py
       - name: Validate README collector, history, charts and publisher
         run: |
           python3 -m venv "$RUNNER_TEMP/readme-venv"
