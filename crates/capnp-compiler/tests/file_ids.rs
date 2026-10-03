@@ -162,24 +162,26 @@ fn cyclic_imports_share_ids_and_lazy_loading_preserves_existing_ids() {
 #[test]
 fn disk_sessions_capture_policy_and_failed_extensions_do_not_change_ids() {
     let directory = tempfile::tempdir().unwrap();
-    let main = directory.path().join("main.capnp");
+    // Count physical inputs independently of temporary-directory aliases.
+    let directory_path = directory.path().canonicalize().unwrap();
+    let main = directory_path.join("main.capnp");
     fs::write(
         &main,
         "@0xaaaaaaaaaaaaaaaa; using I = import \"types.capnp\"; struct Root { item @0 :I.Item; }",
     )
     .unwrap();
     fs::write(
-        directory.path().join("types.capnp"),
+        directory_path.join("types.capnp"),
         "struct Item {} struct Later { dep @0 :import \"late.capnp\".Dep; }",
     )
     .unwrap();
     fs::write(
-        directory.path().join("late.capnp"),
+        directory_path.join("late.capnp"),
         "struct Dep { x @0 :Missing; }",
     )
     .unwrap();
     let mut compiler = FileCompiler::default();
-    compiler.src_prefix(directory.path());
+    compiler.src_prefix(&directory_path);
     assert!(compiler.parse_schemas(&[&main]).is_err());
     compiler.set_file_ids_required(false);
     let mut session = compiler.parse_session(&[&main]).unwrap();
@@ -198,9 +200,9 @@ fn disk_sessions_capture_policy_and_failed_extensions_do_not_change_ids() {
     ));
     assert_eq!(bytes(session.schemas()), before);
     assert_eq!(session.schemas().dependencies(), dependencies);
-    fs::remove_file(directory.path().join("types.capnp")).unwrap();
+    fs::remove_file(directory_path.join("types.capnp")).unwrap();
     fs::write(
-        directory.path().join("late.capnp"),
+        directory_path.join("late.capnp"),
         "struct Dep { x @0 :UInt16 = 8; }",
     )
     .unwrap();

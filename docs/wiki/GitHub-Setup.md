@@ -87,6 +87,21 @@ The email route in `SECURITY.md` also works before this setting is enabled.
 GitHub's [private reporting setup guide](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configure-for-a-repository)
 documents the setting and notification options.
 
+## Code scanning
+
+Use GitHub CodeQL **default setup** with the **Extended** security query suite
+for Actions, C/C++, Python and Rust. Keep its branch/PR analysis and weekly scan
+enabled. Check that the setup validation finishes successfully before treating
+a configuration change as active. Do not also enable an advanced CodeQL workflow;
+that would duplicate analysis. Include the vendored runtimes and review findings
+using the [security policy](../../SECURITY.md) and
+[recorded triage](../../.github/codeql-review.json). A dismissed alert must explain
+the checked guard, public protocol value or test-only scope; do not exclude whole
+queries or directories to remove alert counts.
+
+GitHub documents [editing default setup](https://docs.github.com/en/code-security/how-tos/find-and-fix-code-vulnerabilities/manage-your-configuration/edit-default-setup)
+and [resolving individual alerts](https://docs.github.com/en/code-security/how-tos/manage-security-alerts/manage-code-scanning-alerts/resolve-alerts).
+
 ## CI and repository policy
 
 Follow [Quality and Benchmarks](Quality-and-Benchmarks.md) to configure the DigitalOcean GitHub Actions

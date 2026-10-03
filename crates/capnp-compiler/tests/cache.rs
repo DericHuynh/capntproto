@@ -168,9 +168,12 @@ fn concurrent_extensions_merge_and_failed_batches_do_not_publish_partial_state()
 #[test]
 fn disk_cache_rolls_back_discovery_and_retries_corrected_files() {
     let directory = tempfile::tempdir().unwrap();
-    let main = directory.path().join("main.capnp");
-    let types = directory.path().join("types.capnp");
-    let late = directory.path().join("late.capnp");
+    // This test counts physical inputs; a symlinked temporary root would also
+    // retain the requested main-file alias as an intentional dependency.
+    let directory_path = directory.path().canonicalize().unwrap();
+    let main = directory_path.join("main.capnp");
+    let types = directory_path.join("types.capnp");
+    let late = directory_path.join("late.capnp");
     std::fs::write(
         &main,
         "@0xaaaaaaaaaaaaaaaa; using D = import \"types.capnp\"; struct Root { value @0 :D.Used; }",
@@ -178,7 +181,7 @@ fn disk_cache_rolls_back_discovery_and_retries_corrected_files() {
     .unwrap();
     std::fs::write(&types, "@0xbbbbbbbbbbbbbbbb; struct Used {} struct Later { value @0 :import \"late.capnp\".Item; }").unwrap();
     let mut compiler = FileCompiler::new();
-    compiler.src_prefix(directory.path());
+    compiler.src_prefix(&directory_path);
     let cache = compiler.into_concurrent(&[&main]).unwrap();
     let before = cache.schemas().unwrap();
     for text in [

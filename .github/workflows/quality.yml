@@ -90,7 +90,7 @@ jobs:
         shell: bash
         run: |
           cargo run --locked --manifest-path examples/downstream/Cargo.toml
-          cargo test --locked -p capnp-compiler
+          cargo test --locked --no-fail-fast -p capnp-compiler
           cargo test --locked -p capnp-compat --test codecs --test adapters --test json_rpc
           cargo test --locked -p reproto --test tcp_rpc --test secure_rpc
           cargo test --locked -p reproto --test rpc_ownership --test native_vat

@@ -278,13 +278,15 @@ fn disk_discovery_and_embeds_roll_back_and_retry_after_source_errors() {
 #[test]
 fn successful_disk_inputs_stay_cached_and_loader_failures_discard_new_inputs() {
     let directory = tempfile::tempdir().unwrap();
-    let main = directory.path().join("main.capnp");
-    let types = directory.path().join("types.capnp");
-    let late = directory.path().join("late.capnp");
+    // Count physical inputs independently of temporary-directory aliases.
+    let directory_path = directory.path().canonicalize().unwrap();
+    let main = directory_path.join("main.capnp");
+    let types = directory_path.join("types.capnp");
+    let late = directory_path.join("late.capnp");
     fs::write(&main, MAIN).unwrap();
     fs::write(&types, "@0xbbbbbbbbbbbbbbbb; struct Used {} struct Later { value @0 :import \"late.capnp\".Item; } struct Last { value @0 :import \"late.capnp\".Item; }").unwrap();
     let mut compiler = FileCompiler::new();
-    compiler.src_prefix(directory.path());
+    compiler.src_prefix(&directory_path);
     let mut session = compiler
         .parse_session_with_limits(
             &[&main],
