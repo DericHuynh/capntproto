@@ -34,5 +34,27 @@
       }
     }
   ],
-  "benchmark": null
+  "benchmark": {
+    "run_id": 37100431837,
+    "attempt": 1,
+    "commit": "3d383045ae16ee8bad8aa9e643410afc996e6e12",
+    "date": "2026-10-03T05:37:43Z",
+    "url": "https://github.com/DericHuynh/capntproto/actions/runs/37100431837",
+    "conclusion": "failure",
+    "data": {
+      "format": 1,
+      "kind": "benchmark",
+      "origin": {
+        "repository": "DericHuynh/capntproto",
+        "run_id": 37100431837,
+        "attempt": 1,
+        "commit": "3d383045ae16ee8bad8aa9e643410afc996e6e12"
+      },
+      "source_id": "40fa5a253080142d06445e66cd1efbbdfd8486718728d16b12d33694743fc517",
+      "tests": null,
+      "charts": [],
+      "status": "failed",
+      "note": "Lane failed or did not complete; inspect the linked CI run."
+    }
+  }
 }
