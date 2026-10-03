@@ -1,7 +1,8 @@
 # Quality checks and benchmark reports
 
 Pull requests compile default features on **Linux, macOS and Windows** and run
-small smoke checks. There is no feature combination matrix. Full correctness
+smoke checks plus selected minimal storage, TLS and QUIC feature profiles.
+There is no feature powerset matrix. Full correctness
 checks use one entry point on the supported Linux verification host:
 
 ```sh
@@ -20,19 +21,57 @@ records their rationale.
 
 | Workflow | Trigger | Scope and README artifact |
 | --- | --- | --- |
-| [Quality](../../.github/workflows/quality.yml) | Push, PR, manual | Default library/binaries compile; generated capability RPC/pipelining smoke on all three OSes. Linux/macOS also test storage reopen; Linux enforces allocation budgets. `platform-report` |
-| [Workflow checks](../../.github/workflows/workflow-checks.yml) | Workflow changes, manual | Pinned actionlint with ShellCheck/Pyflakes, and Zizmor with findings configured to fail the job |
-| [Documentation links](../../.github/workflows/links.yml) | Documentation/workflow changes; weekly; manual | Local links block affected PRs. External checks publish an advisory report on weekly/manual runs. `documentation-links` |
-| [Extended quality](../../.github/workflows/extended-quality.yml) | Weekly, manual | Bounded Miri endian/seed sweep, native cargo-careful checks, and LLVM IR size reports in independent jobs |
-| [Full quality](../../.github/workflows/full-quality.yml) | Weekly, manual | One LLVM-instrumented workspace test invocation, C++ LLVM reference suites, advisory checks, coverage regression report. `full-quality-report` |
+| [Quality](../../.github/workflows/quality.yml) | PR; push to `main`; manual | Library/binary builds and RPC/pipelining, transport and selected feature checks on all three OSes. Linux/macOS also test storage reopen; Linux enforces allocation budgets and QUIC v2 interoperability. `platform-report` |
+| [Workflow checks](../../.github/workflows/workflow-checks.yml) | Affected PR or push to `main`; manual | Workflow, auditable-build, trigger-test and README-reporting changes: actionlint with ShellCheck/Pyflakes, trigger regression tests, reporting tests and Zizmor |
+| [Documentation links](../../.github/workflows/links.yml) | Affected PR or push to `main`; Tuesday 05:43 UTC; manual | Documentation/workflow/wiki-tool changes: wiki validation/export and local links. External checks are advisory and run only weekly/manually. `github-wiki`, `documentation-links` |
+| [Extended quality](../../.github/workflows/extended-quality.yml) | Wednesday 04:37 UTC; manual | Bounded Miri endian/seed sweep, native cargo-careful checks, and LLVM IR size reports in independent jobs |
+| [Full quality](../../.github/workflows/full-quality.yml) | Monday 03:19 UTC; manual | One LLVM-instrumented workspace test invocation, C++ LLVM reference suites, advisory checks, coverage regression report. `full-quality-report` |
 | [Dedicated benchmarks](../../.github/workflows/benchmarks.yml) | Manual | Compile release artifacts on Actions, measure on a temporary dedicated CPU Linux droplet, validate downloaded samples. `dedicated-benchmark-report` |
-| [Benchmark droplet cleanup](../../.github/workflows/benchmark-cleanup.yml) | Hourly, manual | Destroy this repository's abandoned benchmark resources older than two hours |
+| [Benchmark droplet cleanup](../../.github/workflows/benchmark-cleanup.yml) | Every hour at :17 UTC; manual | Destroy this repository's abandoned benchmark resources older than two hours |
+| [Publish README reports](../../.github/workflows/readme.yml) | Full quality or Dedicated benchmarks completion; manual run ID | Validate trusted default-branch producer artifacts and publish reports; it does not rerun their tests |
+
+## Trigger and concurrency policy
+
+Branch work runs through `pull_request` only; automatic `push` checks are limited
+to `main`. A Dependabot or feature-branch update therefore gets one run of each
+applicable PR workflow. A branch without a PR needs a manual dispatch to run CI.
+Tag pushes do not start these checks. The `main` push after a merge intentionally
+checks the integrated revision. Workflows with path filters require both the
+branch and path conditions to match; see GitHub's
+[trigger filters](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax).
+
+New commits to the same PR cancel its stale checks. Workflow, event and PR/ref
+identity keep unrelated checks separate, including scheduled external-link
+checks versus ordinary documentation pushes. Full and extended verification
+retain their own cancellation groups. Dedicated benchmarks, cleanup and README
+publication each serialize their own runs without cancelling an active run;
+cleanup remains independent of the benchmark job so it can recover abandoned
+resources. Manual dispatch is an explicit additional run.
+
+The two GitHub-managed **Dependabot Updates** jobs come from the separate Cargo
+and GitHub Actions ecosystems in [dependabot.yml](../../.github/dependabot.yml).
+They update dependencies; they are not duplicate Quality runs. GitHub-managed
+**Dependency Graph** analysis also has a distinct purpose: it does not run the
+platform tests. The README
+publisher pushes with `GITHUB_TOKEN`, which GitHub excludes from ordinary
+[recursive workflow triggering](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
+
+Trigger changes apply when the branch contains the updated workflow files.
+Branches created before this policy must incorporate it to stop their old
+branch-push triggers. Already queued runs are not removed by a workflow edit.
+
+Workflow checks enforce this policy with regression tests. Locally, with
+PyYAML installed (`python3-yaml` on the CI runner), run:
+
+```sh
+python3 -m unittest discover -s scripts/tests -p 'test_workflow_triggers.py' -v
+```
 
 Require **Required platform report** in branch protection. Full quality and
 benchmark workflows are separate from PR latency. Windows storage compiles;
-its directory-sync durability is not claimed by the RPC smoke check. These jobs
-need their first hosted execution; local Linux validation is not macOS/Windows
-validation.
+its directory-sync durability is not claimed by the RPC smoke check. Platform
+qualification requires successful hosted checks; local Linux validation is not
+macOS/Windows validation.
 
 ## Auditable Cargo builds
 
@@ -55,6 +94,9 @@ cargo test --workspace
 Keep that PATH active for build, benchmark, verification and release commands.
 No system Cargo installation is replaced. The ordinary workspace test command
 is unchanged. All tools and the wrapper live under ignored `target/`.
+Each platform smoke job checks wrapper argument forwarding, including the
+macOS runner's Bash 3.2, before invoking Cargo. Schema fixtures come from the
+pinned C++ submodule; Linux jobs install both the compiler and schema headers.
 
 Platform jobs also package and compile the extracted `capnp` crate with Rust
 1.97.0, its declared minimum. Package contents include sources, tests, schemas,
@@ -92,8 +134,8 @@ the same check through `cargo test --workspace`; the Linux
 `nightly_rpc_try_contracts` driver also checks the optional feature on the pinned
 nightly with Clippy installed.
 
-The platform jobs remain default-feature compile/smoke checks; no feature powerset
-matrix is introduced. Allocation contracts in [allocations.rs](../../tests/allocations.rs)
+The platform jobs cover default-feature compile/smoke checks and selected minimal
+feature profiles; no feature powerset matrix is introduced. Allocation contracts in [allocations.rs](../../tests/allocations.rs)
 use allocation-counter **0.8.1**, run with `cargo test --workspace`, and also run on
 Linux PRs. They require zero allocations for repeated borrowed generated field
 reads and synchronous decoding into caller storage. Async scratch decoding

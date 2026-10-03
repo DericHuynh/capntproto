@@ -1,14 +1,15 @@
 name: Workflow checks
 on:
   pull_request:
-    paths: ['.github/**', 'scripts/*auditable*', 'scripts/update_readme.py', 'quality/reporting/**', 'quality/reporting-requirements.txt', 'docs/README.template.md']
+    paths: ['.github/**', 'scripts/*auditable*', 'scripts/update_readme.py', 'scripts/tests/test_workflow_triggers.py', 'quality/reporting/**', 'quality/reporting-requirements.txt', 'docs/README.template.md']
   push:
-    paths: ['.github/**', 'scripts/*auditable*', 'scripts/update_readme.py', 'quality/reporting/**', 'quality/reporting-requirements.txt', 'docs/README.template.md']
+    branches: [main]
+    paths: ['.github/**', 'scripts/*auditable*', 'scripts/update_readme.py', 'scripts/tests/test_workflow_triggers.py', 'quality/reporting/**', 'quality/reporting-requirements.txt', 'docs/README.template.md']
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: workflow-checks-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
   workflows:
@@ -21,16 +22,19 @@ jobs:
       - name: Install script linters and pinned actionlint
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y shellcheck pyflakes3
+          sudo apt-get install --no-install-recommends -y shellcheck pyflakes3 python3-yaml
           curl --fail --location --retry 3 https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz -o "$RUNNER_TEMP/actionlint.tar.gz"
           echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum --check --strict
           tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
       - name: Check workflow expressions and embedded scripts
         run: '"$RUNNER_TEMP/actionlint" -pyflakes pyflakes3 -config-file .github/actionlint.yaml .github/workflows/*.yml'
+      - name: Prevent duplicate automatic workflow runs
+        run: python3 -m unittest discover -s scripts/tests -p 'test_workflow_triggers.py' -v
       - name: Check auditable build scripts
         run: |
-          shellcheck scripts/setup-auditable.sh scripts/auditable-cargo.sh scripts/auditable-bench-rustc.sh
-          pyflakes3 scripts/check_auditable.py
+          shellcheck scripts/setup-auditable.sh scripts/auditable-cargo.sh scripts/auditable-bench-rustc.sh scripts/test-auditable-cargo.sh
+          bash scripts/test-auditable-cargo.sh
+          pyflakes3 scripts/check_auditable.py scripts/tests/test_workflow_triggers.py
       - name: Validate README collector, history, charts and publisher
         run: |
           python3 -m venv "$RUNNER_TEMP/readme-venv"
