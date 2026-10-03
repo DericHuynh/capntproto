@@ -16,7 +16,7 @@ ring = "0.17"
 tempfile = "3"
 tar = "0.4"
 shuttle = "=0.9.4"
-signal-hook = "0.3.18"
+signal-hook = "0.4.4"
 
 [build-dependencies]
 capnpc = { version = "0.25", path = "../vendor/capnpc" }
