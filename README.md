@@ -99,11 +99,23 @@ No validated coverage/baseline comparison is available for the latest run. Missi
 
 ### Linux loopback benchmark comparisons
 
-Latest benchmark run: [2026-10-03T05:37:43Z · run 37100431837 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37100431837) · commit `3d383045ae16` · **failure**
+Latest benchmark run: [2026-10-03T06:13:31Z · run 37102346979 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37102346979) · commit `85e68e0dc6cc` · **success**
 
 Separate client/server processes, one outstanding request, several payload sizes and five repetitions. Capn't Proto uses encrypted Native/UDP; C++ Cap'n Proto, gRPC and WebSocket baselines use plaintext TCP. Bars compare this workload, not universal protocol performance.
 
-![Benchmark measurements pending](docs/reports/benchmarks-pending.svg)
+![Median round-trip latency (p50)](docs/reports/latency-p50.svg)
+
+![Tail round-trip latency (p95)](docs/reports/latency-p95.svg)
+
+![Tail round-trip latency (p99)](docs/reports/latency-p99.svg)
+
+![Sequential request rate](docs/reports/request-rate.svg)
+
+![Median latency difference from Capn't Proto](docs/reports/latency-difference.svg)
+
+![Request rate difference from Capn't Proto](docs/reports/request-rate-difference.svg)
+
+![Serialization CPU work (Callgrind)](docs/reports/instruction-counts.svg)
 
 [Machine-readable history and exact plotted values](docs/reports/history.json). Full logs, raw samples and LLVM exports are retained in the linked workflow artifacts.
 
