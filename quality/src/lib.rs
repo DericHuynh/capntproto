@@ -76,6 +76,18 @@ impl Runner {
         Ok(runner)
     }
     pub fn run(&mut self, name: &str, cmd: &mut Command) -> Result<String> {
+        self.run_output(name, cmd, false)
+    }
+    /// Machine-readable output must not include warnings written to stderr.
+    pub fn run_stdout(&mut self, name: &str, cmd: &mut Command) -> Result<String> {
+        self.run_output(name, cmd, true)
+    }
+    fn run_output(
+        &mut self,
+        name: &str,
+        cmd: &mut Command,
+        separate_stdout: bool,
+    ) -> Result<String> {
         if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
             return Err("invalid log name".into());
         }
@@ -86,7 +98,12 @@ impl Runner {
             .collect();
         eprintln!("quality {}: {name}", self.evidence.lane);
         let start = Instant::now();
-        let result = v::run_with_timeout(cmd, &log, 0, Duration::from_secs(7200));
+        let timeout = Duration::from_secs(7200);
+        let result = if separate_stdout {
+            v::run_stdout_with_timeout(cmd, &log.with_extension("stdout"), &log, 0, timeout)
+        } else {
+            v::run_with_timeout(cmd, &log, 0, timeout)
+        };
         self.evidence.steps.push(Step {
             name: name.into(),
             command,

@@ -493,7 +493,7 @@ pub fn collect(r: &mut Runner) -> Result<()> {
         c.arg("-sources").args(&source_paths);
         c
     };
-    let export = r.run(
+    let export = r.run_stdout(
         "llvm-export",
         command("export")
             .arg("-skip-functions")
@@ -501,7 +501,7 @@ pub fn collect(r: &mut Runner) -> Result<()> {
     )?;
     fs::write(r.directory.join("coverage.json"), &export)?;
     let measured = parse_export(&serde_json::from_str(&export)?, &root())?;
-    let lcov = r.run("lcov", command("export").arg("-format=lcov"))?;
+    let lcov = r.run_stdout("lcov", command("export").arg("-format=lcov"))?;
     fs::write(r.directory.join("coverage.lcov"), lcov)?;
     r.run(
         "html",

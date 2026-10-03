@@ -246,6 +246,9 @@ C++ reference sources, Cargo registry dependencies and generated `OUT_DIR` files
 are excluded. Instrumentation of linked Rust dependencies may still be present
 in raw execution profiles; it does not enter the published coverage scope.
 See [LLVM's source filtering](https://llvm.org/docs/CommandGuide/llvm-cov.html#export-command).
+JSON and LCOV capture stdout separately from diagnostic stderr. LLVM warnings
+remain in the export logs and cannot corrupt the machine-readable artifacts;
+nonzero exit statuses, deadlines and cancellation still fail the collection.
 
 Zero-hit owned code remains in the denominator. Owned files without executable
 mappings are explicit N/A, never counted as covered. The scope is versioned as

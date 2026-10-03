@@ -280,6 +280,31 @@ pub fn run_with_timeout(
     expected: i32,
     timeout: Duration,
 ) -> Result<String> {
+    run_with_outputs(cmd, log, None, expected, timeout)
+}
+
+/// Capture machine-readable stdout separately from diagnostic stderr while
+/// retaining the same exit-status, deadline and process-tree cancellation checks.
+pub fn run_stdout_with_timeout(
+    cmd: &mut Command,
+    stdout: &Path,
+    log: &Path,
+    expected: i32,
+    timeout: Duration,
+) -> Result<String> {
+    if stdout == log {
+        return Err("stdout and diagnostic paths must differ".into());
+    }
+    run_with_outputs(cmd, log, Some(stdout), expected, timeout)
+}
+
+fn run_with_outputs(
+    cmd: &mut Command,
+    log: &Path,
+    stdout: Option<&Path>,
+    expected: i32,
+    timeout: Duration,
+) -> Result<String> {
     // Every nested verification driver forwards termination to its own group.
     // Handling SIGTERM here lets cancellation propagate through Cargo/test/TLC
     // chains even though each command has an isolated process group.
@@ -301,7 +326,15 @@ pub fn run_with_timeout(
         fs::create_dir_all(parent)?;
     }
     let file = File::create(log)?;
-    cmd.stdout(file.try_clone()?).stderr(Stdio::from(file));
+    let output = if let Some(path) = stdout {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        File::create(path)?
+    } else {
+        file.try_clone()?
+    };
+    cmd.stdout(output).stderr(Stdio::from(file));
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -362,7 +395,11 @@ pub fn run_with_timeout(
         )
         .into());
     }
-    Ok(output)
+    if let Some(path) = stdout {
+        Ok(fs::read_to_string(path)?)
+    } else {
+        Ok(output)
+    }
 }
 #[cfg(unix)]
 fn descendant_groups(pid: u32) -> Vec<u32> {
@@ -593,6 +630,55 @@ pub fn input(name: &str) -> std::result::Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    #[test]
+    fn structured_output_keeps_warnings_out_of_json_and_preserves_failure_diagnostics() {
+        let directory = tempfile::tempdir().unwrap();
+        let stdout = directory.path().join("export.json");
+        let log = directory.path().join("export.log");
+        let script = "printf 'warning: mismatched data\\n' >&2; printf '{\"data\":[]}'";
+        let output = run_stdout_with_timeout(
+            Command::new("sh").args(["-c", script]),
+            &stdout,
+            &log,
+            0,
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&output).unwrap(),
+            serde_json::json!({"data": []})
+        );
+        assert_eq!(fs::read_to_string(&stdout).unwrap(), output);
+        assert_eq!(
+            fs::read_to_string(&log).unwrap(),
+            "warning: mismatched data\n"
+        );
+
+        let error = run_stdout_with_timeout(
+            Command::new("sh").args([
+                "-c",
+                "printf 'partial output'; printf 'export failed\\n' >&2; exit 7",
+            ]),
+            &stdout,
+            &log,
+            0,
+            Duration::from_secs(5),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("export failed"));
+        assert_eq!(fs::read_to_string(&stdout).unwrap(), "partial output");
+        assert!(run_stdout_with_timeout(
+            &mut Command::new("sh"),
+            &log,
+            &log,
+            0,
+            Duration::from_secs(5)
+        )
+        .is_err());
+    }
+
     #[test]
     fn repository_layout_preserves_verification_and_distribution_inputs() {
         let work = tempfile::tempdir().unwrap();
