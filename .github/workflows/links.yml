@@ -3,6 +3,7 @@ on:
   pull_request:
     paths: ['*.md', 'docs/**', '.github/**', 'quality/lychee.toml', 'research/reports/README.md', 'crates/*/README.md', 'benchmarks/**/README.md', 'vendor/*/REPROTO.md', 'scripts/wiki.py', 'scripts/tests/test_wiki.py']
   push:
+    branches: [main]
     paths: ['*.md', 'docs/**', '.github/**', 'quality/lychee.toml', 'research/reports/README.md', 'crates/*/README.md', 'benchmarks/**/README.md', 'vendor/*/REPROTO.md', 'scripts/wiki.py', 'scripts/tests/test_wiki.py']
   schedule:
     - cron: '43 5 * * 2'
@@ -10,7 +11,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: links-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
   links:

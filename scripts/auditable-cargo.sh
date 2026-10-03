@@ -4,9 +4,9 @@
 set -euo pipefail
 shim_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 IFS= read -r real_cargo < "$shim_dir/real-cargo"
-toolchain=()
+toolchain=''
 if [[ ${1:-} == +* ]]; then
-    toolchain=("$1")
+    toolchain=$1
     shift
 fi
 if [[ ${1:-} == auditable ]]; then
@@ -19,4 +19,8 @@ if [[ ${1:-} == bench ]]; then
     fi
     export RUSTC_WRAPPER="$shim_dir/auditable-bench-rustc"
 fi
-exec "$real_cargo" "${toolchain[@]}" auditable "$@"
+# Bash 3.2 (the macOS runner default) treats empty arrays as unset under -u.
+if [[ -n $toolchain ]]; then
+    exec "$real_cargo" "$toolchain" auditable "$@"
+fi
+exec "$real_cargo" auditable "$@"
