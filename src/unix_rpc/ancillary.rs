@@ -8,12 +8,12 @@ use std::{
 };
 use tokio::net::UnixStream;
 
-#[cfg(target_os = "linux")]
+// Linux and supported macOS releases suppress SIGPIPE per send. Setting
+// SO_NOSIGPIPE during a write is too late on Darwin: a closed peer can make
+// setsockopt fail with EINVAL before sendmsg reports the actual disconnect.
 const SEND_FLAGS: libc::c_int = libc::MSG_NOSIGNAL;
 #[cfg(target_os = "linux")]
 const RECV_FLAGS: libc::c_int = libc::MSG_CMSG_CLOEXEC;
-#[cfg(target_os = "macos")]
-const SEND_FLAGS: libc::c_int = 0;
 #[cfg(target_os = "macos")]
 const RECV_FLAGS: libc::c_int = 0;
 
@@ -38,22 +38,6 @@ pub(super) fn send_once(
             io::ErrorKind::InvalidInput,
             "too many outgoing descriptors",
         ));
-    }
-    // Supplied sockets may not have been created by Tokio. On Darwin suppress
-    // SIGPIPE on this socket instead of relying on a process-wide signal policy.
-    #[cfg(target_os = "macos")]
-    unsafe {
-        let enabled: libc::c_int = 1;
-        if libc::setsockopt(
-            socket.as_raw_fd(),
-            libc::SOL_SOCKET,
-            libc::SO_NOSIGPIPE,
-            (&enabled as *const libc::c_int).cast(),
-            mem::size_of_val(&enabled) as _,
-        ) < 0
-        {
-            return Err(io::Error::last_os_error());
-        }
     }
     let mut control = control_buffer(fds.len());
     let mut iov = libc::iovec {

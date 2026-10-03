@@ -135,12 +135,36 @@ async fn closed_peer_write_reports_error_with_default_sigpipe_handler() {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
     let (sender, receiver) = UnixStream::pair().unwrap();
+    // Exercise the per-send flag even if the socket constructor suppressed
+    // SIGPIPE itself. Configure while connected; Darwin rejects options after
+    // the peer closes. The process-wide handler above remains SIG_DFL.
+    #[cfg(target_os = "macos")]
+    unsafe {
+        let disabled: libc::c_int = 0;
+        assert_eq!(
+            libc::setsockopt(
+                sender.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_NOSIGPIPE,
+                (&disabled as *const libc::c_int).cast(),
+                mem::size_of_val(&disabled) as _,
+            ),
+            0,
+            "could not enable SIGPIPE for the regression: {}",
+            io::Error::last_os_error()
+        );
+    }
     drop(receiver);
     let error = super::super::write_message(&sender, b"x", &[])
         .await
         .unwrap_err();
-    assert!(matches!(
-        error.kind(),
-        io::ErrorKind::BrokenPipe | io::ErrorKind::ConnectionReset | io::ErrorKind::NotConnected
-    ));
+    assert!(
+        matches!(
+            error.kind(),
+            io::ErrorKind::BrokenPipe
+                | io::ErrorKind::ConnectionReset
+                | io::ErrorKind::NotConnected
+        ),
+        "unexpected closed-peer error: {error:?}"
+    );
 }

@@ -4,6 +4,8 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import subprocess
+from types import SimpleNamespace
 import time
 from unittest.mock import patch
 
@@ -43,7 +45,8 @@ class API:
             return {"ssh_key": key}
         if method == "POST" and path == "/droplets":
             assert data["size"] == "c-4" and data["image"] == "ubuntu-24-04-x64"
-            host = {"id": 7, "name": data["name"], "tags": data["tags"]}
+            host = {"id": 7, "name": data["name"], "tags": data["tags"],
+                    "status": "active", "networks": {"v4": [{"type": "public", "ip_address": "192.0.2.1"}]}}
             self.hosts.append(host)
             if self.creation_response_lost:
                 raise RuntimeError("Lost creation response")
@@ -54,7 +57,8 @@ class API:
             self.hosts = [h for h in self.hosts if path != f'/droplets/{h["id"]}']
             return None
         if method == "GET" and path.startswith("/droplets/"):
-            return next((h for h in self.hosts if path == f'/droplets/{h["id"]}'), None)
+            host = next((h for h in self.hosts if path == f'/droplets/{h["id"]}'), None)
+            return {"droplet": host} if host else None
         if method == "DELETE" and path.startswith("/account/keys/"):
             self.keys = [k for k in self.keys if path != f'/account/keys/{k["id"]}']
             return None
@@ -144,6 +148,39 @@ with tempfile.TemporaryDirectory() as directory:
     assert (base / "state/receipt.json").exists()
     assert not (base / "state/client").exists()
     cloud.cleanup(api, json.loads((base / "state/receipt.json").read_text())["name"])
+
+# A failed remote driver streams progress, preserves its status, retrieves
+# partial evidence and destroys the host even when one diagnostic is missing.
+with tempfile.TemporaryDirectory() as directory:
+    base = Path(directory)
+    bundle = base / 'bundle'
+    bundle.mkdir()
+    (bundle / 'driver').write_text('fixture')
+    api = API()
+    downloads = []
+    def remote_command(args, **kwargs):
+        if args[0] == 'ssh-keygen':
+            return fake_command(args, **kwargs)
+        if args[0] == 'ssh' and 'pipefail' in args[-1]:
+            assert 'tee /root/results/runner.log' in args[-1]
+            raise subprocess.CalledProcessError(124, args)
+        if args[0] == 'scp' and ':/root/results/' in args[-2]:
+            name = args[-2].rsplit('/', 1)[1]
+            downloads.append(name)
+            if name == 'instructions.jsonl':
+                raise subprocess.CalledProcessError(1, args)
+            Path(args[-1]).write_text('partial evidence')
+    with patch.object(cloud, 'command', remote_command), patch.object(cloud.subprocess, 'run', return_value=SimpleNamespace(returncode=0)):
+        with patch.dict(os.environ, DO_SIZE='auto', DO_REGION='auto'):
+            try:
+                cloud.run(api, bundle, base / 'results', base / 'state')
+            except subprocess.CalledProcessError as error:
+                assert error.returncode == 124
+            else:
+                raise AssertionError('Expected measurement timeout')
+    assert downloads == ['runner.log', 'trials.json', 'environment.json', 'instructions.jsonl']
+    assert (base / 'results/runner.log').read_text() == 'partial evidence'
+    assert not api.hosts and not api.keys
 
 # TTL cleanup preserves active hosts and unrelated resources, and surfaces failures.
 api = API()

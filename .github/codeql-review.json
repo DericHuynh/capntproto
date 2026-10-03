@@ -247,6 +247,38 @@
       "rule": "rust/hard-coded-cryptographic-value",
       "disposition": "false positive",
       "reason": "These are the public QUIC initial salts mandated by RFC 9001 section 5.2 (v1) and RFC 9369 section 3.3.1 (v2). Initial keys derive from these salts plus the peer destination CID; authenticated traffic keys come from TLS 1.3. Randomizing these interoperability constants would break QUIC."
+    },
+    {
+      "alerts": [
+        113,
+        114,
+        115,
+        116,
+        117,
+        118,
+        119,
+        120,
+        121,
+        122,
+        123,
+        124,
+        125,
+        126,
+        127,
+        128,
+        129,
+        130
+      ],
+      "rule": "rust/access-after-lifetime-ended",
+      "disposition": "false positive",
+      "reason": "All reported paths begin at &self in schema_loader/dynamic/conversion.rs and propagate a copied i64, u64 or f64 through Number::convert or Number::ordinal. Number stores scalar values, not references into self. The numeric branch returns only numeric Value variants or Enum; pointer targets return a type-mismatch error. The query then incorrectly switches the returned value to Struct, List or AnyPointer in dynamic::write_pointer before the reported layout dereferences. These enum-variant paths cannot execute, and no borrow into the consumed self is retained. Reviewed all four code flows for each of the 18 sinks in extended analysis 1885192147."
+    }
+  ],
+  "additional_analyses": [
+    {
+      "analysis_id": 1885192147,
+      "source_commit": "5753ae14601011d4bf6d92802dfa66bdc092cc94",
+      "query_suite": "security-extended"
     }
   ]
 }

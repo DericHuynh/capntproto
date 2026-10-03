@@ -256,6 +256,15 @@ that protocol's workload; the C++ wrapper additionally requires
 comparison timing runs on the droplet with protocol order rotated between five
 repetitions.
 
+Actions streams the driver's protocol, payload size and repetition progress while
+retaining it in `runner.log`. Setup stages identify cloud-init, runtime-tool
+installation and bundle upload separately. The driver has a 20-minute overall
+limit; a failed or timed-out run downloads available partial logs and samples
+before cleanup and still fails the job. Partial samples are diagnostic evidence,
+not published measurements. A low droplet-wide CPU reading alone cannot establish
+whether this sequential latency benchmark is making progress; check the live
+trial log and completed samples.
+
 The bundle also contains Gungraun **0.20.0**, its matching precompiled runner, and
 the instruction benchmark. The droplet installs Valgrind, but no Rust toolchain
 or build dependencies. After the RPC timing runs, it profiles encode/decode at
@@ -284,7 +293,6 @@ this is not a guaranteed billing cutoff. DigitalOcean bills CPU Droplets by the
 second at their hourly rate (minimum charges apply); **destroying** the droplet
 ends billing, whereas powering it off does not. See [DigitalOcean pricing](https://docs.digitalocean.com/products/droplets/details/pricing/).
 
-No live droplet or hosted workflow was executed during the local refactor.
 Do not treat old `target/quality` output as evidence for changed sources; reports
 reject mismatched source fingerprints. Each workflow reports its own scope and
 explicitly omits unmeasured coverage/performance rather than inventing results.

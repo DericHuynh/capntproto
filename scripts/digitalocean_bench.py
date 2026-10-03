@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import shlex
 import subprocess
 import sys
 import tarfile
@@ -259,8 +260,10 @@ def run(api, bundle, destination, state):
             time.sleep(5)
         else:
             raise RuntimeError("SSH readiness timed out")
+        print('SSH ready; waiting for cloud-init', flush=True)
         command([*ssh, "cloud-init status --wait"], timeout=240)
-        command([*ssh, "apt-get update && apt-get install --no-install-recommends -y valgrind"], timeout=300)
+        print('Installing runtime tools (no compilation on the droplet)', flush=True)
+        command([*ssh, "DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y valgrind"], timeout=300)
         command([*ssh, "mkdir -p /root/bench /root/results"])
         archive = state / "bundle.tar.gz"
         with tarfile.open(archive, "w:gz") as tar:
@@ -268,10 +271,25 @@ def run(api, bundle, destination, state):
                 if not path.is_file() or path.is_symlink():
                     raise RuntimeError("Unexpected bundle entry")
                 tar.add(path, arcname=path.name)
+        print(f'Uploading precompiled bundle: {archive.stat().st_size} bytes', flush=True)
         command(["scp", *options, str(archive), f"root@{address}:/root/bundle.tar.gz"], timeout=300)
         # Matching Ubuntu versions preserve glibc compatibility. Only runtime tools
         # and precompiled binaries are needed; no Cargo/Rust/compiler on this host.
-        command([*ssh, "tar -xzf /root/bundle.tar.gz -C /root/bench && chmod +x /root/bench/native /root/bench/grpc /root/bench/websocket /root/bench/capnp_cpp /root/bench/capnp-reference /root/bench/driver /root/bench/hot_paths /root/bench/gungraun-runner && timeout --kill-after=10s 20m /root/bench/driver compare /root/bench /root/results > /root/results/runner.log 2>&1"], timeout=1250)
+        remote = "tar -xzf /root/bundle.tar.gz -C /root/bench && chmod +x /root/bench/native /root/bench/grpc /root/bench/websocket /root/bench/capnp_cpp /root/bench/capnp-reference /root/bench/driver /root/bench/hot_paths /root/bench/gungraun-runner && timeout --kill-after=10s 20m /root/bench/driver compare /root/bench /root/results 2>&1 | tee /root/results/runner.log"
+        print('Starting measurements; live trial progress follows (20-minute overall limit)', flush=True)
+        try:
+            # pipefail preserves the driver/timeout exit status when tee succeeds.
+            command([*ssh, "bash -o pipefail -c " + shlex.quote(remote)], timeout=1250)
+        except BaseException:
+            # Preserve partial evidence before the outer finally destroys the host.
+            # Diagnostic-download failures must not mask the measurement failure.
+            for filename in ("runner.log", "trials.json", "environment.json", "instructions.jsonl"):
+                try:
+                    command(["scp", *options, f"root@{address}:/root/results/{filename}", str(destination / filename)], timeout=30)
+                except (subprocess.SubprocessError, OSError) as error:
+                    print(f'Could not retrieve {filename}: {type(error).__name__}', file=sys.stderr, flush=True)
+            raise
+        print('Measurements completed; downloading validated-input artifacts', flush=True)
         for filename in ("trials.json", "environment.json", "instructions.jsonl", "runner.log"):
             command(["scp", *options, f"root@{address}:/root/results/{filename}", str(destination / filename)])
     finally:
