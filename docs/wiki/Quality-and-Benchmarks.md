@@ -145,7 +145,10 @@ A positive control must observe a heap allocation. The allocator is linked into 
 thread-local and make no claim about other tasks or threads.
 
 Workflow checks use actionlint **1.7.12** and Zizmor **1.30.1**. Actions are pinned
-to commit IDs. Zizmor uses `advanced-security: false`, so findings fail the job
+to commit IDs. Zizmor audits the repository's `.github` directory, including
+composite actions and Dependabot configuration. Vendored upstream workflows
+are not executed by this repository and are outside that input scope.
+Zizmor uses `advanced-security: false`, so findings fail the job
 without requiring code-scanning merge rules. Targeted suppressions keep
 checked-out composite action syntax compatible with the pinned actionlint and
 allow the intentional PATH additions for auditable Cargo. They do not exempt
