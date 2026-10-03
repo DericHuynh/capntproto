@@ -1,5 +1,5 @@
 <!-- Generated README: edit docs/README.template.md, then run python3 scripts/update_readme.py render. -->
-# Capntproto
+# Capn't Proto
 
 [![CI](https://github.com/DericHuynh/capntproto/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/ci.yml)
 [![Cargo tests and coverage](https://github.com/DericHuynh/capntproto/actions/workflows/verification-tests.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/verification-tests.yml)
