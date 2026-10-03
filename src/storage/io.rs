@@ -1,8 +1,23 @@
 //! File operations with deterministic fault injection compiled only for unit tests.
 use std::{
-    fs::File,
+    fs::{File, OpenOptions},
     io::{self, Write},
+    path::Path,
 };
+
+pub(super) fn directory(path: &Path) -> io::Result<File> {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        // CreateFile requires backup semantics for directories; the subsequent
+        // FlushFileBuffers (File::sync_all) also requires GENERIC_WRITE access.
+        const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+        options.write(true).custom_flags(FILE_FLAG_BACKUP_SEMANTICS);
+    }
+    options.open(path)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Point {

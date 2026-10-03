@@ -106,6 +106,12 @@ serving handle. An I/O failure quarantines the writer and new snapshot reads
 until reopen/recovery. Existing snapshots remain
 readable when Store is dropped and prevent a second writer from opening the file.
 
+On Windows, directory handles use `FILE_FLAG_BACKUP_SEMANTICS` and request write
+access so `sync_all` can call `FlushFileBuffers`. Directory open/flush failures
+remain errors; the durability barrier is never silently skipped. See Microsoft's
+[directory-handle requirements](https://learn.microsoft.com/en-us/windows/win32/fileio/obtaining-a-handle-to-a-directory)
+and [flush access requirements](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers).
+
 This is a mutable store through whole-entry replacement, not arbitrary in-place
 mutation of serialized pointers. Explicit compaction atomically replaces a file
 with a current-format compact or history-preserving checkpoint while preserving held mappings; see

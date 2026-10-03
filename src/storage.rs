@@ -318,7 +318,7 @@ impl Store {
             (&file).write_all(&h)?;
             file.sync_all()?;
             if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-                File::open(parent)?.sync_all()?;
+                io::directory(parent)?.sync_all()?;
             }
         }
         let len = usize::try_from(file.metadata()?.len()).map_err(|_| Error::Limit)?;
@@ -565,7 +565,7 @@ impl Store {
         // before the previous writer's barriers. Stabilize both before serving.
         io::sync(&file, Point::RecoverySync)?;
         io::sync(
-            &File::open(path.parent().unwrap())?,
+            &io::directory(path.parent().unwrap())?,
             Point::RecoveryDirectorySync,
         )?;
         io::point(Point::Recovered)?;
@@ -795,7 +795,7 @@ impl Store {
         self.end = after_bytes;
         stage(CompactStage::Renamed)?;
         io::point(Point::CompactRenamed)?;
-        io::sync(&File::open(parent)?, Point::CompactDirectorySync)?;
+        io::sync(&io::directory(parent)?, Point::CompactDirectorySync)?;
         stage(CompactStage::DirectorySynced)?;
         io::point(Point::CompactComplete)?;
         self.poisoned = false;
