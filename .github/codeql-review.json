@@ -207,8 +207,8 @@
         72
       ],
       "rule": "rust/cleartext-logging",
-      "disposition": "source hardened; review after scan",
-      "reason": "Reviewed the public trace-ID taint and hardened actual token formatting: packet Header redacts Initial/Retry tokens; NEW_CONNECTION_ID frame Debug redacts stateless-reset tokens; TransportParams Debug redacts reset tokens and unknown extension payloads. Regressions check redaction while wire round trips remain covered. Remaining trace ID/protocol/cipher/curve and length fields are public metadata; no traffic key is formatted."
+      "disposition": "false positive",
+      "reason": "Reviewed the public trace-ID taint and hardened actual token formatting: packet Header redacts Initial/Retry tokens; NEW_CONNECTION_ID frame Debug redacts stateless-reset tokens; TransportParams Debug redacts reset tokens and unknown extension payloads. Regressions check redaction while wire round trips remain covered. Remaining trace ID/protocol/cipher/curve and length fields are public metadata; no traffic key is formatted. Re-reviewed the remaining findings in analysis 1885221382 at commit 78c1059da8cbd4cf7745b2813a9864200bb481bf after the redaction change: the reported sources are connection-wide TLS taint reaching public trace IDs and metadata, not key bytes."
     },
     {
       "alerts": [
@@ -236,8 +236,8 @@
         108
       ],
       "rule": "rust/hard-coded-cryptographic-value",
-      "disposition": "source hardened; review after scan",
-      "reason": "The output buffer was filled by ring::SystemRandom before use. Replaced it with ring::rand::generate(...).expose() so successful initialization is explicit and no placeholder constant is exposed."
+      "disposition": "false positive",
+      "reason": "The original zero array was an output buffer filled by ring::SystemRandom before use; fill failures panic before returning a CID. It was never a constant operational nonce. Replaced it with ring::rand::generate(...).expose() so successful initialization is explicit. The finding is absent from current-source analysis 1885221382 at commit 78c1059da8cbd4cf7745b2813a9864200bb481bf; the old setup-validation instance is dismissed for the same initialization false positive."
     },
     {
       "alerts": [
@@ -279,6 +279,17 @@
       "analysis_id": 1885192147,
       "source_commit": "5753ae14601011d4bf6d92802dfa66bdc092cc94",
       "query_suite": "security-extended"
+    },
+    {
+      "analysis_id": 1885221382,
+      "source_commit": "78c1059da8cbd4cf7745b2813a9864200bb481bf",
+      "purpose": "Verify source hardening against current-source results"
+    },
+    {
+      "analysis_id": 1885245700,
+      "source_commit": "5d7ad25a0c8f1547b89b09c4c7abf64eac770911",
+      "query_suite": "security-extended",
+      "purpose": "Confirm the active push configuration includes the extended queries; 127 findings reviewed, zero open alerts after individual triage"
     }
   ]
 }
