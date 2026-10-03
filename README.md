@@ -81,9 +81,13 @@ Generated automatically from CI evidence. Each lane keeps its own measured commi
 
 ### Aggregate workspace tests
 
-Awaiting the first full-quality CI run. No historical results have been fabricated.
+Latest full-quality run: [2026-10-03T00:30:50Z · run 37082380827 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37082380827) · commit `390261cd8481` · **failure**
 
 ![Aggregate test history: total, passed, failed, errored and skipped](docs/reports/test-history.svg)
+
+| Total | Passed | Failed | Errors | Skipped | Workspace command |
+| ---: | ---: | ---: | ---: | ---: | --- |
+| 1,371 | 1,354 | 6 | 0 | 11 | Failed / incomplete |
 
 Counts are outer workspace libtest cases and doctests. Nested C++/model/fuzz checks are represented by their parent test, without double-counting their internal cases. Skipped means ignored; errors mean announced tests that never returned a result. Build failures and missing reports have unknown totals. [Reporting contract and setup](docs/wiki/README-Reports.md).
 
