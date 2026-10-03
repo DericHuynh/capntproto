@@ -14,7 +14,7 @@ capnp-rpc = { path = "../../vendor/capnp-rpc" }
 capnp-compiler = { path = "../capnp-compiler" }
 futures = "0.3"
 serde_json = "1"
-base64 = "0.22"
+base64 = "0.23"
 
 [build-dependencies]
 capnp = { path = "../../vendor/capnp" }
