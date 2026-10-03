@@ -1261,5 +1261,40 @@
         "note": "Workflow failed after measurement; see the CI run."
       }
     }
+  ],
+  "cargo": [
+    {
+      "run_id": 37113359978,
+      "attempt": 1,
+      "commit": "7b0a5aafb6a58f6216979c7c9517739a5687428e",
+      "date": "2026-10-03T09:31:53Z",
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/37113359978",
+      "conclusion": "failure",
+      "data": {
+        "format": 1,
+        "kind": "cargo",
+        "origin": {
+          "repository": "DericHuynh/capntproto",
+          "run_id": 37113359978,
+          "attempt": 1,
+          "commit": "7b0a5aafb6a58f6216979c7c9517739a5687428e"
+        },
+        "source_id": "6377e481282367b17b8327eeb5a9f08f432dcc5dea2172125b45dd02b273cdf3",
+        "tests": {
+          "passed": 1118,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 10,
+          "total": 1128,
+          "suites": 176,
+          "complete": true,
+          "command_passed": true,
+          "failures": []
+        },
+        "charts": [],
+        "status": "failed",
+        "note": "Workflow failed after measurement; see the CI run."
+      }
+    }
   ]
 }
