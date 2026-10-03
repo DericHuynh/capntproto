@@ -297,6 +297,17 @@ inspecting its files and counters. Changes to a baseline require review. Missing
 baselines still fail the final report; CI never creates one automatically or
 substitutes the current run for a missing comparison.
 
+The first `first-party-owned-crates-v3` baseline was measured on Linux x86-64 on
+2026-10-03 from commit `ed95a35ac`, using the pinned coverage compiler and flags.
+Its source fingerprint is
+`fec878f884402877922bf93693050d11cf88fcc25d6ae8ecccb6efab3971e2fd`.
+The instrumented workspace run passed 1,236 tests. The baseline inventories 558
+owned source files: 515 have LLVM mappings; 43 are explicitly unmapped. The four
+imported Rust crates each have measured coverage. Raw-counter hashes, source-file
+hashes and per-group totals were checked before saving the initial summary as
+the baseline. The initial measurement is a regression reference, not a claim that
+all code paths are covered.
+
 The Fuzzing job packages its reports, logs, queues, crashes and hangs in
 `fuzz-report.tar.gz` before artifact upload. This preserves AFL's colon-containing
 filenames, which GitHub's artifact uploader rejects as individual files. Extract
