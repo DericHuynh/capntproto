@@ -39,7 +39,7 @@ jobs:
       - name: Build prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y cmake ninja-build clang capnproto protobuf-compiler
+          sudo apt-get install --no-install-recommends -y cmake ninja-build clang capnproto libcapnp-dev protobuf-compiler
           rustup toolchain install 1.97.0 --profile minimal
           cargo install gungraun-runner --version 0.20.0 --locked
           git submodule update --init --depth 1 -- vendor/capnproto
