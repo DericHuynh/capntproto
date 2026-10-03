@@ -97,7 +97,7 @@ fences long enough for embedded backticks. Bare HTTP(S) URLs in prose become
 links; existing links, inline code and code blocks keep their roles. The parser
 and serializer are build-time dependencies of the generator.
 
-The [fixture](../../crates/capnp-compiler/examples/rustdoc.capnp) and
+The [fixture](../../crates/capntproto-compiler/examples/rustdoc.capnp) and
 [HTML/doctest integration test](../../tests/schema_compiler/rustdoc.rs) exercise both
 compiler inputs, both generated APIs, imports, streaming, renaming, ordinal order,
 partial metadata and comment escaping. The test generates actual Rustdoc with
@@ -350,7 +350,7 @@ aliased editors, consumed handles, occupied initialization, cloned editors,
 wrong-schema descriptors, escaping callback elements, readers outliving their
 view owner, overlapping list element editors, premature commit, reused orphans, expired
 message storage, escaping draft editors, and cross-session brands. Logs and source hashes go to
-`reports/reproto/field-api/`. Runtime tests exercise defaults, invalid text and
+`reports/capntproto/field-api/`. Runtime tests exercise defaults, invalid text and
 pointers, atomic failure, schema upgrades, unknown discriminants, capability
 identity/release, traversal limits, and segmented arenas.
 

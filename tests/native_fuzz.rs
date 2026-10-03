@@ -1,6 +1,6 @@
 //! Bounded wire/real-crypto fuzz qualification orchestrated entirely by Cargo tests.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-use reproto_test_support::verification::{self as v, command, root, run};
+use capntproto_test_support::verification::{self as v, command, root, run};
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, fs};
 
@@ -46,12 +46,12 @@ fn native_fuzz_smoke() {
     }
     let directory = tempfile::tempdir_in(&base).unwrap().keep();
     let inputs = input_hashes();
-    let wire_runs = match std::env::var("REPROTO_FUZZ_WIRE_RUNS") {
+    let wire_runs = match std::env::var("CAPNTPROTO_FUZZ_WIRE_RUNS") {
         Ok(value) => value
             .parse::<u32>()
-            .expect("REPROTO_FUZZ_WIRE_RUNS must be an integer"),
+            .expect("CAPNTPROTO_FUZZ_WIRE_RUNS must be an integer"),
         Err(std::env::VarError::NotPresent) => 16384,
-        Err(error) => panic!("REPROTO_FUZZ_WIRE_RUNS: {error}"),
+        Err(error) => panic!("CAPNTPROTO_FUZZ_WIRE_RUNS: {error}"),
     };
     assert!(
         wire_runs >= 16384,
@@ -140,8 +140,8 @@ fn native_fuzz_smoke() {
                 "--no-default-features",
                 "--lib",
             ])
-            .env("REPROTO_NATIVE_FUZZ_CORPUS", &corpus)
-            .env_remove("REPROTO_NATIVE_FUZZ_REPLAY"),
+            .env("CAPNTPROTO_NATIVE_FUZZ_CORPUS", &corpus)
+            .env_remove("CAPNTPROTO_NATIVE_FUZZ_REPLAY"),
         &log("native"),
         0,
     )
@@ -257,8 +257,11 @@ fn native_fuzz_smoke() {
                     "--",
                     "--exact",
                 ])
-                .env("REPROTO_NATIVE_FUZZ_TARGET", target)
-                .env("REPROTO_NATIVE_FUZZ_REPLAY", seed_directory.join("seed-1")),
+                .env("CAPNTPROTO_NATIVE_FUZZ_TARGET", target)
+                .env(
+                    "CAPNTPROTO_NATIVE_FUZZ_REPLAY",
+                    seed_directory.join("seed-1"),
+                ),
             &log(&format!("{target}-replay")),
             0,
         )

@@ -1,5 +1,5 @@
 use super::super::*;
-use reproto_test_support::verification::{command, cpp, exploration, root, run};
+use capntproto_test_support::verification::{command, cpp, exploration, root, run};
 
 fn encoded(input: Input) -> (u8, String) {
     match input {

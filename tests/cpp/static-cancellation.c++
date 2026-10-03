@@ -4,7 +4,7 @@
 #include <kj/async.h>
 #include <kj/debug.h>
 #include <iostream>
-#ifdef REPROTO_PINNED_RUNTIME
+#ifdef CAPNTPROTO_PINNED_RUNTIME
 #include "dynamic-test.capnp.h"
 #include <capnp/dynamic.h>
 #include <capnp/message.h>
@@ -89,7 +89,7 @@ void check(kj::WaitScope& wait, uint64_t interfaceId, uint16_t method, bool allo
     KJ_REQUIRE(state.completed && !state.running && !state.alive);
   }
 }
-#ifdef REPROTO_PINNED_RUNTIME
+#ifdef CAPNTPROTO_PINNED_RUNTIME
 void checkRevocable(kj::WaitScope& wait) {
   for (bool allow: {false, true}) {
     State state;
@@ -388,7 +388,7 @@ int main() {
   check<DerivedServer>(wait, capnp::typeId<Policy>(), 0, false);
   check<DerivedServer>(wait, capnp::typeId<Derived>(), 0, true);
   check<FileServer>(wait, capnp::typeId<Harness>(), 3, true);
-#ifdef REPROTO_PINNED_RUNTIME
+#ifdef CAPNTPROTO_PINNED_RUNTIME
   checkRevocable(wait);
   checkServerSet(wait);
   checkServerHooks(wait);

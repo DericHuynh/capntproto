@@ -5,7 +5,7 @@ use capnp::{
     message,
     schema_loader::{dynamic, Schema, SchemaLoader, Type},
 };
-use reproto_test_support::native_list_capnp::{cast_item, cast_types};
+use capntproto_test_support::native_list_capnp::{cast_item, cast_types};
 #[path = "loaded_view_casts/capabilities.rs"]
 mod capabilities;
 #[path = "loaded_view_casts/erasure.rs"]
@@ -673,7 +673,7 @@ fn loaded_casts_defer_child_validation_and_retain_list_traversal_budgets() {
 #[cfg(target_os = "linux")]
 #[test]
 fn compatible_loaded_casts_match_pinned_cpp() {
-    use reproto_test_support::verification::{command, cpp, root, run};
+    use capntproto_test_support::verification::{command, cpp, root, run};
     let build = cpp::build(&["capnpc", "capnp_tool"]).unwrap();
     let logs = root().join("target/verification/loaded-view-casts");
     std::fs::create_dir_all(&logs).unwrap();

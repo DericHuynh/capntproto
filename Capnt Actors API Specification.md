@@ -1,16 +1,16 @@
 # Capnt Actors — Rust virtual actor API specification
 
-Capnt Actors is a proposed virtual actor layer for **Capn't Proto**, the system in this workspace. It builds on the maintained `capnp`, `capnp-rpc`, `capnp-futures` and `capnpc` crates, the Rust schema compiler, and the `reproto` RPC, native transport, authority and storage modules. Its wire foundation remains Cap'n Proto serialization and capability RPC. The application API combines ordinary Rust methods, authorized typed references, exclusive actor turns, and an explicit transaction boundary for durable state and effects.
+Capnt Actors is a proposed virtual actor layer for **Capntproto**, the system in this workspace. It builds on the maintained `capnp`, `capnp-rpc`, `capnp-futures` and `capnpc` crates, the Rust schema compiler, and the `capntproto` RPC, native transport, authority and storage modules. Its wire foundation remains Cap'n Proto serialization and capability RPC. The application API combines ordinary Rust methods, authorized typed references, exclusive actor turns, and an explicit transaction boundary for durable state and effects.
 
-This is a normative design proposal, not an implemented actor runtime. The planned workspace crate is `capnt-actors`, imported as `capnt_actors`; the actor macros, generated clients, host, CLI and persistence guarantees below are proposed. Their examples have not been compiled or benchmarked. Existing packages and wire identifiers keep their current names. “Must” identifies a requirement for a future conforming implementation, not a property already supplied by `reproto`. Provider construction and routine application plumbing are omitted where they do not affect the contract.
+This is a normative design proposal, not an implemented actor runtime. The planned workspace crate is `capnt-actors`, imported as `capnt_actors`; the actor macros, generated clients, host, CLI and persistence guarantees below are proposed. Their examples have not been compiled or benchmarked. Existing packages and wire identifiers keep their current names. “Must” identifies a requirement for a future conforming implementation, not a property already supplied by `capntproto`. Provider construction and routine application plumbing are omitted where they do not affect the contract.
 
 ## Relationship to the current system
 
 The [runtime status](docs/wiki/Runtime-Status.md) and [RPC application guide](docs/wiki/RPC-Applications.md) describe the implemented foundation. This proposal adds actor policy above those APIs; it does not introduce another RPC engine or QUIC backend.
 
-| Area | Current Capn't Proto foundation | Capnt Actors work still required |
+| Area | Current Capntproto foundation | Capnt Actors work still required |
 | --- | --- | --- |
-| RPC ownership | `reproto::rpc::Connection` for two-party connections; `reproto::native_rpc::Vat` for authenticated multiparty RPC, both on a Tokio `LocalSet` | Actor host, activations, exclusive turns and bounded actor mailboxes |
+| RPC ownership | `capntproto::rpc::Connection` for two-party connections; `capntproto::native_rpc::Vat` for authenticated multiparty RPC, both on a Tokio `LocalSet` | Actor host, activations, exclusive turns and bounded actor mailboxes |
 | Transport | Plain `rpc::tcp`; conventional CA-validated `rpc::tls` and `rpc::quic`; native pinned mutual-TLS sessions over TCP or quiche QUIC v1/v2 | Actor service registration and deployment policy; production actor peers use authenticated sessions |
 | Capabilities and pipelines | Generated clients, `RemotePromise`, field-API `PendingCall`, `with_params`, `send().await`, `into_parts`, capability pipelines, typed tail calls and structured server replies | Lazy actor invocation builders, method modes and durable operation observation |
 | Three-party RPC | Native introductions, authenticated Join, answer adoption and pipeline migration with ordering fences | Actor ownership/placement protocol and storage fencing; capability handoff alone does not transfer an activation |
@@ -665,7 +665,7 @@ let restored: ActorRef<document::Reader> = client.restore(&saved).await?;
 let title = restored.title().await?;
 ```
 
-Saving and restoring are authorized protocols. Restoration revalidates tenant, expiry, revocation, interface, actor generation, and delegation scope. Tokens are secrets: redacted `Debug`, no ordinary `Display`, no unguarded logging, and explicit encoding APIs for protected storage. Copying a token does not extend its lifetime. The existing `reproto::persistence::SturdyRef` is a nongeneric realm-ID/opaque-token value, and `Realm` owns authenticated save/restore checks and host-registered factories. The generic actor `SturdyRef<I>` adds typed actor descriptors and lookup behavior; it is not an alias for that raw value. The adapter must preserve owner sealing, restore-time checks, key-rotation epochs and expiry. Revoking a realm token does not retract an already restored live capability or automatically revoke independently saved child tokens; actor grant lineage must be enforced explicitly where the proposal requires it.
+Saving and restoring are authorized protocols. Restoration revalidates tenant, expiry, revocation, interface, actor generation, and delegation scope. Tokens are secrets: redacted `Debug`, no ordinary `Display`, no unguarded logging, and explicit encoding APIs for protected storage. Copying a token does not extend its lifetime. The existing `capntproto::persistence::SturdyRef` is a nongeneric realm-ID/opaque-token value, and `Realm` owns authenticated save/restore checks and host-registered factories. The generic actor `SturdyRef<I>` adds typed actor descriptors and lookup behavior; it is not an alias for that raw value. The adapter must preserve owner sealing, restore-time checks, key-rotation epochs and expiry. Revoking a realm token does not retract an already restored live capability or automatically revoke independently saved child tokens; actor grant lineage must be enforced explicitly where the proposal requires it.
 
 `Wire` describes transportability. `Persistable: Wire` additionally declares an owned, versioned representation that can be decoded after restart. Derivation recursively verifies field types; an owned struct containing `Cap<I>` or an unsaved `ActorRef<I>` is not persistable. `SturdyRef<I>` being persistable does not promise that later restoration will succeed after revocation.
 
@@ -684,7 +684,7 @@ The current realm authenticates the restoring peer against the owner key in its 
 | Stable restoration service | An actor-aware service owns the realm binding and accepts term-bound delegated actor requests; it restores/proxies under its stable identity and enforces the current actor generation and grant lineage |
 | Scoped rebinding/delegation | A coordinator authorized by the realm/reference policy transfers a reference or an actor-exclusive owner binding from source to destination, with replay-safe transfer IDs, expected epochs and recovery records |
 
-The core adapter should prefer a stable restoration service when using the present realm API. It adds availability, capacity and authorization obligations of its own; it is not present in `reproto::persistence`. Existing tokens sealed directly to a departed host require an authorized migration/delegation path. If that authority is unavailable, the operation is suspended as unrestorable rather than restored with a forged peer identity. Sharing a logical actor's private key among concurrent hosts is not a relocation protocol.
+The core adapter should prefer a stable restoration service when using the present realm API. It adds availability, capacity and authorization obligations of its own; it is not present in `capntproto::persistence`. Existing tokens sealed directly to a departed host require an authorized migration/delegation path. If that authority is unavailable, the operation is suspended as unrestorable rather than restored with a forged peer identity. Sharing a logical actor's private key among concurrent hosts is not a relocation protocol.
 
 Relocation first records the affected actor generation, old/new terms, grant lineage and reference-binding plan. The provider fences old commits, then the restoration service/coordinator validates the destination's ownership proof and installs idempotent new bindings. The target activates only after all required bindings are usable, or records a recoverable suspension. Crash recovery completes or safely retries this plan; a partially moved reference set cannot justify unfenced execution. Existing accepted request bytes and token descriptors remain unchanged for fingerprint checking; a versioned binding resolver may map those original descriptors to their authorized current binding.
 
@@ -863,7 +863,7 @@ ActorHost::builder()
     .await?;
 ```
 
-This `ActorHost` builder is proposed. `config.vat` is an owned `reproto::native_rpc::Vat` configured with an actor bootstrap service/factory and authorized connector; it runs on the same `LocalSet` as the actor RPC integration. The existing `Vat::builder(...).connector(...).bootstrap_with(...).start()` configures RPC ownership, not actor scheduling. A host keeps that vat and its required drivers alive. The other `config` values are constructed actor adapters, not connection strings that imply a consistency protocol. Actor policy is keyed by entity kind so interfaces cannot accidentally receive independent mailbox or supervision policies. Runtime dependencies resolve through typed `Inject<T>` handles; missing or ambiguous registrations fail startup.
+This `ActorHost` builder is proposed. `config.vat` is an owned `capntproto::native_rpc::Vat` configured with an actor bootstrap service/factory and authorized connector; it runs on the same `LocalSet` as the actor RPC integration. The existing `Vat::builder(...).connector(...).bootstrap_with(...).start()` configures RPC ownership, not actor scheduling. A host keeps that vat and its required drivers alive. The other `config` values are constructed actor adapters, not connection strings that imply a consistency protocol. Actor policy is keyed by entity kind so interfaces cannot accidentally receive independent mailbox or supervision policies. Runtime dependencies resolve through typed `Inject<T>` handles; missing or ambiguous registrations fail startup.
 
 The placement directory provides actor ownership metadata; the native connector separately discovers authorized peer endpoints. Actor authority grants and validates capabilities; the proposed transaction provider enforces ownership fencing at commit. The existing Store path lock and revision CAS provide local protection, not this distributed ownership protocol. They may share infrastructure but have distinct contracts. Ownership transfer follows the [provider protocol](#ownership-and-transaction-provider-protocol). New commits require the current ownership token; delivery of an older committed outbox record uses its immutable commit proof. Moving authority does not invalidate that prior committed obligation.
 
@@ -939,7 +939,7 @@ The shared actor contract uses ordered capability RPC on every selected backend.
 
 ## Generation and schema evolution
 
-Rust-first authoring uses annotated implementations and registered wire DTOs as its signature source. A proposed actor generation stage emits a contract crate, Cap'n Proto schemas, and a checked-in identity manifest, then uses the existing `capnp-compiler` frontend and maintained `capnpc` generator. Those tools currently compile schemas/generate bindings; they do not implement `Actor` derives, Rust-first actor extraction, or the CLI below. Ordinary compilation verifies those artifacts rather than silently assigning or rewriting public IDs.
+Rust-first authoring uses annotated implementations and registered wire DTOs as its signature source. A proposed actor generation stage emits a contract crate, Cap'n Proto schemas, and a checked-in identity manifest, then uses the existing `capntproto-compiler` frontend and maintained `capnpc` generator. Those tools currently compile schemas/generate bindings; they do not implement `Actor` derives, Rust-first actor extraction, or the CLI below. Ordinary compilation verifies those artifacts rather than silently assigning or rewriting public IDs.
 
 ```text
 cargo capnt-actors schema update
@@ -985,15 +985,15 @@ State migrations execute in fenced maintenance transactions before new-version b
 | - | - |
 | `capnt-actors` | Public actor, call, state, capability, and host types |
 | `capnt-actors-macros` | Actor/method/DTO declarations and validation |
-| `capnt-actors-codegen` | Actor contract metadata, manifest and Rust-first declarations layered over `capnp-compiler` and `capnpc` |
+| `capnt-actors-codegen` | Actor contract metadata, manifest and Rust-first declarations layered over `capntproto-compiler` and `capnpc` |
 | `capnt-actors-protocol` | Versioned actor application schemas above the existing Cap'n Proto/native RPC protocol |
-| `capnt-actors-rpc` | Adapter to existing `reproto` connection/vat and maintained `capnp-rpc` APIs; no second transport engine |
+| `capnt-actors-rpc` | Adapter to existing `capntproto` connection/vat and maintained `capnp-rpc` APIs; no second transport engine |
 | `capnt-actors-store-*` | Validated persistence implementations |
 | `capnt-actors-sim` | Deterministic model runtime and fault injection |
 | `capnt-actors-observe` | Tracing, metrics, and inspection integration |
 | `capnt-actors-app` | Optional host composition and deployment integrations |
 
-These are proposed logical package boundaries. Start with the requested `capnt-actors` workspace crate and split modules only when needed; this document does not add these packages to Cargo. Existing `reproto`, `capnp`, `capnp-rpc`, `capnp-futures`, `capnp-compiler`, `capnpc` and quiche dependencies retain their identities and ownership. There is no requirement to expose every proposed crate to application developers. The default facade reexports the common surface. Contract-only consumers depend on generated contracts plus the client runtime, not the actor host or persistence providers.
+These are proposed logical package boundaries. Start with the requested `capnt-actors` workspace crate and split modules only when needed; this document does not add these packages to Cargo. Existing `capntproto`, `capnp`, `capnp-rpc`, `capnp-futures`, `capntproto-compiler`, `capnpc` and quiche dependencies retain their identities and ownership. There is no requirement to expose every proposed crate to application developers. The default facade reexports the common surface. Contract-only consumers depend on generated contracts plus the client runtime, not the actor host or persistence providers.
 
 An ordinary executable is the primary host. `capnt-actors-app` remains optional. Its initial scope is service configuration, resource references, health/readiness, telemetry, and adapters for existing hosting systems. An Aspire integration can be developed independently of actor semantics. This specification does not commit to a second complete deployment orchestrator.
 

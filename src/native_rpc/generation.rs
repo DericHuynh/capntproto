@@ -10,15 +10,15 @@ use std::{cell::Cell, num::NonZeroU64};
 /// networks have independent counters. Route cleanup still checks owner identity.
 ///
 /// ```compile_fail,E0308
-/// use reproto::native_rpc::RouteGeneration;
+/// use capntproto::native_rpc::RouteGeneration;
 /// let generation: RouteGeneration = 1u64;
 /// ```
 /// ```compile_fail,E0423
-/// use reproto::native_rpc::RouteGeneration;
+/// use capntproto::native_rpc::RouteGeneration;
 /// let generation = RouteGeneration(std::num::NonZeroU64::new(1).unwrap());
 /// ```
 /// ```compile_fail,E0308
-/// fn count_is_not_generation(generation: reproto::native_rpc::RouteGeneration) {
+/// fn count_is_not_generation(generation: capntproto::native_rpc::RouteGeneration) {
 ///     let byte_count: u64 = generation;
 /// }
 /// ```

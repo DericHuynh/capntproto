@@ -579,7 +579,7 @@ impl<S: std::borrow::Borrow<UnixStream> + Unpin> FdReader<S> {
     ///
     /// ```compile_fail
     /// # async fn example(socket: &tokio::net::UnixStream) -> capnp::Result<()> {
-    /// let mut stream = reproto::unix_rpc::FdReader::new(socket, Default::default());
+    /// let mut stream = capntproto::unix_rpc::FdReader::new(socket, Default::default());
     /// let mut words = capnp::Word::allocate_zeroed_vec(256);
     /// let mut slots = [None];
     /// let message = stream.try_read_message_with_scratch(
@@ -909,7 +909,7 @@ mod tests {
     async fn replay_tlc_fd_framing_traces() {
         use capnp_rpc::VatNetwork as _;
         use std::io::Read;
-        let path = reproto_test_support::verification::input("REPROTO_FD_FRAMING_TRACES")
+        let path = capntproto_test_support::verification::input("CAPNTPROTO_FD_FRAMING_TRACES")
             .expect("run this test through its verification driver");
         let cases: Vec<serde_json::Value> =
             serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();

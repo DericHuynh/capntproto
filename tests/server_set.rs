@@ -1,7 +1,7 @@
 use capnp::Error;
 use capnp_rpc::CapabilityServerSet;
+use capntproto_test_support::runtime_test_capnp::harness;
 use futures::channel::oneshot;
-use reproto_test_support::runtime_test_capnp::harness;
 use std::{
     cell::{Cell, RefCell},
     collections::VecDeque,
@@ -151,7 +151,7 @@ async fn server_lookup_waits_for_prior_streams_but_not_later_calls() {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_server_set_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_SERVER_SET_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_SERVER_SET_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();

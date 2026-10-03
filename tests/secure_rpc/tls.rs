@@ -1,6 +1,6 @@
 use super::common::*;
 use capnp_rpc::{rpc_twoparty_capnp::Side, twoparty::TwoPartyServer};
-use reproto::rpc::tls::{self, rustls};
+use capntproto::rpc::tls::{self, rustls};
 use std::{cell::RefCell, io, rc::Rc, sync::Arc, time::Duration};
 use tokio::{
     io::AsyncReadExt,
@@ -169,7 +169,7 @@ async fn listener_isolates_invalid_and_stalled_handshakes_and_cancellation() {
             .unwrap();
             let mut driver = tls::client(stream, None, Side::Client, Default::default());
             let cap = driver
-                .bootstrap::<reproto_test_support::structured::runtime_test_capnp::harness::Client>(
+                .bootstrap::<capntproto_test_support::structured::runtime_test_capnp::harness::Client>(
                 );
             let close = driver.get_disconnector();
             let task = tokio::task::spawn_local(driver);

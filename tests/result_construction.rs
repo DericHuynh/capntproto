@@ -9,8 +9,8 @@ use capnp::{
     traits::ImbueMut,
     Error, MessageSize,
 };
+use capntproto_test_support::runtime_test_capnp::harness;
 use futures::{channel::oneshot, FutureExt};
-use reproto_test_support::runtime_test_capnp::harness;
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,

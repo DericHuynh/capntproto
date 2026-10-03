@@ -639,7 +639,7 @@ mod tests {
     }
     #[tokio::test(flavor = "current_thread")]
     async fn replay_tlc_provisioning_traces() {
-        let path = reproto_test_support::verification::input("REPROTO_PROVISIONING_TRACES")
+        let path = capntproto_test_support::verification::input("CAPNTPROTO_PROVISIONING_TRACES")
             .expect("run this test through its verification driver");
         let traces: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         assert!(!traces.is_empty());

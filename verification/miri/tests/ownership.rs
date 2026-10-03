@@ -4,7 +4,7 @@ use capnp::{
     message::{AllocationStrategy, HeapAllocator, Reader, ReaderOptions, ReaderSegments},
     ErrorKind, Result, Word,
 };
-use reproto_memory_checks::field_api_capnp::{
+use capntproto_memory_checks::field_api_capnp::{
     api::{Address, NativeRecord, Person, Transfer},
     person, service,
 };

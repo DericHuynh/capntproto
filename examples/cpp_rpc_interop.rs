@@ -1,7 +1,7 @@
 //! Real C++ peer interop on a plain ordered stream, independent of Native framing.
 use capnp::capability::FromClientHook;
+use capntproto_test_support::runtime_test_capnp::harness;
 use futures::AsyncReadExt;
-use reproto_test_support::runtime_test_capnp::harness;
 use std::{
     io::{BufRead, BufReader},
     process::{Child, Command, Stdio},

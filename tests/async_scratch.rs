@@ -294,7 +294,7 @@ fn io_errors_are_not_clean_eof_and_leave_only_the_read_prefix_modified() {
 
 #[test]
 fn scratch_storage_and_rejections_match_pinned_cpp() {
-    use reproto_test_support::verification::{command, cpp, root, run};
+    use capntproto_test_support::verification::{command, cpp, root, run};
     use std::{fmt::Write, fs};
 
     // (scratch capacity, traversal budget, independently encoded wire bytes).

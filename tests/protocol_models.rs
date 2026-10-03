@@ -1,5 +1,5 @@
 // Native Cargo entry points for every bounded model and negative control.
-use reproto_test_support::verification::{catalog, verify};
+use capntproto_test_support::verification::{catalog, verify};
 
 #[test]
 fn storage_recovery_model() {

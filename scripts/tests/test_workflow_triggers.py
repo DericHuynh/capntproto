@@ -42,48 +42,49 @@ class WorkflowTriggerTests(unittest.TestCase):
                 self.assertLessEqual(set(push), {'branches', 'paths'})
                 self.assertIn('pull_request', workflow['on'])
 
-    def test_pr_checks_remain_available_after_removing_branch_pushes(self):
-        for name in ('quality', 'workflow-checks', 'links'):
-            with self.subTest(workflow=name):
-                events = self.workflows[name]['on']
-                pr = events['pull_request'] or {}
-                self.assertLessEqual(set(pr), {'paths'})
-                self.assertEqual(pr.get('paths'), events['push'].get('paths'))
-                self.assertIn('workflow_dispatch', events)
-        # This is the unconditional required check; path filtering would leave
-        # some PRs waiting for a check that was never scheduled.
-        self.assertFalse(self.workflows['quality']['on']['pull_request'])
+    def test_ci_has_one_automatic_entrypoint_and_explicit_dependencies(self):
+        automatic = {name for name, w in self.workflows.items() if 'push' in w['on'] or 'pull_request' in w['on']}
+        self.assertEqual(automatic, {'ci'})
+        ci = self.workflows['ci']
+        self.assertFalse(ci['on']['pull_request'])
+        self.assertIn('workflow_dispatch', ci['on'])
+        jobs = ci['jobs']
+        for job, filename in [('workflows', 'ci-workflows'), ('documentation', 'ci-docs')]:
+            self.assertEqual(jobs[job]['uses'], f'./.github/workflows/{filename}.yml')
+            self.assertIn('workflow_call', self.workflows[filename]['on'])
+        self.assertEqual(jobs['platforms']['needs'], 'workflows')
+        self.assertEqual(set(jobs['report']['needs']), {'workflows', 'documentation', 'platforms'})
+        self.assertEqual(jobs['report']['if'], 'always()')
 
     def test_pr_updates_cancel_only_the_same_check_for_the_same_pr(self):
         keys = set()
-        for name, workflow in self.workflows.items():
-            if 'pull_request' not in workflow['on']:
-                continue
-            with self.subTest(workflow=name):
-                self.assertEqual(workflow['concurrency']['cancel-in-progress'], 'true')
-                first = concurrency_key(workflow, 'pull_request', 'refs/pull/1/merge', 1)
-                other = concurrency_key(workflow, 'pull_request', 'refs/pull/2/merge', 2)
-                self.assertNotEqual(first, other)
-                self.assertNotIn(first, keys)
-                self.assertNotIn(other, keys)
-                keys.update((first, other))
+        for name in ('ci', 'ci-workflows', 'ci-docs'):
+            workflow = self.workflows[name]
+            self.assertEqual(workflow['concurrency']['cancel-in-progress'], 'true')
+            # github.workflow in a called workflow is the caller's name. Check
+            # these keys in that context so a reusable job cannot cancel CI.
+            workflow = dict(workflow, name=self.workflows['ci']['name'])
+            for pr in (1, 2):
+                key = concurrency_key(workflow, 'pull_request', f'refs/pull/{pr}/merge', pr)
+                self.assertNotIn(key, keys)
+                keys.add(key)
 
     def test_pushes_do_not_cancel_manual_or_scheduled_link_checks(self):
-        for name in ('quality', 'workflow-checks', 'links'):
+        for name in ('ci', 'ci-workflows', 'ci-docs'):
             workflow = self.workflows[name]
             with self.subTest(workflow=name):
                 keys = [concurrency_key(workflow, event)
-                        for event in workflow['on'] if event != 'pull_request']
+                        for event in workflow['on'] if event not in ('pull_request', 'workflow_call')]
                 self.assertEqual(len(keys), len(set(keys)))
 
     def test_expensive_verification_stays_out_of_push_and_pr_events(self):
-        for name in ('full-quality', 'extended-quality'):
+        for name in ('verification-coverage', 'verification-extended'):
             self.assertEqual(set(self.workflows[name]['on']), {'schedule', 'workflow_dispatch'})
-        self.assertEqual(set(self.workflows['benchmarks']['on']), {'workflow_dispatch'})
+        self.assertEqual(set(self.workflows['performance']['on']), {'workflow_dispatch'})
 
     def test_resource_cleanup_and_publication_are_serialized_independently(self):
         groups = set()
-        for name in ('benchmark-cleanup', 'benchmarks', 'readme'):
+        for name in ('maintenance-benchmarks', 'performance', 'reports'):
             workflow = self.workflows[name]
             with self.subTest(workflow=name):
                 self.assertEqual(workflow['concurrency']['cancel-in-progress'], 'false')
@@ -99,7 +100,7 @@ class WorkflowTriggerTests(unittest.TestCase):
         self.assertEqual(set(events), {'workflow_run', 'workflow_dispatch'})
         self.assertEqual(events['workflow_run']['types'], ['completed'])
         self.assertEqual(set(events['workflow_run']['workflows']), {
-            self.workflows[name]['name'] for name in ('full-quality', 'benchmarks')})
+            self.workflows[name]['name'] for name in ('verification-coverage', 'performance')})
 
 
 if __name__ == '__main__':

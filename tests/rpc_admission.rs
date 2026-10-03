@@ -3,8 +3,8 @@ mod support;
 
 use capnp::ErrorKind;
 use capnp_rpc::{ConnectionSnapshot, RpcDiagnostics, RpcSystem};
+use capntproto_test_support::runtime_test_capnp::harness;
 use futures::{Future, FutureExt};
-use reproto_test_support::runtime_test_capnp::harness;
 use std::{
     cell::{Cell, RefCell},
     pin::Pin,

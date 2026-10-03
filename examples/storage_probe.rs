@@ -1,7 +1,7 @@
 //! Research harness, not a runtime API. Run compiled release binaries serially
 //! on an explicitly selected filesystem; never use these results as CI gates.
 use capnp::traits::HasTypeId;
-use reproto::{
+use capntproto::{
     authority::ObjectId,
     orm::components::{ComponentState, Edit, TypedComponent},
     storage::{

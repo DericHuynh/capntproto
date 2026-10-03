@@ -4,7 +4,7 @@ use capnp::{
     traits::{Imbue, ImbueMut, IntoInternalStructReader},
     ErrorKind,
 };
-use reproto_test_support::{
+use capntproto_test_support::{
     dynamic_test_capnp::{orphan_case, orphan_payload, parcel, small_orphan},
     runtime_test_capnp::harness,
 };
@@ -288,7 +288,7 @@ fn concatenation_rejects_brands_overflow_and_partial_capability_copy_failure() -
 #[test]
 fn concatenation_upgrades_primitive_encodings_and_preserves_maximum_struct_sections(
 ) -> capnp::Result<()> {
-    use reproto_test_support::dynamic_test_capnp::orphan_group;
+    use capntproto_test_support::dynamic_test_capnp::orphan_group;
     for small in [false, true] {
         let drops = Rc::new(Cell::new(0));
         let source = Input::new(1, client(&drops), small);
@@ -464,7 +464,7 @@ fn shrink_keeps_blob_addresses_and_zeroes_removed_data_and_bit_padding() -> capn
 
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_orphan_concat_traces() -> capnp::Result<()> {
-    let path = reproto_test_support::verification::input("REPROTO_ORPHAN_CONCAT_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_ORPHAN_CONCAT_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();

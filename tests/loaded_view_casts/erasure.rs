@@ -183,7 +183,7 @@ fn erasure_preserves_empty_encodings_and_null_children() {
 
 #[test]
 fn group_erasure_exposes_containing_storage_and_retains_reborrow_exclusivity() {
-    use reproto_test_support::presence_capnp::group_reset;
+    use capntproto_test_support::presence_capnp::group_reset;
     let mut native = SchemaLoader::default();
     native
         .load_compiled_type_and_dependencies::<group_reset::Owned>()

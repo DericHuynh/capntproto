@@ -1,4 +1,4 @@
-use reproto::{
+use capntproto::{
     authority::{Grant, ObjectGeneration, ObjectId, Rights},
     orm::{ObjectServer, ObjectState},
     rpc,
@@ -101,7 +101,7 @@ async fn typed_orm_over_native_udp() {
                     .get_revision();
                 assert_eq!(rev, 1);
                 assert!(
-                    ObjectServer::<reproto::store_capnp::introduction_ticket::Owned>::client(
+                    ObjectServer::<capntproto::store_capnp::introduction_ticket::Owned>::client(
                         ObjectState::new(state.store().clone(), ObjectId::new(42).unwrap()),
                         root.clone()
                     )
@@ -135,7 +135,7 @@ async fn typed_orm_over_native_udp() {
                 let result = response.get().unwrap().get_result().unwrap();
                 assert_eq!(result.get_floor(), 0);
                 match result.which().unwrap() {
-                    reproto::store_capnp::history_result::Event(event) => {
+                    capntproto::store_capnp::history_result::Event(event) => {
                         assert_eq!(event.get_revision(), 1);
                         assert_eq!(
                             event.get_value().unwrap().get_text().unwrap(),
@@ -186,7 +186,7 @@ async fn three_party_introduction_preserves_rights_and_order() {
                     b"broker-owner",
                 )
                 .await;
-                let mut intro = reproto::handoff::Introduction::new(
+                let mut intro = capntproto::handoff::Introduction::new(
                     &owner,
                     &parent,
                     recipient.public_key(),
@@ -216,11 +216,11 @@ async fn three_party_introduction_preserves_rights_and_order() {
                 use tokio::io::AsyncWriteExt;
                 a.write_all(b"R").await.unwrap();
                 let serving =
-                    reproto::handoff::serve::<document::Owned>(intro.clone(), state, &owner, b)
+                    capntproto::handoff::serve::<document::Owned>(intro.clone(), state, &owner, b)
                         .await
                         .unwrap();
                 let (handoff, ct) =
-                    rpc::client::<reproto::store_capnp::handoff::Client<document::Owned>>(a);
+                    rpc::client::<capntproto::store_capnp::handoff::Client<document::Owned>>(a);
                 let more = vec![at.abort_handle(), ct.abort_handle()];
                 let mut invalid = handoff.accept_request();
                 invalid.get().set_id(&[0; 32]);
@@ -320,7 +320,7 @@ async fn automatic_three_party_ticket_delivery_and_direct_connection() {
     tokio::task::LocalSet::new()
         .run_until(async {
             tokio::time::timeout(Duration::from_secs(10), async {
-                use reproto::{
+                use capntproto::{
                     introduction::{Introducer, Receiver},
                     store_capnp::{introducer, introduction_receiver},
                 };

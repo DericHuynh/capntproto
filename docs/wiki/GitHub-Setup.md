@@ -36,7 +36,7 @@ the `main` branch upload large.
 Copy the single line from [DESCRIPTION.md](../../.github/DESCRIPTION.md) into the
 repository's **About → Description** field:
 
-> Capn't Proto: Rust schemas, serialization and capability RPC, with a native compiler, compatibility adapters, encrypted transport and correctness tooling.
+> Capntproto: Rust schemas, serialization and capability RPC, with a native compiler, compatibility adapters, encrypted transport and correctness tooling.
 
 GitHub does not automatically import `DESCRIPTION.md` into that field. The generated
 [README](../../README.md) introduces the same project. Suggested topics
@@ -44,7 +44,8 @@ are `rust`, `rpc`, `capnproto`, `object-capabilities`, `quic`, `tla-plus`,
 and `storage`.
 
 The configured repository is **DericHuynh/capntproto**; the display name is
-**Capn't Proto**. Existing Cargo package/import names remain unchanged.
+**Capntproto**. Project-owned Cargo packages/imports now use `capntproto`; see the
+[name migration](Repository-Layout.md#crate-name-migration).
 The [wiki publishing guide](Wiki-Maintenance.md) covers initialization, export
 and the separate wiki Git repository.
 
@@ -106,8 +107,7 @@ and [resolving individual alerts](https://docs.github.com/en/code-security/how-t
 
 Follow [Quality and Benchmarks](Quality-and-Benchmarks.md) to configure the DigitalOcean GitHub Actions
 secret, run the hosted workflows, and establish a reviewed LLVM coverage
-baseline. Once the platform workflow has run, require **Required platform
-report** in the default branch's rules. Full verification and dedicated
+baseline. Once the platform workflow has run, require **Required CI result** in the default branch's rules. Full verification and dedicated
 benchmarks have separate workflows; their reports identify the checked revision.
 
 ## GitHub references

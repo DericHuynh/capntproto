@@ -7,8 +7,8 @@ use capnp_rpc::{
     rpc_twoparty_capnp::{join_key_part, join_result},
     RpcSystem,
 };
+use capntproto_test_support::runtime_test_capnp::harness;
 use futures::FutureExt;
-use reproto_test_support::runtime_test_capnp::harness;
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -684,7 +684,7 @@ struct Step {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_membrane_join_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_MEMBRANE_JOIN_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_MEMBRANE_JOIN_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     tokio::task::LocalSet::new()

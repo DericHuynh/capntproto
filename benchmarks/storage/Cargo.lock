@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "capnp-compiler"
+name = "capntproto-compiler"
 version = "0.1.0"
 dependencies = [
  "capnp",
@@ -333,13 +333,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
-name = "reproto"
+name = "capntproto"
 version = "0.1.0"
 dependencies = [
  "capnp",
  "capnp-futures",
  "capnp-rpc",
- "capnp-compiler",
+ "capntproto-compiler",
  "capnpc",
  "fs2",
  "futures",
@@ -356,13 +356,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "reproto-storage-comparison"
+name = "capntproto-storage-comparison"
 version = "0.1.0"
 dependencies = [
  "capnp",
  "capnpc",
  "eae_pages",
- "reproto",
+ "capntproto",
  "serde_json",
  "tempfile",
 ]

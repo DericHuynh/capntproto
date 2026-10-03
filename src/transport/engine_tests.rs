@@ -145,8 +145,8 @@ fn queued_datagram_after_shutdown_request_is_discarded_without_failing_rpc() {
 
 #[test]
 fn replay_tlc_receipt_survives_close_packet_burst_yield() {
+    use capntproto_test_support::verification::exploration;
     use futures::FutureExt;
-    use reproto_test_support::verification::exploration;
     let config = include_str!("../../verification/NativeCloseFlush.cfg");
     exploration::controls(
         "verification/NativeCloseFlush.tla",

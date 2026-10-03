@@ -517,7 +517,7 @@ pub(super) fn accept(
 mod tests {
     use super::*;
     use crate::native_rpc::Network;
-    use reproto_test_support::runtime_test_capnp::harness;
+    use capntproto_test_support::runtime_test_capnp::harness;
 
     struct Echo;
     impl harness::Server for Echo {}
@@ -840,8 +840,9 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn replay_tlc_multiparty_join_traces() {
-        let path = reproto_test_support::verification::input("REPROTO_MULTIPARTY_JOIN_TRACES")
-            .expect("run this test through its verification driver");
+        let path =
+            capntproto_test_support::verification::input("CAPNTPROTO_MULTIPARTY_JOIN_TRACES")
+                .expect("run this test through its verification driver");
         let cases: serde_json::Value =
             serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         tokio::task::LocalSet::new()

@@ -4,8 +4,8 @@ use capnp_rpc::{
     rpc_capnp::{cap_descriptor, message, return_},
     RpcSystem,
 };
+use capntproto_test_support::runtime_test_capnp::harness;
 use futures::FutureExt;
-use reproto_test_support::runtime_test_capnp::harness;
 use std::{cell::RefCell, future::Future, pin::Pin, rc::Rc, time::Duration};
 use support::{ConnectionStatus, Endpoint, Hub};
 struct Echo(Rc<RefCell<Option<harness::PendingResults>>>);
@@ -326,7 +326,7 @@ async fn capabilities_and_answers_prevent_idle_until_last_release() {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_idle_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_IDLE_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_IDLE_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     tokio::task::LocalSet::new()
@@ -438,7 +438,7 @@ async fn disconnector_waits_for_idle_flush_alongside_replacement_connection() {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_idle_shutdown_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_IDLE_SHUTDOWN_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_IDLE_SHUTDOWN_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<ShutdownTrace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     tokio::task::LocalSet::new()

@@ -11,7 +11,7 @@ durability and other Rust versions are not qualified. EAE additionally requires
 ## Install and run
 
 This preview is a source bundle, not a crates.io package. Unpack
-`reproto-0.1.0-source.tar.gz`, verify its published SHA-256 against a trusted
+`capntproto-0.1.0-source.tar.gz`, verify its published SHA-256 against a trusted
 delivery channel, and keep its `SOURCE_MANIFEST.json`. That manifest identifies
 the exact files; a checksum alone does not authenticate the distributor.
 
@@ -33,7 +33,7 @@ The downstream check copies `examples/downstream` outside the workspace. It
 generates the field API, starts two RPC systems, calls a returned capability
 through a pipeline, and commits/reopens storage. It executes default and
 optimized builds. Its manifest shows the dependency
-recipe: point `reproto`, `capnp`, `capnp-rpc` and build dependency `capnpc` at
+recipe: point `capntproto`, `capnp`, `capnp-rpc` and build dependency `capnpc` at
 the **same unpacked bundle**. Internal paths also select vendored
 `capnp-futures`; no consumer `[patch.crates-io]` table is needed. Consumers own
 their Cargo.lock and must retain the coordinated versions. The separate sample

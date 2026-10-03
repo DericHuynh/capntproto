@@ -76,4 +76,4 @@ compaction failure stages, schema mismatches, mixed subscription capacity,
 quota failure, independent publishers, and authenticated Native transport.
 These are bounded checks, not proof of every executor schedule or power-loss
 history. The machine-readable evidence is in
-`reports/reproto/orm-history/verification.json` and the canonical runtime report.
+`reports/capntproto/orm-history/verification.json` and the canonical runtime report.

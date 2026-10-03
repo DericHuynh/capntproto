@@ -124,7 +124,7 @@ ORM publication use `DurableTransfer` instead.
 
 Run `cargo test --test protocol_models bulk_model -- --exact`, or the complete suite with
 `cargo test --locked --workspace --all-targets`. The focused report is
-`reports/reproto/bulk/verification.json`.
+`reports/capntproto/bulk/verification.json`.
 
 Seven configurations of `RpcBulkTransfer.tla` explore 2,147 states across
 separate graphs. All 4,365 edge-prefix traces replay against the production

@@ -45,8 +45,8 @@ and CI lanes. Platform smoke jobs do not qualify storage durability on every OS.
 | Native routes and migration | `cargo test --locked --test native_multiparty --test native_pipeline_migration --test native_deployment` |
 | Storage worker and component ORM | `cargo test --locked --test storage_worker --test component_orm` |
 | Storage recovery in child processes | `cargo test --locked --test tooling storage_crashes_in_isolated_process -- --exact` |
-| Rust compiler and reference comparisons | `cargo test --locked -p capnp-compiler` and `cargo test --locked --test schema_compiler` |
-| Optional codecs and adapters | `cargo test --locked -p capnp-compat` |
+| Rust compiler and reference comparisons | `cargo test --locked -p capntproto-compiler` and `cargo test --locked --test schema_compiler` |
+| Optional codecs and adapters | `cargo test --locked -p capntproto-compat` |
 | Generated field API contracts | `cargo test --locked --test tooling generated_api_compile_contracts -- --exact` |
 | Source archive and downstream use | `cargo test --locked --test release source_bundle_roundtrip -- --exact` and `cargo test --locked --test tooling external_consumer_default_features -- --exact` |
 

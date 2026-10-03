@@ -1,6 +1,6 @@
 //! Self-contained localhost example: cargo run --example native_store -- /tmp/example.rp
-use reproto::storage::ObjectKey;
-use reproto::{
+use capntproto::storage::ObjectKey;
+use capntproto::{
     authority::{Grant, ObjectGeneration, ObjectId, Rights},
     native_rpc::Vat,
     orm::{ObjectServer, ObjectState},

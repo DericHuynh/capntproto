@@ -5,7 +5,7 @@ use capnp_rpc::{
     rpc_capnp::{cap_descriptor, exception, message, return_},
     IncomingMessage, RpcSystem,
 };
-use reproto_test_support::runtime_test_capnp::harness;
+use capntproto_test_support::runtime_test_capnp::harness;
 use std::{cell::RefCell, future::Future, pin::Pin, rc::Rc};
 use support::{Endpoint, Hub};
 
@@ -319,7 +319,7 @@ async fn replay(steps: &[serde_json::Value], kind: u16, trace: bool) {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_exception_metadata_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_EXCEPTION_METADATA_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_EXCEPTION_METADATA_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
@@ -407,8 +407,9 @@ async fn disconnect_trace(steps: &[serde_json::Value], original_kind: exception:
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_exception_disconnect_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_EXCEPTION_DISCONNECT_TRACES")
-        .expect("prepare verified trace corpus");
+    let path =
+        capntproto_test_support::verification::input("CAPNTPROTO_EXCEPTION_DISCONNECT_TRACES")
+            .expect("prepare verified trace corpus");
     let cases: Vec<Vec<serde_json::Value>> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     tokio::task::LocalSet::new()

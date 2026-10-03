@@ -1,5 +1,5 @@
 //! Listing ignored controls does not execute them or repeat the workspace suite.
-use reproto_test_support::verification as v;
+use capntproto_test_support::verification as v;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,

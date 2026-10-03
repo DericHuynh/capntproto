@@ -2294,7 +2294,7 @@ remain in the existing compiler smoke jobs on Linux, macOS and Windows.
 ### Schema grammar corpus
 
 `cargo test --locked -p capnp-compiler --test grammar` runs the shared
-[295-case corpus](../../crates/capnp-compiler/tests/corpus/grammar.rs) without C++.
+[295-case corpus](../../crates/capntproto-compiler/tests/corpus/grammar.rs) without C++.
 It checks expected acceptance, runtime loading and valid diagnostic source spans.
 Separate assertions resolve contextual generic parameters through branded fields
 and method signatures, and exercise the leading-zero numeric rule through the
@@ -2326,7 +2326,7 @@ Unicode separators. The pinned compiler agrees on 46 accepted requests and
 grammar corpus; artifacts are under `target/verification/schema-compiler/lexical/`.
 The standalone text-value parser also has a vertical-tab byte-preservation check.
 
-The [numeric corpus](../../crates/capnp-compiler/tests/corpus/numbers.rs) adds 33 valid
+The [numeric corpus](../../crates/capntproto-compiler/tests/corpus/numbers.rs) adds 33 valid
 and 33 invalid expressions, each compiled as a requested declaration and as an
 unused constant in a loaded import: **132 pinned C++ comparisons**. Accepted
 requests compare the same metadata and canonical values as the grammar corpus.
@@ -2351,7 +2351,7 @@ under standard source roots. A second regression compares the mixed-root fixture
 without changing display names or prefix lengths.
 
 `cargo test --locked -p capnp-compiler --test discovery` runs the shared
-[22-case import-order corpus](../../crates/capnp-compiler/tests/corpus/discovery.rs)
+[22-case import-order corpus](../../crates/capntproto-compiler/tests/corpus/discovery.rs)
 in memory and through the concurrent cache, including lazy extensions and retained
 snapshots. `cargo test --locked -p reproto --test schema_compiler discovery::`
 compares those cases with pinned C++ using the filesystem frontend. Cases cover
@@ -2551,7 +2551,7 @@ The focused commands are `cargo test --locked -p capnp-compat --test codecs` and
 `cargo test --locked -p capnp-compat --test cpp`; summaries are in
 `target/verification/compat/codecs-summary.txt`.
 
-The [wrapping corpus](../../crates/capnp-compat/tests/common/text_wrapping.rs) adds
+The [wrapping corpus](../../crates/capntproto-compat/tests/common/text_wrapping.rs) adds
 25 accepted values (checked in compact and pretty modes) and 23 rejections. Cases
 cover structs/groups/unions, reordered declarations, defaults, branded fields,
 list elements, numeric boundaries, Unicode and controls, plus rejection of
@@ -2561,7 +2561,7 @@ group defaults and non-UTF-8 bytes. The C++ fixture generates pinned bindings in
 `target/verification/compat/codec-generated/` to exercise the public typed orphan
 overload. Existing-root decoding remains restricted to struct expressions.
 
-The [assignment corpus](../../crates/capnp-compat/tests/common/text_assignments.rs)
+The [assignment corpus](../../crates/capntproto-compat/tests/common/text_assignments.rs)
 adds 36 cases, each compared with C++ in compact and pretty modes. It covers
 repeated scalar, pointer and list fields, nested assignments, successive union
 selections, repeated group initialization, defaults and inactive union storage.

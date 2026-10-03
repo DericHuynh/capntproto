@@ -1,6 +1,6 @@
 # Third-party source and dependency notices
 
-Capn't Proto's original code is covered by the root MIT license. Included upstream
+Capntproto's original code is covered by the root MIT license. Included upstream
 code retains its original notices and licenses; the root license does not
 replace them.
 

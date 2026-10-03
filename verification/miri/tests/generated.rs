@@ -3,7 +3,7 @@ use capnp::{
     message::{AllocationStrategy, HeapAllocator, ReaderOptions},
     ErrorKind, Result,
 };
-use reproto_memory_checks::field_api_capnp::{
+use capntproto_memory_checks::field_api_capnp::{
     api::{Future, Historical, StagedChoice},
     service,
 };

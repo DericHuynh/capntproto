@@ -4,8 +4,8 @@ use capnp_rpc::{
     rpc_capnp::{call, cap_descriptor, message, message_target, promised_answer, return_},
     Connection, RpcSystem,
 };
+use capntproto_test_support::runtime_test_capnp::harness;
 use futures::FutureExt;
-use reproto_test_support::runtime_test_capnp::harness;
 use std::{cell::RefCell, future::Future, pin::Pin, rc::Rc, time::Duration};
 use support::{Endpoint, Hub};
 struct Tail;
@@ -434,7 +434,7 @@ async fn optimized_tail_transfer_preserves_pipeline_and_sends_one_return() {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_tail_transfer_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_TAIL_TRANSFER_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_TAIL_TRANSFER_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<Vec<Step>> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     assert!(!traces.is_empty());
@@ -666,7 +666,7 @@ async fn tail_request_resolved_locally_after_construction_uses_forwarding() {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_tail_routing_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_TAIL_ROUTING_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_TAIL_ROUTING_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<Vec<RoutingStep>> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();

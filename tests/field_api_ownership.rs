@@ -1,9 +1,9 @@
 use capnp::field_api::{Message, MessageView};
 use capnp::ErrorKind;
-use reproto_test_support::field_api_capnp::api::{
+use capntproto_test_support::field_api_capnp::api::{
     Address, Historical, NewRecord, OldRecord, Person, Transfer, Types,
 };
-use reproto_test_support::field_api_capnp::service;
+use capntproto_test_support::field_api_capnp::service;
 use std::{cell::Cell, rc::Rc};
 
 struct Server(Rc<Cell<usize>>);
@@ -192,7 +192,7 @@ fn inline_copy_rejects_newer_layout_and_keeps_value_on_bad_descendant() -> capnp
 
 #[test]
 fn old_list_edit_requires_upgrade_but_generic_edit_does_not_allocate() -> capnp::Result<()> {
-    use reproto_test_support::field_api_capnp::api::Future;
+    use capntproto_test_support::field_api_capnp::api::Future;
     let mut old = Message::<Historical>::new()?;
     old.edit().records().init_with(1, |_, mut r| {
         r.value().set(17);
@@ -404,7 +404,7 @@ fn replay_staging(trace: &Trace, far: bool) -> capnp::Result<()> {
 }
 #[test]
 fn replay_tlc_field_ownership_traces() -> capnp::Result<()> {
-    let path = reproto_test_support::verification::input("REPROTO_FIELD_OWNERSHIP_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_FIELD_OWNERSHIP_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     assert!(!traces.is_empty());
@@ -422,7 +422,7 @@ fn replay_tlc_field_ownership_traces() -> capnp::Result<()> {
 
 #[test]
 fn branded_sessions_move_values_and_select_union_arms() -> capnp::Result<()> {
-    use reproto_test_support::field_api_capnp::api::{Choice, ChoiceUnionTag};
+    use capntproto_test_support::field_api_capnp::api::{Choice, ChoiceUnionTag};
     let mut m = Message::<Person>::new()?;
     m.scoped_edit(|session| {
         let (mut root, orphanage) = session.into_parts();
@@ -453,7 +453,7 @@ fn branded_sessions_move_values_and_select_union_arms() -> capnp::Result<()> {
 #[test]
 fn orphan_capability_transfer_includes_unknown_fields_and_nested_lists() -> capnp::Result<()> {
     use capnp::traits::IntoInternalStructReader;
-    use reproto_test_support::field_api_capnp::api::{CapForest, OpaqueRef, OpaqueTransfer};
+    use capntproto_test_support::field_api_capnp::api::{CapForest, OpaqueRef, OpaqueTransfer};
     let drops = Rc::new(Cell::new(0));
     let mut forest = Message::<CapForest>::new()?;
     forest.edit().items().init_with(2, |_, row| {
@@ -514,7 +514,7 @@ fn chunked_fill_refuses_short_overlong_and_invalid_text_without_publication() ->
 #[test]
 fn failed_recursive_copy_releases_partially_copied_capabilities() -> capnp::Result<()> {
     use capnp::traits::{Imbue, ImbueMut};
-    use reproto_test_support::field_api_capnp::types;
+    use capntproto_test_support::field_api_capnp::types;
     let incoming = Rc::new(Cell::new(0));
     let previous = Rc::new(Cell::new(0));
     let mut source = capnp::message::Builder::new_default();
@@ -559,7 +559,7 @@ fn failed_recursive_copy_releases_partially_copied_capabilities() -> capnp::Resu
 
 #[test]
 fn primitive_to_struct_list_edit_cannot_silently_allocate() -> capnp::Result<()> {
-    use reproto_test_support::field_api_capnp::api::{
+    use capntproto_test_support::field_api_capnp::api::{
         GenericHistory, GenericPrimitiveHistory, PrimitiveHistory,
     };
     let mut primitive = Message::<PrimitiveHistory>::new()?;

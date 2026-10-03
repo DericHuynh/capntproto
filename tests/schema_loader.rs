@@ -122,7 +122,7 @@ fn child(kind: Kind) -> message::Builder<message::HeapAllocator> {
 }
 #[test]
 fn loaded_compiler_schemas_build_and_read_typed_wire_messages() {
-    use reproto_test_support::dynamic_test_capnp::orphan_case;
+    use capntproto_test_support::dynamic_test_capnp::orphan_case;
     let loader = compiled();
     let schema = loader.get(id(&loader, "OrphanCase")).unwrap();
     let mut message = message::Builder::new_default();
@@ -249,10 +249,10 @@ fn loaded_generics_groups_and_inherited_methods_preserve_brands() {
         .set_named("text", Value::Text("nested".into()))
         .unwrap();
     let typed = m
-        .get_root_as_reader::<reproto_test_support::dynamic_test_capnp::orphan_group::Reader>()
+        .get_root_as_reader::<capntproto_test_support::dynamic_test_capnp::orphan_group::Reader>()
         .unwrap();
     assert_eq!(typed.get_sibling(), 123);
-    let reproto_test_support::dynamic_test_capnp::orphan_group::body::Nested(nested) =
+    let capntproto_test_support::dynamic_test_capnp::orphan_group::body::Nested(nested) =
         typed.get_body().which().unwrap()
     else {
         panic!()
@@ -324,7 +324,7 @@ impl dynamic::Server for LoadedEcho {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn transmitted_schema_drives_rpc_servers_capability_calls_and_pipelines() {
-    use reproto::schema_exchange::{self, Catalog, Key, Limits as ExchangeLimits};
+    use capntproto::schema_exchange::{self, Catalog, Key, Limits as ExchangeLimits};
     use std::{cell::RefCell, rc::Rc};
     tokio::task::LocalSet::new()
         .run_until(async {
@@ -339,8 +339,8 @@ async fn transmitted_schema_drives_rpc_servers_capability_calls_and_pipelines() 
                 .unwrap();
             let (a, b) = tokio::io::duplex(4096);
             let catalog_server =
-                reproto::rpc::serve(b, Catalog::service(Rc::new(RefCell::new(catalog))).client);
-            let (catalog_client, catalog_driver) = reproto::rpc::client(a);
+                capntproto::rpc::serve(b, Catalog::service(Rc::new(RefCell::new(catalog))).client);
+            let (catalog_client, catalog_driver) = capntproto::rpc::client(a);
             let bundle = schema_exchange::fetch(
                 &catalog_client,
                 Key {
@@ -355,8 +355,9 @@ async fn transmitted_schema_drives_rpc_servers_capability_calls_and_pipelines() 
             let remote_loader = bundle.load(Limits::default()).unwrap();
             assert_eq!(remote_loader.len(), bundle.len());
             let (a, b) = tokio::io::duplex(4096);
-            let host_driver = reproto::rpc::serve(b, host.clone());
-            let (client, client_driver): (capnp::capability::Client, _) = reproto::rpc::client(a);
+            let host_driver = capntproto::rpc::serve(b, host.clone());
+            let (client, client_driver): (capnp::capability::Client, _) =
+                capntproto::rpc::client(a);
             let schema = remote_loader.get(harness_id).unwrap();
             let client = dynamic::Client::new(client, schema.clone()).unwrap();
             let mut call = client.new_request("echo").unwrap();
@@ -429,7 +430,7 @@ async fn transmitted_schema_drives_rpc_servers_capability_calls_and_pipelines() 
                     .unwrap(),
                 Value::UInt32(7)
             ));
-            let typed = reproto_test_support::runtime_test_capnp::harness::Client {
+            let typed = capntproto_test_support::runtime_test_capnp::harness::Client {
                 client: cap.as_client().unwrap().clone(),
             };
             let mut call = typed.echo_request();
@@ -467,7 +468,7 @@ fn malformed() -> message::Builder<message::HeapAllocator> {
 }
 #[test]
 fn replay_tlc_schema_loader_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_SCHEMA_LOADER_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_SCHEMA_LOADER_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<Vec<serde_json::Value>> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
@@ -534,8 +535,8 @@ fn loader_state(loader: &SchemaLoader) -> (u64, u64) {
 
 #[test]
 fn pinned_cpp_loader_agrees_on_validation_and_version_selection() {
-    let executable =
-        reproto_test_support::verification::cpp::loader().expect("prepare verified trace corpus");
+    let executable = capntproto_test_support::verification::cpp::loader()
+        .expect("prepare verified trace corpus");
     use std::{
         io::Write,
         process::{Command, Stdio},
@@ -720,11 +721,11 @@ impl Drop for OwnedEcho {
         self.0.set(false);
     }
 }
-impl reproto_test_support::runtime_test_capnp::harness::Server for OwnedEcho {
+impl capntproto_test_support::runtime_test_capnp::harness::Server for OwnedEcho {
     async fn echo(
         self: std::rc::Rc<Self>,
-        _: reproto_test_support::runtime_test_capnp::harness::EchoParams,
-        mut r: reproto_test_support::runtime_test_capnp::harness::EchoResults,
+        _: capntproto_test_support::runtime_test_capnp::harness::EchoParams,
+        mut r: capntproto_test_support::runtime_test_capnp::harness::EchoResults,
     ) -> capnp::Result<()> {
         r.get().set_value(42);
         Ok(())
@@ -751,7 +752,7 @@ async fn loaded_call_trace(
         ..Default::default()
     });
     let alive = Rc::new(Cell::new(true));
-    let cap: reproto_test_support::runtime_test_capnp::harness::Client =
+    let cap: capntproto_test_support::runtime_test_capnp::harness::Client =
         capnp_rpc::new_client(OwnedEcho(alive.clone()));
     let (tx, rx) = futures::channel::oneshot::channel();
     let mut tx = Some(tx);
@@ -781,8 +782,8 @@ async fn loaded_call_trace(
     let mut drivers = Drivers(vec![tokio::task::spawn_local(driver)]);
     let client = if wire {
         let (a, b) = tokio::io::duplex(4096);
-        drivers.0.push(reproto::rpc::serve(b, server));
-        let (client, driver) = reproto::rpc::client::<capnp::capability::Client>(a);
+        drivers.0.push(capntproto::rpc::serve(b, server));
+        let (client, driver) = capntproto::rpc::client::<capnp::capability::Client>(a);
         drivers.0.push(driver);
         client
     } else {
@@ -882,7 +883,7 @@ async fn loaded_call_trace(
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_loaded_capability_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_LOADED_CAPABILITY_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_LOADED_CAPABILITY_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
@@ -1032,7 +1033,7 @@ fn upgrade_state(loader: &SchemaLoader) -> (u64, u64) {
 }
 #[test]
 fn replay_tlc_schema_upgrade_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_SCHEMA_UPGRADE_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_SCHEMA_UPGRADE_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<Vec<serde_json::Value>> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
@@ -1069,7 +1070,7 @@ fn replay_tlc_schema_upgrade_traces() {
 
 #[test]
 fn native_registration_gates_casts_and_capability_hints_follow_dependencies() {
-    use reproto_test_support::dynamic_test_capnp::orphan_case;
+    use capntproto_test_support::dynamic_test_capnp::orphan_case;
     let mut loader = compiled();
     let schema_id = id(&loader, "OrphanCase");
     let mut m = message::Builder::new_default();

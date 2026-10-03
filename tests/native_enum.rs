@@ -6,8 +6,8 @@ use capnp::{
     schema_capnp::{brand, node},
     schema_loader::{dynamic, Schema, SchemaLoader, Type},
 };
+use capntproto_test_support::enum_brand_capnp as fixture;
 use fixture::{api::scope::Tone as OpenTone, scope::Tone};
-use reproto_test_support::enum_brand_capnp as fixture;
 mod native_enum {
     pub mod verification;
 }

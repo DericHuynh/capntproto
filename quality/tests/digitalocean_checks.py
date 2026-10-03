@@ -13,7 +13,7 @@ root = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("digitalocean_bench", root / "scripts/digitalocean_bench.py")
 cloud = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(cloud)
-os.environ.update(GITHUB_REPOSITORY="test/reproto", GITHUB_RUN_ID="42", GITHUB_RUN_ATTEMPT="1")
+os.environ.update(GITHUB_REPOSITORY="test/capntproto", GITHUB_RUN_ID="42", GITHUB_RUN_ATTEMPT="1")
 
 
 class API:

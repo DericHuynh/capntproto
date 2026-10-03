@@ -1,10 +1,10 @@
 //! Matched, validated, sequential loopback round trips. Setup is not timed.
 #![forbid(unsafe_code)]
-use futures::{SinkExt, StreamExt};
-use reproto::{
+use capntproto::{
     native_rpc::Network,
     transport::{self, Identity},
 };
+use futures::{SinkExt, StreamExt};
 use serde_json::json;
 use std::{
     io::Write,

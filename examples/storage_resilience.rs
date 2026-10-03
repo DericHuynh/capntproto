@@ -1,6 +1,6 @@
 //! Fixed-rate storage experiments, not a production writer or a CI timing gate.
 //! Every accepted write uses the real V5 commit path and its durability barrier.
-use reproto::storage::{ComponentId, ComponentUpdate, ObjectKey, Revision, Store};
+use capntproto::storage::{ComponentId, ComponentUpdate, ObjectKey, Revision, Store};
 use serde_json::{json, Value};
 use std::{
     path::Path,

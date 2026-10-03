@@ -27,8 +27,8 @@ async fn main() -> capnp::Result<()> {
         .run_until(async {
             let bootstrap: preview_capnp::echo::Client = capnp_rpc::new_client(Echo);
             let (a, b) = tokio::io::duplex(4096);
-            let server = reproto::rpc::serve(b, bootstrap.client);
-            let (client, driver) = reproto::rpc::client::<preview_capnp::echo::Client>(a);
+            let server = capntproto::rpc::serve(b, bootstrap.client);
+            let (client, driver) = capntproto::rpc::client::<preview_capnp::echo::Client>(a);
             let pending = client.child_call().send();
             let child = pending.pipeline.get_cap();
             let mut call = child.echo_call();
@@ -41,20 +41,20 @@ async fn main() -> capnp::Result<()> {
             {
                 let dir = tempfile::tempdir().unwrap();
                 let path = dir.path().join("preview.store");
-                let mut store = reproto::storage::Store::open(&path).unwrap();
+                let mut store = capntproto::storage::Store::open(&path).unwrap();
                 store
-                    .commit(&[reproto::storage::Update {
-                        object: reproto::storage::ObjectKey::new(1),
-                        expected_head: reproto::storage::Revision::INITIAL,
-                        expected_published: Some(reproto::storage::Revision::INITIAL),
+                    .commit(&[capntproto::storage::Update {
+                        object: capntproto::storage::ObjectKey::new(1),
+                        expected_head: capntproto::storage::Revision::INITIAL,
+                        expected_published: Some(capntproto::storage::Revision::INITIAL),
                         value: b"durable preview",
                     }])
                     .unwrap();
                 drop(store);
-                let store = reproto::storage::Store::open(&path).unwrap();
+                let store = capntproto::storage::Store::open(&path).unwrap();
                 assert_eq!(
                     store
-                        .get(reproto::storage::ObjectKey::new(1))
+                        .get(capntproto::storage::ObjectKey::new(1))
                         .unwrap()
                         .bytes(),
                     b"durable preview"

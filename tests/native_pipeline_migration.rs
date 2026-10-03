@@ -1,10 +1,10 @@
 use capnp::{capability::FromClientHook, Error};
-use futures::channel::oneshot;
-use reproto::{
+use capntproto::{
     native_rpc::{Handle, Network, Options},
     transport::{self, Identity},
 };
-use reproto_test_support::runtime_test_capnp::harness;
+use capntproto_test_support::runtime_test_capnp::harness;
+use futures::channel::oneshot;
 use std::{cell::RefCell, rc::Rc, time::Duration};
 
 struct Task(tokio::task::JoinHandle<capnp::Result<()>>);
@@ -317,8 +317,8 @@ async fn migration(expire: bool) {
 
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_active_pipeline_fence() {
+    use capntproto_test_support::verification::exploration;
     use futures::FutureExt;
-    use reproto_test_support::verification::exploration;
     let config = include_str!("../verification/RpcPipelineFence.cfg");
     let live = config.replace("SPECIFICATION Spec", "SPECIFICATION LiveSpec")
         + "\nPROPERTIES Settles CallsSettle\n";

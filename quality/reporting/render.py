@@ -7,7 +7,7 @@ import re
 
 from .data import validate_publication
 
-NAME = "Capn't Proto"
+NAME = "Capntproto"
 COLORS = ['#0868d4', '#00ac7b', '#ef4444', '#e89200', '#8b5cf6']
 BENCHMARKS = ['latency-p50', 'latency-p95', 'latency-p99', 'request-rate',
               'latency-difference', 'request-rate-difference']
@@ -121,7 +121,7 @@ def plotting():
 
 
 def save(plt, fig, path):
-    fig.savefig(path, format='svg', facecolor='white', metadata={'Date': None, 'Creator': "Capn't Proto CI reporting"})
+    fig.savefig(path, format='svg', facecolor='white', metadata={'Date': None, 'Creator': "Capntproto CI reporting"})
     plt.close(fig)
 
 
@@ -220,7 +220,7 @@ def waiting_chart(path):
     ax.axis('off')
     ax.text(.03, .78, f'{NAME} — Linux Loopback Benchmarks', fontsize=23, weight='bold', transform=ax.transAxes)
     ax.text(.03, .43, 'Awaiting a validated dedicated-host benchmark run', fontsize=16, color='#64748b', transform=ax.transAxes)
-    ax.text(.03, .16, "Capn't Proto / Native · C++ Cap'n Proto · gRPC (tonic) · WebSockets\nLabelled latency, request-rate and relative-difference bars appear after measurements arrive.", fontsize=11, transform=ax.transAxes)
+    ax.text(.03, .16, "Capntproto / Native · C++ Cap'n Proto · gRPC (tonic) · WebSockets\nLabelled latency, request-rate and relative-difference bars appear after measurements arrive.", fontsize=11, transform=ax.transAxes)
     save(plt, fig, path)
 
 
@@ -264,7 +264,7 @@ def render(template, history, output):
         section += 'No validated coverage/baseline comparison is available for the latest run. Missing or unmapped counters are never presented as 100% coverage.\n\n'
     section += '### Linux loopback benchmark comparisons\n\n'
     section += ('Latest benchmark run: ' + run_text(benchmark) + '\n\n') if benchmark else 'Awaiting the first dedicated DigitalOcean benchmark run.\n\n'
-    section += "Separate client/server processes, one outstanding request, several payload sizes and five repetitions. Capn't Proto uses encrypted Native/UDP; C++ Cap'n Proto, gRPC and WebSocket baselines use plaintext TCP. Bars compare this workload, not universal protocol performance.\n\n"
+    section += "Separate client/server processes, one outstanding request, several payload sizes and five repetitions. Capntproto uses encrypted Native/UDP; C++ Cap'n Proto, gRPC and WebSocket baselines use plaintext TCP. Bars compare this workload, not universal protocol performance.\n\n"
     charts = benchmark['data']['charts'] if benchmark else []
     for chart in charts:
         bar_chart(chart, assets / f"{chart['name']}.svg", f"Measured {benchmark['date']} | commit {benchmark['commit'][:12]} | dedicated Linux loopback")

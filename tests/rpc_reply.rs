@@ -3,8 +3,8 @@ mod support;
 
 use capnp::capability::FromClientHook;
 use capnp_rpc::RpcSystem;
+use capntproto_test_support::structured::rpc_api_capnp::{base, service};
 use futures::{channel::oneshot, FutureExt};
-use reproto_test_support::structured::rpc_api_capnp::{base, service};
 use std::{
     cell::{Cell, RefCell},
     future::Future,
@@ -179,7 +179,7 @@ async fn structured_replies_support_inheritance_typed_tail_calls_and_legacy_clie
             // An ordinary call is the completion barrier for a streaming send.
             assert_eq!(echo(&inherited, 75).await.unwrap(), 75);
             assert_eq!(streams.get(), 1);
-            let legacy: reproto_test_support::rpc_api_capnp::service::Client =
+            let legacy: capntproto_test_support::rpc_api_capnp::service::Client =
                 client.clone().cast_to();
             let cap = legacy
                 .open_request()

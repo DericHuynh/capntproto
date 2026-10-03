@@ -355,7 +355,7 @@ fn adaptive_estimates_clamp_to_minimum_and_maximum() {
 
 #[test]
 fn variable_window_model_replays_credit_failure_cancellation_and_drain() {
-    use reproto_test_support::verification::exploration::{controls, traces};
+    use capntproto_test_support::verification::exploration::{controls, traces};
     const MODEL: &str = "verification/RpcVariableWindow.tla";
     const CFG: &str = include_str!("../verification/RpcVariableWindow.cfg");
     let live =
@@ -413,7 +413,7 @@ fn variable_window_model_replays_credit_failure_cancellation_and_drain() {
 
 #[test]
 fn adaptive_model_replays_timing_reordering_collar_and_startup_transitions() {
-    use reproto_test_support::verification::exploration::{controls, traces};
+    use capntproto_test_support::verification::exploration::{controls, traces};
     const MODEL: &str = "verification/RpcAdaptiveWindow.tla";
     const CFG: &str = include_str!("../verification/RpcAdaptiveWindow.cfg");
     let mut saw_steady = false;
@@ -486,7 +486,7 @@ fn adaptive_model_replays_timing_reordering_collar_and_startup_transitions() {
 
 #[test]
 fn timed_variable_and_adaptive_backpressure_matches_pinned_cpp() {
-    use reproto_test_support::verification::{command, cpp, root, run};
+    use capntproto_test_support::verification::{command, cpp, root, run};
     let build = cpp::build(&["capnp-rpc"]).unwrap();
     let directory = tempfile::tempdir().unwrap();
     let executable = directory.path().join("flow-control");

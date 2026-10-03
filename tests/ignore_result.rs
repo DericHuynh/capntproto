@@ -2,8 +2,8 @@
 mod support;
 use capnp::{capability::Promise, private::capability::ResultsHook, Error};
 use capnp_rpc::RpcSystem;
+use capntproto_test_support::{cancellation_policy_capnp::policy, runtime_test_capnp::harness};
 use futures::{channel::oneshot, FutureExt};
-use reproto_test_support::{cancellation_policy_capnp::policy, runtime_test_capnp::harness};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,

@@ -2,7 +2,7 @@ use super::{check_contracts, root};
 
 #[test]
 fn structured_rpc_reply_compile_contracts() {
-    let prelude = "#![allow(dead_code)]\nuse reproto_test_support::structured::rpc_api_capnp::{base, service};\n";
+    let prelude = "#![allow(dead_code)]\nuse capntproto_test_support::structured::rpc_api_capnp::{base, service};\n";
     let mut cases = vec![(
         "positive".into(),
         format!(
@@ -67,7 +67,7 @@ fn main() {}
     cases.push(("request-must-use".into(), format!("#![deny(unused_must_use)]\n{prelude}fn bad(c: base::Client) {{ c.echo_request(); }}\nfn main() {{}}"), Some("unused_must_use")));
     cases.push(("published-owner-must-use".into(), format!("#![deny(unused_must_use)]\n{prelude}fn bad(r: service::OpenResults) {{ r.build().publish().unwrap(); }}\nfn main() {{}}"), Some("unused_must_use")));
     check_contracts("rpc-reply-contracts", &format!(
-        "capnp = {{ path = {:?} }}\nreproto-test-support = {{ path = {:?} }}\n",
+        "capnp = {{ path = {:?} }}\ncapntproto-test-support = {{ path = {:?} }}\n",
         root().join("vendor/capnp"), root().join("test-support")
     ), cases,
     "external consumers: affine reply stages, exact tail result schema, editor lifetimes, consuming requests and generated legacy/structured client compatibility",

@@ -18,8 +18,8 @@ authorization, schema reservations and revocation ordering is separate work.
 ## Use
 
 ```rust
-use reproto::storage::{Limits, ObjectKey, Revision};
-use reproto::storage::worker::{Config, Format, Options, ShutdownMode, Worker};
+use capntproto::storage::{Limits, ObjectKey, Revision};
+use capntproto::storage::worker::{Config, Format, Options, ShutdownMode, Worker};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -185,9 +185,9 @@ owner panic, append and compaction I/O quarantine, V4 atomic batches, V5 compone
 sharing/deletion, publication history and snapshot locks after shutdown.
 
 ```sh
-cargo test --locked -p reproto --lib storage::worker
-cargo test --locked -p reproto --test storage_worker
-cargo test --locked -p reproto --no-default-features --features storage --test storage_worker
+cargo test --locked -p capntproto --lib storage::worker
+cargo test --locked -p capntproto --test storage_worker
+cargo test --locked -p capntproto --no-default-features --features storage --test storage_worker
 ```
 
 Group commit, general durable receipts, execution-time capability authorization

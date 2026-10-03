@@ -134,7 +134,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "capnp-compiler"
+name = "capntproto-compiler"
 version = "0.1.0"
 dependencies = [
  "capnp",
@@ -782,12 +782,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
-name = "reproto"
+name = "capntproto"
 version = "0.1.0"
 dependencies = [
  "boring",
  "capnp",
- "capnp-compiler",
+ "capntproto-compiler",
  "capnp-futures",
  "capnp-rpc",
  "capnpc",
@@ -810,7 +810,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "reproto-native-fuzz"
+name = "capntproto-native-fuzz"
 version = "0.1.0"
 dependencies = [
  "capnp",
@@ -819,7 +819,7 @@ dependencies = [
  "futures",
  "libfuzzer-sys",
  "quiche",
- "reproto",
+ "capntproto",
 ]
 
 [[package]]

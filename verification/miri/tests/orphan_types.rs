@@ -5,7 +5,9 @@ use capnp::{
     traits::{Imbue, ImbueMut, IntoInternalStructReader},
     Result,
 };
-use reproto_memory_checks::field_api_capnp::{native_record, opaque, person, service, PhoneKind};
+use capntproto_memory_checks::field_api_capnp::{
+    native_record, opaque, person, service, PhoneKind,
+};
 use std::{cell::Cell, rc::Rc};
 
 fn allocator(far: bool) -> HeapAllocator {

@@ -1,5 +1,5 @@
 [package]
-name = "reproto-storage-comparison"
+name = "capntproto-storage-comparison"
 version = "0.1.0"
 edition = "2021"
 publish = false
@@ -7,7 +7,7 @@ publish = false
 [workspace]
 
 [dependencies]
-reproto = { path = "../..", default-features = false, features = ["storage"] }
+capntproto = { path = "../..", default-features = false, features = ["storage"] }
 eae_pages = { path = "../../target/eae-benchmark/eae-research/rust" }
 serde_json = "1"
 tempfile = "3"

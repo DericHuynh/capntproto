@@ -12,7 +12,7 @@ fn loader() -> SchemaLoader {
     loader
 }
 pub(super) async fn replay_loaded(
-    path: &[reproto_test_support::verification::exploration::State],
+    path: &[capntproto_test_support::verification::exploration::State],
     words: u32,
 ) {
     let loader = loader();

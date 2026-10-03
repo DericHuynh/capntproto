@@ -182,7 +182,7 @@ pub fn build(base: &Path, destination: &Path, qualified: bool) -> Result<Bundle>
     }
     let mut manifest = Manifest {
         version: 1,
-        package: "reproto".into(),
+        package: "capntproto".into(),
         package_version: env!("CARGO_PKG_VERSION").into(),
         qualified_runtime: qualified,
         modes: BTreeMap::new(),
@@ -240,7 +240,7 @@ pub fn build(base: &Path, destination: &Path, qualified: bool) -> Result<Bundle>
         header.set_cksum();
         archive.append_data(
             &mut header,
-            PathBuf::from(format!("reproto-{}-source", manifest.package_version)).join(name),
+            PathBuf::from(format!("capntproto-{}-source", manifest.package_version)).join(name),
             bytes.as_slice(),
         )?;
     }

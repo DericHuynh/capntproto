@@ -1,4 +1,4 @@
-use reproto::{
+use capntproto::{
     semantics::Revisions,
     storage::{ObjectKey, Revision, Store},
 };

@@ -1,13 +1,13 @@
 //! State-relative choices stay legal when Proptest removes earlier decisions.
 //! Every concrete history must be a path in the fresh composed-handler graph.
 use super::replay;
+use capntproto_test_support::verification::{
+    self as v,
+    exploration::{self, Graph, State},
+};
 use proptest::{
     prelude::*,
     test_runner::{Config, RngAlgorithm, RngSeed, TestError, TestRunner},
-};
-use reproto_test_support::verification::{
-    self as v,
-    exploration::{self, Graph, State},
 };
 use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, fs, path::Path, time::Duration};
@@ -197,7 +197,7 @@ fn worker(report: &Path) {
         if let TestError::Fail(_, case) = &error {
             let saved = artifact(&graph, case.clone());
             let path = save_failure(&saved);
-            eprintln!("replay: REPROTO_RPC_HISTORY_REPLAY={} cargo test --test composed_wire_boundary {TEST} -- --exact --nocapture",path.display());
+            eprintln!("replay: CAPNTPROTO_RPC_HISTORY_REPLAY={} cargo test --test composed_wire_boundary {TEST} -- --exact --nocapture",path.display());
         }
         panic!("RPC history property failed: {error}");
     }
@@ -271,14 +271,14 @@ fn worker(report: &Path) {
 
 #[test]
 fn generated_rpc_histories() {
-    if let Some(path) = std::env::var_os("REPROTO_RPC_HISTORY_REPLAY") {
+    if let Some(path) = std::env::var_os("CAPNTPROTO_RPC_HISTORY_REPLAY") {
         let graph = graph();
         let saved: Artifact = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
         validate(&graph, &saved).unwrap();
         execute(&runtime(), &saved);
         return;
     }
-    if let Some(path) = std::env::var_os("REPROTO_RPC_HISTORY_WORKER_REPORT") {
+    if let Some(path) = std::env::var_os("CAPNTPROTO_RPC_HISTORY_WORKER_REPORT") {
         worker(Path::new(&path));
         return;
     }
@@ -293,7 +293,7 @@ fn generated_rpc_histories() {
         let output = v::run(
             v::command(std::env::current_exe().unwrap())
                 .args([TEST, "--exact", "--nocapture"])
-                .env("REPROTO_RPC_HISTORY_WORKER_REPORT", &report),
+                .env("CAPNTPROTO_RPC_HISTORY_WORKER_REPORT", &report),
             &directory.join(format!("worker-{index}.log")),
             0,
         )
@@ -343,7 +343,7 @@ fn shrinking_and_saved_history_controls() {
     let output = v::run(
         v::command(std::env::current_exe().unwrap())
             .args([TEST, "--exact", "--nocapture"])
-            .env("REPROTO_RPC_HISTORY_REPLAY", path),
+            .env("CAPNTPROTO_RPC_HISTORY_REPLAY", path),
         &v::root().join("target/verification/composed-wire-history/saved-replay.log"),
         0,
     )

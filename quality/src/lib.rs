@@ -5,7 +5,7 @@ mod charts;
 pub mod coverage;
 pub mod instructions;
 pub mod report;
-use reproto_test_support::verification::{self as v, root};
+use capntproto_test_support::verification::{self as v, root};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{

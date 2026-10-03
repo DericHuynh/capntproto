@@ -21,15 +21,15 @@ pub enum IdentityError {
 /// The owned seed is zeroized on drop. Debug output contains only the public key.
 ///
 /// ```compile_fail,E0451
-/// use reproto::transport::Identity;
+/// use capntproto::transport::Identity;
 /// let identity = Identity { private: [7; 32].into(), public: [9; 32] };
 /// ```
 /// ```compile_fail,E0616
-/// let mut identity = reproto::transport::Identity::generate();
+/// let mut identity = capntproto::transport::Identity::generate();
 /// identity.public = [9; 32];
 /// ```
 /// ```compile_fail,E0616
-/// let identity = reproto::transport::Identity::generate();
+/// let identity = capntproto::transport::Identity::generate();
 /// let secret = identity.private;
 /// ```
 pub struct Identity {

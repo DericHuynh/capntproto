@@ -6,7 +6,7 @@ use capnp::{
     schema_capnp::brand,
     schema_loader::{dynamic, Schema, SchemaLoader, Type},
 };
-use reproto_test_support::enum_brand_capnp as fixture;
+use capntproto_test_support::enum_brand_capnp as fixture;
 mod enum_brand {
     pub mod verification;
 }

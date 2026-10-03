@@ -6,8 +6,8 @@ use capnp::{
     Error,
 };
 use capnp_rpc::{RevocableServer, RpcSystem};
+use capntproto_test_support::runtime_test_capnp::harness;
 use futures::channel::oneshot;
-use reproto_test_support::runtime_test_capnp::harness;
 use std::{
     cell::{Cell, RefCell},
     collections::VecDeque,
@@ -84,7 +84,7 @@ impl harness::Server for Service {
         Ok(())
     }
 }
-impl reproto_test_support::cancellation_policy_capnp::policy::Server for Service {}
+impl capntproto_test_support::cancellation_policy_capnp::policy::Server for Service {}
 
 struct Target(Rc<Cell<u32>>);
 impl harness::Server for Target {
@@ -350,7 +350,7 @@ async fn shortening_waits_for_old_streams_and_survives_later_revocation() {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_server_hooks_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_SERVER_HOOKS_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_SERVER_HOOKS_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
@@ -498,7 +498,7 @@ async fn self_trace(steps: &[serde_json::Value], revocable: bool) {
                 let new: harness::Client =
                     capnp_rpc::new_client_from_rc(external.as_ref().unwrap().clone());
                 if revocable {
-                    let other: reproto_test_support::cancellation_policy_capnp::policy::Client =
+                    let other: capntproto_test_support::cancellation_policy_capnp::policy::Client =
                         capnp_rpc::new_client_from_rc(external.as_ref().unwrap().clone());
                     assert!(other
                         .cancellable_request()
@@ -562,7 +562,7 @@ async fn self_trace(steps: &[serde_json::Value], revocable: bool) {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_self_capability_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_SELF_CAPABILITY_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_SELF_CAPABILITY_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
@@ -577,7 +577,7 @@ async fn replay_tlc_self_capability_traces() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn inherited_server_hooks_and_cross_interface_revocation_exclusivity() {
-    use reproto_test_support::cancellation_policy_capnp::{derived, policy};
+    use capntproto_test_support::cancellation_policy_capnp::{derived, policy};
     struct Inherited(SelfCapability);
     impl ServerHooks for Inherited {
         fn self_cap(&self) -> Option<&SelfCapability> {
@@ -738,7 +738,7 @@ async fn lookup_trace(steps: &[serde_json::Value], reject: bool) {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_shorten_lookup_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_SHORTEN_LOOKUP_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_SHORTEN_LOOKUP_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();

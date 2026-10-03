@@ -1,5 +1,5 @@
-use reproto::storage::Revision;
-use reproto::storage::*;
+use capntproto::storage::Revision;
+use capntproto::storage::*;
 use std::io::Write;
 #[test]
 fn revisions_snapshots_recovery() {
@@ -345,7 +345,7 @@ fn compaction_resolves_symlinks_and_refuses_hard_link_aliases() {
 
 #[test]
 fn replay_tlc_storage_compaction_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_STORAGE_COMPACTION_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_STORAGE_COMPACTION_TRACES")
         .expect("prepare verified trace corpus");
     #[derive(serde::Deserialize)]
     struct Step {

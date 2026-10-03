@@ -15,12 +15,12 @@ use ring::{
 /// Authentication is performed by [`serve`], never asserted by an application.
 ///
 /// ```compile_fail,E0624
-/// fn forge(intro: &mut reproto::handoff::Introduction) {
+/// fn forge(intro: &mut capntproto::handoff::Introduction) {
 ///     intro.accept([1; 32], [2; 32]);
 /// }
 /// ```
 /// ```compile_fail,E0616
-/// fn replace_recipient(intro: &mut reproto::handoff::Introduction) {
+/// fn replace_recipient(intro: &mut capntproto::handoff::Introduction) {
 ///     intro.recipient = [9; 32];
 /// }
 pub struct Introduction {
@@ -188,7 +188,7 @@ fn failure(error: impl std::fmt::Display) -> capnp::Error {
 /// pending. Run inside a Tokio LocalSet. Dropping the future cancels acceptance.
 ///
 /// ```compile_fail,E0603
-/// use reproto::handoff::Acceptor;
+/// use capntproto::handoff::Acceptor;
 /// ```
 pub async fn serve<T: capnp::traits::Owned + Unpin + 'static>(
     introduction: std::rc::Rc<std::cell::RefCell<Introduction>>,

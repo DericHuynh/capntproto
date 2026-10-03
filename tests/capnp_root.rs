@@ -1,7 +1,7 @@
 //! Compile and execute bindings in downstream crates whose runtime is renamed
 //! or re-exported. A default-path control lives in a separate crate so it cannot
 //! hide stray `::capnp` references in the override cases.
-use reproto_test_support::verification::{command, root, run};
+use capntproto_test_support::verification::{command, root, run};
 use std::fs;
 
 #[test]
@@ -9,7 +9,7 @@ fn runtime_paths_work_with_both_frontends() {
     let schemas = root().join("tests/capnp_root");
     let includes = root().join("vendor/capnproto/c++/src");
     let files = [schemas.join("roots.capnp"), schemas.join("leaf.capnp")];
-    let request = capnp_compiler::FileCompiler::new()
+    let request = capntproto_compiler::FileCompiler::new()
         .src_prefix(&schemas)
         .import_path(&includes)
         .compile(&files)

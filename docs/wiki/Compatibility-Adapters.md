@@ -1,8 +1,8 @@
 # Optional Cap’n Proto compatibility
 
-`capnp-compat` ports the pinned C++ compatibility protocols into an opt-in Rust
+`capntproto-compat` ports the pinned C++ compatibility protocols into an opt-in Rust
 workspace crate. It uses the maintained `capnp` / `capnp-rpc` runtime and requires
-Rust 1.97. The crate is unpublished; it is not a dependency of `reproto`.
+Rust 1.97. The crate is unpublished; it is not a dependency of `capntproto`.
 
 The modules provide:
 
@@ -124,7 +124,7 @@ All tests are part of the root `cargo test --workspace` command. For focused wor
 retain the repository’s cargo-auditable PATH setup and run:
 
 ```sh
-cargo test --locked -p capnp-compat
+cargo test --locked -p capntproto-compat
 ```
 
 Portable tests cover codecs, annotations, handlers, generic brands, limits,
@@ -152,4 +152,4 @@ These are bounded interoperability tests, not an exhaustive KJ replacement or
 production qualification.
 
 The bundled schemas are unmodified copies of reference revision
-`0de72d8d8cec6b69edaa29de51d3bd490341f9c2`. See [NOTICE](../../crates/capnp-compat/NOTICE) for attribution.
+`0de72d8d8cec6b69edaa29de51d3bd490341f9c2`. See [NOTICE](../../crates/capntproto-compat/NOTICE) for attribution.

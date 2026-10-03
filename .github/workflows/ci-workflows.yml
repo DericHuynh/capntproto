@@ -1,0 +1,51 @@
+name: CI / Workflow validation
+on:
+  workflow_call:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-workflow-validation-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    name: Validate workflow configuration and scripts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install script linters and pinned actionlint
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y shellcheck pyflakes3 python3-yaml
+          curl --fail --location --retry 3 https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz -o "$RUNNER_TEMP/actionlint.tar.gz"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+      - name: Check workflow expressions and embedded scripts
+        run: '"$RUNNER_TEMP/actionlint" -pyflakes pyflakes3 -config-file .github/actionlint.yaml .github/workflows/*.yml'
+      - name: Prevent duplicate automatic workflow runs
+        run: python3 -m unittest discover -s scripts/tests -p 'test_workflow_triggers.py' -v
+      - name: Check auditable build scripts
+        run: |
+          shellcheck scripts/setup-auditable.sh scripts/auditable-cargo.sh scripts/auditable-bench-rustc.sh scripts/test-auditable-cargo.sh
+          bash scripts/test-auditable-cargo.sh
+          pyflakes3 scripts/check_auditable.py scripts/tests/test_workflow_triggers.py
+      - name: Check cloud capacity selection and cleanup
+        run: |
+          python3 quality/tests/digitalocean_checks.py
+          pyflakes3 scripts/digitalocean_bench.py quality/tests/digitalocean_checks.py
+      - name: Validate README collector, history, charts and publisher
+        run: |
+          python3 -m venv "$RUNNER_TEMP/readme-venv"
+          "$RUNNER_TEMP/readme-venv/bin/pip" install --only-binary=:all: -r quality/reporting-requirements.txt
+          PYTHONPATH=quality "$RUNNER_TEMP/readme-venv/bin/python" -m unittest reporting.test_reporting -v
+          pyflakes3 scripts/update_readme.py quality/reporting
+      - name: Check workflow security
+        uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        with:
+          version: v1.30.1
+          # Vendored upstream workflows are source data, not this repo's CI.
+          inputs: .github
+          advanced-security: false

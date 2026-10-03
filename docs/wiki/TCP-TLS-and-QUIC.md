@@ -4,9 +4,9 @@ The public two-party RPC adapters support three ordinary network transports:
 
 | API | Wire protocol | Authentication |
 | --- | --- | --- |
-| `reproto::rpc::tcp` | Cap'n Proto RPC on TCP | Plaintext; no peer authentication |
-| `reproto::rpc::tls` | Cap'n Proto RPC on TLS 1.3/TCP | Server certificates, optional required client certificates |
-| `reproto::rpc::quic` | Cap'n Proto RPC on standard QUIC v1 or v2 | TLS 1.3 server certificates, optional required client certificates |
+| `capntproto::rpc::tcp` | Cap'n Proto RPC on TCP | Plaintext; no peer authentication |
+| `capntproto::rpc::tls` | Cap'n Proto RPC on TLS 1.3/TCP | Server certificates, optional required client certificates |
+| `capntproto::rpc::quic` | Cap'n Proto RPC on standard QUIC v1 or v2 | TLS 1.3 server certificates, optional required client certificates |
 
 TLS/TCP uses Cargo-managed rustls and tokio-rustls. All QUIC uses quiche with
 Cargo-managed BoringSSL, including standard two-party RPC and the authenticated
@@ -28,7 +28,7 @@ loaded from DER, or from PEM using `rustls::pki_types::pem::PemObject`.
 Build configurations once and share their `Arc`s:
 
 ```rust
-use reproto::rpc::tls;
+use capntproto::rpc::tls;
 
 // RootCertStore values contain the application's trusted CA certificates.
 let client = tls::client_config(server_roots, Some(client_identity))?;
@@ -68,7 +68,7 @@ For TLS, connect first, then construct the RPC driver:
 
 ```rust
 use capnp_rpc::rpc_twoparty_capnp::Side;
-use reproto::rpc::tls;
+use capntproto::rpc::tls;
 use std::time::Duration;
 
 let stream = tls::connect(
@@ -102,7 +102,7 @@ certificates and `tls::Identity` values directly. TCP's rustls configuration
 objects are specific to TCP and are not passed to the QUIC engine.
 
 ```rust
-use reproto::rpc::quic::{self, Endpoint, Version};
+use capntproto::rpc::quic::{self, Endpoint, Version};
 use std::time::Duration;
 
 let server = Endpoint::server(

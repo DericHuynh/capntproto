@@ -266,7 +266,7 @@ fn annotation_lines(output: &mut Vec<String>, parent: u64, member: &str, list: A
 
 #[test]
 fn pinned_cpp_agrees_on_constant_and_annotation_metadata() {
-    let executable = reproto_test_support::verification::cpp::loader().unwrap();
+    let executable = capntproto_test_support::verification::cpp::loader().unwrap();
     let request = request();
     let mut loader = SchemaLoader::default();
     loader
@@ -408,7 +408,7 @@ fn metadata_case(base: &SchemaLoader, payload: u64, bound: u64) -> SchemaLoader 
 
 #[test]
 fn metadata_model_replays_lazy_resolution_type_checks_and_authority() {
-    use reproto_test_support::verification::exploration::{controls, traces};
+    use capntproto_test_support::verification::exploration::{controls, traces};
     const MODEL: &str = "verification/RpcSchemaMetadata.tla";
     const CFG: &str = include_str!("../verification/RpcSchemaMetadata.cfg");
     controls(

@@ -6,7 +6,7 @@ use capnp::{
     schema_capnp::{field, node},
     schema_loader::{self, dynamic as loaded},
 };
-use reproto_test_support::presence_capnp::{child, sample};
+use capntproto_test_support::presence_capnp::{child, sample};
 
 mod presence {
     pub mod verification;
@@ -520,7 +520,7 @@ fn capability_presence_does_not_resolve_or_retain_clients() -> capnp::Result<()>
         capability::FromClientHook,
         traits::{Imbue, ImbueMut},
     };
-    use reproto_test_support::runtime_test_capnp::harness;
+    use capntproto_test_support::runtime_test_capnp::harness;
     use std::{cell::Cell, rc::Rc};
     let polls = Rc::new(Cell::new(0));
     let marker = Rc::new(());

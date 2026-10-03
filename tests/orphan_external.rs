@@ -1,5 +1,5 @@
 use capnp::{dynamic_orphan::ExternalData, dynamic_struct, dynamic_value as value};
-use reproto_test_support::dynamic_test_capnp::external_case;
+use capntproto_test_support::dynamic_test_capnp::external_case;
 use std::sync::Arc;
 
 fn words(len: usize) -> Arc<[capnp::Word]> {
@@ -156,7 +156,7 @@ struct Case {
 }
 
 struct Service(std::rc::Rc<std::cell::Cell<bool>>);
-impl reproto_test_support::runtime_test_capnp::harness::Server for Service {}
+impl capntproto_test_support::runtime_test_capnp::harness::Server for Service {}
 impl Drop for Service {
     fn drop(&mut self) {
         self.0.set(false);
@@ -166,7 +166,7 @@ impl Drop for Service {
 #[test]
 fn replay_tlc_external_data_traces() -> capnp::Result<()> {
     use capnp::traits::ImbueMut;
-    let path = reproto_test_support::verification::input("REPROTO_EXTERNAL_DATA_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_EXTERNAL_DATA_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<Case> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     for small in [false, true] {

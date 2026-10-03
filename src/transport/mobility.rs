@@ -416,7 +416,7 @@ mod tests {
     }
     #[test]
     fn replay_tlc_path_validation_gate() {
-        use reproto_test_support::verification::exploration;
+        use capntproto_test_support::verification::exploration;
         let config = include_str!("../../verification/NativePathMigration.cfg");
         let live =
             config.replace("SPECIFICATION Spec", "SPECIFICATION LiveSpec") + "\nPROPERTY Settles\n";

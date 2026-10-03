@@ -3,7 +3,7 @@
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     use capnp_rpc::{rpc_twoparty_capnp::Side, RpcSystem};
-    use reproto_test_support::runtime_test_capnp::harness;
+    use capntproto_test_support::runtime_test_capnp::harness;
     use std::{
         io::Write,
         os::{fd::OwnedFd, unix::fs::FileExt},
@@ -37,7 +37,7 @@ async fn main() {
     tokio::task::LocalSet::new().run_until(async {
         tokio::time::timeout(std::time::Duration::from_secs(10), async {
             let (socket, _) = listener.accept().await.unwrap();
-            let network = reproto::unix_rpc::VatNetwork::new(socket, Side::Client, Default::default());
+            let network = capntproto::unix_rpc::VatNetwork::new(socket, Side::Client, Default::default());
             let mut system = RpcSystem::new(Box::new(network), None);
             let remote: harness::Client = system.bootstrap(Side::Server);
             let disconnect = system.get_disconnector();

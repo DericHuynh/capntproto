@@ -30,8 +30,8 @@ has an explicit checked `new(u64) -> Option<Self>` or `TryFrom<u64>` boundary;
 zero is rejected, and `get()` projects the stored number. For example:
 
 ```rust
-use reproto::authority::{ObjectGeneration, ObjectId, Rights};
-use reproto::persistence::{Descriptor, ObjectKind};
+use capntproto::authority::{ObjectGeneration, ObjectId, Rights};
+use capntproto::persistence::{Descriptor, ObjectKind};
 
 let descriptor = Descriptor::new(
     ObjectKind::new(1).unwrap(),

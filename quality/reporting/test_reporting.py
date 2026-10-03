@@ -199,7 +199,7 @@ class Publishing(unittest.TestCase):
                 if path == '':
                     return dict(default_branch='main')
                 if path == '/actions/runs/1':
-                    return dict(id=1, run_attempt=1, path='.github/workflows/full-quality.yml', status='completed',
+                    return dict(id=1, run_attempt=1, path='.github/workflows/verification-coverage.yml', status='completed',
                                 event='schedule', head_branch='main', head_repository=dict(full_name='example/capnt-proto'),
                                 head_sha='b' * 40, created_at='2026-09-28T10:00:00Z', conclusion='success',
                                 html_url='https://github.com/example/capnt-proto/actions/runs/1')
@@ -239,7 +239,7 @@ class Publishing(unittest.TestCase):
         self.assertTrue(all(body['force'] is False for path, body, _ in calls if path == '/git/refs/heads/main'))
 
     def test_untrusted_origins_and_workflows_cannot_publish(self):
-        run = dict(status='completed', path='.github/workflows/full-quality.yml', event='schedule',
+        run = dict(status='completed', path='.github/workflows/verification-coverage.yml', event='schedule',
                    head_branch='main', head_repository=dict(full_name='example/capnt-proto'))
         self.assertTrue(trusted_run(run, 'example/capnt-proto', 'main'))
         for change in [dict(event='pull_request'), dict(head_branch='topic'), dict(path='.github/workflows/unknown.yml'),
@@ -280,7 +280,7 @@ class Rendering(unittest.TestCase):
             benchmark['data']['charts'] = [dict(name='latency-p50', title='Synthetic renderer data — Median latency',
                 unit='Microseconds — lower is better', note='Test fixture, not a performance claim.', coverage=False,
                 panels=[dict(title=f'{size} byte payload', bars=[dict(label=label, value=10.0 * (i + 1))
-                        for i, label in enumerate(["Capn't Proto / Native", "Cap'n Proto C++", 'gRPC (tonic)', 'WebSockets'])])
+                        for i, label in enumerate(["Capntproto / Native", "Cap'n Proto C++", 'gRPC (tonic)', 'WebSockets'])])
                         for size in (0, 64, 1024, 65536)])]
             history = merge(history, benchmark)
             render(template, history, output)

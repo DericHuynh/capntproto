@@ -1,7 +1,7 @@
 use capnp_rpc::twoparty::TwoPartyServer;
+use capntproto::rpc::tcp;
+use capntproto_test_support::runtime_test_capnp::harness;
 use futures::FutureExt;
-use reproto::rpc::tcp;
-use reproto_test_support::runtime_test_capnp::harness;
 use std::{rc::Rc, time::Duration};
 
 struct Echo;

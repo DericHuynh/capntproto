@@ -1,6 +1,6 @@
 use super::*;
 use capnp_rpc::twoparty::TwoPartyClient;
-use reproto_test_support::verification::{command, cpp, exploration, root, run};
+use capntproto_test_support::verification::{command, cpp, exploration, root, run};
 use std::{pin::Pin, task::Poll};
 
 async fn settle() {

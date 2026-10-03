@@ -1,5 +1,5 @@
 use capnp::{dynamic_list, dynamic_struct, dynamic_value as value, traits::ImbueMut, ErrorKind};
-use reproto_test_support::{
+use capntproto_test_support::{
     dynamic_test_capnp::{orphan_case, orphan_payload},
     runtime_test_capnp::harness,
 };
@@ -327,7 +327,7 @@ fn inline_struct_and_nested_group_moves_preserve_descendants_and_siblings() -> c
 
 #[test]
 fn evolved_unknown_capabilities_are_retained_and_narrow_adoption_is_atomic() -> capnp::Result<()> {
-    use reproto_test_support::dynamic_test_capnp::{
+    use capntproto_test_support::dynamic_test_capnp::{
         large_orphan_case, small_orphan, small_orphan_case,
     };
     for small in [false, true] {
@@ -379,7 +379,7 @@ fn evolved_unknown_capabilities_are_retained_and_narrow_adoption_is_atomic() -> 
 
 #[tokio::test(flavor = "current_thread")]
 async fn context_mismatch_brand_mismatch_and_revocation_cannot_be_bypassed() -> capnp::Result<()> {
-    use reproto_test_support::dynamic_test_capnp::{base, derived, orphan_brands};
+    use capntproto_test_support::dynamic_test_capnp::{base, derived, orphan_brands};
     let drops = Rc::new(Cell::new(0));
     let mut caps = Vec::new();
     let mut wrong_caps = Vec::new();
@@ -666,7 +666,7 @@ async fn replay(trace: &Trace, mode: u8, small: bool) -> capnp::Result<()> {
 
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_dynamic_orphan_traces() -> capnp::Result<()> {
-    let path = reproto_test_support::verification::input("REPROTO_DYNAMIC_ORPHAN_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_DYNAMIC_ORPHAN_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     assert!(!traces.is_empty());

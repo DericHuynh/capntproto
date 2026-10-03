@@ -1,5 +1,5 @@
 //! Independent requirements and explicit wire/local-state projection checks.
-use reproto_test_support::verification::{command, root, run};
+use capntproto_test_support::verification::{command, root, run};
 use std::fs;
 fn check(name: &str) {
     let work = tempfile::tempdir().unwrap();
@@ -21,8 +21,8 @@ fn check(name: &str) {
     )
     .unwrap();
     let java = std::env::var("JAVA").unwrap_or_else(|_| {
-        if std::path::Path::new("/tmp/reproto-jre17/bin/java").exists() {
-            "/tmp/reproto-jre17/bin/java".into()
+        if std::path::Path::new("/tmp/capntproto-jre17/bin/java").exists() {
+            "/tmp/capntproto-jre17/bin/java".into()
         } else {
             "java".into()
         }
@@ -33,7 +33,7 @@ fn check(name: &str) {
             if root().join("target/tools/tla2tools.jar").is_file() {
                 root().join("target/tools/tla2tools.jar")
             } else {
-                "/tmp/reproto-tla2tools.jar".into()
+                "/tmp/capntproto-tla2tools.jar".into()
             }
         });
     let output = run(

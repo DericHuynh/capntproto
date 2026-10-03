@@ -1,5 +1,5 @@
 //! Trusted host access to component storage without running fsync on Tokio.
-use reproto::storage::{
+use capntproto::storage::{
     worker::{Config, Format, Options, ShutdownMode, Worker},
     ComponentId, ComponentUpdate, Limits, ObjectKey, Revision,
 };

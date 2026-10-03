@@ -1,4 +1,4 @@
-use reproto_test_support::verification::{command, distribution as d, root, run_with_timeout};
+use capntproto_test_support::verification::{command, distribution as d, root, run_with_timeout};
 use std::fs;
 
 #[test]
@@ -42,7 +42,7 @@ fn source_bundle_roundtrip() {
 fn isolated_release_qualification() {
     let before = d::verification_hashes(&root()).unwrap();
     let work = tempfile::Builder::new()
-        .prefix(".reproto-cargo-release-")
+        .prefix(".capntproto-cargo-release-")
         .tempdir_in(root().parent().unwrap())
         .unwrap()
         .keep();
@@ -75,7 +75,7 @@ fn isolated_release_qualification() {
                 .args(args)
                 .current_dir(&extracted)
                 .env_remove("CARGO_TARGET_DIR")
-                .env("REPROTO_CHECK_TIMEOUT", "7200"),
+                .env("CAPNTPROTO_CHECK_TIMEOUT", "7200"),
             &reports.join(format!("cargo-{name}.log")),
             0,
             std::time::Duration::from_secs(7200),
@@ -95,7 +95,7 @@ fn isolated_release_qualification() {
     .unwrap();
     d::build(
         &root(),
-        &root().join("dist/reproto-0.1.0-source.tar.gz"),
+        &root().join("dist/capntproto-0.1.0-source.tar.gz"),
         true,
     )
     .unwrap();
@@ -106,7 +106,7 @@ fn isolated_release_qualification() {
 fn build_qualified_source() {
     d::build(
         &root(),
-        &root().join("dist/reproto-0.1.0-source.tar.gz"),
+        &root().join("dist/capntproto-0.1.0-source.tar.gz"),
         true,
     )
     .unwrap();

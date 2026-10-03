@@ -1,5 +1,5 @@
 use crate::{Result, Runner};
-use reproto_test_support::verification::{self as v, root};
+use capntproto_test_support::verification::{self as v, root};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
@@ -10,6 +10,7 @@ use std::{
     process::Command,
 };
 pub const NIGHTLY: &str = "nightly-2026-03-05";
+pub const SCOPE: &str = "first-party-rust-v1";
 const FLAGS: &str = "-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch";
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -59,6 +60,44 @@ pub struct Summary {
     pub flags: String,
     pub compiler: String,
     pub baseline: String,
+    #[serde(default)]
+    pub scope: String,
+}
+
+/// Explicit source ownership boundary, shared by every export and regression gate.
+fn owned_source(path: &Path) -> bool {
+    if path.extension().is_none_or(|ext| ext != "rs")
+        || path
+            .components()
+            .any(|part| !matches!(part, std::path::Component::Normal(_)))
+        || path
+            .iter()
+            .any(|part| matches!(part.to_str(), Some("target" | "vendor" | ".git")))
+    {
+        return false;
+    }
+    path == Path::new("build.rs")
+        || [
+            "src",
+            "crates/capntproto-compiler",
+            "crates/capntproto-compat",
+            "test-support",
+            "quality",
+            "tests",
+            "examples",
+            "fuzz",
+            "benchmarks",
+            "verification/miri",
+        ]
+        .iter()
+        .any(|prefix| path.starts_with(prefix))
+}
+
+fn sources() -> Result<BTreeMap<PathBuf, String>> {
+    Ok(v::distribution::source_hashes(&root())?
+        .into_iter()
+        .filter(|(path, _)| owned_source(path))
+        .collect())
 }
 
 fn metric(value: &Value) -> Result<Metric> {
@@ -84,6 +123,9 @@ pub fn parse_export(value: &Value, base: &Path) -> Result<BTreeMap<String, Metri
             let Ok(relative) = filename.strip_prefix(base) else {
                 continue;
             };
+            if !owned_source(relative) {
+                continue;
+            }
             let summary = &file["summary"];
             let metrics = Metrics {
                 lines: metric(&summary["lines"])?,
@@ -105,16 +147,10 @@ pub fn parse_export(value: &Value, base: &Path) -> Result<BTreeMap<String, Metri
 fn group(path: &str) -> &str {
     if path.starts_with("src/") {
         "runtime"
-    } else if path.starts_with("crates/capnp-compiler/") {
+    } else if path.starts_with("crates/capntproto-compiler/") {
         "schema-compiler"
-    } else if path.starts_with("crates/capnp-compat/") {
+    } else if path.starts_with("crates/capntproto-compat/") {
         "optional-compatibility"
-    } else if path.starts_with("vendor/capnproto/") {
-        "cpp-reference"
-    } else if path.starts_with("vendor/quiche/") {
-        "transport"
-    } else if path.starts_with("vendor/") && !path.starts_with("vendor/provenance/") {
-        "maintained-capnp"
     } else if path.starts_with("tests/") || path.starts_with("test-support/") {
         "tests-and-verification"
     } else {
@@ -183,48 +219,11 @@ pub fn totals(files: &BTreeMap<String, FileCoverage>) -> BTreeMap<String, Metric
 }
 pub fn inventory(measured: &BTreeMap<String, Metrics>) -> Result<BTreeMap<String, FileCoverage>> {
     let mut files = BTreeMap::new();
-    for (path, sha256) in v::distribution::source_hashes(&root())? {
-        let extension = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or_default();
-        if ![
-            "rs",
-            "c",
-            "h",
-            "c++",
-            "cpp",
-            "cc",
-            "hpp",
-            "cxx",
-            "hxx",
-            "hh",
-            "inc",
-            "capnp",
-            "proto",
-            "tla",
-            "py",
-            "sh",
-            "js",
-            "in",
-            "nobuild",
-            "ekam-rule",
-            "el",
-        ]
-        .contains(&extension)
-        {
-            continue;
-        }
+    for (path, sha256) in sources()? {
         let name = path.to_string_lossy().into_owned();
         let metrics = measured.get(&name).cloned();
         let status = if metrics.is_some() {
             "measured (including zero-hit code)"
-        } else if ![
-            "rs", "c", "h", "c++", "cpp", "cc", "hpp", "cxx", "hxx", "hh", "inc",
-        ]
-        .contains(&extension)
-        {
-            "schema/model/script/template/negative fixture; not an executable LLVM mapping"
         } else {
             "no executable LLVM mapping in these platform/feature/test builds; not counted as covered"
         };
@@ -273,17 +272,15 @@ fn instrumented(args: &[&str], build: &Path, profiles: &Path) -> Command {
         .env("RUSTFLAGS", FLAGS)
         .env_remove("CARGO_ENCODED_RUSTFLAGS")
         .env("LLVM_PROFILE_FILE", profiles.join("%p-%m.profraw"))
-        .env("REPROTO_COVERAGE_CHILDREN_NATIVE", "1");
+        .env("CAPNTPROTO_COVERAGE_CHILDREN_NATIVE", "1");
     cmd
 }
-/// Build and execute the C++ reference suites with LLVM instrumentation.
+/// Build and execute the independent C++ reference suites without coverage instrumentation.
 /// The cache is bound to the complete C++ inputs, compiler and collector code.
-pub fn cpp(r: &mut Runner, profiles: &Path) -> Result<PathBuf> {
-    let clang_binary = std::env::var("REPROTO_COVERAGE_CLANG").unwrap_or_else(|_| "clang++".into());
+pub fn cpp(r: &mut Runner) -> Result<()> {
+    let clang_binary =
+        std::env::var("CAPNTPROTO_REFERENCE_CXX").unwrap_or_else(|_| "clang++".into());
     let clang = r.run("clang", v::command(&clang_binary).arg("--version"))?;
-    if !clang.contains("version 22.") {
-        return Err("coverage requires Clang 22 matching pinned Rust LLVM 22".into());
-    }
     let inputs: BTreeMap<_, _> = v::distribution::source_hashes(&root())?
         .into_iter()
         .filter(|(path, _)| path.starts_with("vendor/capnproto"))
@@ -292,18 +289,17 @@ pub fn cpp(r: &mut Runner, profiles: &Path) -> Result<PathBuf> {
         inputs,
         clang,
         clang_binary,
-        "llvm22-O1-debug-fibers-clean-shutdown-v1"
+        "native-O1-debug-fibers-clean-shutdown-v2"
     ]))?);
     let cpp = root().join("target/quality-build/cpp").join(key);
     fs::create_dir_all(&cpp)?;
     let cpp = cpp.canonicalize()?;
-    fs::create_dir_all(profiles)?;
     let lock = fs::OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
         .truncate(false)
-        .open(cpp.join("coverage.lock"))?;
+        .open(cpp.join("reference.lock"))?;
     fs2::FileExt::try_lock_exclusive(&lock)?;
     r.run(
         "cpp-configure",
@@ -319,8 +315,6 @@ pub fn cpp(r: &mut Runner, profiles: &Path) -> Result<PathBuf> {
                 "-DWITH_FIBERS=ON",
                 "-DCMAKE_BUILD_TYPE=Debug",
                 "-DCMAKE_CXX_FLAGS_DEBUG=-O1 -g0 -DKJ_DEBUG=1",
-                "-DCMAKE_CXX_FLAGS=-g0 -fprofile-instr-generate -fcoverage-mapping",
-                "-DCMAKE_EXE_LINKER_FLAGS=-fprofile-instr-generate",
             ])
             .arg(format!("-DCMAKE_CXX_COMPILER={clang_binary}")),
     )?;
@@ -338,8 +332,7 @@ pub fn cpp(r: &mut Runner, profiles: &Path) -> Result<PathBuf> {
                 "kj-tests",
                 "kj-heavy-tests",
             ])
-            .env("KJ_CLEAN_SHUTDOWN", "1")
-            .env("LLVM_PROFILE_FILE", profiles.join("cpp-%p-%m.profraw")),
+            .env("KJ_CLEAN_SHUTDOWN", "1"),
     )?;
     for (name, package) in [
         ("capnp-tests", "capnp"),
@@ -347,30 +340,12 @@ pub fn cpp(r: &mut Runner, profiles: &Path) -> Result<PathBuf> {
         ("kj-tests", "kj"),
         ("kj-heavy-tests", "kj"),
     ] {
-        let prefix = format!("cpp-{name}-");
         r.run(
             name,
-            v::command(cpp.join(format!("c++/src/{package}/{name}")))
-                // KJ normally calls _exit(), bypassing LLVM's atexit writer.
-                .env("KJ_CLEAN_SHUTDOWN", "1")
-                .env(
-                    "LLVM_PROFILE_FILE",
-                    profiles.join(format!("{prefix}%p-%m.profraw")),
-                ),
+            v::command(cpp.join(format!("c++/src/{package}/{name}"))).env("KJ_CLEAN_SHUTDOWN", "1"),
         )?;
-        let flushed = fs::read_dir(profiles)?.try_fold(false, |found, entry| {
-            let entry = entry?;
-            Ok::<_, std::io::Error>(
-                found
-                    || (entry.file_name().to_string_lossy().starts_with(&prefix)
-                        && entry.metadata()?.len() > 0),
-            )
-        })?;
-        if !flushed {
-            return Err(format!("{name} passed but did not flush an LLVM profile").into());
-        }
     }
-    Ok(cpp)
+    Ok(())
 }
 pub fn collect(r: &mut Runner) -> Result<()> {
     let working = root().join("target/quality-build");
@@ -420,10 +395,9 @@ pub fn collect(r: &mut Runner) -> Result<()> {
             &build,
             &profiles,
         )
-        .env("REPROTO_FULL_COVERAGE_BUILD", &build)
-        .env("REPROTO_FULL_COVERAGE_PROFILES", &profiles)
-        .env("REPROTO_FULL_COVERAGE_FLAGS", FLAGS)
-        .env("REPROTO_FULL_COVERAGE_REPORT", r.directory.join("cpp"))
+        .env("CAPNTPROTO_FULL_COVERAGE_BUILD", &build)
+        .env("CAPNTPROTO_FULL_COVERAGE_PROFILES", &profiles)
+        .env("CAPNTPROTO_FULL_COVERAGE_FLAGS", FLAGS)
         .env(
             "RUSTDOCFLAGS",
             format!(
@@ -433,11 +407,9 @@ pub fn collect(r: &mut Runner) -> Result<()> {
         ),
     )?;
 
-    let cpp: PathBuf = serde_json::from_slice(&fs::read(profiles.join("cpp-objects.json"))?)?;
     let mut objects = vec![];
     let mut paths = vec![];
     visit(&build, &mut paths)?;
-    visit(&cpp, &mut paths)?;
     for path in paths {
         // ELF coverage objects include build-script executables. Archives and
         // generated source files cannot silently substitute for runnable code.
@@ -501,6 +473,15 @@ pub fn collect(r: &mut Runner) -> Result<()> {
             .arg("-o")
             .arg(&profdata),
     )?;
+    // LLVM's -sources allowlist applies to JSON, LCOV and HTML alike. Exact
+    // owned paths also exclude generated OUT_DIR files and checkout-local vendors.
+    let source_paths: Vec<_> = sources()?
+        .into_keys()
+        .map(|path| root().join(path))
+        .collect();
+    if source_paths.is_empty() {
+        return Err("no first-party Rust sources discovered".into());
+    }
     let command = |mode: &str| {
         let mut c = v::command(llvm.join("llvm-cov"));
         c.arg(mode)
@@ -509,6 +490,7 @@ pub fn collect(r: &mut Runner) -> Result<()> {
         for object in &objects {
             c.arg("-object").arg(object);
         }
+        c.arg("-sources").args(&source_paths);
         c
     };
     let export = r.run(
@@ -536,14 +518,8 @@ pub fn collect(r: &mut Runner) -> Result<()> {
     // Never certify the old three-file report or lose an entire maintained crate.
     for prefix in [
         "src/",
-        "crates/capnp-compiler/src/",
-        "crates/capnp-compat/src/",
-        "vendor/capnp/src/",
-        "vendor/capnp-rpc/src/",
-        "vendor/capnp-futures/src/",
-        "vendor/capnpc/src/",
-        "vendor/quiche/quiche/src/",
-        "vendor/capnproto/c++/src/",
+        "crates/capntproto-compiler/src/",
+        "crates/capntproto-compat/src/",
         "fuzz/src/",
         "quality/src/",
     ] {
@@ -560,6 +536,7 @@ pub fn collect(r: &mut Runner) -> Result<()> {
         flags: FLAGS.into(),
         compiler,
         baseline: "not yet established; this run is the initial measurement".into(),
+        scope: SCOPE.into(),
     };
     crate::report::write_files(&r.directory, &summary)?;
     fs::write(
@@ -568,9 +545,9 @@ pub fn collect(r: &mut Runner) -> Result<()> {
     )?;
     if baseline_path.exists() {
         let old: Summary = serde_json::from_slice(&fs::read(&baseline_path)?)?;
-        if old.flags != summary.flags || old.compiler != summary.compiler {
+        if old.scope != SCOPE || old.flags != summary.flags || old.compiler != summary.compiler {
             return Err(
-                "coverage baseline toolchain/options differ; requalification required".into(),
+                "coverage baseline scope/toolchain/options differ; requalification required".into(),
             );
         }
         regression(&summary.files, &old.files)?;
@@ -580,7 +557,7 @@ pub fn collect(r: &mut Runner) -> Result<()> {
         r.directory.join("summary.json"),
         serde_json::to_vec_pretty(&summary)?,
     )?;
-    r.evidence.data = json!({"summary":summary,"objects":objects.len(),"profiles":profile_paths.len(),"llvm_json_sha256":v::sha256(export),"build":build,"scope":"Rust line/region/function/branch coverage and C++ source/branch coverage; complete repository source inventory, zero hits retained, unbuilt files explicitly unmeasured; no MC/DC claim"});
+    r.evidence.data = json!({"summary":summary,"objects":objects.len(),"profiles":profile_paths.len(),"llvm_json_sha256":v::sha256(export),"build":build,"scope":"First-party Rust line/region/function/branch coverage only; vendored, generated and external sources excluded; zero-hit mappings retained and unmapped owned files explicit; no MC/DC claim"});
     Ok(())
 }
 
@@ -588,17 +565,57 @@ pub fn collect(r: &mut Runner) -> Result<()> {
 mod tests {
     use super::*;
     #[test]
-    fn vendored_cpp_keeps_its_reference_coverage_group() {
+    fn scope_excludes_dependencies_generated_files_and_path_escapes() {
+        for path in [
+            "src/lib.rs",
+            "build.rs",
+            "crates/capntproto-compiler/src/lib.rs",
+            "crates/capntproto-compat/src/json.rs",
+            "quality/src/coverage.rs",
+            "tests/storage.rs",
+            "verification/miri/tests/ownership.rs",
+        ] {
+            assert!(owned_source(Path::new(path)), "{path}");
+        }
+        for path in [
+            "vendor/capnp/src/lib.rs",
+            "vendor/quiche/quiche/src/lib.rs",
+            "vendor/capnproto/c++/src/capnp/rpc.c++",
+            "target/debug/build/schema.rs",
+            "crates/capntproto-compiler/target/debug/build/schema.rs",
+            "src/../vendor/a.rs",
+            "src-extra/a.rs",
+            "/src/lib.rs",
+            "src/schema.capnp",
+            "crates/external/src/lib.rs",
+        ] {
+            assert!(!owned_source(Path::new(path)), "{path}");
+        }
         assert_eq!(
-            group("vendor/capnproto/c++/src/capnp/rpc.c++"),
-            "cpp-reference"
-        );
-        assert_eq!(group("vendor/capnp-rpc/src/lib.rs"), "maintained-capnp");
-        assert_eq!(
-            group("crates/capnp-compat/src/json.rs"),
+            group("crates/capntproto-compat/src/json.rs"),
             "optional-compatibility"
         );
-        assert_eq!(group("vendor/quiche/quiche/src/lib.rs"), "transport");
+    }
+
+    #[test]
+    fn export_keeps_zero_hit_owned_code_and_ignores_other_sources() {
+        let counts = json!({"count": 3, "covered": 0});
+        let summary = json!({"lines":counts,"regions":counts,"functions":counts,"branches":counts});
+        let exported = json!({"type":"llvm.coverage.json.export", "data":[{"files":[
+            {"filename":"/repo/src/lib.rs", "summary":summary},
+            {"filename":"/repo/vendor/capnp/src/lib.rs", "summary":{}},
+            {"filename":"/repo/target/debug/build/generated.rs", "summary":{}},
+            {"filename":"/registry/dependency/src/lib.rs", "summary":{}}
+        ]}]});
+        let files = parse_export(&exported, Path::new("/repo")).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(
+            files["src/lib.rs"].lines,
+            Metric {
+                count: 3,
+                covered: 0
+            }
+        );
     }
 
     #[test]

@@ -1,8 +1,7 @@
 use capnp::capability::{Client, FromClientHook, Promise};
-use futures::{channel::oneshot, FutureExt};
-use reproto::storage::ObjectKey;
-use reproto::storage::Revision;
-use reproto::{
+use capntproto::storage::ObjectKey;
+use capntproto::storage::Revision;
+use capntproto::{
     authority::{Grant, ObjectGeneration, ObjectId, Rights},
     persistence::{
         Descriptor, Limits, ObjectFactory, ObjectKind, OwnerId, Persistent, Realm, SturdyRef,
@@ -11,7 +10,8 @@ use reproto::{
     storage::Store,
     store_capnp::{document, object},
 };
-use reproto_test_support::runtime_test_capnp::harness;
+use capntproto_test_support::runtime_test_capnp::harness;
+use futures::{channel::oneshot, FutureExt};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -496,7 +496,7 @@ async fn every_torn_ledger_transaction_recovers_last_committed_authority() {
 async fn realm_bootstrap_uses_authenticated_native_identity() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            use reproto::{
+            use capntproto::{
                 native_rpc::{Handle, Network},
                 transport::{self, Identity},
             };
@@ -593,7 +593,7 @@ async fn realm_bootstrap_uses_authenticated_native_identity() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_persistence_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_PERSISTENCE_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_PERSISTENCE_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
@@ -775,7 +775,7 @@ async fn malformed_references_and_committed_metadata_fail_closed() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn restored_orm_facets_share_publication_notifications() {
-    use reproto::store_capnp::observer;
+    use capntproto::store_capnp::observer;
     struct Observer(Rc<Cell<u64>>);
     impl observer::Server<document::Owned> for Observer {
         async fn changed(
@@ -917,7 +917,7 @@ async fn protected_save_waits_for_earlier_local_stream_policy() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_persistent_save_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_PERSISTENT_SAVE_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_PERSISTENT_SAVE_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
@@ -1134,7 +1134,7 @@ async fn reject_obsolete_ledgers_and_invalid_lifecycle_metadata() {
             let reference = save(&bound(&realm), OWNER).await.unwrap();
             realm.close();
             let mut old = ledger(&path);
-            old["format"] = "reproto-realm/1".into();
+            old["format"] = "capntproto-realm/1".into();
             for name in ["clock", "last_epoch", "last_token"] {
                 old.as_object_mut().unwrap().remove(name);
             }
@@ -1184,7 +1184,7 @@ async fn reject_obsolete_ledgers_and_invalid_lifecycle_metadata() {
                         r["hash"] = serde_json::json!(vec![0u8; 32]);
                         invalid["references"].as_array_mut().unwrap().push(r);
                     }
-                    "legacyNewFields" => invalid["format"] = "reproto-realm/1".into(),
+                    "legacyNewFields" => invalid["format"] = "capntproto-realm/1".into(),
                     _ => unreachable!(),
                 }
                 let trial = dir.path().join(fault);
@@ -1304,7 +1304,7 @@ async fn lifecycle_commits_recover_atomically_at_every_truncated_byte() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_persistence_expiry_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_PERSISTENCE_EXPIRY_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_PERSISTENCE_EXPIRY_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
@@ -1451,7 +1451,7 @@ async fn configured_realm_compacts_authority_without_reissuing_or_rewinding() {
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("realm");
             let copy = dir.path().join("committed");
-            let storage_limits = reproto::storage::Limits {
+            let storage_limits = capntproto::storage::Limits {
                 max_entry_bytes: 32 * 1024,
                 max_file_bytes: 64 * 1024,
             };
@@ -1487,13 +1487,13 @@ async fn configured_realm_compacts_authority_without_reissuing_or_rewinding() {
             assert!(realm.restore(revoked.clone(), PEER).await.is_err());
             assert!(realm.restore(expired.clone(), PEER).await.is_err());
             assert!(realm
-                .set_storage_limits(reproto::storage::Limits {
+                .set_storage_limits(capntproto::storage::Limits {
                     max_file_bytes: 64,
                     ..storage_limits
                 })
                 .is_err());
             realm
-                .set_storage_limits(reproto::storage::Limits {
+                .set_storage_limits(capntproto::storage::Limits {
                     max_file_bytes: 128 * 1024,
                     ..storage_limits
                 })

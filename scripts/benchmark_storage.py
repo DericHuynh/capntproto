@@ -60,7 +60,7 @@ def main():
     if not lock.exists():
         subprocess.run(['cargo', '+1.97.0', 'generate-lockfile', '--manifest-path', str(manifest), '--offline'], cwd=ROOT, env=env, check=True)
     subprocess.run(['cargo', '+1.97.0', 'auditable', 'build', '--release', '--locked', '--manifest-path', str(manifest)], cwd=ROOT, env=env, check=True)
-    executable = Path(env['CARGO_TARGET_DIR'])/'release/reproto-storage-comparison'
+    executable = Path(env['CARGO_TARGET_DIR'])/'release/capntproto-storage-comparison'
     sources = [manifest, lock, ROOT/'benchmarks/storage/src/main.rs', ROOT/'benchmarks/storage/build.rs', ROOT/'benchmarks/storage/entry.capnp', ROOT/'rust-toolchain.toml', Path(__file__).resolve(),
                ROOT/'Cargo.toml', ROOT/'Cargo.lock', *sorted((ROOT/'src').rglob('*.rs'))]
     hashes = {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sources}

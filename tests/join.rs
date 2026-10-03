@@ -6,8 +6,8 @@ use capnp_rpc::{
     rpc_twoparty_capnp::{join_key_part, join_result},
     RpcSystem,
 };
+use capntproto_test_support::runtime_test_capnp::harness;
 use futures::{channel::oneshot, FutureExt, TryFutureExt};
-use reproto_test_support::runtime_test_capnp::harness;
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -1083,7 +1083,7 @@ async fn join_accepts_one_and_three_parts() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_two_party_join_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_TWO_PARTY_JOIN_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_TWO_PARTY_JOIN_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();

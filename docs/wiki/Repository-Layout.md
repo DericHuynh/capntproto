@@ -1,6 +1,6 @@
 # Repository layout and boundaries
 
-Capn't Proto uses a Cargo root package with a small workspace. Production Rust follows
+Capntproto uses a Cargo root package with a small workspace. Production Rust follows
 the [Cargo package layout](https://doc.rust-lang.org/cargo/guide/project-layout.html):
 `src/` holds the library and binaries, `tests/` holds integration tests, and
 `examples/` holds runnable examples. Repository-level community files stay at
@@ -10,9 +10,9 @@ the root so GitHub discovers them.
 .
 ├── Cargo.toml, Cargo.lock, build.rs, rust-toolchain.toml
 ├── README.md, LICENSE, CONTRIBUTING.md, SECURITY.md, …
-├── src/                         Capn't Proto runtime and model-exploration binary
-├── crates/capnp-compiler/        Rust schema-language frontend library and CLI
-├── crates/capnp-compat/          Optional standard codecs and protocol adapters
+├── src/                         Capntproto runtime and model-exploration binary
+├── crates/capntproto-compiler/        Rust schema-language frontend library and CLI
+├── crates/capntproto-compat/          Optional standard codecs and protocol adapters
 ├── schemas/                     Service schemas and shared schema test inputs
 ├── tests/                       Runtime, interoperability, and acceptance tests
 ├── examples/                    Examples and an independent downstream consumer
@@ -44,12 +44,12 @@ the root so GitHub discovers them.
 
 | Package | Location | Role |
 | --- | --- | --- |
-| `reproto` | Root `Cargo.toml`, `src/` | Production runtime and public API |
+| `capntproto` | Root `Cargo.toml`, `src/` | Production runtime and public API |
 | `capnp-rpc` | `vendor/capnp-rpc/` | Maintained RPC engine; its tests run in the root workspace |
-| `reproto-test-support` | `test-support/` | Verification tools and fixtures; a dev dependency of the runtime |
-| `reproto-quality` | `quality/` | Developer/CI tooling, not a runtime dependency |
-| `capnp-compiler` | `crates/capnp-compiler/` | First-party textual schema frontend and CLI; no C++ runtime dependency |
-| `capnp-compat` | `crates/capnp-compat/` | Opt-in JSON/text codecs and standard ByteStream, HTTP, WebSocket and JSON-RPC adapters |
+| `capntproto-test-support` | `test-support/` | Verification tools and fixtures; a dev dependency of the runtime |
+| `capntproto-quality` | `quality/` | Developer/CI tooling, not a runtime dependency |
+| `capntproto-compiler` | `crates/capntproto-compiler/` | First-party textual schema frontend and CLI; no C++ runtime dependency |
+| `capntproto-compat` | `crates/capntproto-compat/` | Opt-in JSON/text codecs and standard ByteStream, HTTP, WebSocket and JSON-RPC adapters |
 
 The root manifest explicitly lists workspace members and excluded workspaces.
 `capnp-rpc` previously joined through Cargo's automatic path-dependency membership;
@@ -71,9 +71,33 @@ Benchmarks use individual `cargo bench --manifest-path benchmarks/rpc/Cargo.toml
 --bench NAME --no-run` builds. See [Quality and Benchmarks](Quality-and-Benchmarks.md) for Linux droplet runs
 and the lighter Linux/macOS/Windows compile-and-smoke workflow.
 
+## Crate name migration
+
+Project-owned packages and Rust imports now use `capntproto`:
+
+| Previous package or CLI | Current package or CLI | Rust import |
+| --- | --- | --- |
+| `reproto` | `capntproto` | `capntproto` |
+| `capnp-compiler` / `capnp-compile` | `capntproto-compiler` / `capntproto-compile` | `capntproto_compiler` |
+| `capnp-compat` | `capntproto-compat` | `capntproto_compat` |
+| `reproto-test-support` | `capntproto-test-support` | `capntproto_test_support` |
+| `reproto-quality` | `capntproto-quality` | `capntproto_quality` |
+| `reproto-model` | `capntproto-model` | — |
+
+Update Cargo dependency keys, imports, command lines and `REPROTO_*` development
+environment variables to `CAPNTPROTO_*`. The compiler and compatibility directories
+also moved to `crates/capntproto-compiler` and `crates/capntproto-compat`.
+This is a source-level rename in the developer preview; no compatibility aliases
+are provided. Upstream `capnp`, `capnpc`, `capnp-rpc`, `capnp-futures`, schema paths,
+generated `_capnp` modules and Cap'n Proto wire names are unchanged.
+Existing ALPN values, authentication domain separators, persistence format IDs,
+TLS fixture names and model identities retain their original bytes. Historical
+measurements retain their original source identity. The cloud cleanup tag prefix
+also remains stable so renamed tooling can reclaim older benchmark resources.
+
 ## Runtime, tests, and schemas
 
-Production dependency edges run from `reproto` to the coordinated vendored crates
+Production dependency edges run from `capntproto` to the coordinated vendored crates
 and optional transport/storage dependencies. Production code must not depend on
 `test-support`, `quality`, benchmarks, fuzzing, or the EAE research implementation.
 `test-support` can depend on the core/RPC crates; runtime tests depend on it through
@@ -83,8 +107,8 @@ Runtime module ownership is described in [Architecture](Architecture.md).
 The first-party compiler lives under `crates/`, separate from vendored upstream
 forks. It depends on the core wire runtime, not the RPC/Native/storage runtime or
 verification helpers. `vendor/capnpc` owns Rust generation from compiled requests;
-`crates/capnp-compiler` owns textual parsing, semantic checks and schema emission.
-`crates/capnp-compat` depends on the maintained wire/RPC crates and the Rust
+`crates/capntproto-compiler` owns textual parsing, semantic checks and schema emission.
+`crates/capntproto-compat` depends on the maintained wire/RPC crates and the Rust
 compiler’s standalone text lexer. It owns copies of the pinned compatibility
 schemas, generates bindings in `OUT_DIR`, and depends on verification helpers
 only for tests. HTTP/WebSocket/TLS implementations remain application supplied.

@@ -265,7 +265,7 @@ fn inode(fd: &OwnedFd) -> u64 {
 }
 
 #[cfg(target_os = "linux")]
-async fn replay(path: &[reproto_test_support::verification::exploration::State], prefix: usize) {
+async fn replay(path: &[capntproto_test_support::verification::exploration::State], prefix: usize) {
     use capnp_rpc::VatNetwork as _;
     let (sender, receiver) = UnixStream::pair().unwrap();
     let mut sender = Some(sender);
@@ -388,7 +388,7 @@ async fn replay(path: &[reproto_test_support::verification::exploration::State],
 #[cfg(target_os = "linux")]
 #[tokio::test(flavor = "current_thread")]
 async fn tlc_buffered_fds_replays_boundaries_budgets_cancellation_and_eof() {
-    use reproto_test_support::verification::exploration::{controls, traces};
+    use capntproto_test_support::verification::exploration::{controls, traces};
     const MODEL: &str = "verification/RpcBufferedFds.tla";
     const CONFIG: &str = include_str!("../../verification/RpcBufferedFds.cfg");
     let mut outcomes = [false; 5];
@@ -433,7 +433,7 @@ async fn tlc_buffered_fds_replays_boundaries_budgets_cancellation_and_eof() {
 #[cfg(target_os = "linux")]
 #[tokio::test(flavor = "current_thread")]
 async fn buffered_ancillary_boundaries_and_limits_match_pinned_cpp() {
-    use reproto_test_support::verification::{command, cpp, root, run};
+    use capntproto_test_support::verification::{command, cpp, root, run};
     let build = cpp::build(&["capnp-rpc"]).unwrap();
     let directory = tempfile::tempdir().unwrap();
     let executable = directory.path().join("buffered-fds");

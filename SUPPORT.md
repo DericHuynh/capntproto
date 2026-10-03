@@ -1,6 +1,6 @@
 # Getting help
 
-Capn't Proto is an experimental developer preview. Community support is provided as
+Capntproto is an experimental developer preview. Community support is provided as
 maintainer availability permits; there is no guaranteed response time or
 production support contract.
 

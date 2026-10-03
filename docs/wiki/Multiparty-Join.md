@@ -38,7 +38,7 @@ values with the following versioned encoding. Integers are big-endian.
 | Acceptance | `RJA1`, caller key (32), nonce (32), group ID (32), caller proof (32) | 132 |
 
 Shares are independent 256-bit OS-random values. Their XOR is the operation
-key. The host and caller proofs are HMAC-SHA-256 over `Capn't Proto Native Join v1\0`,
+key. The host and caller proofs are HMAC-SHA-256 over `Capntproto Native Join v1\0`,
 the role (`host` or `caller`), caller key, nonce, count, host key and group ID.
 Verification uses the cryptographic library's constant-time MAC check. Role
 separation prevents reflection of the host proof as caller authentication.

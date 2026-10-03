@@ -6,7 +6,7 @@ use capnp::{
     schema_capnp::{field, node},
     schema_loader::{dynamic, Schema, SchemaLoader},
 };
-use reproto_test_support::presence_capnp::{access_capability, pointer_access};
+use capntproto_test_support::presence_capnp::{access_capability, pointer_access};
 type Message = message::Builder<message::HeapAllocator>;
 fn native_schema() -> capnp::schema::StructSchema {
     pointer_access::Owned::introspect()
@@ -796,7 +796,7 @@ fn constrained_views_keep_descendant_capabilities_and_owned_extractions() {
 #[cfg(target_os = "linux")]
 #[test]
 fn pointer_views_match_pinned_cpp() {
-    use reproto_test_support::verification::{command, cpp, root, run};
+    use capntproto_test_support::verification::{command, cpp, root, run};
     let build = cpp::build(&["capnpc", "capnp_tool"]).unwrap();
     let logs = root().join("target/verification/dynamic-pointers");
     std::fs::create_dir_all(&logs).unwrap();

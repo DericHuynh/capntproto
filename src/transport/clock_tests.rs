@@ -221,7 +221,7 @@ async fn outer_driver_observes_virtual_idle_and_shutdown_deadline_precedence() {
 
 #[test]
 fn replay_tlc_runtime_clock_and_replacement_deadlines() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     let config = include_str!("../../verification/NativeClockDomains.cfg");
     exploration::controls(
         "verification/NativeClockDomains.tla",

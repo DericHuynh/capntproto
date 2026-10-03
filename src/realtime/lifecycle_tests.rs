@@ -39,7 +39,7 @@ impl Receipt {
 
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_realtime_receipt_lifecycle() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     const MODEL: &str = "verification/RealtimeReceiptLifecycle.tla";
     const CONFIG: &str = include_str!("../../verification/RealtimeReceiptLifecycle.cfg");
     let paths = exploration::traces(MODEL, "realtime-receipt-lifecycle", CONFIG).unwrap();

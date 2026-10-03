@@ -17,7 +17,7 @@ const BLUE: [u8; 3] = [0, 114, 178];
 const GRAY: [u8; 3] = [148, 163, 184];
 const COLORS: [[u8; 3]; 4] = [BLUE, [230, 159, 0], [0, 158, 115], [204, 121, 167]];
 const LABELS: [&str; 4] = [
-    "Capn't Proto / Native",
+    "Capntproto / Native",
     "Cap'n Proto C++",
     "gRPC (tonic)",
     "WebSockets",
@@ -127,7 +127,7 @@ pub(crate) fn performance(rows: &[Value]) -> Result<Vec<Chart>> {
         ),
         (
             "latency-difference",
-            "Median latency difference from Capn't Proto",
+            "Median latency difference from Capntproto",
             "p50_ns",
             "Percent difference - negative is less latency",
             1.0,
@@ -135,7 +135,7 @@ pub(crate) fn performance(rows: &[Value]) -> Result<Vec<Chart>> {
         ),
         (
             "request-rate-difference",
-            "Request rate difference from Capn't Proto",
+            "Request rate difference from Capntproto",
             "sequential_requests_per_second",
             "Percent difference - positive is more requests",
             1.0,
@@ -378,7 +378,7 @@ pub(crate) fn append(
         directory.join("data.json"),
         serde_json::to_vec_pretty(&serde_json::json!({"source_id":source,"charts":charts}))?,
     )?;
-    readme.push_str("Figures below use the validated report data above. [Exact plotted values](charts/data.json) and standalone SVGs are included in this artifact. Performance panels compare protocols at the same payload size; axes include zero and are scaled separately per panel. Percentage differences use `(comparison / Capn't Proto - 1) × 100`. The coverage figures compare the current run with its reviewed baseline; unmapped counters remain N/A.\n\n");
+    readme.push_str("Figures below use the validated report data above. [Exact plotted values](charts/data.json) and standalone SVGs are included in this artifact. Performance panels compare protocols at the same payload size; axes include zero and are scaled separately per panel. Percentage differences use `(comparison / Capntproto - 1) × 100`. The coverage figures compare the current run with its reviewed baseline; unmapped counters remain N/A.\n\n");
     for chart in charts {
         render(&directory, chart, source)?;
         writeln!(
@@ -411,6 +411,7 @@ mod tests {
     }
     fn summary() -> Summary {
         Summary {
+            scope: crate::coverage::SCOPE.into(),
             files: BTreeMap::new(),
             totals: BTreeMap::from([
                 (
@@ -555,7 +556,7 @@ mod tests {
             fs::read(temp.path().join("charts/latency-difference.svg")).unwrap()
         );
         // Opt-in local visual inspection; these labelled fixtures are never CI evidence.
-        if let Some(directory) = std::env::var_os("REPROTO_CHART_TEST_PREVIEW") {
+        if let Some(directory) = std::env::var_os("CAPNTPROTO_CHART_TEST_PREVIEW") {
             let directory = std::path::PathBuf::from(directory);
             fs::create_dir_all(directory.join("charts")).unwrap();
             for entry in fs::read_dir(temp.path().join("charts")).unwrap() {

@@ -40,7 +40,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_STORAGE_RECOVERY_TRACES": {
+        "CAPNTPROTO_STORAGE_RECOVERY_TRACES": {
           "file": "storage-recovery/traces.json.gz",
           "sha256": "010f3cf056329ae0740a25d58a3c64b5d420772df989b9eb714e8f55a18d61d3",
           "cases": 1082
@@ -95,7 +95,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_ROUTE_LIFECYCLE_TRACES": {
+        "CAPNTPROTO_ROUTE_LIFECYCLE_TRACES": {
           "file": "route-lifecycle/traces.json.gz",
           "sha256": "faff2babf3f9fd31904dce7e2ef3bdb908f9c1e05d84701a20d1a1c082c69485",
           "cases": 36
@@ -176,12 +176,12 @@
         }
       ],
       "inputs": {
-        "REPROTO_SCHEMA_LOADER_TRACES": {
+        "CAPNTPROTO_SCHEMA_LOADER_TRACES": {
           "file": "schema-loader/traces.json.gz",
           "sha256": "3198150c4caeff8c122fbba7e7303ee33c3a01c2062e5792b6062f2528757c0f",
           "cases": 252
         },
-        "REPROTO_SCHEMA_UPGRADE_TRACES": {
+        "CAPNTPROTO_SCHEMA_UPGRADE_TRACES": {
           "file": "schema-loader/upgrade-traces.json.gz",
           "sha256": "fa8d28180b0325b1442c0595c57ea5de14e871d6cd3c28973d6791f47c2aae20",
           "cases": 224
@@ -397,7 +397,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_MULTIPARTY_JOIN_TRACES": {
+        "CAPNTPROTO_MULTIPARTY_JOIN_TRACES": {
           "file": "multiparty-join/traces.json.gz",
           "sha256": "b74ace4dfec9de19aa5313eaf230538eea7e2dfee2702f3ac12e08534d0665c6",
           "cases": 392
@@ -553,12 +553,12 @@
         }
       ],
       "inputs": {
-        "REPROTO_ANSWER_ADOPTION_TRACES": {
+        "CAPNTPROTO_ANSWER_ADOPTION_TRACES": {
           "file": "answer-adoption/traces.json.gz",
           "sha256": "2f79d24fb9f9b632a9d412aa1aa80b8dcd8120aec01dccd13f1fe5e8a8ebc6c8",
           "cases": 114
         },
-        "REPROTO_ADOPTED_CALL_TRACES": {
+        "CAPNTPROTO_ADOPTED_CALL_TRACES": {
           "file": "answer-adoption/callee-traces.json.gz",
           "sha256": "949376e16a2229805d8a4a0af50fa2f8a93581f221f77ffa350d7e90a927b55e",
           "cases": 380
@@ -712,7 +712,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_CALLER_PIPELINE_TRACES": {
+        "CAPNTPROTO_CALLER_PIPELINE_TRACES": {
           "file": "caller-pipeline/traces.json.gz",
           "sha256": "9f62f2d388413f9084dbeeb58e0d8c3f44882b0f4d594a79fb2ef5036625fcec",
           "cases": 3311
@@ -838,7 +838,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_TWO_PARTY_JOIN_TRACES": {
+        "CAPNTPROTO_TWO_PARTY_JOIN_TRACES": {
           "file": "two-party-join/traces.json.gz",
           "sha256": "6b77f59c4f74575917bf7f1a2f05115d2199717eae71f6bdc25658deb3696f13",
           "cases": 536
@@ -1005,7 +1005,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_MEMBRANE_JOIN_TRACES": {
+        "CAPNTPROTO_MEMBRANE_JOIN_TRACES": {
           "file": "membrane-join/traces.json.gz",
           "sha256": "4b60cf9dd91932844929b6b8c298dd8e324906f4a6943398d7893dbfe50a3925",
           "cases": 640
@@ -1093,7 +1093,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_STORAGE_COMPACTION_TRACES": {
+        "CAPNTPROTO_STORAGE_COMPACTION_TRACES": {
           "file": "storage-compaction/traces.json.gz",
           "sha256": "a4f2d76c6c02cd8c18edef5a0ac4d4500cbcd6c31ef2a28584d8d8522369e9f4",
           "cases": 4190
@@ -1188,7 +1188,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_ORM_HISTORY_TRACES": {
+        "CAPNTPROTO_ORM_HISTORY_TRACES": {
           "file": "orm-history/traces.json.gz",
           "sha256": "30a06218cc130c24ff829d22a22399bf0303fe24cfb0d645f778986b1ee2e34d",
           "cases": 1172
@@ -1288,12 +1288,12 @@
         }
       ],
       "inputs": {
-        "REPROTO_PERSISTENCE_TRACES": {
+        "CAPNTPROTO_PERSISTENCE_TRACES": {
           "file": "persistence/traces.json.gz",
           "sha256": "90aa6202584bf62b0bdfd1e53b6d8c3f55b12d50681a4515bc5f1efcb86a56fe",
           "cases": 1236
         },
-        "REPROTO_PERSISTENT_SAVE_TRACES": {
+        "CAPNTPROTO_PERSISTENT_SAVE_TRACES": {
           "file": "persistence/save-stream-traces.json.gz",
           "sha256": "dc82dd30773321cd325e2f55c202b8c64566a3fd58f22eaca765cb0fe22140c5",
           "cases": 52
@@ -1425,7 +1425,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_PERSISTENCE_EXPIRY_TRACES": {
+        "CAPNTPROTO_PERSISTENCE_EXPIRY_TRACES": {
           "file": "persistence-expiry/traces.json.gz",
           "sha256": "bf69f8a499d782ae2d8923b81ffd21dcd385e23900c220912b55a22f54020f93",
           "cases": 8674
@@ -1473,7 +1473,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_GENERIC_PARAMETER_CASES": {
+        "CAPNTPROTO_GENERIC_PARAMETER_CASES": {
           "file": "generic-parameters/cases.json.gz",
           "sha256": "87dbad97da1f0ab2b708efe9dbb17a150f9d4a927b5d31b8c29662f8175d133f",
           "cases": 128
@@ -1549,7 +1549,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_DYNAMIC_ORPHAN_TRACES": {
+        "CAPNTPROTO_DYNAMIC_ORPHAN_TRACES": {
           "file": "dynamic-orphans/traces.json.gz",
           "sha256": "29a0fc41bc91ab1f567d66799992e82bd18567113766da46de5560bc69e4ba64",
           "cases": 320
@@ -1625,7 +1625,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_ORPHAN_ACCESS_TRACES": {
+        "CAPNTPROTO_ORPHAN_ACCESS_TRACES": {
           "file": "orphan-access/traces.json.gz",
           "sha256": "e85d9fbf79298836aad15d5ea76253b5a2dee73fbb77ff2f6121bcb63abd8c07",
           "cases": 1253
@@ -1708,7 +1708,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_ORPHAN_CONCAT_TRACES": {
+        "CAPNTPROTO_ORPHAN_CONCAT_TRACES": {
           "file": "orphan-concat/traces.json.gz",
           "sha256": "55ba37160bfcb715c01a7697433a94ba42ad6e71921961b7b517fd8bc5541452",
           "cases": 5340
@@ -1791,7 +1791,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_EXTERNAL_DATA_TRACES": {
+        "CAPNTPROTO_EXTERNAL_DATA_TRACES": {
           "file": "external-data/traces.json.gz",
           "sha256": "23127b925a681de310ab73516086ea80810f5adc083f7c0ea2845ed86bba3608",
           "cases": 1219
@@ -1853,7 +1853,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_ARENA_RESIZE_TRACES": {
+        "CAPNTPROTO_ARENA_RESIZE_TRACES": {
           "file": "arena-resize/traces.json.gz",
           "sha256": "fd63e2a4fb0e4fe8990f5fdca32664b999ff718171836ff9a1e3279aabe49a5f",
           "cases": 15
@@ -1950,7 +1950,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_ORPHAN_GROUPS_TRACES": {
+        "CAPNTPROTO_ORPHAN_GROUPS_TRACES": {
           "file": "orphan-groups/traces.json.gz",
           "sha256": "a31629fa4a50bea19d79da1e5949d8d73cb7d87cdfe1be0c09d9f591c1b9e480",
           "cases": 2913
@@ -2059,7 +2059,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_ARBITRATION_TRACES": {
+        "CAPNTPROTO_ARBITRATION_TRACES": {
           "file": "native-arbitration/traces.json.gz",
           "sha256": "407538d76bef2e03a1f959ab8b2cc9d865dc8ed9dc454439eb01a0ed5ba6ace8",
           "cases": 21609
@@ -2149,7 +2149,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_PROVISIONING_TRACES": {
+        "CAPNTPROTO_PROVISIONING_TRACES": {
           "file": "native-provisioning/traces.json.gz",
           "sha256": "59d0f399a5db637a2028681aa1dacb1ef82036568f45f6f40e1b5e1ff920ec04",
           "cases": 46217
@@ -2251,7 +2251,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_LISTENER_TRACES": {
+        "CAPNTPROTO_LISTENER_TRACES": {
           "file": "native-listener/traces.json.gz",
           "sha256": "b25fe25aef77158209626f9859b6dee7277e7c3816194ef7206e6f3f764bb097",
           "cases": 23976
@@ -2365,7 +2365,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_NATIVE_SHUTDOWN_TRACES": {
+        "CAPNTPROTO_NATIVE_SHUTDOWN_TRACES": {
           "file": "native-shutdown/traces.json.gz",
           "sha256": "72e033c1ba86dd9ae9fe29762f4c71821fbf59c01cd20529b61dff1bd917ed49",
           "cases": 1496
@@ -2427,7 +2427,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_DATAGRAM_TRACES": {
+        "CAPNTPROTO_DATAGRAM_TRACES": {
           "file": "realtime-datagram/traces.json.gz",
           "sha256": "2eff29cb4a4ab2b75991d48ff235ce67997b43e139800d32da4397c1be738d58",
           "cases": 10566
@@ -2543,12 +2543,12 @@
         }
       ],
       "inputs": {
-        "REPROTO_FRAGMENT_TRACES": {
+        "CAPNTPROTO_FRAGMENT_TRACES": {
           "file": "realtime-fragments/reassembly-traces.json.gz",
           "sha256": "e30c395855bcc6af210274c04901e0b6f08bcee2094253c8c7293bf703fa9321",
           "cases": 10321
         },
-        "REPROTO_DATAGRAM_BATCH_TRACES": {
+        "CAPNTPROTO_DATAGRAM_BATCH_TRACES": {
           "file": "realtime-fragments/admission-traces.json.gz",
           "sha256": "3f1f5eb1960f1e6f0c5472f0e8d4a4ce0ded0e175b9d61a4e6d044915d1709f7",
           "cases": 417
@@ -2689,12 +2689,12 @@
         }
       ],
       "inputs": {
-        "REPROTO_BULK_TRACES": {
+        "CAPNTPROTO_BULK_TRACES": {
           "file": "bulk/traces.json.gz",
           "sha256": "df1cc13bfff166cc4ce265b3ad2a5f55c2d5270892d8943bbfb450ebef469514",
           "cases": 4365
         },
-        "REPROTO_BULK_WIRE_TRACES": {
+        "CAPNTPROTO_BULK_WIRE_TRACES": {
           "file": "bulk/wire-traces.json.gz",
           "sha256": "cc63d5d8d5ae3b1a63810c2a3674592fab65727171128b598fbcd561e122305f",
           "cases": 1351
@@ -2905,7 +2905,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_DURABLE_BULK_TRACES": {
+        "CAPNTPROTO_DURABLE_BULK_TRACES": {
           "file": "durable-bulk/traces.json.gz",
           "sha256": "44e6c20f408471448eaad85f2048cb0e3a6a5f320027cb1e1854b0897db0cc38",
           "cases": 2971
@@ -3022,7 +3022,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_REALTIME_TRACES": {
+        "CAPNTPROTO_REALTIME_TRACES": {
           "file": "realtime/traces.json.gz",
           "sha256": "55e42b0e06d57b95710cb93047ea6a0c178b680d520ec6d2ced8a1e9daf69115",
           "cases": 32979
@@ -3147,7 +3147,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_SCHEMA_EXCHANGE_TRACES": {
+        "CAPNTPROTO_SCHEMA_EXCHANGE_TRACES": {
           "file": "schema-exchange/traces.json.gz",
           "sha256": "08069e9f20a323c149441eb1af550846b9b4dc9f633b48815ab806f69f5fec24",
           "cases": 292
@@ -3202,7 +3202,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_NATIVE_ROUTE_TRACES": {
+        "CAPNTPROTO_NATIVE_ROUTE_TRACES": {
           "file": "native-routes/traces.json.gz",
           "sha256": "0e11a7484d5d2ddbdbb5a23082351b0d51ffbfb204dd5ad020b9bdc76bfaaa86",
           "cases": 91
@@ -3288,7 +3288,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_NATIVE_MULTIPARTY_TRACES": {
+        "CAPNTPROTO_NATIVE_MULTIPARTY_TRACES": {
           "file": "native-multiparty/traces.json.gz",
           "sha256": "11e0f7858c76864546287cbcc0b4fb53ccee6162d30b816e868f3db3b2096d73",
           "cases": 167
@@ -3383,7 +3383,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_FIELD_OWNER_TRACES": {
+        "CAPNTPROTO_FIELD_OWNER_TRACES": {
           "file": "field-owners/traces.json.gz",
           "sha256": "18be7a1d9e4de7ae01d3418718d6b0dba61dfbd0c3c3e0760e76afe6e1c81f18",
           "cases": 12602
@@ -3507,7 +3507,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_FIELD_ENTRY_TRACES": {
+        "CAPNTPROTO_FIELD_ENTRY_TRACES": {
           "file": "field-entry/traces.json.gz",
           "sha256": "633a903e664d2a9ddfeafea2cf1bc32a100ca79fa6de612a28d94930fefdc827",
           "cases": 42
@@ -3555,7 +3555,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_NATIVE_VALUE_TRACES": {
+        "CAPNTPROTO_NATIVE_VALUE_TRACES": {
           "file": "field-values/traces.json.gz",
           "sha256": "17892dcdc3102c50bb91985ac1ededd4823574031396479eabfffa01bb725d9b",
           "cases": 524
@@ -3636,7 +3636,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_FIELD_OWNERSHIP_TRACES": {
+        "CAPNTPROTO_FIELD_OWNERSHIP_TRACES": {
           "file": "field-ownership/traces.json.gz",
           "sha256": "d38e2c558bfe30308fca06f90946351250a155e7c30f1f08936e001504d7bb7b",
           "cases": 102
@@ -3705,7 +3705,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_GROUP_STAGING_TRACES": {
+        "CAPNTPROTO_GROUP_STAGING_TRACES": {
           "file": "field-group-staging/traces.json.gz",
           "sha256": "102ef1c8144df0da344455344dd378aa82a68eb535716550ffb82aa21d1b1271",
           "cases": 339
@@ -3796,7 +3796,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_DISCONNECT_CLEANUP_TRACES": {
+        "CAPNTPROTO_DISCONNECT_CLEANUP_TRACES": {
           "file": "disconnect-cleanup/traces.json.gz",
           "sha256": "347c303186fc34bcc0fa3a655c049bb8d3c2f2ba8e4e3b3ca9a18fb181fdbe02",
           "cases": 416
@@ -3930,12 +3930,12 @@
         }
       ],
       "inputs": {
-        "REPROTO_IDLE_TRACES": {
+        "CAPNTPROTO_IDLE_TRACES": {
           "file": "idle/traces.json.gz",
           "sha256": "ea920e320b7e6b16719c1519aaeb5cfde3026b980afc44f07b7f2d086be90f35",
           "cases": 330
         },
-        "REPROTO_IDLE_SHUTDOWN_TRACES": {
+        "CAPNTPROTO_IDLE_SHUTDOWN_TRACES": {
           "file": "idle/shutdown-traces.json.gz",
           "sha256": "5dce0578dd12acfa47fd3a1fe24ac548f36188ae87fc4e547f8b92cf47d9c990",
           "cases": 10
@@ -4141,12 +4141,12 @@
         }
       ],
       "inputs": {
-        "REPROTO_DEFERRED_HANDOFF_TRACES": {
+        "CAPNTPROTO_DEFERRED_HANDOFF_TRACES": {
           "file": "deferred-handoff/traces.json.gz",
           "sha256": "f5693edd5d7a9d98fa0b277ff53781d4034cfd890987b8fb68835227ab6c82eb",
           "cases": 4784
         },
-        "REPROTO_DEFERRED_DISCONNECT_TRACES": {
+        "CAPNTPROTO_DEFERRED_DISCONNECT_TRACES": {
           "file": "deferred-handoff/disconnect-traces.json.gz",
           "sha256": "476aee052059e48a1b723e4585f67be8f75d09499766c18b8cb5339d66dd23d7",
           "cases": 38
@@ -4223,7 +4223,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_CANCELLATION_TRACES": {
+        "CAPNTPROTO_CANCELLATION_TRACES": {
           "file": "cancellation/traces.json.gz",
           "sha256": "793ba07f1a0d05bfe2d4f853091894c4686457374fc2dc10cb7bee89dc6325f3",
           "cases": 218
@@ -4264,7 +4264,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_TAIL_ADOPTION_TRACES": {
+        "CAPNTPROTO_TAIL_ADOPTION_TRACES": {
           "file": "tail-adoption/traces.json.gz",
           "sha256": "684eb3f527805e65b36d57f4ce03c7bcb2f3b251824ae2685d524b31b3fdbda6",
           "cases": 21
@@ -4324,12 +4324,12 @@
         }
       ],
       "inputs": {
-        "REPROTO_TAIL_TRANSFER_TRACES": {
+        "CAPNTPROTO_TAIL_TRANSFER_TRACES": {
           "file": "tail-transfer/traces.json.gz",
           "sha256": "ea21224a3df6c8a9024109baa8a0604c7a30b71ae943308f14f62f2de83f3488",
           "cases": 47
         },
-        "REPROTO_TAIL_ROUTING_TRACES": {
+        "CAPNTPROTO_TAIL_ROUTING_TRACES": {
           "file": "tail-transfer/routing-traces.json.gz",
           "sha256": "2a6aeabdf3954fd7a4553c87b6a77140b4a74885eac0ac14336bb18683fc094f",
           "cases": 3
@@ -4396,12 +4396,12 @@
         }
       ],
       "inputs": {
-        "REPROTO_BOOTSTRAP_TRACES": {
+        "CAPNTPROTO_BOOTSTRAP_TRACES": {
           "file": "bootstrap/traces.json.gz",
           "sha256": "d0ca932bb1a658c6090207b4a6085672f446e6aba57029fe66cb4e96308d43aa",
           "cases": 608
         },
-        "REPROTO_INTRODUCED_BOOTSTRAP_TRACES": {
+        "CAPNTPROTO_INTRODUCED_BOOTSTRAP_TRACES": {
           "file": "bootstrap/introduced-traces.json.gz",
           "sha256": "d3d57d021f33ea7d31e466c1da23799fe4cb395bf89bc9329cd6727aa3554189",
           "cases": 5
@@ -4478,7 +4478,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_INCOMING_FLOW_TRACES": {
+        "CAPNTPROTO_INCOMING_FLOW_TRACES": {
           "file": "incoming-flow/traces.json.gz",
           "sha256": "6b3b71b2370d26c852fa3d18ca766d932d8c45d580f82b0218961447be3ef80b",
           "cases": 1137
@@ -4555,7 +4555,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_RECONNECT_TRACES": {
+        "CAPNTPROTO_RECONNECT_TRACES": {
           "file": "reconnect/traces.json.gz",
           "sha256": "13c279281f7d1d708720d4487eaf1a127cd010603780e419b39361743f71aa51",
           "cases": 146
@@ -4627,7 +4627,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_STREAMING_TRACES": {
+        "CAPNTPROTO_STREAMING_TRACES": {
           "file": "streaming/traces.json.gz",
           "sha256": "bb77af98aaa43671893f1c9a414063f5840f0a75db9266dd2f0b5e5ff5d8bacd",
           "cases": 312
@@ -4687,7 +4687,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_MEMBRANE_TRACES": {
+        "CAPNTPROTO_MEMBRANE_TRACES": {
           "file": "membrane/traces.json.gz",
           "sha256": "c9af16d3551769284585fb6dd9cb840afe3d8afbf420344fccafec1d7fa3aeb5",
           "cases": 34
@@ -4728,7 +4728,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_EXCEPTION_TRACE_TRACES": {
+        "CAPNTPROTO_EXCEPTION_TRACE_TRACES": {
           "file": "exception-trace/traces.json.gz",
           "sha256": "8f6f590a5dda19f25f096db3feb126cf8df6a1f8fa74637f38f1f4b56e03b733",
           "cases": 81
@@ -4762,7 +4762,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_IMPORT_ALIAS_TRACES": {
+        "CAPNTPROTO_IMPORT_ALIAS_TRACES": {
           "file": "import-alias/traces.json.gz",
           "sha256": "9aec63dee9b1babf7f5e95059001770fd37ff939bb3b36c13aaf48b2d261617a",
           "cases": 10
@@ -4815,7 +4815,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_REVOKED_POLICY_TRACES": {
+        "CAPNTPROTO_REVOKED_POLICY_TRACES": {
           "file": "revoked-policy/traces.json.gz",
           "sha256": "cb269349f93b5afd280827a8fe2a471b07e9fb177c59d319a5eaadcf908fc851",
           "cases": 12
@@ -4892,7 +4892,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_MEMBRANE_TRANSFORM_TRACES": {
+        "CAPNTPROTO_MEMBRANE_TRANSFORM_TRACES": {
           "file": "membrane-transform/traces.json.gz",
           "sha256": "40a38cce14b9762b76494fd5e18f526b3a135e593c7be8e45113b2803570b140",
           "cases": 54
@@ -4945,7 +4945,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_FD_FRAMING_TRACES": {
+        "CAPNTPROTO_FD_FRAMING_TRACES": {
           "file": "fd-framing/traces.json.gz",
           "sha256": "4fef4dc2f007e0301eddfb274d008447ebee0a72c65082e037fcdd60c9c8bc7b",
           "cases": 38
@@ -4986,7 +4986,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_QUEUED_STREAMING_TRACES": {
+        "CAPNTPROTO_QUEUED_STREAMING_TRACES": {
           "file": "queued-streaming/traces.json.gz",
           "sha256": "3604e456073e4ad82d0c8a002099080e4f056fb96f2b2ffd2ab23da4bc8bf2f1",
           "cases": 10
@@ -5027,7 +5027,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_EXCEPTION_DISCONNECT_TRACES": {
+        "CAPNTPROTO_EXCEPTION_DISCONNECT_TRACES": {
           "file": "exception-disconnect/traces.json.gz",
           "sha256": "a3ce57857e86c3e0fe600e4d63cc540e511e850b65767b754cc490d67afbc3ac",
           "cases": 23
@@ -5087,7 +5087,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_EXCEPTION_METADATA_TRACES": {
+        "CAPNTPROTO_EXCEPTION_METADATA_TRACES": {
           "file": "exception-metadata/traces.json.gz",
           "sha256": "c9512fc04beedc8d31bc12b2b25c9bb8806ef0955b466107fc5fbe4503868cd9",
           "cases": 110
@@ -5147,7 +5147,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_CALL_HINT_TRACES": {
+        "CAPNTPROTO_CALL_HINT_TRACES": {
           "file": "call-hints/traces.json.gz",
           "sha256": "cddf61e941b6c5dcdbe5629eeeb8af3806bcc070b0a18ebb517187359fe112e0",
           "cases": 352
@@ -5224,7 +5224,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_INCOMING_HINT_TRACES": {
+        "CAPNTPROTO_INCOMING_HINT_TRACES": {
           "file": "incoming-hints/traces.json.gz",
           "sha256": "2d0b26cae063373e7911de2f066411866f1e6a713cd849c1e7aad62b983f8831",
           "cases": 46
@@ -5349,7 +5349,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_STATIC_CANCELLATION_TRACES": {
+        "CAPNTPROTO_STATIC_CANCELLATION_TRACES": {
           "file": "static-cancellation/traces.json.gz",
           "sha256": "6f693d4eb576980ae4583ea6837426beeb62dbc11318272fc84d231f9a397ed6",
           "cases": 128
@@ -5402,7 +5402,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_CALL_EXECUTOR_TRACES": {
+        "CAPNTPROTO_CALL_EXECUTOR_TRACES": {
           "file": "call-executor/traces.json.gz",
           "sha256": "ca289b1c8594cdf2960c12f41e90216d74e77c60e098e1c3217a5c2e8b7e3fb2",
           "cases": 36
@@ -5443,7 +5443,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_SCHEMA_HINT_CASES": {
+        "CAPNTPROTO_SCHEMA_HINT_CASES": {
           "file": "schema-hints/cases.json.gz",
           "sha256": "0995e3fe400ccc6d0d48d59a710e3db2609156ddbcb15f101e5c6427d1375adf",
           "cases": 4096
@@ -5760,7 +5760,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_FD_TRACES": {
+        "CAPNTPROTO_FD_TRACES": {
           "file": "file-descriptors/traces.json.gz",
           "sha256": "363f78e1ad2fec819df9e5acad275e612fc4db8cd6f8e4a2fa679115d58356f3",
           "cases": 324
@@ -5837,7 +5837,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_REVOCABLE_SERVER_TRACES": {
+        "CAPNTPROTO_REVOCABLE_SERVER_TRACES": {
           "file": "revocable-server/traces.json.gz",
           "sha256": "aa0159beb64f5373dc83c7aa60fe9db402f6488ab3eceb9f26cf3f0ede1ea909",
           "cases": 418
@@ -5914,7 +5914,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_REVOCABLE_STREAMING_TRACES": {
+        "CAPNTPROTO_REVOCABLE_STREAMING_TRACES": {
           "file": "revocable-streaming/traces.json.gz",
           "sha256": "4e60359ac7320117673f7cf05c4ca87ccc65f7e961075e25faef183473ada30b",
           "cases": 250
@@ -5967,7 +5967,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_SERVER_SET_TRACES": {
+        "CAPNTPROTO_SERVER_SET_TRACES": {
           "file": "server-set/traces.json.gz",
           "sha256": "063b2049c6738d4d7541448d6fd9bf6efcc6cd97a57108773c79698bddef1a28",
           "cases": 176
@@ -6092,7 +6092,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_SERVER_HOOKS_TRACES": {
+        "CAPNTPROTO_SERVER_HOOKS_TRACES": {
           "file": "server-hooks/traces.json.gz",
           "sha256": "58c59e2319742bc66cc5816caa0c11071f488dce9edebe9b0e2b4bd1fa17d81d",
           "cases": 795
@@ -6145,7 +6145,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_SELF_CAPABILITY_TRACES": {
+        "CAPNTPROTO_SELF_CAPABILITY_TRACES": {
           "file": "self-capability/traces.json.gz",
           "sha256": "309237b74a00b35a52e07bc0b20bc303b881dd9bb248820698f149126edf57a7",
           "cases": 102
@@ -6198,7 +6198,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_SHORTEN_LOOKUP_TRACES": {
+        "CAPNTPROTO_SHORTEN_LOOKUP_TRACES": {
           "file": "shorten-lookup/traces.json.gz",
           "sha256": "e864fe9463ed8eb8a997ab788071af8ffa8e3af20f754e524783bc041ccc20bf",
           "cases": 44
@@ -6323,12 +6323,12 @@
         }
       ],
       "inputs": {
-        "REPROTO_DYNAMIC_CAPABILITY_TRACES": {
+        "CAPNTPROTO_DYNAMIC_CAPABILITY_TRACES": {
           "file": "dynamic-capability/traces.json.gz",
           "sha256": "5582d57557a9721022cad2b9006d6fbb312ae8289a1dd6f55a4663e5f5479253",
           "cases": 72
         },
-        "REPROTO_LOADED_CAPABILITY_TRACES": {
+        "CAPNTPROTO_LOADED_CAPABILITY_TRACES": {
           "file": "dynamic-capability/traces.json.gz",
           "sha256": "5582d57557a9721022cad2b9006d6fbb312ae8289a1dd6f55a4663e5f5479253",
           "cases": 72
@@ -6381,7 +6381,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_DYNAMIC_OWNERSHIP_TRACES": {
+        "CAPNTPROTO_DYNAMIC_OWNERSHIP_TRACES": {
           "file": "dynamic-ownership/traces.json.gz",
           "sha256": "00ba44cc5b002d3279be053b796a0efd442f30696abd149ea8bf297d108f8493",
           "cases": 156
@@ -6458,7 +6458,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_DYNAMIC_BRAND_TRACES": {
+        "CAPNTPROTO_DYNAMIC_BRAND_TRACES": {
           "file": "dynamic-brand/traces.json.gz",
           "sha256": "6ab22acf6833e8255bc61984ce3e35d305b798945ba431ef0c6466102cd922ba",
           "cases": 630
@@ -6492,7 +6492,7 @@
         }
       ],
       "inputs": {
-        "REPROTO_TLC_TRACES": {
+        "CAPNTPROTO_TLC_TRACES": {
           "file": "rpc-wire/traces.json.gz",
           "sha256": "61d8948f3aadad5c378b07c48a1a02ff51cc167fe4f6e31027f6688463b0b738",
           "cases": 46

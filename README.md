@@ -1,5 +1,11 @@
 <!-- Generated README: edit docs/README.template.md, then run python3 scripts/update_readme.py render. -->
-# Capn't Proto
+# Capntproto
+
+[![CI](https://github.com/DericHuynh/capntproto/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/ci.yml)
+[![Coverage verification](https://github.com/DericHuynh/capntproto/actions/workflows/verification-coverage.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/verification-coverage.yml)
+[![Dedicated benchmarks](https://github.com/DericHuynh/capntproto/actions/workflows/performance.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/performance.yml)
+[![Rust 1.97](https://img.shields.io/badge/rust-1.97-orange.svg)](rust-toolchain.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A Rust implementation of Cap'n Proto schemas, serialization and capability RPC,
 with a native schema compiler, compatibility adapters, encrypted transport and
@@ -42,7 +48,7 @@ and [CI prerequisites](.github/actions/quality-setup/action.yml) describe them.
 git submodule update --init --depth 1 -- vendor/capnproto
 bash scripts/setup-auditable.sh
 export PATH="$PWD/target/auditable-tools/wrapper:$PWD/target/auditable-tools/bin:$PATH"
-cargo build --locked -p reproto --lib --bins
+cargo build --locked -p capntproto --lib --bins
 cargo test --workspace
 ```
 
@@ -50,8 +56,10 @@ The C++ reference is pinned as a Git submodule. Ordinary Rust dependencies are
 resolved by Cargo; the modified Rust forks remain source dependencies in this
 checkout. [Dependency and checkout policy](docs/wiki/Repository-Layout.md#vendored-and-external-code).
 
-The existing Cargo package/import names (`reproto`, `capnp`, `capnpc`, `capnp-rpc`)
-remain stable. Capn't Proto is the project name. Use Bash / Git Bash for the setup
+Our crates use `capntproto`, `capntproto-compiler`, `capntproto-compat` and the
+`capntproto-` prefix for supporting tools. Upstream dependencies retain their
+`capnp`, `capnpc` and `capnp-rpc` names. See the [name migration](docs/wiki/Repository-Layout.md#crate-name-migration).
+Use Bash / Git Bash for the setup
 commands. Linux, macOS and Windows have compile-and-smoke CI; full verification
 and dedicated benchmarks run on Linux.
 
@@ -59,6 +67,10 @@ Benchmarks are separate from tests: CI builds individual release benchmarks with
 `cargo bench --no-run`, transfers the artifacts to a temporary dedicated
 DigitalOcean droplet, measures Linux loopback RPC and deletes the droplet.
 Credentials stay in GitHub Actions secrets. [Benchmark setup](docs/wiki/Quality-and-Benchmarks.md).
+The [CI workflow graph](docs/wiki/Quality-and-Benchmarks.md#workflow-dependencies)
+shows the validation gates and how coverage and benchmark results reach this README.
+Status badges link to workflow runs; the coverage badge reports verification
+status, not a coverage percentage.
 
 ## Documentation and participation
 
@@ -101,7 +113,7 @@ No validated coverage/baseline comparison is available for the latest run. Missi
 
 Latest benchmark run: [2026-10-03T06:13:31Z · run 37102346979 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37102346979) · commit `85e68e0dc6cc` · **success**
 
-Separate client/server processes, one outstanding request, several payload sizes and five repetitions. Capn't Proto uses encrypted Native/UDP; C++ Cap'n Proto, gRPC and WebSocket baselines use plaintext TCP. Bars compare this workload, not universal protocol performance.
+Separate client/server processes, one outstanding request, several payload sizes and five repetitions. Capntproto uses encrypted Native/UDP; C++ Cap'n Proto, gRPC and WebSocket baselines use plaintext TCP. Bars compare this workload, not universal protocol performance.
 
 ![Median round-trip latency (p50)](docs/reports/latency-p50.svg)
 

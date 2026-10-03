@@ -58,7 +58,7 @@ fn generic_types_and_methods_match_pinned_cpp() {
         "struct G(A,B) { annotation a(*) :Void; } $((G(Text,Data)).a);",
     ].map(str::to_owned));
     cases.push(
-        include_str!("../../crates/capnp-compiler/examples/generics.capnp")
+        include_str!("../../crates/capntproto-compiler/examples/generics.capnp")
             .split_once(';')
             .unwrap()
             .1
@@ -94,7 +94,7 @@ fn generic_types_and_methods_match_pinned_cpp() {
             message::ReaderOptions::new(),
         )
         .unwrap();
-        let rust = capnp_compiler::compile("test.capnp", &source)
+        let rust = capntproto_compiler::compile("test.capnp", &source)
             .unwrap_or_else(|e| panic!("{body}: {e}"));
         eprintln!("generic case: {body}");
         compare_requests(
@@ -142,7 +142,7 @@ fn generic_types_and_methods_match_pinned_cpp() {
             .unwrap();
         assert!(!reference.status.success(), "C++ accepted {body}");
         assert!(
-            capnp_compiler::compile("test.capnp", &source).is_err(),
+            capntproto_compiler::compile("test.capnp", &source).is_err(),
             "Rust accepted {body}"
         );
     }
@@ -198,7 +198,7 @@ fn generic_imports_and_standard_schemas_match_pinned_cpp() {
         "using T = import \"types.capnp\"; struct S $((T.Box(Text)).mark)(\"tag\") {}",
         "struct Node(T) { next @0 :import \"cycle.capnp\".Node(T); value @1 :T; }",
     ];
-    let mut frontend = capnp_compiler::FileCompiler::new();
+    let mut frontend = capntproto_compiler::FileCompiler::new();
     frontend.src_prefix(directory.path());
     for source in cases {
         fs::write(
@@ -281,7 +281,7 @@ fn generic_imports_and_standard_schemas_match_pinned_cpp() {
             message::ReaderOptions::new(),
         )
         .unwrap();
-        let rust = capnp_compiler::FileCompiler::new()
+        let rust = capntproto_compiler::FileCompiler::new()
             .src_prefix(&standard)
             .import_path(&standard)
             .compile(&[standard.join(name)])
@@ -299,9 +299,9 @@ fn generic_imports_and_standard_schemas_match_pinned_cpp() {
 fn rust_generics_generate_working_structs_and_rpc_bindings() {
     let project = tempfile::tempdir().unwrap();
     fs::create_dir(project.path().join("src")).unwrap();
-    let request = capnp_compiler::compile(
+    let request = capntproto_compiler::compile(
         "generics.capnp",
-        include_str!("../../crates/capnp-compiler/examples/generics.capnp"),
+        include_str!("../../crates/capntproto-compiler/examples/generics.capnp"),
     )
     .unwrap();
     capnpc::codegen::CodeGenerationCommand::new()
@@ -415,7 +415,7 @@ fn repository_schemas_match_pinned_cpp_with_rust_frontend() {
         .filter(|p| p.extension().is_some_and(|e| e == "capnp"))
         .collect();
     files.sort();
-    let mut frontend = capnp_compiler::FileCompiler::new();
+    let mut frontend = capntproto_compiler::FileCompiler::new();
     frontend
         .src_prefix(&schemas)
         .import_path(&standard)
@@ -473,7 +473,7 @@ fn unbound_list_elements_are_rejected_consistently_across_parameter_indices() {
             .output()
             .unwrap();
         assert_eq!(reference.status.success(), accepted);
-        let error = capnp_compiler::compile("test.capnp", &source)
+        let error = capntproto_compiler::compile("test.capnp", &source)
             .err()
             .unwrap();
         assert!(error.message.contains("unbound parameters"), "{error}");

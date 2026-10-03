@@ -255,7 +255,7 @@ possible after admission; retry is explicit and covers the whole snapshot.
 
 Run `cargo test --test protocol_models realtime_model -- --exact` for the focused check, or
 `cargo test --locked --workspace --all-targets` for the complete current runtime suite.
-The focused report is `reports/reproto/realtime/verification.json`.
+The focused report is `reports/capntproto/realtime/verification.json`.
 
 Five `RpcRealtimeReceiver.tla` configurations contain 6,336 states across separate
 graphs. All 32,979 edge-prefix traces replay against the production Rust receiver,
@@ -293,7 +293,7 @@ The model covers two copies of one immutable snapshot, packet loss, retries,
 invalid tokens, malformed frames, cancel-before-data, revocation, driver stop,
 and delayed status replies. Five mutations must fail: authority bypass,
 forgotten cancellation, duplicate application, admission after revocation and
-false applied receipts. Its report is `reports/reproto/realtime-datagram/verification.json`.
+false applied receipts. Its report is `reports/capntproto/realtime-datagram/verification.json`.
 
 Separate Rust tests exercise maximum-size datagrams over real TLS admission Native UDP,
 session isolation, reliable status under datagram pressure, queue bounds,
@@ -312,7 +312,7 @@ data, metadata commitments, authorization, capacity, cancellation, expiry and
 closure. `RpcDatagramBatch.tla` has 130 states and 417 replays against the real
 sender and queue with two free slots, two sequence numbers, backpressure, retries
 and shutdown. Eleven injected faults must violate their specified invariants.
-The combined report is `reports/reproto/realtime-fragments/verification.json`.
+The combined report is `reports/capntproto/realtime-fragments/verification.json`.
 
 `cargo test --locked --lib transport::datagram_reentry_tests -- --nocapture`
 also checks `DatagramReentry.tla`: **3,021 states / 3,192 native edge prefixes**,

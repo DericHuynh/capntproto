@@ -8,7 +8,7 @@ use capnp::{
     },
     Result,
 };
-use reproto_memory_checks::field_api_capnp::new_record;
+use capntproto_memory_checks::field_api_capnp::new_record;
 
 fn allocator(far: bool) -> HeapAllocator {
     if far {

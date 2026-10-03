@@ -1,5 +1,5 @@
 use super::super::*;
-use reproto_test_support::verification::{command, cpp, exploration, root, run};
+use capntproto_test_support::verification::{command, cpp, exploration, root, run};
 
 fn cpp_replay(inputs: &str, expected: &str) {
     let build = cpp::build(&["capnpc", "capnp_tool", "capnpc_cpp", "capnp-rpc"]).unwrap();

@@ -1,7 +1,7 @@
-# Contributing to Capn't Proto
+# Contributing to Capntproto
 
 Contributions can improve the runtime, protocol models, regression tests,
-documentation, and quality tooling. Capn't Proto is an experimental source preview;
+documentation, and quality tooling. Capntproto is an experimental source preview;
 the [correctness roadmap](docs/wiki/Correctness.md) and
 [release acceptance criteria](docs/wiki/Release-Acceptance.md) describe current work.
 All participation follows the [code of conduct](CODE_OF_CONDUCT.md).
@@ -32,7 +32,7 @@ git submodule update --init --depth 1 -- vendor/capnproto
 ```
 
 Install Rust 1.97.0 through rustup and the Cap'n Proto schema compiler/development
-headers. The [platform workflow](.github/workflows/quality.yml) contains the
+headers. The [platform workflow](.github/workflows/ci.yml) contains the
 Linux, macOS, and Windows setup used by CI. `CAPNP_INCLUDE_DIR` selects the schema
 include directory when it is outside the compiler's normal search path.
 
@@ -41,7 +41,7 @@ For a quick compile and smoke check from the repository root:
 ```sh
 bash scripts/setup-auditable.sh
 export PATH="$PWD/target/auditable-tools/wrapper:$PWD/target/auditable-tools/bin:$PATH"
-cargo build --locked -p reproto --lib --bins
+cargo build --locked -p capntproto --lib --bins
 cargo run --locked --manifest-path examples/downstream/Cargo.toml
 ```
 
@@ -126,7 +126,7 @@ focused on review feedback, and update the description when the final scope
 changes. Maintainers review correctness, reproducibility, documentation, and
 compatibility with the stated preview contracts before merging.
 
-Contribute only material you have the right to submit. Original Capn't Proto code uses
+Contribute only material you have the right to submit. Original Capntproto code uses
 the [MIT License](LICENSE); preserve the licenses of vendored components listed
 in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 

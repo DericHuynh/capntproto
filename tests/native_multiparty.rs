@@ -1,12 +1,12 @@
 use capnp_rpc::{Connection, VatNetwork};
-use reproto::{
+use capntproto::{
     native_rpc::{
         Connector, DirectoryConnector, Handle, Network, Options, RetryPolicy, RetryingConnector,
         RouteStatus,
     },
     transport::{self, Identity},
 };
-use reproto_test_support::runtime_test_capnp::harness;
+use capntproto_test_support::runtime_test_capnp::harness;
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -167,7 +167,7 @@ fn send(
     fill(msg.get_body().unwrap().init_as());
     drop(msg.send());
 }
-async fn wait_stats(handle: &Handle, p: impl Fn(reproto::native_rpc::Stats) -> bool) {
+async fn wait_stats(handle: &Handle, p: impl Fn(capntproto::native_rpc::Stats) -> bool) {
     tokio::time::timeout(Duration::from_secs(3), async {
         while !p(handle.stats()) {
             tokio::time::sleep(Duration::from_millis(1)).await;
@@ -496,7 +496,7 @@ async fn replay_rendezvous(trace: &Trace) -> capnp::Result<()> {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_native_multiparty_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_NATIVE_MULTIPARTY_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_NATIVE_MULTIPARTY_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     assert!(!traces.is_empty());
@@ -504,7 +504,7 @@ async fn replay_tlc_native_multiparty_traces() {
         .run_until(async {
             for trace in traces {
                 if trace.kind == "gate" {
-                    use reproto::semantics::{NativeStreamGate, NativeStreamState, StreamRole};
+                    use capntproto::semantics::{NativeStreamGate, NativeStreamState, StreamRole};
                     let mut gate = NativeStreamGate::new(if trace.server {
                         StreamRole::Responder
                     } else {
@@ -960,7 +960,7 @@ async fn network_deadline_bounds_entire_retry_sequence() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_failed_route_recovery() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     let config = include_str!("../verification/RpcRouteRecovery.cfg");
     let live = config.replace("SPECIFICATION Spec", "SPECIFICATION LiveSpec")
         + "\nPROPERTY SetupSettles\n";
@@ -1095,7 +1095,7 @@ async fn replay_tlc_failed_route_recovery() {
                     }
                     if let Some(observer) = &old_observer {
                         assert_eq!(observer.status(), RouteStatus::Failed);
-                        let Some(reproto::native_rpc::Termination::Failed(cause)) =
+                        let Some(capntproto::native_rpc::Termination::Failed(cause)) =
                             observer.termination()
                         else {
                             panic!()
@@ -1103,9 +1103,9 @@ async fn replay_tlc_failed_route_recovery() {
                         assert_eq!(
                             cause.kind,
                             if state["oldCause"] == 1 {
-                                reproto::native_rpc::FailureKind::Connect
+                                capntproto::native_rpc::FailureKind::Connect
                             } else {
-                                reproto::native_rpc::FailureKind::Timeout
+                                capntproto::native_rpc::FailureKind::Timeout
                             },
                             "{trace:?}"
                         );
@@ -1192,7 +1192,7 @@ struct RouteTrace {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_native_route_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_NATIVE_ROUTE_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_NATIVE_ROUTE_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<RouteTrace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     assert!(!traces.is_empty());

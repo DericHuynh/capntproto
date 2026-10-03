@@ -8,8 +8,8 @@ use capnp::{
     Error,
 };
 use capnp_rpc::membrane::{Direction, Membrane, Policy};
+use capntproto_test_support::runtime_test_capnp::harness;
 use futures::{channel::oneshot, FutureExt};
-use reproto_test_support::runtime_test_capnp::harness;
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -336,7 +336,7 @@ fn cyclic_and_deep_diagnostics_are_bounded() {
 
 #[test]
 fn tlc_diagnostics_replay_without_changing_resolution_or_connection_state() {
-    use reproto_test_support::verification::exploration::{controls, traces};
+    use capntproto_test_support::verification::exploration::{controls, traces};
     const MODEL: &str = "verification/RpcDebugInfo.tla";
     const CONFIG: &str = include_str!("../verification/RpcDebugInfo.cfg");
     for path in traces(MODEL, "capability-debug", CONFIG).unwrap() {
@@ -450,7 +450,7 @@ fn normalized(client: &harness::Client) -> String {
 
 #[test]
 fn wrapper_order_resolution_and_revocation_match_pinned_cpp() {
-    use reproto_test_support::verification::{command, cpp, root, run};
+    use capntproto_test_support::verification::{command, cpp, root, run};
     let build = cpp::build(&["capnp-rpc"]).unwrap();
     let directory = tempfile::tempdir().unwrap();
     let executable = directory.path().join("capability-debug");

@@ -8,8 +8,8 @@ use capnp_rpc::{
     rpc_capnp::{cap_descriptor, message, message_target},
     Connection, RpcSystem,
 };
+use capntproto_test_support::runtime_test_capnp::harness;
 use futures::FutureExt;
-use reproto_test_support::runtime_test_capnp::harness;
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -308,7 +308,7 @@ async fn replay(steps: &[serde_json::Value], params: bool, wrapper: u32) {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_call_hint_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_CALL_HINT_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_CALL_HINT_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
@@ -661,7 +661,7 @@ impl Incoming {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_incoming_hint_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_INCOMING_HINT_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_INCOMING_HINT_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
@@ -832,7 +832,7 @@ async fn queued_streaming_trace(steps: &[serde_json::Value], fail: bool, wrapper
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_queued_streaming_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_QUEUED_STREAMING_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_QUEUED_STREAMING_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<Vec<serde_json::Value>> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();

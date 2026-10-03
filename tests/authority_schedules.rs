@@ -1,5 +1,5 @@
-use reproto::authority::{Grant, ObjectGeneration, ObjectId, Rights};
-use reproto_test_support::schedules::{self, block_on, spawn_local, yield_now, Trace};
+use capntproto::authority::{Grant, ObjectGeneration, ObjectId, Rights};
+use capntproto_test_support::schedules::{self, block_on, spawn_local, yield_now, Trace};
 use std::{cell::Cell, rc::Rc};
 
 fn notifications(trace: Trace) {

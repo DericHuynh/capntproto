@@ -1,7 +1,7 @@
 //! Compare logical file bytes for the same typed value and durability boundary.
 //! Run with --release --no-default-features --features storage.
 use capnp::traits::HasTypeId;
-use reproto::{
+use capntproto::{
     authority::ObjectId,
     orm::components::{ComponentState, Edit},
     storage::{ComponentId, ObjectKey, Retention, Revision, Store, Update},

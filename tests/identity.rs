@@ -1,5 +1,5 @@
 #![cfg(feature = "native")]
-use reproto::transport::{self, Identity, IdentityError};
+use capntproto::transport::{self, Identity, IdentityError};
 
 // RFC 8032 section 7.1 Ed25519 test vectors.
 // https://www.rfc-editor.org/rfc/rfc8032.txt
@@ -169,7 +169,7 @@ async fn imported_keys_label_authenticated_sessions_with_their_proven_peers() {
 
 #[test]
 fn tlc_identity_construction_and_configuration_traces() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     const MODEL: &str = "verification/NativeIdentity.tla";
     const CONFIG: &str = include_str!("../verification/NativeIdentity.cfg");
     let paths = exploration::traces(MODEL, "native-identity", CONFIG).unwrap();

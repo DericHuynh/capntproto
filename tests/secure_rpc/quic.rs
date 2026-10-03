@@ -1,6 +1,6 @@
 use super::common::*;
 use capnp_rpc::{rpc_twoparty_capnp::Side, twoparty::TwoPartyServer};
-use reproto::rpc::quic::{self, Endpoint, Version};
+use capntproto::rpc::quic::{self, Endpoint, Version};
 use std::{io, time::Duration};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -206,7 +206,7 @@ async fn listener_accepts_while_peer_stalls_and_preserves_established_rpc_after_
             let stalled = quic::connect(&client, endpoint.local_addr().unwrap(), "localhost", TIMEOUT).await.unwrap();
             let stream = quic::connect(&client, endpoint.local_addr().unwrap(), "localhost", TIMEOUT).await.unwrap();
             let mut driver = quic::client(stream, None, Side::Client, Default::default());
-            let cap = driver.bootstrap::<reproto_test_support::structured::runtime_test_capnp::harness::Client>();
+            let cap = driver.bootstrap::<capntproto_test_support::structured::runtime_test_capnp::harness::Client>();
             let close = driver.get_disconnector();
             let task = tokio::task::spawn_local(driver);
             assert_eq!(echo(&cap, 81).await.unwrap(), 81);

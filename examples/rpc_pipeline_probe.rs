@@ -6,8 +6,8 @@ use capnp_rpc::{
     rpc_twoparty_capnp::Side,
     PipelineBuilder, RpcSystem,
 };
+use capntproto_test_support::runtime_test_capnp::harness;
 use futures::AsyncReadExt as _;
-use reproto_test_support::runtime_test_capnp::harness;
 use serde_json::{json, Value};
 use std::{
     cell::{Cell, RefCell},

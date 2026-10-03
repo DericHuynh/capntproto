@@ -237,12 +237,12 @@ tests; they do not certify arbitrary KJ scheduling or application integrations.
 
 | Status | C++ implementation | Rust counterpart |
 |---|---|---|
-| [x] | [`ByteStreamFactory`](../../vendor/capnproto/c++/src/capnp/compat/byte-stream.h) | [`byte_stream`](../../crates/capnp-compat/src/byte_stream.rs): explicit end/abort, futures I/O, optional executor-owned legacy EOF, TLS callback, local unwrapping, substreams and path resolution. |
-| [x] | [`HttpOverCapnpFactory`](../../vendor/capnproto/c++/src/capnp/compat/http-over-capnp.h) | [`http`](../../crates/capnp-compat/src/http.rs): level-2 pipelined bodies, common headers, fixed/unknown lengths, upgrades and CONNECT. |
-| [x] | [`WebSocketMessageStream`](../../vendor/capnproto/c++/src/capnp/compat/websocket-rpc.h) | [`websocket`](../../crates/capnp-compat/src/websocket.rs): bounded binary-message framing and futures I/O for two-party RPC. |
-| [x] | [`JsonCodec`](../../vendor/capnproto/c++/src/capnp/compat/json.h) | [`json`](../../crates/capnp-compat/src/json.rs): dynamic values, annotation/type/field handlers, owned orphan decode, compact/pretty output and input/work limits. |
-| [x] | [`JsonRpc`](../../vendor/capnproto/c++/src/capnp/compat/json-rpc.h) | [`json_rpc`](../../crates/capnp-compat/src/json_rpc.rs): bidirectional named calls, notifications, errors, cancellation and Content-Length framing; no capabilities or batches. |
-| [x] | [`TextCodec`](../../vendor/capnproto/c++/src/capnp/serialize-text.h) | [`text`](../../crates/capnp-compat/src/text.rs): dynamic text encode/decode through the Rust compiler lexer, standalone orphan values and pretty output. |
+| [x] | [`ByteStreamFactory`](../../vendor/capnproto/c++/src/capnp/compat/byte-stream.h) | [`byte_stream`](../../crates/capntproto-compat/src/byte_stream.rs): explicit end/abort, futures I/O, optional executor-owned legacy EOF, TLS callback, local unwrapping, substreams and path resolution. |
+| [x] | [`HttpOverCapnpFactory`](../../vendor/capnproto/c++/src/capnp/compat/http-over-capnp.h) | [`http`](../../crates/capntproto-compat/src/http.rs): level-2 pipelined bodies, common headers, fixed/unknown lengths, upgrades and CONNECT. |
+| [x] | [`WebSocketMessageStream`](../../vendor/capnproto/c++/src/capnp/compat/websocket-rpc.h) | [`websocket`](../../crates/capntproto-compat/src/websocket.rs): bounded binary-message framing and futures I/O for two-party RPC. |
+| [x] | [`JsonCodec`](../../vendor/capnproto/c++/src/capnp/compat/json.h) | [`json`](../../crates/capntproto-compat/src/json.rs): dynamic values, annotation/type/field handlers, owned orphan decode, compact/pretty output and input/work limits. |
+| [x] | [`JsonRpc`](../../vendor/capnproto/c++/src/capnp/compat/json-rpc.h) | [`json_rpc`](../../crates/capntproto-compat/src/json_rpc.rs): bidirectional named calls, notifications, errors, cancellation and Content-Length framing; no capabilities or batches. |
+| [x] | [`TextCodec`](../../vendor/capnproto/c++/src/capnp/serialize-text.h) | [`text`](../../crates/capntproto-compat/src/text.rs): dynamic text encode/decode through the Rust compiler lexer, standalone orphan values and pretty output. |
 | [ ] | [`SchemaParser`](../../vendor/capnproto/c++/src/capnp/schema-parser.h), [implementation](../../vendor/capnproto/c++/src/capnp/schema-parser.c++): schemas/imports | The separate [Rust frontend](../wiki/Schema-Compiler.md#runtime-reflection) provides snapshots with metadata/dynamic messages, lazy declaration/alias loading, and [concurrent caches](../wiki/Schema-Compiler.md#concurrent-parser-caching). [Custom callbacks](../wiki/Schema-Compiler.md#custom-source-providers) supply identity/import resolution and bounded readers. [Optional file IDs](../wiki/Schema-Compiler.md#optional-file-ids) support configuration schemas. Cache handles retain immutable generations; runtime reflection materializes locally. [Qualification](../wiki/Compiler-Qualification.md) records remaining grammar/metadata differences. |
 
 The rest of KJ, C++ generators and CLI commands are outside RPC-first scope.
@@ -911,7 +911,7 @@ values remain inlined, including when an imported type is erased to AnyPointer;
 the compiler computes the layout without adding unused schema dependencies to
 the emitted request.
 
-The [wire encoder](../../crates/capnp-compiler/src/wire.rs) uses safe builder APIs.
+The [wire encoder](../../crates/capntproto-compiler/src/wire.rs) uses safe builder APIs.
 It preserves scalar default masks, null versus explicit empty pointers, source
 assignment order and C++ group/union storage behavior. Cached values carry their
 expanded depth and work costs, preventing exponential constant references from
@@ -1577,7 +1577,7 @@ rerun for this cleanup.
 
 ## Custom schema source callbacks (2026-09-28)
 
-[`SourceCompiler` / `SourceProvider`](../../crates/capnp-compiler/src/source/custom.rs)
+[`SourceCompiler` / `SourceProvider`](../../crates/capntproto-compiler/src/source/custom.rs)
 close the application-defined input gap alongside the existing in-memory and
 disk parsers. A provider resolves requested names and import/embed strings into
 opaque identities and logical filenames, then supplies a `Read` stream. Strings
@@ -1593,7 +1593,7 @@ the last successful snapshot and allowing corrected inputs to be retried. Callba
 side effects cannot be rolled back. Custom snapshots expose no inferred disk
 dependencies; providers can track their own inputs.
 
-The [native tests](../../crates/capnp-compiler/tests/provider.rs) cover opaque paths,
+The [native tests](../../crates/capntproto-compiler/tests/provider.rs) cover opaque paths,
 identity deduplication and collisions, recursive aliases, binary embeds, fresh
 compilations, lazy selection, cached input deletion, compilation/validation
 rollback, read failures, metadata validation and input limits. A compile-fail
@@ -1620,7 +1620,7 @@ non-Linux ancillary transport remain open; optional file IDs are covered below.
 ## Optional schema file IDs (2026-09-28)
 
 `SchemaParser`, `FileCompiler` and `SourceCompiler` now expose
-[`set_file_ids_required(false)`](../../crates/capnp-compiler/src/source.rs) for
+[`set_file_ids_required(false)`](../../crates/capntproto-compiler/src/source.rs) for
 configuration schemas without persistent file IDs. The default remains strict.
 Missing IDs use `getrandom` 0.4.3 OS entropy with the high bit set; explicit IDs
 take precedence even when declared after other declarations. Existing child,
@@ -1638,7 +1638,7 @@ continue supplying explicit IDs. The free `compile()` function and CLI remain
 strict. Unlike C++, strict missing-ID diagnostics do not draw randomness merely
 to suggest an ID, and the compiler does not retain a cross-session parser cache.
 
-[Native tests](../../crates/capnp-compiler/tests/file_ids.rs) cover defaults and policy
+[Native tests](../../crates/capntproto-compiler/tests/file_ids.rs) cover defaults and policy
 reset, explicit declarations, empty sources, fresh identities, dynamic defaults,
 all source providers, lazy/cyclic imports, policy capture and transactional
 compile/loader failure. Private parser tests inject entropy failure and a collision,
@@ -1680,10 +1680,10 @@ lexer and splits the rejected spellings into separate tokens. Rust reports an
 invalid octal digit directly. The rule also applies to the text-value parser used
 by the optional compatibility codecs.
 
-A [shared 295-case corpus](../../crates/capnp-compiler/tests/corpus/grammar.rs) covers
+A [shared 295-case corpus](../../crates/capntproto-compiler/tests/corpus/grammar.rs) covers
 contextual keywords/built-ins, duplicate and shadowed generic parameters,
 declaration placement, annotation targets, parentheses, trailing commas and
-numeric spellings. [Portable tests](../../crates/capnp-compiler/tests/grammar.rs)
+numeric spellings. [Portable tests](../../crates/capntproto-compiler/tests/grammar.rs)
 check acceptance, runtime loading and diagnostic spans, plus concrete generic
 bindings through fields and method parameters/results.
 
@@ -1710,14 +1710,14 @@ hexadecimal byte pairs. Rust's `is_ascii_whitespace()` excludes that character,
 whereas KJ includes it. The binary-literal path now uses the same six whitespace
 bytes as token spacing.
 
-An additional [108 lexical cases](../../crates/capnp-compiler/tests/corpus/grammar.rs)
+An additional [108 lexical cases](../../crates/capntproto-compiler/tests/corpus/grammar.rs)
 check all ASCII controls, space and DEL in token spacing, quoted strings and
 binary literals, plus selected Unicode separators. The pinned C++ comparison
 agrees on **46 accepted requests and 62 rejections**, including schema/source
 metadata and canonical values. The portable suite also checks standalone byte
 parsing. Evidence is under `target/verification/schema-compiler/lexical/`.
 
-[`TextCodec`](../../crates/capnp-compat/src/text.rs) now checks numeric syntax and
+[`TextCodec`](../../crates/capntproto-compat/src/text.rs) now checks numeric syntax and
 schema type before conversion. Numbers can no longer initialize Text or enum
 fields, floating-point literals require floating-point fields, and integer
 magnitudes are bounded before conversion to floats. Uppercase `0X` is rejected.
@@ -1727,7 +1727,7 @@ first rounding through Float64, fixing wire differences near large half-way
 points. The compiler's existing checked positive-UInt64 overflow policy applies
 here too; pinned C++ wraps oversized positive literals.
 
-The [shared codec corpus](../../crates/capnp-compat/tests/common/text_scalars.rs)
+The [shared codec corpus](../../crates/capntproto-compat/tests/common/text_scalars.rs)
 checks decimal/hex/octal spellings, both signs, integer and floating-point zero,
 large rounding boundaries, infinity/underflow, numeric type/range rejection and
 binary whitespace. The C++ oracle now compares **102 accepted input/format
@@ -1750,7 +1750,7 @@ remain open.
 
 ## Text value wrapping and C++ escaping (2026-09-28)
 
-[`TextCodec`](../../crates/capnp-compat/src/text.rs) now accepts an unambiguous scalar
+[`TextCodec`](../../crates/capntproto-compat/src/text.rs) now accepts an unambiguous scalar
 for a struct or group by assigning it to the first field in schema order. For
 example, `child = true` creates the same value as `child = (flag = true)` when
 `flag` is the child's first field. The conversion supports nested fields, bound
@@ -1765,7 +1765,7 @@ even when that field is Data. Explicit nested expressions can supply ambiguous
 values. C++'s mutable-root decoder still requires a struct expression, and Rust
 keeps that distinction from `decode_orphan()`.
 
-The [shared wrapping corpus](../../crates/capnp-compat/tests/common/text_wrapping.rs)
+The [shared wrapping corpus](../../crates/capntproto-compat/tests/common/text_wrapping.rs)
 adds **25 accepted values and 23 rejected forms**. Native tests compare implicit
 values with explicit equivalents and check replacement, group defaults, union
 selection and arbitrary text bytes. The pinned C++ fixture now generates bindings
@@ -1794,7 +1794,7 @@ ancillary transport remain open.
 
 ## Ordered text assignments and group failure state (2026-09-28)
 
-[`TextCodec`](../../crates/capnp-compat/src/text.rs) now evaluates assignments in source
+[`TextCodec`](../../crates/capntproto-compat/src/text.rs) now evaluates assignments in source
 order, matching C++ for repeated fields and successive union selections. For
 example, `(i32 = 1, i32 = 2)` leaves `i32` equal to 2. Replacing a struct pointer or
 list creates a fresh value with schema defaults; it does not merge with the old
@@ -1808,7 +1808,7 @@ successfully assigned prefix, including activation of a group union member.
 Syntax errors occur before mutation; semantic errors stop at the first failure.
 Orphan decode failures leave the destination unchanged.
 
-The [shared assignment corpus](../../crates/capnp-compat/tests/common/text_assignments.rs)
+The [shared assignment corpus](../../crates/capntproto-compat/tests/common/text_assignments.rs)
 contains **36 cases**, including **15 failures**, checked in compact and pretty
 modes. The pinned C++ oracle compares canonical wire bytes and exact JSON/text
 for all **72 combinations**, including the destination remaining after an error.
@@ -2160,7 +2160,7 @@ Integers exceeding UInt64 remain rejected when evaluated; the pinned C++ lexer
 wraps them, which remains an intentional difference. Incomplete exponents cause
 C++ exceptions, so differential tests compare rejection rather than diagnostics.
 
-The shared [numeric corpus](../../crates/capnp-compiler/tests/corpus/numbers.rs)
+The shared [numeric corpus](../../crates/capntproto-compiler/tests/corpus/numbers.rs)
 contains 33 valid and 33 invalid expressions, tested in requested files and unused
 imported declarations. All **132 comparisons** agree with pinned C++ on acceptance;
 accepted requests also match known schema fields, canonical values, source info
@@ -2237,7 +2237,7 @@ Auxiliary group dependencies follow declaration order independently of field
 ordinals. Expanded-value limits are checked as defaults are constructed, including
 deferred defaults in groups and method parameter/result structs.
 
-The shared [22-case corpus](../../crates/capnp-compiler/tests/corpus/discovery.rs)
+The shared [22-case corpus](../../crates/capntproto-compiler/tests/corpus/discovery.rs)
 compares competing relative/absolute import spellings, nested aliases, declarations,
 groups, annotations, RPC signatures, generic dependencies and default phases.
 All known request fields, canonical values/source info and normalized identifiers

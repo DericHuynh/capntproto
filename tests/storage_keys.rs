@@ -1,5 +1,5 @@
-use reproto::storage::Revision;
-use reproto::{
+use capntproto::storage::Revision;
+use capntproto::{
     authority::{Grant, ObjectGeneration, ObjectId, Rights},
     bulk::{Config, Status},
     durable_bulk::{JournalId, Receiver},
@@ -115,7 +115,7 @@ fn journal_domain_preserves_zero_and_max_and_rejects_target_collision() {
 
 #[test]
 fn replay_tlc_storage_key_and_snapshot_bindings() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     const MODEL: &str = "verification/StorageObjectKeys.tla";
     const CONFIG: &str = include_str!("../verification/StorageObjectKeys.cfg");
     let paths = exploration::traces(MODEL, "storage-object-keys", CONFIG).unwrap();

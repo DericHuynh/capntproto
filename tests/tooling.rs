@@ -1,5 +1,5 @@
 //! Compiler, distribution and reference checks, all launched by `cargo test`.
-use reproto_test_support::verification::{self as v, command, root, run};
+use capntproto_test_support::verification::{self as v, command, root, run};
 use serde::Deserialize;
 use serde_json::Value;
 use std::{collections::BTreeSet, fs, path::PathBuf};
@@ -15,9 +15,9 @@ fn cargo(args: &[&str], name: &str) -> String {
 fn cargo_with_toolchain(toolchain: Option<&str>, args: &[&str], name: &str) -> String {
     let mut cmd = command("cargo");
     if let (Ok(build), Ok(profiles), Ok(flags)) = (
-        std::env::var("REPROTO_FULL_COVERAGE_BUILD"),
-        std::env::var("REPROTO_FULL_COVERAGE_PROFILES"),
-        std::env::var("REPROTO_FULL_COVERAGE_FLAGS"),
+        std::env::var("CAPNTPROTO_FULL_COVERAGE_BUILD"),
+        std::env::var("CAPNTPROTO_FULL_COVERAGE_PROFILES"),
+        std::env::var("CAPNTPROTO_FULL_COVERAGE_FLAGS"),
     ) {
         if args.first() == Some(&"test") {
             if let Some(manifest) = args.windows(2).find(|p| p[0] == "--manifest-path") {
@@ -32,7 +32,7 @@ fn cargo_with_toolchain(toolchain: Option<&str>, args: &[&str], name: &str) -> S
                         "LLVM_PROFILE_FILE",
                         PathBuf::from(profiles).join("%p-%m.profraw"),
                     )
-                    .env("REPROTO_COVERAGE_CHILDREN_NATIVE", "1");
+                    .env("CAPNTPROTO_COVERAGE_CHILDREN_NATIVE", "1");
                 cmd.args(["test", "--ignore-rust-version"]).args(&args[1..]);
                 return run(&mut cmd, &log(name), 0).unwrap();
             }
@@ -274,7 +274,7 @@ fn pinned_native_profile() {
     assert!(runtime.contains("quiche feature \"tokio-clock\""));
     assert!(!runtime.contains("tokio feature \"test-util\""));
     let output = cargo(
-        &["test", "--locked", "-p", "reproto", "--test", "native"],
+        &["test", "--locked", "-p", "capntproto", "--test", "native"],
         "native/backend",
     );
     assert!(output.contains("0 failed"));
@@ -713,7 +713,7 @@ fn rust_guard_graph_equals_tlc() {
     .unwrap();
     let rust: Value = serde_json::from_str(
         &run(
-            &mut command(env!("CARGO_BIN_EXE_reproto-model")),
+            &mut command(env!("CARGO_BIN_EXE_capntproto-model")),
             &log("guard/rust"),
             0,
         )
@@ -923,13 +923,15 @@ fn formatting_and_lints() {
         &[
             "fmt",
             "-p",
-            "reproto",
+            "capntproto",
             "-p",
-            "reproto-test-support",
+            "capntproto-test-support",
             "-p",
-            "reproto-quality",
+            "capntproto-quality",
             "-p",
-            "capnp-compiler",
+            "capntproto-compiler",
+            "-p",
+            "capntproto-compat",
             "-p",
             "capnp-rpc",
             "--",

@@ -1,5 +1,5 @@
 use super::super::*;
-use reproto_test_support::verification::{command, cpp, exploration, root, run};
+use capntproto_test_support::verification::{command, cpp, exploration, root, run};
 
 #[test]
 fn tlc_union_presence_traces_match_compiled_and_loaded_rust() {

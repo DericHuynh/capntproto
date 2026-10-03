@@ -1,5 +1,5 @@
 [package]
-name = "reproto-concurrency-probe"
+name = "capntproto-concurrency-probe"
 version = "0.0.0"
 edition = "2021"
 publish = false
@@ -15,4 +15,4 @@ tokio = { version = "=1.53.1", features = ["sync"] }
 futures = "=0.3.34"
 serde_json = "1"
 tempfile = "3"
-reproto = { path = "../..", default-features = false, features = ["storage"] }
+capntproto = { path = "../..", default-features = false, features = ["storage"] }

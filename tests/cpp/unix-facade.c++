@@ -22,7 +22,7 @@ struct FileCap final: Harness::Server {
   unsigned& calls;
   kj::AutoCloseFd fd;
   FileCap(unsigned number, unsigned& calls): number(number), calls(calls) {
-    char path[]="/tmp/reproto-facade-fd-XXXXXX";
+    char path[]="/tmp/capntproto-facade-fd-XXXXXX";
     int raw=mkstemp(path);
     KJ_REQUIRE(raw>=0);
     fd=kj::AutoCloseFd(raw);

@@ -1,5 +1,5 @@
 //! Bounded Miri qualification, invoked and checked by ordinary Cargo tests.
-use reproto_test_support::verification::{self as v, command, root, run};
+use capntproto_test_support::verification::{self as v, command, root, run};
 use serde_json::json;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -86,10 +86,10 @@ fn serialization_and_ownership_miri() {
     if checked.exists() {
         fs::remove_file(&checked).unwrap();
     }
-    let extended = match std::env::var("REPROTO_MIRI_EXTENDED").as_deref() {
+    let extended = match std::env::var("CAPNTPROTO_MIRI_EXTENDED").as_deref() {
         Ok("1") => true,
         Err(std::env::VarError::NotPresent) | Ok("0") => false,
-        _ => panic!("REPROTO_MIRI_EXTENDED must be 0 or 1"),
+        _ => panic!("CAPNTPROTO_MIRI_EXTENDED must be 0 or 1"),
     };
     let directory = tempfile::tempdir_in(&base).unwrap().keep();
     let log = |name: &str| directory.join(format!("{name}.log"));

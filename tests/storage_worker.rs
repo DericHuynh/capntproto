@@ -1,5 +1,5 @@
 #![cfg(feature = "storage")]
-use reproto::storage::{
+use capntproto::storage::{
     worker::{AdmissionError, Client, Config, Error, Format, Options, ShutdownMode, Worker},
     ComponentId, ComponentUpdate, Limits, ObjectKey, Retention, Revision, Store, Update,
 };
@@ -52,7 +52,7 @@ async fn whole_entry_batches_conflicts_history_and_snapshot_lifetimes() {
             .try_commit(&batch(Revision::INITIAL), OPTIONS)
             .unwrap()
             .await,
-        Err(Error::NotApplied(reproto::storage::Error::Conflict))
+        Err(Error::NotApplied(capntproto::storage::Error::Conflict))
     ));
     client
         .try_put(A, Revision::new(1), b"new", OPTIONS)
@@ -96,7 +96,7 @@ async fn whole_entry_batches_conflicts_history_and_snapshot_lifetimes() {
             .unwrap()
             .await,
         Err(Error::NotApplied(
-            reproto::storage::Error::HistoryExpired { .. }
+            capntproto::storage::Error::HistoryExpired { .. }
         ))
     ));
     assert!(matches!(
@@ -104,7 +104,7 @@ async fn whole_entry_batches_conflicts_history_and_snapshot_lifetimes() {
             .try_revision(A, Revision::new(1), OPTIONS)
             .unwrap()
             .await,
-        Err(Error::NotApplied(reproto::storage::Error::NotFound))
+        Err(Error::NotApplied(capntproto::storage::Error::NotFound))
     ));
     assert_eq!(old.bytes(), b"a");
     assert_eq!(
@@ -174,7 +174,7 @@ async fn components_preserve_atomic_cas_references_retention_and_delete_semantic
     assert_eq!(first.await.unwrap(), Revision::new(2));
     assert!(matches!(
         conflict.await,
-        Err(Error::NotApplied(reproto::storage::Error::Conflict))
+        Err(Error::NotApplied(capntproto::storage::Error::Conflict))
     ));
     let current = client
         .try_get_components(A, OPTIONS)
@@ -197,7 +197,7 @@ async fn components_preserve_atomic_cas_references_retention_and_delete_semantic
     assert_eq!(next.snapshot().revision(), Revision::new(2));
     assert!(matches!(
         client.try_get(A, OPTIONS).unwrap().await,
-        Err(Error::NotApplied(reproto::storage::Error::Layout))
+        Err(Error::NotApplied(capntproto::storage::Error::Layout))
     ));
     client
         .try_edit_components(
@@ -248,7 +248,7 @@ async fn storage_limits_are_execution_failures_without_quarantining_admission() 
             .try_put(A, Revision::INITIAL, b"too long", OPTIONS)
             .unwrap()
             .await,
-        Err(Error::NotApplied(reproto::storage::Error::Limit))
+        Err(Error::NotApplied(capntproto::storage::Error::Limit))
     ));
     assert!(matches!(
         client.try_commit(&[], OPTIONS),
@@ -269,6 +269,6 @@ fn public_handles_and_outcomes_can_cross_thread_boundaries() {
     fn send<T: Send>() {}
     send_sync::<Client>();
     send_sync::<Worker>();
-    send::<reproto::storage::worker::Pending<Revision>>();
+    send::<capntproto::storage::worker::Pending<Revision>>();
     send::<Error>();
 }

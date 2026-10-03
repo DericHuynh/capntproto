@@ -376,7 +376,7 @@ async fn outer_transport_driver_preserves_close_validation_and_deadline_errors()
 
 #[test]
 fn replay_tlc_encrypted_shutdown_packet_fences() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     const MODEL: &str = "verification/NativeShutdownPacketFence.tla";
     const CONFIG: &str = include_str!("../../../verification/NativeShutdownPacketFence.cfg");
     let mut total = 0;

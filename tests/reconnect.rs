@@ -2,8 +2,8 @@
 mod support;
 use capnp::{capability::Promise, Error, ErrorKind};
 use capnp_rpc::{RpcSystem, SetTarget};
+use capntproto_test_support::runtime_test_capnp::harness;
 use futures::channel::oneshot;
-use reproto_test_support::runtime_test_capnp::harness;
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -231,7 +231,7 @@ impl Fixture {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_reconnect_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_RECONNECT_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_RECONNECT_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();

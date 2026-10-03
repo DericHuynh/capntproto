@@ -1,26 +1,27 @@
 # README generation and public CI reports
 
-The project is **Capn't Proto**; the existing Cargo package and import names stay
-compatible. The root [README](../../README.md) is generated from
+The project is **Capntproto**; project-owned Cargo packages and imports use
+`capntproto` (see the [name migration](Repository-Layout.md#crate-name-migration)). The root [README](../../README.md) is generated from
 [README.template.md](../README.template.md). Edit the template, not the generated file.
 Template links are relative to the repository root because that is where the
 rendered README lives.
 
 ## What updates automatically
 
-[Full quality](../../.github/workflows/full-quality.yml) runs the workspace tests
+[Verification / Coverage](../../.github/workflows/verification-coverage.yml) runs the workspace tests
 once, collects LLVM coverage and checks its reviewed baseline. It exports a small
-`readme-data` artifact even when tests fail. [Dedicated benchmarks](../../.github/workflows/benchmarks.yml)
+`readme-data` artifact even when tests fail. [Performance / Dedicated benchmarks](../../.github/workflows/performance.yml)
 exports the same artifact after validating dedicated-host samples. Existing full
 reports retain raw samples, environment information and logs.
 
-[Publish README reports](../../.github/workflows/readme.yml) runs after either producer
+[Reports / Publish](../../.github/workflows/reports.yml) runs after either producer
 finishes. It updates only `README.md` and renderer-owned files in `docs/reports/`,
 using one atomic, non-forced commit to the default branch. A concurrent source
 commit causes a bounded retry against the new template/history. No source files
 are rewritten, and no PR code or executable artifact is run by the publisher.
 
-The publisher accepts only completed runs of the two named workflow files, from
+The publisher accepts only completed runs of the two named workflow files (plus their former filenames for manually publishing
+runs started before the workflow migration), from
 this repository's default branch, triggered by push, schedule or manual dispatch.
 It checks the measured commit's ancestry and the artifact's repository, run ID,
 attempt and commit. It downloads only the bounded JSON publication artifact;
@@ -74,12 +75,12 @@ Build errors and tests without terminal results remain separate from named failu
 ## Labelled benchmark bar charts
 
 The README's final section includes horizontal bars for p50/p95/p99 round-trip
-latency, sequential request rate, and percentage differences from Capn't Proto.
+latency, sequential request rate, and percentage differences from Capntproto.
 Every bar has an implementation label and numeric value; every panel identifies
 its payload size. Axes include zero, units and the direction of improvement.
 Validated instruction-count and LLVM baseline charts appear when available.
 
-The implementation labels distinguish Capn't Proto / Native, C++ Cap'n Proto,
+The implementation labels distinguish Capntproto / Native, C++ Cap'n Proto,
 gRPC (tonic) and WebSockets. These are separate processes on the same dedicated
 Linux droplet, with one outstanding request, five repetitions and rotated order.
 Native is encrypted over UDP; the other compared transports are plaintext TCP.
@@ -129,7 +130,7 @@ pinned dependencies and requires this case. Test-only synthetic plots stay under
 
 Upload the template, generated README, initial `docs/reports/` files, scripts and
 workflows together. The configured repository is `DericHuynh/capntproto`; the display
-name stays **Capn't Proto**. No owner/repository URL is hard-coded into the
+name stays **Capntproto**. No owner/repository URL is hard-coded into the
 publisher. Repository identity comes from GitHub's event/API.
 
 The publishing job requests `contents: write` and `actions: read` on its own
@@ -149,5 +150,5 @@ with `GITHUB_TOKEN` do not recursively trigger normal push workflows; see
 Keep `DIGITALOCEAN_ACCESS_TOKEN` in the **`Benchmarking`** GitHub environment
 for the benchmark producer and cleanup job, as described in
 [Quality and Benchmarks](Quality-and-Benchmarks.md). Publication does not receive
-that secret or create cloud resources. Full quality remains scheduled weekly;
+that secret or create cloud resources. Coverage verification remains scheduled weekly;
 dedicated benchmarks remain manually dispatched to control droplet spend.

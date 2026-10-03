@@ -13,7 +13,7 @@ use capnp::{
     traits::ImbueMut,
     ErrorKind,
 };
-use reproto_test_support::{
+use capntproto_test_support::{
     dynamic_test_capnp::{orphan_case, orphan_payload},
     runtime_test_capnp::harness,
 };
@@ -197,7 +197,7 @@ fn loaded_orphans_move_defaults_and_preserve_failed_adoption() -> capnp::Result<
 
 #[test]
 fn loaded_allocation_copy_group_access_resize_and_native_brands() -> capnp::Result<()> {
-    use reproto_test_support::dynamic_test_capnp::{group_defaults, orphan_brands, parcel};
+    use capntproto_test_support::dynamic_test_capnp::{group_defaults, orphan_brands, parcel};
     let mut loader = loader();
     loader.load_compiled_type_and_dependencies::<orphan_case::Owned>()?;
     loader.load_compiled_type_and_dependencies::<orphan_brands::Owned>()?;
@@ -495,7 +495,7 @@ fn loaded_fieldwise_group_defaults_copy_and_nested_transfer() -> capnp::Result<(
         let mut source_caps = Vec::new();
         {
             let mut s =
-                source.init_root::<reproto_test_support::dynamic_test_capnp::orphan_pointer_kinds::Builder>();
+                source.init_root::<capntproto_test_support::dynamic_test_capnp::orphan_pointer_kinds::Builder>();
             s.imbue_mut(&mut source_caps);
             let mut body = s.init_body();
             body.reborrow()
@@ -556,7 +556,7 @@ fn loaded_fieldwise_group_defaults_copy_and_nested_transfer() -> capnp::Result<(
 #[test]
 fn loaded_unknown_fields_survive_rejected_inline_adoption() -> capnp::Result<()> {
     use capnp::traits::IntoInternalStructReader;
-    use reproto_test_support::dynamic_test_capnp::{
+    use capntproto_test_support::dynamic_test_capnp::{
         large_orphan_case, small_orphan, small_orphan_case,
     };
     let mut loader = loader();
@@ -854,7 +854,7 @@ async fn replay(trace: &Trace, mode: u8, small: bool, loader: &SchemaLoader) -> 
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_loaded_orphan_traces() -> capnp::Result<()> {
-    let path = reproto_test_support::verification::input("REPROTO_DYNAMIC_ORPHAN_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_DYNAMIC_ORPHAN_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     assert!(!traces.is_empty());
@@ -961,7 +961,7 @@ impl<'m, 's> Held<'m, 's> {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_loaded_orphan_access_traces() -> capnp::Result<()> {
-    let path = reproto_test_support::verification::input("REPROTO_ORPHAN_ACCESS_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_ORPHAN_ACCESS_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     assert!(!cases.is_empty());
@@ -1158,8 +1158,8 @@ fn text_address(v: Value<'_, '_>) -> capnp::Result<*const u8> {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_loaded_orphan_group_traces() -> capnp::Result<()> {
-    use reproto_test_support::dynamic_test_capnp::orphan_group;
-    let path = reproto_test_support::verification::input("REPROTO_ORPHAN_GROUPS_TRACES")
+    use capntproto_test_support::dynamic_test_capnp::orphan_group;
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_ORPHAN_GROUPS_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     assert!(!cases.is_empty());

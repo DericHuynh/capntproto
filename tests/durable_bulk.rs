@@ -1,9 +1,8 @@
 use capnp::traits::HasTypeId;
-use futures::FutureExt;
-use reproto::durable_bulk::JournalId;
-use reproto::storage::ObjectKey;
-use reproto::storage::Revision;
-use reproto::{
+use capntproto::durable_bulk::JournalId;
+use capntproto::storage::ObjectKey;
+use capntproto::storage::Revision;
+use capntproto::{
     authority::{Grant, ObjectGeneration, ObjectId, Rights},
     bulk::{Config, Status},
     bulk_capnp::durable_transfer,
@@ -12,6 +11,7 @@ use reproto::{
     storage::{Retention, Store, Update},
     store_capnp::{document, object},
 };
+use futures::FutureExt;
 use ring::digest::{digest, SHA256};
 use std::{cell::RefCell, rc::Rc, time::Duration};
 
@@ -249,11 +249,11 @@ async fn lost_chunk_and_completion_replies_resume_without_duplicate_commits() {
 
 #[test]
 fn live_capability_payloads_and_final_commit_quota_failure_do_not_publish() {
-    use reproto_test_support::dynamic_test_capnp::external_case;
+    use capntproto_test_support::dynamic_test_capnp::external_case;
     let mut payload = capnp::message::Builder::new_default();
     struct Empty;
-    impl reproto_test_support::runtime_test_capnp::harness::Server for Empty {}
-    let broken: reproto_test_support::runtime_test_capnp::harness::Client =
+    impl capntproto_test_support::runtime_test_capnp::harness::Server for Empty {}
+    let broken: capntproto_test_support::runtime_test_capnp::harness::Client =
         capnp_rpc::new_client(Empty);
     let mut caps = Vec::new();
     let mut root = payload.init_root::<external_case::Builder>();
@@ -291,7 +291,7 @@ fn live_capability_payloads_and_final_commit_quota_failure_do_not_publish() {
     let limits = db.borrow().limits();
     let size = db.borrow().file_bytes();
     db.borrow_mut()
-        .set_limits(reproto::storage::Limits {
+        .set_limits(capntproto::storage::Limits {
             max_file_bytes: size,
             ..limits
         })
@@ -359,8 +359,8 @@ struct Wire {
 impl Wire {
     fn new(client: durable_transfer::Client) -> Self {
         let (a, b) = tokio::io::duplex(4096);
-        let server = reproto::rpc::serve(b, client.client);
-        let (client, driver) = reproto::rpc::client(a);
+        let server = capntproto::rpc::serve(b, client.client);
+        let (client, driver) = capntproto::rpc::client(a);
         Self {
             client,
             tasks: vec![server, driver],
@@ -546,7 +546,7 @@ fn batch_conflicts_limits_and_semantic_corruption_never_partially_update_indexes
         std::fs::write(&p, bytes).unwrap();
         assert!(Store::open(&p).is_err(), "offset {offset}");
     }
-    db.set_limits(reproto::storage::Limits {
+    db.set_limits(capntproto::storage::Limits {
         max_file_bytes: db.file_bytes(),
         ..db.limits()
     })
@@ -778,7 +778,7 @@ fn retries_conflicts_authority_and_cancel_preserve_durable_prefix_and_target() {
     )
     .is_err());
     assert!(
-        Receiver::<reproto::store_capnp::introduction_ticket::Owned>::resume(
+        Receiver::<capntproto::store_capnp::introduction_ticket::Owned>::resume(
             state,
             JournalId::new(99),
             grant()
@@ -874,11 +874,11 @@ async fn completion_notifies_orm_history_and_push_subscribers_over_native() {
                 let mut waiting = history.next_request().send().promise;
                 assert!((&mut waiting).now_or_never().is_none());
                 struct Observer(Rc<RefCell<Vec<u64>>>);
-                impl reproto::store_capnp::observer::Server<document::Owned> for Observer {
+                impl capntproto::store_capnp::observer::Server<document::Owned> for Observer {
                     async fn changed(
                         self: Rc<Self>,
-                        p: reproto::store_capnp::observer::ChangedParams<document::Owned>,
-                        _: reproto::store_capnp::observer::ChangedResults<document::Owned>,
+                        p: capntproto::store_capnp::observer::ChangedParams<document::Owned>,
+                        _: capntproto::store_capnp::observer::ChangedResults<document::Owned>,
                     ) -> capnp::Result<()> {
                         self.0.borrow_mut().push(p.get()?.get_revision());
                         Ok(())
@@ -898,21 +898,23 @@ async fn completion_notifies_orm_history_and_push_subscribers_over_native() {
                     .unwrap()
                     .get_subscription()
                     .unwrap();
-                let a = reproto::transport::Identity::generate();
-                let b = reproto::transport::Identity::generate();
+                let a = capntproto::transport::Identity::generate();
+                let b = capntproto::transport::Identity::generate();
                 let left = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
                 let right = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
                 let address = right.local_addr().unwrap();
                 let mut ac =
-                    reproto::transport::config(&a, b.public_key(), None, b"durable-bulk").unwrap();
+                    capntproto::transport::config(&a, b.public_key(), None, b"durable-bulk")
+                        .unwrap();
                 let mut bc =
-                    reproto::transport::config(&b, a.public_key(), None, b"durable-bulk").unwrap();
-                let (left, at) = reproto::transport::connect(left, address, &mut ac)
+                    capntproto::transport::config(&b, a.public_key(), None, b"durable-bulk")
+                        .unwrap();
+                let (left, at) = capntproto::transport::connect(left, address, &mut ac)
                     .await
                     .unwrap();
-                let (right, bt) = reproto::transport::accept(right, &mut bc).await.unwrap();
-                let server = reproto::rpc::serve(right, receiver.capability().client);
-                let (client, driver) = reproto::rpc::client::<durable_transfer::Client>(left);
+                let (right, bt) = capntproto::transport::accept(right, &mut bc).await.unwrap();
+                let server = capntproto::rpc::serve(right, receiver.capability().client);
+                let (client, driver) = capntproto::rpc::client::<durable_transfer::Client>(left);
                 let input = dir.path().join("input");
                 std::fs::write(&input, &bytes).unwrap();
                 assert_eq!(
@@ -924,7 +926,7 @@ async fn completion_notifies_orm_history_and_push_subscribers_over_native() {
                 );
                 let event = waiting.await.unwrap();
                 match event.get().unwrap().get_result().unwrap().which().unwrap() {
-                    reproto::store_capnp::history_result::Event(e) => {
+                    capntproto::store_capnp::history_result::Event(e) => {
                         assert_eq!(e.get_revision(), 1)
                     }
                     _ => panic!("completion did not publish an ORM event"),
@@ -1108,7 +1110,7 @@ async fn replay_operation(r: &Replay, action: &str, wire: bool) -> u64 {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_durable_bulk_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_DURABLE_BULK_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_DURABLE_BULK_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     assert!(!traces.is_empty());

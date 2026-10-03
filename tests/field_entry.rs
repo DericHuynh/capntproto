@@ -5,7 +5,7 @@ use capnp::private::{
     layout::{CapTable, CapTableBuilder, ElementSize, PointerBuilder, StructBuilder, StructSize},
 };
 use capnp::{ErrorKind, Result};
-use reproto_test_support::field_api_capnp::{
+use capntproto_test_support::field_api_capnp::{
     api::{NewRecord, Person, Types},
     new_record,
 };
@@ -313,7 +313,7 @@ fn occupied_old_layouts_only_upgrade_on_ensure() -> Result<()> {
             .get_pointer_field(0)
             .init_list(ElementSize::EightBytes, 1);
         let slot = api::PointerField::<
-            api::List<reproto_test_support::field_api_capnp::api::OldRecord>,
+            api::List<capntproto_test_support::field_api_capnp::api::OldRecord>,
         >::new(root.reborrow(), 0, None, None);
         assert_eq!(
             occupied(slot.entry()?).edit().err().unwrap().kind,
@@ -335,7 +335,7 @@ fn readonly_occupied_entries_cache_failure_without_copying_external_data() -> Re
         });
         use capnp::introspect::{Introspect, TypeVariant};
         let TypeVariant::Struct(raw) =
-            reproto_test_support::dynamic_test_capnp::external_case::Owned::introspect().which()
+            capntproto_test_support::dynamic_test_capnp::external_case::Owned::introspect().which()
         else {
             unreachable!()
         };
@@ -548,7 +548,7 @@ impl capnp::capability::FromClientHook for CountedClient {
     }
 }
 struct CapServer(Rc<Cell<u64>>);
-impl reproto_test_support::field_api_capnp::service::Server for CapServer {}
+impl capntproto_test_support::field_api_capnp::service::Server for CapServer {}
 impl Drop for CapServer {
     fn drop(&mut self) {
         self.0.set(self.0.get() + 1);
@@ -558,7 +558,7 @@ fn replay_caps(trace: &Trace, far: bool) -> Result<()> {
     let mut arena = Arena::new(far);
     let mut table = CapTable::new();
     let drops = Rc::new(Cell::new(0));
-    let client: reproto_test_support::field_api_capnp::service::Client =
+    let client: capntproto_test_support::field_api_capnp::service::Client =
         capnp_rpc::new_client(CapServer(drops.clone()));
     let identity = client.client.hook.get_ptr();
     let mut root = arena.root().init_struct(StructSize {
@@ -621,7 +621,7 @@ fn replay_caps(trace: &Trace, far: bool) -> Result<()> {
 }
 #[test]
 fn replay_tlc_field_entry_traces() -> Result<()> {
-    let path = reproto_test_support::verification::input("REPROTO_FIELD_ENTRY_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_FIELD_ENTRY_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     for trace in &cases {
@@ -668,7 +668,7 @@ fn capability_entries_keep_the_acquired_hook_through_consumption_and_drop() -> R
     }
     // Generated interface field entries use the same cache and preserve identity.
     let drops = Rc::new(Cell::new(0));
-    let client: reproto_test_support::field_api_capnp::service::Client =
+    let client: capntproto_test_support::field_api_capnp::service::Client =
         capnp_rpc::new_client(CapServer(drops.clone()));
     let identity = client.client.hook.get_ptr();
     let mut message = Message::<Types>::new()?;

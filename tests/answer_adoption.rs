@@ -8,8 +8,8 @@ use capnp_rpc::{
     rpc_capnp::{cap_descriptor, message, return_},
     RpcSystem,
 };
+use capntproto_test_support::runtime_test_capnp::harness;
 use futures::{channel::oneshot, FutureExt};
-use reproto_test_support::runtime_test_capnp::harness;
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -564,7 +564,7 @@ async fn expired_unreturned_answers_cannot_exhaust_unbounded_question_ids() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_answer_setup_deadlines() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     let config = include_str!("../verification/RpcAnswerSetup.cfg");
     let live = config.replace("SPECIFICATION Spec", "SPECIFICATION LiveSpec")
         + "\nPROPERTY SetupSettles\n";
@@ -1067,7 +1067,7 @@ async fn canceled_and_disconnected_adoptions_settle_without_losing_authority_che
 
 #[tokio::test(flavor = "current_thread")]
 async fn third_party_tail_returns_over_authenticated_native() {
-    use reproto::{
+    use capntproto::{
         native_rpc::{Handle, Network},
         transport::{self, Identity},
     };
@@ -1297,7 +1297,7 @@ async fn self_introduced_answer_adopts_locally_without_allocating_a_wire_questio
 
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_answer_adoption_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_ANSWER_ADOPTION_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_ANSWER_ADOPTION_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
@@ -1582,7 +1582,7 @@ async fn adopted_call_owns_execution_until_both_answers_finish() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_adopted_call_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_ADOPTED_CALL_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_ADOPTED_CALL_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
@@ -1916,7 +1916,7 @@ async fn direct_pipeline_remains_live_after_both_parent_answers_are_finished() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_caller_pipeline_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_CALLER_PIPELINE_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_CALLER_PIPELINE_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();

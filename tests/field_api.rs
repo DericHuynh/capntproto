@@ -1,6 +1,6 @@
 use capnp::field_api::{Entry, Message, MessageView};
 use capnp::{Error, ErrorKind};
-use reproto_test_support::field_api_capnp::{
+use capntproto_test_support::field_api_capnp::{
     api::{Address, Person, PhoneKind, Types},
     person,
 };
@@ -76,7 +76,7 @@ fn documented_workflow_defaults_entries_lists_and_freeze() -> capnp::Result<()> 
         Some(PhoneKind::Unknown(60000))
     );
     assert_eq!(message.read().matrix()?.get(0).unwrap()?.get(1), Some(6));
-    use reproto_test_support::field_api_capnp::api::person::{
+    use capntproto_test_support::field_api_capnp::api::person::{
         EmploymentUnionRef, EmploymentUnionTag,
     };
     assert!(matches!(
@@ -106,7 +106,7 @@ fn handles_are_lazy_and_native_copies_reuse_storage() -> capnp::Result<()> {
         assert!(p.read().field(Person::NAME).is_null());
         assert!(matches!(
             p.read().employment()?,
-            reproto_test_support::field_api_capnp::api::person::EmploymentUnionRef::Unemployed
+            capntproto_test_support::field_api_capnp::api::person::EmploymentUnionRef::Unemployed
         ));
         assert_eq!(
             p.address().edit().err().unwrap().kind,
@@ -269,7 +269,7 @@ fn generics_and_legacy_rpc_builder_bridge() -> capnp::Result<()> {
 
 #[test]
 fn group_union_selection_is_lazy_and_clears_overlapping_storage() -> capnp::Result<()> {
-    use reproto_test_support::field_api_capnp::api::{Choice, ChoiceUnionRef, ChoiceUnionTag};
+    use capntproto_test_support::field_api_capnp::api::{Choice, ChoiceUnionRef, ChoiceUnionTag};
     let mut m = Message::<Choice>::new()?;
     m.edit().untouched().set(123);
     m.edit().text().copy_from("old arm")?;
@@ -303,7 +303,7 @@ fn group_union_selection_is_lazy_and_clears_overlapping_storage() -> capnp::Resu
 
 #[test]
 fn old_struct_layout_requires_explicit_upgrade() -> capnp::Result<()> {
-    use reproto_test_support::field_api_capnp::api::{Evolving, NewRecord, OldRecord};
+    use capntproto_test_support::field_api_capnp::api::{Evolving, NewRecord, OldRecord};
     let mut old = Message::<OldRecord>::new()?;
     old.edit().value().set(99);
     let bytes = old.to_vec();
@@ -325,7 +325,7 @@ fn old_struct_layout_requires_explicit_upgrade() -> capnp::Result<()> {
 
 #[test]
 fn unions_decode_only_selected_payload_and_preserve_unknown_tags() -> capnp::Result<()> {
-    use reproto_test_support::field_api_capnp::{
+    use capntproto_test_support::field_api_capnp::{
         api::{Choice, ChoiceUnionRef, ChoiceUnionTag},
         choice,
     };
@@ -362,7 +362,7 @@ fn unions_decode_only_selected_payload_and_preserve_unknown_tags() -> capnp::Res
 
 #[test]
 fn capabilities_keep_identity_and_release_replaced_references() -> capnp::Result<()> {
-    use reproto_test_support::field_api_capnp::service;
+    use capntproto_test_support::field_api_capnp::service;
     use std::{cell::Cell, rc::Rc};
     struct Server(Rc<Cell<usize>>);
     impl service::Server for Server {}
@@ -458,7 +458,7 @@ fn staging_works_across_segments_and_unwinding_keeps_old_value() -> capnp::Resul
 
 #[test]
 fn annotations_and_keywords_keep_schema_identity() -> capnp::Result<()> {
-    use reproto_test_support::field_api_capnp::api::{RenamedEnum, RenamedFields};
+    use capntproto_test_support::field_api_capnp::api::{RenamedEnum, RenamedFields};
     let mut m = Message::<RenamedFields>::new()?;
     m.edit().label().copy_from("renamed accessor")?;
     m.edit().r#type().copy_from("keyword")?;

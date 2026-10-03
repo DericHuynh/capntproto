@@ -70,11 +70,11 @@ Pass a `Discovery` instead of a single reader to use several independently
 delegated control routes:
 
 ```rust
-let discovery = reproto::native_discovery::Discovery::new(
+let discovery = capntproto::native_discovery::Discovery::new(
     vec![primary_reader, secondary_reader],
-    reproto::native_discovery::DiscoveryOptions::default(),
+    capntproto::native_discovery::DiscoveryOptions::default(),
 )?;
-let connector = reproto::native_discovery::DiscoveryConnector::new(
+let connector = capntproto::native_discovery::DiscoveryConnector::new(
     identity, bind, discovery, None,
 )?;
 ```
@@ -220,10 +220,10 @@ For example, using a listener and network handle for the same identity:
 ```rust
 let mut mapping = listener.maintain_mapping(stun_server, Default::default())?;
 mapping.changed().await; // advertise() rejects unavailable/stopped observations
-let service = reproto::native_discovery::MappedService::new(listener, handle, &mapping)?;
+let service = capntproto::native_discovery::MappedService::new(listener, handle, &mapping)?;
 let advertisement = service.advertise(
     &directory, "objects", recipient_key, b"objects-v1",
-    reproto::native_discovery::AdvertisementOptions {
+    capntproto::native_discovery::AdvertisementOptions {
         rendezvous: true,
         ..Default::default()
     },

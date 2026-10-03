@@ -61,7 +61,7 @@ Each side sends a 24-byte hello: `RPA1` followed by four zero bytes and its
 16-byte route epoch. A control frame is 49 bytes: one kind byte, sender epoch,
 receiver epoch, and session selector (16 bytes each). Kinds are reject (0),
 select (1), acknowledge (2), and commit (3). All these bytes are carried inside
-the existing authenticated ordered Native stream. This is a Capn't Proto transport
+the existing authenticated ordered Native stream. This is a Capntproto transport
 extension; the standard Cap'n Proto RPC schemas are unchanged.
 
 Run `cargo test --test protocol_models native_arbitration_model -- --exact` or the canonical

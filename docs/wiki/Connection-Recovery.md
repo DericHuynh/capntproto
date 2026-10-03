@@ -5,7 +5,7 @@ recovery and third-party answer setup. The policies operate inside the existing
 Tokio `LocalSet`; no background reconnect loop is required.
 
 ```rust
-use reproto::native_rpc::{Network, Options, RetryingConnector, RetryPolicy};
+use capntproto::native_rpc::{Network, Options, RetryingConnector, RetryPolicy};
 use std::rc::Rc;
 
 // `provisioning` is an authorized ProvisioningConnector for permitted peers.

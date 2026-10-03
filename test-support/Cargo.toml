@@ -1,5 +1,5 @@
 [package]
-name = "reproto-test-support"
+name = "capntproto-test-support"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
@@ -20,5 +20,5 @@ signal-hook = "0.3.18"
 
 [build-dependencies]
 capnpc = { version = "0.25", path = "../vendor/capnpc" }
-capnp-compiler = { path = "../crates/capnp-compiler" }
+capntproto-compiler = { path = "../crates/capntproto-compiler" }
 capnp = { version = "0.25", path = "../vendor/capnp" }

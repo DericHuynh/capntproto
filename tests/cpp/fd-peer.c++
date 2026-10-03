@@ -13,7 +13,7 @@
 class FileServer final: public Harness::Server {
 public:
   explicit FileServer(unsigned char value) {
-    char path[] = "/tmp/reproto-cpp-fd-XXXXXX";
+    char path[] = "/tmp/capntproto-cpp-fd-XXXXXX";
     int raw = mkstemp(path);
     KJ_REQUIRE(raw >= 0);
     fd = kj::AutoCloseFd(raw);

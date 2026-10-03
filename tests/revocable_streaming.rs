@@ -8,8 +8,8 @@ use capnp::{
     Error,
 };
 use capnp_rpc::{RevocableServer, RpcSystem};
+use capntproto_test_support::cancellation_policy_capnp::policy;
 use futures::channel::oneshot;
-use reproto_test_support::cancellation_policy_capnp::policy;
 use std::{
     cell::{Cell, RefCell},
     pin::Pin,
@@ -286,8 +286,9 @@ async fn protected_stream_cancellation_releases_queue_but_revocation_stops_work(
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_revocable_streaming_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_REVOCABLE_STREAMING_TRACES")
-        .expect("prepare verified trace corpus");
+    let path =
+        capntproto_test_support::verification::input("CAPNTPROTO_REVOCABLE_STREAMING_TRACES")
+            .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     tokio::task::LocalSet::new()

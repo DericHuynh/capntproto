@@ -1,0 +1,54 @@
+name: CI / Documentation
+on:
+  workflow_call:
+  schedule:
+    - cron: '43 5 * * 2'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-documentation-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  links:
+    name: Validate documentation and export wiki
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Validate wiki navigation, inventory and local links
+        run: |
+          python3 scripts/wiki.py check
+          python3 -m unittest discover -s scripts/tests -p 'test_wiki.py'
+          python3 scripts/wiki.py build --output target/wiki --source-ref "${GITHUB_SHA}"
+      - name: Upload GitHub Wiki export
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: github-wiki
+          path: target/wiki/
+          if-no-files-found: error
+      - name: Check local documentation links
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          lycheeVersion: v0.24.2
+          args: --config quality/lychee.toml --offline '*.md' 'docs/**/*.md' '.github/**/*.md' 'research/reports/README.md' 'crates/*/README.md' 'benchmarks/**/README.md' 'vendor/*/REPROTO.md'
+          fail: true
+          output: target/links/local.md
+          jobSummary: true
+      - name: Check external links on scheduled or manual runs
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          lycheeVersion: v0.24.2
+          args: --config quality/lychee.toml '*.md' 'docs/**/*.md' '.github/**/*.md' 'research/reports/README.md' 'crates/*/README.md' 'benchmarks/**/README.md' 'vendor/*/REPROTO.md'
+          fail: false
+          output: target/links/external.md
+          jobSummary: true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: documentation-links
+          path: target/links/
+          if-no-files-found: error

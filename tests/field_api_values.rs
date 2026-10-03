@@ -2,7 +2,7 @@ use capnp::field_api::{
     native::{Limits, UnknownFields},
     Message, MessageView,
 };
-use reproto_test_support::field_api_capnp::{api::*, service};
+use capntproto_test_support::field_api_capnp::{api::*, service};
 use std::{cell::Cell, rc::Rc};
 
 fn limits() -> Limits {
@@ -321,7 +321,7 @@ struct Step {
 }
 #[test]
 fn replay_tlc_native_value_traces() -> capnp::Result<()> {
-    let path = reproto_test_support::verification::input("REPROTO_NATIVE_VALUE_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_NATIVE_VALUE_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     assert!(!traces.is_empty());

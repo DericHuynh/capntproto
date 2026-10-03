@@ -31,7 +31,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "capnp-compiler"
+name = "capntproto-compiler"
 version = "0.1.0"
 dependencies = [
  "capnp",
@@ -394,11 +394,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "reproto"
+name = "capntproto"
 version = "0.1.0"
 dependencies = [
  "capnp",
- "capnp-compiler",
+ "capntproto-compiler",
  "capnp-futures",
  "capnp-rpc",
  "capnpc",
@@ -417,14 +417,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "reproto-concurrency-probe"
+name = "capntproto-concurrency-probe"
 version = "0.0.0"
 dependencies = [
  "arc-swap",
  "crossbeam-queue",
  "futures",
  "parking_lot",
- "reproto",
+ "capntproto",
  "serde_json",
  "tempfile",
  "tokio",

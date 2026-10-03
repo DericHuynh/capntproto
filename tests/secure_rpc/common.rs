@@ -1,10 +1,10 @@
 use capnp_rpc::twoparty::TwoPartyClient;
+use capntproto::rpc::tls::{self, rustls, Identity};
+use capntproto_test_support::structured::runtime_test_capnp::harness;
 use rcgen::{
     BasicConstraints, CertificateParams, CertifiedIssuer, ExtendedKeyUsagePurpose, IsCa, KeyPair,
     KeyUsagePurpose,
 };
-use reproto::rpc::tls::{self, rustls, Identity};
-use reproto_test_support::structured::runtime_test_capnp::harness;
 use rustls::pki_types::PrivatePkcs8KeyDer;
 use std::{future::Future, rc::Rc, sync::Arc, time::Duration};
 
@@ -127,7 +127,7 @@ pub async fn echo(client: &harness::Client, value: u32) -> capnp::Result<u32> {
 
 pub async fn exercise(mut driver: TwoPartyClient<'static>) {
     driver.set_outgoing_call_limit(4);
-    let connection = reproto::rpc::Connection::spawn(driver);
+    let connection = capntproto::rpc::Connection::spawn(driver);
     let cap: harness::Client = connection.bootstrap();
     let disconnected = connection.on_disconnect();
     let diagnostics = connection.diagnostics();

@@ -701,7 +701,7 @@ impl Store {
         };
         let parent = self.path.parent().unwrap(); // Canonical absolute path.
         let temporary = tempfile::Builder::new()
-            .prefix(".reproto-compact-")
+            .prefix(".capntproto-compact-")
             .tempfile_in(parent)?;
         temporary.as_file().try_lock_exclusive()?;
         temporary

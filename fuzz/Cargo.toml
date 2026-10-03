@@ -1,5 +1,5 @@
 [package]
-name = "reproto-native-fuzz"
+name = "capntproto-native-fuzz"
 version = "0.1.0"
 edition = "2021"
 publish = false
@@ -14,7 +14,7 @@ default = ["fuzz-targets"]
 fuzz-targets = ["dep:libfuzzer-sys"]
 
 [dependencies]
-reproto = { path = "..", default-features = false, features = ["native"] }
+capntproto = { path = "..", default-features = false, features = ["native"] }
 capnp = { path = "../vendor/capnp" }
 capnp-rpc = { path = "../vendor/capnp-rpc" }
 futures = "0.3"

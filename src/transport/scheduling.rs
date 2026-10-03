@@ -230,7 +230,7 @@ mod tests {
     }
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn replay_tlc_scheduling() {
-        use reproto_test_support::verification::exploration;
+        use capntproto_test_support::verification::exploration;
         let config = include_str!("../../verification/NativeScheduling.cfg");
         exploration::controls(
             "verification/NativeScheduling.tla",

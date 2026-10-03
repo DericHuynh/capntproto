@@ -346,7 +346,7 @@ fn status_code(receiver: &Receiver) -> u64 {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_fragment_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_FRAGMENT_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_FRAGMENT_TRACES")
         .expect("run this test through its verification driver");
     let traces: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     tokio::task::LocalSet::new()

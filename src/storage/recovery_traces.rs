@@ -72,9 +72,9 @@ fn disk_state(bytes: &[u8]) -> (u64, u64, u64) {
 
 #[test]
 fn replay_tlc_storage_recovery_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_STORAGE_RECOVERY_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_STORAGE_RECOVERY_TRACES")
         .expect("required trace file");
-    let cases: Vec<Trace> = reproto_test_support::traces::read(path, "StorageRecovery");
+    let cases: Vec<Trace> = capntproto_test_support::traces::read(path, "StorageRecovery");
     for (case, trace) in cases.into_iter().enumerate() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("objects");

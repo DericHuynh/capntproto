@@ -1,6 +1,6 @@
 //! Qualify semantic replay of the real transport driver through private packet
 //! IO. Ciphertext and internal Tokio select order are deliberately not compared.
-use reproto_test_support::verification::{self as v, command, root, run};
+use capntproto_test_support::verification::{self as v, command, root, run};
 use serde_json::{json, Value};
 use std::{fs, path::PathBuf};
 
@@ -47,8 +47,8 @@ fn runtime_packet_scenarios_replay_across_processes() {
         let result = run(
             command(binary)
                 .args(["--exact", CASE, "--nocapture"])
-                .env("REPROTO_RUNTIME_SIM_OUTPUT", &output)
-                .env_remove("REPROTO_RUNTIME_SIM_REPLAY"),
+                .env("CAPNTPROTO_RUNTIME_SIM_OUTPUT", &output)
+                .env_remove("CAPNTPROTO_RUNTIME_SIM_REPLAY"),
             &directory.join(format!("sample-{process}.log")),
             0,
         )
@@ -69,8 +69,8 @@ fn runtime_packet_scenarios_replay_across_processes() {
     let result = run(
         command(binary)
             .args(["--exact", CASE, "--nocapture"])
-            .env("REPROTO_RUNTIME_SIM_OUTPUT", &output)
-            .env("REPROTO_RUNTIME_SIM_REPLAY", &replay),
+            .env("CAPNTPROTO_RUNTIME_SIM_OUTPUT", &output)
+            .env("CAPNTPROTO_RUNTIME_SIM_REPLAY", &replay),
         &directory.join("replay.log"),
         0,
     )
@@ -83,8 +83,8 @@ fn runtime_packet_scenarios_replay_across_processes() {
     run(
         command(binary)
             .args(["--exact", CASE, "--nocapture"])
-            .env("REPROTO_RUNTIME_SIM_OUTPUT", directory.join("process-0"))
-            .env("REPROTO_RUNTIME_SIM_REPLAY", &replay),
+            .env("CAPNTPROTO_RUNTIME_SIM_OUTPUT", directory.join("process-0"))
+            .env("CAPNTPROTO_RUNTIME_SIM_REPLAY", &replay),
         &directory.join("in-place-replay.log"),
         0,
     )
@@ -99,8 +99,8 @@ fn runtime_packet_scenarios_replay_across_processes() {
     let failure = run(
         command(binary)
             .args(["--exact", CASE, "--nocapture"])
-            .env("REPROTO_RUNTIME_SIM_OUTPUT", &output)
-            .env("REPROTO_RUNTIME_SIM_REPLAY", bad),
+            .env("CAPNTPROTO_RUNTIME_SIM_OUTPUT", &output)
+            .env("CAPNTPROTO_RUNTIME_SIM_REPLAY", bad),
         &directory.join("control.log"),
         101,
     )

@@ -387,7 +387,7 @@ mod tests {
     }
     #[tokio::test]
     async fn replay_tlc_mapping_refresh() {
-        use reproto_test_support::verification::exploration;
+        use capntproto_test_support::verification::exploration;
         let config = include_str!("../../verification/NativeMappingRefresh.cfg");
         let live = config.replace("SPECIFICATION Spec", "SPECIFICATION LiveSpec")
             + "\nPROPERTY ProbeSettles\n";

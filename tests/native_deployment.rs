@@ -1,11 +1,11 @@
-use reproto::{
+use capntproto::{
     native_discovery::{self, Binding, Directory, DiscoveryConnector, DiscoveryGeneration},
     native_listener::{self, Limits, Listener},
     native_provisioning::Provisioner,
     native_rpc::{Connector, Network},
     transport::Identity,
 };
-use reproto_test_support::runtime_test_capnp::harness;
+use capntproto_test_support::runtime_test_capnp::harness;
 use std::{cell::RefCell, net::SocketAddr, rc::Rc, time::Duration};
 use tokio::net::UdpSocket;
 
@@ -90,8 +90,8 @@ async fn discovered_rendezvous_establishes_native_rpc_and_follows_name_key_rotat
             let directory=Directory::default();
             // Exercise generated discovery calls over an RPC connection.
             let (a,b)=tokio::io::duplex(4096);
-            let _directory=Task(reproto::rpc::serve(b,directory.client(recipient.public_key()).client));
-            let (reader,driver):(reproto::native_discovery_capnp::directory::Client,_)=reproto::rpc::client(a);
+            let _directory=Task(capntproto::rpc::serve(b,directory.client(recipient.public_key()).client));
+            let (reader,driver):(capntproto::native_discovery_capnp::directory::Client,_)=capntproto::rpc::client(a);
             let _reader=Task(driver);
             let connector=Rc::new(DiscoveryConnector::new(recipient.clone(),local(),reader.clone(),Some(stun)).unwrap());
             let (network,handle)=Network::with_connector(recipient.public_key(),connector.clone());
@@ -224,7 +224,7 @@ async fn path_migration_and_cid_rotation_preserve_rpc_generation_and_datagrams()
 
 #[tokio::test(flavor = "current_thread")]
 async fn maintained_mapping_refresh_failure_recovery_and_stop_preserve_rpc() {
-    use reproto::nat::{MappingOptions, MappingStatus};
+    use capntproto::nat::{MappingOptions, MappingStatus};
     use std::cell::Cell;
     tokio::task::LocalSet::new()
         .run_until(async {
@@ -383,7 +383,7 @@ async fn maintained_mapping_refresh_failure_recovery_and_stop_preserve_rpc() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn mapped_advertisements_follow_outages_and_new_endpoints_without_replaying_calls() {
-    use reproto::{
+    use capntproto::{
         nat::MappingOptions,
         native_discovery::{
             AdvertisementOptions, AdvertisementStatus, AdvertisementStop, MappedService,
@@ -429,8 +429,8 @@ async fn mapped_advertisements_follow_outages_and_new_endpoints_without_replayin
         let ad_c=service.advertise(&directory,"service",c.public_key(),b"mapped",options).unwrap();
         // Real generated directory RPC over an independent control connection.
         let (left,right)=tokio::io::duplex(4096);
-        let _directory=Task(reproto::rpc::serve(right,directory.client(a.public_key()).client));
-        let (reader,driver):(reproto::native_discovery_capnp::directory::Client,_)=reproto::rpc::client(left);
+        let _directory=Task(capntproto::rpc::serve(right,directory.client(a.public_key()).client));
+        let (reader,driver):(capntproto::native_discovery_capnp::directory::Client,_)=capntproto::rpc::client(left);
         let _reader=Task(driver);
         let connector=Rc::new(DiscoveryConnector::new(a.clone(),local(),reader.clone(),None).unwrap());
         let (an,ah)=Network::with_connector(a.public_key(),connector);
@@ -518,7 +518,7 @@ async fn directory_expiry_cas_revocation_recipient_scope_and_capacity() {
     tokio::task::LocalSet::new()
         .run_until(async {
             struct Never;
-            impl reproto::native_provisioning_capnp::provisioner::Server for Never {}
+            impl capntproto::native_provisioning_capnp::provisioner::Server for Never {}
             let directory = Directory::default();
             let binding = Binding {
                 host: [1; 32],
@@ -580,7 +580,7 @@ async fn directory_expiry_cas_revocation_recipient_scope_and_capacity() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn advertisement_shutdown_and_replacement_notify_and_preserve_successors() {
-    use reproto::{
+    use capntproto::{
         nat::MappingOptions,
         native_discovery::{
             AdvertisementOptions, AdvertisementStatus, AdvertisementStop, MappedService,
@@ -714,7 +714,7 @@ async fn advertisement_shutdown_and_replacement_notify_and_preserve_successors()
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn replay_tlc_discovery_publication_and_rotation() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     let config = include_str!("../verification/NativeDiscovery.cfg");
     let live =
         config.replace("SPECIFICATION Spec", "SPECIFICATION LiveSpec") + "\nPROPERTY LeaseEnds\n";
@@ -739,7 +739,7 @@ async fn replay_tlc_discovery_publication_and_rotation() {
     tokio::task::LocalSet::new()
         .run_until(async {
             struct Never;
-            impl reproto::native_provisioning_capnp::provisioner::Server for Never {}
+            impl capntproto::native_provisioning_capnp::provisioner::Server for Never {}
             for trace in traces {
                 let directory = Directory::default();
                 let mut generation = None;
@@ -826,7 +826,7 @@ async fn replay_tlc_discovery_publication_and_rotation() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_rendezvous_consent_authentication_and_retirement() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     let config = include_str!("../verification/NativeRendezvous.cfg");
     let live =
         config.replace("SPECIFICATION Spec", "SPECIFICATION LiveSpec") + "\nPROPERTY Settles\n";

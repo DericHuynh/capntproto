@@ -114,7 +114,7 @@ mapped generation. A complete checkpoint is mandatory; it cannot be mistaken
 for an ordinary torn append. Incomplete trailing appends *after* a complete
 checkpoint still recover using the existing validated-prefix rule.
 
-An abrupt process death before rename may leave a `.reproto-compact-*` temporary
+An abrupt process death before rename may leave a `.capntproto-compact-*` temporary
 file. It is never selected for recovery; removing such abandoned files is host
 maintenance. `Store::open()` accepts `RPROTO04`; the explicit
 `Store::open_components()` API accepts [RPROTO05 component storage](Component-Storage.md).

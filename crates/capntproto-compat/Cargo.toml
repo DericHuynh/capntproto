@@ -1,0 +1,28 @@
+[package]
+name = "capntproto-compat"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.97"
+license = "MIT"
+description = "Optional codecs and protocol adapters for the maintained Cap'n Proto runtime"
+readme = "README.md"
+publish = false
+
+[dependencies]
+capnp = { path = "../../vendor/capnp" }
+capnp-rpc = { path = "../../vendor/capnp-rpc" }
+capntproto-compiler = { path = "../capntproto-compiler" }
+futures = "0.3"
+serde_json = "1"
+base64 = "0.22"
+
+[build-dependencies]
+capnp = { path = "../../vendor/capnp" }
+capntproto-compiler = { path = "../capntproto-compiler" }
+capnpc = { path = "../../vendor/capnpc" }
+
+[dev-dependencies]
+capntproto-test-support = { path = "../../test-support" }
+tempfile = "3"
+tokio = { version = "1", features = ["rt", "macros", "net", "time", "io-util", "process"] }
+tokio-util = { version = "0.7", features = ["compat"] }

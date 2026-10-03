@@ -131,7 +131,7 @@ async fn blocked_mapping_expiry_and_replacement_preserve_shared_sessions() {
 
 #[test]
 fn replay_tlc_mapping_packets_and_discovery_publications() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     let config = include_str!("../../../../../verification/NativeMappingRefresh.cfg");
     let traces = exploration::traces(
         "verification/NativeMappingRefresh.tla",

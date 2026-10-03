@@ -3,7 +3,7 @@ use capnp::{
     message,
     schema_loader::{dynamic, SchemaLoader, Type},
 };
-use reproto_test_support::native_list_capnp::{self as fixture, item, lists, other, service};
+use capntproto_test_support::native_list_capnp::{self as fixture, item, lists, other, service};
 mod native_list {
     pub mod capabilities;
     pub mod verification;

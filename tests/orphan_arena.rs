@@ -1,5 +1,5 @@
 use capnp::{dynamic_struct, dynamic_value as value};
-use reproto_test_support::dynamic_test_capnp::external_case;
+use capntproto_test_support::dynamic_test_capnp::external_case;
 
 #[derive(serde::Deserialize)]
 struct Step {
@@ -101,7 +101,7 @@ fn reclaimed_tail_is_reused_without_corrupting_retained_bytes() -> capnp::Result
 
 #[test]
 fn replay_tlc_arena_resize_traces() -> capnp::Result<()> {
-    let path = reproto_test_support::verification::input("REPROTO_ARENA_RESIZE_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_ARENA_RESIZE_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<Case> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     for case in &cases {

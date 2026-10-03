@@ -288,10 +288,10 @@ host, without introducing an actor system into this workspace.
 
 ```sh
 export PATH="$PWD/target/auditable-tools/wrapper:$PWD/target/auditable-tools/bin:$PATH"
-cargo build --locked -p reproto --release --example storage_resilience
+cargo build --locked -p capntproto --release --example storage_resilience
 python3 scripts/storage_resilience.py --base target --output target/storage-resilience-results --trials 3
 python3 scripts/storage_resilience.py --summarize target/storage-resilience-results
-cargo test --locked -p reproto --test tooling storage_crashes_in_isolated_process -- --exact
+cargo test --locked -p capntproto --test tooling storage_crashes_in_isolated_process -- --exact
 ```
 
 Choose an existing `--base` directory on the filesystem to measure and a new

@@ -5,8 +5,8 @@ use capnp_rpc::{
     membrane::{Direction, Membrane, Policy},
     RpcSystem,
 };
+use capntproto_test_support::runtime_test_capnp::harness;
 use futures::channel::oneshot;
-use reproto_test_support::runtime_test_capnp::harness;
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -199,7 +199,7 @@ impl Fixture {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_membrane_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_MEMBRANE_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_MEMBRANE_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
@@ -405,7 +405,7 @@ async fn revoked_policy_trace(steps: &[serde_json::Value], redirect: bool, mode:
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_revoked_policy_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_REVOKED_POLICY_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_REVOKED_POLICY_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
@@ -538,7 +538,7 @@ async fn transform_trace(steps: &[serde_json::Value], custom: bool, reverse: boo
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_membrane_transform_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_MEMBRANE_TRANSFORM_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_MEMBRANE_TRANSFORM_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();

@@ -90,7 +90,7 @@ crossed authenticated sessions before RPC publication.
 
 Run `cargo test --test protocol_models native_listener_model -- --exact`, or the complete
 `cargo test --locked --workspace --all-targets`. The focused report is
-`reports/reproto/native-listener/verification.json`.
+`reports/capntproto/native-listener/verification.json`.
 
 The shared listener also runs through in-memory packet IO with real mutual TLS authentication, with and without admission secrets. `NativeListenerIo.tla` covers blocked concurrent sends, drain,
 expiry, receive errors and close: 213 states and 456 traces replayed in both

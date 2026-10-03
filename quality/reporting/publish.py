@@ -16,7 +16,9 @@ from .data import CHARTS, validate_publication
 from .render import empty_history, merge, render
 
 WORKFLOWS = {'.github/workflows/full-quality.yml': 'full',
-             '.github/workflows/benchmarks.yml': 'benchmark'}
+             '.github/workflows/benchmarks.yml': 'benchmark',
+             '.github/workflows/verification-coverage.yml': 'full',
+             '.github/workflows/performance.yml': 'benchmark'}
 MAX_ARTIFACT = 16 * 1024 * 1024
 OWNED = {f'docs/reports/{name}.svg' for name in CHARTS} | {
     'README.md', 'docs/reports/history.json', 'docs/reports/test-history.svg',
@@ -152,7 +154,7 @@ def publish(event_path):
             return
         tree = api.request(f'/git/commits/{head}')['tree']['sha']
         tree = api.request('/git/trees', {'base_tree': tree, 'tree': entries}, 'POST')['sha']
-        commit = api.request('/git/commits', {'message': f"docs: refresh Capn't Proto reports (run {run['id']})",
+        commit = api.request('/git/commits', {'message': f"docs: refresh Capntproto reports (run {run['id']})",
                                              'tree': tree, 'parents': [head]}, 'POST')['sha']
         try:
             api.request(f'/git/refs/heads/{quote(branch, safe="")}', {'sha': commit, 'force': False}, 'PATCH')

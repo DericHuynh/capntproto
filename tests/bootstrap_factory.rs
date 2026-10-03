@@ -4,7 +4,7 @@ use capnp_rpc::{
     rpc_capnp::{cap_descriptor, message, return_},
     BootstrapFactory, RpcSystem,
 };
-use reproto_test_support::runtime_test_capnp::harness;
+use capntproto_test_support::runtime_test_capnp::harness;
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -267,7 +267,7 @@ struct Step {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_bootstrap_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_BOOTSTRAP_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_BOOTSTRAP_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<Vec<Step>> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     assert!(!traces.is_empty());
@@ -445,8 +445,9 @@ async fn introduced_connections_keep_factory_and_delegated_capability_authority(
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_introduced_bootstrap_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_INTRODUCED_BOOTSTRAP_TRACES")
-        .expect("prepare verified trace corpus");
+    let path =
+        capntproto_test_support::verification::input("CAPNTPROTO_INTRODUCED_BOOTSTRAP_TRACES")
+            .expect("prepare verified trace corpus");
     let traces: Vec<Vec<IntroductionStep>> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     assert!(!traces.is_empty());

@@ -1,5 +1,5 @@
 use super::*;
-use reproto_test_support::schedules::{self, block_on, spawn_local, yield_now, Trace};
+use capntproto_test_support::schedules::{self, block_on, spawn_local, yield_now, Trace};
 use std::cell::Cell;
 
 #[derive(Default)]
@@ -12,7 +12,7 @@ impl std::task::Wake for WakeFlag {
 
 #[test]
 fn replay_tlc_shutdown_waiter_lifecycle() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     use std::{
         future::Future,
         pin::Pin,

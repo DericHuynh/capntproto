@@ -581,7 +581,7 @@ mod tests {
     }
     #[test]
     fn replay_tlc_arbitration_traces() {
-        let path = reproto_test_support::verification::input("REPROTO_ARBITRATION_TRACES")
+        let path = capntproto_test_support::verification::input("CAPNTPROTO_ARBITRATION_TRACES")
             .expect("run this test through its verification driver");
         let traces: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         assert!(!traces.is_empty());

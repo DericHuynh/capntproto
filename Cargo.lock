@@ -170,16 +170,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "capnp-compat"
+name = "capntproto-compat"
 version = "0.1.0"
 dependencies = [
  "base64",
  "capnp",
- "capnp-compiler",
+ "capntproto-compiler",
  "capnp-rpc",
  "capnpc",
  "futures",
- "reproto-test-support",
+ "capntproto-test-support",
  "serde_json",
  "tempfile",
  "tokio",
@@ -187,7 +187,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "capnp-compiler"
+name = "capntproto-compiler"
 version = "0.1.0"
 dependencies = [
  "capnp",
@@ -1074,13 +1074,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
-name = "reproto"
+name = "capntproto"
 version = "0.1.0"
 dependencies = [
  "allocation-counter",
  "boring",
  "capnp",
- "capnp-compiler",
+ "capntproto-compiler",
  "capnp-futures",
  "capnp-rpc",
  "capnpc",
@@ -1091,7 +1091,7 @@ dependencies = [
  "proptest",
  "quiche",
  "rcgen",
- "reproto-test-support",
+ "capntproto-test-support",
  "ring",
  "rustls",
  "serde",
@@ -1107,23 +1107,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "reproto-quality"
+name = "capntproto-quality"
 version = "0.1.0"
 dependencies = [
  "fs2",
  "plotters",
- "reproto-test-support",
+ "capntproto-test-support",
  "serde",
  "serde_json",
  "tempfile",
 ]
 
 [[package]]
-name = "reproto-test-support"
+name = "capntproto-test-support"
 version = "0.1.0"
 dependencies = [
  "capnp",
- "capnp-compiler",
+ "capntproto-compiler",
  "capnp-rpc",
  "capnpc",
  "flate2",

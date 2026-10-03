@@ -3,7 +3,7 @@ use crate::{
     coverage::{self, Metric, Metrics, Summary},
     source_id, Evidence, Result,
 };
-use reproto_test_support::verification::{self as v, root};
+use capntproto_test_support::verification::{self as v, root};
 use serde_json::Value;
 use std::{collections::BTreeMap, fmt::Write as _, fs, path::Path};
 
@@ -51,6 +51,9 @@ pub fn validate_evidence(e: &Evidence, id: &str, directory: &Path) -> Result<()>
 }
 fn validate_coverage(e: &Evidence, directory: &Path) -> Result<(Summary, Summary)> {
     let summary: Summary = serde_json::from_slice(&fs::read(directory.join("summary.json"))?)?;
+    if summary.scope != coverage::SCOPE {
+        return Err("coverage source scope differs; requalification required".into());
+    }
     let raw = fs::read(directory.join("coverage.json"))?;
     if e.data["llvm_json_sha256"] != v::sha256(&raw) {
         return Err("LLVM export hash mismatch".into());
@@ -65,6 +68,9 @@ fn validate_coverage(e: &Evidence, directory: &Path) -> Result<(Summary, Summary
     let baseline: Summary = serde_json::from_slice(&fs::read(&baseline_path).map_err(|_| {
         "coverage baseline missing; qualify and review the initial measurement first"
     })?)?;
+    if baseline.scope != summary.scope {
+        return Err("coverage baseline source scope differs; requalification required".into());
+    }
     if baseline.totals != coverage::totals(&baseline.files) {
         return Err("baseline totals differ from its per-file counters".into());
     }
@@ -104,7 +110,7 @@ fn instruction_rows(e: &Evidence, directory: &Path) -> Result<Vec<crate::instruc
     Ok(rows)
 }
 pub fn write_files(directory: &Path, summary: &Summary) -> Result<()> {
-    let mut inventory = String::from("# Every source file\n\nN/A means no executable LLVM mapping in the tested builds, not 100% coverage. Schema/model/script files use their separate correctness gates.\n\n| File | Status | Lines | Regions | Functions | Branches |\n| --- | --- | --- | --- | --- | --- |\n");
+    let mut inventory = String::from("# First-party Rust source files\n\nN/A means no executable LLVM mapping in the tested builds, not 100% coverage. Schema/model/script files use their separate correctness gates.\n\n| File | Status | Lines | Regions | Functions | Branches |\n| --- | --- | --- | --- | --- | --- |\n");
     for (name, file) in &summary.files {
         let empty = Metrics::default();
         let m = file.metrics.as_ref().unwrap_or(&empty);
@@ -137,12 +143,12 @@ pub fn generate(base: &Path, lanes: &str) -> Result<()> {
     charts::clear(base)?;
     fs::write(
         base.join("README.md"),
-        "# Capn't Proto quality report\n\nReport generation incomplete.\n",
+        "# Capntproto quality report\n\nReport generation incomplete.\n",
     )?;
     let mut figures = vec![];
     let mut evidence = BTreeMap::new();
     let mut failures = vec![];
-    let mut readme = format!("# Capn't Proto quality report\n\nSource fingerprint: `{id}`. Measurement platform: Linux x86-64. Linux, macOS and Windows compile/smoke results are published by the separate Quality workflow.\n\nThis README is generated from fresh test, LLVM and benchmark evidence. Missing or failed jobs prevent the required CI check from passing.\n\n## Required checks\n\n| Lane | Result |\n| --- | --- |\n");
+    let mut readme = format!("# Capntproto quality report\n\nSource fingerprint: `{id}`. Measurement platform: Linux x86-64. Linux, macOS and Windows compile/smoke results are published by the separate CI workflow.\n\nThis README is generated from fresh test, LLVM and benchmark evidence. Missing or failed jobs prevent the required CI check from passing.\n\n## Required checks\n\n| Lane | Result |\n| --- | --- |\n");
     for lane in &expected {
         let directory = base.join(lane);
         let result: Result<Evidence> = (|| {
@@ -164,7 +170,7 @@ pub fn generate(base: &Path, lanes: &str) -> Result<()> {
             }
         }
     }
-    readme.push_str("\n## LLVM code coverage\n\nCoverage includes zero-hit mappings. Files without executable mappings are listed explicitly and are never counted as covered. Branch counters are instrumented; MC/DC is not claimed. Rust and C++ reference totals are kept separate.\n\n");
+    readme.push_str("\n## LLVM code coverage\n\nCoverage includes zero-hit mappings. Files without executable mappings are listed explicitly and are never counted as covered. Branch counters are instrumented; MC/DC is not claimed. Coverage is restricted to project-owned Rust sources; vendored dependencies, generated OUT_DIR files and the independent C++ reference are excluded.\n\n");
     if let Some(e) = evidence.get("coverage") {
         match validate_coverage(e, &base.join("coverage")) {
             Ok((summary, baseline)) => {
@@ -200,9 +206,9 @@ pub fn generate(base: &Path, lanes: &str) -> Result<()> {
         }
     } else {
         readme
-            .push_str("No validated coverage was supplied to this report; see the separate Full quality artifact. No percentage is reported.\n");
+            .push_str("No validated coverage was supplied to this report; see the separate Verification / Coverage artifact. No percentage is reported.\n");
     }
-    readme.push_str("\n## Linux loopback performance\n\nOne outstanding request, separate server/client processes, five repetitions per cell, rotated protocol order, validated sequence numbers and full payloads. Setup and warmup are excluded; latency includes serialization, transport, scheduling, and response validation. These are sequential round trips, not maximum concurrent throughput. Host load and CPU scheduling affect results.\n\n| Implementation | Transport in this run | Application contract |\n| --- | --- | --- |\n| Capn't Proto | Authenticated, encrypted Native IK / UDP | Cap’n Proto capability RPC |\n| C++ Cap’n Proto | Plaintext TCP | Cap’n Proto capability RPC |\n| tonic gRPC | Plaintext HTTP/2 / TCP | Protobuf unary service RPC |\n| tokio-tungstenite | Plaintext WebSocket / TCP | Binary echo with an application sequence header |\n\nEncryption and protocol semantics differ. WebSockets alone do not supply the capability or RPC semantics of the other implementations. No result establishes a universal fastest protocol.\n\n");
+    readme.push_str("\n## Linux loopback performance\n\nOne outstanding request, separate server/client processes, five repetitions per cell, rotated protocol order, validated sequence numbers and full payloads. Setup and warmup are excluded; latency includes serialization, transport, scheduling, and response validation. These are sequential round trips, not maximum concurrent throughput. Host load and CPU scheduling affect results.\n\n| Implementation | Transport in this run | Application contract |\n| --- | --- | --- |\n| Capntproto | Authenticated, encrypted Native IK / UDP | Cap’n Proto capability RPC |\n| C++ Cap’n Proto | Plaintext TCP | Cap’n Proto capability RPC |\n| tonic gRPC | Plaintext HTTP/2 / TCP | Protobuf unary service RPC |\n| tokio-tungstenite | Plaintext WebSocket / TCP | Binary echo with an application sequence header |\n\nEncryption and protocol semantics differ. WebSockets alone do not supply the capability or RPC semantics of the other implementations. No result establishes a universal fastest protocol.\n\n");
     let mut instruction_counts = None;
     if let Some(e) = evidence.get("benchmark") {
         let results = benchmark_rows(e, &base.join("benchmark")).and_then(|rows| {
@@ -212,7 +218,7 @@ pub fn generate(base: &Path, lanes: &str) -> Result<()> {
         match results {
             Ok(rows) => {
                 figures.extend(charts::performance(&rows)?);
-                readme.push_str("| Payload bytes | Implementation | p50 µs | p95 µs | p99 µs | Sequential req/s | p50 / Capn't Proto |\n| --- | --- | --- | --- | --- | --- | --- |\n");
+                readme.push_str("| Payload bytes | Implementation | p50 µs | p95 µs | p99 µs | Sequential req/s | p50 / Capntproto |\n| --- | --- | --- | --- | --- | --- | --- |\n");
                 for row in &rows {
                     let native = rows
                         .iter()
@@ -233,7 +239,7 @@ pub fn generate(base: &Path, lanes: &str) -> Result<()> {
                         p50 / native["p50_ns"].as_f64().unwrap()
                     )?;
                 }
-                readme.push_str("\nThe last column compares each implementation’s median latency with Capn't Proto at the same payload size; lower is less latency. [Raw per-request samples](benchmark/trials.json) and [environment, compiler/binary identities, repetition ranges and source pins](benchmark/evidence.json) accompany the results.\n");
+                readme.push_str("\nThe last column compares each implementation’s median latency with Capntproto at the same payload size; lower is less latency. [Raw per-request samples](benchmark/trials.json) and [environment, compiler/binary identities, repetition ranges and source pins](benchmark/evidence.json) accompany the results.\n");
             }
             Err(error) => {
                 writeln!(
@@ -246,7 +252,7 @@ pub fn generate(base: &Path, lanes: &str) -> Result<()> {
         }
     } else {
         readme.push_str(
-            "No validated performance was supplied to this report; see the separate Dedicated benchmarks artifact. No comparison numbers are reported.\n",
+            "No validated performance was supplied to this report; see the separate Performance / Dedicated benchmarks artifact. No comparison numbers are reported.\n",
         );
     }
     if let Some(rows) = instruction_counts {

@@ -1,5 +1,5 @@
-use reproto::storage::Revision;
-use reproto::storage::{Error, ObjectKey, PublicationCursor, Retention, Store};
+use capntproto::storage::Revision;
+use capntproto::storage::{Error, ObjectKey, PublicationCursor, Retention, Store};
 
 fn seed(path: &std::path::Path) -> Store {
     let mut store = Store::open(path).unwrap();
@@ -176,7 +176,7 @@ fn error_code(error: Error) -> u64 {
 
 #[test]
 fn replay_tlc_cursor_ownership_retention_and_retry() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     const MODEL: &str = "verification/PublicationCursor.tla";
     const CONFIG: &str = include_str!("../verification/PublicationCursor.cfg");
     let paths = exploration::traces(MODEL, "publication-cursor", CONFIG).unwrap();

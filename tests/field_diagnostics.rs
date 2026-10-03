@@ -3,7 +3,7 @@ use capnp::field_api::{
     Entry, Message, MessageView,
 };
 use capnp::{Error, ErrorKind, Result};
-use reproto_test_support::field_api_capnp::{api::*, service};
+use capntproto_test_support::field_api_capnp::{api::*, service};
 use std::{cell::Cell, rc::Rc};
 
 fn failure<T>(result: Result<T>) -> Error {

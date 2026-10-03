@@ -1,12 +1,12 @@
 use capnp::capability::FromClientHook;
-use reproto::{
+use capntproto::{
     native_listener::{Limits, Listener},
     native_provisioning::{relay, Provisioner, ProvisioningConnector},
     native_provisioning_capnp::provisioner,
     native_rpc::{Connector, Handle, Network, RouteStatus},
     transport::{self, Identity},
 };
-use reproto_test_support::runtime_test_capnp::harness;
+use capntproto_test_support::runtime_test_capnp::harness;
 use std::{
     cell::{Cell, RefCell},
     net::SocketAddr,
@@ -140,7 +140,7 @@ async fn native_handoff(arbitration: bool) {
                         Network::with_arbitration(
                             id,
                             connector,
-                            reproto::native_arbitration::Limits::default(),
+                            capntproto::native_arbitration::Limits::default(),
                         )
                         .unwrap()
                     } else if let Some(connector) = connector {
@@ -252,8 +252,8 @@ async fn remote_lease_cancellation_expiry_drop_and_revocation_release_reservatio
             .unwrap();
             // This in-memory RPC fixture checks capability release, not secrecy.
             let (a, b) = tokio::io::duplex(4096);
-            let server = reproto::rpc::serve(b, grant.client().client);
-            let (client, task): (provisioner::Client, _) = reproto::rpc::client(a);
+            let server = capntproto::rpc::serve(b, grant.client().client);
+            let (client, task): (provisioner::Client, _) = capntproto::rpc::client(a);
             let _tasks = Tasks(vec![server, task]);
             let mut previous = None;
             for mode in 0..5 {
@@ -343,8 +343,8 @@ async fn canceled_control_call_and_provider_owner_drop_abort_pending_accepts() {
                 issued: issued.clone(),
             });
             let (a, b) = tokio::io::duplex(4096);
-            let server = reproto::rpc::serve(b, delayed.client);
-            let (client, task): (provisioner::Client, _) = reproto::rpc::client(a);
+            let server = capntproto::rpc::serve(b, delayed.client);
+            let (client, task): (provisioner::Client, _) = capntproto::rpc::client(a);
             let tasks = Tasks(vec![server, task]);
             let connector = ProvisioningConnector::new(recipient, local());
             connector

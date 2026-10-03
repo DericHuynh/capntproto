@@ -1,7 +1,7 @@
 use capnp::field_api::{CapabilityTable, Message, MessageReader, MessageView};
 use capnp::message::{HeapAllocator, Reader, ReaderOptions, ReaderSegments};
 use capnp::{ErrorKind, Result, Word};
-use reproto_test_support::field_api_capnp::{
+use capntproto_test_support::field_api_capnp::{
     api::{Address, AddressRef, NativeRecord},
     service,
 };
@@ -445,9 +445,9 @@ struct Step {
 }
 #[test]
 fn replay_tlc_field_owner_traces() -> Result<()> {
-    let path = reproto_test_support::verification::input("REPROTO_FIELD_OWNER_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_FIELD_OWNER_TRACES")
         .expect("prepare verified trace corpus");
-    let traces: Vec<Trace> = reproto_test_support::traces::read(path, "RpcFieldOwners");
+    let traces: Vec<Trace> = capntproto_test_support::traces::read(path, "RpcFieldOwners");
     assert!(!traces.is_empty());
     for trace in traces {
         let counts = Counts::default();
@@ -647,7 +647,7 @@ fn replay_tlc_field_owner_traces() -> Result<()> {
 
 #[test]
 fn custom_context_orphans_reject_other_arenas_without_losing_authority() -> Result<()> {
-    use reproto_test_support::field_api_capnp::api::Transfer;
+    use capntproto_test_support::field_api_capnp::api::Transfer;
     let counts = Counts::default();
     let mut left = Message::<Transfer>::with_capabilities(Context {
         table: Vec::new(),

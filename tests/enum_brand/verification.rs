@@ -1,5 +1,5 @@
 use super::super::*;
-use reproto_test_support::verification::{command, cpp, exploration, root, run};
+use capntproto_test_support::verification::{command, cpp, exploration, root, run};
 use std::{
     collections::HashMap,
     hash::{BuildHasherDefault, Hasher},

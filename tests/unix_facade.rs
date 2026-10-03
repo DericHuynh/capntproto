@@ -4,9 +4,9 @@ use capnp::{
     ErrorKind,
 };
 use capnp_rpc::rpc_twoparty_capnp::Side;
+use capntproto::unix_rpc::{self, Options, TwoPartyServer};
+use capntproto_test_support::runtime_test_capnp::harness;
 use futures::FutureExt;
-use reproto::unix_rpc::{self, Options, TwoPartyServer};
-use reproto_test_support::runtime_test_capnp::harness;
 use std::{
     cell::Cell,
     future::Future,

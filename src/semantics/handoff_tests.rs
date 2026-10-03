@@ -43,7 +43,7 @@ fn enqueue_reserves_drain_capacity_before_reporting_success() {
 
 #[test]
 fn replay_tlc_handoff_counter_boundary() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     const MODEL: &str = "verification/HandoffCounterBoundary.tla";
     const CONFIG: &str = include_str!("../../verification/HandoffCounterBoundary.cfg");
     // These private test fixtures represent reachable histories with MAX-2

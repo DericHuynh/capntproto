@@ -37,8 +37,8 @@ for validation, export and the live-publication prerequisite.
 | `SUPPORT.md` | revised: [SUPPORT.md](../../SUPPORT.md) | Retain support boundaries and refresh guide destinations. |
 | `THIRD_PARTY_NOTICES.md` | revised: [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md) | Retain license/provenance attribution; correct rustls transport description. |
 | `benchmarks/concurrency/README.md` | revised: [README.md](../../benchmarks/concurrency/README.md) | Retain standalone probe setup and link to canonical research guide. |
-| `crates/capnp-compat/README.md` | moved and revised: [Compatibility-Adapters.md](Compatibility-Adapters.md), [README.md](../../crates/capnp-compat/README.md) | Move detailed adapter guide to wiki; keep package landing/build README. |
-| `crates/capnp-compiler/README.md` | moved and revised: [Schema-Compiler.md](Schema-Compiler.md), [README.md](../../crates/capnp-compiler/README.md) | Move detailed compiler guide to wiki; keep package landing/build README and date corpus claims. |
+| `crates/capntproto-compat/README.md` | moved and revised: [Compatibility-Adapters.md](Compatibility-Adapters.md), [README.md](../../crates/capntproto-compat/README.md) | Move detailed adapter guide to wiki; keep package landing/build README. |
+| `crates/capntproto-compiler/README.md` | moved and revised: [Schema-Compiler.md](Schema-Compiler.md), [README.md](../../crates/capntproto-compiler/README.md) | Move detailed compiler guide to wiki; keep package landing/build README and date corpus claims. |
 | `docs/ANSWER_ADOPTION.md` | moved and revised: [Third-Party-Answers.md](Third-Party-Answers.md) | Retain authenticated adoption semantics and explicit C++ interoperability boundary. |
 | `docs/ARCHITECTURE.md` | moved and revised: [Architecture.md](Architecture.md) | Retain module ownership; repair guide and source references. |
 | `docs/BULK_RUNTIME.md` | moved and revised: [Bulk-Transfer.md](Bulk-Transfer.md) | Retain capability-scoped bulk contracts, limits and test entry points. |

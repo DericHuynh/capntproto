@@ -21,8 +21,7 @@ runs:
         sudo apt-get update
         sudo apt-get install --no-install-recommends -y cmake ninja-build g++ binutils clang-22 libclang-rt-22-dev pkg-config capnproto libcapnp-dev protobuf-compiler valgrind openjdk-17-jre-headless unzip python3-matplotlib
         echo "JAVA=/usr/lib/jvm/java-17-openjdk-amd64/bin/java" >> "$GITHUB_ENV"
-        echo "REPROTO_COVERAGE_CLANG=clang++-22" >> "$GITHUB_ENV"
-    - uses: ./.github/actions/auditable-setup # zizmor: ignore[self-repository]
+        echo "CAPNTPROTO_REFERENCE_CXX=clang++-22" >> "$GITHUB_ENV"
     - name: Pinned Rust toolchains
       shell: bash
       env:
@@ -39,6 +38,15 @@ runs:
             rustup toolchain install nightly-2026-08-29 --profile minimal --component rustfmt,clippy,rust-src,miri
             ;;
         esac
+    - uses: ./.github/actions/auditable-setup # zizmor: ignore[self-repository]
+      with:
+        cache-key: quality-${{ inputs.lane }}
+        # Coverage targets are source-bound and include nested instrumented
+        # workspaces. Cache tools/registries without accumulating those trees.
+        cache-targets: ${{ inputs.lane != 'coverage' }}
+    - name: Install pinned quality tools
+      shell: bash
+      run: |
         cargo install cargo-llvm-cov --version 0.8.6 --locked
         cargo install cargo-mutants --version 27.1.0 --locked
         cargo install cargo-fuzz --version 0.13.1 --locked

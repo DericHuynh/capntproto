@@ -29,17 +29,17 @@ impl Rights {
 /// binding holder metadata to authenticated peers.
 ///
 /// ```compile_fail,E0616
-/// fn retarget(grant: &mut reproto::authority::Grant) {
+/// fn retarget(grant: &mut capntproto::authority::Grant) {
 ///     grant.object = 99;
 /// }
 /// ```
 /// ```compile_fail,E0616
-/// fn replace_generation(grant: &mut reproto::authority::Grant) {
+/// fn replace_generation(grant: &mut capntproto::authority::Grant) {
 ///     grant.generation = 99;
 /// }
 /// ```
 /// ```compile_fail,E0616
-/// fn replace_holder(grant: &mut reproto::authority::Grant) {
+/// fn replace_holder(grant: &mut capntproto::authority::Grant) {
 ///     grant.holder = [9; 32];
 /// }
 /// ```

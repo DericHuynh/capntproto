@@ -2,7 +2,7 @@
 mod support;
 use capnp::capability::FromClientHook;
 use capnp_rpc::RpcSystem;
-use reproto_test_support::runtime_test_capnp::harness;
+use capntproto_test_support::runtime_test_capnp::harness;
 use std::{cell::RefCell, rc::Rc, time::Duration};
 use support::Hub;
 
@@ -408,7 +408,7 @@ async fn replay(trace: &Trace) {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_deferred_handoff_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_DEFERRED_HANDOFF_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_DEFERRED_HANDOFF_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     tokio::task::LocalSet::new()
@@ -535,8 +535,9 @@ async fn lost_forwarded_vine_does_not_abort_downstream_connection() {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_deferred_disconnect_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_DEFERRED_DISCONNECT_TRACES")
-        .expect("prepare verified trace corpus");
+    let path =
+        capntproto_test_support::verification::input("CAPNTPROTO_DEFERRED_DISCONNECT_TRACES")
+            .expect("prepare verified trace corpus");
     let traces: Vec<DisconnectTrace> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     tokio::task::LocalSet::new()

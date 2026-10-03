@@ -10,7 +10,7 @@ use capnp::{
     Error,
 };
 use capnp_rpc::membrane::{Direction, Membrane, Policy};
-use reproto_test_support::membrane_copy_capnp::{empty, payload, service};
+use capntproto_test_support::membrane_copy_capnp::{empty, payload, service};
 use std::{cell::Cell, rc::Rc};
 
 mod membrane_copy {
@@ -595,7 +595,7 @@ fn substitutions_errors_and_data_only_copies_follow_membrane_rules() {
 
 #[test]
 fn inline_groups_transform_nested_capabilities_and_exclude_parent_siblings() {
-    use reproto_test_support::membrane_copy_capnp::grouped;
+    use capntproto_test_support::membrane_copy_capnp::grouped;
     let stats = Rc::new(Stats::default());
     let sibling_stats = Rc::new(Stats::default());
     let cap = server(&stats);

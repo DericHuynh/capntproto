@@ -5,7 +5,7 @@ use capnp::{
     introspect::Introspect,
     schema_loader::{dynamic as loaded, SchemaLoader},
 };
-use reproto_test_support::native_rpc_capnp::{derived, factory, other, outer, service, wrong};
+use capntproto_test_support::native_rpc_capnp::{derived, factory, other, outer, service, wrong};
 use std::{cell::Cell, rc::Rc};
 type Text = capnp::text::Owned;
 type Data = capnp::data::Owned;

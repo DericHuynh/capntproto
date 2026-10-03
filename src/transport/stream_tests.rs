@@ -2,7 +2,7 @@ use super::stream::{ReceiveStream, SendStream};
 
 #[test]
 fn replay_tlc_stream_progress() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     let config = include_str!("../../verification/RpcStreamProgress.cfg");
     exploration::controls(
         "verification/RpcStreamProgress.tla",

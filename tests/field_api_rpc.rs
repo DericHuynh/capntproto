@@ -1,7 +1,7 @@
 #[allow(dead_code)]
 mod support;
 use capnp::field_api::Message;
-use reproto_test_support::field_api_capnp::service;
+use capntproto_test_support::field_api_capnp::service;
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -107,7 +107,7 @@ async fn generated_calls_support_edit_await_pipeline_and_streaming() {
                 stream.edit().person().ensure().unwrap().id().set(71);
                 stream.send().await.unwrap();
                 let mut native = Message::<
-                    reproto_test_support::field_api_capnp::api::service::EchoParams,
+                    capntproto_test_support::field_api_capnp::api::service::EchoParams,
                 >::new()
                 .unwrap();
                 native.edit().person().ensure().unwrap().id().set(99);

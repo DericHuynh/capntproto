@@ -1,8 +1,8 @@
-use futures::FutureExt;
-use reproto::{
+use capntproto::{
     realtime::{Clock, Config, Outcome, Receiver, Sender},
     realtime_capnp::{self as wire, snapshots},
 };
+use futures::FutureExt;
 use std::{cell::Cell, rc::Rc};
 
 #[derive(Clone, Debug)]
@@ -251,8 +251,8 @@ async fn hostile_wire_limits_fail_before_offers_and_valid_limits_roundtrip() {
             for raw in invalid() {
                 let (service, calls) = advertised(raw.clone());
                 let (a, b) = tokio::io::duplex(4096);
-                let server = reproto::rpc::serve(b, service.client);
-                let (remote, driver) = reproto::rpc::client(a);
+                let server = capntproto::rpc::serve(b, service.client);
+                let (remote, driver) = capntproto::rpc::client(a);
                 assert!(Sender::connect(remote).await.is_err(), "{raw:?}");
                 assert_eq!(calls.get(), 0);
                 server.abort();
@@ -263,8 +263,8 @@ async fn hostile_wire_limits_fail_before_offers_and_valid_limits_roundtrip() {
             let config = Config::new("é", 0, 1, 1, 1, 1, 1).unwrap();
             let (receiver, service) = Receiver::new(config.clone(), Rc::new(TestClock));
             let (a, b) = tokio::io::duplex(4096);
-            let server = reproto::rpc::serve(b, service.client);
-            let (remote, driver) = reproto::rpc::client(a);
+            let server = capntproto::rpc::serve(b, service.client);
+            let (remote, driver) = capntproto::rpc::client(a);
             let sender = Sender::connect(remote).await.unwrap();
             assert_eq!(sender.config(), &config);
             assert!(sender.offer(1, 2, b"a").is_err());
@@ -292,7 +292,7 @@ async fn hostile_wire_limits_fail_before_offers_and_valid_limits_roundtrip() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_realtime_config_import_and_admission_traces() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     const MODEL: &str = "verification/RealtimeConfigBoundary.tla";
     const CONFIG: &str = include_str!("../verification/RealtimeConfigBoundary.cfg");
     let paths = exploration::traces(MODEL, "realtime-config-boundary", CONFIG).unwrap();

@@ -81,7 +81,7 @@ async fn exchange(fixture: &mut Fixture, byte: u8) {
 
 #[test]
 fn replay_tlc_candidate_io_through_encrypted_driver() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     let config = include_str!("../../../../verification/NativeCandidateIo.cfg");
     exploration::controls(
         "verification/NativeCandidateIo.tla",

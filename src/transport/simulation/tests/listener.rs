@@ -464,7 +464,7 @@ fn shared_send_readiness_wakes_each_task_without_emitting_canceled_sends() {
 
 #[test]
 fn replay_tlc_shared_listener_io_lifecycle() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     let config = include_str!("../../../../verification/NativeListenerIo.cfg");
     exploration::controls(
         "verification/NativeListenerIo.tla",

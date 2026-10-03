@@ -1,6 +1,6 @@
 //! Build and run the async fixtures in independent processes; qualify replay
 //! and deadlock detection before publishing schedule evidence.
-use reproto_test_support::{
+use capntproto_test_support::{
     schedules::{Saved, ITERATIONS, SEED},
     verification::{self as v, command, root, run},
 };
@@ -14,12 +14,12 @@ use std::{
 
 const CASES: &[(&str, &str, &str)] = &[
     (
-        "reproto",
+        "capntproto",
         "native_shutdown::schedule_tests::shuttle_shutdown_first_completion_wakes_all_waiters",
         "shutdown-completion",
     ),
     (
-        "reproto",
+        "capntproto",
         "native_shutdown::schedule_tests::shuttle_shutdown_cancellation_and_generation_isolation",
         "shutdown-cancellation",
     ),
@@ -29,27 +29,27 @@ const CASES: &[(&str, &str, &str)] = &[
         "grant-waiters",
     ),
     (
-        "reproto",
+        "capntproto",
         "native_rpc::session::schedule_tests::shuttle_route_owners_cancel_pending_tasks_and_isolate_generations",
         "route-owners",
     ),
     (
-        "reproto",
+        "capntproto",
         "native_rpc::session::output_tests::shuttle_output_fences_cancel_replace_and_preserve_order",
         "route-output-success",
     ),
     (
-        "reproto",
+        "capntproto",
         "native_rpc::session::output_tests::shuttle_output_failures_race_drain_and_owner_stop",
         "route-output-errors",
     ),
     (
-        "reproto",
+        "capntproto",
         "native_rpc::session::shutdown_tests::shuttle_shutdown_fences_compete_with_deadline",
         "shutdown-fences",
     ),
     (
-        "reproto",
+        "capntproto",
         "native_rpc::session::shutdown_tests::shuttle_shutdown_terminal_causes_and_cancellation_wake_blocked_fences",
         "shutdown-terminal",
     ),
@@ -58,8 +58,8 @@ const CASES: &[(&str, &str, &str)] = &[
 fn child(binary: &Path, test: &str, output: &Path) -> Command {
     let mut cmd = command(binary);
     cmd.args(["--exact", test, "--nocapture"])
-        .env("REPROTO_SCHEDULE_OUTPUT", output)
-        .env_remove("REPROTO_SCHEDULE_REPLAY");
+        .env("CAPNTPROTO_SCHEDULE_OUTPUT", output)
+        .env_remove("CAPNTPROTO_SCHEDULE_REPLAY");
     for (name, _) in std::env::vars_os() {
         if name.to_string_lossy().starts_with("SHUTTLE_") {
             cmd.env_remove(name);
@@ -158,7 +158,8 @@ fn recorded_async_schedules_replay_across_processes() {
         let replay = directory.join(format!("{name}-single.json"));
         fs::write(&replay, serde_json::to_vec_pretty(&saved).unwrap()).unwrap();
         passed(
-            child(binary, test, &directory.join("replay")).env("REPROTO_SCHEDULE_REPLAY", &replay),
+            child(binary, test, &directory.join("replay"))
+                .env("CAPNTPROTO_SCHEDULE_REPLAY", &replay),
             &directory.join(format!("{name}-replay.log")),
         );
         // Both incomplete decisions and corrupted semantic expectations must fail.
@@ -176,7 +177,7 @@ fn recorded_async_schedules_replay_across_processes() {
             fs::write(&file, serde_json::to_vec_pretty(&bad).unwrap()).unwrap();
             let output = run(
                 child(binary, test, &directory.join("controls"))
-                    .env("REPROTO_SCHEDULE_REPLAY", file),
+                    .env("CAPNTPROTO_SCHEDULE_REPLAY", file),
                 &directory.join(format!("{name}-{fault}.log")),
                 101,
             )
@@ -201,7 +202,7 @@ fn recorded_async_schedules_replay_across_processes() {
     ] {
         let lost = directory.join(name);
         let output = run(
-            child(&binaries["reproto"], test, &lost).arg("--ignored"),
+            child(&binaries["capntproto"], test, &lost).arg("--ignored"),
             &directory.join(format!("{name}.log")),
             101,
         )
@@ -219,12 +220,12 @@ fn recorded_async_schedules_replay_across_processes() {
             .any(|(name, _)| name == "case-complete"));
         let output = run(
             child(
-                &binaries["reproto"],
+                &binaries["capntproto"],
                 test,
                 &directory.join(format!("{name}-replay")),
             )
             .arg("--ignored")
-            .env("REPROTO_SCHEDULE_REPLAY", saved),
+            .env("CAPNTPROTO_SCHEDULE_REPLAY", saved),
             &directory.join(format!("{name}-replay.log")),
             101,
         )

@@ -5,7 +5,7 @@ use capnp::{
     schema_capnp::{field, node},
     schema_loader::{dynamic, Schema, SchemaLoader, Type},
 };
-use reproto_test_support::presence_capnp::mutable_access;
+use capntproto_test_support::presence_capnp::mutable_access;
 
 const TARGETS: &[(&str, bool)] = &[
     ("child", false),
@@ -282,7 +282,7 @@ fn active_getters_materialize_defaults_and_return_writable_branded_views() {
 #[test]
 fn rejected_getters_cannot_expose_or_release_retained_capability_owners() {
     use capnp::traits::ImbueMut;
-    use reproto_test_support::runtime_test_capnp::harness;
+    use capntproto_test_support::runtime_test_capnp::harness;
     use std::{cell::Cell, rc::Rc};
     struct Server(Rc<Cell<usize>>);
     impl harness::Server for Server {}
@@ -348,7 +348,7 @@ fn rejected_getters_cannot_expose_or_release_retained_capability_owners() {
 #[cfg(target_os = "linux")]
 #[test]
 fn mutable_getters_match_pinned_cpp() {
-    use reproto_test_support::verification::{command, cpp, root, run};
+    use capntproto_test_support::verification::{command, cpp, root, run};
     let build = cpp::build(&["capnpc", "capnp_tool"]).unwrap();
     let logs = root().join("target/verification/dynamic-getters");
     std::fs::create_dir_all(&logs).unwrap();

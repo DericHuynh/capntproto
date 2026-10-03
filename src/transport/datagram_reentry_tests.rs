@@ -177,7 +177,7 @@ struct Observed {
 
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_datagram_reentry_traces() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     const MODEL: &str = "verification/DatagramReentry.tla";
     const CONFIG: &str = include_str!("../../verification/DatagramReentry.cfg");
     let paths = exploration::traces(MODEL, "datagram-reentry", CONFIG).unwrap();

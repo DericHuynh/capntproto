@@ -1,6 +1,6 @@
 use capnp_rpc::rpc_twoparty_capnp::Side;
-use reproto::rpc::Connection;
-use reproto_test_support::runtime_test_capnp::harness;
+use capntproto::rpc::Connection;
+use capntproto_test_support::runtime_test_capnp::harness;
 use std::{future::Future, rc::Rc, time::Duration};
 use tokio::io::AsyncReadExt;
 
@@ -36,7 +36,7 @@ async fn tcp_owned_connection_bootstraps_both_sides_and_shuts_down() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let service: harness::Client = capnp_rpc::new_client(Echo);
         let (client, server) = tokio::join!(
-            reproto::rpc::tcp::connect(
+            capntproto::rpc::tcp::connect(
                 listener.local_addr().unwrap(),
                 Some(service.client.clone()),
                 Default::default()
@@ -44,7 +44,7 @@ async fn tcp_owned_connection_bootstraps_both_sides_and_shuts_down() {
             listener.accept()
         );
         let a = Connection::spawn(client.unwrap());
-        let b = Connection::spawn(reproto::rpc::tcp::client(
+        let b = Connection::spawn(capntproto::rpc::tcp::client(
             server.unwrap().0,
             Some(service.client),
             Side::Server,

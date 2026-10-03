@@ -50,7 +50,7 @@ fn check_graph(graph: u16, seeds: u8, hint: bool) {
 }
 #[test]
 fn replay_tlc_schema_hint_cases() {
-    let path = reproto_test_support::verification::input("REPROTO_SCHEMA_HINT_CASES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_SCHEMA_HINT_CASES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();

@@ -1,7 +1,7 @@
 use capnp::{
     dynamic_struct, dynamic_value as value, introspect::Introspect, traits::ImbueMut, ErrorKind,
 };
-use reproto_test_support::{
+use capntproto_test_support::{
     dynamic_test_capnp::{group_defaults, orphan_group, orphan_payload},
     runtime_test_capnp::harness,
 };
@@ -364,7 +364,7 @@ fn group_copy_is_independent_and_rejects_wrong_brand_arena_field_and_type() -> c
 
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_orphan_groups_traces() -> capnp::Result<()> {
-    let path = reproto_test_support::verification::input("REPROTO_ORPHAN_GROUPS_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_ORPHAN_GROUPS_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();

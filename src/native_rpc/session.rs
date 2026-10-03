@@ -507,9 +507,10 @@ mod tests {
     }
     #[tokio::test(flavor = "current_thread")]
     async fn replay_tlc_route_lifecycle_traces() {
-        let path = reproto_test_support::verification::input("REPROTO_ROUTE_LIFECYCLE_TRACES")
-            .expect("run verification driver");
-        let traces: Vec<Trace> = reproto_test_support::traces::read(path, "RpcRouteLifecycle");
+        let path =
+            capntproto_test_support::verification::input("CAPNTPROTO_ROUTE_LIFECYCLE_TRACES")
+                .expect("run verification driver");
+        let traces: Vec<Trace> = capntproto_test_support::traces::read(path, "RpcRouteLifecycle");
         for trace in traces {
             let lifecycle = Lifecycle::new(generation(1));
             let observer = RouteObserver(lifecycle.clone());

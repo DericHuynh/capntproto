@@ -1,4 +1,4 @@
-use reproto::{
+use capntproto::{
     bulk::{Config, Receiver, Sender, Status},
     bulk_capnp::transfer,
 };
@@ -149,8 +149,8 @@ async fn hostile_wire_limits_are_rejected_before_any_transfer_calls() {
             for input in INVALID {
                 let (service, calls) = advertised(*input);
                 let (a, b) = tokio::io::duplex(4096);
-                let server = reproto::rpc::serve(b, service.client);
-                let (remote, driver) = reproto::rpc::client(a);
+                let server = capntproto::rpc::serve(b, service.client);
+                let (remote, driver) = capntproto::rpc::client(a);
                 let error = Sender::connect(remote)
                     .await
                     .err()
@@ -167,8 +167,8 @@ async fn hostile_wire_limits_are_rejected_before_any_transfer_calls() {
             let limits = Config::new(3, 2, 2, 2).unwrap();
             let (receiver, service) = Receiver::new(limits.clone());
             let (a, b) = tokio::io::duplex(4096);
-            let server = reproto::rpc::serve(b, service.client);
-            let (remote, driver) = reproto::rpc::client(a);
+            let server = capntproto::rpc::serve(b, service.client);
+            let (remote, driver) = capntproto::rpc::client(a);
             let mut sender = Sender::connect(remote).await.unwrap();
             assert_eq!(sender.config(), &limits);
             sender.write(b"ab").await.unwrap();
@@ -185,7 +185,7 @@ async fn hostile_wire_limits_are_rejected_before_any_transfer_calls() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_bulk_config_import_and_receiver_traces() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     const MODEL: &str = "verification/BulkConfigBoundary.tla";
     const CONFIG: &str = include_str!("../verification/BulkConfigBoundary.cfg");
     let paths = exploration::traces(MODEL, "bulk-config-boundary", CONFIG).unwrap();

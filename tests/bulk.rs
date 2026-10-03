@@ -1,8 +1,8 @@
-use futures::{channel::oneshot, FutureExt};
-use reproto::{
+use capntproto::{
     bulk::{Config, CreditWindow, Receiver, Sender, Settlement, Status, Summary},
     bulk_capnp::transfer,
 };
+use futures::{channel::oneshot, FutureExt};
 use std::{
     cell::{Cell, RefCell},
     collections::VecDeque,
@@ -117,8 +117,8 @@ impl Drop for Tasks {
 }
 fn wire(client: transfer::Client) -> (transfer::Client, Tasks) {
     let (a, b) = tokio::io::duplex(4096);
-    let server = reproto::rpc::serve(b, client.client);
-    let (client, driver) = reproto::rpc::client(a);
+    let server = capntproto::rpc::serve(b, client.client);
+    let (client, driver) = capntproto::rpc::client(a);
     (client, Tasks(vec![server, driver]))
 }
 async fn until(mut predicate: impl FnMut() -> bool) {
@@ -372,7 +372,7 @@ async fn disconnect_settles_outstanding_calls_without_claiming_completion() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn bulk_over_authenticated_blake3_native() {
-    use reproto::{
+    use capntproto::{
         native_rpc::Network,
         transport::{self, Identity},
     };
@@ -445,7 +445,7 @@ struct Step {
 }
 #[test]
 fn replay_tlc_bulk_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_BULK_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_BULK_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     for trace in traces {
@@ -635,7 +635,7 @@ impl transfer::Server for Controlled {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_bulk_wire_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_BULK_WIRE_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_BULK_WIRE_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     tokio::task::LocalSet::new()

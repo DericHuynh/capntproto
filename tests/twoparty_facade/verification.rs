@@ -1,5 +1,5 @@
 use super::*;
-use reproto_test_support::verification::{command, cpp, exploration, root, run};
+use capntproto_test_support::verification::{command, cpp, exploration, root, run};
 
 struct CountingEcho(Rc<Cell<u64>>);
 impl harness::Server for CountingEcho {

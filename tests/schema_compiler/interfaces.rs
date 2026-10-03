@@ -84,7 +84,7 @@ fn interfaces_match_pinned_cpp() {
             message::ReaderOptions::new(),
         )
         .unwrap();
-        let rust = capnp_compiler::compile("test.capnp", &source)
+        let rust = capntproto_compiler::compile("test.capnp", &source)
             .unwrap_or_else(|e| panic!("case {index}: {source}\n{e}"));
         if [
             "interface I extends(I) {}",
@@ -154,7 +154,7 @@ fn interfaces_match_pinned_cpp() {
             .unwrap();
         assert!(!reference.status.success(), "C++ accepted {body}");
         assert!(
-            capnp_compiler::compile("test.capnp", &source).is_err(),
+            capntproto_compiler::compile("test.capnp", &source).is_err(),
             "Rust accepted {body}"
         );
     }
@@ -207,7 +207,7 @@ fn imported_interfaces_and_streaming_match_pinned_cpp() {
         "interface I { f @0 () -> import \"/capnp/stream.capnp\".StreamResult; }",
         "using S = import \"/capnp/stream.capnp\"; interface I { f @0 () -> stream; g @1 () -> S.StreamResult; }",
     ];
-    let mut frontend = capnp_compiler::FileCompiler::new();
+    let mut frontend = capntproto_compiler::FileCompiler::new();
     frontend.src_prefix(directory.path()).import_path(&standard);
     for source in cases {
         fs::write(
@@ -302,11 +302,11 @@ fn imported_interfaces_and_streaming_match_pinned_cpp() {
 fn rust_interfaces_generate_working_rpc_bindings() {
     let project = tempfile::tempdir().unwrap();
     fs::create_dir(project.path().join("src")).unwrap();
-    let mut parser = capnp_compiler::SchemaParser::new();
+    let mut parser = capntproto_compiler::SchemaParser::new();
     parser
         .add_source(
             "interfaces.capnp",
-            include_str!("../../crates/capnp-compiler/examples/interfaces.capnp"),
+            include_str!("../../crates/capntproto-compiler/examples/interfaces.capnp"),
         )
         .unwrap();
     parser
@@ -422,7 +422,7 @@ fn cyclic_deep_and_exponential_inheritance_fail_codegen_without_recursing_foreve
         "interface A extends(B) {} interface B extends(A) {}",
     ] {
         let request =
-            capnp_compiler::compile("cycle.capnp", &format!("@0xabcdefabcdefabcd; {body}"))
+            capntproto_compiler::compile("cycle.capnp", &format!("@0xabcdefabcdefabcd; {body}"))
                 .unwrap();
         let error = capnpc::codegen::CodeGenerationCommand::new()
             .output_directory(directory.path())
@@ -433,7 +433,7 @@ fn cyclic_deep_and_exponential_inheritance_fail_codegen_without_recursing_foreve
     for (count, duplicated, expected) in
         [(70, false, "nesting limit"), (18, true, "expansion limit")]
     {
-        let mut parser = capnp_compiler::SchemaParser::new();
+        let mut parser = capntproto_compiler::SchemaParser::new();
         let mut source = "@0xbbbbbbbbbbbbbbbb; interface I0 {}".to_owned();
         for i in 1..count {
             let bases = if duplicated {

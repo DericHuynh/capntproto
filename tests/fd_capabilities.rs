@@ -10,7 +10,7 @@ use capnp_rpc::{
     rpc_capnp::{cap_descriptor, message, return_},
     Connection, RpcSystem,
 };
-use reproto_test_support::runtime_test_capnp::harness;
+use capntproto_test_support::runtime_test_capnp::harness;
 use std::{
     cell::RefCell,
     io::Write,
@@ -134,10 +134,10 @@ impl Fixture {
                 use capnp_rpc::{rpc_twoparty_capnp::Side, VatNetwork};
                 let (left, right) = tokio::net::UnixStream::pair().unwrap();
                 let network =
-                    reproto::unix_rpc::VatNetwork::new(left, Side::Server, Default::default());
+                    capntproto::unix_rpc::VatNetwork::new(left, Side::Server, Default::default());
                 let system = RpcSystem::new(Box::new(network), Some(service.client));
                 let mut raw =
-                    reproto::unix_rpc::VatNetwork::new(right, Side::Client, Default::default());
+                    capntproto::unix_rpc::VatNetwork::new(right, Side::Client, Default::default());
                 let connection = raw.connect(Side::Server).unwrap();
                 let driver =
                     tokio::task::spawn_local(async move { raw.drive_until_shutdown().await });
@@ -339,7 +339,7 @@ async fn replay(case: &serde_json::Value, promise: bool, unix: bool) {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_fd_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_FD_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_FD_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
@@ -482,7 +482,7 @@ async fn unix_rpc_bootstrap_resolve_call_return_and_fallback() {
                     for promised in [false, true] {
                         use capnp_rpc::rpc_twoparty_capnp::Side;
                         let (a, b) = tokio::net::UnixStream::pair().unwrap();
-                        let options = reproto::unix_rpc::Options {
+                        let options = capntproto::unix_rpc::Options {
                             max_fds: limit,
                             ..Default::default()
                         };
@@ -498,11 +498,19 @@ async fn unix_rpc_bootstrap_resolve_call_return_and_fallback() {
                             server.clone()
                         };
                         let server_system = RpcSystem::new(
-                            Box::new(reproto::unix_rpc::VatNetwork::new(a, Side::Server, options)),
+                            Box::new(capntproto::unix_rpc::VatNetwork::new(
+                                a,
+                                Side::Server,
+                                options,
+                            )),
                             Some(bootstrap.client),
                         );
                         let mut caller_system = RpcSystem::new(
-                            Box::new(reproto::unix_rpc::VatNetwork::new(b, Side::Client, options)),
+                            Box::new(capntproto::unix_rpc::VatNetwork::new(
+                                b,
+                                Side::Client,
+                                options,
+                            )),
                             None,
                         );
                         let remote: harness::Client = caller_system.bootstrap(Side::Server);

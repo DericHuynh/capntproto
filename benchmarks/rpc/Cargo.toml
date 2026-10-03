@@ -1,5 +1,5 @@
 [package]
-name = "reproto-rpc-bench"
+name = "capntproto-rpc-bench"
 version = "0.1.0"
 edition = "2021"
 publish = false
@@ -7,7 +7,7 @@ publish = false
 [workspace]
 
 [dependencies]
-reproto = { path = "../..", default-features = false, features = ["native"] }
+capntproto = { path = "../..", default-features = false, features = ["native"] }
 capnp = { path = "../../vendor/capnp" }
 capnp-rpc = { path = "../../vendor/capnp-rpc" }
 futures = "0.3"

@@ -7,7 +7,10 @@ fn documentation_and_positions_match_pinned_cpp() {
         .join("c++/src/capnp/capnp");
     let directory = tempfile::tempdir().unwrap();
     let mut cases =
-        vec![include_str!("../../crates/capnp-compiler/examples/documentation.capnp").to_owned()];
+        vec![
+            include_str!("../../crates/capntproto-compiler/examples/documentation.capnp")
+                .to_owned(),
+        ];
     for prefix in ["", "\n", "\r\n", "\u{feff}", "# prelude\n"] {
         for doc in [
             "",
@@ -54,7 +57,7 @@ fn documentation_and_positions_match_pinned_cpp() {
             message::ReaderOptions::new(),
         )
         .unwrap();
-        let rust = capnp_compiler::compile("docs.capnp", source).unwrap();
+        let rust = capntproto_compiler::compile("docs.capnp", source).unwrap();
         eprintln!("source-info case: {source:?}");
         compare_requests(
             rust.get_root_as_reader().unwrap(),

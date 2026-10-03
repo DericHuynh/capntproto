@@ -1,10 +1,10 @@
 //! Compare the Rust textual frontend with the pinned C++ compiler, then compile
 //! and execute Rust bindings generated from the Rust frontend's request.
 use capnp::{message, schema_capnp::code_generator_request, schema_loader::SchemaLoader};
-use reproto_test_support::verification::{command, cpp, root, run};
+use capntproto_test_support::verification::{command, cpp, root, run};
 use std::{collections::BTreeMap, fs};
 
-const SAMPLE: &str = include_str!("../crates/capnp-compiler/examples/message.capnp");
+const SAMPLE: &str = include_str!("../crates/capntproto-compiler/examples/message.capnp");
 
 #[path = "schema_compiler/annotations.rs"]
 mod annotations;
@@ -340,7 +340,7 @@ fn supported_schemas_match_pinned_cpp() {
         let reference = reference
             .get_root::<code_generator_request::Reader<'_>>()
             .unwrap();
-        let rust = capnp_compiler::compile(filename, source).unwrap();
+        let rust = capntproto_compiler::compile(filename, source).unwrap();
         let rust = rust
             .get_root_as_reader::<code_generator_request::Reader<'_>>()
             .unwrap();
@@ -367,7 +367,7 @@ fn supported_schemas_match_pinned_cpp() {
             .unwrap();
         assert!(!output.status.success(), "C++ accepted {body}");
         assert!(
-            capnp_compiler::compile("test.capnp", &source).is_err(),
+            capntproto_compiler::compile("test.capnp", &source).is_err(),
             "Rust accepted {body}"
         );
     }
@@ -380,7 +380,7 @@ fn supported_schemas_match_pinned_cpp() {
 fn rust_request_generates_compilable_bindings_and_round_trips() {
     let project = tempfile::tempdir().unwrap();
     fs::create_dir(project.path().join("src")).unwrap();
-    let request = capnp_compiler::compile("message.capnp", SAMPLE).unwrap();
+    let request = capntproto_compiler::compile("message.capnp", SAMPLE).unwrap();
     let bytes = capnp::serialize::write_message_to_words(&request);
     capnpc::codegen::CodeGenerationCommand::new()
         .output_directory(project.path().join("src"))
@@ -489,7 +489,7 @@ fn import_and_alias_graphs_match_pinned_cpp() {
     for (path, source) in dependencies {
         fs::write(directory.path().join(path), source).unwrap();
     }
-    let mut frontend = capnp_compiler::FileCompiler::new();
+    let mut frontend = capntproto_compiler::FileCompiler::new();
     frontend
         .src_prefix(directory.path())
         .import_path(directory.path().join("include"));
@@ -524,12 +524,12 @@ fn import_and_alias_graphs_match_pinned_cpp() {
     }
     fs::write(
         directory.path().join("main.capnp"),
-        include_str!("../crates/capnp-compiler/examples/imports/main.capnp"),
+        include_str!("../crates/capntproto-compiler/examples/imports/main.capnp"),
     )
     .unwrap();
     fs::write(
         directory.path().join("common.capnp"),
-        include_str!("../crates/capnp-compiler/examples/imports/common.capnp"),
+        include_str!("../crates/capntproto-compiler/examples/imports/common.capnp"),
     )
     .unwrap();
     for names in [
@@ -605,17 +605,17 @@ fn import_and_alias_graphs_match_pinned_cpp() {
 fn imported_rust_bindings_compile_and_round_trip_without_cpp() {
     let project = tempfile::tempdir().unwrap();
     fs::create_dir(project.path().join("src")).unwrap();
-    let mut parser = capnp_compiler::SchemaParser::new();
+    let mut parser = capntproto_compiler::SchemaParser::new();
     parser
         .add_source(
             "main.capnp",
-            include_str!("../crates/capnp-compiler/examples/imports/main.capnp"),
+            include_str!("../crates/capntproto-compiler/examples/imports/main.capnp"),
         )
         .unwrap();
     parser
         .add_source(
             "common.capnp",
-            include_str!("../crates/capnp-compiler/examples/imports/common.capnp"),
+            include_str!("../crates/capntproto-compiler/examples/imports/common.capnp"),
         )
         .unwrap();
     let request = parser.parse(&["main.capnp", "common.capnp"]).unwrap();
@@ -716,7 +716,7 @@ fn union_and_group_layouts_match_pinned_cpp() {
     }
     // Exercise the unmodified layout fixtures maintained by the reference project.
     cases.push(
-        include_str!("../crates/capnp-compiler/examples/choices.capnp")
+        include_str!("../crates/capntproto-compiler/examples/choices.capnp")
             .split_once(';')
             .unwrap()
             .1
@@ -750,7 +750,7 @@ fn union_and_group_layouts_match_pinned_cpp() {
         let reference =
             capnp::serialize::read_message(output.stdout.as_slice(), message::ReaderOptions::new())
                 .unwrap();
-        let rust = capnp_compiler::compile("test.capnp", &source)
+        let rust = capntproto_compiler::compile("test.capnp", &source)
             .unwrap_or_else(|e| panic!("case {index}: {body}\n{e}"));
         compare_requests(
             rust.get_root_as_reader().unwrap(),
@@ -784,7 +784,7 @@ fn union_and_group_layouts_match_pinned_cpp() {
             .unwrap();
         assert!(!output.status.success(), "C++ accepted {body}");
         assert!(
-            capnp_compiler::compile("test.capnp", &source).is_err(),
+            capntproto_compiler::compile("test.capnp", &source).is_err(),
             "Rust accepted {body}"
         );
     }
@@ -797,9 +797,9 @@ fn union_and_group_layouts_match_pinned_cpp() {
 fn union_group_bindings_switch_alternatives_and_preserve_other_fields() {
     let project = tempfile::tempdir().unwrap();
     fs::create_dir(project.path().join("src")).unwrap();
-    let request = capnp_compiler::compile(
+    let request = capntproto_compiler::compile(
         "choices.capnp",
-        include_str!("../crates/capnp-compiler/examples/choices.capnp"),
+        include_str!("../crates/capntproto-compiler/examples/choices.capnp"),
     )
     .unwrap();
     capnpc::codegen::CodeGenerationCommand::new()
@@ -902,7 +902,7 @@ fn nested_union_permutations_match_cpp_including_historical_rejections() {
             .args(["compile", "-o-", "test.capnp"])
             .output()
             .unwrap();
-        let rust = capnp_compiler::compile("test.capnp", &source);
+        let rust = capntproto_compiler::compile("test.capnp", &source);
         if reference.status.success() {
             let reference = capnp::serialize::read_message(
                 reference.stdout.as_slice(),
@@ -958,7 +958,7 @@ fn constants_and_data_defaults_match_pinned_cpp() {
         "const true :Bool = false; const x :Bool = true; const y :Bool = .true;",
     ].into_iter().map(str::to_owned).collect();
     cases.push(
-        include_str!("../crates/capnp-compiler/examples/constants.capnp")
+        include_str!("../crates/capntproto-compiler/examples/constants.capnp")
             .split_once(';')
             .unwrap()
             .1
@@ -1067,7 +1067,7 @@ fn constants_and_data_defaults_match_pinned_cpp() {
             message::ReaderOptions::new(),
         )
         .unwrap();
-        let rust = capnp_compiler::compile("test.capnp", &source)
+        let rust = capntproto_compiler::compile("test.capnp", &source)
             .unwrap_or_else(|e| panic!("case {index}: {source}\n{e}"));
         compare_requests(
             rust.get_root_as_reader().unwrap(),
@@ -1084,7 +1084,7 @@ fn constants_and_data_defaults_match_pinned_cpp() {
             .unwrap();
         assert!(!reference.status.success(), "C++ accepted {body}");
         assert!(
-            capnp_compiler::compile("test.capnp", &source).is_err(),
+            capntproto_compiler::compile("test.capnp", &source).is_err(),
             "Rust accepted {body}"
         );
     }
@@ -1119,7 +1119,7 @@ fn constants_and_data_defaults_match_pinned_cpp() {
         constant.get_value().unwrap().which().unwrap(),
         capnp::schema_capnp::value::Uint64(0)
     ));
-    assert!(capnp_compiler::compile("test.capnp", overflow)
+    assert!(capntproto_compiler::compile("test.capnp", overflow)
         .err()
         .unwrap()
         .message
@@ -1154,7 +1154,7 @@ fn imported_constants_are_inlined_and_resolved_lazily_like_cpp() {
         "using L = import \"leaf.capnp\"; const en :L.E = one; struct S { raw @0 :UInt16 = L.en; }",
         "using L = import \"leaf.capnp\"; const answer :UInt32 = L.number; struct S { x @0 :L.Scope; }",
     ];
-    let mut frontend = capnp_compiler::FileCompiler::new();
+    let mut frontend = capntproto_compiler::FileCompiler::new();
     frontend.src_prefix(directory.path());
     for (index, source) in cases.iter().enumerate() {
         fs::write(
@@ -1247,13 +1247,13 @@ fn imported_constants_are_inlined_and_resolved_lazily_like_cpp() {
 fn constant_bindings_and_imported_data_defaults_compile_and_round_trip() {
     let project = tempfile::tempdir().unwrap();
     fs::create_dir(project.path().join("src")).unwrap();
-    let mut parser = capnp_compiler::SchemaParser::new();
+    let mut parser = capntproto_compiler::SchemaParser::new();
     parser
         .add_source(
             "constants.capnp",
             format!(
                 "{}\nconst external :Data = import \"external.capnp\".bytes;",
-                include_str!("../crates/capnp-compiler/examples/constants.capnp")
+                include_str!("../crates/capntproto-compiler/examples/constants.capnp")
             ),
         )
         .unwrap();
@@ -1354,7 +1354,7 @@ fn composite_values_match_pinned_cpp() {
         "struct S { x @0 :S; } const a :S = (); const b :S = (x = .a); const c :S = (x = .b);",
     ].into_iter().map(str::to_owned).collect();
     cases.push(
-        include_str!("../crates/capnp-compiler/examples/composites.capnp")
+        include_str!("../crates/capntproto-compiler/examples/composites.capnp")
             .split_once(';')
             .unwrap()
             .1
@@ -1426,7 +1426,7 @@ fn composite_values_match_pinned_cpp() {
             message::ReaderOptions::new(),
         )
         .unwrap();
-        let rust = capnp_compiler::compile("test.capnp", &source)
+        let rust = capntproto_compiler::compile("test.capnp", &source)
             .unwrap_or_else(|e| panic!("case {index}: {source}\n{e}"));
         compare_requests(
             rust.get_root_as_reader().unwrap(),
@@ -1467,7 +1467,7 @@ fn composite_values_match_pinned_cpp() {
             .unwrap();
         assert!(!reference.status.success(), "C++ accepted {body}");
         assert!(
-            capnp_compiler::compile("test.capnp", &source).is_err(),
+            capntproto_compiler::compile("test.capnp", &source).is_err(),
             "Rust accepted {body}"
         );
     }
@@ -1528,7 +1528,7 @@ fn imported_composites_and_erased_type_dependencies_match_pinned_cpp() {
         "struct S { p @0 :AnyPointer = import \"leaf.capnp\".item; } const p :S = ();",
         "const p :AnyPointer = import \"leaf.capnp\".empty;",
     ];
-    let mut frontend = capnp_compiler::FileCompiler::new();
+    let mut frontend = capntproto_compiler::FileCompiler::new();
     frontend.src_prefix(directory.path());
     for source in cases {
         fs::write(
@@ -1618,9 +1618,9 @@ fn imported_composites_and_erased_type_dependencies_match_pinned_cpp() {
 fn composite_constants_and_defaults_generate_bindings_and_round_trip() {
     let project = tempfile::tempdir().unwrap();
     fs::create_dir(project.path().join("src")).unwrap();
-    let request = capnp_compiler::compile(
+    let request = capntproto_compiler::compile(
         "composites.capnp",
-        include_str!("../crates/capnp-compiler/examples/composites.capnp"),
+        include_str!("../crates/capntproto-compiler/examples/composites.capnp"),
     )
     .unwrap();
     capnpc::codegen::CodeGenerationCommand::new()

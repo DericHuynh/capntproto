@@ -16,17 +16,17 @@ pub enum HandoffPhase {
 /// derived from the phase; callers cannot create a direct, unaccepted state.
 ///
 /// ```compile_fail,E0616
-/// let mut state = reproto::semantics::HandoffState::default();
-/// state.phase = reproto::semantics::HandoffPhase::Direct;
+/// let mut state = capntproto::semantics::HandoffState::default();
+/// state.phase = capntproto::semantics::HandoffPhase::Direct;
 /// ```
 /// ```compile_fail,E0451
-/// use reproto::semantics::{HandoffPhase, HandoffState};
+/// use capntproto::semantics::{HandoffPhase, HandoffState};
 /// let state = HandoffState {
 ///     phase: HandoffPhase::Direct, pending: 1, ..Default::default()
 /// };
 /// ```
 /// ```compile_fail,E0277
-/// let state: reproto::semantics::HandoffState = serde_json::from_str("{}").unwrap();
+/// let state: capntproto::semantics::HandoffState = serde_json::from_str("{}").unwrap();
 /// ```
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
 pub struct HandoffState {

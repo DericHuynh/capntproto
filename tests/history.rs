@@ -1,15 +1,15 @@
-use reproto::storage::ObjectKey;
-use reproto::storage::Revision;
+use capntproto::storage::ObjectKey;
+use capntproto::storage::Revision;
 #[allow(dead_code)]
 mod support;
 use capnp::capability::Promise;
-use futures::FutureExt;
-use reproto::{
+use capntproto::{
     authority::{Grant, ObjectGeneration, ObjectId, Rights},
     orm::{ObjectServer, ObjectState},
     storage::{Error, Retention, Store},
     store_capnp::{document, history, history_result, object},
 };
+use futures::FutureExt;
 use std::{cell::RefCell, rc::Rc, time::Duration};
 use support::Hub;
 type Object = object::Client<document::Owned>;
@@ -540,11 +540,11 @@ async fn history_requires_authority_and_shares_the_subscription_quota() {
             let f = Fixture::new(false);
             let mut streams = vec![];
             struct Observer;
-            impl reproto::store_capnp::observer::Server<document::Owned> for Observer {
+            impl capntproto::store_capnp::observer::Server<document::Owned> for Observer {
                 async fn changed(
                     self: Rc<Self>,
-                    _: reproto::store_capnp::observer::ChangedParams<document::Owned>,
-                    _: reproto::store_capnp::observer::ChangedResults<document::Owned>,
+                    _: capntproto::store_capnp::observer::ChangedParams<document::Owned>,
+                    _: capntproto::store_capnp::observer::ChangedResults<document::Owned>,
                 ) -> capnp::Result<()> {
                     Ok(())
                 }
@@ -593,7 +593,7 @@ fn history_quota_rejection_never_invents_publications_or_discards_history() {
     store.compact(Retention::Latest).unwrap();
     let bytes = std::fs::read(&path).unwrap();
     store
-        .set_limits(reproto::storage::Limits {
+        .set_limits(capntproto::storage::Limits {
             max_file_bytes: bytes.len(),
             ..store.limits()
         })
@@ -625,7 +625,7 @@ fn history_quota_rejection_never_invents_publications_or_discards_history() {
         .publish(ObjectKey::new(7), Revision::new(1), Revision::INITIAL)
         .unwrap();
     store
-        .set_limits(reproto::storage::Limits {
+        .set_limits(capntproto::storage::Limits {
             max_file_bytes: store.file_bytes(),
             ..store.limits()
         })
@@ -867,7 +867,7 @@ async fn replay_rpc(trace: &Trace, wire: bool) {
 
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_orm_history_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_ORM_HISTORY_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_ORM_HISTORY_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     assert!(!traces.is_empty());
@@ -893,7 +893,7 @@ fn read_publication(
     store: &Store,
     object: ObjectKey,
     after: u64,
-) -> reproto::storage::Result<Option<reproto::storage::Snapshot>> {
+) -> capntproto::storage::Result<Option<capntproto::storage::Snapshot>> {
     let cursor = store.publication_cursor(object, after)?;
     Ok(store
         .publication_after(&cursor)?

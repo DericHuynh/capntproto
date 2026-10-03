@@ -100,14 +100,14 @@ fn config(directory: &std::path::Path) -> Config {
 pub fn check(name: &'static str, case: fn(Trace)) -> Batch {
     assert!(
         std::env::var_os("SHUTTLE_RANDOM_SEED").is_none(),
-        "use REPROTO_SCHEDULE_REPLAY to replay saved runs"
+        "use CAPNTPROTO_SCHEDULE_REPLAY to replay saved runs"
     );
-    let directory = std::env::var_os("REPROTO_SCHEDULE_OUTPUT")
+    let directory = std::env::var_os("CAPNTPROTO_SCHEDULE_OUTPUT")
         .map(PathBuf::from)
         .unwrap_or_else(|| crate::verification::root().join("target/verification/schedules"))
         .join(name);
     std::fs::create_dir_all(&directory).unwrap();
-    if let Some(path) = std::env::var_os("REPROTO_SCHEDULE_REPLAY") {
+    if let Some(path) = std::env::var_os("CAPNTPROTO_SCHEDULE_REPLAY") {
         let saved: Saved = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         assert_eq!(saved.format, 1);
         assert_eq!(saved.case, name);

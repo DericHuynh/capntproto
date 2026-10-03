@@ -1,6 +1,6 @@
 //! Allocation contracts measured only on this test binary's current thread.
 use capnp::{field_api::Message, message::ReaderOptions};
-use reproto_test_support::field_api_capnp::api::Person;
+use capntproto_test_support::field_api_capnp::api::Person;
 use std::hint::black_box;
 
 #[test]

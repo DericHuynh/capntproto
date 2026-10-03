@@ -20,7 +20,7 @@ Cap'n Proto pointers stay inside their component; use explicit application IDs
 for relationships between components.
 
 ```rust
-use reproto::{
+use capntproto::{
     authority::ObjectId,
     orm::components::{ComponentState, Edit},
     storage::{ComponentId, Revision, Store},
@@ -164,8 +164,8 @@ the existing encoding.
 
 ```sh
 cargo run --locked --release --no-default-features --features storage --example component_store
-cargo test --locked -p reproto --no-default-features --features storage --lib storage::components
-cargo test --locked -p reproto --no-default-features --features storage --test component_orm
+cargo test --locked -p capntproto --no-default-features --features storage --lib storage::components
+cargo test --locked -p capntproto --no-default-features --features storage --test component_orm
 ```
 
 The example performs 200 updates to an 8-byte text field beside 64 KiB of

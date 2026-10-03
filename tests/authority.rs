@@ -1,4 +1,4 @@
-use reproto::authority::{Grant, ObjectGeneration, ObjectId, Rights};
+use capntproto::authority::{Grant, ObjectGeneration, ObjectId, Rights};
 
 #[test]
 fn exhaustive_rights_decoding_and_attenuation() {
@@ -89,7 +89,7 @@ fn grant_tree() -> [Grant; 4] {
 
 #[test]
 fn replay_tlc_grant_revocation_waits() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     use std::{future::Future, pin::Pin, task::Context};
     const MODEL: &str = "verification/GrantRevocation.tla";
     const CONFIG: &str = include_str!("../verification/GrantRevocation.cfg");
@@ -236,7 +236,7 @@ fn attenuation_and_branch_revocation() {
 }
 #[test]
 fn embargo_and_replay() {
-    let mut h = reproto::semantics::HandoffState::default();
+    let mut h = capntproto::semantics::HandoffState::default();
     assert_eq!(h.pending(), 0);
     assert_eq!(h.direct_calls(), 0);
     assert!(!h.accepted());
@@ -269,7 +269,7 @@ fn embargo_and_replay() {
 
 #[test]
 fn revocation_preserves_phase_and_allows_only_pending_cleanup() {
-    use reproto::semantics::{HandoffPhase, HandoffState};
+    use capntproto::semantics::{HandoffPhase, HandoffState};
     for phase in [
         HandoffPhase::Proxying,
         HandoffPhase::Offered,
@@ -312,7 +312,7 @@ fn revocation_preserves_phase_and_allows_only_pending_cleanup() {
 
 #[test]
 fn native_stream_gate_enforces_roles_and_terminal_preface_failure() {
-    use reproto::semantics::{NativeStreamGate, NativeStreamState as State, StreamRole};
+    use capntproto::semantics::{NativeStreamGate, NativeStreamState as State, StreamRole};
     for role in [StreamRole::Initiator, StreamRole::Responder] {
         let mut gate = NativeStreamGate::new(role);
         let initial = gate;

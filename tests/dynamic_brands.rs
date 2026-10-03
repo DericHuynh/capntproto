@@ -5,7 +5,7 @@ use capnp::{
     traits::{Imbue, ImbueMut},
     Error,
 };
-use reproto_test_support::dynamic_test_capnp::{
+use capntproto_test_support::dynamic_test_capnp::{
     base, brand_envelope, derived, marker, parcel, scope, wrap,
 };
 use std::{cell::Cell, rc::Rc};
@@ -238,7 +238,7 @@ fn write_slot(
     cap: dynamic::Client,
     compatible: bool,
 ) -> capnp::Result<()> {
-    use reproto_test_support::dynamic_test_capnp::compound_envelope;
+    use capntproto_test_support::dynamic_test_capnp::compound_envelope;
     if location < 2 {
         let mut root = msg.0.get_root::<brand_envelope::Builder>()?;
         root.imbue_mut(&mut msg.1);
@@ -278,7 +278,7 @@ fn write_slot(
     }
 }
 fn read_slot(msg: &Message, location: usize) -> Option<dynamic::Client> {
-    use reproto_test_support::dynamic_test_capnp::compound_envelope;
+    use capntproto_test_support::dynamic_test_capnp::compound_envelope;
     let value = if location < 2 {
         let mut root = msg
             .0
@@ -350,7 +350,7 @@ fn clear_slot(msg: &mut Message, location: usize) {
     } else {
         let mut root = msg
             .0
-            .get_root::<reproto_test_support::dynamic_test_capnp::compound_envelope::Builder>()
+            .get_root::<capntproto_test_support::dynamic_test_capnp::compound_envelope::Builder>()
             .unwrap();
         root.imbue_mut(&mut msg.1);
         let mut root = value::Builder::from(root).downcast::<capnp::dynamic_struct::Builder>();
@@ -407,7 +407,7 @@ async fn trace(
         root.init_caps(1);
     } else {
         msg.0
-            .init_root::<reproto_test_support::dynamic_test_capnp::compound_envelope::Builder>()
+            .init_root::<capntproto_test_support::dynamic_test_capnp::compound_envelope::Builder>()
             .init_items(1);
     }
     if !empty {
@@ -519,7 +519,7 @@ async fn failed_brand_assignment_preserves_union_and_capability_ownership() {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_dynamic_brand_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_DYNAMIC_BRAND_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_DYNAMIC_BRAND_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();

@@ -26,7 +26,7 @@ fn generation_is_nonzero_monotonic_and_network_local() {
 
 #[test]
 fn replay_tlc_route_generation_exhaustion() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     const MODEL: &str = "verification/RouteGeneration.tla";
     const CONFIG: &str = include_str!("../../../verification/RouteGeneration.cfg");
     let paths = exploration::traces(MODEL, "route-generation", CONFIG).unwrap();

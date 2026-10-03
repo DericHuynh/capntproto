@@ -1,7 +1,7 @@
 #[cfg(any(feature = "native", feature = "storage", feature = "services"))]
 fn main() {
     println!("cargo:rerun-if-env-changed=CAPNP_INCLUDE_DIR");
-    let mut compiler = capnp_compiler::FileCompiler::new();
+    let mut compiler = capntproto_compiler::FileCompiler::new();
     if let Some(directory) = std::env::var_os("CAPNP_INCLUDE_DIR") {
         println!(
             "cargo:rerun-if-changed={}",

@@ -1,6 +1,6 @@
 use capnp::{capability::Promise, Error};
 use capnp_rpc::VatNetwork;
-use reproto::{
+use capntproto::{
     native_arbitration::Limits,
     native_listener::{self, Listener},
     native_provisioning::{Provisioner, ProvisioningConnector},
@@ -8,7 +8,7 @@ use reproto::{
     native_rpc::{Connector, Handle, Network, RouteStatus},
     transport::{AuthenticatedSession, Identity},
 };
-use reproto_test_support::runtime_test_capnp::harness;
+use capntproto_test_support::runtime_test_capnp::harness;
 use std::{
     cell::{Cell, RefCell},
     net::SocketAddr,
@@ -381,11 +381,11 @@ async fn crossed_remote_provisioning_dials_do_not_deadlock_on_lease_readiness() 
                 // In-memory RPC control channels exercise delivery/lease semantics.
                 // The native candidates below use actual Native TLS admission UDP sessions.
                 let (x, y) = tokio::io::duplex(4096);
-                let at = reproto::rpc::serve(y, ag.client().client);
-                let (ap, acontrol): (provisioner::Client, _) = reproto::rpc::client(x);
+                let at = capntproto::rpc::serve(y, ag.client().client);
+                let (ap, acontrol): (provisioner::Client, _) = capntproto::rpc::client(x);
                 let (x, y) = tokio::io::duplex(4096);
-                let bt = reproto::rpc::serve(y, bg.client().client);
-                let (bp, bcontrol): (provisioner::Client, _) = reproto::rpc::client(x);
+                let bt = capntproto::rpc::serve(y, bg.client().client);
+                let (bp, bcontrol): (provisioner::Client, _) = capntproto::rpc::client(x);
                 let controls = Tasks(vec![at, acontrol, bt, bcontrol]);
                 ac.insert(b.public_key(), bp, bl.local_addr().unwrap(), b"cross")
                     .unwrap();

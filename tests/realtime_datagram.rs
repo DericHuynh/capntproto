@@ -1,4 +1,4 @@
-use reproto::{
+use capntproto::{
     native_rpc::Network,
     realtime::{Clock, Config, Outcome},
     realtime_datagram::{Router, Sender, Status, MAX_PAYLOAD_BYTES, MAX_SNAPSHOT_BYTES},
@@ -301,7 +301,7 @@ async fn tokens_are_session_local_and_router_drop_revokes_pending_work() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn checked_configuration_preserves_datagram_import_bounds() {
-    use reproto::realtime_capnp::{config, datagram_snapshots};
+    use capntproto::realtime_capnp::{config, datagram_snapshots};
     struct Advertisement {
         domain: Vec<u8>,
         sequence: u64,

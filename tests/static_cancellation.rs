@@ -5,11 +5,11 @@ use capnp_rpc::{
     rpc_capnp::{cap_descriptor, message, return_},
     Connection, RpcSystem,
 };
-use futures::{channel::oneshot, FutureExt};
-use reproto_test_support::{
+use capntproto_test_support::{
     cancellation_policy_capnp::{allowed, derived, policy},
     runtime_test_capnp::harness,
 };
+use futures::{channel::oneshot, FutureExt};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -493,8 +493,9 @@ async fn missing_or_stopped_local_executor_fails_before_application_dispatch() {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_static_cancellation_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_STATIC_CANCELLATION_TRACES")
-        .expect("prepare verified trace corpus");
+    let path =
+        capntproto_test_support::verification::input("CAPNTPROTO_STATIC_CANCELLATION_TRACES")
+            .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     tokio::task::LocalSet::new()
@@ -624,7 +625,7 @@ async fn executor_trace(steps: &[serde_json::Value], early: bool, fail: bool) {
 
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_call_executor_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_CALL_EXECUTOR_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_CALL_EXECUTOR_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();

@@ -146,7 +146,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "reproto-memory-checks"
+name = "capntproto-memory-checks"
 version = "0.1.0"
 dependencies = [
  "capnp",

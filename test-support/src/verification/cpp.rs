@@ -51,7 +51,7 @@ pub fn build(targets: &[&str]) -> Result<PathBuf> {
     Ok(destination)
 }
 pub fn loader() -> Result<String> {
-    if let Ok(path) = std::env::var("REPROTO_CPP_SCHEMA_LOADER") {
+    if let Ok(path) = std::env::var("CAPNTPROTO_CPP_SCHEMA_LOADER") {
         return Ok(path);
     }
     let build = build(&["capnpc"])?;
@@ -156,7 +156,7 @@ pub fn reference() -> Result<()> {
         0,
     )?;
     let mut cmd = command("g++");
-    cmd.args(["-std=c++23", "-DREPROTO_PINNED_RUNTIME"])
+    cmd.args(["-std=c++23", "-DCAPNTPROTO_PINNED_RUNTIME"])
         .arg(format!("-I{}", tmp.path().display()))
         .args([
             "-Ivendor/capnproto/c++/src",

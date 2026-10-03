@@ -1,7 +1,7 @@
 use super::*;
 use crate::native_shutdown::Receipt;
+use capntproto_test_support::schedules::{self, block_on, spawn_local, yield_now, Trace};
 use futures::FutureExt;
-use reproto_test_support::schedules::{self, block_on, spawn_local, yield_now, Trace};
 use std::{
     future::Future,
     pin::Pin,
@@ -270,7 +270,7 @@ fn control_outcome(control: &Control) -> u64 {
 
 #[test]
 fn replay_tlc_shutdown_completion() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     const MODEL: &str = "verification/RouteShutdownCompletion.tla";
     const CONFIG: &str = include_str!("../../../verification/RouteShutdownCompletion.cfg");
     let mut total = 0;

@@ -1,5 +1,5 @@
 #![cfg(all(feature = "native", feature = "storage"))]
-use reproto::{
+use capntproto::{
     authority::{Grant, ObjectGeneration, ObjectId, Rights},
     handoff::{self, Introduction, Package, Serving},
     orm::ObjectState,
@@ -331,7 +331,7 @@ async fn cancelling_accept_or_serving_wait_releases_its_socket() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn tlc_authenticated_handoff_traces() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     const MODEL: &str = "verification/AuthenticatedHandoff.tla";
     const CONFIG: &str = include_str!("../verification/AuthenticatedHandoff.cfg");
     let paths = exploration::traces(MODEL, "authenticated-handoff", CONFIG).unwrap();
@@ -414,7 +414,7 @@ async fn tlc_authenticated_handoff_traces() {
                     };
                     assert_eq!(result, state["result"], "{path:?}");
                     let actual = f.intro.borrow().state();
-                    use reproto::semantics::HandoffPhase;
+                    use capntproto::semantics::HandoffPhase;
                     let phase = match actual.phase() {
                         HandoffPhase::Proxying => 0,
                         HandoffPhase::Offered => 1,

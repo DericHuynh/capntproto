@@ -4,7 +4,7 @@ use capnp::{
     message,
     schema_loader::{dynamic, Schema, SchemaLoader, Type},
 };
-use reproto_test_support::native_list_capnp::{self as fixture, nested_lists, service};
+use capntproto_test_support::native_list_capnp::{self as fixture, nested_lists, service};
 
 type Message = message::Builder<message::HeapAllocator>;
 const FIELDS: &[&str] = &[
@@ -437,7 +437,7 @@ fn nested_getters_preserve_capability_ownership() {
 #[cfg(target_os = "linux")]
 #[test]
 fn nested_getters_match_pinned_cpp() {
-    use reproto_test_support::verification::{command, cpp, root, run};
+    use capntproto_test_support::verification::{command, cpp, root, run};
     let build = cpp::build(&["capnpc", "capnp_tool"]).unwrap();
     let logs = root().join("target/verification/dynamic-nested-lists");
     std::fs::create_dir_all(&logs).unwrap();

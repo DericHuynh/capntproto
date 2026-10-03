@@ -95,10 +95,10 @@ The separate [realtime snapshot contract](Realtime-Model.md) extends this collec
 Use Java 17 and TLC 2.19 through the native Cargo harness:
 
 ```sh
-REPROTO_TLC_CASES=BulkTransfer,BulkCancellation,BulkError,BulkDuplicateAck,EncryptedTransport,EncryptedReplay,EncryptedCapability,EncryptedEpoch cargo test --test protocol_models protocol_reference -- --ignored --exact
+CAPNTPROTO_TLC_CASES=BulkTransfer,BulkCancellation,BulkError,BulkDuplicateAck,EncryptedTransport,EncryptedReplay,EncryptedCapability,EncryptedEpoch cargo test --test protocol_models protocol_reference -- --ignored --exact
 ```
 
-Omit `REPROTO_TLC_CASES` to check every configuration. Module and expected
+Omit `CAPNTPROTO_TLC_CASES` to check every configuration. Module and expected
 violation annotations live in `verification/configs/*.cfg`; see [Testing](Testing.md).
 The configuration generator is `scripts/generate_feature_configs.py`; it does not
 run tests.

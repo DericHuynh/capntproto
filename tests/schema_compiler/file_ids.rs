@@ -1,5 +1,5 @@
 use super::*;
-use capnp_compiler::SchemaParser;
+use capntproto_compiler::SchemaParser;
 use std::fmt::Write;
 
 fn hex(bytes: &[u8]) -> String {
@@ -33,10 +33,13 @@ fn optional_file_ids_and_derived_schemas_match_pinned_cpp() {
     let sources: Vec<_> = names
         .iter()
         .map(|name| {
-            let source =
-                fs::read_to_string(root().join("crates/capnp-compiler/examples").join(name))
-                    .unwrap()
-                    .replace("\r\n", "\n");
+            let source = fs::read_to_string(
+                root()
+                    .join("crates/capntproto-compiler/examples")
+                    .join(name),
+            )
+            .unwrap()
+            .replace("\r\n", "\n");
             fs::write(directory.path().join(name), &source).unwrap();
             source
         })

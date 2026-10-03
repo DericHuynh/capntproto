@@ -12,8 +12,8 @@ pub mod lifecycle_capnp {
     include!(concat!(env!("OUT_DIR"), "/lifecycle_capnp.rs"));
 }
 
+use capntproto::transport::{config, Identity};
 use quiche::{Connection, ConnectionId, Error, RecvInfo};
-use reproto::transport::{config, Identity};
 use std::net::SocketAddr;
 
 const MARKER: &[u8] = b"authenticated Native fuzz payload";
@@ -330,7 +330,7 @@ mod tests {
     use super::*;
 
     fn seed(target: &str, index: usize, input: &[u8]) -> usize {
-        if let Some(directory) = std::env::var_os("REPROTO_NATIVE_FUZZ_CORPUS") {
+        if let Some(directory) = std::env::var_os("CAPNTPROTO_NATIVE_FUZZ_CORPUS") {
             let directory = std::path::PathBuf::from(directory).join(target);
             std::fs::create_dir_all(&directory).unwrap();
             std::fs::write(directory.join(format!("seed-{index}")), input).unwrap();
@@ -446,13 +446,13 @@ mod tests {
 
     #[test]
     fn replay_saved_fuzz_input() {
-        let Some(path) = std::env::var_os("REPROTO_NATIVE_FUZZ_REPLAY") else {
+        let Some(path) = std::env::var_os("CAPNTPROTO_NATIVE_FUZZ_REPLAY") else {
             packet(&[5, 1, 0]);
             stream(&[127, 0, 1, 2, 3]);
             return;
         };
         let input = std::fs::read(path).unwrap();
-        match std::env::var("REPROTO_NATIVE_FUZZ_TARGET")
+        match std::env::var("CAPNTPROTO_NATIVE_FUZZ_TARGET")
             .unwrap()
             .as_str()
         {

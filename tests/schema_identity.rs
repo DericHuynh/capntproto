@@ -5,7 +5,7 @@ use capnp::{
     schema_capnp::brand,
     schema_loader::{Schema, SchemaLoader, Type},
 };
-use reproto_test_support::reflection_lookup_capnp as fixture;
+use capntproto_test_support::reflection_lookup_capnp as fixture;
 use std::{
     collections::{hash_map::DefaultHasher, HashMap},
     hash::{BuildHasherDefault, Hash, Hasher},

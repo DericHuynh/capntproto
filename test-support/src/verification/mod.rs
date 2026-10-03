@@ -113,7 +113,7 @@ pub fn catalog() -> &'static Catalog {
                     });
                 }
                 if group.id == "protocol_reference" {
-                    if let Ok(selected) = std::env::var("REPROTO_TLC_CASES") {
+                    if let Ok(selected) = std::env::var("CAPNTPROTO_TLC_CASES") {
                         let names: BTreeSet<_> = selected.split(',').map(str::trim).collect();
                         for name in &names {
                             assert!(
@@ -244,7 +244,7 @@ pub fn graph_digest(text: &str) -> Result<GraphDigest> {
 pub fn command(program: impl AsRef<std::ffi::OsStr>) -> Command {
     let mut cmd = Command::new(program);
     cmd.current_dir(root());
-    if std::env::var_os("REPROTO_COVERAGE_CHILDREN_NATIVE").is_some() {
+    if std::env::var_os("CAPNTPROTO_COVERAGE_CHILDREN_NATIVE").is_some() {
         // Coverage of this test process is retained. Nested compiler-contract,
         // Miri, sanitizer and mutation commands must use their own toolchains
         // and profiles, rather than mixing incompatible LLVM profile formats.
@@ -255,7 +255,7 @@ pub fn command(program: impl AsRef<std::ffi::OsStr>) -> Command {
             "LLVM_PROFILE_FILE",
             "CARGO_TARGET_DIR",
             "RUSTUP_TOOLCHAIN",
-            "REPROTO_COVERAGE_CHILDREN_NATIVE",
+            "CAPNTPROTO_COVERAGE_CHILDREN_NATIVE",
         ] {
             cmd.env_remove(key);
         }
@@ -265,7 +265,7 @@ pub fn command(program: impl AsRef<std::ffi::OsStr>) -> Command {
 /// Execute without a shell, capturing a durable combined log and enforcing a timeout.
 pub fn run(cmd: &mut Command, log: &Path, expected: i32) -> Result<String> {
     let timeout = Duration::from_secs(
-        std::env::var("REPROTO_CHECK_TIMEOUT")
+        std::env::var("CAPNTPROTO_CHECK_TIMEOUT")
             .ok()
             .map(|s| s.parse())
             .transpose()?
@@ -421,8 +421,8 @@ fn tools() -> Result<(PathBuf, PathBuf)> {
     let java = std::env::var_os("JAVA")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
-            if Path::new("/tmp/reproto-jre17/bin/java").exists() {
-                "/tmp/reproto-jre17/bin/java".into()
+            if Path::new("/tmp/capntproto-jre17/bin/java").exists() {
+                "/tmp/capntproto-jre17/bin/java".into()
             } else {
                 "java".into()
             }
@@ -434,7 +434,7 @@ fn tools() -> Result<(PathBuf, PathBuf)> {
             if local.is_file() {
                 local
             } else {
-                "/tmp/reproto-tla2tools.jar".into()
+                "/tmp/capntproto-tla2tools.jar".into()
             }
         });
     if !jar.is_file() {
@@ -478,7 +478,7 @@ pub fn verify(group: &Group) -> Result<()> {
     let (java, jar) = tools()?;
     let before = fingerprint(group, &java, &jar)?;
     let stamp = dir.join("checked.json");
-    if std::env::var_os("REPROTO_TLC_FRESH").is_none() {
+    if std::env::var_os("CAPNTPROTO_TLC_FRESH").is_none() {
         if let Ok(bytes) = fs::read(&stamp) {
             if let Ok((key, logs)) =
                 serde_json::from_slice::<(String, BTreeMap<String, String>)>(&bytes)

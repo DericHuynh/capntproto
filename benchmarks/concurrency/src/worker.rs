@@ -1,8 +1,8 @@
-use futures::executor::block_on;
-use reproto::storage::{
+use capntproto::storage::{
     worker::{Config, Format, Options, ShutdownMode, Worker},
     ComponentId, ComponentUpdate, Limits, ObjectKey, Revision, Store,
 };
+use futures::executor::block_on;
 use serde_json::{json, Value};
 use std::{
     path::Path,

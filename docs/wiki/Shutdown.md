@@ -61,7 +61,7 @@ or dropping the final listener during a drain aborts the exchange.
 ## Authenticated wire extension
 
 The standard Cap'n Proto RPC schemas are unchanged. On quiche sessions, this
-Capn't Proto extension uses two reliable unidirectional control streams per endpoint:
+Capntproto extension uses two reliable unidirectional control streams per endpoint:
 request streams 2/3 and acknowledgement streams 6/7 (initiator/responder).
 Each stream contains exactly one 29-byte frame followed by FIN:
 

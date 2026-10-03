@@ -334,10 +334,10 @@ struct Saved {
 
 #[test]
 fn generated_runtime_packet_schedules() {
+    use capntproto_test_support::verification as v;
     use proptest::test_runner::{Config, RngAlgorithm, RngSeed, TestCaseError, TestRunner};
-    use reproto_test_support::verification as v;
     const SEED: u64 = 0x5250_534F_434B_4554;
-    let output = std::env::var_os("REPROTO_RUNTIME_SIM_OUTPUT")
+    let output = std::env::var_os("CAPNTPROTO_RUNTIME_SIM_OUTPUT")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| {
             let base = v::root().join("target/verification/runtime-socket");
@@ -354,7 +354,7 @@ fn generated_runtime_packet_schedules() {
     // deliberately be the same saved run. A failed run must not leave a stale
     // success artifact that appears to qualify the new inputs.
     let replay =
-        std::env::var_os("REPROTO_RUNTIME_SIM_REPLAY").map(|path| std::fs::read(path).unwrap());
+        std::env::var_os("CAPNTPROTO_RUNTIME_SIM_REPLAY").map(|path| std::fs::read(path).unwrap());
     match std::fs::remove_file(output.join("runs.json")) {
         Ok(()) => (),
         Err(error) if error.kind() == io::ErrorKind::NotFound => (),
@@ -588,7 +588,7 @@ async fn partition_and_stale_packets_cannot_deliver_into_a_replacement_generatio
 
 #[test]
 fn replay_tlc_socket_driver_terminal_races() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     let config = include_str!("../../../verification/NativeSocketDriver.cfg");
     exploration::controls(
         "verification/NativeSocketDriver.tla",

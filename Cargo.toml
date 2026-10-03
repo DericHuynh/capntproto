@@ -1,9 +1,9 @@
 [package]
-name = "reproto"
+name = "capntproto"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "Capn't Proto: Rust schemas, capability RPC, encrypted transport and durable storage"
+description = "Capntproto: Rust schemas, capability RPC, encrypted transport and durable storage"
 readme = "README.md"
 rust-version = "1.97"
 publish = false
@@ -13,7 +13,7 @@ build = "build.rs"
 resolver = "2"
 # capnp-rpc was already an implicit path-dependency member. Name it explicitly
 # so the workspace test boundary is visible and remains stable.
-members = ["test-support", "quality", "vendor/capnp-rpc", "crates/capnp-compiler", "crates/capnp-compat"]
+members = ["test-support", "quality", "vendor/capnp-rpc", "crates/capntproto-compiler", "crates/capntproto-compat"]
 # These packages retain independent toolchains, lockfiles, or benchmark builds.
 exclude = [
     "vendor/quiche",
@@ -33,9 +33,9 @@ exclude = [
 
 [features]
 default = ["quic-quiche", "services", "storage"]
-native = ["tls", "dep:rcgen", "dep:x509-parser", "dep:boring", "dep:quiche", "dep:zeroize", "dep:capnpc", "dep:capnp-compiler"]
-services = ["dep:capnpc", "dep:capnp-compiler"]
-storage = ["dep:memmap2", "dep:fs2", "dep:capnpc", "dep:capnp-compiler"]
+native = ["tls", "dep:rcgen", "dep:x509-parser", "dep:boring", "dep:quiche", "dep:zeroize", "dep:capnpc", "dep:capntproto-compiler"]
+services = ["dep:capnpc", "dep:capntproto-compiler"]
+storage = ["dep:memmap2", "dep:fs2", "dep:capnpc", "dep:capntproto-compiler"]
 tls = ["dep:rustls", "dep:tokio-rustls"]
 quic = ["native"]
 quic-quiche = ["quic"]
@@ -65,7 +65,7 @@ tempfile = "3"
 
 [build-dependencies]
 capnpc = { version = "0.25", path = "vendor/capnpc", optional = true }
-capnp-compiler = { path = "crates/capnp-compiler", optional = true }
+capntproto-compiler = { path = "crates/capntproto-compiler", optional = true }
 capnp = { version = "0.25", path = "vendor/capnp" }
 
 [dev-dependencies]
@@ -73,12 +73,12 @@ allocation-counter = "=0.8.1"
 rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring"] }
 proptest = { version = "=1.11.0", default-features = false, features = ["std"] }
 tokio = { version = "1", features = ["test-util"] }
-reproto-test-support = { path = "test-support" }
-capnp-compiler = { path = "crates/capnp-compiler" }
+capntproto-test-support = { path = "test-support" }
+capntproto-compiler = { path = "crates/capntproto-compiler" }
 capnpc = { version = "0.25", path = "vendor/capnpc" }
 
 [[bin]]
-name = "reproto-model"
+name = "capntproto-model"
 path = "src/bin/model.rs"
 
 [[example]]

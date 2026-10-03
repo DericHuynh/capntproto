@@ -671,7 +671,7 @@ mod datagram_tests {
             realtime::{Config, MonotonicClock},
             realtime_datagram::{Router, Sender},
         };
-        let path = reproto_test_support::verification::input("REPROTO_DATAGRAM_BATCH_TRACES")
+        let path = capntproto_test_support::verification::input("CAPNTPROTO_DATAGRAM_BATCH_TRACES")
             .expect("run this test through its verification driver");
         let traces: Vec<BatchTrace> =
             serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();

@@ -24,7 +24,7 @@ it does not mutate committed file mappings in place. Its first snapshot after
 a changed generation copies the whole arena. The page engine's snapshot costs
 must not be attributed to this different durable implementation.
 
-| Contract | Capn't Proto Store | EAE durable arena |
+| Contract | Capntproto Store | EAE durable arena |
 |---|---|---|
 | Updates | Whole entries with per-object head/publication CAS | Byte ranges with an arena-wide generation CAS |
 | Publication/history | Staged heads, published revisions, retained history and cursor gaps | Current image and detached snapshots; no ORM publication/history layer |

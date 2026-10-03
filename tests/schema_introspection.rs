@@ -361,7 +361,7 @@ fn inspect_schema(lines: &mut Vec<String>, label: &str, s: Schema<'_>, loader: &
 
 #[test]
 fn pinned_cpp_agrees_on_brands_scopes_arguments_and_union_subsets() {
-    let executable = reproto_test_support::verification::cpp::loader().unwrap();
+    let executable = capntproto_test_support::verification::cpp::loader().unwrap();
     let request = request();
     let mut loader = SchemaLoader::default();
     loader
@@ -439,7 +439,7 @@ fn pinned_cpp_agrees_on_brands_scopes_arguments_and_union_subsets() {
 
 fn compiled_union(tag: u16) {
     use capnp::introspect::Introspect;
-    use reproto_test_support::dynamic_test_capnp::brand_envelope;
+    use capntproto_test_support::dynamic_test_capnp::brand_envelope;
     let schema = brand_envelope::Owned::introspect()
         .as_struct_schema()
         .unwrap();
@@ -472,7 +472,7 @@ fn compiled_union(tag: u16) {
 #[test]
 fn inactive_union_arms_cannot_expose_retained_capability_pointers() {
     use capnp::traits::{HasTypeId, Imbue, ImbueMut};
-    use reproto_test_support::dynamic_test_capnp::{base, brand_envelope};
+    use capntproto_test_support::dynamic_test_capnp::{base, brand_envelope};
     struct Server;
     impl base::Server<capnp::text::Owned> for Server {}
     let client: base::Client<capnp::text::Owned> = capnp_rpc::new_client(Server);
@@ -532,7 +532,7 @@ fn inactive_union_arms_cannot_expose_retained_capability_pointers() {
 
 #[test]
 fn introspection_model_replays_brand_transitions_and_union_reads() {
-    use reproto_test_support::verification::exploration::{controls, traces};
+    use capntproto_test_support::verification::exploration::{controls, traces};
     const MODEL: &str = "verification/RpcSchemaIntrospection.tla";
     const CFG: &str = include_str!("../verification/RpcSchemaIntrospection.cfg");
     controls(

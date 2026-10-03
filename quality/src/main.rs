@@ -1,9 +1,9 @@
-use reproto_quality::{benchmark, coverage, qualification, report, Result, Runner};
+use capntproto_quality::{benchmark, coverage, qualification, report, Result, Runner};
 use std::path::Path;
 fn main() -> Result<()> {
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.len() < 2 {
-        return Err("usage: reproto-quality LANE OUTPUT [REQUIRED_LANES | BUNDLE_PATH]".into());
+        return Err("usage: capntproto-quality LANE OUTPUT [REQUIRED_LANES | BUNDLE_PATH]".into());
     }
     if args[0] == "report" {
         return report::generate(

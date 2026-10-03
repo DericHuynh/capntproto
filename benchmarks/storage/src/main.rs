@@ -1,7 +1,7 @@
 //! Same fixed-slot, latest-publication workload on both storage engines.
 //! This is a comparison adapter, not the complete ORM/history/capability API.
+use capntproto::storage::{Limits, ObjectKey, Retention, Revision, Snapshot, Store, Update};
 use eae_pages::durable::{Arena, ArenaSnapshot, Durability, Limits as ArenaLimits};
-use reproto::storage::{Limits, ObjectKey, Retention, Revision, Snapshot, Store, Update};
 use serde_json::json;
 use std::{fs, hint::black_box, os::unix::fs::MetadataExt, path::Path, time::Instant};
 

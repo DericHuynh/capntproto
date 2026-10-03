@@ -1,6 +1,6 @@
 # Fork and compatibility policy
 
-The project is unreleased 0.x. Private Rust APIs and Capn't Proto-only storage/transport
+The project is unreleased 0.x. Private Rust APIs and Capntproto-only storage/transport
 formats may break. Do not add forwarding aliases, format migrations or downgrade
 fallbacks solely for earlier development snapshots. The realm loader accepts only
 `reproto-realm/2`, and the explicit storage openers accept `RPROTO04` (whole entry) or

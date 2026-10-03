@@ -103,7 +103,7 @@ async fn final_generation_is_issued_once_and_rejection_preserves_binding_and_dea
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn replay_tlc_discovery_generation_boundary() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     const MODEL: &str = "verification/DiscoveryGenerationBoundary.tla";
     const CONFIG: &str = include_str!("../../../verification/DiscoveryGenerationBoundary.cfg");
     let paths = exploration::traces(MODEL, "discovery-generation-boundary", CONFIG).unwrap();

@@ -316,9 +316,10 @@ mod tests {
     }
     #[tokio::test(flavor = "current_thread")]
     async fn replay_tlc_native_shutdown_traces() {
-        let path = reproto_test_support::verification::input("REPROTO_NATIVE_SHUTDOWN_TRACES")
-            .expect("run this test through its verification driver");
-        let traces: Vec<Trace> = reproto_test_support::traces::read(path, "RpcNativeShutdown");
+        let path =
+            capntproto_test_support::verification::input("CAPNTPROTO_NATIVE_SHUTDOWN_TRACES")
+                .expect("run this test through its verification driver");
+        let traces: Vec<Trace> = capntproto_test_support::traces::read(path, "RpcNativeShutdown");
         assert!(!traces.is_empty());
         for (index, trace) in traces.iter().enumerate() {
             let mut a = Protocol::default();

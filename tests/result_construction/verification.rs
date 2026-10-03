@@ -1,5 +1,5 @@
 use super::super::*;
-use reproto_test_support::verification::{command, cpp, exploration, root as repo_root, run};
+use capntproto_test_support::verification::{command, cpp, exploration, root as repo_root, run};
 
 fn compare_cpp(inputs: &str, expected: &str) {
     let build = cpp::build(&["capnp-rpc", "capnp_tool", "capnpc_cpp"]).unwrap();

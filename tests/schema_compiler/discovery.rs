@@ -1,6 +1,6 @@
 use super::*;
 
-#[path = "../../crates/capnp-compiler/tests/corpus/discovery.rs"]
+#[path = "../../crates/capntproto-compiler/tests/corpus/discovery.rs"]
 mod corpus;
 
 #[test]
@@ -49,7 +49,7 @@ fn semantic_import_discovery_matches_cpp_without_renaming() {
             "{}",
             case.name
         );
-        let rust = capnp_compiler::FileCompiler::new()
+        let rust = capntproto_compiler::FileCompiler::new()
             .src_prefix(directory.path())
             .import_path(directory.path().join("src"))
             .compile(

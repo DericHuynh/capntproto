@@ -1,4 +1,4 @@
-use reproto::bulk::{CreditWindow, Reservation, Settlement};
+use capntproto::bulk::{CreditWindow, Reservation, Settlement};
 
 fn metrics(window: &CreditWindow) -> (u32, u32, u64, usize) {
     (
@@ -75,7 +75,7 @@ fn full_chunk_namespace_is_usable_once_and_remains_exhausted() {
 
 #[test]
 fn replay_tlc_bulk_reservation_ownership() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     const MODEL: &str = "verification/BulkReservation.tla";
     const CONFIG: &str = include_str!("../verification/BulkReservation.cfg");
     let paths = exploration::traces(MODEL, "bulk-reservation", CONFIG).unwrap();

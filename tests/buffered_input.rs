@@ -281,7 +281,7 @@ fn buffered_prefetch_reduces_input_operations_against_unbuffered_reader() {
 
 #[test]
 fn tlc_buffered_input_replays_ownership_prefetch_cancellation_and_eof() {
-    use reproto_test_support::verification::exploration::{controls, traces};
+    use capntproto_test_support::verification::exploration::{controls, traces};
     const MODEL: &str = "verification/RpcBufferedInput.tla";
     const CONFIG: &str = include_str!("../verification/RpcBufferedInput.cfg");
     let paths = traces(MODEL, "buffered-input", CONFIG).unwrap();
@@ -386,7 +386,7 @@ fn rpc_frame(tag: u16, payload: usize) -> Vec<u8> {
 
 #[test]
 fn all_rpc_discriminants_and_buffer_lifetimes_match_pinned_cpp() {
-    use reproto_test_support::verification::{command, cpp, root, run};
+    use capntproto_test_support::verification::{command, cpp, root, run};
     let build = cpp::build(&["capnp-rpc"]).unwrap();
     let directory = tempfile::tempdir().unwrap();
     let executable = directory.path().join("buffered-input");
@@ -468,8 +468,8 @@ fn all_rpc_discriminants_and_buffer_lifetimes_match_pinned_cpp() {
 #[tokio::test(flavor = "current_thread")]
 async fn two_party_rpc_retains_call_and_return_capabilities_across_buffer_reuse() {
     use capnp_rpc::{rpc_twoparty_capnp::Side, RpcSystem};
+    use capntproto_test_support::runtime_test_capnp::harness;
     use futures::channel::oneshot;
-    use reproto_test_support::runtime_test_capnp::harness;
     use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
     struct Service {
         offset: u32,

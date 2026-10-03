@@ -1,6 +1,6 @@
 use super::*;
 use capnp_rpc::{rpc_twoparty_capnp::Side, twoparty, VatNetwork};
-use reproto_test_support::verification::{command, cpp, exploration, root, run};
+use capntproto_test_support::verification::{command, cpp, exploration, root, run};
 
 fn hint(value: u64) -> Option<usize> {
     match value {
@@ -163,7 +163,8 @@ async fn unix_network_automatically_samples_live_send_buffer_without_retaining_s
     let (socket, peer) = tokio::net::UnixStream::pair().unwrap();
     let probe = socket.as_fd().try_clone_to_owned().unwrap();
     let raw = socket.as_raw_fd();
-    let mut network = reproto::unix_rpc::VatNetwork::new(socket, Side::Client, Default::default());
+    let mut network =
+        capntproto::unix_rpc::VatNetwork::new(socket, Side::Client, Default::default());
     let mut connection = network.connect(Side::Server).unwrap();
     check_live_socket_window(&mut *connection, &probe);
     let mut pending = harness(&mut *connection);
@@ -198,7 +199,7 @@ async fn tcp_network_automatically_samples_live_send_buffer_and_releases_output(
     let socket = socket.unwrap();
     let probe = socket.as_fd().try_clone_to_owned().unwrap();
     let raw = socket.as_raw_fd();
-    let mut network = reproto::rpc::tcp::network(socket, Side::Client, Default::default());
+    let mut network = capntproto::rpc::tcp::network(socket, Side::Client, Default::default());
     let mut connection = network.connect(Side::Server).unwrap();
     check_live_socket_window(&mut *connection, &probe);
     let mut pending = harness(&mut *connection);

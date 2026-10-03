@@ -8,7 +8,12 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-fn dump(schemas: &capnp_compiler::ParsedSchemas, output: &mut String, step: usize, result: u64) {
+fn dump(
+    schemas: &capntproto_compiler::ParsedSchemas,
+    output: &mut String,
+    step: usize,
+    result: u64,
+) {
     writeln!(output, "stage {step} {result}").unwrap();
     for schema in schemas.get_all_loaded() {
         let id = schema.schema().id();
@@ -59,11 +64,15 @@ fn lazy_session_declaration_closures_match_cpp_compiler_loader() {
         "session-late.capnp",
         "reflection.txt",
     ] {
-        let source =
-            fs::read_to_string(root().join("crates/capnp-compiler/examples").join(file)).unwrap();
+        let source = fs::read_to_string(
+            root()
+                .join("crates/capntproto-compiler/examples")
+                .join(file),
+        )
+        .unwrap();
         fs::write(directory.path().join(file), source.replace("\r\n", "\n")).unwrap();
     }
-    let mut compiler = capnp_compiler::FileCompiler::new();
+    let mut compiler = capntproto_compiler::FileCompiler::new();
     compiler.src_prefix(directory.path());
     let mut session = compiler
         .parse_session(&[directory.path().join("session-main.capnp")])

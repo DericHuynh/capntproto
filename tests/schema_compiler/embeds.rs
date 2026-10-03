@@ -8,7 +8,7 @@ fn check(compiler: &std::path::Path, directory: &std::path::Path, body: &str, ac
         .args(["compile", "-Iinclude", "-o-", "test.capnp"])
         .output()
         .unwrap();
-    let mut frontend = capnp_compiler::FileCompiler::new();
+    let mut frontend = capntproto_compiler::FileCompiler::new();
     frontend
         .src_prefix(directory)
         .import_path(directory.join("include"));
@@ -256,7 +256,7 @@ fn embeds_and_imported_embed_values_match_pinned_cpp() {
 fn embeds_generate_working_rust_constants_and_mutable_defaults() {
     let project = tempfile::tempdir().unwrap();
     fs::create_dir(project.path().join("src")).unwrap();
-    let mut parser = capnp_compiler::SchemaParser::new();
+    let mut parser = capntproto_compiler::SchemaParser::new();
     parser
         .add_source(
             "embedded.capnp",

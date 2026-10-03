@@ -1,5 +1,5 @@
 [package]
-name = "reproto-instruction-bench"
+name = "capntproto-instruction-bench"
 version = "0.1.0"
 edition = "2021"
 publish = false

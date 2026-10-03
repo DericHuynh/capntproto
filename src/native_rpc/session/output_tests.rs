@@ -5,8 +5,8 @@ use super::{
     *,
 };
 use capnp_rpc::{rpc_twoparty_capnp::Side, VatNetwork};
+use capntproto_test_support::schedules::{self, block_on, spawn_local, yield_now, Trace};
 use futures::{Future, FutureExt};
-use reproto_test_support::schedules::{self, block_on, spawn_local, yield_now, Trace};
 use std::{
     pin::Pin,
     task::{Context, Poll, Waker},
@@ -345,7 +345,7 @@ fn receipt_cannot_bypass_real_output_close_or_route_cancellation() {
 
 #[test]
 fn replay_tlc_route_output_fences() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     const MODEL: &str = "verification/RouteOutputFence.tla";
     const CONFIG: &str = include_str!("../../../verification/RouteOutputFence.cfg");
     let mut total = 0;

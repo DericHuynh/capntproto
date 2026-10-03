@@ -34,7 +34,7 @@ fn annotations_match_pinned_cpp() {
         "annotation a(enumerant, enum) :UInt16; enum E $a(1) { last @1 $a(2); first @0 $a(3); }",
     ].into_iter().map(str::to_owned).collect();
     cases.push(
-        include_str!("../../crates/capnp-compiler/examples/annotations.capnp")
+        include_str!("../../crates/capntproto-compiler/examples/annotations.capnp")
             .split_once(';')
             .unwrap()
             .1
@@ -100,7 +100,7 @@ fn annotations_match_pinned_cpp() {
             message::ReaderOptions::new(),
         )
         .unwrap();
-        let rust = capnp_compiler::compile("test.capnp", &source)
+        let rust = capntproto_compiler::compile("test.capnp", &source)
             .unwrap_or_else(|e| panic!("case {index}: {source}\n{e}"));
         compare_requests(
             rust.get_root_as_reader().unwrap(),
@@ -139,7 +139,7 @@ fn annotations_match_pinned_cpp() {
             .unwrap();
         assert!(!reference.status.success(), "C++ accepted {body}");
         assert!(
-            capnp_compiler::compile("test.capnp", &source).is_err(),
+            capntproto_compiler::compile("test.capnp", &source).is_err(),
             "Rust accepted {body}"
         );
     }
@@ -216,7 +216,7 @@ fn annotation_imports_and_dependencies_match_pinned_cpp() {
         "using R = import \"rust.capnp\"; struct S { g :group $R.name(\"metadata\") { x @0 :Bool; } u :union $R.name(\"choice\") { a @1 :Void; b @2 :Text; } }",
         "using Cxx = import \"c++.capnp\"; $Cxx.namespace(\"example\"); $Cxx.allowCancellation; struct S {}",
     ];
-    let mut frontend = capnp_compiler::FileCompiler::new();
+    let mut frontend = capntproto_compiler::FileCompiler::new();
     frontend.src_prefix(directory.path());
     for source in cases {
         fs::write(
@@ -315,7 +315,7 @@ fn annotation_imports_and_dependencies_match_pinned_cpp() {
 fn rust_annotations_generate_renamed_optional_fields_and_reflection() {
     let project = tempfile::tempdir().unwrap();
     fs::create_dir(project.path().join("src")).unwrap();
-    let mut parser = capnp_compiler::SchemaParser::new();
+    let mut parser = capntproto_compiler::SchemaParser::new();
     parser
         .add_source(
             "annotated.capnp",

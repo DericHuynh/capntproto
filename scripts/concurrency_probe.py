@@ -51,7 +51,7 @@ def main():
     parser.add_argument('--base', type=Path, help='Existing directory on the measured filesystem')
     parser.add_argument('--output', type=Path, help='New evidence directory; must not exist')
     parser.add_argument('--binary', type=Path,
-                        default=Path('target/concurrency-research/release/reproto-concurrency-probe'))
+                        default=Path('target/concurrency-research/release/capntproto-concurrency-probe'))
     parser.add_argument('--trials', type=int, default=3)
     parser.add_argument('--summarize', type=Path)
     args = parser.parse_args()

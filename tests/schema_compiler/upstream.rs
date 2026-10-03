@@ -42,7 +42,7 @@ fn every_pinned_upstream_schema_matches_cpp() {
             tree.join("samples")
         };
         let requested = file.strip_prefix(&prefix).unwrap();
-        let mut frontend = capnp_compiler::FileCompiler::new();
+        let mut frontend = capntproto_compiler::FileCompiler::new();
         frontend.src_prefix(&prefix).import_path(&standard);
         let output = command(&compiler)
             .current_dir(&prefix)
@@ -110,7 +110,7 @@ fn mixed_import_roots_match_first_discovered_display_names() {
     let reference =
         capnp::serialize::read_message(output.stdout.as_slice(), message::ReaderOptions::new())
             .unwrap();
-    let rust = capnp_compiler::FileCompiler::new()
+    let rust = capntproto_compiler::FileCompiler::new()
         .src_prefix(&tree)
         .import_path(&standard)
         .compile(&[standard.join("capnp/test-import2.capnp")])

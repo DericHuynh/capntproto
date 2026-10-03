@@ -1,5 +1,5 @@
 use capnp::capability::FromClientHook;
-use reproto::{
+use capntproto::{
     authority::{Grant, ObjectGeneration, ObjectId, Rights},
     orm::{ObjectServer, ObjectState},
     persistence::{
@@ -145,7 +145,7 @@ fn facet(store: &Rc<RefCell<Store>>, object: u64, generation: u64, rights: Right
 
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_persistent_factory_bindings() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     const MODEL: &str = "verification/PersistentFactoryBinding.tla";
     const CONFIG: &str = include_str!("../verification/PersistentFactoryBinding.cfg");
     let paths = exploration::traces(MODEL, "persistent-factory-binding", CONFIG).unwrap();

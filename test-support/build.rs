@@ -3,7 +3,7 @@ fn compile(files: &[&str], facade: bool, structured: bool) {
         .iter()
         .map(|s| format!("../schemas/{s}.capnp"))
         .collect();
-    let compiled = capnp_compiler::FileCompiler::new()
+    let compiled = capntproto_compiler::FileCompiler::new()
         .src_prefix("../schemas")
         .import_path("../vendor")
         .import_path("../vendor/capnpc")

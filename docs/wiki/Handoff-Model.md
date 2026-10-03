@@ -34,7 +34,7 @@ These positive configurations check the composed safety invariants, application/
 Run the dedicated checks:
 
 ```sh
-REPROTO_TLC_CASES=NetworkCanceledReturnHandoff,NetworkProviderLossHandoff,NetworkWitnessRuntimeHandoff,NetworkBugEmbargo,NetworkBugBarrierOrder REPROTO_CHECK_TIMEOUT=2400 cargo test --test protocol_models protocol_reference -- --ignored --exact
+CAPNTPROTO_TLC_CASES=NetworkCanceledReturnHandoff,NetworkProviderLossHandoff,NetworkWitnessRuntimeHandoff,NetworkBugEmbargo,NetworkBugBarrierOrder CAPNTPROTO_CHECK_TIMEOUT=2400 cargo test --test protocol_models protocol_reference -- --ignored --exact
 cargo test --test conformance
 ```
 

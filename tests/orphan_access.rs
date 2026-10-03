@@ -1,7 +1,7 @@
 use capnp::{
     dynamic_struct, dynamic_value as value, introspect::Introspect, traits::ImbueMut, ErrorKind,
 };
-use reproto_test_support::{
+use capntproto_test_support::{
     dynamic_test_capnp::{orphan_case, orphan_payload, parcel},
     runtime_test_capnp::harness,
 };
@@ -395,7 +395,7 @@ fn empty_list_anchor_and_typed_release_check_generic_brands() -> capnp::Result<(
 #[test]
 fn resize_preserves_unknown_fields_child_addresses_and_drops_removed_capabilities(
 ) -> capnp::Result<()> {
-    use reproto_test_support::dynamic_test_capnp::{large_orphan_case, small_orphan_case};
+    use capntproto_test_support::dynamic_test_capnp::{large_orphan_case, small_orphan_case};
     for small in [false, true] {
         let kept = Rc::new(Cell::new(0));
         let removed = Rc::new(Cell::new(0));
@@ -575,7 +575,7 @@ impl<'a> HeldOrphan<'a> {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_orphan_access_traces() -> capnp::Result<()> {
-    let path = reproto_test_support::verification::input("REPROTO_ORPHAN_ACCESS_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_ORPHAN_ACCESS_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();

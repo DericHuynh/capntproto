@@ -95,7 +95,7 @@ unimplemented.
 
 Run `cargo test --test protocol_models native_provisioning_model -- --exact` or the canonical
 `cargo test --locked --workspace --all-targets`. The focused report is
-`reports/reproto/native-provisioning/verification.json`.
+`reports/capntproto/native-provisioning/verification.json`.
 
 `RpcNativeProvisioning.tla` explores two successive leases, one waiter per lease,
 allocation/rejection, authentication claim, attach success/failure, acknowledgement,

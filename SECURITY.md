@@ -3,7 +3,7 @@
 ## Report a vulnerability
 
 Email [huynhderic@gmail.com](mailto:huynhderic@gmail.com) with the subject
-`Capn't Proto security report`. Do not disclose suspected vulnerabilities in public
+`Capntproto security report`. Do not disclose suspected vulnerabilities in public
 issues, pull requests, or discussion threads.
 
 If the GitHub repository offers **Security → Advisories → Report a vulnerability**,
@@ -29,9 +29,9 @@ target. Reports about older preview snapshots are welcome, but a fix may require
 updating to the current source. There is no stable release or long-term support
 branch at this stage, and no promise of backports to earlier snapshots.
 
-For a problem in vendored code that affects Capn't Proto, report it here with the
+For a problem in vendored code that affects Capntproto, report it here with the
 component and revision. The maintainer can coordinate with the upstream project
-while accounting for Capn't Proto's fork-specific behavior.
+while accounting for Capntproto's fork-specific behavior.
 
 ## Deployment and support boundary
 

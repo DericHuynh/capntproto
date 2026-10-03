@@ -242,7 +242,7 @@ async fn quiche_dials_single_use_reservations_in_both_versions() {
 #[tokio::test(flavor = "current_thread")]
 async fn native_network_runs_capability_rpc_on_every_backend() {
     use crate::native_rpc::Network;
-    use reproto_test_support::runtime_test_capnp::harness;
+    use capntproto_test_support::runtime_test_capnp::harness;
     use std::rc::Rc;
     struct Echo;
     impl harness::Server for Echo {

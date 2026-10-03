@@ -5,8 +5,8 @@ use capnp::{
     Error,
 };
 use capnp_rpc::{PipelineBuilder, RpcSystem};
+use capntproto_test_support::runtime_test_capnp::harness;
 use futures::{channel::oneshot, FutureExt};
-use reproto_test_support::runtime_test_capnp::harness;
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -283,7 +283,7 @@ async fn target_failure_and_parent_failure_before_publication_propagate() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn builders_preserve_nested_paths_groups_generics_and_capability_lifetimes() {
-    use reproto_test_support::dynamic_test_capnp::{base, parcel};
+    use capntproto_test_support::dynamic_test_capnp::{base, parcel};
     let calls = Rc::new(Cell::new(0));
     for words in [0, 1, 64] {
         let target: harness::Client = capnp_rpc::new_client(Echo(73, calls.clone()));

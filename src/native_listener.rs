@@ -922,7 +922,7 @@ mod tests {
     }
     #[tokio::test(flavor = "current_thread")]
     async fn replay_tlc_listener_traces() {
-        let path = reproto_test_support::verification::input("REPROTO_LISTENER_TRACES")
+        let path = capntproto_test_support::verification::input("CAPNTPROTO_LISTENER_TRACES")
             .expect("run this test through its verification driver");
         let cases: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         assert!(!cases.is_empty());

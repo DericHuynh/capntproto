@@ -268,7 +268,7 @@ impl Worker {
         let owner = shared.clone();
         let (ready_tx, ready_rx) = oneshot::channel();
         thread::Builder::new()
-            .name("reproto-storage".into())
+            .name("capntproto-storage".into())
             .spawn(move || {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     match open() {

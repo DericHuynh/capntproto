@@ -1,5 +1,5 @@
 //! Exhaustive bounded graph of the production Rust revision/handoff guards.
-use reproto::semantics::{HandoffPhase, HandoffState, Revision, Revisions};
+use capntproto::semantics::{HandoffPhase, HandoffState, Revision, Revisions};
 use serde::Serialize;
 use std::collections::{BTreeMap, VecDeque};
 #[derive(Clone, Copy, Default, Eq, PartialEq, Ord, PartialOrd)]

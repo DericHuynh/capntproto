@@ -1,6 +1,6 @@
-use reproto::storage::ObjectKey;
-use reproto::storage::Revision;
-use reproto::{
+use capntproto::storage::ObjectKey;
+use capntproto::storage::Revision;
+use capntproto::{
     authority::{Grant, ObjectGeneration, ObjectId, Rights},
     orm::{ObjectServer, ObjectState},
     storage::Store,
@@ -12,7 +12,7 @@ type Doc = object::Client<document::Owned>;
 
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_object_authority_bindings() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     const MODEL: &str = "verification/ObjectAuthorityBinding.tla";
     const CONFIG: &str = include_str!("../verification/ObjectAuthorityBinding.cfg");
     let paths = exploration::traces(MODEL, "object-authority-binding", CONFIG).unwrap();
@@ -200,13 +200,13 @@ fn full_width_bindings_survive_delegation_and_serialization() {
         let child = root.delegate([2; 32], Rights::VIEW).unwrap();
         let clone = child.clone();
         assert_eq!((clone.object(), clone.generation()), (object, generation));
-        let descriptor = reproto::persistence::Descriptor::new(
-            reproto::persistence::ObjectKind::new(7).unwrap(),
+        let descriptor = capntproto::persistence::Descriptor::new(
+            capntproto::persistence::ObjectKind::new(7).unwrap(),
             clone.object(),
             clone.generation(),
             clone.rights(),
         );
-        let decoded: reproto::persistence::Descriptor =
+        let decoded: capntproto::persistence::Descriptor =
             serde_json::from_str(&serde_json::to_string(&descriptor).unwrap()).unwrap();
         assert_eq!(
             (decoded.object(), decoded.generation()),

@@ -5,7 +5,7 @@ use capnp::{
     schema_capnp::{field, node},
     schema_loader::{dynamic, Schema, SchemaLoader},
 };
-use reproto_test_support::presence_capnp::{access_capability, blob_access};
+use capntproto_test_support::presence_capnp::{access_capability, blob_access};
 
 type Message = message::Builder<message::HeapAllocator>;
 fn native_schema() -> capnp::schema::StructSchema {
@@ -588,7 +588,7 @@ fn invalid_blob_initialization_preserves_selection_bytes_and_capability_owners()
 #[cfg(target_os = "linux")]
 #[test]
 fn blob_access_matches_pinned_cpp() {
-    use reproto_test_support::verification::{command, cpp, root, run};
+    use capntproto_test_support::verification::{command, cpp, root, run};
     let build = cpp::build(&["capnpc", "capnp_tool"]).unwrap();
     let logs = root().join("target/verification/dynamic-blobs");
     std::fs::create_dir_all(&logs).unwrap();

@@ -89,7 +89,7 @@ pub fn cpp() -> Result<()> {
     if args.is_empty() {
         return individual("capnp-cpp");
     }
-    let reference = std::env::var_os("REPROTO_CPP_BENCH")
+    let reference = std::env::var_os("CAPNTPROTO_CPP_BENCH")
         .map(PathBuf::from)
         .unwrap_or(std::env::current_exe()?.with_file_name("capnp-reference"));
     #[cfg(unix)]

@@ -5,8 +5,8 @@ use capnp_rpc::{
     rpc_capnp::{cap_descriptor, exception, message, resolve, return_},
     BootstrapFactory, RpcSystem,
 };
+use capntproto_test_support::runtime_test_capnp::harness;
 use futures::channel::oneshot;
-use reproto_test_support::runtime_test_capnp::harness;
 use std::{
     cell::{Cell, RefCell},
     collections::HashMap,
@@ -234,7 +234,7 @@ impl Fixture {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_exception_trace_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_EXCEPTION_TRACE_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_EXCEPTION_TRACE_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<Vec<serde_json::Value>> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();

@@ -1,5 +1,5 @@
 //! Controlled quiche peer for scripts/check_quic_interop.py.
-use reproto::rpc::{
+use capntproto::rpc::{
     quic::{self, Endpoint, Version},
     tls::{rustls, Identity},
 };

@@ -1,4 +1,4 @@
-use reproto::{
+use capntproto::{
     realtime::{Clock, Config, Outcome, Receiver, Sender},
     realtime_capnp::snapshots,
 };
@@ -132,8 +132,8 @@ async fn rpc_timeout_is_unknown_and_does_not_cancel_snapshot() {
         .run_until(async {
             let (_clock, r, service) = setup();
             let (a, b) = tokio::io::duplex(4096);
-            let server = reproto::rpc::serve(b, service.client);
-            let (client, driver): (snapshots::Client, _) = reproto::rpc::client(a);
+            let server = capntproto::rpc::serve(b, service.client);
+            let (client, driver): (snapshots::Client, _) = capntproto::rpc::client(a);
             let _tasks = Tasks(vec![server, driver]);
             let sender = Sender::connect(client).await.unwrap();
             let first = sender.offer(0, 10, b"first").unwrap();
@@ -189,7 +189,7 @@ async fn receiver_owner_drop_closes_pending_receipts() {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn authenticated_native_realtime_worker() {
-    use reproto::{
+    use capntproto::{
         native_rpc::Network,
         transport::{self, Identity},
     };
@@ -264,7 +264,7 @@ fn code(outcome: Outcome) -> usize {
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_realtime_traces() {
     use futures::FutureExt;
-    let path = reproto_test_support::verification::input("REPROTO_REALTIME_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_REALTIME_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     assert!(!traces.is_empty());

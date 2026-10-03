@@ -1,5 +1,5 @@
 //! Scoped implementation mutation and LLVM coverage evidence.
-use reproto_test_support::verification::{self as v, command, root, run};
+use capntproto_test_support::verification::{self as v, command, root, run};
 use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -111,7 +111,7 @@ fn authority_and_transition_mutations() {
             "--no-default-features",
             "--in-place",
             "--package",
-            "reproto",
+            "capntproto",
             "--baseline",
             "run",
             "--build-timeout",

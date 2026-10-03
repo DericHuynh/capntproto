@@ -4,8 +4,8 @@ use capnp_rpc::{
     rpc_capnp::{cap_descriptor, message, return_},
     Connection, RpcSystem,
 };
+use capntproto_test_support::runtime_test_capnp::harness;
 use futures::{channel::oneshot, FutureExt};
-use reproto_test_support::runtime_test_capnp::harness;
 use std::{cell::RefCell, collections::VecDeque, future::Future, pin::Pin, rc::Rc, time::Duration};
 use support::{Endpoint, Hub};
 
@@ -360,7 +360,7 @@ struct Trace {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_incoming_flow_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_INCOMING_FLOW_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_INCOMING_FLOW_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     assert!(!traces.is_empty());

@@ -1,4 +1,4 @@
-use reproto::{
+use capntproto::{
     native_discovery::{Binding, Directory, Discovery, DiscoveryConnector, DiscoveryOptions},
     native_discovery_capnp::directory,
     native_listener::{Limits, Listener},
@@ -6,7 +6,7 @@ use reproto::{
     native_rpc::{Connector, Network},
     transport::Identity,
 };
-use reproto_test_support::runtime_test_capnp::harness;
+use capntproto_test_support::runtime_test_capnp::harness;
 use std::{cell::Cell, net::SocketAddr, rc::Rc, time::Duration};
 
 fn local() -> SocketAddr {
@@ -59,8 +59,8 @@ fn control(directory: &Directory, recipient: [u8; 32]) -> Control {
         calls: calls.clone(),
     });
     let (a, b) = tokio::io::duplex(4096);
-    let server = Task(reproto::rpc::serve(b, service.client));
-    let (reader, task) = reproto::rpc::client(a);
+    let server = Task(capntproto::rpc::serve(b, service.client));
+    let (reader, task) = capntproto::rpc::client(a);
     Control {
         reader,
         calls,

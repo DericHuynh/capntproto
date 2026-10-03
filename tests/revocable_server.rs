@@ -8,8 +8,8 @@ use capnp::{
     Error, ErrorKind,
 };
 use capnp_rpc::{RevocableServer, RpcSystem};
+use capntproto_test_support::{cancellation_policy_capnp::policy, runtime_test_capnp::harness};
 use futures::channel::oneshot;
-use reproto_test_support::{cancellation_policy_capnp::policy, runtime_test_capnp::harness};
 use std::{
     cell::{Cell, RefCell},
     pin::Pin,
@@ -375,7 +375,7 @@ async fn protected_methods_are_synchronously_revoked_even_after_caller_drop() {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_revocable_server_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_REVOCABLE_SERVER_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_REVOCABLE_SERVER_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();

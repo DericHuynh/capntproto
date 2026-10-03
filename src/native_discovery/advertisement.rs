@@ -451,7 +451,7 @@ mod tests {
     }
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn replay_tlc_mapped_advertisement() {
-        use reproto_test_support::verification::exploration;
+        use capntproto_test_support::verification::exploration;
         let config = include_str!("../../verification/NativeAdvertisement.cfg");
         let live = config.replace("SPECIFICATION Spec", "SPECIFICATION LiveSpec")
             + "\nPROPERTY OwnerStops\n";

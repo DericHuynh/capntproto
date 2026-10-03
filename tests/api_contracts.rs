@@ -1,7 +1,7 @@
 //! Compile external consumers of public APIs and the exact private RPC table
 //! modules. Check exact Rust diagnostics after a positive control; all
 //! orchestration is an ordinary Cargo integration test.
-use reproto_test_support::verification::{self as v, command, root, run};
+use capntproto_test_support::verification::{self as v, command, root, run};
 use serde_json::{json, Value};
 use std::{collections::BTreeSet, fs};
 
@@ -13,8 +13,8 @@ fn authority_bindings_and_route_generation_compile_contracts() {
     let mut cases = vec![(
         "positive".to_owned(),
         r#"
-use reproto::authority::{Grant, ObjectGeneration, ObjectId, Rights};
-use reproto::native_rpc::{RouteGeneration, RouteObserver};
+use capntproto::authority::{Grant, ObjectGeneration, ObjectId, Rights};
+use capntproto::native_rpc::{RouteGeneration, RouteObserver};
 fn observe(route: &RouteObserver) -> RouteGeneration {
     let id = route.generation();
     let _: u64 = id.get();
@@ -22,7 +22,7 @@ fn observe(route: &RouteObserver) -> RouteGeneration {
     id
 }
 fn main() {
-    let grant = Grant::root(reproto::authority::ObjectId::new(7).unwrap(), reproto::authority::ObjectGeneration::new(11).unwrap(), [1; 32], Rights::ALL);
+    let grant = Grant::root(capntproto::authority::ObjectId::new(7).unwrap(), capntproto::authority::ObjectGeneration::new(11).unwrap(), [1; 32], Rights::ALL);
     let child = grant.delegate([2; 32], Rights::VIEW).unwrap();
     let _: ObjectId = child.object();
     let _: ObjectGeneration = child.generation();
@@ -41,27 +41,27 @@ fn main() {
         ("holder", "[9; 32]"),
     ] {
         cases.push((format!("grant-{field}-private"), format!(
-            "fn retarget(grant: &mut reproto::authority::Grant) {{ grant.{field} = {value}; }}\nfn main() {{}}"
+            "fn retarget(grant: &mut capntproto::authority::Grant) {{ grant.{field} = {value}; }}\nfn main() {{}}"
         ), Some("E0616")));
     }
     for (name, source, diagnostic) in [
-        ("generation-from-count", "fn main() { let _: reproto::native_rpc::RouteGeneration = 1u64; }", "E0308"),
-        ("generation-as-count", "fn wrong(g: reproto::native_rpc::RouteGeneration) { let _: u64 = g; } fn main() {}", "E0308"),
-        ("generation-private-constructor", "use reproto::native_rpc::RouteGeneration; fn main() { let _ = RouteGeneration(std::num::NonZeroU64::new(1).unwrap()); }", "E0423"),
-        ("generation-from-conversion", "fn main() { let _: reproto::native_rpc::RouteGeneration = 1u64.into(); }", "E0277"),
-        ("generation-default", "fn main() { let _: reproto::native_rpc::RouteGeneration = Default::default(); }", "E0277"),
-        ("generation-arithmetic", "fn wrong(g: reproto::native_rpc::RouteGeneration) { let _ = g + 1; } fn main() {}", "E0369"),
-        ("generation-deserialize", "fn main() { let _ = serde_json::from_str::<reproto::native_rpc::RouteGeneration>(\"1\"); }", "E0277"),
-        ("grant-deserialize", "fn main() { let _ = serde_json::from_str::<reproto::authority::Grant>(\"{}\"); }", "E0277"),
-        ("grant-send", "fn require<T: Send>() {} fn main() { require::<reproto::authority::Grant>(); }", "E0277"),
-        ("grant-sync", "fn require<T: Sync>() {} fn main() { require::<reproto::authority::Grant>(); }", "E0277"),
-        ("observer-send", "fn require<T: Send>() {} fn main() { require::<reproto::native_rpc::RouteObserver>(); }", "E0277"),
-        ("grant-must-use", "#![deny(unused_must_use)]\nfn main() { reproto::authority::Grant::root(reproto::authority::ObjectId::new(7).unwrap(), reproto::authority::ObjectGeneration::new(11).unwrap(), [1;32], reproto::authority::Rights::ALL); }", "unused_must_use"),
+        ("generation-from-count", "fn main() { let _: capntproto::native_rpc::RouteGeneration = 1u64; }", "E0308"),
+        ("generation-as-count", "fn wrong(g: capntproto::native_rpc::RouteGeneration) { let _: u64 = g; } fn main() {}", "E0308"),
+        ("generation-private-constructor", "use capntproto::native_rpc::RouteGeneration; fn main() { let _ = RouteGeneration(std::num::NonZeroU64::new(1).unwrap()); }", "E0423"),
+        ("generation-from-conversion", "fn main() { let _: capntproto::native_rpc::RouteGeneration = 1u64.into(); }", "E0277"),
+        ("generation-default", "fn main() { let _: capntproto::native_rpc::RouteGeneration = Default::default(); }", "E0277"),
+        ("generation-arithmetic", "fn wrong(g: capntproto::native_rpc::RouteGeneration) { let _ = g + 1; } fn main() {}", "E0369"),
+        ("generation-deserialize", "fn main() { let _ = serde_json::from_str::<capntproto::native_rpc::RouteGeneration>(\"1\"); }", "E0277"),
+        ("grant-deserialize", "fn main() { let _ = serde_json::from_str::<capntproto::authority::Grant>(\"{}\"); }", "E0277"),
+        ("grant-send", "fn require<T: Send>() {} fn main() { require::<capntproto::authority::Grant>(); }", "E0277"),
+        ("grant-sync", "fn require<T: Sync>() {} fn main() { require::<capntproto::authority::Grant>(); }", "E0277"),
+        ("observer-send", "fn require<T: Send>() {} fn main() { require::<capntproto::native_rpc::RouteObserver>(); }", "E0277"),
+        ("grant-must-use", "#![deny(unused_must_use)]\nfn main() { capntproto::authority::Grant::root(capntproto::authority::ObjectId::new(7).unwrap(), capntproto::authority::ObjectGeneration::new(11).unwrap(), [1;32], capntproto::authority::Rights::ALL); }", "unused_must_use"),
     ] {
         cases.push((name.to_owned(), source.to_owned(), Some(diagnostic)));
     }
     check_contracts("api-contracts", &format!(
-        "reproto = {{ path = {:?}, default-features = false, features = [\"native\"] }}\nserde_json = \"1\"\n", root()
+        "capntproto = {{ path = {:?}, default-features = false, features = [\"native\"] }}\nserde_json = \"1\"\n", root()
     ), cases,
         "external Rust API construction, domain separation, immutable grant fields, local thread affinity and must-use checks",
         "not a proof of runtime authority, authentication or cross-network generation uniqueness");
@@ -202,7 +202,7 @@ fn bulk_reservation_compile_contracts() {
     let mut cases = vec![(
         "positive".to_owned(),
         r#"
-use reproto::bulk::{CreditWindow, Reservation, Settlement};
+use capntproto::bulk::{CreditWindow, Reservation, Settlement};
 fn thread_safe<T: Send + Sync>() {}
 fn main() {
     thread_safe::<CreditWindow>();
@@ -220,26 +220,26 @@ fn main() {
         None,
     )];
     for (name, source, diagnostic) in [
-        ("raw-number", "fn main() { let mut w = reproto::bulk::CreditWindow::new(3, 2).unwrap(); let _ = w.settle(&1u64); }", "E0308"),
-        ("private-fields", "fn main() { let _ = reproto::bulk::Reservation { owner: std::sync::Arc::new(()), sequence: std::num::NonZeroU64::new(1).unwrap(), bytes: std::num::NonZeroU32::new(1).unwrap() }; }", "E0451"),
-        ("sequence-mutation", "fn wrong(r: &mut reproto::bulk::Reservation) { r.sequence = std::num::NonZeroU64::new(1).unwrap(); } fn main() {}", "E0616"),
-        ("owner-mutation", "fn wrong(r: &mut reproto::bulk::Reservation) { r.owner = std::sync::Arc::new(()); } fn main() {}", "E0616"),
-        ("bytes-mutation", "fn wrong(r: &mut reproto::bulk::Reservation) { r.bytes = std::num::NonZeroU32::new(1).unwrap(); } fn main() {}", "E0616"),
-        ("no-clone", "fn wrong(r: reproto::bulk::Reservation) { let _ = r.clone(); } fn main() {}", "E0599"),
-        ("no-copy", "fn require<T: Copy>() {} fn main() { require::<reproto::bulk::Reservation>(); }", "E0277"),
-        ("no-default", "fn main() { let _: reproto::bulk::Reservation = Default::default(); }", "E0277"),
-        ("no-conversion", "fn main() { let _: reproto::bulk::Reservation = 1u64.into(); }", "E0277"),
-        ("no-deserialization", "fn main() { let _ = serde_json::from_str::<reproto::bulk::Reservation>(\"{}\"); }", "E0277"),
-        ("no-implicit-decay", "fn wrong(r: reproto::bulk::Reservation) { let _: u64 = r; } fn main() {}", "E0308"),
-        ("use-after-move", "fn wrong(r: reproto::bulk::Reservation) { drop(r); let _ = r.sequence(); } fn main() {}", "E0382"),
-        ("reservation-must-use", "#![deny(unused_must_use)]\nfn main() { let mut w = reproto::bulk::CreditWindow::new(3, 2).unwrap(); w.reserve(1).unwrap().unwrap(); }", "unused_must_use"),
-        ("settlement-must-use", "#![deny(unused_must_use)]\nfn main() { let mut w = reproto::bulk::CreditWindow::new(3, 2).unwrap(); let r = w.reserve(1).unwrap().unwrap(); w.settle(&r).unwrap(); }", "unused_must_use"),
-        ("no-raw-acknowledge", "fn main() { let mut w = reproto::bulk::CreditWindow::new(3, 2).unwrap(); let _ = w.acknowledge(1); }", "E0599"),
+        ("raw-number", "fn main() { let mut w = capntproto::bulk::CreditWindow::new(3, 2).unwrap(); let _ = w.settle(&1u64); }", "E0308"),
+        ("private-fields", "fn main() { let _ = capntproto::bulk::Reservation { owner: std::sync::Arc::new(()), sequence: std::num::NonZeroU64::new(1).unwrap(), bytes: std::num::NonZeroU32::new(1).unwrap() }; }", "E0451"),
+        ("sequence-mutation", "fn wrong(r: &mut capntproto::bulk::Reservation) { r.sequence = std::num::NonZeroU64::new(1).unwrap(); } fn main() {}", "E0616"),
+        ("owner-mutation", "fn wrong(r: &mut capntproto::bulk::Reservation) { r.owner = std::sync::Arc::new(()); } fn main() {}", "E0616"),
+        ("bytes-mutation", "fn wrong(r: &mut capntproto::bulk::Reservation) { r.bytes = std::num::NonZeroU32::new(1).unwrap(); } fn main() {}", "E0616"),
+        ("no-clone", "fn wrong(r: capntproto::bulk::Reservation) { let _ = r.clone(); } fn main() {}", "E0599"),
+        ("no-copy", "fn require<T: Copy>() {} fn main() { require::<capntproto::bulk::Reservation>(); }", "E0277"),
+        ("no-default", "fn main() { let _: capntproto::bulk::Reservation = Default::default(); }", "E0277"),
+        ("no-conversion", "fn main() { let _: capntproto::bulk::Reservation = 1u64.into(); }", "E0277"),
+        ("no-deserialization", "fn main() { let _ = serde_json::from_str::<capntproto::bulk::Reservation>(\"{}\"); }", "E0277"),
+        ("no-implicit-decay", "fn wrong(r: capntproto::bulk::Reservation) { let _: u64 = r; } fn main() {}", "E0308"),
+        ("use-after-move", "fn wrong(r: capntproto::bulk::Reservation) { drop(r); let _ = r.sequence(); } fn main() {}", "E0382"),
+        ("reservation-must-use", "#![deny(unused_must_use)]\nfn main() { let mut w = capntproto::bulk::CreditWindow::new(3, 2).unwrap(); w.reserve(1).unwrap().unwrap(); }", "unused_must_use"),
+        ("settlement-must-use", "#![deny(unused_must_use)]\nfn main() { let mut w = capntproto::bulk::CreditWindow::new(3, 2).unwrap(); let r = w.reserve(1).unwrap().unwrap(); w.settle(&r).unwrap(); }", "unused_must_use"),
+        ("no-raw-acknowledge", "fn main() { let mut w = capntproto::bulk::CreditWindow::new(3, 2).unwrap(); let _ = w.acknowledge(1); }", "E0599"),
     ] {
         cases.push((name.to_owned(), source.to_owned(), Some(diagnostic)));
     }
     check_contracts("bulk-reservation-contracts", &format!(
-        "reproto = {{ path = {:?}, default-features = false, features = [\"services\"] }}\nserde_json = \"1\"\n", root()
+        "capntproto = {{ path = {:?}, default-features = false, features = [\"services\"] }}\nserde_json = \"1\"\n", root()
     ), cases,
         "public bulk reservations: private immutable ownership, explicit sequence projection, move-only handles, must-use results, Send/Sync and removal of raw-number settlement",
         "foreign-window rejection is dynamic; a retained reservation is not evidence of remote execution or permission to settle before a terminal reply");
@@ -247,7 +247,7 @@ fn main() {
 
 #[test]
 fn bulk_config_compile_contracts() {
-    let prelude = "use reproto::bulk::{Config, Receiver, Sender};\n";
+    let prelude = "use capntproto::bulk::{Config, Receiver, Sender};\n";
     let mut cases = vec![(
         "positive".to_owned(),
         format!(
@@ -267,7 +267,7 @@ fn main() {
     let c = checked.unwrap();
     let imported: Config = serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
     assert_eq!(c, imported);
-    let _: (Receiver, reproto::bulk_capnp::transfer::Client) = Receiver::new(c.clone());
+    let _: (Receiver, capntproto::bulk_capnp::transfer::Client) = Receiver::new(c.clone());
 }
 "#
         ),
@@ -290,7 +290,7 @@ fn main() {
         cases.push((name.to_owned(), format!("#![deny(unused_must_use)]\n{prelude}{code}\nfn main() {{}}"), Some(diagnostic)));
     }
     check_contracts("bulk-config-contracts", &format!(
-        "reproto = {{ path = {:?}, default-features = false, features = [\"services\"] }}\ncapnp = {{ path = {:?} }}\nserde_json = \"1\"\n", root(), root().join("vendor/capnp")
+        "capntproto = {{ path = {:?}, default-features = false, features = [\"services\"] }}\ncapnp = {{ path = {:?} }}\nserde_json = \"1\"\n", root(), root().join("vendor/capnp")
     ), cases,
         "checked immutable bulk limits across receiver/sender APIs, private fields, explicit imports, Send/Sync, clone and must-use construction",
         "runtime validation of wire/JSON inputs is tested separately; limits are not authority or evidence of remote execution");
@@ -298,7 +298,7 @@ fn main() {
 
 #[test]
 fn persistent_descriptor_compile_contracts() {
-    let prelude = "use reproto::persistence::{Descriptor, ObjectKind};\nuse reproto::authority::{ObjectGeneration, ObjectId, Rights};\n";
+    let prelude = "use capntproto::persistence::{Descriptor, ObjectKind};\nuse capntproto::authority::{ObjectGeneration, ObjectId, Rights};\n";
     let mut cases = vec![(
         "positive".to_owned(),
         format!(
@@ -390,19 +390,19 @@ fn main() {
         ("constructor-raw-object", "fn wrong(k: ObjectKind, g: ObjectGeneration) { let _ = Descriptor::new(k, 1u64, g, Rights::ALL); } fn main() {}", "E0308"),
         ("constructor-raw-generation", "fn wrong(k: ObjectKind, o: ObjectId) { let _ = Descriptor::new(k, o, 1u64, Rights::ALL); } fn main() {}", "E0308"),
         ("constructor-swapped", "fn wrong(k: ObjectKind, o: ObjectId, g: ObjectGeneration) { let _ = Descriptor::new(k, g, o, Rights::ALL); } fn main() {}", "E0308"),
-        ("registry-wrong-kind", "fn wrong(r: &reproto::persistence::Realm, f: std::rc::Rc<dyn reproto::persistence::Factory>, o: ObjectId) { let _ = r.register_factory(o, f); } fn main() {}", "E0308"),
-        ("registry-raw-kind", "fn wrong(r: &reproto::persistence::Realm, f: std::rc::Rc<dyn reproto::persistence::Factory>) { let _ = r.register_factory(1u64, f); } fn main() {}", "E0308"),
-        ("factory-wrong-generation", "fn wrong(s: std::rc::Rc<std::cell::RefCell<reproto::storage::Store>>, k: ObjectKind) { let _ = reproto::persistence::ObjectFactory::<reproto::store_capnp::document::Owned>::new(s, k); } fn main() {}", "E0308"),
-        ("factory-wrong-object", "fn wrong(f: &reproto::persistence::ObjectFactory<reproto::store_capnp::document::Owned>, g: ObjectGeneration) { let _ = f.state(g); } fn main() {}", "E0308"),
-        ("orm-binding-wrong-kind", "fn wrong(r: &reproto::persistence::Realm, s: std::rc::Rc<reproto::orm::ObjectState>, g: reproto::authority::Grant, o: ObjectId) { let _ = r.persistent_object::<reproto::store_capnp::document::Owned>(s, g, o); } fn main() {}", "E0308"),
-        ("route-as-object-generation", "fn wrong(g: reproto::native_rpc::RouteGeneration) { let _: ObjectGeneration = g; } fn main() {}", "E0308"),
-        ("object-as-route-generation", "fn wrong(g: ObjectGeneration) { let _: reproto::native_rpc::RouteGeneration = g; } fn main() {}", "E0308"),
+        ("registry-wrong-kind", "fn wrong(r: &capntproto::persistence::Realm, f: std::rc::Rc<dyn capntproto::persistence::Factory>, o: ObjectId) { let _ = r.register_factory(o, f); } fn main() {}", "E0308"),
+        ("registry-raw-kind", "fn wrong(r: &capntproto::persistence::Realm, f: std::rc::Rc<dyn capntproto::persistence::Factory>) { let _ = r.register_factory(1u64, f); } fn main() {}", "E0308"),
+        ("factory-wrong-generation", "fn wrong(s: std::rc::Rc<std::cell::RefCell<capntproto::storage::Store>>, k: ObjectKind) { let _ = capntproto::persistence::ObjectFactory::<capntproto::store_capnp::document::Owned>::new(s, k); } fn main() {}", "E0308"),
+        ("factory-wrong-object", "fn wrong(f: &capntproto::persistence::ObjectFactory<capntproto::store_capnp::document::Owned>, g: ObjectGeneration) { let _ = f.state(g); } fn main() {}", "E0308"),
+        ("orm-binding-wrong-kind", "fn wrong(r: &capntproto::persistence::Realm, s: std::rc::Rc<capntproto::orm::ObjectState>, g: capntproto::authority::Grant, o: ObjectId) { let _ = r.persistent_object::<capntproto::store_capnp::document::Owned>(s, g, o); } fn main() {}", "E0308"),
+        ("route-as-object-generation", "fn wrong(g: capntproto::native_rpc::RouteGeneration) { let _: ObjectGeneration = g; } fn main() {}", "E0308"),
+        ("object-as-route-generation", "fn wrong(g: ObjectGeneration) { let _: capntproto::native_rpc::RouteGeneration = g; } fn main() {}", "E0308"),
     ] {
         cases.push((name.to_owned(), format!("{prelude}{code}"), Some(diagnostic)));
     }
     cases.push(("descriptor-must-use".to_owned(), format!("#![deny(unused_must_use)]\n{prelude}fn main() {{ Descriptor::new(ObjectKind::new(1).unwrap(), ObjectId::new(1).unwrap(), ObjectGeneration::new(1).unwrap(), Rights::ALL); }}"), Some("unused_must_use")));
     check_contracts("persistent-descriptor-contracts", &format!(
-        "reproto = {{ path = {:?}, default-features = false, features = [\"storage\", \"native\"] }}\nserde_json = \"1\"\n", root()
+        "capntproto = {{ path = {:?}, default-features = false, features = [\"storage\", \"native\"] }}\nserde_json = \"1\"\n", root()
     ), cases,
         "external persistent metadata consumers: distinct nonzero identifier domains, immutable descriptor bindings, typed factory registry/cache/generation and ORM binding, checked serialization, must-use descriptors",
         "metadata does not confer authority or brand IDs to a realm; hosts and factories still enforce object meaning, authorization, generation and exact restored rights");
@@ -410,13 +410,13 @@ fn main() {
 
 #[test]
 fn object_authority_compile_contracts() {
-    let prelude = "use reproto::{authority::{Grant, ObjectId, ObjectGeneration, Rights}, orm::ObjectState};\n";
+    let prelude = "use capntproto::{authority::{Grant, ObjectId, ObjectGeneration, Rights}, orm::ObjectState};\n";
     let mut cases = vec![(
         "positive".to_owned(),
         format!(
             "{prelude}{}",
             r#"
-fn bind(store: std::rc::Rc<std::cell::RefCell<reproto::storage::Store>>) {
+fn bind(store: std::rc::Rc<std::cell::RefCell<capntproto::storage::Store>>) {
     let object = ObjectId::new(7).unwrap();
     let generation = ObjectGeneration::new(11).unwrap();
     let root = Grant::root(object, generation, [1;32], Rights::ALL);
@@ -425,8 +425,8 @@ fn bind(store: std::rc::Rc<std::cell::RefCell<reproto::storage::Store>>) {
     let _: ObjectGeneration = child.generation();
     let state = ObjectState::new(store.clone(), child.object());
     let _: ObjectId = state.object();
-    let _: &std::rc::Rc<std::cell::RefCell<reproto::storage::Store>> = state.store();
-    let _ = reproto::orm::ObjectServer::<reproto::store_capnp::document::Owned>::client(state, child).unwrap();
+    let _: &std::rc::Rc<std::cell::RefCell<capntproto::storage::Store>> = state.store();
+    let _ = capntproto::orm::ObjectServer::<capntproto::store_capnp::document::Owned>::client(state, child).unwrap();
 }
 fn main() {}
 "#
@@ -437,16 +437,16 @@ fn main() {}
         ("root-raw-object", "fn wrong(g: ObjectGeneration) { let _ = Grant::root(0u64, g, [1;32], Rights::ALL); }", "E0308"),
         ("root-raw-generation", "fn wrong(o: ObjectId) { let _ = Grant::root(o, 0u64, [1;32], Rights::ALL); }", "E0308"),
         ("root-swapped", "fn wrong(o: ObjectId, g: ObjectGeneration) { let _ = Grant::root(g, o, [1;32], Rights::ALL); }", "E0308"),
-        ("root-factory-kind", "fn wrong(k: reproto::persistence::ObjectKind, g: ObjectGeneration) { let _ = Grant::root(k, g, [1;32], Rights::ALL); }", "E0308"),
+        ("root-factory-kind", "fn wrong(k: capntproto::persistence::ObjectKind, g: ObjectGeneration) { let _ = Grant::root(k, g, [1;32], Rights::ALL); }", "E0308"),
         ("object-numeric-decay", "fn wrong(g: &Grant) { let _: u64 = g.object(); }", "E0308"),
         ("generation-numeric-decay", "fn wrong(g: &Grant) { let _: u64 = g.generation(); }", "E0308"),
         ("object-as-generation", "fn wrong(g: &Grant) { let _: ObjectGeneration = g.object(); }", "E0308"),
         ("generation-as-object", "fn wrong(g: &Grant) { let _: ObjectId = g.generation(); }", "E0308"),
-        ("state-raw-object", "fn wrong(s: std::rc::Rc<std::cell::RefCell<reproto::storage::Store>>) { let _ = ObjectState::new(s, 0u64); }", "E0308"),
-        ("state-generation", "fn wrong(s: std::rc::Rc<std::cell::RefCell<reproto::storage::Store>>, g: ObjectGeneration) { let _ = ObjectState::new(s, g); }", "E0308"),
+        ("state-raw-object", "fn wrong(s: std::rc::Rc<std::cell::RefCell<capntproto::storage::Store>>) { let _ = ObjectState::new(s, 0u64); }", "E0308"),
+        ("state-generation", "fn wrong(s: std::rc::Rc<std::cell::RefCell<capntproto::storage::Store>>, g: ObjectGeneration) { let _ = ObjectState::new(s, g); }", "E0308"),
         ("state-object-mutation", "fn wrong(s: &mut ObjectState, o: ObjectId) { s.object = o; }", "E0616"),
-        ("state-store-mutation", "fn wrong(s: &mut ObjectState, store: std::rc::Rc<std::cell::RefCell<reproto::storage::Store>>) { s.store = store; }", "E0616"),
-        ("state-store-accessor-rebind", "fn wrong(s: &ObjectState, store: std::rc::Rc<std::cell::RefCell<reproto::storage::Store>>) { *s.store() = store; }", "E0594"),
+        ("state-store-mutation", "fn wrong(s: &mut ObjectState, store: std::rc::Rc<std::cell::RefCell<capntproto::storage::Store>>) { s.store = store; }", "E0616"),
+        ("state-store-accessor-rebind", "fn wrong(s: &ObjectState, store: std::rc::Rc<std::cell::RefCell<capntproto::storage::Store>>) { *s.store() = store; }", "E0594"),
         ("state-object-decay", "fn wrong(s: &ObjectState) { let _: u64 = s.object(); }", "E0308"),
         ("state-send", "fn require<T: Send>() {} fn wrong() { require::<ObjectState>(); }", "E0277"),
         ("state-sync", "fn require<T: Sync>() {} fn wrong() { require::<ObjectState>(); }", "E0277"),
@@ -454,7 +454,7 @@ fn main() {}
         cases.push((name.to_owned(), format!("{prelude}{code}\nfn main() {{}}"), Some(diagnostic)));
     }
     check_contracts("object-authority-contracts", &format!(
-        "reproto = {{ path = {:?}, default-features = false, features = [\"storage\"] }}\n", root()
+        "capntproto = {{ path = {:?}, default-features = false, features = [\"storage\"] }}\n", root()
     ), cases,
         "shared object authority domains in root grants, delegation, ORM binding and immutable state accessors",
         "IDs are metadata, not store brands; trusted hosts still issue root grants and choose generations and stores");
@@ -463,7 +463,7 @@ fn main() {}
 #[test]
 fn storage_key_and_snapshot_compile_contracts() {
     let prelude =
-        "use reproto::{storage::{ObjectKey, Revision, Snapshot, Store, Update}, durable_bulk::JournalId};\n";
+        "use capntproto::{storage::{ObjectKey, Revision, Snapshot, Store, Update}, durable_bulk::JournalId};\n";
     let mut cases = vec![(
         "positive".to_owned(),
         format!(
@@ -484,7 +484,7 @@ fn inspect(store: &mut Store, snapshot: &Snapshot) {
     let _ = store.publish(key, Revision::new(1), Revision::INITIAL);
     let _ = store.commit(&[Update {object:key, expected_head:Revision::new(1), expected_published:None, value:b"next"}]);
     let _: Vec<ObjectKey> = store.objects().collect();
-    let _ = ObjectKey::from(reproto::authority::ObjectId::new(7).unwrap());
+    let _ = ObjectKey::from(capntproto::authority::ObjectId::new(7).unwrap());
 }
 fn main() { thread_safe::<ObjectKey>(); thread_safe::<JournalId>(); thread_safe::<Snapshot>(); }
 "#
@@ -548,15 +548,15 @@ fn main() { thread_safe::<ObjectKey>(); thread_safe::<JournalId>(); thread_safe:
         ("batch-raw-object", "fn wrong() { let _ = Update {object:0u64, expected_head:Revision::INITIAL, expected_published:None, value:b\"\"}; }", "E0308"),
         ("batch-key-as-revision", "fn wrong(k: ObjectKey) { let _ = Update {object:k, expected_head:k, expected_published:None, value:b\"\"}; }", "E0308"),
         ("journal-as-object", "fn wrong(s: &Store, j: JournalId) { let _ = s.get(j); }", "E0308"),
-        ("authority-as-store-key", "fn wrong(s: &Store, o: reproto::authority::ObjectId) { let _ = s.get(o); }", "E0308"),
-        ("key-as-generation", "fn wrong(k: ObjectKey) { let _: reproto::authority::ObjectGeneration = k; }", "E0308"),
-        ("object-as-journal", "fn wrong(o: reproto::authority::ObjectId) { let _: JournalId = o; }", "E0308"),
+        ("authority-as-store-key", "fn wrong(s: &Store, o: capntproto::authority::ObjectId) { let _ = s.get(o); }", "E0308"),
+        ("key-as-generation", "fn wrong(k: ObjectKey) { let _: capntproto::authority::ObjectGeneration = k; }", "E0308"),
+        ("object-as-journal", "fn wrong(o: capntproto::authority::ObjectId) { let _: JournalId = o; }", "E0308"),
         ("key-as-journal", "fn wrong(k: ObjectKey) { let _: JournalId = k; }", "E0308"),
-        ("resume-raw-journal", "fn wrong(s: std::rc::Rc<reproto::orm::ObjectState>, g: reproto::authority::Grant) { let _ = reproto::durable_bulk::Receiver::<reproto::store_capnp::document::Owned>::resume(s, 1u64, g); }", "E0308"),
-        ("create-object-as-journal", "fn wrong(s: std::rc::Rc<reproto::orm::ObjectState>, g: reproto::authority::Grant, c: reproto::bulk::Config, k: ObjectKey) { let _ = reproto::durable_bulk::Receiver::<reproto::store_capnp::document::Owned>::create(s, k, g, c, [0;32]); }", "E0308"),
+        ("resume-raw-journal", "fn wrong(s: std::rc::Rc<capntproto::orm::ObjectState>, g: capntproto::authority::Grant) { let _ = capntproto::durable_bulk::Receiver::<capntproto::store_capnp::document::Owned>::resume(s, 1u64, g); }", "E0308"),
+        ("create-object-as-journal", "fn wrong(s: std::rc::Rc<capntproto::orm::ObjectState>, g: capntproto::authority::Grant, c: capntproto::bulk::Config, k: ObjectKey) { let _ = capntproto::durable_bulk::Receiver::<capntproto::store_capnp::document::Owned>::create(s, k, g, c, [0;32]); }", "E0308"),
     ] {cases.push((name.to_owned(), format!("{prelude}{code} fn main() {{}}"),Some(diagnostic)));}
     check_contracts("storage-key-contracts", &format!(
-        "reproto = {{ path = {:?}, default-features = false, features = [\"storage\", \"services\"] }}\n", root()
+        "capntproto = {{ path = {:?}, default-features = false, features = [\"storage\", \"services\"] }}\n", root()
     ), cases,
         "typed Store and upload-journal domains, immutable snapshot coordinates, explicit conversions, and Send/Sync preservation",
         "keys are store-local metadata, not instance brands or authority; revision counters have a distinct metadata type and external mmap mutation remains prohibited");
@@ -565,14 +565,14 @@ fn main() { thread_safe::<ObjectKey>(); thread_safe::<JournalId>(); thread_safe:
 #[test]
 fn publication_cursor_compile_contracts() {
     let prelude =
-        "use reproto::storage::{ObjectKey, Publication, PublicationCursor, Revision, Snapshot, Store};\n";
+        "use capntproto::storage::{ObjectKey, Publication, PublicationCursor, Revision, Snapshot, Store};\n";
     let mut cases = vec![(
         "positive".to_owned(),
         format!(
             "{prelude}{}",
             r#"
 fn thread_safe<T: Send + Sync>() {}
-fn read(store: &Store) -> reproto::storage::Result<()> {
+fn read(store: &Store) -> capntproto::storage::Result<()> {
     let cursor = store.publication_cursor(ObjectKey::new(0), 0)?;
     let _: ObjectKey = cursor.object();
     let _: Revision = cursor.after();
@@ -618,7 +618,7 @@ fn main() { thread_safe::<PublicationCursor>(); thread_safe::<Publication>(); }
         cases.push((name.to_owned(), format!("#![deny(unused_must_use)]\n{prelude}{code}\nfn main() {{}}"), Some(diagnostic)));
     }
     check_contracts("publication-cursor-contracts", &format!(
-        "reproto = {{ path = {:?}, default-features = false, features = [\"storage\"] }}\nserde_json = \"1\"\n", root()
+        "capntproto = {{ path = {:?}, default-features = false, features = [\"storage\"] }}\nserde_json = \"1\"\n", root()
     ), cases,
         "checked publication cursors, immutable Store/object/position binding, paired snapshots and next positions, explicit wire checkpoints and retained Send/Sync",
         "Store ownership and retention require runtime checks; numeric imports are explicit trusted-host operations and cursors do not confer capability authority");
@@ -626,7 +626,7 @@ fn main() { thread_safe::<PublicationCursor>(); thread_safe::<Publication>(); }
 
 #[test]
 fn revision_domain_compile_contracts() {
-    let prelude = "use reproto::{semantics::Revisions, storage::{ObjectKey, Revision, Store, Update, Snapshot, PublicationCursor}};\n";
+    let prelude = "use capntproto::{semantics::Revisions, storage::{ObjectKey, Revision, Store, Update, Snapshot, PublicationCursor}};\n";
     let mut cases = vec![(
         "positive".to_owned(),
         format!(
@@ -671,8 +671,8 @@ fn main() { thread_safe::<Revision>(); thread_safe::<Revisions>(); }
         ("raw-comparison", "fn wrong(r: Revision) { let _ = r == 0; }", "E0308"),
         ("object-as-counter", "fn wrong(k: ObjectKey) { let _: Revision = k; }", "E0308"),
         ("counter-as-object", "fn wrong(r: Revision) { let _: ObjectKey = r; }", "E0308"),
-        ("generation-as-counter", "fn wrong(g: reproto::authority::ObjectGeneration) { let _: Revision = g; }", "E0308"),
-        ("counter-as-generation", "fn wrong(r: Revision) { let _: reproto::authority::ObjectGeneration = r; }", "E0308"),
+        ("generation-as-counter", "fn wrong(g: capntproto::authority::ObjectGeneration) { let _: Revision = g; }", "E0308"),
+        ("counter-as-generation", "fn wrong(r: Revision) { let _: capntproto::authority::ObjectGeneration = r; }", "E0308"),
         ("counter-as-cursor", "fn wrong(r: Revision) { let _: PublicationCursor = r; }", "E0308"),
         ("snapshot-decay", "fn wrong(s: &Snapshot) { let _: u64 = s.revision(); }", "E0308"),
         ("cursor-decay", "fn wrong(c: &PublicationCursor) { let _: u64 = c.after(); }", "E0308"),
@@ -695,7 +695,7 @@ fn main() { thread_safe::<Revision>(); thread_safe::<Revisions>(); }
         cases.push((name.to_owned(), format!("#![deny(unused_must_use)]\n{prelude}{code}\nfn main() {{}}"), Some(diagnostic)));
     }
     check_contracts("revision-domain-contracts", &format!(
-        "reproto = {{ path = {:?}, default-features = false, features = [\"storage\"] }}\nserde_json = \"1\"\n", root()
+        "capntproto = {{ path = {:?}, default-features = false, features = [\"storage\"] }}\nserde_json = \"1\"\n", root()
     ), cases,
         "distinct revision counters throughout Store and snapshot/cursor APIs; private checked revision states, explicit numeric boundaries and checked successor operations",
         "zero denotes the initial counter; numbers remain object-local metadata, not existence/publication evidence or Store ownership; no unbounded implementation proof");
@@ -703,7 +703,7 @@ fn main() { thread_safe::<Revision>(); thread_safe::<Revisions>(); }
 
 #[test]
 fn discovery_generation_and_resolved_compile_contracts() {
-    let prelude = "use reproto::native_discovery::{Binding, Directory, DiscoveryGeneration, Resolved, Publication, AdvertisementOptions};\n";
+    let prelude = "use capntproto::native_discovery::{Binding, Directory, DiscoveryGeneration, Resolved, Publication, AdvertisementOptions};\n";
     let mut cases = vec![(
         "positive".to_owned(),
         format!(
@@ -741,9 +741,9 @@ fn main() {
         ("generation-default", "fn wrong() { let _: DiscoveryGeneration = Default::default(); }", "E0277"),
         ("generation-arithmetic", "fn wrong(g: DiscoveryGeneration) { let _ = g + 1; }", "E0369"),
         ("generation-deserialize", "fn wrong() { let _ = serde_json::from_str::<DiscoveryGeneration>(\"1\"); }", "E0277"),
-        ("object-generation", "fn wrong(g: reproto::authority::ObjectGeneration) { let _: DiscoveryGeneration = g; }", "E0308"),
-        ("route-generation", "fn wrong(g: reproto::native_rpc::RouteGeneration) { let _: DiscoveryGeneration = g; }", "E0308"),
-        ("revision-generation", "fn wrong(g: reproto::semantics::Revision) { let _: DiscoveryGeneration = g; }", "E0308"),
+        ("object-generation", "fn wrong(g: capntproto::authority::ObjectGeneration) { let _: DiscoveryGeneration = g; }", "E0308"),
+        ("route-generation", "fn wrong(g: capntproto::native_rpc::RouteGeneration) { let _: DiscoveryGeneration = g; }", "E0308"),
+        ("revision-generation", "fn wrong(g: capntproto::semantics::Revision) { let _: DiscoveryGeneration = g; }", "E0308"),
         ("raw-create", "fn wrong(d: &Directory, b: Binding) { let _ = d.publish(\"service\", b, 0, std::time::Duration::from_secs(1)); }", "E0308"),
         ("raw-renew", "fn wrong(d: &Directory, b: Binding) { let _ = d.maintain(\"service\", b, Some(1u64), std::time::Duration::from_secs(1)); }", "E0308"),
         ("raw-revoke", "fn wrong(d: &Directory) { let _ = d.revoke(\"service\", [1;32], 1u64); }", "E0308"),
@@ -761,12 +761,12 @@ fn main() {
         ("resolved-send", "fn send<T: Send>() {} fn wrong() { send::<Resolved>(); }", "E0277"),
         ("resolved-sync", "fn sync<T: Sync>() {} fn wrong() { sync::<Resolved>(); }", "E0277"),
         ("generation-must-use", "fn wrong() { DiscoveryGeneration::new(1).unwrap(); }", "unused_must_use"),
-        ("resolved-must-use", "async fn wrong(d: &reproto::native_discovery::Discovery) { d.resolve([1;32], \"service\").await.unwrap(); }", "unused_must_use"),
+        ("resolved-must-use", "async fn wrong(d: &capntproto::native_discovery::Discovery) { d.resolve([1;32], \"service\").await.unwrap(); }", "unused_must_use"),
     ] {
         cases.push((name.to_owned(), format!("#![deny(unused_must_use)]\n{prelude}{code}\nfn main() {{}}"), Some(diagnostic)));
     }
     check_contracts("discovery-type-contracts", &format!(
-        "reproto = {{ path = {:?}, default-features = false, features = [\"native\"] }}\nserde_json = \"1\"\ntokio = {{ version = \"1\", features = [\"time\"] }}\n", root()
+        "capntproto = {{ path = {:?}, default-features = false, features = [\"native\"] }}\nserde_json = \"1\"\ntokio = {{ version = \"1\", features = [\"time\"] }}\n", root()
     ), cases,
         "nonzero discovery generation domain across administrative APIs and immutable recipient/host/provider/context/expiry lookup bindings; explicit numeric imports and local capability ownership",
         "generations are directory-local metadata, not branded ownership or authentication; expiry, CAS, provider authority and Native authentication remain runtime checks");
@@ -774,7 +774,7 @@ fn main() {
 
 #[test]
 fn realtime_snapshot_compile_contracts() {
-    let prelude = "use reproto::realtime::{Receiver, Snapshot};\n";
+    let prelude = "use capntproto::realtime::{Receiver, Snapshot};\n";
     let mut cases = vec![(
         "positive".to_owned(),
         format!(
@@ -812,7 +812,7 @@ fn main() {}
         cases.push((name.to_owned(), format!("#![deny(unused_must_use)]\n{prelude}{code}\nfn main() {{}}"), Some(diagnostic)));
     }
     check_contracts("realtime-snapshot-contracts", &format!(
-        "reproto = {{ path = {:?}, default-features = false, features = [\"services\"] }}\nserde_json = \"1\"\n", root()
+        "capntproto = {{ path = {:?}, default-features = false, features = [\"services\"] }}\nserde_json = \"1\"\n", root()
     ), cases,
         "immutable realtime snapshot coordinates/data, receiver-issued construction, retained clone/Debug and local thread traits, and required handling of returned values",
         "snapshot values are not receiver-branded authority or evidence that the deadline remains in the future; runtime publication/deadline/receipt invariants have separate trace tests");
@@ -820,7 +820,7 @@ fn main() {}
 
 #[test]
 fn realtime_config_compile_contracts() {
-    let prelude = "use reproto::realtime::{Clock, Config, Receiver, Sender};\n";
+    let prelude = "use capntproto::realtime::{Clock, Config, Receiver, Sender};\n";
     let mut cases = vec![(
         "positive".to_owned(),
         format!(
@@ -839,7 +839,7 @@ fn inspect(sender: &Sender) {
 }
 fn create(clock: std::rc::Rc<dyn Clock>) {
     let config = Config::new("ticks", 0, 1, 1, 1, 1, 1).unwrap();
-    let _: (Receiver, reproto::realtime_capnp::snapshots::Client) = Receiver::new(config, clock);
+    let _: (Receiver, capntproto::realtime_capnp::snapshots::Client) = Receiver::new(config, clock);
 }
 fn main() { thread_safe::<Config>(); }
 "#
@@ -866,7 +866,7 @@ fn main() { thread_safe::<Config>(); }
         cases.push((name.to_owned(), format!("#![deny(unused_must_use)]\n{prelude}{code}\nfn main() {{}}"), Some(diagnostic)));
     }
     check_contracts("realtime-config-contracts", &format!(
-        "reproto = {{ path = {:?}, default-features = false, features = [\"services\"] }}\nserde_json = \"1\"\n", root()
+        "capntproto = {{ path = {:?}, default-features = false, features = [\"services\"] }}\nserde_json = \"1\"\n", root()
     ), cases,
         "checked immutable clock/resource configuration, no construction/mutation/deserialization bypass, infallible receiver creation and required result handling",
         "limits are stream metadata, not capability authority, clock synchronization evidence or a global process memory quota; datagram limits remain an additional adapter check");
@@ -938,7 +938,7 @@ fn check_contracts(
     let project = tempfile::tempdir().unwrap();
     fs::create_dir(project.path().join("src")).unwrap();
     fs::write(project.path().join("Cargo.toml"), format!(
-        "[package]\nname = \"reproto-{name}\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\n{dependencies}"
+        "[package]\nname = \"capntproto-{name}\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[workspace]\n[dependencies]\n{dependencies}"
     )).unwrap();
     // Seed from the workspace; the positive check adjusts the consumer entry.
     // The subsequent checks require exactly that resulting dependency lock.

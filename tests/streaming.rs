@@ -133,7 +133,7 @@ impl Fixture {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_streaming_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_STREAMING_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_STREAMING_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();

@@ -6,11 +6,11 @@ use capnp::{
     traits::{Imbue, ImbueMut},
     Error,
 };
-use futures::channel::oneshot;
-use reproto_test_support::{
+use capntproto_test_support::{
     dynamic_test_capnp::{base, derived, envelope, other},
     runtime_test_capnp::harness,
 };
+use futures::channel::oneshot;
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -417,7 +417,7 @@ async fn call_trace(steps: &[serde_json::Value], allow: bool, early: bool, fail:
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_dynamic_capability_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_DYNAMIC_CAPABILITY_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_DYNAMIC_CAPABILITY_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
@@ -606,7 +606,7 @@ async fn ownership_trace(steps: &[serde_json::Value], revocable: bool, location:
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_dynamic_ownership_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_DYNAMIC_OWNERSHIP_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_DYNAMIC_OWNERSHIP_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();

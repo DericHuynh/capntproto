@@ -5,7 +5,7 @@ use capnp::{
     schema_capnp::{brand, node},
     schema_loader::{SchemaLoader, Type},
 };
-use reproto_test_support::reflection_lookup_capnp as fixture;
+use capntproto_test_support::reflection_lookup_capnp as fixture;
 mod reflection_lookup {
     pub mod verification;
 }

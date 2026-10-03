@@ -1,7 +1,7 @@
 //! Public report contracts join the ordinary workspace test command.
 #[test]
 fn readme_collection_history_and_publication_contracts() {
-    use reproto_test_support::verification as v;
+    use capntproto_test_support::verification as v;
     let python = if cfg!(windows) { "python" } else { "python3" };
     v::run(
         v::command(python)

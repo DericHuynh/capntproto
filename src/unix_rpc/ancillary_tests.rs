@@ -119,7 +119,7 @@ fn truncated_control_length_never_reads_beyond_returned_bytes() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn closed_peer_write_reports_error_with_default_sigpipe_handler() {
-    const MARKER: &str = "REPROTO_SIGPIPE_CHILD";
+    const MARKER: &str = "CAPNTPROTO_SIGPIPE_CHILD";
     if std::env::var_os(MARKER).is_none() {
         let status = std::process::Command::new(std::env::current_exe().unwrap())
             .args(["unix_rpc::ancillary::tests::closed_peer_write_reports_error_with_default_sigpipe_handler", "--exact"])

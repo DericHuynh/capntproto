@@ -4,7 +4,7 @@ use capnp_rpc::{
     rpc_capnp::{message, return_},
     RpcSystem,
 };
-use reproto_test_support::runtime_test_capnp::harness;
+use capntproto_test_support::runtime_test_capnp::harness;
 use std::{cell::RefCell, rc::Rc, time::Duration};
 use support::{Endpoint, Hub};
 
@@ -576,7 +576,7 @@ struct WireTrace {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_wire_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_TLC_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_TLC_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<WireTrace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     assert!(!traces.is_empty());

@@ -8,7 +8,7 @@ use capnp::{
     traits::{Imbue, ImbueMut},
     Equality, Word,
 };
-use reproto_test_support::{
+use capntproto_test_support::{
     membrane_copy_capnp::{empty, service},
     native_list_capnp::{item, lists, Choice},
 };

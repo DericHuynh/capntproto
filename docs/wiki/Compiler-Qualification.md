@@ -19,9 +19,9 @@ They exclude the compiler-version field and do not equate diagnostic wording.
 - Lexical forms and expression delimiters: identifiers, contextual keywords,
   operators, comments, BOM/ASCII spacing, integer/float radices, quoted strings,
   escapes, backtick strings, binary literals, parentheses, lists and trailing
-  commas. [Grammar/lexical corpus](../../crates/capnp-compiler/tests/corpus/grammar.rs),
-  [numeric corpus](../../crates/capnp-compiler/tests/corpus/numbers.rs),
-  [string tests](../../crates/capnp-compiler/tests/strings.rs).
+  commas. [Grammar/lexical corpus](../../crates/capntproto-compiler/tests/corpus/grammar.rs),
+  [numeric corpus](../../crates/capntproto-compiler/tests/corpus/numbers.rs),
+  [string tests](../../crates/capntproto-compiler/tests/strings.rs).
 - Declarations: file IDs, structs, enums/enumerants, interfaces/methods,
   constants, annotations, groups and named/unnamed unions, including legacy union
   ordinals. [Core/layout oracle](../../tests/schema_compiler.rs),
@@ -30,16 +30,16 @@ They exclude the compiler-version field and do not equate diagnostic wording.
 - Types and names: primitives, pointer constraints, lists, nested/absolute names,
   aliases, generic application/inheritance, lexical shadowing and implicit method
   parameters. [Generic oracle](../../tests/schema_compiler/generics.rs) and
-  [portable grammar tests](../../crates/capnp-compiler/tests/grammar.rs).
+  [portable grammar tests](../../crates/capntproto-compiler/tests/grammar.rs).
 - Values: scalar/enum/blob/list/struct constants and defaults, groups/unions,
   nested composites, generic values, annotation applications and explicit null
   method defaults. [Constants/composite oracle](../../tests/schema_compiler.rs),
-  [native constants](../../crates/capnp-compiler/tests/constants.rs),
-  [native composites](../../crates/capnp-compiler/tests/composites.rs).
+  [native constants](../../crates/capntproto-compiler/tests/constants.rs),
+  [native composites](../../crates/capntproto-compiler/tests/composites.rs).
 - Source graphs: relative/absolute imports, cyclic imports, file identity,
   re-exported aliases, binary embeds, custom providers, optional file IDs,
   lazy declaration discovery and failed-extension rollback.
-  [Import tests](../../crates/capnp-compiler/tests/imports.rs),
+  [Import tests](../../crates/capntproto-compiler/tests/imports.rs),
   [embed oracle](../../tests/schema_compiler/embeds.rs),
   [provider oracle](../../tests/schema_compiler/provider.rs),
   [ID oracle](../../tests/schema_compiler/file_ids.rs),
@@ -64,14 +64,14 @@ corpus changes. The existing suite separately discovers and compares the reposit
 
 The mixed-root `test-import2.capnp` invocation also compares unchanged requests,
 including the file and annotation display names/prefix lengths that previously
-differed. A shared [22-case corpus](../../crates/capnp-compiler/tests/corpus/discovery.rs)
+differed. A shared [22-case corpus](../../crates/capntproto-compiler/tests/corpus/discovery.rs)
 exercises the same source identity through relative and absolute import spellings.
 It covers dependencies before unused aliases, child declaration order, alias name
 order, slot ordinals across nested groups, member annotation source order,
 generic declaration/brand dependencies, inline and explicit RPC signatures, and
 scalar versus deferred pointer defaults. Every case compares all the usual
 request fields and canonical values without display-name normalization.
-[Portable tests](../../crates/capnp-compiler/tests/discovery.rs) also check concurrent
+[Portable tests](../../crates/capntproto-compiler/tests/discovery.rs) also check concurrent
 cache initialization, lazy extension and retained snapshot names/bytes.
 
 ## Known differences and remaining work
@@ -90,7 +90,7 @@ cache initialization, lazy extension and retained snapshot names/bytes.
 
 ## Concurrent cache coverage
 
-[ConcurrentSchemaParser](../../crates/capnp-compiler/src/cache.rs) owns one session on
+[ConcurrentSchemaParser](../../crates/capntproto-compiler/src/cache.rs) owns one session on
 a worker. Cloneable clients share source reads, positive alias resolution and
 successful compilation. A bounded queue serializes mutations; immutable snapshots
 are transferable across threads and materialize independent local reflection.
@@ -98,7 +98,7 @@ The requested-file set and successful input bytes remain fixed for the cache's
 lifetime. Persistent caching, automatic invalidation, parallel compilation and
 in-place mutation of retained runtime handles are outside this API.
 
-[Portable tests](../../crates/capnp-compiler/tests/cache.rs) use 32 simultaneous
+[Portable tests](../../crates/capntproto-compiler/tests/cache.rs) use 32 simultaneous
 lookups and cover shared storage/read counts, concurrent distinct extensions,
 failed batches, loader limits, disk correction/retry, optional IDs, snapshot
 lifetimes, owned non-Sync providers, last-client shutdown, callback reentry, and
@@ -111,8 +111,8 @@ aliases, generic erasure, implicit nodes, metadata and lazy dependency closures.
 Activate the [auditable Cargo wrapper](Quality-and-Benchmarks.md#auditable-cargo-builds), then:
 
 ```sh
-cargo test --locked -p capnp-compiler
-cargo test --locked -p reproto --test schema_compiler
+cargo test --locked -p capntproto-compiler
+cargo test --locked -p capntproto --test schema_compiler
 ```
 
 These tests are included in `cargo test --workspace`. Portable cache tests also

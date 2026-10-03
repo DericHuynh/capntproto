@@ -253,7 +253,7 @@ async fn fd_read_errors_close_staging_and_leave_caller_storage_untouched() {
 #[cfg(target_os = "linux")]
 #[tokio::test(flavor = "current_thread")]
 async fn caller_storage_and_fd_boundaries_match_pinned_cpp() {
-    use reproto_test_support::verification::{command, cpp, root, run};
+    use capntproto_test_support::verification::{command, cpp, root, run};
     let build = cpp::build(&["capnp-rpc"]).unwrap();
     let directory = tempfile::tempdir().unwrap();
     let executable = directory.path().join("buffered-fds-scratch");

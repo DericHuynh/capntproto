@@ -72,7 +72,7 @@ async fn blocked_discovery_send_cannot_hide_its_deadline() {
 
 #[test]
 fn replay_tlc_discovery_io_deadlines_and_replies() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     let config = include_str!("../../../../verification/NatDiscoveryIo.cfg");
     exploration::controls(
         "verification/NatDiscoveryIo.tla",

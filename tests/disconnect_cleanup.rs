@@ -10,7 +10,7 @@ use capnp_rpc::{
     RpcSystem,
 };
 
-use reproto_test_support::runtime_test_capnp::harness;
+use capntproto_test_support::runtime_test_capnp::harness;
 use std::{
     cell::{Cell, RefCell},
     future::Future,
@@ -350,7 +350,7 @@ async fn replay(steps: &[serde_json::Value], prebuilt: bool, fail_body: bool, ex
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_disconnect_cleanup_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_DISCONNECT_CLEANUP_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_DISCONNECT_CLEANUP_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();

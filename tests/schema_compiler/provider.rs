@@ -1,5 +1,5 @@
 use super::*;
-use capnp_compiler::{ParsedSchema, SourceCompiler, SourceFile, SourceProvider};
+use capntproto_compiler::{ParsedSchema, SourceCompiler, SourceFile, SourceProvider};
 use std::{
     fmt::Write,
     io::{self, Read},
@@ -85,10 +85,13 @@ fn custom_source_identity_aliases_embeds_and_lazy_lookup_match_cpp_schema_files(
         .iter()
         .map(|key| {
             let name = format!("provider-{key}.capnp");
-            let text =
-                fs::read_to_string(root().join("crates/capnp-compiler/examples").join(&name))
-                    .unwrap()
-                    .replace("\r\n", "\n");
+            let text = fs::read_to_string(
+                root()
+                    .join("crates/capntproto-compiler/examples")
+                    .join(&name),
+            )
+            .unwrap()
+            .replace("\r\n", "\n");
             fs::write(directory.path().join(name), &text).unwrap();
             text.into_bytes()
         })

@@ -1,13 +1,13 @@
 #![cfg(feature = "storage")]
 use capnp_rpc::rpc_twoparty_capnp::Side;
-use reproto::{
+use capntproto::{
     authority::{Grant, ObjectGeneration, ObjectId, Rights},
     orm::components::{ComponentServer, ComponentState, Edit, TypedComponent},
     rpc::Connection,
     storage::{ComponentId, ComponentUpdate, ObjectKey, Retention, Revision, Store},
     store_capnp::{component, document},
 };
-use reproto_test_support::runtime_test_capnp::harness;
+use capntproto_test_support::runtime_test_capnp::harness;
 use std::{cell::RefCell, rc::Rc, time::Duration};
 
 const HOT: ComponentId = ComponentId::new(1);
@@ -177,7 +177,7 @@ async fn commit(
 
 #[tokio::test(flavor = "current_thread")]
 async fn both_orm_layouts_reject_live_rpc_capabilities_without_panicking_or_writing() {
-    use reproto::orm::{ObjectServer, ObjectState};
+    use capntproto::orm::{ObjectServer, ObjectState};
     struct Harness;
     impl harness::Server for Harness {}
     tokio::task::LocalSet::new()

@@ -8,7 +8,7 @@ selected its session. The latter returns `None` for connecting, draining or
 terminated routes. No wire message, peer identity or capability authority changes.
 
 ```rust
-use reproto::transport::{DatagramPacing, Schedule};
+use capntproto::transport::{DatagramPacing, Schedule};
 use std::time::Duration;
 
 let scheduling = handle.scheduling(peer).expect("authenticated route");

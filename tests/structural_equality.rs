@@ -356,7 +356,7 @@ fn generated_and_both_dynamic_apis_compare_the_same_storage() {
         introspect::Introspect,
         schema_loader::{dynamic, SchemaLoader},
     };
-    use reproto_test_support::native_list_capnp::lists;
+    use capntproto_test_support::native_list_capnp::lists;
     let mut loader = SchemaLoader::default();
     loader
         .load_compiled_type_and_dependencies::<lists::Owned>()

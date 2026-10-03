@@ -34,7 +34,7 @@ fn duplicate(socket: &UnixStream) -> std::io::Result<UnixStream> {
 ///
 /// ```compile_fail
 /// # fn example(mut socket: tokio::net::UnixStream) -> std::io::Result<()> {
-/// let driver = reproto::unix_rpc::client_borrowed(&mut socket, None,
+/// let driver = capntproto::unix_rpc::client_borrowed(&mut socket, None,
 ///     capnp_rpc::rpc_twoparty_capnp::Side::Client, Default::default())?;
 /// drop(socket);
 /// drop(driver);

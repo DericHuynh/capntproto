@@ -1,5 +1,5 @@
 use crate::{Result, Runner};
-use reproto_test_support::verification::{self as v, root};
+use capntproto_test_support::verification::{self as v, root};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{fs, path::Path};
@@ -199,11 +199,11 @@ pub fn bundle(r: &mut Runner) -> Result<()> {
             "--manifest-path",
             "benchmarks/rpc/Cargo.toml",
             "--bin",
-            "reproto-rpc-bench",
+            "capntproto-rpc-bench",
         ],
     )?;
     fs::copy(
-        root().join("benchmarks/rpc/target/release/reproto-rpc-bench"),
+        root().join("benchmarks/rpc/target/release/capntproto-rpc-bench"),
         bundle.join("driver"),
     )?;
     let cxx = std::env::var("CXX").unwrap_or_else(|_| "g++".into());

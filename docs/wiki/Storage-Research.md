@@ -281,7 +281,7 @@ it does not establish packet crypto or checksumming as the dominant cost.
 
 ```sh
 export PATH="$PWD/target/auditable-tools/wrapper:$PWD/target/auditable-tools/bin:$PATH"
-cargo build --locked -p reproto --release --no-default-features --features storage --example storage_probe
+cargo build --locked -p capntproto --release --no-default-features --features storage --example storage_probe
 mkdir -p target/storage-probe-data
 python3 scripts/storage_probe.py --base target/storage-probe-data --output target/storage-probe-results --trials 3
 python3 scripts/summarize_storage_probe.py target/storage-probe-results

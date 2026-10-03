@@ -1,8 +1,8 @@
-# Capn't Proto Wiki
+# Capntproto Wiki
 
-Capn't Proto is an experimental Rust implementation of Cap'n Proto schemas,
+Capntproto is an experimental Rust implementation of Cap'n Proto schemas,
 serialization and capability RPC, with TCP/TLS, quiche QUIC v1/v2, multiparty
-capability routing and durable object storage. Package names remain `reproto`,
+capability routing and durable object storage. Package names remain `capntproto`,
 `capnp`, `capnp-rpc`, `capnp-futures` and `capnpc`.
 
 These pages describe the development source, not a published stable release.

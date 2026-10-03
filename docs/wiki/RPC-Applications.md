@@ -14,7 +14,7 @@ scheduler or placement service.
 Wrap a configured transport driver with `Connection::spawn`:
 
 ```rust
-use reproto::rpc::{self, Connection};
+use capntproto::rpc::{self, Connection};
 
 let driver = rpc::tcp::connect(address, None, Default::default()).await?;
 let connection = Connection::spawn(driver);
@@ -42,7 +42,7 @@ message scheduling policy. Configure it once, then obtain typed bootstraps
 whenever needed, including from request handlers through a cloned bootstrapper:
 
 ```rust
-use reproto::native_rpc::Vat;
+use capntproto::native_rpc::Vat;
 
 let vat = Vat::builder(identity.public_key())
     .connector(directory.clone())
@@ -357,8 +357,8 @@ The [storage example](../../examples/native_store.rs) uses a native vat and owns
 authenticated connection from setup through shutdown:
 
 ```sh
-cargo run --locked -p reproto --example native_store -- /tmp/example.rp
-cargo test --locked -p reproto --test rpc_ownership --test native_vat --test secure_rpc
+cargo run --locked -p capntproto --example native_store -- /tmp/example.rp
+cargo test --locked -p capntproto --test rpc_ownership --test native_vat --test secure_rpc
 ```
 
 [Native vat tests](../../tests/native_vat.rs) exercise three-party pipelining,

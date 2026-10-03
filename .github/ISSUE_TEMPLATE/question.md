@@ -1,6 +1,6 @@
 ---
 name: Usage question
-about: Ask for help with a Capn't Proto API, configuration, or supported workflow.
+about: Ask for help with a Capntproto API, configuration, or supported workflow.
 title: "[Question] "
 labels: question
 assignees: ''

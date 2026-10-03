@@ -42,8 +42,8 @@ fn child(path: &Path, scenario: &str) {
             "storage::components::crash_tests::crash_worker",
             "--nocapture",
         ])
-        .env("REPROTO_COMPONENT_CRASH_PATH", path)
-        .env("REPROTO_COMPONENT_CRASH_SCENARIO", scenario)
+        .env("CAPNTPROTO_COMPONENT_CRASH_PATH", path)
+        .env("CAPNTPROTO_COMPONENT_CRASH_SCENARIO", scenario)
         .stdout(std::process::Stdio::null())
         .status()
         .unwrap();
@@ -95,10 +95,10 @@ fn child_process_crashes_preserve_components_across_recovery_and_second_crash() 
 
 #[test]
 fn crash_worker() {
-    let Some(path) = std::env::var_os("REPROTO_COMPONENT_CRASH_PATH") else {
+    let Some(path) = std::env::var_os("CAPNTPROTO_COMPONENT_CRASH_PATH") else {
         return;
     };
-    let scenario = std::env::var("REPROTO_COMPONENT_CRASH_SCENARIO").unwrap();
+    let scenario = std::env::var("CAPNTPROTO_COMPONENT_CRASH_SCENARIO").unwrap();
     if scenario == "recovered" {
         let _guard = faults::install([(Point::Recovered, Action::Crash)]);
         let _ = Store::open_components(path).unwrap();

@@ -129,22 +129,22 @@
       "note": "Retain standalone probe setup and link to canonical research guide."
     },
     {
-      "source": "crates/capnp-compat/README.md",
+      "source": "crates/capntproto-compat/README.md",
       "original_sha256": "dcbb591ccac601a1baf0304bbb32f73ee90f0251b9e34129e65e2b81d5f8452d",
       "action": "moved and revised",
       "destinations": [
         "docs/wiki/Compatibility-Adapters.md",
-        "crates/capnp-compat/README.md"
+        "crates/capntproto-compat/README.md"
       ],
       "note": "Move detailed adapter guide to wiki; keep package landing/build README."
     },
     {
-      "source": "crates/capnp-compiler/README.md",
+      "source": "crates/capntproto-compiler/README.md",
       "original_sha256": "08947c8678c6d81172ceeddb327d62040255f2d72ae310f732b80f957ad79e4b",
       "action": "moved and revised",
       "destinations": [
         "docs/wiki/Schema-Compiler.md",
-        "crates/capnp-compiler/README.md"
+        "crates/capntproto-compiler/README.md"
       ],
       "note": "Move detailed compiler guide to wiki; keep package landing/build README and date corpus claims."
     },
@@ -675,8 +675,8 @@
     "SUPPORT.md",
     "THIRD_PARTY_NOTICES.md",
     "benchmarks/concurrency/README.md",
-    "crates/capnp-compat/README.md",
-    "crates/capnp-compiler/README.md",
+    "crates/capntproto-compat/README.md",
+    "crates/capntproto-compiler/README.md",
     "docs/README.md",
     "docs/README.template.md",
     "docs/archive/Correctness-History.md",

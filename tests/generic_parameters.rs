@@ -1,5 +1,5 @@
 use capnp::{capability::FromClientHook, data, text};
-use reproto_test_support::runtime_test_capnp::{generic_outer::service, harness};
+use capntproto_test_support::runtime_test_capnp::{generic_outer::service, harness};
 use std::rc::Rc;
 
 // This signature fixes the public lexical parameter order independently of the
@@ -91,7 +91,7 @@ fn repeated_generator_runs_produce_identical_explicit_aliases() {
 
 #[test]
 fn replay_tlc_generic_parameter_cases() {
-    let path = reproto_test_support::verification::input("REPROTO_GENERIC_PARAMETER_CASES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_GENERIC_PARAMETER_CASES")
         .expect("prepare verified trace corpus");
     let all_cases: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
@@ -168,7 +168,7 @@ fn replay_tlc_generic_parameter_cases() {
 
 #[test]
 fn group_union_aliases_bind_unused_enclosing_parameters() {
-    use reproto_test_support::dynamic_test_capnp::group_scope::inner;
+    use capntproto_test_support::dynamic_test_capnp::group_scope::inner;
     let mut message = capnp::message::Builder::new_default();
     let mut root = message.init_root::<inner::Builder<data::Owned, text::Owned, harness::Owned>>();
     root.reborrow().init_payload().set_count(17);

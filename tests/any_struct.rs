@@ -8,7 +8,7 @@ use capnp::{
     traits::{HasStructSize, Imbue, ImbueMut},
     Equality, Word,
 };
-use reproto_test_support::membrane_copy_capnp::{empty, payload, service};
+use capntproto_test_support::membrane_copy_capnp::{empty, payload, service};
 use std::rc::Rc;
 
 #[path = "any_struct/verification.rs"]

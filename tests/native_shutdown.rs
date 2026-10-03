@@ -1,11 +1,11 @@
 use capnp_rpc::VatNetwork;
-use reproto::{
+use capntproto::{
     native_arbitration,
     native_listener::{self, Listener},
     native_rpc::{Connector, Handle, Network, RouteStatus, Termination},
     transport::{self, AuthenticatedSession, Identity},
 };
-use reproto_test_support::runtime_test_capnp::harness;
+use capntproto_test_support::runtime_test_capnp::harness;
 use std::{cell::RefCell, rc::Rc, time::Duration};
 
 async fn socket() -> tokio::net::UdpSocket {

@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a reproducible failure or incorrect behavior in Capn't Proto.
+about: Report a reproducible failure or incorrect behavior in Capntproto.
 title: "[Bug]"
 labels: bug
 assignees: ''

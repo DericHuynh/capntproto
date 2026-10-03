@@ -1,8 +1,8 @@
 use super::*;
 
-#[path = "../../crates/capnp-compiler/tests/corpus/grammar.rs"]
+#[path = "../../crates/capntproto-compiler/tests/corpus/grammar.rs"]
 mod corpus;
-#[path = "../../crates/capnp-compiler/tests/corpus/numbers.rs"]
+#[path = "../../crates/capntproto-compiler/tests/corpus/numbers.rs"]
 mod numbers;
 
 #[test]
@@ -43,7 +43,7 @@ fn numeric_tokens_in_requested_and_dependency_only_files_match_pinned_cpp() {
                 .args(["compile", "-o-", "main.capnp"])
                 .output()
                 .unwrap();
-            let mut parser = capnp_compiler::SchemaParser::new();
+            let mut parser = capntproto_compiler::SchemaParser::new();
             parser.add_source("main.capnp", main).unwrap();
             parser.add_source("types.capnp", &source).unwrap();
             let rust = parser.parse(&["main.capnp"]);
@@ -113,7 +113,7 @@ fn check_cases(cases: Vec<corpus::Case>, name: &str) {
             .args(["compile", "-o-", "grammar.capnp"])
             .output()
             .unwrap();
-        let rust = capnp_compiler::compile("grammar.capnp", &source);
+        let rust = capntproto_compiler::compile("grammar.capnp", &source);
         fs::write(logs.join(format!("{}.capnp", case.name)), &source).unwrap();
         fs::write(logs.join(format!("{}.cpp.txt", case.name)), &output.stderr).unwrap();
         assert_eq!(

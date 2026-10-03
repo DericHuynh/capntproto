@@ -1,11 +1,11 @@
-# capnp-compiler
+# capntproto-compiler
 
 An experimental Cap'n Proto schema-language frontend written in Rust. It parses
 source, resolves imports, aliases, generic bindings, constants and annotations,
 checks typed values, assigns IDs and wire offsets, and emits a standard `CodeGeneratorRequest`. It provides the in-memory
 `SchemaParser`, filesystem `FileCompiler`, callback-based `SourceCompiler`, runtime `ParsedSchemas` snapshots and
 lazy `SchemaSession` loading, worker-owned `ConcurrentSchemaParser` caches,
-and `capnp-compile` CLI. None invokes C++.
+and `capntproto-compile` CLI. None invokes C++.
 
 The repository schema corpus and all 22 unmodified pinned upstream schemas are compared with
 C++ requests under their standard source roots, including documentation and
@@ -24,10 +24,10 @@ Activate the repository's [auditable Cargo wrapper](Quality-and-Benchmarks.md#au
 first. From the repository root, compile both files in the cyclic import example:
 
 ```sh
-cargo run --locked -p capnp-compiler --bin capnp-compile -- \
-  --src-prefix crates/capnp-compiler/examples/imports \
-  crates/capnp-compiler/examples/imports/main.capnp \
-  crates/capnp-compiler/examples/imports/common.capnp > target/import-request.bin
+cargo run --locked -p capntproto-compiler --bin capntproto-compile -- \
+  --src-prefix crates/capntproto-compiler/examples/imports \
+  crates/capntproto-compiler/examples/imports/main.capnp \
+  crates/capntproto-compiler/examples/imports/common.capnp > target/import-request.bin
 cargo build --locked --manifest-path vendor/capnpc/Cargo.toml --bin capnpc-rust
 mkdir -p target/schema-compiler-demo
 (cd target/schema-compiler-demo && \
@@ -48,7 +48,7 @@ For source already in memory, `compile(filename, text)` handles one file.
 `SchemaParser` handles multiple virtual files without filesystem access:
 
 ```rust
-let mut parser = capnp_compiler::SchemaParser::new();
+let mut parser = capntproto_compiler::SchemaParser::new();
 parser.add_source("main.capnp", r#"
     using Types = import "types.capnp";
     @0xaaaaaaaaaaaaaaaa;
@@ -69,7 +69,7 @@ way can also be imported as schemas.
 For files on disk, a build script for supported schemas can use both Rust stages:
 
 ```rust
-let compiled = capnp_compiler::FileCompiler::new()
+let compiled = capntproto_compiler::FileCompiler::new()
     .src_prefix("schema")
     .import_path("schema")
     .compile_with_dependencies(&["schema/main.capnp", "schema/common.capnp"])?;
@@ -82,7 +82,7 @@ capnpc::codegen::CodeGenerationCommand::new()
     .run(bytes.as_slice())?;
 ```
 
-The caller supplies `capnp`, `capnp-compiler` and `capnpc` build dependencies.
+The caller supplies `capnp`, `capntproto-compiler` and `capnpc` build dependencies.
 `compile_with_dependencies` returns a `FileCompilation` containing the request
 and sorted, unique absolute paths for loaded schemas and embeds. It includes
 symlink spellings and canonical targets, excludes unused lazy imports, and starts
@@ -100,7 +100,7 @@ is needed before migrating that separately packaged crate.
 ## Custom source providers
 
 `SourceCompiler::new(&provider)` accepts an application-defined
-[`SourceProvider`](../../crates/capnp-compiler/src/source/custom.rs), such as an archive, package registry or
+[`SourceProvider`](../../crates/capntproto-compiler/src/source/custom.rs), such as an archive, package registry or
 virtual filesystem. `resolve(from, path)` returns a `SourceFile` with an opaque
 identity and logical filename; `open(identity)` returns a borrowed or owned
 `std::io::Read`. Imports and binary `embed` expressions use the same provider.
@@ -124,8 +124,8 @@ effects are not rolled back. Fresh compilations read inputs again. Callbacks are
 synchronous and need neither `Send` nor `Sync`; use the [owned-provider cache](#concurrent-parser-caching) for concurrent callers. Custom snapshots have an empty filesystem `dependencies()` list; providers
 can record their own input dependencies.
 
-The [provider fixtures](../../crates/capnp-compiler/examples/provider-main.capnp) and
-[tests](../../crates/capnp-compiler/tests/provider.rs) exercise opaque imports, aliases, cycles, binary embeds,
+The [provider fixtures](../../crates/capntproto-compiler/examples/provider-main.capnp) and
+[tests](../../crates/capntproto-compiler/tests/provider.rs) exercise opaque imports, aliases, cycles, binary embeds,
 limits and rollback. The root integration test compares these operations with
 the pinned C++ `SchemaFile` interface.
 
@@ -137,7 +137,7 @@ This supports dynamic messages without generating Rust bindings:
 
 ```rust
 use capnp::schema_loader::dynamic::{Builder, Value};
-let mut parser = capnp_compiler::SchemaParser::new();
+let mut parser = capntproto_compiler::SchemaParser::new();
 parser.add_source("config.capnp", r#"
     @0xaaaaaaaaaaaaaaaa;
     struct Config { port @0 :UInt16 = 80; }
@@ -177,7 +177,7 @@ but uncompiled child returns an error, while an absent name returns `None`.
 Explicitly requesting an imported file compiles its complete declaration subtree.
 Concurrent caching is available through the [worker-owned cache](#concurrent-parser-caching). [Optional file IDs](#optional-file-ids)
 support configuration schemas. Custom source
-callbacks are available through `SourceCompiler`. See [reflection.capnp](../../crates/capnp-compiler/examples/reflection.capnp) for a tested
+callbacks are available through `SourceCompiler`. See [reflection.capnp](../../crates/capntproto-compiler/examples/reflection.capnp) for a tested
 example with imports, generics, groups, methods and embeds. Use a session below
 when lookup should compile additional source.
 
@@ -194,7 +194,7 @@ Unused children and siblings remain uncompiled, and the requested-file list stay
 unchanged. Names are case-sensitive and are not dotted lookup paths.
 
 ```rust
-let mut parser = capnp_compiler::SchemaParser::new();
+let mut parser = capntproto_compiler::SchemaParser::new();
 parser.add_source("main.capnp", r#"
     @0xaaaaaaaaaaaaaaaa;
     using I = import "types.capnp";
@@ -247,7 +247,7 @@ limits. The owned provider must be `Send + 'static`, but need not be `Sync`.
 The borrowed `SourceCompiler` API keeps its existing non-Send provider support.
 
 ```rust
-let mut parser = capnp_compiler::SchemaParser::new();
+let mut parser = capntproto_compiler::SchemaParser::new();
 parser.add_source("main.capnp", "@0xaaaaaaaaaaaaaaaa; using D = import \"types.capnp\"; struct Root { value @0 :D.Used; }")?;
 parser.add_source("types.capnp", "@0xbbbbbbbbbbbbbbbb; struct Used {} struct Later { label @0 :Text; }")?;
 let cache = parser.into_concurrent(&["main.capnp"])?;
@@ -290,7 +290,7 @@ not wait for other threads that are themselves waiting for that cache.
 Calls and final cache destruction can block on provider I/O. Async applications
 should use a blocking executor. This is shared transactional caching, not parallel
 compilation or in-place mutation of retained runtime handles. The
-[cache tests](../../crates/capnp-compiler/tests/cache.rs) and C++ session oracle cover these boundaries.
+[cache tests](../../crates/capntproto-compiler/tests/cache.rs) and C++ session oracle cover these boundaries.
 
 ## Imports and aliases
 
@@ -331,7 +331,7 @@ default. `set_file_ids_required(false)` permits configuration schemas to omit
 them, matching C++ `SchemaParser::setFileIdsRequired(false)`:
 
 ```rust
-let mut parser = capnp_compiler::SchemaParser::new();
+let mut parser = capntproto_compiler::SchemaParser::new();
 parser.set_file_ids_required(false);
 parser.add_source("config.capnp", "struct Config { port @0 :UInt16 = 80; }")?;
 let parsed = parser.parse_schemas(&["config.capnp"])?;
@@ -353,7 +353,7 @@ setting at creation, so changing a disk/custom compiler's configuration affects
 new sessions only. Starting a fresh parse generates new IDs and new derived type
 identities. Use explicit IDs for persistent schemas and cross-process RPC types.
 
-`compile(filename, text)` and the `capnp-compile` CLI remain strict; opt in through
+`compile(filename, text)` and the `capntproto-compile` CLI remain strict; opt in through
 the parser APIs above. This adds no persistent ID storage. Concurrent caches retain
 generated IDs for their lifetime. The OS entropy provider is `getrandom` 0.4.3, already present
 in the repository lockfiles.
@@ -404,14 +404,14 @@ Schema requests include documentation comments, node/member byte ranges and
 per-file identifier references. Diagnostics retain separate byte spans and
 one-based line/column positions. The C++ compiler-version field is omitted.
 
-A [295-case grammar corpus](../../crates/capnp-compiler/tests/corpus/grammar.rs) checks contextual names,
+A [295-case grammar corpus](../../crates/capntproto-compiler/tests/corpus/grammar.rs) checks contextual names,
 generic parameters, declaration forms, delimiters and numeric literals. Portable
 tests check acceptance and runtime loading; the pinned C++ test additionally
 compares emitted metadata and values. This is bounded grammar coverage, not a
 claim of complete language qualification. See the [test guide](../archive/Testing-History.md#schema-grammar-corpus).
 An additional 108 lexical cases cover ASCII controls, DEL and Unicode separators
 inside quoted strings, between tokens and between hexadecimal byte pairs.
-A [66-expression numeric corpus](../../crates/capnp-compiler/tests/corpus/numbers.rs) checks both requested
+A [66-expression numeric corpus](../../crates/capntproto-compiler/tests/corpus/numbers.rs) checks both requested
 schemas and unused declarations in loaded imports against pinned C++. Malformed
 numbers fail during lexing, including incomplete exponents, unsupported radix
 prefixes and multiple decimal points. The standalone text-value parser uses the
@@ -442,12 +442,12 @@ library contains no unsafe code.
 
 Nested union layouts rejected by the pinned C++ compiler for historical issue
 #344 also return source diagnostics. This compatibility check is always enabled.
-See [choices.capnp](../../crates/capnp-compiler/examples/choices.capnp) for ordinary groups, group alternatives
+See [choices.capnp](../../crates/capntproto-compiler/examples/choices.capnp) for ordinary groups, group alternatives
 and nested named unions.
 
 ## Constants and values
 
-See [constants.capnp](../../crates/capnp-compiler/examples/constants.capnp) for typed declarations and defaults:
+See [constants.capnp](../../crates/capntproto-compiler/examples/constants.capnp) for typed declarations and defaults:
 
 ```capnp
 const limit :UInt32 = 64;
@@ -475,7 +475,7 @@ exposes an enum constant reference as its numeric ordinal; this frontend matches
 that behavior, including rejection when such a reference is used as an enum
 default. Use the bare enumerant name for enum defaults.
 
-See [composites.capnp](../../crates/capnp-compiler/examples/composites.capnp) for lists, structs, groups,
+See [composites.capnp](../../crates/capntproto-compiler/examples/composites.capnp) for lists, structs, groups,
 unions and pointer defaults. Unassigned fields read their schema defaults;
 explicit empty lists/structs remain distinct from null pointers. Struct values
 use `(field = value, ...)`; lists use `[value, ...]`. Trailing commas are accepted.
@@ -541,7 +541,7 @@ using C++'s unlimited embed reader options. Disk inputs must be regular files.
 
 ## Documentation and source ranges
 
-[documentation.capnp](../../crates/capnp-compiler/examples/documentation.capnp) demonstrates the reference
+[documentation.capnp](../../crates/capntproto-compiler/examples/documentation.capnp) demonstrates the reference
 compiler's comment attachment rules. Documentation follows the declaration it
 describes: after `;`, after a block's opening `{`, or after its closing `}` when
 there is no opening comment. At most one line ending may precede the comment;
@@ -578,7 +578,7 @@ Comments are emitted as escaped string attributes. Untagged fenced and indented
 examples become `text` code blocks, while explicit Rust examples remain doctests.
 CommonMark parsing handles nested lists, quotes and fence delimiters; bare HTTP(S)
 URLs in prose become links. See the
-[Rustdoc fixture](../../crates/capnp-compiler/examples/rustdoc.capnp) and
+[Rustdoc fixture](../../crates/capntproto-compiler/examples/rustdoc.capnp) and
 [generator guide](Rust-Generator.md#schema-documentation).
 
 `RequestedFile.fileSourceInfo.identifiers` records the UTF-8 byte range and target
@@ -600,7 +600,7 @@ work budget. Older requests without this metadata read as an empty table.
 
 ## Annotations
 
-See [annotations.capnp](../../crates/capnp-compiler/examples/annotations.capnp) for declarations, targets,
+See [annotations.capnp](../../crates/capntproto-compiler/examples/annotations.capnp) for declarations, targets,
 scalar and composite arguments, and annotations on fields, groups and unions:
 
 ```capnp
@@ -631,7 +631,7 @@ renamed, and uses those original names for its field lookup index.
 
 ## Generic types and brands
 
-[generics.capnp](../../crates/capnp-compiler/examples/generics.capnp) exercises generic structs, groups, enums
+[generics.capnp](../../crates/capntproto-compiler/examples/generics.capnp) exercises generic structs, groups, enums
 in generic scopes, generic interfaces, inheritance and explicit nested signatures:
 
 ```capnp
@@ -668,7 +668,7 @@ such annotation values therefore have distinct dependency requirements.
 
 ## Interfaces and methods
 
-See [interfaces.capnp](../../crates/capnp-compiler/examples/interfaces.capnp) for inheritance, explicit
+See [interfaces.capnp](../../crates/capntproto-compiler/examples/interfaces.capnp) for inheritance, explicit
 parameter/result structs, annotations, returned capabilities and streaming:
 
 ```capnp
@@ -706,7 +706,7 @@ The [qualification report](Compiler-Qualification.md) maps grammar
 families to tests and records known deviations, the 22-file upstream corpus and
 concurrent-cache guarantees. Full language equivalence remains unqualified.
 
-The shared [22-case import-discovery corpus](../../crates/capnp-compiler/tests/corpus/discovery.rs) checks
+The shared [22-case import-discovery corpus](../../crates/capntproto-compiler/tests/corpus/discovery.rs) checks
 declaration/dependency traversal, alias ordering, field/group ordinals, annotation
 timing, inline RPC signatures, generic dependencies and deferred pointer defaults.
 Its requests match pinned C++ without rewriting display names. Portable tests also
@@ -717,8 +717,8 @@ verify that concurrent-cache extensions retain the same names and old snapshots.
 Focused checks:
 
 ```sh
-cargo test --locked -p capnp-compiler
-cargo test --locked -p reproto --test schema_compiler
+cargo test --locked -p capntproto-compiler
+cargo test --locked -p capntproto --test schema_compiler
 ```
 
 The second command needs the pinned C++ sources and CMake/C++ toolchain. Platform

@@ -1,5 +1,5 @@
 use super::*;
-use reproto_test_support::verification::{command, cpp, exploration, root, run};
+use capntproto_test_support::verification::{command, cpp, exploration, root, run};
 
 fn pointer_value(pointer: any_pointer::Reader<'_>) -> u64 {
     match pointer.get_pointer_type().unwrap() {

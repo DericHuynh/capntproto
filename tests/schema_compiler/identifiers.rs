@@ -49,7 +49,7 @@ fn identifier_targets_and_ranges_match_pinned_cpp() {
             message::ReaderOptions::new(),
         )
         .unwrap();
-        let rust = capnp_compiler::compile("identifiers.capnp", source)
+        let rust = capntproto_compiler::compile("identifiers.capnp", source)
             .unwrap_or_else(|e| panic!("{source}: {e}"));
         eprintln!("identifier case: {source}");
         compare_requests(
@@ -72,7 +72,7 @@ fn identifier_imports_and_multiple_requested_files_match_pinned_cpp() {
         ("nested.capnp", "@0xcccccccccccccccc; struct Item { t @0 :Text; }"),
         ("values.capnp", "@0xdddddddddddddddd; const n :UInt32 = 5;"),
     ];
-    let mut parser = capnp_compiler::SchemaParser::new();
+    let mut parser = capntproto_compiler::SchemaParser::new();
     for (path, source) in sources {
         fs::write(directory.path().join(path), source).unwrap();
         parser.add_source(path, source).unwrap();

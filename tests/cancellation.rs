@@ -4,8 +4,8 @@ use capnp_rpc::{
     rpc_capnp::{message, return_},
     RpcSystem,
 };
+use capntproto_test_support::runtime_test_capnp::harness;
 use futures::channel::oneshot;
-use reproto_test_support::runtime_test_capnp::harness;
 use std::{cell::RefCell, rc::Rc, time::Duration};
 use support::{Endpoint, Hub};
 
@@ -415,7 +415,7 @@ struct Trace {
 async fn replay_tlc_cancellation_traces() {
     use capnp_rpc::Connection;
     use futures::FutureExt;
-    let path = reproto_test_support::verification::input("REPROTO_CANCELLATION_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_CANCELLATION_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     assert!(!traces.is_empty());
@@ -491,7 +491,7 @@ struct AdoptionStep {
 async fn replay_tlc_tail_adoption_traces() {
     use capnp_rpc::Connection;
     use futures::FutureExt;
-    let path = reproto_test_support::verification::input("REPROTO_TAIL_ADOPTION_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_TAIL_ADOPTION_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<Vec<AdoptionStep>> =
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();

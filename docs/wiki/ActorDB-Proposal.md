@@ -1,7 +1,7 @@
 # ActorDB Event Sourcing and Incremental Views Proposal
 
 **Status: Draft proposal. Date: 2026-10-02.** ActorDB is the working name for a
-new database we would build on Capnt Actors and Capn't Proto. This document
+new database we would build on Capnt Actors and Capntproto. This document
 proposes its architecture and first delivery scope; it does not describe an
 integration with an existing product named ActorDB or an implemented database.
 

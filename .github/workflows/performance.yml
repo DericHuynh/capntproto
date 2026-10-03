@@ -1,0 +1,117 @@
+name: Performance / Dedicated benchmarks
+on:
+  workflow_dispatch:
+    inputs:
+      region:
+        description: DigitalOcean region, or auto to select an available region
+        default: auto
+        required: true
+        type: string
+      size:
+        description: CPU-Optimized size, or auto for four dedicated vCPUs (ceiling $0.50/hour)
+        default: auto
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: dedicated-benchmarks
+  cancel-in-progress: false
+jobs:
+  benchmark:
+    name: Build, measure, validate, and clean up
+    environment: Benchmarking
+    # Same userspace as the droplet; avoid newer glibc requirements in artifacts.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CXX: clang++
+      CC: clang
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Require configured Actions secret
+        env:
+          DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        run: test -n "$DIGITALOCEAN_ACCESS_TOKEN"
+      - name: Check dedicated capacity before compiling
+        env:
+          DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          DO_REGION: ${{ inputs.region }}
+          DO_SIZE: ${{ inputs.size }}
+        run: python3 scripts/digitalocean_bench.py check --output target/quality/benchmark --state "$RUNNER_TEMP/capntproto-do"
+      # actionlint 1.7.12 requires the checked-out local action syntax.
+      - uses: ./.github/actions/auditable-setup # zizmor: ignore[self-repository]
+        with:
+          cache-key: dedicated-benchmarks
+          workspaces: |
+            . -> target
+            benchmarks/rpc -> target
+            benchmarks/instructions -> target
+      - name: Build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y cmake ninja-build clang capnproto libcapnp-dev protobuf-compiler
+          rustup toolchain install 1.97.0 --profile minimal
+          cargo install gungraun-runner --version 0.20.0 --locked
+          git submodule update --init --depth 1 -- vendor/capnproto
+      - name: Compile individual release benchmarks without running them
+        run: cargo run --locked -p capntproto-quality -- benchmark-build target/benchmark-build
+      - name: Benchmark precompiled artifacts on a temporary dedicated droplet
+        id: measure
+        env:
+          DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          DO_REGION: ${{ inputs.region }}
+          DO_SIZE: ${{ inputs.size }}
+        run: python3 scripts/digitalocean_bench.py run --bundle target/benchmark-build/bundle --output target/quality/benchmark --state "$RUNNER_TEMP/capntproto-do"
+      - name: Always verify droplet cleanup
+        if: always()
+        env:
+          DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        run: python3 scripts/digitalocean_bench.py cleanup --state "$RUNNER_TEMP/capntproto-do"
+      - name: Validate downloaded samples
+        if: ${{ !cancelled() && steps.measure.outcome == 'success' }}
+        run: |
+          cargo run --locked -p capntproto-quality -- benchmark target/quality/benchmark target/benchmark-build/bundle
+      - name: Generate validated README and comparison bar charts
+        if: ${{ !cancelled() && steps.measure.outcome == 'success' }}
+        run: cargo run --locked -p capntproto-quality -- report target/quality benchmark
+      - name: Export compact README data (including failed test runs)
+        if: success() || failure()
+        run: python3 scripts/update_readme.py collect --input target/quality --kind benchmark --output target/readme-data/publication.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: readme-data
+          path: target/readme-data/publication.json
+          if-no-files-found: warn
+          overwrite: true
+          retention-days: 90
+      - id: report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: dedicated-benchmark-report
+          path: target/quality/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Job summary
+        if: always()
+        env:
+          REPORT_URL: ${{ steps.report.outputs.artifact-url }}
+        run: |
+          if test -f target/quality/README.md; then
+            sed '/^## Comparison bar charts/,$d' target/quality/README.md >> "$GITHUB_STEP_SUMMARY"
+            printf '\n## Comparison bar charts\n\n[Download the README, SVG chart suite and plotted values](%s).\n' "$REPORT_URL" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: benchmark-build-provenance
+          path: |
+            target/benchmark-build/evidence.json
+            target/benchmark-build/logs/
+            target/benchmark-build/bundle/manifest.json
+          if-no-files-found: error
+          retention-days: 30

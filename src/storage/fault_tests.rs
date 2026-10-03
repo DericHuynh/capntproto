@@ -227,8 +227,8 @@ fn child(path: &Path, scenario: &str) {
             "storage::fault_tests::crash_worker",
             "--nocapture",
         ])
-        .env("REPROTO_STORAGE_CRASH_PATH", path)
-        .env("REPROTO_STORAGE_CRASH_SCENARIO", scenario)
+        .env("CAPNTPROTO_STORAGE_CRASH_PATH", path)
+        .env("CAPNTPROTO_STORAGE_CRASH_SCENARIO", scenario)
         .stdout(std::process::Stdio::null())
         .status()
         .unwrap();
@@ -260,10 +260,10 @@ fn child_process_crashes_preserve_batch_atomicity_across_recovery_and_second_cra
 
 #[test]
 fn crash_worker() {
-    let Some(path) = std::env::var_os("REPROTO_STORAGE_CRASH_PATH") else {
+    let Some(path) = std::env::var_os("CAPNTPROTO_STORAGE_CRASH_PATH") else {
         return;
     };
-    let scenario = std::env::var("REPROTO_STORAGE_CRASH_SCENARIO").unwrap();
+    let scenario = std::env::var("CAPNTPROTO_STORAGE_CRASH_SCENARIO").unwrap();
     if scenario == "recovered" {
         let _guard = faults::install([(Point::Recovered, Action::Crash)]);
         let _ = Store::open(path).unwrap();
@@ -299,7 +299,7 @@ async fn uncertain_and_acknowledged_revocations_survive_recovery_without_new_aut
         persistence::{Descriptor, ObjectKind, Persistent, Realm, SturdyRef},
     };
     use capnp::capability::{FromClientHook, Promise};
-    use reproto_test_support::runtime_test_capnp::harness;
+    use capntproto_test_support::runtime_test_capnp::harness;
     use std::rc::Rc;
     struct Target;
     impl harness::Server for Target {}

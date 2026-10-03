@@ -14,13 +14,13 @@ fn schema_documentation_renders_on_generated_rust_items_and_preserves_doctests()
     let sources = project.path().join("schemas");
     fs::create_dir(&sources).unwrap();
     fs::create_dir(project.path().join("src")).unwrap();
-    let source =
-        include_str!("../../crates/capnp-compiler/examples/rustdoc.capnp").replace('\n', "\r\n");
+    let source = include_str!("../../crates/capntproto-compiler/examples/rustdoc.capnp")
+        .replace('\n', "\r\n");
     fs::write(sources.join("docs.capnp"), source).unwrap();
     fs::write(sources.join("dep.capnp"), "@0xbbbbbbbbbbbbbbbb; # DEP-FILE-DOC\nstruct Item { # DEP-ITEM-DOC\nx @0 :UInt32; # DEP-FIELD-DOC\n}\n").unwrap();
     let cpp_includes = root().join("vendor/capnproto/c++/src");
     let rust_includes = root().join("vendor/capnpc");
-    let request = capnp_compiler::FileCompiler::new()
+    let request = capntproto_compiler::FileCompiler::new()
         .src_prefix(&sources)
         .import_path(&cpp_includes)
         .import_path(&rust_includes)
@@ -255,7 +255,7 @@ fn absent_partial_and_malformed_documentation_is_handled_without_panicking() {
     let output = tempfile::tempdir().unwrap();
     let source = "@0xabcdefabcdefabcd; struct S { a @0 :Text; b @1 :UInt32; }";
     for count in [0, 1] {
-        let mut request = capnp_compiler::compile("test.capnp", source).unwrap();
+        let mut request = capntproto_compiler::compile("test.capnp", source).unwrap();
         let mut root = request
             .get_root::<code_generator_request::Builder<'_>>()
             .unwrap();
@@ -278,7 +278,7 @@ fn absent_partial_and_malformed_documentation_is_handled_without_panicking() {
         }
     }
     for duplicate in [false, true] {
-        let mut request = capnp_compiler::compile("test.capnp", source).unwrap();
+        let mut request = capntproto_compiler::compile("test.capnp", source).unwrap();
         let mut info = request
             .get_root::<code_generator_request::Builder<'_>>()
             .unwrap()

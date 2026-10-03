@@ -1,7 +1,7 @@
 //! Executor adapters for the private route-owner boundary. Abort requests stay
 //! synchronous; captured futures are released on the next executor poll.
 use super::LocalExecutor;
-use reproto_test_support::schedules::{spawn_local, JoinHandle};
+use capntproto_test_support::schedules::{spawn_local, JoinHandle};
 use std::{cell::RefCell, future::Future, pin::Pin, rc::Rc, task::Poll};
 
 type Work = Pin<Box<dyn Future<Output = Result<(), futures::future::Aborted>>>>;

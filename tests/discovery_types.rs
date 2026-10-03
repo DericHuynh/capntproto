@@ -1,5 +1,4 @@
-use futures::FutureExt;
-use reproto::{
+use capntproto::{
     native_discovery::{
         Binding, Directory, Discovery, DiscoveryConnector, DiscoveryGeneration, DiscoveryOptions,
     },
@@ -7,6 +6,7 @@ use reproto::{
     native_provisioning_capnp::provisioner,
     transport::Identity,
 };
+use futures::FutureExt;
 use std::{cell::Cell, net::SocketAddr, rc::Rc, time::Duration};
 
 fn local() -> SocketAddr {
@@ -165,12 +165,12 @@ impl<T> Drop for Task<T> {
 
 #[tokio::test(flavor = "current_thread")]
 async fn captured_bindings_connect_their_original_authenticated_hosts_after_rotation() {
-    use reproto::{
+    use capntproto::{
         native_listener::{Limits, Listener},
         native_provisioning::Provisioner,
         native_rpc::Network,
     };
-    use reproto_test_support::runtime_test_capnp::harness;
+    use capntproto_test_support::runtime_test_capnp::harness;
     struct Echo;
     impl harness::Server for Echo {
         async fn echo(

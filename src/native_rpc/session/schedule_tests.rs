@@ -1,6 +1,6 @@
 use super::test_executor::{Executor, Manual};
 use super::*;
-use reproto_test_support::schedules::{self, block_on, spawn_local, yield_now, Trace};
+use capntproto_test_support::schedules::{self, block_on, spawn_local, yield_now, Trace};
 use std::{cell::Cell, future::Future, pin::Pin};
 
 struct Dropped(Rc<Cell<u64>>);
@@ -114,7 +114,7 @@ async fn tokio_owner_cancellation_releases_all_workers_with_observers_retained()
 
 #[test]
 fn replay_tlc_route_task_ownership() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     const MODEL: &str = "verification/RouteTaskOwner.tla";
     const CONFIG: &str = include_str!("../../../verification/RouteTaskOwner.cfg");
     let paths = exploration::traces(MODEL, "route-task-owner", CONFIG).unwrap();

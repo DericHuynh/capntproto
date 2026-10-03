@@ -41,8 +41,12 @@ fn parsed_schema_navigation_metadata_and_dynamic_wire_match_cpp() {
         "reflection.txt",
     ] {
         // Match the native fixture independently of checkout line endings.
-        let source =
-            fs::read_to_string(root().join("crates/capnp-compiler/examples").join(name)).unwrap();
+        let source = fs::read_to_string(
+            root()
+                .join("crates/capntproto-compiler/examples")
+                .join(name),
+        )
+        .unwrap();
         fs::write(directory.path().join(name), source.replace("\r\n", "\n")).unwrap();
     }
     let expected = run(
@@ -51,7 +55,7 @@ fn parsed_schema_navigation_metadata_and_dynamic_wire_match_cpp() {
         0,
     )
     .unwrap();
-    let mut compiler = capnp_compiler::FileCompiler::new();
+    let mut compiler = capntproto_compiler::FileCompiler::new();
     compiler.src_prefix(directory.path());
     let parsed = compiler
         .parse_schemas(&[

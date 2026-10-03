@@ -9,7 +9,7 @@ use capnp::{
     },
     ErrorKind,
 };
-use reproto_test_support::conversion_capnp::{self, target};
+use capntproto_test_support::conversion_capnp::{self, target};
 
 mod conversion {
     pub mod verification;
@@ -444,7 +444,7 @@ fn enum_names_ordinals_and_blob_conversions_are_directional() {
 #[test]
 fn conversion_errors_preserve_union_bytes_and_capability_ownership() -> capnp::Result<()> {
     use capnp::{capability::FromClientHook, traits::ImbueMut};
-    use reproto_test_support::runtime_test_capnp::harness;
+    use capntproto_test_support::runtime_test_capnp::harness;
     use std::{cell::Cell, rc::Rc};
     let loader = loader();
     for runtime_loaded in [false, true] {
@@ -511,7 +511,7 @@ fn aggregate_brands_and_capability_upcasts_remain_checked() -> capnp::Result<()>
         capability::FromClientHook,
         traits::{Imbue, ImbueMut},
     };
-    use reproto_test_support::dynamic_test_capnp::{derived, orphan_brands};
+    use capntproto_test_support::dynamic_test_capnp::{derived, orphan_brands};
     use std::{cell::Cell, rc::Rc};
     let polls = Rc::new(Cell::new(0));
     let count = polls.clone();
@@ -578,7 +578,7 @@ fn aggregate_brands_and_capability_upcasts_remain_checked() -> capnp::Result<()>
 
 #[test]
 fn converted_values_work_in_lists_and_detached_group_setters() -> capnp::Result<()> {
-    use reproto_test_support::presence_capnp::sample;
+    use capntproto_test_support::presence_capnp::sample;
     let mut list_message = message::Builder::new_default();
     let list = list_message.initn_root::<capnp::primitive_list::Builder<u8>>(2);
     let mut list = dynamic_value::Builder::from(list).downcast::<capnp::dynamic_list::Builder>();

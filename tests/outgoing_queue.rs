@@ -388,7 +388,7 @@ fn vectored_batches_preserve_multisegment_framing_under_partial_writes() {
 
 #[test]
 fn tlc_queue_traces_replay_batching_flush_failure_cancellation_and_shutdown() {
-    use reproto_test_support::verification::exploration::{controls, traces};
+    use capntproto_test_support::verification::exploration::{controls, traces};
     const MODEL: &str = "verification/RpcOutgoingQueue.tla";
     const CONFIG: &str = include_str!("../verification/RpcOutgoingQueue.cfg");
     let paths = traces(MODEL, "outgoing-queue", CONFIG).unwrap();
@@ -489,7 +489,7 @@ fn tlc_queue_traces_replay_batching_flush_failure_cancellation_and_shutdown() {
 #[test]
 fn queue_metrics_and_batch_boundaries_match_pinned_cpp_network() {
     use capnp_rpc::{rpc_twoparty_capnp::Side, VatNetwork};
-    use reproto_test_support::verification::{command, cpp, root, run};
+    use capntproto_test_support::verification::{command, cpp, root, run};
     let build = cpp::build(&["capnp-rpc"]).unwrap();
     let directory = tempfile::tempdir().unwrap();
     let executable = directory.path().join("outgoing-queue");

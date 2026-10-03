@@ -1,5 +1,5 @@
 use capnp::field_api::Message;
-use reproto_test_support::field_api_capnp::{
+use capntproto_test_support::field_api_capnp::{
     api::{ScalarGroup, StagedChoice, StagedChoiceUnionTag},
     service,
 };
@@ -115,7 +115,7 @@ fn group_callbacks_publish_atomically_and_preserve_siblings_and_payload_addresse
                     assert_eq!(group.label()?.as_ptr(), label_address);
                     assert_eq!(group.value()?.as_bytes().as_ptr(), generic_address);
                     let nested = group.nested();
-                    let reproto_test_support::field_api_capnp::api::staged_choice::details::NestedUnionRef::Second(nested) = nested? else { panic!("wrong nested arm") };
+                    let capntproto_test_support::field_api_capnp::api::staged_choice::details::NestedUnionRef::Second(nested) = nested? else { panic!("wrong nested arm") };
                     assert_eq!(nested.cap()?.client.hook.get_ptr(), identity);
                     assert_eq!(nested.number(), 8.25);
                     // Replacing an already selected group starts from defaults.
@@ -160,10 +160,12 @@ struct Step {
     action: String,
     state: Vec<u8>,
 }
-type GroupRef<'a> =
-    reproto_test_support::field_api_capnp::api::staged_choice::DetailsRef<'a, capnp::text::Owned>;
+type GroupRef<'a> = capntproto_test_support::field_api_capnp::api::staged_choice::DetailsRef<
+    'a,
+    capnp::text::Owned,
+>;
 fn group_cap(group: GroupRef<'_>) -> capnp::Result<Option<(u8, service::Client)>> {
-    use reproto_test_support::field_api_capnp::api::staged_choice::details::NestedUnionRef;
+    use capntproto_test_support::field_api_capnp::api::staged_choice::details::NestedUnionRef;
     Ok(match group.nested()? {
         NestedUnionRef::None => None,
         NestedUnionRef::First(g) => Some((1, g.cap()?)),
@@ -321,7 +323,7 @@ fn replay(trace: &Trace, far: bool, existing_group: bool) -> capnp::Result<()> {
 
 #[test]
 fn replay_tlc_group_staging_traces() -> capnp::Result<()> {
-    let path = reproto_test_support::verification::input("REPROTO_GROUP_STAGING_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_GROUP_STAGING_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     assert!(!traces.is_empty());

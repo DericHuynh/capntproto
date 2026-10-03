@@ -4,7 +4,7 @@ use capnp::{
     message::{Builder as Message, HeapAllocator},
     schema_loader::{dynamic, Schema, SchemaLoader, Type},
 };
-use reproto_test_support::presence_capnp::group_reset;
+use capntproto_test_support::presence_capnp::group_reset;
 
 fn seed() -> Message<HeapAllocator> {
     let mut message = Message::new_default();
@@ -234,7 +234,7 @@ fn group_initialization_resets_defaults_but_views_preserve_values_and_brands() {
 #[cfg(target_os = "linux")]
 #[test]
 fn group_resets_match_pinned_cpp() {
-    use reproto_test_support::verification::{command, cpp, root, run};
+    use capntproto_test_support::verification::{command, cpp, root, run};
     let build = cpp::build(&["capnpc", "capnp_tool"]).unwrap();
     let logs = root().join("target/verification/dynamic-groups");
     std::fs::create_dir_all(&logs).unwrap();

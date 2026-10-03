@@ -1,9 +1,9 @@
-use reproto::{
+use capntproto::{
     native_listener::{self, Limits, Listener},
     native_rpc::{Connector, DirectoryConnector, Network},
     transport::Identity,
 };
-use reproto_test_support::runtime_test_capnp::harness;
+use capntproto_test_support::runtime_test_capnp::harness;
 use std::{cell::RefCell, rc::Rc, time::Duration};
 struct Service(Rc<RefCell<Option<harness::Client>>>);
 impl harness::Server for Service {

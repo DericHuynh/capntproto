@@ -12,7 +12,7 @@ use capnp_rpc::{
     rpc_capnp::{cap_descriptor, message, return_},
     RpcSystem,
 };
-use reproto_test_support::{runtime_test_capnp::harness, verification::exploration};
+use capntproto_test_support::{runtime_test_capnp::harness, verification::exploration};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,

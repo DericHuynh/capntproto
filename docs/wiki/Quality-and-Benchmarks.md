@@ -21,24 +21,24 @@ records their rationale.
 
 | Workflow | Trigger | Scope and README artifact |
 | --- | --- | --- |
-| [Quality](../../.github/workflows/quality.yml) | PR; push to `main`; manual | Library/binary builds and RPC/pipelining, transport and selected feature checks on all three OSes. Linux/macOS also test storage reopen; Linux enforces allocation budgets and QUIC v2 interoperability. `platform-report` |
-| [Workflow checks](../../.github/workflows/workflow-checks.yml) | Affected PR or push to `main`; manual | Workflow, auditable-build, trigger-test and README-reporting changes: actionlint with ShellCheck/Pyflakes, trigger regression tests, reporting tests and Zizmor |
-| [Documentation links](../../.github/workflows/links.yml) | Affected PR or push to `main`; Tuesday 05:43 UTC; manual | Documentation/workflow/wiki-tool changes: wiki validation/export and local links. External checks are advisory and run only weekly/manually. `github-wiki`, `documentation-links` |
-| [Extended quality](../../.github/workflows/extended-quality.yml) | Wednesday 04:37 UTC; manual | Bounded Miri endian/seed sweep, native cargo-careful checks, and LLVM IR size reports in independent jobs |
-| [Full quality](../../.github/workflows/full-quality.yml) | Monday 03:19 UTC; manual | One LLVM-instrumented workspace test invocation, C++ LLVM reference suites, advisory checks, coverage regression report. `full-quality-report` |
-| [Dedicated benchmarks](../../.github/workflows/benchmarks.yml) | Manual | Compile release artifacts on Actions, measure on a temporary dedicated CPU Linux droplet, validate downloaded samples. `dedicated-benchmark-report` |
-| [Benchmark droplet cleanup](../../.github/workflows/benchmark-cleanup.yml) | Every hour at :17 UTC; manual | Destroy this repository's abandoned benchmark resources older than two hours |
-| [Publish README reports](../../.github/workflows/readme.yml) | Full quality or Dedicated benchmarks completion; manual run ID | Validate trusted default-branch producer artifacts and publish reports; it does not rerun their tests |
+| [CI](../../.github/workflows/ci.yml) | PR; push to `main`; manual | Library/binary builds and RPC/pipelining, transport and selected feature checks on all three OSes. Linux/macOS also test storage reopen; Linux enforces allocation budgets and QUIC v2 interoperability. `platform-report` |
+| [CI / Workflow validation](../../.github/workflows/ci-workflows.yml) | Called once by CI; manual | Workflow, auditable-build, trigger-test and README-reporting changes: actionlint with ShellCheck/Pyflakes, trigger regression tests, reporting tests and Zizmor |
+| [CI / Documentation](../../.github/workflows/ci-docs.yml) | Called once by CI; Tuesday 05:43 UTC; manual | Documentation/workflow/wiki-tool changes: wiki validation/export and local links. External checks are advisory and run only weekly/manually. `github-wiki`, `documentation-links` |
+| [Verification / Extended](../../.github/workflows/verification-extended.yml) | Wednesday 04:37 UTC; manual | Bounded Miri endian/seed sweep, native cargo-careful checks, and LLVM IR size reports in independent jobs |
+| [Verification / Coverage](../../.github/workflows/verification-coverage.yml) | Monday 03:19 UTC; manual | One LLVM-instrumented workspace test invocation, un-instrumented C++ reference suites, advisory checks, coverage regression report. `full-quality-report` |
+| [Performance / Dedicated benchmarks](../../.github/workflows/performance.yml) | Manual | Compile release artifacts on Actions, measure on a temporary dedicated CPU Linux droplet, validate downloaded samples. `dedicated-benchmark-report` |
+| [Benchmark droplet cleanup](../../.github/workflows/maintenance-benchmarks.yml) | Every hour at :17 UTC; manual | Destroy this repository's abandoned benchmark resources older than two hours |
+| [Reports / Publish](../../.github/workflows/reports.yml) | Coverage or dedicated benchmark completion; manual run ID | Validate trusted default-branch producer artifacts and publish reports; it does not rerun their tests |
 
 ## Trigger and concurrency policy
 
-Branch work runs through `pull_request` only; automatic `push` checks are limited
-to `main`. A Dependabot or feature-branch update therefore gets one run of each
-applicable PR workflow. A branch without a PR needs a manual dispatch to run CI.
-Tag pushes do not start these checks. The `main` push after a merge intentionally
-checks the integrated revision. Workflows with path filters require both the
-branch and path conditions to match; see GitHub's
-[trigger filters](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax).
+CI is the only automatic push/PR entry point. It calls workflow validation and
+documentation as reusable workflows, then starts platform builds after workflow
+validation succeeds. Branch work runs through `pull_request`; only `main` has an
+automatic `push` trigger. Feature branches without a PR can dispatch CI manually.
+The unconditional final CI job checks every required dependency, including failed
+or skipped jobs, so workflow validation and documentation failures cannot produce
+a green result. Tag pushes do not start CI.
 
 New commits to the same PR cancel its stale checks. Workflow, event and PR/ref
 identity keep unrelated checks separate, including scheduled external-link
@@ -67,11 +67,51 @@ PyYAML installed (`python3-yaml` on the CI runner), run:
 python3 -m unittest discover -s scripts/tests -p 'test_workflow_triggers.py' -v
 ```
 
-Require **Required platform report** in branch protection. Full quality and
-benchmark workflows are separate from PR latency. Windows storage compiles;
-its directory-sync durability is not claimed by the RPC smoke check. Platform
+Require **Required CI result** in branch protection (replace the former
+**Required platform report** check when adopting this workflow layout). Coverage
+and dedicated benchmarks remain separate from PR latency. Windows also exercises
+component storage and retained snapshots; CI does not establish power-loss
+durability. Platform
 qualification requires successful hosted checks; local Linux validation is not
 macOS/Windows validation.
+
+## Workflow dependencies
+
+```mermaid
+flowchart TD
+  event[PR / main push / manual CI] --> checks[CI: workflow validation]
+  event --> docs[CI: documentation]
+  checks --> platforms[CI: Linux / macOS / Windows builds and tests]
+  checks --> result[Required CI result]
+  docs --> result
+  platforms --> result
+  coverage[Weekly / manual Coverage verification] --> publish[Reports: validate evidence and publish]
+  benchmark[Manual Dedicated benchmarks] --> publish
+  cleanup[Hourly / manual Benchmark cleanup]
+  extended[Weekly / manual Extended verification]
+  codeql[GitHub-managed CodeQL default setup]
+```
+
+Solid edges are `needs`, reusable-workflow calls, or report-producer completion
+triggers. Extended verification, CodeQL and cleanup run independently. Benchmark
+cleanup also runs inside its producing job; the hourly workflow recovers abandoned
+resources. Report publication never launches another verification or benchmark run.
+
+## Rust dependency caching
+
+Every Cargo job uses [Swatinem/rust-cache](https://github.com/Swatinem/rust-cache),
+pinned to a reviewed commit in the shared setup action. Restore occurs after
+Rust toolchain setup and before cargo-auditable installation and project builds.
+Keys separate platform, coverage, extended-check and benchmark configurations;
+the action also hashes toolchains, manifests, lockfiles and compiler settings.
+Only trusted `main` runs save caches; PRs can restore them. Cargo verifies its
+fingerprints, and every requested test still runs after a cache hit.
+
+The cache holds registries, dependency build artifacts and installed Cargo tools.
+Coverage uses registry/tool caching only: its large source-bound instrumented
+targets are rebuilt, and raw counters and reports are never restored as measurements.
+The workspace-specific targets for downstream consumers and benchmarks are mapped
+explicitly rather than sharing incompatible quiche build artifacts.
 
 ## Auditable Cargo builds
 
@@ -161,9 +201,9 @@ Ordinary source links and frozen measurements remain checked. External sites are
 checked separately so transient failures do not block code PRs. The workflows
 with path filters should not be unconditional required checks in branch protection.
 
-Extended quality has three independent, bounded jobs:
+Verification / Extended has three independent, bounded jobs:
 
-- **Miri:** `REPROTO_MIRI_EXTENDED=1 cargo test --locked --test memory_safety`
+- **Miri:** `CAPNTPROTO_MIRI_EXTENDED=1 cargo test --locked --test memory_safety`
   retains the existing 92 interpreted ownership executions and adds six wire
   tests with seeds 2–5 on x86-64 and big-endian `s390x-unknown-linux-gnu`: 48 more
   executions. Compiler, source hashes, exact test inventories, targets, seeds,
@@ -185,26 +225,32 @@ shorter than the main compiler pin. Tool failures fail their respective jobs.
 ## Complete LLVM reporting and regression gates
 
 ```sh
-cargo run --locked -p reproto-quality -- coverage target/quality/coverage
-cargo run --locked -p reproto-quality -- security target/quality/security
-cargo run --locked -p reproto-quality -- report target/quality coverage,security
+cargo run --locked -p capntproto-quality -- coverage target/quality/coverage
+cargo run --locked -p capntproto-quality -- security target/quality/security
+cargo run --locked -p capntproto-quality -- report target/quality coverage,security
 ```
 
-The collector uses pinned nightly Rust/LLVM 22 and matching Clang 22. It runs the
-workspace tests once with default features and collects ordinary nested crate
-profiles. Miri, sanitizer and mutation subprocesses retain their own toolchains.
-Native C++ profiles use `KJ_CLEAN_SHUTDOWN=1`, and every suite must flush counters.
-Separate Cargo target directories prevent incompatible quiche artifacts from
-being shared across workspaces. Each collection uses fresh profile counters.
+The collector uses pinned nightly Rust/LLVM 22. It runs the workspace tests once
+with default features and collects ordinary nested Rust crate profiles. Miri,
+sanitizer and mutation subprocesses retain their own toolchains. The independent
+C++ reference suites still execute, without coverage instrumentation or counters
+in this report. Separate Cargo target directories prevent incompatible quiche
+artifacts from being shared across workspaces. Every collection uses fresh raw
+profiles even when Rust dependencies are restored from cache.
 
-Every bundled source has a row in `coverage/FILES.md`. LLVM-mapped files include
-zero-hit code; unmapped sources are explicit N/A and never counted as covered.
-Source groups separate production Rust, maintained Cap'n Proto code, the optional
-`capnp-compat` adapters/codecs, transport, C++ reference and verification tooling.
-The compatibility crate's source prefix must have measured files. This is
-complete reporting, not 100% execution. Linux measurements do not establish
-Windows/macOS coverage. HTML,
-LCOV and raw LLVM JSON accompany the README.
+Only project-owned `.rs` sources enter `coverage/FILES.md`, totals and regression
+checks: the runtime, compiler, compatibility crate, quality tools, test support,
+tests, examples, fuzz harnesses, benchmarks and Miri checks. An explicit file
+allowlist is passed to **all** LLVM JSON, LCOV and HTML exports. Vendored crates,
+C++ reference sources, Cargo registry dependencies and generated `OUT_DIR` files
+are excluded. Instrumentation of linked Rust dependencies may still be present
+in raw execution profiles; it does not enter the published coverage scope.
+See [LLVM's source filtering](https://llvm.org/docs/CommandGuide/llvm-cov.html#export-command).
+
+Zero-hit owned code remains in the denominator. Owned files without executable
+mappings are explicit N/A, never counted as covered. The scope is versioned as
+`first-party-rust-v1`; a baseline from the former vendor-inclusive scope is
+rejected and must be reviewed again. Linux coverage does not qualify other OSes.
 
 Per-file and aggregate **line, region, function and branch ratios** must not
 regress against `quality/coverage-baseline.json`. Lost instrumentation, changed
@@ -221,7 +267,7 @@ Add **`DIGITALOCEAN_ACCESS_TOKEN`** as a secret in the GitHub environment
 **`Benchmarking`** (Settings → Environments → Benchmarking). Both the dedicated
 benchmark job and scheduled cleanup job use this environment. It needs access
 to read plans, create/read/delete Droplets and SSH keys, and create/read tags.
-No local token or persistent SSH key is required. Run **Dedicated benchmarks**
+No local token or persistent SSH key is required. Run **Performance / Dedicated benchmarks**
 from a trusted revision. The workflow generates temporary client and host keys,
 pins the host key, and exposes the token only to the infrastructure steps.
 
@@ -252,7 +298,7 @@ comparison driver, copies Cargo-reported executable paths into a bundle, and
 records compiler/source/lockfile/binary identities. The remote driver verifies
 binary hashes before measuring. An individual `cargo bench --bench NAME` runs
 that protocol's workload; the C++ wrapper additionally requires
-`REPROTO_CPP_BENCH` pointing to the compiled `capnp-reference` binary. Full
+`CAPNTPROTO_CPP_BENCH` pointing to the compiled `capnp-reference` binary. Full
 comparison timing runs on the droplet with protocol order rotated between five
 repetitions.
 
@@ -281,7 +327,7 @@ processes, one outstanding call, 0/64/1024/65536-byte payloads, 100 warmups and
 1,000 timed requests per repetition. Every response's sequence and payload are
 validated. Setup and warmup are excluded. Reports include p50/p95/p99, sequential
 request rate, comparison ratios, raw samples, CPU/OS details and droplet plan.
-Capn't Proto uses authenticated encrypted Native/UDP; C++ Cap'n Proto uses plaintext
+Capntproto uses authenticated encrypted Native/UDP; C++ Cap'n Proto uses plaintext
 TCP, gRPC plaintext HTTP/2, and WebSockets plaintext binary echo. These security
 and semantic differences are explicit; this is not peak concurrent throughput.
 
@@ -312,8 +358,8 @@ payload size:
 
 - Median (p50), p95 and p99 round-trip latency, in microseconds.
 - Sequential requests per second.
-- Median-latency and request-rate differences from Capn't Proto, calculated as
-  `(comparison / Capn't Proto - 1) × 100`.
+- Median-latency and request-rate differences from Capntproto, calculated as
+  `(comparison / Capntproto - 1) × 100`.
 
 A seventh figure shows Gungraun instruction counts by encode/decode operation
 and payload size. Its table also records data reads and writes. Charts are drawn

@@ -1,9 +1,9 @@
-use reproto::{
+use capntproto::{
     native_listener::{self, Listener},
     native_rpc::{Handle, Network},
     transport::{AuthenticatedSession, DatagramPacing, Identity, Schedule},
 };
-use reproto_test_support::runtime_test_capnp::harness;
+use capntproto_test_support::runtime_test_capnp::harness;
 use std::{net::SocketAddr, rc::Rc, time::Duration};
 use tokio::time::Instant;
 

@@ -1,11 +1,11 @@
 use capnp::{capability::Promise, Error};
 use capnp_rpc::{Connection, IncomingMessage, OutgoingMessage, RpcSystem, VatNetwork};
-use futures::TryFutureExt;
-use reproto::{
+use capntproto::{
     native_rpc::{DirectoryConnector, Handle, Network},
     transport::{self, Identity},
 };
-use reproto_test_support::runtime_test_capnp::harness;
+use capntproto_test_support::runtime_test_capnp::harness;
+use futures::TryFutureExt;
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,

@@ -1,6 +1,6 @@
 //! Exercise cancellation in subprocesses so signal state cannot poison other tests.
 #![cfg(target_os = "linux")]
-use reproto_test_support::verification as v;
+use capntproto_test_support::verification as v;
 use std::{
     fs,
     process::{Command, Stdio},
@@ -9,14 +9,14 @@ use std::{
 
 #[test]
 fn cancellation_worker() {
-    let Ok(directory) = std::env::var("REPROTO_CANCEL_TEST") else {
+    let Ok(directory) = std::env::var("CAPNTPROTO_CANCEL_TEST") else {
         return;
     };
     let directory = std::path::Path::new(&directory);
-    let mut command = if std::env::var_os("REPROTO_CANCEL_NESTED").is_none() {
+    let mut command = if std::env::var_os("CAPNTPROTO_CANCEL_NESTED").is_none() {
         let mut cmd = Command::new(std::env::current_exe().unwrap());
         cmd.args(["--exact", "cancellation_worker"])
-            .env("REPROTO_CANCEL_NESTED", "1");
+            .env("CAPNTPROTO_CANCEL_NESTED", "1");
         cmd
     } else {
         let mut cmd = Command::new("sh");
@@ -28,7 +28,7 @@ fn cancellation_worker() {
         .arg(directory.join("leaf.pid"));
         cmd
     };
-    let log = if std::env::var_os("REPROTO_CANCEL_NESTED").is_some() {
+    let log = if std::env::var_os("CAPNTPROTO_CANCEL_NESTED").is_some() {
         "leaf.log"
     } else {
         "nested.log"
@@ -47,7 +47,7 @@ fn termination_stops_nested_groups_and_term_resistant_children() {
     let dir = tempfile::tempdir().unwrap();
     let mut worker = Command::new(std::env::current_exe().unwrap())
         .args(["--exact", "cancellation_worker"])
-        .env("REPROTO_CANCEL_TEST", dir.path())
+        .env("CAPNTPROTO_CANCEL_TEST", dir.path())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()

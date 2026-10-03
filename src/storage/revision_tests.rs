@@ -123,7 +123,7 @@ fn recovery_rejects_wrapped_single_and_batch_records_without_modifying_disk() {
 
 #[test]
 fn replay_tlc_revision_exhaustion_and_atomic_compare() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     const MODEL: &str = "verification/RevisionBoundary.tla";
     const CONFIG: &str = include_str!("../../verification/RevisionBoundary.cfg");
     const BASE: u64 = u64::MAX - 2;

@@ -64,7 +64,7 @@ See [generator](Rust-Generator.md) and [compiler qualification](Compiler-Qualifi
 
 ## Optional C++ adapters and codecs
 
-[capnp-compat](Compatibility-Adapters.md) supplies JSON/text codecs,
+[capntproto-compat](Compatibility-Adapters.md) supplies JSON/text codecs,
 ByteStream, HTTP level 2, WebSocket message framing and JSON-RPC. It remains an
 optional crate; applications supply network/authentication integrations.
 The whole KJ library and every C++ tool/overload are outside this runtime's scope.

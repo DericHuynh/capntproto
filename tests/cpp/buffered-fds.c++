@@ -12,7 +12,7 @@
 #include <vector>
 
 kj::AutoCloseFd descriptor(unsigned char value) {
-  char path[] = "/tmp/reproto-buffered-fd-XXXXXX";
+  char path[] = "/tmp/capntproto-buffered-fd-XXXXXX";
   int raw = mkstemp(path);
   KJ_REQUIRE(raw >= 0);
   kj::AutoCloseFd fd(raw);

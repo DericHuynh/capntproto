@@ -3,7 +3,7 @@
 For package ownership, dependency direction, and file placement, see the
 [repository layout](Repository-Layout.md).
 
-Capn't Proto is an unreleased 0.x protocol/runtime. Breaking Rust APIs and rejecting
+Capntproto is an unreleased 0.x protocol/runtime. Breaking Rust APIs and rejecting
 obsolete private formats is allowed. Standard Cap'n Proto wire behavior,
 capability authority, schema evolution, and C++ interoperability remain contracts.
 
@@ -141,7 +141,7 @@ Changing providers, authority, or budget rules belongs at this core boundary.
 
 | Feature/package | Responsibility |
 |---|---|
-| base `reproto` | RPC adapters, authority and semantic helpers |
+| base `capntproto` | RPC adapters, authority and semantic helpers |
 | `tls` | Certificate configuration, TLS 1.3 over TCP, optional mandatory client certificates |
 | `quic` | Standard QUIC v1/v2 RPC streams with quiche; enables `native` and `tls` |
 | `native` | Native/quiche transport, listener, arbitration, multiparty routing, provisioning, discovery, NAT rendezvous and path control |
@@ -150,14 +150,14 @@ Changing providers, authority, or budget rules belongs at this core boundary.
 | `native` + `services` | Capability-authorized realtime datagrams |
 | `native` + `storage` | Application object introduction/handoff |
 | `services` + `storage` | Durable bulk/ORM publication |
-| `reproto-test-support` | Generated fixture schemas and trace-file contract; dev dependency only |
+| `capntproto-test-support` | Generated fixture schemas and trace-file contract; dev dependency only |
 
 The default enables `native`, `services`, `storage`, `tls`, and `quic`.
 Plain TCP works without default features. TLS and QUIC also run their secure RPC
 tests independently with `--no-default-features --features tls` or `quic`.
 Feature-specific library builds use
 `cargo check --no-default-features --features FEATURE --lib`. Fixture modules are
-not re-exported from the production package; tests import `reproto_test_support`.
+not re-exported from the production package; tests import `capntproto_test_support`.
 The production build script compiles only schemas used by enabled features.
 
 ## Verification workflow

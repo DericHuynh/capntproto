@@ -1,6 +1,6 @@
 # Code of conduct
 
-Capn't Proto welcomes people of all backgrounds and levels of experience. Everyone
+Capntproto welcomes people of all backgrounds and levels of experience. Everyone
 participating in the project is expected to help make its spaces respectful,
 accessible, and free from harassment.
 
@@ -25,13 +25,13 @@ deliberately disrupting project discussions.
 ## Scope
 
 This policy applies to issues, pull requests, reviews, discussions, other
-project-managed spaces, and interactions in which someone represents Capn't Proto.
+project-managed spaces, and interactions in which someone represents Capntproto.
 It applies to contributors and maintainers alike.
 
 ## Report a concern
 
 Email [huynhderic@gmail.com](mailto:huynhderic@gmail.com) with the subject
-`Capn't Proto conduct report`. Include what happened, where and when it happened, and
+`Capntproto conduct report`. Include what happened, where and when it happened, and
 links or screenshots if safe to share. Describe any immediate concern and the
 best way to contact you. You do not need to confront the person involved or post
 a report publicly.
@@ -41,7 +41,7 @@ the concern and take action. Absolute confidentiality cannot be promised when
 safety or platform intervention requires disclosure. If reporting to the project
 maintainer is not appropriate, GitHub offers a separate
 [abuse-reporting process](https://docs.github.com/en/communities/maintaining-your-safety-on-github/reporting-abuse-or-spam).
-This is a platform reporting option, not an independent Capn't Proto appeals team.
+This is a platform reporting option, not an independent Capntproto appeals team.
 
 ## Enforcement and review
 

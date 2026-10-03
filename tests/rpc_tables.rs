@@ -29,7 +29,7 @@ fn peer_tables_preserve_zero_and_full_wire_range_without_cross_domain_aliasing()
 
 #[test]
 fn replay_tlc_rpc_id_table_operations() {
-    use reproto_test_support::verification::exploration;
+    use capntproto_test_support::verification::exploration;
     const MODEL: &str = "verification/RpcIdTables.tla";
     const CONFIG: &str = include_str!("../verification/RpcIdTables.cfg");
     let paths = exploration::traces(MODEL, "rpc-id-tables", CONFIG).unwrap();

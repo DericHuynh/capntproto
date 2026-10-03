@@ -1,5 +1,5 @@
 use capnp::schema_capnp::node;
-use reproto::{
+use capntproto::{
     schema_exchange::{self as exchange, Catalog, Definition, Key, Limits, Retrieval},
     schema_exchange_capnp as wire,
 };
@@ -84,8 +84,8 @@ async fn pinned_shared_and_cyclic_schema_graphs_over_rpc() {
                 ])
                 .unwrap();
             let (a, b) = tokio::io::duplex(4096);
-            let server = reproto::rpc::serve(b, Catalog::service(catalog.clone()).client);
-            let (client, driver): (wire::catalog::Client, _) = reproto::rpc::client(a);
+            let server = capntproto::rpc::serve(b, Catalog::service(catalog.clone()).client);
+            let (client, driver): (wire::catalog::Client, _) = capntproto::rpc::client(a);
             let bundle = exchange::fetch(&client, key(1, 1), Limits::default(), 3)
                 .await
                 .unwrap();
@@ -290,7 +290,7 @@ struct Step {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_schema_exchange_traces() {
-    let path = reproto_test_support::verification::input("REPROTO_SCHEMA_EXCHANGE_TRACES")
+    let path = capntproto_test_support::verification::input("CAPNTPROTO_SCHEMA_EXCHANGE_TRACES")
         .expect("prepare verified trace corpus");
     let traces: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     assert!(!traces.is_empty());
@@ -323,8 +323,8 @@ async fn replay(trace: Trace) {
         receivers: Rc::new(RefCell::new(receivers)),
     });
     let (a, b) = tokio::io::duplex(4096);
-    let server = reproto::rpc::serve(b, service.client);
-    let (client, driver): (wire::catalog::Client, _) = reproto::rpc::client(a);
+    let server = capntproto::rpc::serve(b, service.client);
+    let (client, driver): (wire::catalog::Client, _) = capntproto::rpc::client(a);
     let _tasks = Tasks(vec![server, driver]);
     let mut state = Some(Retrieval::new(key(1, trace.revision), Limits::default()).unwrap());
     let mut pending = BTreeMap::new();
@@ -419,7 +419,7 @@ async fn replay(trace: Trace) {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn schema_service_over_authenticated_native() {
-    use reproto::{
+    use capntproto::{
         native_rpc::Network,
         transport::{self, Identity},
     };
@@ -478,8 +478,8 @@ async fn cancelling_fetch_releases_outstanding_schema_calls() {
         let receivers=Rc::new(RefCell::new(receivers));
         let service: wire::catalog::Client=capnp_rpc::new_client(Gates {catalog,receivers:receivers.clone()});
         let (a,b)=tokio::io::duplex(4096);
-        let server=reproto::rpc::serve(b,service.client);
-        let (client,driver): (wire::catalog::Client,_) = reproto::rpc::client(a);
+        let server=capntproto::rpc::serve(b,service.client);
+        let (client,driver): (wire::catalog::Client,_) = capntproto::rpc::client(a);
         let _tasks=Tasks(vec![server,driver]);
         senders.remove(&1).unwrap().send(false).unwrap();
         let mut fetch=Box::pin(exchange::fetch(&client,key(1,1),Limits::default(),3));

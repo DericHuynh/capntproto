@@ -1,11 +1,11 @@
 #![cfg(feature = "native")]
 
-use reproto::{
+use capntproto::{
     native_rpc::{Backend, Options, RouteStatus, Vat},
     rpc::QuicVersion,
     transport::{self, AuthenticatedSession, Identity},
 };
-use reproto_test_support::runtime_test_capnp::harness;
+use capntproto_test_support::runtime_test_capnp::harness;
 use std::{
     cell::{Cell, RefCell},
     future::Future,

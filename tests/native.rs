@@ -1,5 +1,5 @@
 #![cfg(feature = "native")]
-use reproto::transport::{config, Identity};
+use capntproto::transport::{config, Identity};
 use std::net::SocketAddr;
 
 fn pair(psk: Option<[u8; 32]>, bad: bool) -> (quiche::Connection, quiche::Connection) {

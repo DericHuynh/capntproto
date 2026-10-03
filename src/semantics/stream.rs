@@ -19,11 +19,11 @@ pub enum NativeStreamState {
 /// initiator-opened even when the first RPC call comes from the responder.
 ///
 /// ```compile_fail,E0451
-/// use reproto::semantics::{NativeStreamGate, NativeStreamState};
+/// use capntproto::semantics::{NativeStreamGate, NativeStreamState};
 /// let gate = NativeStreamGate { state: NativeStreamState::Ready };
 /// ```
 /// ```compile_fail,E0308
-/// let gate = reproto::semantics::NativeStreamGate::new(false);
+/// let gate = capntproto::semantics::NativeStreamGate::new(false);
 /// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NativeStreamGate {
