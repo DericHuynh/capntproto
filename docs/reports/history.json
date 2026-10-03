@@ -82,6 +82,24 @@
         "status": "unavailable",
         "note": "This workflow attempt produced no public measurement artifact."
       }
+    },
+    {
+      "run_id": 37109708879,
+      "attempt": 1,
+      "commit": "daf0a053060b8565e42fc4f877acd1de33de0268",
+      "date": "2026-10-03T08:26:31Z",
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/37109708879",
+      "conclusion": "cancelled",
+      "data": {
+        "format": 1,
+        "kind": "full",
+        "origin": null,
+        "source_id": null,
+        "tests": null,
+        "charts": [],
+        "status": "unavailable",
+        "note": "This workflow attempt produced no public measurement artifact."
+      }
     }
   ],
   "benchmark": {

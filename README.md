@@ -93,7 +93,7 @@ Generated automatically from CI evidence. Each lane keeps its own measured commi
 
 ### Aggregate workspace tests
 
-Latest full-quality run: [2026-10-03T08:18:50Z · run 37109278707 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37109278707) · commit `d41cd934feb5` · **cancelled**
+Latest full-quality run: [2026-10-03T08:26:31Z · run 37109708879 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37109708879) · commit `daf0a053060b` · **cancelled**
 
 ![Aggregate test history: total, passed, failed, errored and skipped](docs/reports/test-history.svg)
 
