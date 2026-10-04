@@ -561,13 +561,28 @@ the small-call diagnostic. Its median ratios were 1.82×, 1.82×, 1.73×, and
 A stack-framing experiment and a smaller request arena showed no clear latency
 gain and were not retained.
 
-The next candidate increases QUIC staging and application bridges to 128 KiB:
+The [third follow-up run](https://github.com/DericHuynh/capntproto/actions/runs/37226839751)
+increases QUIC staging and application bridges to 128 KiB:
 a 64 KiB payload plus framing otherwise spills over the previous 64 KiB bound.
-Local measurements reduced large-message latency by about 21%; a dedicated run
-is required to establish its effect on the target. Calls that explicitly disable
+Local measurements reduced large-message latency by about 21%. Calls that explicitly disable
 promise pipelining also avoid allocating a queued answer pipeline and shared
 completion future. Early publication, errors, capability ownership, cancellation,
 and normal pipelining retain their existing semantics.
+
+| Payload | Native median (µs) | C++ median (µs) | Median ratio |
+| --- | ---: | ---: | ---: |
+| 0 bytes | 60.012 | 36.991 | 1.62× |
+| 64 bytes | 59.645 | 37.002 | 1.61× |
+| 1,024 bytes | 62.991 | 39.726 | 1.59× |
+| 64 KiB | 264.326 | 182.701 | 1.45× |
+
+Only the large payload meets 1.5× in this run. All 5,000 samples per cell were
+retained; the empty-call p95 was 101.390 µs versus C++'s 43.676 µs. This droplet
+used a Xeon Platinum 8168, while the preceding run used an 8280. Ratios compare
+protocols within one run; changes between those runs cannot isolate the effect
+of a code change from host variation. CI passed on Ubuntu, macOS, and Windows.
+A later experiment removing two boxed completion futures showed no consistent
+local latency improvement and was reverted.
 
 ### Clock diagnostics
 
@@ -587,3 +602,7 @@ Do not force a TSC source excluded by the kernel or disable its reliability
 checks just to improve a measurement. Local HPET clock reads measured roughly
 1.4–1.6 microseconds in October 2026, so local timing can magnify clock-heavy
 transport paths relative to the dedicated host.
+The third follow-up run measured 26–31 ns per `Instant` read on both assigned
+droplet cores using `kvm-clock` (TSC was also listed as available). Its clock is
+already fast; raw TSC cannot account for the remaining several-microsecond gap
+to the small-payload target. No clocksource settings were changed.
