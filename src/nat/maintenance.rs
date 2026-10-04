@@ -270,7 +270,7 @@ mod tests {
     async fn udp() -> crate::transport::socket::DatagramSocket {
         let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         socket.writable().await.unwrap();
-        socket.into()
+        crate::transport::socket::DatagramSocket::new(socket).unwrap()
     }
     #[tokio::test(start_paused = true)]
     async fn observers_report_expiry_once_and_do_not_own_mapping() {

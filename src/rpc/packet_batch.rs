@@ -4,6 +4,41 @@ use std::cell::Cell;
 use std::{io, net::SocketAddr};
 use tokio::net::UdpSocket;
 
+pub(crate) trait DatagramSender {
+    async fn send_packet(&self, bytes: &[u8], to: SocketAddr) -> io::Result<usize>;
+    #[cfg(target_os = "linux")]
+    async fn send_gso(&self, bytes: &[u8], segment: u16, to: SocketAddr) -> io::Result<usize>;
+}
+#[cfg(target_os = "linux")]
+pub(crate) fn try_gso(
+    socket: &impl std::os::fd::AsRawFd,
+    bytes: &[u8],
+    segment: u16,
+    to: SocketAddr,
+) -> io::Result<usize> {
+    use nix::sys::socket::{sendmsg, ControlMessage, MsgFlags, SockaddrStorage};
+    sendmsg(
+        socket.as_raw_fd(),
+        &[io::IoSlice::new(bytes)],
+        &[ControlMessage::UdpGsoSegments(&segment)],
+        MsgFlags::MSG_DONTWAIT,
+        Some(&SockaddrStorage::from(to)),
+    )
+    .map_err(io::Error::from)
+}
+impl DatagramSender for UdpSocket {
+    async fn send_packet(&self, bytes: &[u8], to: SocketAddr) -> io::Result<usize> {
+        self.send_to(bytes, to).await
+    }
+    #[cfg(target_os = "linux")]
+    async fn send_gso(&self, bytes: &[u8], segment: u16, to: SocketAddr) -> io::Result<usize> {
+        self.async_io(tokio::io::Interest::WRITABLE, || {
+            try_gso(self, bytes, segment, to)
+        })
+        .await
+    }
+}
+
 pub(crate) struct Batch {
     pub bytes: Vec<u8>,
     pub info: Option<quiche::SendInfo>,
@@ -216,29 +251,15 @@ impl Sender {
     }
     pub async fn send(
         &self,
-        socket: &UdpSocket,
+        socket: &impl DatagramSender,
         bytes: &[u8],
         segment: usize,
         to: SocketAddr,
     ) -> io::Result<()> {
         #[cfg(target_os = "linux")]
         if bytes.len() > segment && !self.unsupported.get() {
-            use nix::sys::socket::{sendmsg, ControlMessage, MsgFlags, SockaddrStorage};
-            use std::{io::IoSlice, os::fd::AsRawFd};
-            let size = segment as u16;
-            let address = SockaddrStorage::from(to);
             loop {
-                socket.writable().await?;
-                let sent = socket.try_io(tokio::io::Interest::WRITABLE, || {
-                    sendmsg(
-                        socket.as_raw_fd(),
-                        &[IoSlice::new(bytes)],
-                        &[ControlMessage::UdpGsoSegments(&size)],
-                        MsgFlags::MSG_DONTWAIT,
-                        Some(&address),
-                    )
-                    .map_err(io::Error::from)
-                });
+                let sent = socket.send_gso(bytes, segment as u16, to).await;
                 match sent {
                     Ok(n) if n == bytes.len() => return Ok(()),
                     Ok(_) => {
@@ -263,7 +284,7 @@ impl Sender {
             }
         }
         for packet in bytes.chunks(segment) {
-            match socket.send_to(packet, to).await {
+            match socket.send_packet(packet, to).await {
                 Ok(n) if n == packet.len() => (),
                 Err(error) if super::packet_mtu::too_large(&error, packet.len()) => {
                     self.mtu_loss.set(true);

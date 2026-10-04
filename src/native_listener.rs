@@ -242,7 +242,7 @@ impl Listener {
         limits: Limits,
     ) -> io::Result<Self> {
         limits.validate()?;
-        let socket = Rc::new(UdpSocket::bind(address).await?.into());
+        let socket = Rc::new(DatagramSocket::new(UdpSocket::bind(address).await?)?);
         Ok(Self::start(socket, identity, limits))
     }
     /// Discover this listener's public mapping before starting packet routing.
@@ -257,7 +257,7 @@ impl Listener {
         let socket = UdpSocket::bind(address).await?;
         let observed = crate::nat::discover(&socket, stun_server, Duration::from_secs(3)).await?;
         Ok((
-            Self::start(Rc::new(socket.into()), identity, limits),
+            Self::start(Rc::new(DatagramSocket::new(socket)?), identity, limits),
             observed,
         ))
     }
@@ -582,7 +582,15 @@ pub async fn connect_for_version(
     context: &[u8],
     version: transport::QuicVersion,
 ) -> io::Result<AuthenticatedSession> {
-    connect_socket_version(socket.into(), target, identity, psk, context, version).await
+    connect_socket_version(
+        DatagramSocket::new(socket)?,
+        target,
+        identity,
+        psk,
+        context,
+        version,
+    )
+    .await
 }
 #[cfg(test)]
 pub(crate) async fn connect_socket(
@@ -663,10 +671,6 @@ impl Drop for SharedSocket {
     }
 }
 impl SharedSocket {
-    pub(crate) fn prepare(&self) -> io::Result<()> {
-        self.check_open()?;
-        self.socket.prepare()
-    }
     pub(crate) async fn send_segments(
         &self,
         sender: &crate::rpc::packet_batch::Sender,
@@ -1053,8 +1057,9 @@ mod tests {
                 let owner = Rc::new(Identity::generate());
                 // Identity verification is exercised by bind() in integration
                 // tests. Each trace needs a fresh registry, not another DH.
-                let socket: Rc<DatagramSocket> =
-                    Rc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap().into());
+                let socket: Rc<DatagramSocket> = Rc::new(
+                    DatagramSocket::new(UdpSocket::bind("127.0.0.1:0").await.unwrap()).unwrap(),
+                );
                 for (index, trace) in cases.into_iter().enumerate() {
                     let listener = Listener::start(
                         socket.clone(),

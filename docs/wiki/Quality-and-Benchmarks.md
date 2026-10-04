@@ -533,8 +533,9 @@ use the unmodified Quiche crate and keep bounded buffering and backpressure.
 ### Follow-up target: 1.5×
 
 The next target is at most **1.5× C++ median latency for every payload** with the
-same authentication and validated workload. Dedicated-host confirmation is
-pending; the preceding 3× results do not establish this target.
+same authentication and validated workload. The [first follow-up run](https://github.com/DericHuynh/capntproto/actions/runs/37223461974)
+reached 1.81–1.86× for small-call medians and 1.60× at 64 KiB; it does not yet
+establish the 1.5× target.
 
 The candidate caches the active socket address until validated migration,
 enables ThinLTO and one codegen unit for checkout release builds, and runs all
@@ -549,3 +550,11 @@ Local ablations rejected custom queue-turn yielding, a local RPC task queue,
 and lazy pipeline resolution because they did not improve latency. Local HPET
 timing has substantially higher clock-read costs than the dedicated host's
 clock; local ratios are diagnostics, not evidence that the target is met.
+
+The next candidate uses full LTO, eight bounded local reply turns, and Linux
+read-only UDP registration with temporary write interest on backpressure. A
+syscall trace identified an EPOLLOUT event after each successful UDP send;
+removing continuous write interest approximately halved client epoll calls in
+the small-call diagnostic. Its dedicated latency effect is still unverified.
+A stack-framing experiment and a smaller request arena showed no clear latency
+gain and were not retained.

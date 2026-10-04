@@ -54,7 +54,8 @@ impl Mobility {
         peer: SocketAddr,
         timeout: Duration,
     ) -> io::Result<Path> {
-        self.migrate_socket(socket.into(), peer, timeout).await
+        self.migrate_socket(DatagramSocket::new(socket)?, peer, timeout)
+            .await
     }
     pub(super) async fn migrate_socket(
         &self,
@@ -337,7 +338,6 @@ impl Driver {
                             "migration requires a fresh socket",
                         ));
                     }
-                    candidate.prepare()?;
                     self.probes += 1;
                     conn.probe_path(local, peer).map_err(error)?;
                     Ok(Path { local, peer })
@@ -366,7 +366,9 @@ mod tests {
     use super::*;
     #[tokio::test(flavor = "current_thread")]
     async fn candidate_socket_error_retires_probe_and_preserves_original_socket() {
-        let old = PacketSocket::Dedicated(UdpSocket::bind("127.0.0.1:0").await.unwrap().into());
+        let old = PacketSocket::Dedicated(
+            DatagramSocket::new(UdpSocket::bind("127.0.0.1:0").await.unwrap()).unwrap(),
+        );
         let candidate = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         // This test targets an actual send error, not initial IO readiness.
         candidate.writable().await.unwrap();
@@ -377,7 +379,7 @@ mod tests {
         let (reply, wait) = oneshot::channel();
         let (_control, mut driver) = pair();
         driver.pending = Some(Pending {
-            socket: candidate.into(),
+            socket: DatagramSocket::new(candidate).unwrap(),
             path,
             deadline: Instant::now() + Duration::from_secs(1),
             reply,

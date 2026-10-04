@@ -29,6 +29,7 @@ pub use mobility::{Mobility, Path};
 pub use scheduling::{DatagramPacing, Schedule, ScheduleStats, Scheduling};
 use shutdown::ShutdownDriver;
 use socket::DatagramIo;
+use socket::DatagramSocket;
 use std::{io, net::SocketAddr, time::Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, DuplexStream},
@@ -94,7 +95,7 @@ pub async fn connect(
         config,
     )
     .map_err(error)?;
-    Ok(spawn(socket, conn))
+    spawn(socket, conn)
 }
 /// Accept one peer on a dedicated socket. Multi-connection routing is external.
 pub async fn accept(
@@ -121,17 +122,17 @@ pub async fn accept(
         },
     )
     .map_err(error)?;
-    Ok(spawn(socket, conn))
+    spawn(socket, conn)
 }
 fn spawn(
     socket: UdpSocket,
     conn: quiche::Connection,
-) -> (DuplexStream, tokio::task::JoinHandle<io::Result<()>>) {
+) -> io::Result<(DuplexStream, tokio::task::JoinHandle<io::Result<()>>)> {
     let (app, network) = tokio::io::duplex(64 * 1024);
-    (
+    Ok((
         app,
         tokio::task::spawn_local(drive(
-            PacketSocket::Dedicated(socket.into()),
+            PacketSocket::Dedicated(DatagramSocket::new(socket)?),
             Box::new(conn),
             network,
             SessionDrivers {
@@ -142,7 +143,7 @@ fn spawn(
                 scheduling: scheduling::pair().1,
             },
         )),
-    )
+    ))
 }
 /// Conservative datagram payload bound, including paths at QUIC's minimum MTU.
 pub const MAX_DATAGRAM_BYTES: usize = 1024;
@@ -276,12 +277,6 @@ pub(crate) enum PacketSocket {
     Shared(crate::native_listener::SharedSocket),
 }
 impl PacketSocket {
-    fn prepare(&self) -> io::Result<()> {
-        match self {
-            Self::Dedicated(socket) => socket.prepare(),
-            Self::Shared(socket) => socket.prepare(),
-        }
-    }
     async fn flush_batch(
         &self,
         sender: &crate::rpc::packet_batch::Sender,
@@ -349,7 +344,6 @@ async fn drive(
     io: DuplexStream,
     drivers: SessionDrivers,
 ) -> io::Result<()> {
-    socket.prepare()?;
     // Listener shutdown must also cancel packet pacing and blocked writes,
     // not only wake the socket receive branch.
     let stopped = socket.stopped();
@@ -372,6 +366,20 @@ async fn drive(
     }
     result
 }
+async fn application_turn() {
+    let mut yielded = false;
+    futures::future::poll_fn(move |cx| {
+        if yielded {
+            std::task::Poll::Ready(())
+        } else {
+            yielded = true;
+            cx.waker().wake_by_ref();
+            std::task::Poll::Pending
+        }
+    })
+    .await
+}
+
 async fn drive_packets(
     mut socket: PacketSocket,
     conn: Box<quiche::Connection>,
@@ -465,8 +473,8 @@ async fn drive_packets(
                     && engine.rx.pending().is_empty()
                     && !engine.conn.stream_readable(0)
                 {
-                    for _ in 0..4 {
-                        tokio::task::yield_now().await;
+                    for _ in 0..8 {
+                        application_turn().await;
                         if engine.tx.can_read() {
                             if let Some(read) = reader.read(engine.tx.read_buffer()?).now_or_never()
                             {
@@ -711,7 +719,7 @@ pub async fn connect_for_version(
     )
     .map_err(error)?;
     authenticated(
-        PacketSocket::Dedicated(socket.into()),
+        PacketSocket::Dedicated(DatagramSocket::new(socket)?),
         Box::new(conn),
         identity.public_key(),
         peer,
@@ -751,7 +759,7 @@ pub async fn accept_authenticated(
     )
     .map_err(error)?;
     authenticated(
-        PacketSocket::Dedicated(socket.into()),
+        PacketSocket::Dedicated(DatagramSocket::new(socket)?),
         Box::new(conn),
         identity.public_key(),
         peer,

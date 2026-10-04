@@ -3,6 +3,13 @@
 use std::{io, net::SocketAddr};
 use tokio::net::UdpSocket;
 
+#[cfg(target_os = "linux")]
+mod readiness;
+#[cfg(target_os = "linux")]
+use readiness::Socket;
+#[cfg(not(target_os = "linux"))]
+type Socket = UdpSocket;
+
 /// Borrowed packet IO for discovery before a socket is moved into its owner.
 /// Static dispatch keeps the production and simulated protocol loop identical.
 /// Dropping a pending operation must not consume or emit a datagram.
@@ -20,22 +27,16 @@ impl DatagramIo for UdpSocket {
 }
 
 pub(crate) enum DatagramSocket {
-    Udp(UdpSocket),
+    Udp(Socket),
     #[cfg(test)]
     Simulated(super::simulation::Socket),
 }
-impl From<UdpSocket> for DatagramSocket {
-    fn from(socket: UdpSocket) -> Self {
-        Self::Udp(socket)
-    }
-}
 impl DatagramSocket {
-    pub(crate) fn prepare(&self) -> io::Result<()> {
-        match self {
-            Self::Udp(socket) => crate::rpc::packet_mtu::prepare(socket),
-            #[cfg(test)]
-            Self::Simulated(_) => Ok(()),
-        }
+    pub(crate) fn new(socket: UdpSocket) -> io::Result<Self> {
+        crate::rpc::packet_mtu::prepare(&socket)?;
+        #[cfg(target_os = "linux")]
+        let socket = Socket::new(socket)?;
+        Ok(Self::Udp(socket))
     }
     pub(crate) async fn send_segments(
         &self,

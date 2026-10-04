@@ -75,7 +75,11 @@ Shared listeners bound each route by both its configured packet count and
 Run application futures as tasks inside the same Tokio `LocalSet` as RPC tasks
 (`spawn_local`), including the main request loop. This avoids extra executor
 turns between the outer `run_until` future and local RPC tasks. All Rust RPC
-benchmarks use this placement. Checkout release builds enable ThinLTO and one
+benchmarks use this placement. Linux Native sockets subscribe to read events and request write readiness only
+when a send blocks, avoiding an extra writable wakeup after every UDP send.
+Bounded local task turns give RPC replies an opportunity to share their ACK.
+
+Checkout release builds enable full LTO and one
 codegen unit; downstream applications select these options in their own Cargo
 release profile because dependency-local Cargo configuration is not inherited.
 

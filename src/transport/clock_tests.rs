@@ -91,14 +91,17 @@ async fn application_pacing_migration_and_shutdown_deadlines_use_runtime_time() 
     let peer = peer_socket.local_addr().unwrap();
     let (mut a, mut b) = engine_tests::pair_at([old, peer], |_| {});
     establish(&mut a, &mut b);
-    let mut socket = PacketSocket::Dedicated(socket.into());
+    let mut socket =
+        PacketSocket::Dedicated(crate::transport::socket::DatagramSocket::new(socket).unwrap());
     let (_mobility, mut migration) = mobility::pair();
     // Exchange CID allowances before requesting a new path.
     migration
         .step(&mut a.conn, &mut socket, Instant::now())
         .unwrap();
     engine_tests::packets(&mut a, &mut b);
-    let mut peer_path = PacketSocket::Dedicated(peer_socket.into());
+    let mut peer_path = PacketSocket::Dedicated(
+        crate::transport::socket::DatagramSocket::new(peer_socket).unwrap(),
+    );
     let (_, mut peer_migration) = mobility::pair();
     peer_migration
         .step(&mut b.conn, &mut peer_path, Instant::now())
@@ -124,7 +127,7 @@ async fn application_pacing_migration_and_shutdown_deadlines_use_runtime_time() 
     let candidate = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     migration.command(
         Some(mobility::Command::Migrate(
-            candidate.into(),
+            crate::transport::socket::DatagramSocket::new(candidate).unwrap(),
             peer,
             Instant::now() + Duration::from_millis(30),
             reply,
@@ -174,7 +177,7 @@ async fn outer_driver_observes_virtual_shutdown_deadline() {
     control.begin(Duration::from_millis(40)).unwrap();
     let (_application, io) = tokio::io::duplex(64);
     let driver = super::drive(
-        PacketSocket::Dedicated(socket.into()),
+        PacketSocket::Dedicated(crate::transport::socket::DatagramSocket::new(socket).unwrap()),
         a.conn,
         io,
         super::SessionDrivers {

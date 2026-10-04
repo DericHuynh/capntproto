@@ -382,7 +382,9 @@ async fn outer_transport_driver_preserves_close_validation_and_deadline_errors()
                 // connection already carrying peer close. This tests its close
                 // branch and guard without inventing an AuthenticatedSession.
                 let result = drive(
-                    PacketSocket::Dedicated(socket.into()),
+                    PacketSocket::Dedicated(
+                        crate::transport::socket::DatagramSocket::new(socket).unwrap(),
+                    ),
                     Box::new(case.a),
                     io,
                     SessionDrivers {
