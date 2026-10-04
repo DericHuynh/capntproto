@@ -1329,6 +1329,133 @@
         "status": "unavailable",
         "note": "No measurement evidence was produced."
       }
+    },
+    {
+      "run_id": 37229897797,
+      "attempt": 1,
+      "commit": "bee81ac4fda3100550df902bff1d9dd171ed3eca",
+      "date": "2026-10-04T19:52:03Z",
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/37229897797",
+      "conclusion": "failure",
+      "data": {
+        "format": 1,
+        "kind": "fuzz",
+        "origin": {
+          "repository": "DericHuynh/capntproto",
+          "run_id": 37229897797,
+          "attempt": 1,
+          "commit": "bee81ac4fda3100550df902bff1d9dd171ed3eca"
+        },
+        "source_id": "aa033de6abb0cbd2ef51c642e20e457b4bec0f8baa897498829e65fb834c305c",
+        "tests": null,
+        "charts": [
+          {
+            "name": "fuzz-executions",
+            "title": "Fuzzing executions by engine",
+            "unit": "Executions",
+            "note": "Bounded campaigns including seed calibration; execution counts are not comparable performance benchmarks.",
+            "panels": [
+              {
+                "title": "AFL++ + RPC IJON",
+                "bars": [
+                  {
+                    "label": "AFL++ / capnp_framing",
+                    "value": 636606
+                  },
+                  {
+                    "label": "AFL++ / capnp_pointers",
+                    "value": 1949522
+                  },
+                  {
+                    "label": "AFL++ / capnp_schema",
+                    "value": 697876
+                  },
+                  {
+                    "label": "AFL++ / rpc_lifecycle",
+                    "value": 64922
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "fuzz-coverage",
+            "title": "Fuzzer feedback by engine",
+            "unit": "Feedback entries",
+            "note": "Engine-local counters, not LLVM source coverage. Do not compare counts across engines or builds.",
+            "panels": [
+              {
+                "title": "AFL++ + RPC IJON",
+                "bars": [
+                  {
+                    "label": "AFL++ / capnp_framing",
+                    "value": 1003
+                  },
+                  {
+                    "label": "AFL++ / capnp_pointers",
+                    "value": 1577
+                  },
+                  {
+                    "label": "AFL++ / capnp_schema",
+                    "value": 5039
+                  },
+                  {
+                    "label": "AFL++ / rpc_lifecycle",
+                    "value": 9443
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "fuzz-findings",
+            "title": "Saved fuzzing findings",
+            "unit": "Inputs",
+            "note": "Saved crashes/hangs are findings requiring triage, not confirmed unique bugs. Missing results remain unknown.",
+            "panels": [
+              {
+                "title": "AFL++ + RPC IJON",
+                "bars": [
+                  {
+                    "label": "AFL++ / capnp_framing crashes",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / capnp_framing hangs",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / capnp_pointers crashes",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / capnp_pointers hangs",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / capnp_schema crashes",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / capnp_schema hangs",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / rpc_lifecycle crashes",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / rpc_lifecycle hangs",
+                    "value": 0
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "status": "failed",
+        "note": "Lane failed or did not complete; inspect the linked CI run."
+      }
     }
   ],
   "cargo": [
