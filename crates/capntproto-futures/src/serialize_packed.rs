@@ -710,6 +710,82 @@ pub mod test {
         quickcheck(round_trip as fn(usize, usize, Vec<Vec<capnp::Word>>) -> TestResult);
     }
 
+    // Keep I/O boundary coverage independent of QuickCheck's random corpus.
+    #[test]
+    fn zero_runs_span_small_output_buffers() {
+        futures::executor::block_on(async {
+            for chunk_size in 1..=17 {
+                let mut reader = PackedRead::new(BlockingRead::new(&[0, 255, 0, 1][..], 1));
+                let mut bytes = [0xff; 258 * 8];
+                for chunk in bytes.chunks_mut(chunk_size) {
+                    reader.read_exact(chunk).await.unwrap();
+                }
+                assert_eq!(bytes, [0; 258 * 8]);
+                assert_eq!(reader.read(&mut [0; 8]).await.unwrap(), 0);
+            }
+        });
+    }
+
+    #[test]
+    fn dense_word_reads_resume_inside_word() {
+        futures::executor::block_on(async {
+            let packed = [0xff, 1, 2, 3, 4, 5, 6, 7, 8, 0];
+            for chunk_size in 1..=8 {
+                let mut reader = PackedRead::new(BlockingRead::new(&packed[..], 1));
+                let mut bytes = [0; 8];
+                for chunk in bytes.chunks_mut(chunk_size) {
+                    reader.read_exact(chunk).await.unwrap();
+                }
+                assert_eq!(bytes, [1, 2, 3, 4, 5, 6, 7, 8]);
+                assert_eq!(reader.read(&mut [0; 8]).await.unwrap(), 0);
+            }
+        });
+    }
+
+    #[test]
+    fn writes_split_inside_words_survive_backpressure() {
+        let unpacked = [
+            0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 8, 7, 6, 5, 4, 3, 2, 1, 0, 0, 12, 0, 0,
+            34, 0, 0,
+        ];
+        futures::executor::block_on(async {
+            for chunk_size in 1..=17 {
+                for blocking_period in 1..=10 {
+                    let mut writer = PackedWrite::new(BlockingWrite::new(
+                        std::io::Cursor::new(Vec::new()),
+                        blocking_period,
+                    ));
+                    for chunk in unpacked.chunks(chunk_size) {
+                        writer.write_all(chunk).await.unwrap();
+                    }
+                    writer.flush().await.unwrap();
+                    let packed = writer.inner.into_writer().into_inner();
+                    let mut reader =
+                        PackedRead::new(BlockingRead::new(&packed[..], blocking_period));
+                    let mut restored = [0; 32];
+                    reader.read_exact(&mut restored).await.unwrap();
+                    assert_eq!(restored, unpacked);
+                    assert_eq!(reader.read(&mut [0; 8]).await.unwrap(), 0);
+                }
+            }
+        });
+    }
+
+    #[test]
+    fn truncated_passthrough_run_reports_eof() {
+        futures::executor::block_on(async {
+            // The first word is complete; the count promises one more word.
+            let packed = [0xff, 1, 2, 3, 4, 5, 6, 7, 8, 1];
+            for prefix in 0..8 {
+                let mut input = packed.to_vec();
+                input.extend_from_slice(&[9; 8][..prefix]);
+                let mut reader = PackedRead::new(BlockingRead::new(&input[..], 1));
+                let error = reader.read_exact(&mut [0; 16]).await.unwrap_err();
+                assert_eq!(error.kind(), std::io::ErrorKind::UnexpectedEof);
+            }
+        });
+    }
+
     #[test]
     fn read_empty() {
         let words = [];
