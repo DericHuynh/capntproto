@@ -94,7 +94,9 @@ fn established_server_response_exceeds_initial_amplification_budget() {
 
     // A tiny request must not leave the authenticated server permanently
     // limited to three times the client's handshake/request byte count.
-    let response = vec![0x5a; 32 * 1024];
+    // Also exceed the larger initial congestion window used with PMTU probing,
+    // so this test must make progress over more than one receive/drain cycle.
+    let response = vec![0x5a; 256 * 1024];
     let mut queued = 0;
     let mut received = Vec::new();
     let mut finished = false;
