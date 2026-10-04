@@ -273,6 +273,27 @@ pub(crate) enum PacketSocket {
     Shared(crate::native_listener::SharedSocket),
 }
 impl PacketSocket {
+    async fn flush_batch(
+        &self,
+        sender: &crate::rpc::packet_batch::Sender,
+        batch: &mut crate::rpc::packet_batch::Batch,
+    ) -> io::Result<()> {
+        if let Some(info) = batch.info {
+            crate::rpc::pacing::wait_until(info.at).await;
+            match self {
+                Self::Dedicated(s) => {
+                    s.send_segments(sender, &batch.bytes, batch.segment, info.to)
+                        .await?
+                }
+                Self::Shared(s) => {
+                    s.send_segments(sender, &batch.bytes, batch.segment, info.to)
+                        .await?
+                }
+            }
+            batch.clear();
+        }
+        Ok(())
+    }
     pub(crate) fn local_addr(&self) -> io::Result<SocketAddr> {
         match self {
             Self::Dedicated(s) => s.local_addr(),
@@ -359,6 +380,8 @@ async fn drive_packets(
     let mut udp = vec![0; 65535];
     let mut candidate_packet = vec![0; 65535];
     let mut out = vec![0; 1350];
+    let mut batch = crate::rpc::packet_batch::Batch::new();
+    let sender = crate::rpc::packet_batch::Sender::default();
     let (mut reader, mut writer) = tokio::io::split(io);
     loop {
         let changed = schedule_changed.notified();
@@ -415,20 +438,54 @@ async fn drive_packets(
         if engine.closing() {
             datagrams = None;
         }
+        // Let the RPC consumer produce a reply before flushing its ACK. A
+        // nonblocking bridge write preserves receive backpressure. A bounded
+        // number of cooperative turns lets the RPC tasks produce their output.
+        let mut application_progress = false;
+        if !engine.rx.pending().is_empty() {
+            if let Some(written) = writer.write(engine.rx.pending()).now_or_never() {
+                engine.delivered(written?)?;
+                application_progress = true;
+                for _ in 0..4 {
+                    tokio::task::yield_now().await;
+                    if engine.tx.can_read() {
+                        if let Some(read) = reader.read(engine.tx.read_buffer()?).now_or_never() {
+                            engine.tx.read(read?)?;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if engine.tx.can_read() {
+            if let Some(read) = reader.read(engine.tx.read_buffer()?).now_or_never() {
+                engine.tx.read(read?)?;
+                application_progress = true;
+            }
+        }
         if engine.rx.needs_shutdown() {
             writer.shutdown().await?;
             engine.rx.closed()?;
+            application_progress = true;
+        }
+        // Delivery can complete a shutdown receipt even without a reply.
+        if application_progress && !engine.step(tokio::time::Instant::now())? {
+            return Ok(());
         }
         let mut burst = engine.scheduling.burst();
         let mut exhausted = true;
         while burst.permit() {
             match engine.conn.send(&mut out) {
                 Ok((n, info)) => {
-                    crate::rpc::pacing::wait_until(info.at).await;
-                    if let Some(mobility) = &mut mobility {
+                    if info.from == local {
+                        if !batch.push(&out[..n], info, engine.conn.send_quantum()) {
+                            socket.flush_batch(&sender, &mut batch).await?;
+                            assert!(batch.push(&out[..n], info, engine.conn.send_quantum()));
+                        }
+                    } else if let Some(mobility) = &mut mobility {
+                        socket.flush_batch(&sender, &mut batch).await?;
+                        crate::rpc::pacing::wait_until(info.at).await;
                         mobility.send(&socket, &out[..n], info).await?;
-                    } else {
-                        socket.send_to(&out[..n], info.to).await?;
                     }
                     engine.scheduling.sent();
                 }
@@ -439,6 +496,7 @@ async fn drive_packets(
                 Err(e) => return Err(error(e)),
             }
         }
+        socket.flush_batch(&sender, &mut batch).await?;
         if !exhausted && engine.packets_drained() {
             return Ok(());
         }
@@ -456,9 +514,12 @@ async fn drive_packets(
         let can_accept_datagram = engine.can_accept_datagram();
         let can_read = engine.tx.can_read();
         let can_write = !engine.rx.pending().is_empty();
+        let more_stream_data = engine.rx.needs_shutdown()
+            || (engine.rx.can_receive() && engine.conn.stream_readable(0));
         tokio::select! {
             _ = &mut changed => {},
             _ = tokio::task::yield_now(), if exhausted => engine.scheduling.yielded(),
+            _ = tokio::task::yield_now(), if more_stream_data => {},
             _ = async { tokio::time::sleep_until(datagram_deadline.unwrap()).await }, if datagram_deadline.is_some() => {},
             event=async { mobility.as_mut().unwrap().event(&mut candidate_packet).await }, if mobility.is_some() => {
                 match event? {
