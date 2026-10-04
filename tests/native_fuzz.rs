@@ -163,6 +163,10 @@ fn native_fuzz_smoke() {
         fs::create_dir_all(&artifacts).unwrap();
         let output = run(
             command("cargo")
+                // The pinned sancov/ASan passes leave unresolved __sancov_gen_*
+                // symbols under fat LTO. Keep sanitizer coverage enabled and
+                // override the checkout's release LTO only for this fuzz build.
+                .env("CARGO_PROFILE_RELEASE_LTO", "off")
                 .args([
                     NIGHTLY,
                     "fuzz",
