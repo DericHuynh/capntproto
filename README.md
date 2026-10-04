@@ -111,7 +111,7 @@ Awaiting the first dedicated CI run; no measurements have been invented.
 
 ### Fuzzing: libFuzzer and AFL++
 
-[2026-10-04T04:10:21Z · run 37176221838 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37176221838) · commit `659901c62461` · **failure**
+[2026-10-04T04:32:57Z · run 37177325085 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37177325085) · commit `35f9c63b6956` · **failure**
 
 AFL++ guides the RPC lifecycle oracle with IJON state and progress annotations. Corpus inputs, crashes, hangs, logs and engine statistics are retained in the linked run. Fuzzer counters are not source coverage percentages.
 

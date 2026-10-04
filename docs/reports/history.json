@@ -1306,6 +1306,29 @@
         "status": "unavailable",
         "note": "No measurement evidence was produced."
       }
+    },
+    {
+      "run_id": 37177325085,
+      "attempt": 1,
+      "commit": "35f9c63b6956cec916c98fa9c2fa24f007e7dad8",
+      "date": "2026-10-04T04:32:57Z",
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/37177325085",
+      "conclusion": "failure",
+      "data": {
+        "format": 1,
+        "kind": "fuzz",
+        "origin": {
+          "repository": "DericHuynh/capntproto",
+          "run_id": 37177325085,
+          "attempt": 1,
+          "commit": "35f9c63b6956cec916c98fa9c2fa24f007e7dad8"
+        },
+        "source_id": null,
+        "tests": null,
+        "charts": [],
+        "status": "unavailable",
+        "note": "No measurement evidence was produced."
+      }
     }
   ],
   "cargo": [
