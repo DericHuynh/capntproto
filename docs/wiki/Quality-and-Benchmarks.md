@@ -360,7 +360,12 @@ binary hashes before measuring. An individual `cargo bench --bench NAME` runs
 that protocol's workload; the C++ wrapper additionally requires
 `CAPNTPROTO_CPP_BENCH` pointing to the compiled `capnp-reference` binary. Full
 comparison timing runs on the droplet with protocol order rotated between five
-repetitions.
+repetitions. The comparison driver uses `taskset` to pin the server and client
+to two distinct cores reported by the host topology, respecting its allowed CPU
+set and skipping sibling hardware threads. Every protocol uses the same pair.
+The selected CPUs, allowed set and topology are retained in `environment.json`;
+unavailable affinity or fewer than two allowed cores fails the comparison.
+Individual `cargo bench --bench NAME` runs retain the caller's CPU affinity.
 
 Actions streams the driver's protocol, payload size and repetition progress while
 retaining it in `runner.log`. Setup stages identify cloud-init, runtime-tool
@@ -383,9 +388,13 @@ ownership cleanup, and do not compare the four RPC transports. No historical
 instruction-count regression baseline is claimed.
 
 Measurements use IPv4 loopback, separate single-threaded server/client
-processes, one outstanding call, 0/64/1024/65536-byte payloads, 100 warmups and
+processes, one outstanding call, 0/64/1024/65536-byte payloads, 10,000 warmups and
 1,000 timed requests per repetition. Every response's sequence and payload are
-validated. Setup and warmup are excluded. Reports include p50/p95/p99, sequential
+validated. The longer warmup gives the host time to settle before collecting
+short latency trials; the previous 100-request warmup lasted only a few
+milliseconds for small messages. The same budget applies to all protocols,
+and setup and warmup are excluded. All measured samples, including slow ones,
+remain in the report. Reports include p50/p95/p99, sequential
 request rate, comparison ratios, raw samples, CPU/OS details, Linux clock source
 and droplet plan. Clock-read costs matter to user-space QUIC recovery and pacing;
 compare implementations on the same host rather than extrapolating from a
@@ -442,3 +451,77 @@ are produced only after source identities, raw samples/counters and baseline
 consistency pass validation. A failed rerun removes previous generated figures
 rather than reusing stale charts. Exact plotted values and source identity are
 retained in `charts/data.json`.
+
+## QUIC performance investigation (October 2026)
+
+The latency target is Native at **no more than 3× the C++ Cap'n Proto median**
+for each payload in the fixed workload above. This compares authenticated QUIC
+with plaintext TCP; encryption, peer authentication, congestion control and
+pacing remain enabled. Tail latency is reported separately, and loopback results
+do not establish WAN latency or concurrent throughput.
+
+The major avoidable costs were in the packet adapter:
+
+1. An unconditional `sleep_until(SendInfo.at)` registered a millisecond-resolution
+   Tokio timer even when a packet was already due. Repeating this per packet
+   turned small RPCs into millisecond operations. The adapter now waits only for
+   future deadlines. A paused-clock regression test checks both cases. This
+   follows [Quiche's packet pacing contract](https://docs.quic.tech/quiche/struct.SendInfo.html)
+   while accounting for [Tokio timer granularity](https://docs.rs/tokio/latest/tokio/time/fn.sleep_until.html).
+2. Flushing after every received datagram emitted ACKs before RPC tasks could
+   generate their responses. Bounded receive bursts and a bounded opportunity
+   to produce the RPC reply let ACKs share data packets. Tiny-request packet
+   sends fell from about two to one per endpoint and request in the local probe.
+3. Native stayed at a 1,200-byte send limit despite having a 1,350-byte packet
+   buffer. Both adapters now probe that bounded limit with Quiche's PMTUD.
+   They retain the smaller working MTU when probes fail.
+4. Every outgoing datagram required a separate send syscall and the mobility
+   path repeated a local-address query. The established path now uses its known
+   address. Linux sends bounded UDP segmentation aggregates; other systems and
+   unsupported kernels use individual datagrams. Aggregates preserve packet
+   boundaries, source/destination, Quiche's send quantum and the latest pacing
+   deadline. Migration probes retain their separate cancellation behavior.
+5. Waiting for a response while more request bytes were already buffered added
+   four scheduler turns to each partial stream delivery. The adapter now drains
+   that input before offering the bounded reply opportunity. Inline delivery
+   must also advance FIN and shutdown receipts without waiting for another UDP
+   packet; large queued shutdowns and crossed receipts cover that requirement.
+
+The [dedicated confirmation run on `66ece9a51`](https://github.com/DericHuynh/capntproto/actions/runs/37179996233)
+contains 80,000 validated timed requests across four protocols, four payloads
+and five repetitions, after 10,000 warmup requests per trial. It uses the same
+fixed server/client CPU pair for every protocol. Its median ratios meet the
+3× target for every payload, confirming the [preceding longer-warmup run](https://github.com/DericHuynh/capntproto/actions/runs/37179451459)
+(2.43–2.69× medians). Some tail ratios remain above 3×:
+
+| Payload | Native p50 (µs) | C++ p50 (µs) | p50 ratio | p95 ratio | p99 ratio |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 0 B | 70.994 | 28.645 | 2.48× | 2.82× | 2.61× |
+| 64 B | 71.058 | 28.715 | 2.47× | 1.90× | 1.84× |
+| 1 KiB | 75.189 | 30.775 | 2.44× | 3.61× | 3.17× |
+| 64 KiB | 439.405 | 159.986 | 2.75× | 3.04× | 3.18× |
+
+Before the timer and packet-loop fixes, [the 100-warmup workload](https://github.com/DericHuynh/capntproto/actions/runs/37167747551)
+measured roughly 4.65 ms for an empty Native RPC and 142.69 ms for 64 KiB.
+Those are separate dedicated-host runs, not paired samples. Ratios in the table
+compare protocols measured on the same host.
+
+Benchmark methodology also needed attention. The original 100-request warmup
+lasted only a few milliseconds for small messages, and CPU placement was not
+controlled. Individual repetitions showed two latency bands in both Native and
+C++, making pooled medians sensitive to how often each protocol landed in each
+band. [One early optimized run](https://github.com/DericHuynh/capntproto/actions/runs/37177323633)
+met all median targets, but [a follow-up](https://github.com/DericHuynh/capntproto/actions/runs/37177863847)
+measured 3.93× at 1 KiB. Affinity alone was insufficient: an
+[affinity-controlled repeat](https://github.com/DericHuynh/capntproto/actions/runs/37178808621)
+measured 3.48× for empty requests. Longer warmup made C++ repetition medians
+more consistent; Native still has occasional slower repetitions. Their remaining
+cause is not isolated, and the results do not promise a 3× bound on every request
+or host. No slow samples are removed.
+
+Memory copying through the bounded application bridge and per-packet QUIC
+cryptography remain visible in CPU profiles. Increasing the stream buffers from
+16 to 64 KiB did not materially improve the local large-message median and was
+reverted. A receive-offload prototype offered a smaller additional gain than
+removing unnecessary scheduler turns; it was not merged. The shipped changes
+use the unmodified Quiche crate and keep bounded buffering and backpressure.
