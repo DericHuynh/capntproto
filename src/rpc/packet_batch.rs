@@ -51,6 +51,7 @@ impl Batch {
         self.info = None;
         self.short = false;
     }
+    #[cfg(any(feature = "quic", test))]
     pub async fn send(&mut self, sender: &Sender, socket: &UdpSocket) -> io::Result<()> {
         if let Some(info) = self.info {
             super::pacing::wait_until(info.at).await;

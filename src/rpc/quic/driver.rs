@@ -308,6 +308,94 @@ async fn pump(
 mod tests {
     use super::*;
     #[tokio::test(flavor = "current_thread")]
+    async fn flush_budget_preserves_queued_packets_and_final_short_datagram() {
+        tokio::task::LocalSet::new()
+            .run_until(async {
+                tokio::time::timeout(Duration::from_secs(5), async {
+                    let cert =
+                        rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+                    let mut config = server_config(
+                        tls::Identity {
+                            certificates: vec![cert.cert.der().clone()],
+                            private_key: rustls::pki_types::PrivatePkcs8KeyDer::from(
+                                cert.signing_key.serialize_der(),
+                            )
+                            .into(),
+                        },
+                        None,
+                    )
+                    .unwrap();
+                    // Make the packet budget, rather than congestion or pacing, the
+                    // limiting factor in this adapter test. Production keeps both.
+                    config.0.set_initial_congestion_window_packets(64);
+                    config.0.enable_pacing(false);
+                    let server = Endpoint::server(config, "127.0.0.1:0".parse().unwrap()).unwrap();
+                    let mut endpoint = Endpoint::client("127.0.0.1:0".parse().unwrap()).unwrap();
+                    endpoint.set_default_client_config(
+                        client_config(vec![cert.cert.der().clone()], None).unwrap(),
+                    );
+                    let payload = vec![0xa5; 64 * 1024 + 17];
+                    let peer = async {
+                        let incoming = server.accept().await.unwrap();
+                        let mut conn = incoming.connection;
+                        let mut route = incoming.route;
+                        let mut batch = crate::rpc::packet_batch::Batch::new();
+                        let sender = crate::rpc::packet_batch::Sender::default();
+                        loop {
+                            let mut start = [0; 1];
+                            if conn.is_established() && conn.stream_recv(0, &mut start).is_ok() {
+                                assert_eq!(
+                                    conn.stream_send(0, &payload, true).unwrap(),
+                                    payload.len()
+                                );
+                                assert!(flush(&mut conn, &server.0, &mut batch, &sender)
+                                    .await
+                                    .unwrap());
+                                while flush(&mut conn, &server.0, &mut batch, &sender)
+                                    .await
+                                    .unwrap()
+                                {}
+                                assert!(batch.bytes.is_empty());
+                                break;
+                            }
+                            flush(&mut conn, &server.0, &mut batch, &sender)
+                                .await
+                                .unwrap();
+                            let mut packet = route.packets.recv().await.unwrap();
+                            conn.recv(
+                                &mut packet.bytes,
+                                quiche::RecvInfo {
+                                    from: packet.from,
+                                    to: server.local_addr().unwrap(),
+                                },
+                            )
+                            .unwrap();
+                        }
+                        // Keep the route alive until the client has drained every byte.
+                        std::future::pending::<()>().await;
+                    };
+                    let client = async {
+                        let mut stream = connect(
+                            &endpoint,
+                            server.local_addr().unwrap(),
+                            "localhost",
+                            Duration::from_secs(2),
+                        )
+                        .await
+                        .unwrap();
+                        stream.write_all(b"s").await.unwrap();
+                        let mut received = Vec::new();
+                        stream.read_to_end(&mut received).await.unwrap();
+                        assert_eq!(received, payload);
+                    };
+                    tokio::select! { _ = peer => unreachable!(), _ = client => {} }
+                })
+                .await
+                .unwrap();
+            })
+            .await;
+    }
+    #[tokio::test(flavor = "current_thread")]
     async fn peer_stop_sending_rejects_subsequent_shutdown() {
         tokio::task::LocalSet::new().run_until(async {
             tokio::time::timeout(Duration::from_secs(5), async {
