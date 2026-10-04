@@ -81,6 +81,30 @@ impl Placement {
 mod tests {
     use super::*;
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn workers_inherit_exactly_the_selected_physical_core() {
+        let placement = Placement::discover().unwrap();
+        assert_ne!(placement.server_cpu, placement.client_cpu);
+        for cpu in [None, Some(placement.server_cpu), Some(placement.client_cpu)] {
+            let result = Placement::command(Path::new("cat"), cpu)
+                .arg("/proc/self/status")
+                .output()
+                .unwrap();
+            assert!(result.status.success());
+            let status = String::from_utf8(result.stdout).unwrap();
+            let allowed = status
+                .lines()
+                .find_map(|line| line.strip_prefix("Cpus_allowed_list:"))
+                .unwrap()
+                .trim();
+            assert_eq!(
+                allowed,
+                cpu.map_or_else(|| placement.allowed_cpus.clone(), |cpu| cpu.to_string())
+            );
+        }
+    }
+
     #[test]
     fn placement_respects_cpuset_and_skips_smt_siblings() {
         let topology = "# CPU,Core,Socket\n0,0,0\n1,0,0\n2,1,0\n3,1,0\n4,0,1\n";

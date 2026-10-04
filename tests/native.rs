@@ -256,11 +256,10 @@ fn lost_responder_flight_is_retransmitted() {
         // recovery timers, including a client PTO after losing ServerHello.
         let delay = a.timeout().into_iter().chain(b.timeout()).min().unwrap();
         std::thread::sleep(delay + std::time::Duration::from_millis(1));
-        if a.timeout().is_some_and(|t| t.is_zero()) {
-            a.on_timeout();
-        }
-        if b.timeout().is_some_and(|t| t.is_zero()) {
-            b.on_timeout();
+        for connection in [&mut a, &mut b] {
+            if connection.timeout().is_some_and(|t| t.is_zero()) {
+                connection.on_timeout();
+            }
         }
     }
     assert!(a.is_established() && b.is_established());

@@ -230,3 +230,19 @@ pub fn compare(directory: &Path, destination: &Path) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn clock_probe_records_all_samples_without_a_performance_threshold() {
+        let report = super::clock_reads();
+        assert_eq!(report["clock"], "std::time::Instant");
+        assert_eq!(report["reads_per_sample"], 100_000);
+        let samples = report["ns_per_read_including_loop"].as_array().unwrap();
+        assert_eq!(samples.len(), 5);
+        for sample in samples {
+            let cost = sample.as_f64().unwrap();
+            assert!(cost.is_finite() && cost > 0.0);
+        }
+    }
+}
