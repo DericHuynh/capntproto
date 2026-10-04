@@ -66,7 +66,9 @@ runs:
             ;;
           fuzz)
             cargo install cargo-fuzz --version 0.13.1 --locked
-            cargo install cargo-afl --version 0.18.2 --locked
+            # cargo-afl embeds its build-time registry source path. Restored
+            # binaries can outlive those sources, so rebuild the pinned tool.
+            cargo install cargo-afl --version 0.18.2 --locked --force
             # The cached cargo-afl executable does not imply that its separate
             # LLVM runtime exists for this pinned rustc. Force permits both
             # warm and cold caches; config --build alone fails on a warm cache.
