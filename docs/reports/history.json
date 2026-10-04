@@ -1493,12 +1493,29 @@
           "total": 1262,
           "suites": 199,
           "complete": true,
-          "command_passed": true,
-          "failures": []
+          "command_passed": true
         },
         "charts": [],
         "status": "failed",
         "note": "Lane failed or did not complete; inspect the linked CI run."
+      }
+    },
+    {
+      "run_id": 37178810014,
+      "attempt": 1,
+      "commit": "ff5e0b20e1bd9e8a978f75a9852ce48c68b39be3",
+      "date": "2026-10-04T05:04:04Z",
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/37178810014",
+      "conclusion": "cancelled",
+      "data": {
+        "format": 1,
+        "kind": "cargo",
+        "origin": null,
+        "source_id": null,
+        "tests": null,
+        "charts": [],
+        "status": "unavailable",
+        "note": "This workflow attempt produced no public measurement artifact."
       }
     }
   ]

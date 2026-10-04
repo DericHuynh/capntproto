@@ -95,13 +95,9 @@ Generated automatically from CI evidence. Each lane keeps its own measured commi
 
 ### Cargo tests
 
-Latest Cargo run: [2026-10-04T03:58:44Z · run 37175621122 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37175621122) · commit `ca8a884745c7` · **failure**
+Latest Cargo run: [2026-10-04T05:04:04Z · run 37178810014 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37178810014) · commit `ff5e0b20e1bd` · **cancelled**
 
 ![Cargo test results](docs/reports/cargo-history.svg)
-
-| Total | Passed | Failed | Errors | Skipped |
-| ---: | ---: | ---: | ---: | ---: |
-| 1,262 | 1,243 | [0](docs/reports/failed-tests.md) | 0 | 19 |
 
 [Show all failed tests and diagnostics](docs/reports/failed-tests.md). Cargo tests and doctests exclude the dedicated TLA+, fuzz, Miri and mutation campaigns. Filtered tests are not counted as passes or skips. [Reporting contract](docs/wiki/README-Reports.md).
 

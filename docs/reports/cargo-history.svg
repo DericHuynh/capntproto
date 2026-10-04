@@ -564,28 +564,7 @@ L 419.114219 106.570462
    <text style="font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #64748b" x="81" y="56.304" transform="rotate(-0 81 56.304)">Cargo libtest results · selected partition · counts per CI run · UTC</text>
   </g>
   <g id="text_25">
-   <g id="patch_7">
-    <path d="M 920.959062 100.504328
-L 1047.6 100.504328
-Q 1054.2 100.504328 1054.2 93.904328
-L 1054.2 14.688
-Q 1054.2 8.088 1047.6 8.088
-L 920.959062 8.088
-Q 914.359062 8.088 914.359062 14.688
-L 914.359062 93.904328
-Q 914.359062 100.504328 920.959062 100.504328
-z
-" style="fill: #ffffff; stroke: #cbd5e1; stroke-linejoin: miter"/>
-   </g>
-   <text style="font-size: 11px; font-family: 'DejaVu Sans'; fill: #1e293b" transform="translate(920.959062 24.147355)">Latest recorded counts</text>
-   <text style="font-size: 11px; font-family: 'DejaVu Sans'; fill: #1e293b" transform="translate(937.543281 37.349504)">Pass: 1,243 (98.5%)</text>
-   <text style="font-size: 11px; font-family: 'DejaVu Sans'; fill: #1e293b" transform="translate(975.204531 50.552512)">Fail: 0 (0.0%)</text>
-   <text style="font-size: 11px; font-family: 'DejaVu Sans'; fill: #1e293b" transform="translate(966.755156 63.75466)">Error: 0 (0.0%)</text>
-   <text style="font-size: 11px; font-family: 'DejaVu Sans'; fill: #1e293b" transform="translate(962.984219 76.957668)">Skip: 19 (1.5%)</text>
-   <text style="font-size: 11px; font-family: 'DejaVu Sans'; fill: #1e293b" transform="translate(983.217344 90.160676)">Total: 1,262</text>
-  </g>
-  <g id="text_26">
-   <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #64748b" x="81" y="472.464" transform="rotate(-0 81 472.464)">Dotted lines: failed/incomplete workspace command. Error = announced tests without a terminal result.</text>
+   <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #64748b" x="81" y="472.464" transform="rotate(-0 81 472.464)">LATEST RUN HAS NO TEST COUNTS — see its CI log. Earlier points are historical evidence.</text>
   </g>
  </g>
  <defs>
