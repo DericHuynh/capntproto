@@ -103,22 +103,22 @@
     }
   ],
   "benchmark": {
-    "run_id": 37177323633,
+    "run_id": 37178808621,
     "attempt": 1,
-    "commit": "35f9c63b6956cec916c98fa9c2fa24f007e7dad8",
-    "date": "2026-10-04T04:32:55Z",
-    "url": "https://github.com/DericHuynh/capntproto/actions/runs/37177323633",
+    "commit": "ff5e0b20e1bd9e8a978f75a9852ce48c68b39be3",
+    "date": "2026-10-04T05:04:03Z",
+    "url": "https://github.com/DericHuynh/capntproto/actions/runs/37178808621",
     "conclusion": "success",
     "data": {
       "format": 1,
       "kind": "benchmark",
       "origin": {
         "repository": "DericHuynh/capntproto",
-        "run_id": 37177323633,
+        "run_id": 37178808621,
         "attempt": 1,
-        "commit": "35f9c63b6956cec916c98fa9c2fa24f007e7dad8"
+        "commit": "ff5e0b20e1bd9e8a978f75a9852ce48c68b39be3"
       },
-      "source_id": "50ef0e5337ce64c5e020492bea1e47d9222edefbe1376c66a285336f2d92b14a",
+      "source_id": "75398e19ae4c1be5dff040e375bf290a1f08290fe007a6f71aaaaf51c852ca0f",
       "tests": null,
       "charts": [
         {
@@ -135,7 +135,7 @@
                     178
                   ],
                   "label": "Capntproto / Native",
-                  "value": 77.766
+                  "value": 97.969
                 },
                 {
                   "color": [
@@ -144,7 +144,7 @@
                     0
                   ],
                   "label": "Cap'n Proto C++",
-                  "value": 28.677
+                  "value": 28.136
                 },
                 {
                   "color": [
@@ -153,7 +153,7 @@
                     115
                   ],
                   "label": "gRPC (tonic)",
-                  "value": 99.214
+                  "value": 61.569
                 },
                 {
                   "color": [
@@ -162,7 +162,7 @@
                     167
                   ],
                   "label": "WebSockets",
-                  "value": 29.016
+                  "value": 27.752
                 }
               ],
               "title": "0 byte payload"
@@ -176,7 +176,7 @@
                     178
                   ],
                   "label": "Capntproto / Native",
-                  "value": 72.543
+                  "value": 70.326
                 },
                 {
                   "color": [
@@ -185,7 +185,7 @@
                     0
                   ],
                   "label": "Cap'n Proto C++",
-                  "value": 28.752
+                  "value": 28.072
                 },
                 {
                   "color": [
@@ -194,7 +194,7 @@
                     115
                   ],
                   "label": "gRPC (tonic)",
-                  "value": 101.359
+                  "value": 60.009
                 },
                 {
                   "color": [
@@ -203,7 +203,7 @@
                     167
                   ],
                   "label": "WebSockets",
-                  "value": 27.376
+                  "value": 26.938
                 }
               ],
               "title": "64 byte payload"
@@ -217,7 +217,7 @@
                     178
                   ],
                   "label": "Capntproto / Native",
-                  "value": 74.604
+                  "value": 72.762
                 },
                 {
                   "color": [
@@ -226,7 +226,7 @@
                     0
                   ],
                   "label": "Cap'n Proto C++",
-                  "value": 31.397
+                  "value": 30.058
                 },
                 {
                   "color": [
@@ -235,7 +235,7 @@
                     115
                   ],
                   "label": "gRPC (tonic)",
-                  "value": 103.334
+                  "value": 61.893
                 },
                 {
                   "color": [
@@ -244,7 +244,7 @@
                     167
                   ],
                   "label": "WebSockets",
-                  "value": 25.056
+                  "value": 23.464
                 }
               ],
               "title": "1024 byte payload"
@@ -258,7 +258,7 @@
                     178
                   ],
                   "label": "Capntproto / Native",
-                  "value": 463.322
+                  "value": 421.172
                 },
                 {
                   "color": [
@@ -267,7 +267,7 @@
                     0
                   ],
                   "label": "Cap'n Proto C++",
-                  "value": 164.565
+                  "value": 153.757
                 },
                 {
                   "color": [
@@ -276,7 +276,7 @@
                     115
                   ],
                   "label": "gRPC (tonic)",
-                  "value": 203.356
+                  "value": 164.553
                 },
                 {
                   "color": [
@@ -285,7 +285,7 @@
                     167
                   ],
                   "label": "WebSockets",
-                  "value": 65.068
+                  "value": 62.981
                 }
               ],
               "title": "65536 byte payload"
@@ -308,7 +308,7 @@
                     178
                   ],
                   "label": "Capntproto / Native",
-                  "value": 129.333
+                  "value": 121.543
                 },
                 {
                   "color": [
@@ -317,7 +317,7 @@
                     0
                   ],
                   "label": "Cap'n Proto C++",
-                  "value": 43.533
+                  "value": 45.691
                 },
                 {
                   "color": [
@@ -326,7 +326,7 @@
                     115
                   ],
                   "label": "gRPC (tonic)",
-                  "value": 113.782
+                  "value": 103.524
                 },
                 {
                   "color": [
@@ -335,7 +335,7 @@
                     167
                   ],
                   "label": "WebSockets",
-                  "value": 37.284
+                  "value": 34.748
                 }
               ],
               "title": "0 byte payload"
@@ -349,7 +349,7 @@
                     178
                   ],
                   "label": "Capntproto / Native",
-                  "value": 126.617
+                  "value": 114.631
                 },
                 {
                   "color": [
@@ -358,7 +358,7 @@
                     0
                   ],
                   "label": "Cap'n Proto C++",
-                  "value": 45.118
+                  "value": 41.893
                 },
                 {
                   "color": [
@@ -367,7 +367,7 @@
                     115
                   ],
                   "label": "gRPC (tonic)",
-                  "value": 119.484
+                  "value": 79.933
                 },
                 {
                   "color": [
@@ -376,7 +376,7 @@
                     167
                   ],
                   "label": "WebSockets",
-                  "value": 35.458
+                  "value": 33.72
                 }
               ],
               "title": "64 byte payload"
@@ -390,7 +390,7 @@
                     178
                   ],
                   "label": "Capntproto / Native",
-                  "value": 120.374
+                  "value": 88.828
                 },
                 {
                   "color": [
@@ -399,7 +399,7 @@
                     0
                   ],
                   "label": "Cap'n Proto C++",
-                  "value": 48.596
+                  "value": 35.635
                 },
                 {
                   "color": [
@@ -408,7 +408,7 @@
                     115
                   ],
                   "label": "gRPC (tonic)",
-                  "value": 122.223
+                  "value": 99.197
                 },
                 {
                   "color": [
@@ -417,7 +417,7 @@
                     167
                   ],
                   "label": "WebSockets",
-                  "value": 35.767
+                  "value": 30.025
                 }
               ],
               "title": "1024 byte payload"
@@ -431,7 +431,7 @@
                     178
                   ],
                   "label": "Capntproto / Native",
-                  "value": 741.785
+                  "value": 663.128
                 },
                 {
                   "color": [
@@ -440,7 +440,7 @@
                     0
                   ],
                   "label": "Cap'n Proto C++",
-                  "value": 223.927
+                  "value": 179.355
                 },
                 {
                   "color": [
@@ -449,7 +449,7 @@
                     115
                   ],
                   "label": "gRPC (tonic)",
-                  "value": 268.406
+                  "value": 194.614
                 },
                 {
                   "color": [
@@ -458,7 +458,7 @@
                     167
                   ],
                   "label": "WebSockets",
-                  "value": 80.509
+                  "value": 73.479
                 }
               ],
               "title": "65536 byte payload"
@@ -481,7 +481,7 @@
                     178
                   ],
                   "label": "Capntproto / Native",
-                  "value": 143.603
+                  "value": 133.143
                 },
                 {
                   "color": [
@@ -490,7 +490,7 @@
                     0
                   ],
                   "label": "Cap'n Proto C++",
-                  "value": 54.678
+                  "value": 55.373
                 },
                 {
                   "color": [
@@ -499,7 +499,7 @@
                     115
                   ],
                   "label": "gRPC (tonic)",
-                  "value": 125.931
+                  "value": 119.245
                 },
                 {
                   "color": [
@@ -508,7 +508,7 @@
                     167
                   ],
                   "label": "WebSockets",
-                  "value": 48.187
+                  "value": 43.405
                 }
               ],
               "title": "0 byte payload"
@@ -522,7 +522,7 @@
                     178
                   ],
                   "label": "Capntproto / Native",
-                  "value": 139.641
+                  "value": 125.557
                 },
                 {
                   "color": [
@@ -531,7 +531,7 @@
                     0
                   ],
                   "label": "Cap'n Proto C++",
-                  "value": 57.344
+                  "value": 49.938
                 },
                 {
                   "color": [
@@ -540,7 +540,7 @@
                     115
                   ],
                   "label": "gRPC (tonic)",
-                  "value": 132.628
+                  "value": 100.738
                 },
                 {
                   "color": [
@@ -549,7 +549,7 @@
                     167
                   ],
                   "label": "WebSockets",
-                  "value": 43.052
+                  "value": 41.791
                 }
               ],
               "title": "64 byte payload"
@@ -563,7 +563,7 @@
                     178
                   ],
                   "label": "Capntproto / Native",
-                  "value": 134.395
+                  "value": 103.009
                 },
                 {
                   "color": [
@@ -572,7 +572,7 @@
                     0
                   ],
                   "label": "Cap'n Proto C++",
-                  "value": 60.344
+                  "value": 46.487
                 },
                 {
                   "color": [
@@ -581,7 +581,7 @@
                     115
                   ],
                   "label": "gRPC (tonic)",
-                  "value": 134.5
+                  "value": 112.509
                 },
                 {
                   "color": [
@@ -590,7 +590,7 @@
                     167
                   ],
                   "label": "WebSockets",
-                  "value": 43.91
+                  "value": 39.967
                 }
               ],
               "title": "1024 byte payload"
@@ -604,7 +604,7 @@
                     178
                   ],
                   "label": "Capntproto / Native",
-                  "value": 770.223
+                  "value": 705.324
                 },
                 {
                   "color": [
@@ -613,7 +613,7 @@
                     0
                   ],
                   "label": "Cap'n Proto C++",
-                  "value": 238.742
+                  "value": 219.915
                 },
                 {
                   "color": [
@@ -622,7 +622,7 @@
                     115
                   ],
                   "label": "gRPC (tonic)",
-                  "value": 284.701
+                  "value": 213.929
                 },
                 {
                   "color": [
@@ -631,7 +631,7 @@
                     167
                   ],
                   "label": "WebSockets",
-                  "value": 90.881
+                  "value": 86.459
                 }
               ],
               "title": "65536 byte payload"
@@ -654,7 +654,7 @@
                     178
                   ],
                   "label": "Capntproto / Native",
-                  "value": 10751.247412405899
+                  "value": 10780.018416583463
                 },
                 {
                   "color": [
@@ -663,7 +663,7 @@
                     0
                   ],
                   "label": "Cap'n Proto C++",
-                  "value": 29701.221277389413
+                  "value": 29951.511557842034
                 },
                 {
                   "color": [
@@ -672,7 +672,7 @@
                     115
                   ],
                   "label": "gRPC (tonic)",
-                  "value": 11456.18578538647
+                  "value": 13570.392272299952
                 },
                 {
                   "color": [
@@ -681,7 +681,7 @@
                     167
                   ],
                   "label": "WebSockets",
-                  "value": 31920.802089571454
+                  "value": 34438.0739135151
                 }
               ],
               "title": "0 byte payload"
@@ -695,7 +695,7 @@
                     178
                   ],
                   "label": "Capntproto / Native",
-                  "value": 11892.831950186273
+                  "value": 12623.40932135115
                 },
                 {
                   "color": [
@@ -704,7 +704,7 @@
                     0
                   ],
                   "label": "Cap'n Proto C++",
-                  "value": 29339.644580367065
+                  "value": 31942.052517078457
                 },
                 {
                   "color": [
@@ -713,7 +713,7 @@
                     115
                   ],
                   "label": "gRPC (tonic)",
-                  "value": 11067.455802236997
+                  "value": 16024.612882369618
                 },
                 {
                   "color": [
@@ -722,7 +722,7 @@
                     167
                   ],
                   "label": "WebSockets",
-                  "value": 35252.409153166765
+                  "value": 36359.09742612859
                 }
               ],
               "title": "64 byte payload"
@@ -736,7 +736,7 @@
                     178
                   ],
                   "label": "Capntproto / Native",
-                  "value": 12559.25342733737
+                  "value": 13357.66601394877
                 },
                 {
                   "color": [
@@ -745,7 +745,7 @@
                     0
                   ],
                   "label": "Cap'n Proto C++",
-                  "value": 26764.302556908373
+                  "value": 32346.587108036107
                 },
                 {
                   "color": [
@@ -754,7 +754,7 @@
                     115
                   ],
                   "label": "gRPC (tonic)",
-                  "value": 10418.832698572896
+                  "value": 14723.359847159747
                 },
                 {
                   "color": [
@@ -763,7 +763,7 @@
                     167
                   ],
                   "label": "WebSockets",
-                  "value": 37738.74568334792
+                  "value": 41479.39273903562
                 }
               ],
               "title": "1024 byte payload"
@@ -777,7 +777,7 @@
                     178
                   ],
                   "label": "Capntproto / Native",
-                  "value": 1903.1797026600307
+                  "value": 2251.6050466378533
                 },
                 {
                   "color": [
@@ -786,7 +786,7 @@
                     0
                   ],
                   "label": "Cap'n Proto C++",
-                  "value": 5526.233440742349
+                  "value": 5661.638012994014
                 },
                 {
                   "color": [
@@ -795,7 +795,7 @@
                     115
                   ],
                   "label": "gRPC (tonic)",
-                  "value": 4909.97089639301
+                  "value": 6191.672870423618
                 },
                 {
                   "color": [
@@ -804,7 +804,7 @@
                     167
                   ],
                   "label": "WebSockets",
-                  "value": 12944.81155642356
+                  "value": 15637.374978757018
                 }
               ],
               "title": "65536 byte payload"
@@ -836,7 +836,7 @@
                     0
                   ],
                   "label": "Cap'n Proto C++",
-                  "value": -63.123987346655355
+                  "value": -71.28071124539395
                 },
                 {
                   "color": [
@@ -845,7 +845,7 @@
                     115
                   ],
                   "label": "gRPC (tonic)",
-                  "value": 27.58017642671604
+                  "value": -37.15461013177638
                 },
                 {
                   "color": [
@@ -854,7 +854,7 @@
                     167
                   ],
                   "label": "WebSockets",
-                  "value": -62.68806419257773
+                  "value": -71.67267196766325
                 }
               ],
               "title": "0 byte payload"
@@ -877,7 +877,7 @@
                     0
                   ],
                   "label": "Cap'n Proto C++",
-                  "value": -60.36557627889665
+                  "value": -60.083041833745696
                 },
                 {
                   "color": [
@@ -886,7 +886,7 @@
                     115
                   ],
                   "label": "gRPC (tonic)",
-                  "value": 39.72264725748866
+                  "value": -14.670249978670757
                 },
                 {
                   "color": [
@@ -895,7 +895,7 @@
                     167
                   ],
                   "label": "WebSockets",
-                  "value": -62.26238231118095
+                  "value": -61.695532235588544
                 }
               ],
               "title": "64 byte payload"
@@ -918,7 +918,7 @@
                     0
                   ],
                   "label": "Cap'n Proto C++",
-                  "value": -57.915125194359554
+                  "value": -58.689975536681224
                 },
                 {
                   "color": [
@@ -927,7 +927,7 @@
                     115
                   ],
                   "label": "gRPC (tonic)",
-                  "value": 38.50999946383571
+                  "value": -14.937742228086092
                 },
                 {
                   "color": [
@@ -936,7 +936,7 @@
                     167
                   ],
                   "label": "WebSockets",
-                  "value": -66.41466945472092
+                  "value": -67.75239822984524
                 }
               ],
               "title": "1024 byte payload"
@@ -959,7 +959,7 @@
                     0
                   ],
                   "label": "Cap'n Proto C++",
-                  "value": -64.48150530300741
+                  "value": -63.49306221686152
                 },
                 {
                   "color": [
@@ -968,7 +968,7 @@
                     115
                   ],
                   "label": "gRPC (tonic)",
-                  "value": -56.10914223801158
+                  "value": -60.92973891901645
                 },
                 {
                   "color": [
@@ -977,7 +977,7 @@
                     167
                   ],
                   "label": "WebSockets",
-                  "value": -85.95620324525923
+                  "value": -85.04625188758988
                 }
               ],
               "title": "65536 byte payload"
@@ -1009,7 +1009,7 @@
                     0
                   ],
                   "label": "Cap'n Proto C++",
-                  "value": 176.25837391777517
+                  "value": 177.8428607484201
                 },
                 {
                   "color": [
@@ -1018,7 +1018,7 @@
                     115
                   ],
                   "label": "gRPC (tonic)",
-                  "value": 6.556805419314782
+                  "value": 25.88468542339326
                 },
                 {
                   "color": [
@@ -1027,7 +1027,7 @@
                     167
                   ],
                   "label": "WebSockets",
-                  "value": 196.9032416902427
+                  "value": 219.46210648895757
                 }
               ],
               "title": "0 byte payload"
@@ -1050,7 +1050,7 @@
                     0
                   ],
                   "label": "Cap'n Proto C++",
-                  "value": 146.70023677503931
+                  "value": 153.03823795883636
                 },
                 {
                   "color": [
@@ -1059,7 +1059,7 @@
                     115
                   ],
                   "label": "gRPC (tonic)",
-                  "value": -6.940114443779299
+                  "value": 26.94362096985714
                 },
                 {
                   "color": [
@@ -1068,7 +1068,7 @@
                     167
                   ],
                   "label": "WebSockets",
-                  "value": 196.41728144165543
+                  "value": 188.0291409439687
                 }
               ],
               "title": "64 byte payload"
@@ -1091,7 +1091,7 @@
                     0
                   ],
                   "label": "Cap'n Proto C++",
-                  "value": 113.10424788985686
+                  "value": 142.1574777678834
                 },
                 {
                   "color": [
@@ -1100,7 +1100,7 @@
                     115
                   ],
                   "label": "gRPC (tonic)",
-                  "value": -17.042579331232222
+                  "value": 10.224045366794222
                 },
                 {
                   "color": [
@@ -1109,7 +1109,7 @@
                     167
                   ],
                   "label": "WebSockets",
-                  "value": 200.485581421608
+                  "value": 210.5287457832879
                 }
               ],
               "title": "1024 byte payload"
@@ -1132,7 +1132,7 @@
                     0
                   ],
                   "label": "Cap'n Proto C++",
-                  "value": 190.3684519658579
+                  "value": 151.448983979144
                 },
                 {
                   "color": [
@@ -1141,7 +1141,7 @@
                     115
                   ],
                   "label": "gRPC (tonic)",
-                  "value": 157.9877711773857
+                  "value": 174.98929617648363
                 },
                 {
                   "color": [
@@ -1150,7 +1150,7 @@
                     167
                   ],
                   "label": "WebSockets",
-                  "value": 580.1675920739851
+                  "value": 594.499019803988
                 }
               ],
               "title": "65536 byte payload"

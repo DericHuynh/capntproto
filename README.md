@@ -125,7 +125,7 @@ No validated coverage/baseline comparison is available for the latest run. Missi
 
 ### Linux loopback benchmark comparisons
 
-Latest benchmark run: [2026-10-04T04:32:55Z · run 37177323633 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37177323633) · commit `35f9c63b6956` · **success**
+Latest benchmark run: [2026-10-04T05:04:03Z · run 37178808621 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37178808621) · commit `ff5e0b20e1bd` · **success**
 
 Separate client/server processes, one outstanding request, several payload sizes and five repetitions. Capntproto uses encrypted Native/UDP; C++ Cap'n Proto, gRPC and WebSocket baselines use plaintext TCP. Bars compare this workload, not universal protocol performance.
 
