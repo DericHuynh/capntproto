@@ -750,6 +750,59 @@ impl SharedSocket {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test(flavor = "current_thread")]
+    async fn shared_sends_preserve_datagrams_and_reject_closed_reservations() {
+        tokio::task::LocalSet::new()
+            .run_until(async {
+                let listener = Listener::bind(
+                    "127.0.0.1:0".parse().unwrap(),
+                    Rc::new(Identity::generate()),
+                    Limits::default(),
+                )
+                .await
+                .unwrap();
+                let reservation = listener.reserve([1; 32], None, b"").unwrap();
+                let socket = reservation.socket.as_ref().unwrap();
+                let receiver = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+                let to = receiver.local_addr().unwrap();
+                let sender = crate::rpc::packet_batch::Sender::default();
+                assert_eq!(socket.send_to(b"one", to).await.unwrap(), 3);
+                socket
+                    .send_segments(&sender, b"twothree", 3, to)
+                    .await
+                    .unwrap();
+                let mut bytes = [0; 32];
+                for expected in [b"one".as_slice(), b"two", b"thr", b"ee"] {
+                    let (n, from) = tokio::time::timeout(
+                        Duration::from_secs(2),
+                        receiver.recv_from(&mut bytes),
+                    )
+                    .await
+                    .unwrap()
+                    .unwrap();
+                    assert_eq!(&bytes[..n], expected);
+                    assert_eq!(from, listener.local_addr().unwrap());
+                }
+                listener.close();
+                assert_eq!(
+                    socket.send_to(b"closed", to).await.unwrap_err().kind(),
+                    io::ErrorKind::BrokenPipe
+                );
+                assert_eq!(
+                    socket
+                        .send_segments(&sender, b"closed", 3, to)
+                        .await
+                        .unwrap_err()
+                        .kind(),
+                    io::ErrorKind::BrokenPipe
+                );
+                assert_eq!(
+                    receiver.try_recv_from(&mut bytes).unwrap_err().kind(),
+                    io::ErrorKind::WouldBlock
+                );
+            })
+            .await;
+    }
     fn packet(id: [u8; 16]) -> Vec<u8> {
         let mut packet = vec![0x40];
         packet.extend_from_slice(&id);
