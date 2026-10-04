@@ -123,7 +123,7 @@ Counts sum independent bounded configurations; they are not globally distinct st
 
 ### Fuzzing: libFuzzer and AFL++
 
-[2026-10-04T20:19:39Z · run 37231663048 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37231663048) · commit `f3cb761866ce` · **success**
+[2026-10-04T21:39:04Z · run 37236948890 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37236948890) · commit `ee0b77b2feca` · **success**
 
 ![Fuzzing executions by engine](docs/reports/fuzz-executions.svg)
 

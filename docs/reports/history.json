@@ -1371,6 +1371,29 @@
         },
         "source_id": "0cacd758268ab8bf8efd9b297824d19338a4f051dd2ba88ff680d48e5acb266f",
         "tests": null,
+        "charts": [],
+        "status": "passed",
+        "note": "Evidence passed."
+      }
+    },
+    {
+      "run_id": 37236948890,
+      "attempt": 1,
+      "commit": "ee0b77b2feca8947ac4608f55b460f9161d5e87a",
+      "date": "2026-10-04T21:39:04Z",
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/37236948890",
+      "conclusion": "success",
+      "data": {
+        "format": 1,
+        "kind": "fuzz",
+        "origin": {
+          "repository": "DericHuynh/capntproto",
+          "run_id": 37236948890,
+          "attempt": 1,
+          "commit": "ee0b77b2feca8947ac4608f55b460f9161d5e87a"
+        },
+        "source_id": "1bff7b54ccd85252820045de9760bee996b74cc8f11a49120ba7e57a60bd2bcd",
+        "tests": null,
         "charts": [
           {
             "name": "fuzz-executions",
@@ -1412,19 +1435,19 @@
                 "bars": [
                   {
                     "label": "AFL++ / capnp_framing",
-                    "value": 573397
+                    "value": 1129410
                   },
                   {
                     "label": "AFL++ / capnp_pointers",
-                    "value": 2068000
+                    "value": 3078800
                   },
                   {
                     "label": "AFL++ / capnp_schema",
-                    "value": 755967
+                    "value": 1430938
                   },
                   {
                     "label": "AFL++ / rpc_lifecycle",
-                    "value": 115290
+                    "value": 145927
                   }
                 ]
               }
@@ -1453,15 +1476,15 @@
                   },
                   {
                     "label": "libFuzzer / native_packet",
-                    "value": 5591
+                    "value": 5580
                   },
                   {
                     "label": "libFuzzer / native_stream",
-                    "value": 5618
+                    "value": 5613
                   },
                   {
                     "label": "libFuzzer / rpc_lifecycle",
-                    "value": 6531
+                    "value": 6532
                   }
                 ]
               },
@@ -1478,11 +1501,11 @@
                   },
                   {
                     "label": "AFL++ / capnp_schema",
-                    "value": 5076
+                    "value": 5162
                   },
                   {
                     "label": "AFL++ / rpc_lifecycle",
-                    "value": 9909
+                    "value": 9846
                   }
                 ]
               }

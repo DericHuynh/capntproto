@@ -548,7 +548,7 @@ z
    <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #64748b" x="37.8" y="74.918437" transform="rotate(-0 37.8 74.918437)">Saved crashes/hangs are findings requiring triage, not confirmed unique bugs. Missing results remain unknown.</text>
   </g>
   <g id="text_43">
-   <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #64748b" x="37.8" y="578.34" transform="rotate(-0 37.8 578.34)">Measured 2026-10-04T20:19:39Z | commit f3cb761866ce</text>
+   <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #64748b" x="37.8" y="578.34" transform="rotate(-0 37.8 578.34)">Measured 2026-10-04T21:39:04Z | commit ee0b77b2feca</text>
   </g>
  </g>
  <defs>
