@@ -103,9 +103,17 @@ Latest Cargo run: [2026-10-04T19:52:00Z · run 37229894351 / attempt 1](https://
 
 ### TLA+ models and Rust trace replays
 
-Awaiting the first dedicated CI run; no measurements have been invented.
+[2026-10-04T20:19:37Z · run 37231661364 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37231661364) · commit `f3cb761866ce` · **success**
 
 ![TLA+ Rust replay results](docs/reports/tla-history.svg)
+
+![TLA+ checks and expected counterexamples](docs/reports/tla-outcomes.svg)
+
+Unique module/configuration/expected-exit checks. Expected invariant violations are successful controls.
+
+![TLA+ explored states by model](docs/reports/tla-states.svg)
+
+Counts sum independent bounded configurations; they are not globally distinct states or a proof beyond those bounds.
 
 [Failed model replay tests](docs/reports/failed-models.md). Expected mutation counterexamples are successful checks, not unexpected failures.
 

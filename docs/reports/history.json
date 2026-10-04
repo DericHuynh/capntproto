@@ -1805,5 +1805,212 @@
         "note": "This workflow attempt produced no public measurement artifact."
       }
     }
+  ],
+  "models": [
+    {
+      "run_id": 37231661364,
+      "attempt": 1,
+      "commit": "f3cb761866ceebe9992b4032264bca63b4a993bb",
+      "date": "2026-10-04T20:19:37Z",
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/37231661364",
+      "conclusion": "success",
+      "data": {
+        "format": 1,
+        "kind": "models",
+        "origin": {
+          "repository": "DericHuynh/capntproto",
+          "run_id": 37231661364,
+          "attempt": 1,
+          "commit": "f3cb761866ceebe9992b4032264bca63b4a993bb"
+        },
+        "source_id": "0cacd758268ab8bf8efd9b297824d19338a4f051dd2ba88ff680d48e5acb266f",
+        "tests": {
+          "passed": 241,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 1,
+          "total": 242,
+          "suites": 190,
+          "complete": true,
+          "command_passed": true,
+          "failures": []
+        },
+        "charts": [
+          {
+            "name": "tla-outcomes",
+            "title": "TLA+ checks and expected counterexamples",
+            "unit": "Checks",
+            "note": "Unique module/configuration/expected-exit checks. Expected invariant violations are successful controls.",
+            "panels": [
+              {
+                "title": "Observed outcomes",
+                "bars": [
+                  {
+                    "label": "Invariant/liveness checks",
+                    "value": 439
+                  },
+                  {
+                    "label": "Expected counterexamples",
+                    "value": 719
+                  },
+                  {
+                    "label": "Failed / incomplete checks",
+                    "value": 0
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "tla-states",
+            "title": "TLA+ explored states by model",
+            "unit": "States",
+            "note": "Counts sum independent bounded configurations; they are not globally distinct states or a proof beyond those bounds.",
+            "panels": [
+              {
+                "title": "Generated states",
+                "bars": [
+                  {
+                    "label": "CapnpRealtime",
+                    "value": 2277944
+                  },
+                  {
+                    "label": "RpcSchemaHints",
+                    "value": 38212
+                  },
+                  {
+                    "label": "RealtimeConfigBoundary",
+                    "value": 32134
+                  },
+                  {
+                    "label": "RpcNativeProvisioning",
+                    "value": 139256
+                  },
+                  {
+                    "label": "StructuralEquality",
+                    "value": 19952
+                  },
+                  {
+                    "label": "RealtimeReceiptLifecycle",
+                    "value": 43006
+                  },
+                  {
+                    "label": "DatagramReentry",
+                    "value": 14310
+                  },
+                  {
+                    "label": "BulkConfigBoundary",
+                    "value": 71635
+                  },
+                  {
+                    "label": "RpcFieldOwners",
+                    "value": 25862
+                  },
+                  {
+                    "label": "GrantRevocation",
+                    "value": 50545
+                  },
+                  {
+                    "label": "ShutdownWaiters",
+                    "value": 49827
+                  },
+                  {
+                    "label": "RpcNativeArbitration",
+                    "value": 22946
+                  },
+                  {
+                    "label": "RpcRealtimeReceiver",
+                    "value": 34616
+                  },
+                  {
+                    "label": "RpcGenericParameters",
+                    "value": 7639
+                  },
+                  {
+                    "label": "CapnpConformance",
+                    "value": 10067
+                  },
+                  {
+                    "label": "Other models",
+                    "value": 344678
+                  }
+                ]
+              },
+              {
+                "title": "Distinct states",
+                "bars": [
+                  {
+                    "label": "CapnpRealtime",
+                    "value": 365483
+                  },
+                  {
+                    "label": "RpcSchemaHints",
+                    "value": 36390
+                  },
+                  {
+                    "label": "RealtimeConfigBoundary",
+                    "value": 25441
+                  },
+                  {
+                    "label": "RpcNativeProvisioning",
+                    "value": 25351
+                  },
+                  {
+                    "label": "StructuralEquality",
+                    "value": 19952
+                  },
+                  {
+                    "label": "RealtimeReceiptLifecycle",
+                    "value": 13704
+                  },
+                  {
+                    "label": "DatagramReentry",
+                    "value": 13057
+                  },
+                  {
+                    "label": "BulkConfigBoundary",
+                    "value": 10780
+                  },
+                  {
+                    "label": "RpcFieldOwners",
+                    "value": 9943
+                  },
+                  {
+                    "label": "GrantRevocation",
+                    "value": 9683
+                  },
+                  {
+                    "label": "ShutdownWaiters",
+                    "value": 8042
+                  },
+                  {
+                    "label": "RpcNativeArbitration",
+                    "value": 7430
+                  },
+                  {
+                    "label": "RpcRealtimeReceiver",
+                    "value": 7212
+                  },
+                  {
+                    "label": "RpcGenericParameters",
+                    "value": 5607
+                  },
+                  {
+                    "label": "CapnpConformance",
+                    "value": 5062
+                  },
+                  {
+                    "label": "Other models",
+                    "value": 114143
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "status": "passed",
+        "note": "Evidence passed."
+      }
+    }
   ]
 }
