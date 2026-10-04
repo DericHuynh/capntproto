@@ -3,6 +3,8 @@ mod connection;
 pub use connection::Connection;
 #[cfg(feature = "native")]
 pub(crate) mod pacing;
+#[cfg(feature = "native")]
+pub(crate) mod packet_batch;
 pub(crate) mod task;
 
 /// Shared RPC task completion. Observers do not retain the task or transport.

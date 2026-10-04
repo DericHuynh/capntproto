@@ -60,18 +60,29 @@ pub(super) async fn spawn(
     stream.version = ready.version;
     Ok(stream)
 }
-async fn flush(conn: &mut quiche::Connection, core: &endpoint::Core) -> io::Result<bool> {
+async fn flush(
+    conn: &mut quiche::Connection,
+    core: &endpoint::Core,
+    batch: &mut crate::rpc::packet_batch::Batch,
+    sender: &crate::rpc::packet_batch::Sender,
+) -> io::Result<bool> {
     let mut out = [0; 1350];
     for _ in 0..16 {
         match conn.send(&mut out) {
             Ok((n, info)) => {
-                crate::rpc::pacing::wait_until(info.at).await;
-                core.socket.send_to(&out[..n], info.to).await?;
+                if !batch.push(&out[..n], info, conn.send_quantum()) {
+                    batch.send(sender, &core.socket).await?;
+                    assert!(batch.push(&out[..n], info, conn.send_quantum()));
+                }
             }
-            Err(quiche::Error::Done) => return Ok(false),
+            Err(quiche::Error::Done) => {
+                batch.send(sender, &core.socket).await?;
+                return Ok(false);
+            }
             Err(e) => return Err(io::Error::other(e)),
         }
     }
+    batch.send(sender, &core.socket).await?;
     Ok(true)
 }
 #[allow(clippy::too_many_arguments)] // A single future owns every resource of this session.
@@ -100,7 +111,13 @@ async fn run(
         if result.is_ok() { 0 } else { 1 },
         b"RPC session closed",
     );
-    let _ = flush(&mut conn, &core).await;
+    let _ = flush(
+        &mut conn,
+        &core,
+        &mut crate::rpc::packet_batch::Batch::new(),
+        &crate::rpc::packet_batch::Sender::default(),
+    )
+    .await;
     let failure = result.as_ref().err().map(|e| (e.kind(), e.to_string()));
     let wake = {
         let mut state = state.borrow_mut();
@@ -138,23 +155,22 @@ async fn pump(
     let mut rx_closed = false;
     let mut stream_seen = !conn.is_server();
     let mut detached = false;
+    let mut batch = crate::rpc::packet_batch::Batch::new();
+    let sender = crate::rpc::packet_batch::Sender::default();
     loop {
         for _ in 0..16 {
-            match route.packets.try_recv() {
-                Ok(mut packet) => match conn.recv(
-                    &mut packet.bytes,
-                    quiche::RecvInfo {
-                        from: packet.from,
-                        to: local,
-                    },
-                ) {
-                    Ok(_) | Err(quiche::Error::Done | quiche::Error::CryptoFail) => (),
-                    Err(e) => return Err(io::Error::other(e)),
+            let Ok(mut packet) = route.packets.try_recv() else {
+                break;
+            };
+            match conn.recv(
+                &mut packet.bytes,
+                quiche::RecvInfo {
+                    from: packet.from,
+                    to: local,
                 },
-                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
-                Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
-                    return Err(io::Error::other("QUIC packet router closed"));
-                }
+            ) {
+                Ok(_) | Err(quiche::Error::Done | quiche::Error::CryptoFail) => (),
+                Err(e) => return Err(io::Error::other(e)),
             }
         }
         if conn.is_established() {
@@ -220,7 +236,7 @@ async fn pump(
             writer.shutdown().await?;
             rx_closed = true;
         }
-        let exhausted = flush(conn, core).await?;
+        let exhausted = flush(conn, core, &mut batch, &sender).await?;
         // CONNECTION_CLOSE may overtake delivery from Quiche's receive buffer
         // into the bounded application bridge. Preserve already authenticated
         // bytes, including a final response larger than the bridge.
@@ -315,7 +331,7 @@ mod tests {
                                 conn.stream_send(0, b"s", false).unwrap(); stopped = true;
                             }
                         }
-                        flush(&mut conn, &server.0).await.unwrap();
+                        flush(&mut conn, &server.0, &mut crate::rpc::packet_batch::Batch::new(), &crate::rpc::packet_batch::Sender::default()).await.unwrap();
                         if conn.is_closed() || conn.is_draining() { break; }
                         let timeout = conn.timeout().unwrap_or(Duration::from_secs(1));
                         tokio::select! {

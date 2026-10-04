@@ -656,6 +656,16 @@ impl Drop for SharedSocket {
     }
 }
 impl SharedSocket {
+    pub(crate) async fn send_segments(
+        &self,
+        sender: &crate::rpc::packet_batch::Sender,
+        bytes: &[u8],
+        segment: usize,
+        to: SocketAddr,
+    ) -> io::Result<()> {
+        self.check_open()?;
+        self.socket.send_segments(sender, bytes, segment, to).await
+    }
     pub(crate) fn register_cid(&self, id: [u8; 16]) -> io::Result<()> {
         self.check_open()?;
         let state = self.state.upgrade().ok_or_else(closed)?;

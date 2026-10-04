@@ -30,6 +30,24 @@ impl From<UdpSocket> for DatagramSocket {
     }
 }
 impl DatagramSocket {
+    pub(crate) async fn send_segments(
+        &self,
+        sender: &crate::rpc::packet_batch::Sender,
+        bytes: &[u8],
+        segment: usize,
+        to: SocketAddr,
+    ) -> io::Result<()> {
+        match self {
+            Self::Udp(socket) => sender.send(socket, bytes, segment, to).await,
+            #[cfg(test)]
+            Self::Simulated(socket) => {
+                for packet in bytes.chunks(segment) {
+                    socket.send_to(packet, to).await?;
+                }
+                Ok(())
+            }
+        }
+    }
     pub(crate) fn local_addr(&self) -> io::Result<SocketAddr> {
         match self {
             Self::Udp(s) => s.local_addr(),
