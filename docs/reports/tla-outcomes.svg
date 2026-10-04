@@ -212,7 +212,7 @@ z
    <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #64748b" x="37.8" y="45.614438" transform="rotate(-0 37.8 45.614438)">Unique module/configuration/expected-exit checks. Expected invariant violations are successful controls.</text>
   </g>
   <g id="text_15">
-   <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #64748b" x="37.8" y="326.592" transform="rotate(-0 37.8 326.592)">Measured 2026-10-04T20:19:37Z | commit f3cb761866ce</text>
+   <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #64748b" x="37.8" y="326.592" transform="rotate(-0 37.8 326.592)">Measured 2026-10-04T21:39:03Z | commit ee0b77b2feca</text>
   </g>
  </g>
  <defs>

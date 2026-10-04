@@ -1888,6 +1888,38 @@
           "total": 242,
           "suites": 190,
           "complete": true,
+          "command_passed": true
+        },
+        "charts": [],
+        "status": "passed",
+        "note": "Evidence passed."
+      }
+    },
+    {
+      "run_id": 37236947323,
+      "attempt": 1,
+      "commit": "ee0b77b2feca8947ac4608f55b460f9161d5e87a",
+      "date": "2026-10-04T21:39:03Z",
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/37236947323",
+      "conclusion": "success",
+      "data": {
+        "format": 1,
+        "kind": "models",
+        "origin": {
+          "repository": "DericHuynh/capntproto",
+          "run_id": 37236947323,
+          "attempt": 1,
+          "commit": "ee0b77b2feca8947ac4608f55b460f9161d5e87a"
+        },
+        "source_id": "1bff7b54ccd85252820045de9760bee996b74cc8f11a49120ba7e57a60bd2bcd",
+        "tests": {
+          "passed": 241,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 1,
+          "total": 242,
+          "suites": 190,
+          "complete": true,
           "command_passed": true,
           "failures": []
         },
@@ -1928,55 +1960,55 @@
                 "bars": [
                   {
                     "label": "CapnpRealtime",
-                    "value": 2277944
+                    "value": 2278144
                   },
                   {
                     "label": "RpcSchemaHints",
-                    "value": 38212
+                    "value": 38211
                   },
                   {
                     "label": "RealtimeConfigBoundary",
-                    "value": 32134
+                    "value": 32132
                   },
                   {
                     "label": "RpcNativeProvisioning",
-                    "value": 139256
+                    "value": 139249
                   },
                   {
                     "label": "StructuralEquality",
-                    "value": 19952
+                    "value": 19888
                   },
                   {
                     "label": "RealtimeReceiptLifecycle",
-                    "value": 43006
+                    "value": 43136
                   },
                   {
                     "label": "DatagramReentry",
-                    "value": 14310
+                    "value": 14149
                   },
                   {
                     "label": "BulkConfigBoundary",
-                    "value": 71635
+                    "value": 71707
                   },
                   {
                     "label": "RpcFieldOwners",
-                    "value": 25862
+                    "value": 25872
                   },
                   {
                     "label": "GrantRevocation",
-                    "value": 50545
+                    "value": 50542
                   },
                   {
                     "label": "ShutdownWaiters",
-                    "value": 49827
+                    "value": 49812
                   },
                   {
                     "label": "RpcNativeArbitration",
-                    "value": 22946
+                    "value": 22983
                   },
                   {
                     "label": "RpcRealtimeReceiver",
-                    "value": 34616
+                    "value": 34781
                   },
                   {
                     "label": "RpcGenericParameters",
@@ -1988,7 +2020,7 @@
                   },
                   {
                     "label": "Other models",
-                    "value": 344678
+                    "value": 345514
                   }
                 ]
               },
@@ -1997,39 +2029,39 @@
                 "bars": [
                   {
                     "label": "CapnpRealtime",
-                    "value": 365483
+                    "value": 365593
                   },
                   {
                     "label": "RpcSchemaHints",
-                    "value": 36390
+                    "value": 36389
                   },
                   {
                     "label": "RealtimeConfigBoundary",
-                    "value": 25441
+                    "value": 25439
                   },
                   {
                     "label": "RpcNativeProvisioning",
-                    "value": 25351
+                    "value": 25356
                   },
                   {
                     "label": "StructuralEquality",
-                    "value": 19952
+                    "value": 19888
                   },
                   {
                     "label": "RealtimeReceiptLifecycle",
-                    "value": 13704
+                    "value": 13815
                   },
                   {
                     "label": "DatagramReentry",
-                    "value": 13057
+                    "value": 12931
                   },
                   {
                     "label": "BulkConfigBoundary",
-                    "value": 10780
+                    "value": 10834
                   },
                   {
                     "label": "RpcFieldOwners",
-                    "value": 9943
+                    "value": 9942
                   },
                   {
                     "label": "GrantRevocation",
@@ -2037,15 +2069,15 @@
                   },
                   {
                     "label": "ShutdownWaiters",
-                    "value": 8042
+                    "value": 8028
                   },
                   {
                     "label": "RpcNativeArbitration",
-                    "value": 7430
+                    "value": 7447
                   },
                   {
                     "label": "RpcRealtimeReceiver",
-                    "value": 7212
+                    "value": 7268
                   },
                   {
                     "label": "RpcGenericParameters",
@@ -2057,7 +2089,7 @@
                   },
                   {
                     "label": "Other models",
-                    "value": 114143
+                    "value": 114257
                   }
                 ]
               }
