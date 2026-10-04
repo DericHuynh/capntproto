@@ -40,6 +40,12 @@ fn cancellation_worker() {
         Duration::from_secs(10)
     )
     .is_err());
+    if std::env::var_os("CAPNTPROTO_CANCEL_NESTED").is_some() {
+        // Model an atexit flush after reaping the TERM-resistant leaf. The
+        // parent must allow this cleanup to finish before escalating to KILL.
+        std::thread::sleep(Duration::from_millis(150));
+        fs::write(directory.join("nested-cleanup-completed"), "done").unwrap();
+    }
 }
 
 #[test]
@@ -88,4 +94,8 @@ fn termination_stops_nested_groups_and_term_resistant_children() {
             "terminated child remains running"
         );
     }
+    assert!(
+        dir.path().join("nested-cleanup-completed").is_file(),
+        "parent killed the nested worker before it finished cleanup"
+    );
 }

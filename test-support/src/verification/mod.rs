@@ -375,14 +375,36 @@ fn run_with_outputs(
                         .stderr(Stdio::null())
                         .status();
                 }
-                // Give nested drivers time to stop and reap their children.
-                std::thread::sleep(Duration::from_millis(500));
+                // Let each parent reap its stopped descendants and finish its
+                // own cleanup (including LLVM's atexit profile flush) before
+                // escalating that parent's group. A single shared 500ms sleep
+                // races every nested driver's own 500ms grace period.
+                let cleanup_deadline = Instant::now() + Duration::from_secs(2);
                 for group in groups.iter().rev() {
-                    let _ = Command::new("kill")
-                        .args(["-KILL", "--", &format!("-{group}")])
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .status();
+                    let grace = (Instant::now() + Duration::from_millis(500)).min(cleanup_deadline);
+                    loop {
+                        // Reap the direct child so an exited group leader does
+                        // not look alive merely because it is a zombie.
+                        let _ = child.try_wait();
+                        if !Command::new("kill")
+                            .args(["-0", "--", &format!("-{group}")])
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .status()
+                            .is_ok_and(|status| status.success())
+                        {
+                            break;
+                        }
+                        if Instant::now() >= grace {
+                            let _ = Command::new("kill")
+                                .args(["-KILL", "--", &format!("-{group}")])
+                                .stdout(Stdio::null())
+                                .stderr(Stdio::null())
+                                .status();
+                            break;
+                        }
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
                 }
             }
             let _ = child.kill();
@@ -454,8 +476,10 @@ fn descendant_groups(pid: u32) -> Vec<u32> {
             }
         }
     }
-    groups.sort_unstable();
-    groups.dedup();
+    // Discovery is parent-before-child. Numeric PID sorting loses that order
+    // when PID allocation wraps, and siblings do not need an ordering.
+    let mut seen = BTreeSet::new();
+    groups.retain(|group| seen.insert(*group));
     groups
 }
 fn lock(path: &Path) -> Result<File> {

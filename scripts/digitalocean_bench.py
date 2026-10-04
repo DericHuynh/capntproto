@@ -26,7 +26,56 @@ import urllib.request
 API = "https://api.digitalocean.com/v2"
 TTL = 2 * 60 * 60
 MAX_HOURLY_PRICE = Decimal('0.50')
+MAX_CREATE_ATTEMPTS = 24
 PREFERRED_REGIONS = ('nyc3', 'nyc1', 'nyc2', 'tor1', 'sfo3', 'ams3', 'lon1', 'fra1', 'sgp1', 'blr1', 'syd1')
+
+
+class DigitalOceanError(RuntimeError):
+    def __init__(self, method, path, status, code='', message=''):
+        self.status, self.code, self.message = status, code, message
+        detail = ': ' + ' '.join(part for part in (code, message) if part) if code or message else ''
+        super().__init__(f'DigitalOcean {method} {path}: HTTP {status}{detail}')
+
+    def capacity_rejection(self):
+        # Only a definitive, recognized capacity rejection permits another POST.
+        # Quota, billing, invalid input and ambiguous network failures must stop.
+        message = self.message.lower()
+        return self.status == 422 and (
+            'insufficient capacity' in message
+            or 'at capacity' in message
+            or ('size' in message and 'not available' in message and 'region' in message)
+        )
+
+
+def error_detail(error, token, data):
+    """Keep the provider's explanation, never request credentials or cloud-init."""
+    try:
+        body = json.loads(error.read(16 * 1024))
+        if not isinstance(body, dict):
+            return '', ''
+    except (ValueError, OSError):
+        return '', ''
+    code = body.get('id', '')
+    code = code if isinstance(code, str) and re.fullmatch(r'[a-zA-Z0-9_-]{1,80}', code) else ''
+    message = body.get('message', '')
+    if not isinstance(message, str):
+        return code, ''
+    message = message.replace(token, '[redacted]') if token else message
+    user_data = (data or {}).get('user_data', '')
+    if user_data:
+        message = message.replace(user_data, '[cloud-init redacted]')
+        # A provider may quote only a field, rather than the complete request.
+        try:
+            config = json.loads(user_data.removeprefix('#cloud-config\n'))
+            keys = config['ssh_keys'].values()
+        except (ValueError, KeyError, TypeError, AttributeError):
+            keys = []
+        for value in keys:
+            if isinstance(value, str) and value:
+                message = message.replace(value, '[key redacted]')
+    message = re.sub(r'-----BEGIN [^-]*PRIVATE KEY-----.*?-----END [^-]*PRIVATE KEY-----',
+                     '[private key redacted]', message, flags=re.S)
+    return code, ' '.join(message.split())[:512]
 
 
 class DigitalOcean:
@@ -53,7 +102,8 @@ class DigitalOcean:
                 if error.code == 404 and method in ("GET", "DELETE"):
                     return None
                 if error.code not in (429, 500, 502, 503, 504) or attempt + 1 == attempts:
-                    raise RuntimeError(f"DigitalOcean {method} {path}: HTTP {error.code}") from None
+                    code, message = error_detail(error, self.token, data)
+                    raise DigitalOceanError(method, path, error.code, code, message) from None
             except (urllib.error.URLError, TimeoutError):
                 if attempt + 1 == attempts:
                     raise RuntimeError(f"DigitalOcean {method} {path}: connection failed") from None
@@ -136,7 +186,7 @@ def command(args, **kwargs):
     return subprocess.run(args, check=True, timeout=kwargs.pop("timeout", 120), **kwargs)
 
 
-def select_plan(api):
+def select_plan(api, excluded=()):
     """Resolve explicit choices or a bounded four-vCPU dedicated alternative.
 
     This is read-only: no keys or Droplets are created during preflight.
@@ -168,7 +218,8 @@ def select_plan(api):
             if re.fullmatch(r'[a-z]{3}[0-9]+', candidate):
                 eligible.append((size, candidate, price))
     candidates = [(s, r, price) for s, r, price in eligible
-                  if (region == 'auto' or r == region)
+                  if (s['slug'], r) not in excluded
+                  and (region == 'auto' or r == region)
                   and (s['slug'] == size_slug if size_slug != 'auto'
                        else s['slug'] in ('c-4', 'c-4-intel') and s.get('vcpus') == 4)]
     if not candidates:
@@ -200,19 +251,56 @@ def preflight(api, destination=None):
         raise
     plan = dict(size=size['slug'], region=region, price_hourly=size['price_hourly'],
                 vcpus=size.get('vcpus'), image='ubuntu-24-04-x64')
-    print('Available benchmark plan: ' + json.dumps(plan, sort_keys=True), flush=True)
+    print('Eligible catalog plan (capacity is confirmed at creation): ' + json.dumps(plan, sort_keys=True), flush=True)
     if destination is not None:
         destination.mkdir(parents=True, exist_ok=True)
         (destination / 'capacity.json').write_text(json.dumps(plan, indent=2) + '\n')
     return size, region
 
 
+def create_host(api, payload, size, region, destination):
+    attempts, excluded = [], set()
+    path = destination / 'provisioning.json'
+    for _ in range(MAX_CREATE_ATTEMPTS):
+        payload.update(size=size['slug'], region=region)
+        attempt = dict(size=size['slug'], region=region, price_hourly=size['price_hourly'], status='requesting')
+        attempts.append(attempt)
+        path.write_text(json.dumps(attempts, indent=2) + '\n')
+        print(f'Creating dedicated benchmark host: {size["slug"]}@{region}', flush=True)
+        try:
+            host = api.request('POST', '/droplets', payload)['droplet']
+        except DigitalOceanError as error:
+            attempt.update(status='rejected', error=str(error))
+            path.write_text(json.dumps(attempts, indent=2) + '\n')
+            if not error.capacity_rejection():
+                raise
+            print(str(error), flush=True)
+            # Never create another host if the response contradicts live state.
+            if any(d['name'] == payload['name'] and owner_tag() in d['tags'] for d in droplets(api)):
+                raise RuntimeError('Rejected creation has a matching Droplet; refusing another POST') from error
+            excluded.add((size['slug'], region))
+            if len(attempts) == MAX_CREATE_ATTEMPTS:
+                raise RuntimeError('Dedicated capacity fallback limit reached; see provisioning.json') from error
+            # Re-query the catalog. Explicit choices and cost/CPU bounds still apply.
+            size, region = select_plan(api, excluded)
+        except Exception as error:
+            # A timeout or lost response may have created the host. Journal the
+            # ambiguity, then let the caller's finally discover and destroy it.
+            attempt.update(status='unknown', error=type(error).__name__)
+            path.write_text(json.dumps(attempts, indent=2) + '\n')
+            raise
+        else:
+            attempt.update(status='created', id=int(host['id']))
+            path.write_text(json.dumps(attempts, indent=2) + '\n')
+            return host, size, region
+    raise AssertionError('unreachable capacity loop')
+
+
 def run(api, bundle, destination, state):
     destination.mkdir(parents=True, exist_ok=True)
-    for filename in ("trials.json", "environment.json", "instructions.jsonl", "runner.log", "capacity.json"):
+    for filename in ("trials.json", "environment.json", "instructions.jsonl", "runner.log", "capacity.json", "provisioning.json", "droplet.json"):
         (destination / filename).unlink(missing_ok=True)
     size, region = preflight(api, destination)
-    size_slug = size['slug']
     name = f'{owner_tag()}-{int(time.time())}-{os.environ["GITHUB_RUN_ID"]}-{os.environ.get("GITHUB_RUN_ATTEMPT", "1")}'
     state.mkdir(parents=True, exist_ok=True, mode=0o700)
     state.chmod(0o700)
@@ -225,10 +313,11 @@ def run(api, bundle, destination, state):
         cloud_config = {"ssh_pwauth": False, "disable_root": False, "ssh_keys": {
             "ed25519_private": host_key.read_text(), "ed25519_public": host_key.with_suffix(".pub").read_text(),
         }}
-        created = api.request("POST", "/droplets", {"name": name, "region": region, "size": size_slug,
+        created, size, region = create_host(api, {"name": name,
             "image": "ubuntu-24-04-x64", "ssh_keys": [key["id"]], "tags": [owner_tag()],
             "backups": False, "monitoring": False, "with_droplet_agent": False,
-            "user_data": "#cloud-config\n" + json.dumps(cloud_config)})["droplet"]
+            "user_data": "#cloud-config\n" + json.dumps(cloud_config)}, size, region, destination)
+        size_slug = size['slug']
         ident = int(created["id"])
         receipt = {"name": name, "id": ident, "region": region, "size": size_slug,
                    "price_hourly": size["price_hourly"], "image": "ubuntu-24-04-x64"}

@@ -1,5 +1,6 @@
 """Fake-API checks invoked by the Cargo integration test, without cloud credentials."""
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -7,6 +8,7 @@ import tempfile
 import subprocess
 from types import SimpleNamespace
 import time
+import urllib.error
 from unittest.mock import patch
 
 root = Path(__file__).resolve().parents[2]
@@ -130,6 +132,80 @@ class MixedCapacity(API):
 with patch.dict(os.environ, DO_SIZE='auto', DO_REGION='auto'):
     size, region = cloud.select_plan(MixedCapacity())
     assert (size['slug'], region) == ('c-4-intel', 'lon1')
+
+# Provider errors retain their explanation but never credentials or cloud-init.
+token, private = 'PRIVATE_TOKEN_FIXTURE', 'PRIVATE_KEY_FIXTURE'
+user_data = '#cloud-config\n' + json.dumps({'ssh_keys': {'ed25519_private': private}})
+body = {'id': 'unprocessable_entity',
+        'message': f'Size is not available in this region. {token} {private} {user_data}'}
+error = urllib.error.HTTPError(cloud.API + '/droplets', 422, 'Unprocessable Entity', {},
+                               io.BytesIO(json.dumps(body).encode()))
+with patch.dict(os.environ, DIGITALOCEAN_ACCESS_TOKEN=token), \
+        patch.object(cloud.urllib.request, 'urlopen', side_effect=error) as request:
+    try:
+        cloud.DigitalOcean().request('POST', '/droplets', {'user_data': user_data})
+    except cloud.DigitalOceanError as failure:
+        assert failure.capacity_rejection()
+        assert failure.code == 'unprocessable_entity'
+        assert 'Size is not available in this region' in str(failure)
+        assert token not in str(failure) and private not in str(failure) and user_data not in str(failure)
+    else:
+        raise AssertionError('Expected provider error')
+    assert request.call_count == 1  # The HTTP layer never repeats POST.
+
+class RejectedCapacity(API):
+    def __init__(self, message='Size is not available in this region.'):
+        super().__init__()
+        self.regions = ['nyc3', 'nyc1']
+        self.message = message
+        self.attempted = []
+
+    def request(self, method, path, data=None):
+        if method == 'POST' and path == '/droplets':
+            self.attempted.append((data['size'], data['region']))
+            if data['region'] == 'nyc3':
+                raise cloud.DigitalOceanError(method, path, 422, 'unprocessable_entity', self.message)
+        return super().request(method, path, data)
+
+def provision(api, destination):
+    size, region = cloud.select_plan(api)
+    return cloud.create_host(api, {'name': 'fixture', 'tags': [cloud.owner_tag()],
+                                   'image': 'ubuntu-24-04-x64'}, size, region, destination)
+
+with tempfile.TemporaryDirectory() as directory:
+    base = Path(directory)
+    api = RejectedCapacity()
+    with patch.dict(os.environ, DO_SIZE='auto', DO_REGION='auto'):
+        host, size, region = provision(api, base)
+    assert region == 'nyc1' and size['slug'] == 'c-4' and host['id'] == 7
+    assert api.attempted == [('c-4', 'nyc3'), ('c-4', 'nyc1')]
+    assert len(api.hosts) == 1
+    assert [a['status'] for a in json.loads((base / 'provisioning.json').read_text())] == ['rejected', 'created']
+
+    # A quota or configuration error is not a capacity fallback signal.
+    for message in ('Droplet limit exceeded.', 'Invalid SSH key.', 'Payment required.'):
+        api = RejectedCapacity(message)
+        with patch.dict(os.environ, DO_SIZE='auto', DO_REGION='auto'):
+            expect_error(lambda: provision(api, base), message)
+        assert len(api.attempted) == 1 and not api.hosts
+
+    # An explicitly requested region cannot silently move elsewhere.
+    api = RejectedCapacity()
+    with patch.dict(os.environ, DO_SIZE='c-4', DO_REGION='nyc3'):
+        expect_error(lambda: provision(api, base), 'No available dedicated plan')
+    assert api.attempted == [('c-4', 'nyc3')]
+
+    api = RejectedCapacity()
+    with patch.dict(os.environ, DO_SIZE='auto', DO_REGION='auto'), patch.object(cloud, 'MAX_CREATE_ATTEMPTS', 1):
+        expect_error(lambda: provision(api, base), 'fallback limit reached')
+    assert len(api.attempted) == 1
+
+    # Even a capacity rejection must not duplicate an unexpectedly created host.
+    api = RejectedCapacity()
+    api.hosts = [{'id': 7, 'name': 'fixture', 'tags': [cloud.owner_tag()]}]
+    with patch.dict(os.environ, DO_SIZE='auto', DO_REGION='auto'):
+        expect_error(lambda: provision(api, base), 'refusing another POST')
+    assert len(api.attempted) == 1
 
 # Creation can succeed even if the response is lost. Cleanup finds the unique name.
 def fake_command(args, **kwargs):

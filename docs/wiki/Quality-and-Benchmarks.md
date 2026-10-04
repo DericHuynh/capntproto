@@ -331,8 +331,14 @@ an available four-vCPU CPU-Optimized `c-4` or `c-4-intel` plan, preferring `c-4`
 and `nyc3` when available. Explicit region/size inputs are honored; unavailable
 choices fail with available alternatives rather than silently changing the host.
 Only dedicated `c-N` / `c-N-intel` sizes are accepted, with a **$0.50/hour rate ceiling**.
-Capacity can change between discovery and creation; a failed create still follows
-the receipt/tag cleanup path. A failed measurement does not run sample-validation
+Catalog availability does not reserve capacity. A recognized HTTP 422 capacity
+rejection tries the next eligible pair (at most 24 attempts), changing only inputs
+set to `auto`. Each pair is tried once. Quota, billing, invalid configuration and
+ambiguous network failures stop without retrying creation. The provider's error
+code and message are retained with credentials and cloud-init data redacted;
+`provisioning.json` records every attempt and `droplet.json` identifies the host
+actually created. A failed create still follows the receipt/tag cleanup path.
+A failed measurement does not run sample-validation
 steps or publish stale measurements. Ubuntu 24.04 builds
 run on Ubuntu 24.04 to preserve shared-library compatibility. The C++ reference
 uses Clang and its pinned upstream source. Nothing is compiled on the droplet.
