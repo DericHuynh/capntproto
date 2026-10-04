@@ -352,7 +352,7 @@ def run(api, bundle, destination, state):
         print('SSH ready; waiting for cloud-init', flush=True)
         command([*ssh, "cloud-init status --wait"], timeout=240)
         print('Installing runtime tools (no compilation on the droplet)', flush=True)
-        command([*ssh, "DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y valgrind"], timeout=300)
+        command([*ssh, "DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y valgrind util-linux"], timeout=300)
         command([*ssh, "mkdir -p /root/bench /root/results"])
         archive = state / "bundle.tar.gz"
         with tarfile.open(archive, "w:gz") as tar:

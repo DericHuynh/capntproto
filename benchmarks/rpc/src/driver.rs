@@ -1,5 +1,7 @@
 //! Runs precompiled clients and servers; never invokes a compiler on the benchmark host.
 use crate::Result;
+mod placement;
+use placement::Placement;
 use serde_json::{json, Value};
 use std::{
     fs,
@@ -18,9 +20,9 @@ impl Drop for Server {
         let _ = self.0.wait();
     }
 }
-fn trial(exe: &Path, protocol: &str, bytes: usize) -> Result<Value> {
+fn trial(exe: &Path, protocol: &str, bytes: usize, placement: Option<&Placement>) -> Result<Value> {
     let mut server = Server(
-        Command::new(exe)
+        Placement::command(exe, placement.map(|p| p.server_cpu))
             .arg("server")
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -39,7 +41,7 @@ fn trial(exe: &Path, protocol: &str, bytes: usize) -> Result<Value> {
     if !parsed.ip().is_loopback() || parsed.port() == 0 {
         return Err("server must use loopback".into());
     }
-    let mut client = Command::new(exe);
+    let mut client = Placement::command(exe, placement.map(|p| p.client_cpu));
     client.args(["measure", address]);
     if protocol != "capnp-cpp" {
         client.arg(serde_json::to_string(&ready["public"])?);
@@ -76,7 +78,7 @@ pub fn individual(protocol: &str) -> Result<()> {
     let exe = std::env::current_exe()?;
     for bytes in PAYLOADS {
         for _ in 0..5 {
-            println!("{}", trial(&exe, protocol, bytes)?);
+            println!("{}", trial(&exe, protocol, bytes, None)?);
         }
     }
     Ok(())
@@ -116,6 +118,7 @@ fn output(program: &str, args: &[&str]) -> Result<String> {
 }
 pub fn compare(directory: &Path, destination: &Path) -> Result<()> {
     fs::create_dir_all(destination)?;
+    let placement = Placement::discover()?;
     let manifest: Value = serde_json::from_slice(&fs::read(directory.join("manifest.json"))?)?;
     let mut hashes = serde_json::Map::new();
     for (name, expected) in manifest["binaries"].as_object().ok_or("missing binaries")? {
@@ -148,7 +151,8 @@ pub fn compare(directory: &Path, destination: &Path) -> Result<()> {
         "uname":output("uname", &["-a"])? , "cpu":output("lscpu", &[])?,
         "governor":fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor").ok(),
         "clocksource":fs::read_to_string("/sys/devices/system/clocksource/clocksource0/current_clocksource").ok(),
-        "scope":"Linux IPv4 loopback; sequential validated echo; 100 warmups/1000 samples; 5 repetitions; Native QUIC v1 / TLS 1.3 with pinned peer authentication, other protocols plaintext"});
+        "cpu_placement":placement,
+        "scope":"Linux IPv4 loopback; sequential validated echo; fixed separate physical cores for server/client across all protocols; 100 warmups/1000 samples; 5 repetitions; Native QUIC v1 / TLS 1.3 with pinned peer authentication, other protocols plaintext"});
     fs::write(
         destination.join("environment.json"),
         serde_json::to_vec_pretty(&environment)?,
@@ -159,7 +163,12 @@ pub fn compare(directory: &Path, destination: &Path) -> Result<()> {
             for index in 0..PROTOCOLS.len() {
                 let protocol = PROTOCOLS[(index + repetition) % PROTOCOLS.len()];
                 eprintln!("{protocol}: {bytes} bytes, repetition {}", repetition + 1);
-                trials.push(trial(&target(directory, protocol), protocol, bytes)?);
+                trials.push(trial(
+                    &target(directory, protocol),
+                    protocol,
+                    bytes,
+                    Some(&placement),
+                )?);
                 fs::write(
                     destination.join("trials.json"),
                     serde_json::to_vec_pretty(&trials)?,
