@@ -58,6 +58,27 @@ Dropping a session cancels its driver.
 
 Version selection is explicit; requesting v2 fails without downgrade.
 
+## Packet sizes and execution
+
+Linux QUIC sockets forbid IP fragmentation and let upstream Quiche discover a
+path MTU up to 16 KiB. Other platforms retain a 1,350-byte outgoing limit;
+all platforms accept packets up to 16 KiB. QUIC starts at its 1,200-byte minimum,
+retains a working smaller size when probes fail, and revalidates a discovered
+MTU after repeated timer expirations without acknowledgement progress. Oversize
+send errors are handled as lost probes. This improves large loopback transfers;
+ordinary network paths still determine their own smaller MTU.
+
+Shared listeners bound each route by both its configured packet count and
+128 KiB of queued payload. The unreliable application datagram limit remains
+1,024 bytes. Reliable stream staging is bounded at 64 KiB per direction.
+
+Run application futures as tasks inside the same Tokio `LocalSet` as RPC tasks
+(`spawn_local`), including the main request loop. This avoids extra executor
+turns between the outer `run_until` future and local RPC tasks. All Rust RPC
+benchmarks use this placement. Checkout release builds enable ThinLTO and one
+codegen unit; downstream applications select these options in their own Cargo
+release profile because dependency-local Cargo configuration is not inherited.
+
 Native QUIC uses bounded request streams 2/3, receipt streams 6/7, and
 confirmation streams 10/11. A confirmation echoes the exact validated receipt
 (nonce and byte count). In a crossed shutdown, a peer must confirm our reciprocal

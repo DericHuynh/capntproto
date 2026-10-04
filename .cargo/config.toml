@@ -3,3 +3,8 @@
 # descriptors before exec closes them. Keep reopen/crash checks isolated from
 # subprocess creation, as the former verification driver did.
 RUST_TEST_THREADS = "1"
+
+# Cross-crate optimization for release builds in this checkout and benchmarks.
+[profile.release]
+lto = "thin"
+codegen-units = 1

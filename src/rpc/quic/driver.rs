@@ -66,7 +66,7 @@ async fn flush(
     batch: &mut crate::rpc::packet_batch::Batch,
     sender: &crate::rpc::packet_batch::Sender,
 ) -> io::Result<bool> {
-    let mut out = [0; 1350];
+    let mut out = [0; crate::rpc::packet_mtu::SEND_MAX];
     for _ in 0..16 {
         match conn.send(&mut out) {
             Ok((n, info)) => {
@@ -77,12 +77,14 @@ async fn flush(
             }
             Err(quiche::Error::Done) => {
                 batch.send(sender, &core.socket).await?;
+                sender.check_path_mtu(conn);
                 return Ok(false);
             }
             Err(e) => return Err(io::Error::other(e)),
         }
     }
     batch.send(sender, &core.socket).await?;
+    sender.check_path_mtu(conn);
     Ok(true)
 }
 #[allow(clippy::too_many_arguments)] // A single future owns every resource of this session.
@@ -145,11 +147,11 @@ async fn pump(
 ) -> io::Result<()> {
     let local = core.socket.local_addr()?;
     let (mut reader, mut writer) = tokio::io::split(network);
-    let mut tx = [0; 16384];
+    let mut tx = vec![0; 64 * 1024];
     let (mut tx_start, mut tx_end) = (0, 0);
     let mut tx_eof = false;
     let mut fin_sent = false;
-    let mut rx = [0; 16384];
+    let mut rx = vec![0; 64 * 1024];
     let (mut rx_start, mut rx_end) = (0, 0);
     let mut rx_fin = false;
     let mut rx_closed = false;
@@ -157,6 +159,7 @@ async fn pump(
     let mut detached = false;
     let mut batch = crate::rpc::packet_batch::Batch::new();
     let sender = crate::rpc::packet_batch::Sender::default();
+    let mut mtu_recovery = crate::rpc::packet_mtu::Recovery::default();
     loop {
         for _ in 0..16 {
             let Ok(mut packet) = route.packets.try_recv() else {
@@ -298,7 +301,7 @@ async fn pump(
             n = reader.read(&mut tx), if ready.is_none() && tx_start == tx_end && !tx_eof && !conn.is_closed() && !conn.is_draining() => {
                 tx_end = n?; tx_start = 0; tx_eof = tx_end == 0;
             }
-            _ = tokio::time::sleep_until(deadline) => conn.on_timeout(),
+            _ = tokio::time::sleep_until(deadline) => mtu_recovery.on_timeout(conn),
             _ = tokio::task::yield_now(), if exhausted => (),
         }
     }
@@ -327,6 +330,7 @@ mod tests {
                     .unwrap();
                     // Make the packet budget, rather than congestion or pacing, the
                     // limiting factor in this adapter test. Production keeps both.
+                    config.0.set_max_send_udp_payload_size(1350);
                     config.0.set_initial_congestion_window_packets(64);
                     config.0.enable_pacing(false);
                     let server = Endpoint::server(config, "127.0.0.1:0".parse().unwrap()).unwrap();

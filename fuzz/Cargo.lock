@@ -154,6 +154,7 @@ dependencies = [
  "quiche",
  "rcgen",
  "ring",
+ "rustix",
  "rustls",
  "serde",
  "serde_json",

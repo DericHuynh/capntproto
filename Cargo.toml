@@ -27,7 +27,7 @@ exclude = [
 
 [features]
 default = ["quic-quiche", "services", "storage"]
-native = ["tls", "dep:rcgen", "dep:x509-parser", "dep:boring", "dep:quiche", "dep:zeroize", "dep:capnpc", "dep:capntproto-compiler", "dep:nix"]
+native = ["tls", "dep:rcgen", "dep:x509-parser", "dep:boring", "dep:quiche", "dep:zeroize", "dep:capnpc", "dep:capntproto-compiler", "dep:nix", "dep:rustix"]
 services = ["dep:capnpc", "dep:capntproto-compiler"]
 storage = ["dep:memmap2", "dep:fs2", "dep:capnpc", "dep:capntproto-compiler"]
 tls = ["dep:rustls", "dep:tokio-rustls"]
@@ -102,3 +102,4 @@ libc = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 nix = { version = "0.31", optional = true, default-features = false, features = ["net", "uio"] }
+rustix = { version = "1.1", optional = true, features = ["net"] }

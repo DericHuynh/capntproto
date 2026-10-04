@@ -47,9 +47,11 @@ impl Endpoint {
     fn new(address: SocketAddr, server: Option<ServerConfig>) -> io::Result<Self> {
         let socket = std::net::UdpSocket::bind(address)?;
         socket.set_nonblocking(true)?;
+        let socket = UdpSocket::from_std(socket)?;
+        crate::rpc::packet_mtu::prepare(&socket)?;
         let (tx, rx) = mpsc::channel(MAX_PENDING);
         let core = Rc::new(Core {
-            socket: Rc::new(UdpSocket::from_std(socket)?),
+            socket: Rc::new(socket),
             client: RefCell::new(None),
             server: RefCell::new(server),
             routes: Rc::new(RefCell::new(HashMap::new())),

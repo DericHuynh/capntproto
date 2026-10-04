@@ -31,6 +31,14 @@ fn source_bundle_roundtrip() {
             .join(format!("research/reports/rpc-pipeline/2026-10-01/{file}"))
             .is_file());
     }
+    // Exercise source-only exclusions even in a clean CI checkout. Archive
+    // validation above inventories every file; only subsequent source scans
+    // exclude newly generated fuzz results.
+    for name in ["fuzz/artifacts/crash", "fuzz/corpus/seed"] {
+        let file = extracted.join(name);
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(file, b"generated fuzz data").unwrap();
+    }
     assert_eq!(
         d::source_hashes(&root()).unwrap(),
         d::source_hashes(&extracted).unwrap()

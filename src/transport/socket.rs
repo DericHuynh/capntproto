@@ -30,6 +30,13 @@ impl From<UdpSocket> for DatagramSocket {
     }
 }
 impl DatagramSocket {
+    pub(crate) fn prepare(&self) -> io::Result<()> {
+        match self {
+            Self::Udp(socket) => crate::rpc::packet_mtu::prepare(socket),
+            #[cfg(test)]
+            Self::Simulated(_) => Ok(()),
+        }
+    }
     pub(crate) async fn send_segments(
         &self,
         sender: &crate::rpc::packet_batch::Sender,

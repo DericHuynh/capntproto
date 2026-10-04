@@ -1,6 +1,5 @@
 //! Bounded QUIC aggregates. Every datagram keeps its wire boundary, destination
 //! and pacing deadline; Linux can segment the aggregate in one kernel call.
-#[cfg(target_os = "linux")]
 use std::cell::Cell;
 use std::{io, net::SocketAddr};
 use tokio::net::UdpSocket;
@@ -11,15 +10,17 @@ pub(crate) struct Batch {
     pub segment: usize,
     short: bool,
     quantum: usize,
+    count: usize,
 }
 impl Batch {
     pub fn new() -> Self {
         Self {
-            bytes: Vec::with_capacity(16 * 1350),
+            bytes: Vec::with_capacity(65507),
             info: None,
             segment: 0,
             short: false,
             quantum: 0,
+            count: 0,
         }
     }
     pub fn push(&mut self, bytes: &[u8], info: quiche::SendInfo, quantum: usize) -> bool {
@@ -29,7 +30,8 @@ impl Batch {
                 || previous.from != info.from
                 || previous.to != info.to
                 || self.bytes.len() + bytes.len() > self.quantum
-                || self.bytes.len() + bytes.len() > 16 * 1350
+                || self.bytes.len() + bytes.len() > 65507
+                || self.count == 16
             {
                 return false;
             }
@@ -38,6 +40,7 @@ impl Batch {
             self.quantum = quantum.max(bytes.len());
         }
         self.short = bytes.len() < self.segment;
+        self.count += 1;
         let at = self
             .info
             .as_ref()
@@ -50,6 +53,7 @@ impl Batch {
         self.bytes.clear();
         self.info = None;
         self.short = false;
+        self.count = 0;
     }
     #[cfg(any(feature = "quic", test))]
     pub async fn send(&mut self, sender: &Sender, socket: &UdpSocket) -> io::Result<()> {
@@ -116,6 +120,11 @@ mod tests {
         batch.clear();
         assert!(batch.push(&[0; 1350], info, 1)); // never split one QUIC datagram
         assert!(!batch.push(&[0; 1], info, 1));
+        batch.clear();
+        for _ in 0..3 {
+            assert!(batch.push(&[0; 16384], info, usize::MAX));
+        }
+        assert!(!batch.push(&[0; 16384], info, usize::MAX));
     }
 
     #[tokio::test]
@@ -157,6 +166,35 @@ mod tests {
             );
         }
     }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn oversized_probe_is_loss_and_does_not_prevent_smaller_packets() {
+        let tx = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let rx = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        super::super::packet_mtu::prepare(&tx).unwrap();
+        let sender = Sender::default();
+        // Above the absolute IPv4 UDP payload limit, even on loopback.
+        sender
+            .send(&tx, &vec![0; 65508], 65508, rx.local_addr().unwrap())
+            .await
+            .unwrap();
+        assert!(sender.mtu_loss.get());
+        sender
+            .send(&tx, &[42; 1200], 1200, rx.local_addr().unwrap())
+            .await
+            .unwrap();
+        let mut bytes = [0; 1500];
+        let (n, _) = tokio::time::timeout(Duration::from_secs(1), rx.recv_from(&mut bytes))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(&bytes[..n], &[42; 1200]);
+        assert_eq!(
+            rx.try_recv_from(&mut bytes).unwrap_err().kind(),
+            io::ErrorKind::WouldBlock
+        );
+    }
 }
 
 /// Cache unsupported GSO per connection. A rejected aggregate is sent as the
@@ -165,8 +203,17 @@ mod tests {
 pub(crate) struct Sender {
     #[cfg(target_os = "linux")]
     unsupported: Cell<bool>,
+    mtu_loss: Cell<bool>,
 }
 impl Sender {
+    pub fn check_path_mtu(&self, conn: &mut quiche::Connection) {
+        // A probe that is too large is packet loss for quiche's DPLPMTUD. A
+        // previously discovered path size can also become invalid; ask the
+        // upstream engine to revalidate it rather than killing reliable RPC.
+        if self.mtu_loss.replace(false) && conn.pmtu().is_some() {
+            conn.revalidate_pmtu();
+        }
+    }
     pub async fn send(
         &self,
         socket: &UdpSocket,
@@ -201,16 +248,11 @@ impl Sender {
                         ))
                     }
                     Err(error) if error.kind() == io::ErrorKind::WouldBlock => continue,
+                    Err(error) if error.raw_os_error() == Some(libc::EMSGSIZE) => break,
                     Err(error)
                         if matches!(
                             error.raw_os_error(),
-                            Some(
-                                libc::EINVAL
-                                    | libc::EIO
-                                    | libc::ENOPROTOOPT
-                                    | libc::EOPNOTSUPP
-                                    | libc::EMSGSIZE
-                            )
+                            Some(libc::EINVAL | libc::EIO | libc::ENOPROTOOPT | libc::EOPNOTSUPP)
                         ) =>
                     {
                         self.unsupported.set(true);
@@ -221,11 +263,18 @@ impl Sender {
             }
         }
         for packet in bytes.chunks(segment) {
-            if socket.send_to(packet, to).await? != packet.len() {
-                return Err(io::Error::new(
-                    io::ErrorKind::WriteZero,
-                    "partial UDP datagram",
-                ));
+            match socket.send_to(packet, to).await {
+                Ok(n) if n == packet.len() => (),
+                Err(error) if super::packet_mtu::too_large(&error, packet.len()) => {
+                    self.mtu_loss.set(true);
+                }
+                Err(error) => return Err(error),
+                Ok(_) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::WriteZero,
+                        "partial UDP datagram",
+                    ))
+                }
             }
         }
         Ok(())

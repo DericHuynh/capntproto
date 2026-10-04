@@ -189,7 +189,8 @@ impl Driver {
         conn: &mut quiche::Connection,
         socket: &mut PacketSocket,
         now: Instant,
-    ) -> io::Result<()> {
+    ) -> io::Result<Option<SocketAddr>> {
+        let mut migrated = None;
         while let Some(id) = conn.retired_scid_next() {
             if let PacketSocket::Shared(shared) = socket {
                 shared.retire_cid(id.as_ref());
@@ -237,12 +238,13 @@ impl Driver {
             if let Some(result) = result {
                 let pending = self.pending.take().unwrap();
                 if result.is_ok() {
+                    migrated = Some(pending.path.local);
                     *socket = PacketSocket::Dedicated(pending.socket);
                 }
                 let _ = pending.reply.send(result);
             }
         }
-        Ok(())
+        Ok(migrated)
     }
     pub(super) fn timeout(&self, now: Instant) -> Duration {
         self.pending.as_ref().map_or(Duration::from_secs(10), |p| {
@@ -335,6 +337,7 @@ impl Driver {
                             "migration requires a fresh socket",
                         ));
                     }
+                    candidate.prepare()?;
                     self.probes += 1;
                     conn.probe_path(local, peer).map_err(error)?;
                     Ok(Path { local, peer })

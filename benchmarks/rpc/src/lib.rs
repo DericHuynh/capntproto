@@ -238,12 +238,15 @@ pub fn run(protocol: Option<&str>) -> Result<()> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
-    runtime.block_on(tokio::task::LocalSet::new().run_until(async {
-        match args.first().map(String::as_str) {
-            Some("server") if args.len() == 2 => serve(&args[1]).await,
-            Some("measure") => measure(&args[1..]).await,
-            _ => Err("expected server or measure".into()),
-        }
+    runtime.block_on(tokio::task::LocalSet::new().run_until(async move {
+        tokio::task::spawn_local(async move {
+            match args.first().map(String::as_str) {
+                Some("server") if args.len() == 2 => serve(&args[1]).await,
+                Some("measure") => measure(&args[1..]).await,
+                _ => Err("expected server or measure".into()),
+            }
+        })
+        .await?
     }))
 }
 

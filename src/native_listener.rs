@@ -18,7 +18,9 @@ use tokio::{net::UdpSocket, sync::Notify, time::Instant};
 
 pub const MAX_ROUTES: usize = 64;
 pub const MAX_ISSUED: usize = 4096;
-pub const MAX_PACKET_BYTES: usize = 1350;
+pub const MAX_PACKET_BYTES: usize = crate::rpc::packet_mtu::RECEIVE_MAX;
+/// Bound queued payload memory independently of the discovered path MTU.
+pub const MAX_QUEUED_BYTES: usize = 128 * 1024;
 pub const MAX_CONTEXT_BYTES: usize = 1024;
 #[derive(Clone, Copy, Debug)]
 pub struct Limits {
@@ -86,6 +88,7 @@ struct Packet {
 }
 struct Route {
     queue: VecDeque<Packet>,
+    queued_bytes: usize,
     capacity: usize,
     signal: Rc<Notify>,
     shutdown: Rc<Notify>,
@@ -165,9 +168,12 @@ fn dispatch(state: &RefCell<Registry>, bytes: &[u8], from: SocketAddr, now: Inst
         let Some(route) = state.routes.get_mut(&owner) else {
             return;
         };
-        if route.queue.len() >= route.capacity {
+        if route.queue.len() >= route.capacity
+            || route.queued_bytes + bytes.len() > MAX_QUEUED_BYTES
+        {
             return;
         }
+        route.queued_bytes += bytes.len();
         route.queue.push_back(Packet { bytes, from });
         route.signal.clone()
     };
@@ -438,6 +444,7 @@ impl Listener {
             id,
             Route {
                 queue: VecDeque::new(),
+                queued_bytes: 0,
                 capacity: self.0.limits.queue,
                 signal: signal.clone(),
                 shutdown: shutdown.clone(),
@@ -656,6 +663,10 @@ impl Drop for SharedSocket {
     }
 }
 impl SharedSocket {
+    pub(crate) fn prepare(&self) -> io::Result<()> {
+        self.check_open()?;
+        self.socket.prepare()
+    }
     pub(crate) async fn send_segments(
         &self,
         sender: &crate::rpc::packet_batch::Sender,
@@ -723,13 +734,15 @@ impl SharedSocket {
             let notified = signal.notified();
             self.check_open()?;
             let state = self.state.upgrade().ok_or_else(closed)?;
-            let packet = state
-                .borrow_mut()
-                .routes
-                .get_mut(&self.id)
-                .ok_or_else(closed)?
-                .queue
-                .pop_front();
+            let packet = {
+                let mut state = state.borrow_mut();
+                let route = state.routes.get_mut(&self.id).ok_or_else(closed)?;
+                let packet = route.queue.pop_front();
+                if let Some(packet) = &packet {
+                    route.queued_bytes -= packet.bytes.len();
+                }
+                packet
+            };
             if let Some(packet) = packet {
                 break packet;
             }
@@ -817,6 +830,52 @@ mod tests {
             .routes
             .get(&id)
             .map_or(0, |r| r.queue.len())
+    }
+    #[tokio::test(flavor = "current_thread")]
+    async fn large_packet_queue_obeys_byte_budget_and_reuses_drained_space() {
+        tokio::task::LocalSet::new()
+            .run_until(async {
+                let listener = Listener::bind(
+                    "127.0.0.1:0".parse().unwrap(),
+                    Rc::new(Identity::generate()),
+                    Limits::default(),
+                )
+                .await
+                .unwrap();
+                let mut slot = listener.reserve([1; 32], None, b"").unwrap();
+                let id = slot.target().connection_id;
+                let mut bytes = packet(id);
+                bytes.resize(MAX_PACKET_BYTES, 0);
+                let from = "127.0.0.1:12345".parse().unwrap();
+                let capacity = MAX_QUEUED_BYTES / MAX_PACKET_BYTES;
+                for _ in 0..capacity + 1 {
+                    dispatch(&listener.0.state, &bytes, from, Instant::now());
+                }
+                assert_eq!(queued(&listener, id), capacity);
+                let mut buffer = vec![0; MAX_PACKET_BYTES];
+                for _ in 0..capacity {
+                    let (n, source) = slot
+                        .socket
+                        .as_mut()
+                        .unwrap()
+                        .recv_from(&mut buffer)
+                        .await
+                        .unwrap();
+                    assert_eq!(n, bytes.len());
+                    assert_eq!(source, from);
+                    assert_eq!(buffer, bytes);
+                }
+                assert_eq!(queued(&listener, id), 0);
+                for _ in 0..capacity {
+                    dispatch(&listener.0.state, &bytes, from, Instant::now());
+                }
+                assert_eq!(queued(&listener, id), capacity);
+                assert_eq!(
+                    listener.0.state.borrow().routes[&id].queued_bytes,
+                    MAX_QUEUED_BYTES
+                );
+            })
+            .await;
     }
     #[tokio::test(flavor = "current_thread")]
     async fn parser_queue_lifetime_limits_and_expiry_release_buffers() {

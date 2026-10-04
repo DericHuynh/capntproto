@@ -454,7 +454,7 @@ retained in `charts/data.json`.
 
 ## QUIC performance investigation (October 2026)
 
-The latency target is Native at **no more than 3× the C++ Cap'n Proto median**
+The initial latency target was Native at **no more than 3× the C++ Cap'n Proto median**
 for each payload in the fixed workload above. This compares authenticated QUIC
 with plaintext TCP; encryption, peer authentication, congestion control and
 pacing remain enabled. Tail latency is reported separately, and loopback results
@@ -529,3 +529,23 @@ cryptography remain visible in CPU profiles. Increasing the stream buffers from
 reverted. A receive-offload prototype offered a smaller additional gain than
 removing unnecessary scheduler turns; it was not merged. The shipped changes
 use the unmodified Quiche crate and keep bounded buffering and backpressure.
+
+### Follow-up target: 1.5×
+
+The next target is at most **1.5× C++ median latency for every payload** with the
+same authentication and validated workload. Dedicated-host confirmation is
+pending; the preceding 3× results do not establish this target.
+
+The candidate caches the active socket address until validated migration,
+enables ThinLTO and one codegen unit for checkout release builds, and runs all
+Rust benchmark application futures as local tasks. Linux sockets now prohibit
+IP fragmentation and allow Quiche to probe up to 16 KiB. Larger stream staging
+and bounded segmentation batches become useful with that larger packet size.
+Real encrypted relay tests cover initial MTU fallback and a silently shrinking
+path, including exact transferred bytes and shutdown receipts. Shared-listener
+queues have a separate 128 KiB byte budget.
+
+Local ablations rejected custom queue-turn yielding, a local RPC task queue,
+and lazy pipeline resolution because they did not improve latency. Local HPET
+timing has substantially higher clock-read costs than the dedicated host's
+clock; local ratios are diagnostics, not evidence that the target is met.

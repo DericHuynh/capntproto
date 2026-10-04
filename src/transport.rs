@@ -10,6 +10,8 @@ mod engine;
 mod engine_tests;
 mod identity;
 mod mobility;
+#[cfg(test)]
+mod mtu_tests;
 mod scheduling;
 mod shutdown;
 #[cfg(test)]
@@ -52,9 +54,10 @@ pub fn config_for_version(
     let mut c = identity.quiche_config(peer, psk, context, version)?;
     c.set_application_protos(&[b"capntproto/3"])?;
     c.set_max_idle_timeout(10_000);
-    // Probe up to the adapter's packet buffer instead of staying at QUIC's
-    // 1200-byte minimum. Lost probes retain the smaller working path MTU.
-    c.set_max_send_udp_payload_size(1350);
+    // Discover the path limit within the adapter's bound. Application packets
+    // stay at QUIC's minimum until larger unfragmented probes succeed.
+    c.set_max_send_udp_payload_size(crate::rpc::packet_mtu::SEND_MAX);
+    c.set_max_recv_udp_payload_size(crate::rpc::packet_mtu::RECEIVE_MAX);
     c.discover_pmtu(true);
     c.set_initial_max_data(2 * 1024 * 1024);
     c.set_initial_max_stream_data_bidi_local(1024 * 1024);
@@ -141,7 +144,7 @@ fn spawn(
         )),
     )
 }
-/// Conservative payload bound for the fixed 1,350-byte packet buffer.
+/// Conservative datagram payload bound, including paths at QUIC's minimum MTU.
 pub const MAX_DATAGRAM_BYTES: usize = 1024;
 pub const DATAGRAM_QUEUE: usize = 64;
 
@@ -273,6 +276,12 @@ pub(crate) enum PacketSocket {
     Shared(crate::native_listener::SharedSocket),
 }
 impl PacketSocket {
+    fn prepare(&self) -> io::Result<()> {
+        match self {
+            Self::Dedicated(socket) => socket.prepare(),
+            Self::Shared(socket) => socket.prepare(),
+        }
+    }
     async fn flush_batch(
         &self,
         sender: &crate::rpc::packet_batch::Sender,
@@ -340,6 +349,7 @@ async fn drive(
     io: DuplexStream,
     drivers: SessionDrivers,
 ) -> io::Result<()> {
+    socket.prepare()?;
     // Listener shutdown must also cancel packet pacing and blocked writes,
     // not only wake the socket receive branch.
     let stopped = socket.stopped();
@@ -379,16 +389,17 @@ async fn drive_packets(
     let mut engine = engine::Engine::new(conn, established.is_some(), shutdown, scheduling);
     let mut udp = vec![0; 65535];
     let mut candidate_packet = vec![0; 65535];
-    let mut out = vec![0; 1350];
+    let mut out = vec![0; crate::rpc::packet_mtu::SEND_MAX];
     let mut batch = crate::rpc::packet_batch::Batch::new();
     let sender = crate::rpc::packet_batch::Sender::default();
+    let mut mtu_recovery = crate::rpc::packet_mtu::Recovery::default();
     let (mut reader, mut writer) = tokio::io::split(io);
+    let mut local = socket.local_addr()?;
     loop {
         let changed = schedule_changed.notified();
         tokio::pin!(changed);
         changed.as_mut().enable();
         socket.check_open()?;
-        let local = socket.local_addr()?;
         // Consume a bounded receive burst before generating acknowledgements.
         // Flushing after each datagram creates an ACK and scheduler round trip
         // per packet even when the rest of the same stream write is queued.
@@ -412,9 +423,10 @@ async fn drive_packets(
             return Ok(());
         }
         if let Some(mobility) = &mut mobility {
-            mobility.step(&mut engine.conn, &mut socket, now)?;
+            if let Some(migrated) = mobility.step(&mut engine.conn, &mut socket, now)? {
+                local = migrated;
+            }
         }
-        let local = socket.local_addr()?;
         if engine.ready() {
             if let Some(d) = &mut datagrams {
                 // Never block reliable RPC on an unread unreliable lane.
@@ -506,6 +518,7 @@ async fn drive_packets(
             }
         }
         socket.flush_batch(&sender, &mut batch).await?;
+        sender.check_path_mtu(&mut engine.conn);
         if !exhausted && engine.packets_drained() {
             return Ok(());
         }
@@ -559,7 +572,7 @@ async fn drive_packets(
             },
             r=async { reader.read(engine.tx.read_buffer()?).await }, if can_read => engine.tx.read(r?)?,
             r=writer.write(engine.rx.pending()), if can_write => engine.delivered(r?)?,
-            _=tokio::time::sleep(timeout) => engine.conn.on_timeout(),
+            _=tokio::time::sleep(timeout) => mtu_recovery.on_timeout(&mut engine.conn),
         }
     }
 }
