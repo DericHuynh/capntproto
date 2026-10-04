@@ -115,8 +115,14 @@ class WorkflowTriggerTests(unittest.TestCase):
         events = publishers[0]['on']
         self.assertEqual(set(events), {'workflow_run', 'workflow_dispatch'})
         self.assertEqual(events['workflow_run']['types'], ['completed'])
-        self.assertEqual(set(events['workflow_run']['workflows']), {
-            self.workflows[name]['name'] for name in ('verification-tests', 'verification-models', 'verification-fuzz', 'performance')})
+        # workflow_run names are glob patterns, so TLA+'s plus must be escaped.
+        # Require literal producer names to prevent missed reports or a loop
+        # from accidentally matching the publisher itself.
+        producers = (self.workflows[name]['name'] for name in
+                     ('verification-tests', 'verification-models', 'verification-fuzz', 'performance'))
+        literals = {''.join('\\' + c if c in r'\*+?![]' else c for c in name)
+                    for name in producers}
+        self.assertEqual(set(events['workflow_run']['workflows']), literals)
 
 
 if __name__ == '__main__':

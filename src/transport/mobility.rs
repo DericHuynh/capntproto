@@ -364,6 +364,33 @@ impl Driver {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn invalid_candidate_setup_does_not_enqueue_or_consume_a_probe() {
+        let (socket, peer) = std::os::unix::net::UnixDatagram::pair().unwrap();
+        socket.set_nonblocking(true).unwrap();
+        let descriptor: std::os::fd::OwnedFd = socket.into();
+        let socket = UdpSocket::from_std(std::net::UdpSocket::from(descriptor)).unwrap();
+        let (control, mut driver) = pair();
+        let error = control
+            .migrate(
+                socket,
+                "127.0.0.1:12345".parse().unwrap(),
+                Duration::from_secs(1),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert_eq!(
+            driver.commands.try_recv().err(),
+            Some(mpsc::error::TryRecvError::Empty)
+        );
+        assert!(driver.pending.is_none());
+        assert_eq!(driver.probes, 0);
+        assert!(peer.send(b"rejected candidate must be closed").is_err());
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn candidate_socket_error_retires_probe_and_preserves_original_socket() {
         let old = PacketSocket::Dedicated(

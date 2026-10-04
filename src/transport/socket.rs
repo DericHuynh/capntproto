@@ -94,3 +94,39 @@ impl DatagramIo for DatagramSocket {
         }
     }
 }
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+    use std::os::{fd::OwnedFd, unix::net::UnixDatagram};
+
+    #[tokio::test]
+    async fn rejected_address_family_releases_the_owned_socket() {
+        let (socket, peer) = UnixDatagram::pair().unwrap();
+        socket.set_nonblocking(true).unwrap();
+        // OwnedFd conversion is safe, but the descriptor's address family still
+        // needs validation before configuring a QUIC path.
+        let descriptor: OwnedFd = socket.into();
+        let socket = UdpSocket::from_std(std::net::UdpSocket::from(descriptor)).unwrap();
+        let error = DatagramSocket::new(socket).err().unwrap();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert!(peer.send(b"rejected socket must be closed").is_err());
+    }
+
+    #[test]
+    fn stopped_reactor_registration_releases_the_bound_port() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_io()
+            .build()
+            .unwrap();
+        let socket = runtime.block_on(UdpSocket::bind("127.0.0.1:0")).unwrap();
+        let address = socket.local_addr().unwrap();
+        let handle = runtime.handle().clone();
+        drop(runtime);
+        let _entered = handle.enter();
+        assert!(DatagramSocket::new(socket).is_err());
+        // A failed registration must relinquish ownership of the UDP socket.
+        let rebound = std::net::UdpSocket::bind(address).unwrap();
+        assert_eq!(rebound.local_addr().unwrap(), address);
+    }
+}
