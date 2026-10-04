@@ -446,12 +446,21 @@ async fn drive_packets(
             if let Some(written) = writer.write(engine.rx.pending()).now_or_never() {
                 engine.delivered(written?)?;
                 application_progress = true;
-                for _ in 0..4 {
-                    tokio::task::yield_now().await;
-                    if engine.tx.can_read() {
-                        if let Some(read) = reader.read(engine.tx.read_buffer()?).now_or_never() {
-                            engine.tx.read(read?)?;
-                            break;
+                // Finish delivering already-buffered input before waiting for
+                // a reply. Otherwise every partial large message pays four
+                // scheduler turns although the RPC reader still needs bytes.
+                if engine.tx.can_read()
+                    && engine.rx.pending().is_empty()
+                    && !engine.conn.stream_readable(0)
+                {
+                    for _ in 0..4 {
+                        tokio::task::yield_now().await;
+                        if engine.tx.can_read() {
+                            if let Some(read) = reader.read(engine.tx.read_buffer()?).now_or_never()
+                            {
+                                engine.tx.read(read?)?;
+                                break;
+                            }
                         }
                     }
                 }
