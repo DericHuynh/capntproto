@@ -111,7 +111,7 @@ Awaiting the first dedicated CI run; no measurements have been invented.
 
 ### Fuzzing: libFuzzer and AFL++
 
-[2026-10-04T19:52:03Z · run 37229897797 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37229897797) · commit `bee81ac4fda3` · **failure**
+[2026-10-04T20:19:39Z · run 37231663048 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37231663048) · commit `f3cb761866ce` · **success**
 
 ![Fuzzing executions by engine](docs/reports/fuzz-executions.svg)
 

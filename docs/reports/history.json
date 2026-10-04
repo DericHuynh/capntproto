@@ -1348,6 +1348,29 @@
         },
         "source_id": "aa033de6abb0cbd2ef51c642e20e457b4bec0f8baa897498829e65fb834c305c",
         "tests": null,
+        "charts": [],
+        "status": "failed",
+        "note": "Lane failed or did not complete; inspect the linked CI run."
+      }
+    },
+    {
+      "run_id": 37231663048,
+      "attempt": 1,
+      "commit": "f3cb761866ceebe9992b4032264bca63b4a993bb",
+      "date": "2026-10-04T20:19:39Z",
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/37231663048",
+      "conclusion": "success",
+      "data": {
+        "format": 1,
+        "kind": "fuzz",
+        "origin": {
+          "repository": "DericHuynh/capntproto",
+          "run_id": 37231663048,
+          "attempt": 1,
+          "commit": "f3cb761866ceebe9992b4032264bca63b4a993bb"
+        },
+        "source_id": "0cacd758268ab8bf8efd9b297824d19338a4f051dd2ba88ff680d48e5acb266f",
+        "tests": null,
         "charts": [
           {
             "name": "fuzz-executions",
@@ -1356,23 +1379,52 @@
             "note": "Bounded campaigns including seed calibration; execution counts are not comparable performance benchmarks.",
             "panels": [
               {
+                "title": "libFuzzer + ASan",
+                "bars": [
+                  {
+                    "label": "libFuzzer / capnp_framing",
+                    "value": 16384
+                  },
+                  {
+                    "label": "libFuzzer / capnp_pointers",
+                    "value": 16384
+                  },
+                  {
+                    "label": "libFuzzer / capnp_schema",
+                    "value": 16384
+                  },
+                  {
+                    "label": "libFuzzer / native_packet",
+                    "value": 1024
+                  },
+                  {
+                    "label": "libFuzzer / native_stream",
+                    "value": 1024
+                  },
+                  {
+                    "label": "libFuzzer / rpc_lifecycle",
+                    "value": 16384
+                  }
+                ]
+              },
+              {
                 "title": "AFL++ + RPC IJON",
                 "bars": [
                   {
                     "label": "AFL++ / capnp_framing",
-                    "value": 636606
+                    "value": 573397
                   },
                   {
                     "label": "AFL++ / capnp_pointers",
-                    "value": 1949522
+                    "value": 2068000
                   },
                   {
                     "label": "AFL++ / capnp_schema",
-                    "value": 697876
+                    "value": 755967
                   },
                   {
                     "label": "AFL++ / rpc_lifecycle",
-                    "value": 64922
+                    "value": 115290
                   }
                 ]
               }
@@ -1384,6 +1436,35 @@
             "unit": "Feedback entries",
             "note": "Engine-local counters, not LLVM source coverage. Do not compare counts across engines or builds.",
             "panels": [
+              {
+                "title": "libFuzzer + ASan",
+                "bars": [
+                  {
+                    "label": "libFuzzer / capnp_framing",
+                    "value": 575
+                  },
+                  {
+                    "label": "libFuzzer / capnp_pointers",
+                    "value": 1169
+                  },
+                  {
+                    "label": "libFuzzer / capnp_schema",
+                    "value": 3119
+                  },
+                  {
+                    "label": "libFuzzer / native_packet",
+                    "value": 5591
+                  },
+                  {
+                    "label": "libFuzzer / native_stream",
+                    "value": 5618
+                  },
+                  {
+                    "label": "libFuzzer / rpc_lifecycle",
+                    "value": 6531
+                  }
+                ]
+              },
               {
                 "title": "AFL++ + RPC IJON",
                 "bars": [
@@ -1397,11 +1478,11 @@
                   },
                   {
                     "label": "AFL++ / capnp_schema",
-                    "value": 5039
+                    "value": 5076
                   },
                   {
                     "label": "AFL++ / rpc_lifecycle",
-                    "value": 9443
+                    "value": 9909
                   }
                 ]
               }
@@ -1413,6 +1494,35 @@
             "unit": "Inputs",
             "note": "Saved crashes/hangs are findings requiring triage, not confirmed unique bugs. Missing results remain unknown.",
             "panels": [
+              {
+                "title": "libFuzzer + ASan",
+                "bars": [
+                  {
+                    "label": "libFuzzer / capnp_framing",
+                    "value": 0
+                  },
+                  {
+                    "label": "libFuzzer / capnp_pointers",
+                    "value": 0
+                  },
+                  {
+                    "label": "libFuzzer / capnp_schema",
+                    "value": 0
+                  },
+                  {
+                    "label": "libFuzzer / native_packet",
+                    "value": 0
+                  },
+                  {
+                    "label": "libFuzzer / native_stream",
+                    "value": 0
+                  },
+                  {
+                    "label": "libFuzzer / rpc_lifecycle",
+                    "value": 0
+                  }
+                ]
+              },
               {
                 "title": "AFL++ + RPC IJON",
                 "bars": [
@@ -1453,8 +1563,8 @@
             ]
           }
         ],
-        "status": "failed",
-        "note": "Lane failed or did not complete; inspect the linked CI run."
+        "status": "passed",
+        "note": "Evidence passed."
       }
     }
   ],
