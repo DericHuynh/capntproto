@@ -111,19 +111,7 @@ Awaiting the first dedicated CI run; no measurements have been invented.
 
 ### Fuzzing: libFuzzer and AFL++
 
-[2026-10-03T23:12:46Z · run 37161030846 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37161030846) · commit `ed95a35ac251` · **success**
-
-![Fuzzing executions by engine](docs/reports/fuzz-executions.svg)
-
-Bounded campaigns including seed calibration; execution counts are not comparable performance benchmarks.
-
-![Fuzzer feedback by engine](docs/reports/fuzz-coverage.svg)
-
-Engine-local counters, not LLVM source coverage. Do not compare counts across engines or builds.
-
-![Saved fuzzing findings](docs/reports/fuzz-findings.svg)
-
-Saved crashes/hangs are findings requiring triage, not confirmed unique bugs. Missing results remain unknown.
+[2026-10-04T04:10:21Z · run 37176221838 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37176221838) · commit `659901c62461` · **failure**
 
 AFL++ guides the RPC lifecycle oracle with IJON state and progress annotations. Corpus inputs, crashes, hangs, logs and engine statistics are retained in the linked run. Fuzzer counters are not source coverage percentages.
 
