@@ -390,12 +390,44 @@
           "total": 1128,
           "suites": 176,
           "complete": true,
+          "command_passed": true
+        },
+        "charts": [],
+        "status": "failed",
+        "note": "Workflow failed after measurement; see the CI run."
+      }
+    },
+    {
+      "run_id": 37162266234,
+      "attempt": 1,
+      "commit": "ed95a35ac2515a549935c3c3ce4bd09c792fa6ac",
+      "date": "2026-10-03T23:35:28Z",
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/37162266234",
+      "conclusion": "failure",
+      "data": {
+        "format": 1,
+        "kind": "cargo",
+        "origin": {
+          "repository": "DericHuynh/capntproto",
+          "run_id": 37162266234,
+          "attempt": 1,
+          "commit": "ed95a35ac2515a549935c3c3ce4bd09c792fa6ac"
+        },
+        "source_id": "fec878f884402877922bf93693050d11cf88fcc25d6ae8ecccb6efab3971e2fd",
+        "tests": {
+          "passed": 1236,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 19,
+          "total": 1255,
+          "suites": 199,
+          "complete": true,
           "command_passed": true,
           "failures": []
         },
         "charts": [],
         "status": "failed",
-        "note": "Workflow failed after measurement; see the CI run."
+        "note": "Lane failed or did not complete; inspect the linked CI run."
       }
     }
   ]
