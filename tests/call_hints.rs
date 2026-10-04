@@ -181,7 +181,15 @@ impl Fixture {
         // requests resolution without issuing an application method call.
         let cap = pipeline.get_cap();
         let mut resolve = Box::pin(cap.client.when_resolved());
-        let m = tokio::select! { m = self.next_call() => m, result = &mut resolve => { result.unwrap(); self.next_call().await } };
+        // Drive resolution first when both futures are ready. Random selection
+        // makes this fixture's exercised paths depend on Tokio's RNG seed.
+        let m = match futures::future::select(&mut resolve, Box::pin(self.next_call())).await {
+            futures::future::Either::Left((result, call)) => {
+                result.unwrap();
+                call.await
+            }
+            futures::future::Either::Right((message, _)) => message,
+        };
         let message::Call(c) = m
             .get_body()
             .unwrap()
