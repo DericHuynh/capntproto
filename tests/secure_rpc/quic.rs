@@ -225,7 +225,19 @@ async fn listener_accepts_while_peer_stalls_and_preserves_established_rpc_after_
         let (mut stalled, cap, close, task) = tokio::select! { r = clients => r, r = &mut listening => panic!("listener exited: {r:?}") };
         drop(listening);
         assert_peer_closes(&mut stalled).await;
+        // A fresh Initial must be rejected after admission stops. Send it
+        // before the established RPC round trip, which also gives the shared
+        // router a processing barrier without a scheduling sleep.
+        let probe = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let mut config = quiche::Config::new(quiche::PROTOCOL_VERSION).unwrap();
+        config.set_application_protos(&[b"probe"]).unwrap();
+        let address = endpoint.local_addr().unwrap();
+        let mut connection = quiche::connect(None, &quiche::ConnectionId::from_ref(&[91; 16]), probe.local_addr().unwrap(), address, &mut config).unwrap();
+        let mut initial = [0; 1350];
+        let (length, _) = connection.send(&mut initial).unwrap();
+        probe.send_to(&initial[..length], address).await.unwrap();
         assert_eq!(echo(&cap, 82).await.unwrap(), 82);
+        assert!(futures::poll!(std::pin::pin!(endpoint.accept())).is_pending());
         close.await.unwrap(); task.await.unwrap().unwrap();
         server.drain().await.unwrap(); drop(server); server_task.await.unwrap().unwrap();
     }).await;
