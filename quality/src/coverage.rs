@@ -394,35 +394,63 @@ pub fn collect(r: &mut Runner) -> Result<()> {
     let llvm = Path::new(sysroot.trim()).join("lib/rustlib/x86_64-unknown-linux-gnu/bin");
     // Instrument the Cargo partition once. Models, fuzz campaigns and extended
     // memory/mutation controls have independent jobs and reports.
-    let mut test_args = vec![
-        "test",
-        "--locked",
-        "--ignore-rust-version",
-        "--workspace",
-        "--no-fail-fast",
-        "--",
-        "-Z",
-        "unstable-options",
-        "--format=json",
-    ];
-    for skip in crate::lanes::CARGO_SKIPS {
-        test_args.extend(["--skip", *skip]);
-    }
-    r.run(
+    let exclusions = crate::lanes::CARGO_SKIPS
+        .iter()
+        .map(|name| format!("test({name})"))
+        .collect::<Vec<_>>()
+        .join(" | ");
+    let filter = format!("not ({exclusions})");
+    let tests = r.nextest(
         "workspace-tests",
-        instrumented(&test_args, &build, &profiles)
-            .env("CAPNTPROTO_CI_LANE", "cargo")
-            .env("CAPNTPROTO_FULL_COVERAGE_BUILD", &build)
-            .env("CAPNTPROTO_FULL_COVERAGE_PROFILES", &profiles)
-            .env("CAPNTPROTO_FULL_COVERAGE_FLAGS", FLAGS)
-            .env(
-                "RUSTDOCFLAGS",
-                format!(
-                    "{FLAGS} -Z unstable-options --persist-doctests {}",
-                    build.join("doctests").display()
-                ),
+        instrumented(
+            &[
+                "nextest",
+                "run",
+                "--locked",
+                "--ignore-rust-version",
+                "--workspace",
+                "--no-fail-fast",
+                "-E",
+                &filter,
+            ],
+            &build,
+            &profiles,
+        )
+        .env("CAPNTPROTO_CI_LANE", "cargo")
+        .env("CAPNTPROTO_FULL_COVERAGE_BUILD", &build)
+        .env("CAPNTPROTO_FULL_COVERAGE_PROFILES", &profiles)
+        .env("CAPNTPROTO_FULL_COVERAGE_FLAGS", FLAGS),
+    );
+    // Nextest does not run rustdoc tests. Keep their instrumentation and result
+    // stream separate, and still execute them after a unit/integration failure.
+    let docs = r.run(
+        "workspace-doctests",
+        instrumented(
+            &[
+                "test",
+                "--locked",
+                "--ignore-rust-version",
+                "--workspace",
+                "--doc",
+                "--no-fail-fast",
+                "--",
+                "-Z",
+                "unstable-options",
+                "--format=json",
+            ],
+            &build,
+            &profiles,
+        )
+        .env(
+            "RUSTDOCFLAGS",
+            format!(
+                "{FLAGS} -Z unstable-options --persist-doctests {}",
+                build.join("doctests").display(),
             ),
-    )?;
+        ),
+    );
+    tests?;
+    docs?;
 
     let mut objects = vec![];
     let mut paths = vec![];
@@ -578,7 +606,7 @@ pub fn collect(r: &mut Runner) -> Result<()> {
         r.directory.join("summary.json"),
         serde_json::to_vec_pretty(&summary)?,
     )?;
-    r.evidence.data = json!({"summary":summary,"objects":objects.len(),"profiles":profile_paths.len(),"llvm_json_sha256":v::sha256(export),"build":build,"scope":"First-party Rust line/region/function/branch coverage only; vendored, generated and external sources excluded; zero-hit mappings retained and unmapped owned files explicit; no MC/DC claim"});
+    r.evidence.data = json!({"test_reports":r.evidence.data["test_reports"],"summary":summary,"objects":objects.len(),"profiles":profile_paths.len(),"llvm_json_sha256":v::sha256(export),"build":build,"scope":"First-party Rust line/region/function/branch coverage only; vendored, generated and external sources excluded; zero-hit mappings retained and unmapped owned files explicit; no MC/DC claim"});
     Ok(())
 }
 

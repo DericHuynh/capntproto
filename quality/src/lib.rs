@@ -131,6 +131,42 @@ impl Runner {
         };
         self.run(name, cmd.arg("auditable").args(args))
     }
+    /// Give each invocation its own JUnit destination, including failures. A
+    /// previous run or a nested nextest process cannot supply its evidence.
+    pub fn nextest(&mut self, name: &str, cmd: &mut Command) -> Result<String> {
+        if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
+            return Err("invalid log name".into());
+        }
+        let junit = self.directory.join("logs").join(format!("{name}.xml"));
+        if junit.exists() {
+            fs::remove_file(&junit)?;
+        }
+        let config = tempfile::Builder::new()
+            .prefix("nextest-")
+            .suffix(".toml")
+            .tempfile_in(&self.directory)?;
+        let base = fs::read_to_string(root().join(".config/nextest.toml"))?;
+        fs::write(
+            config.path(),
+            format!(
+                "{base}\n[profile.evidence]\ninherits = \"ci\"\n[profile.evidence.junit]\npath = {}\n",
+                serde_json::to_string(&junit)?,
+            ),
+        )?;
+        cmd.args(["--profile", "evidence", "--config-file"])
+            .arg(config.path());
+        let result = self.run(name, cmd);
+        if junit.exists() {
+            self.evidence.data["test_reports"][name] = json!({
+                "file": format!("{name}.xml"),
+                "sha256": v::sha256(fs::read(junit)?),
+            });
+            self.save()?;
+        } else if result.is_ok() {
+            return Err("successful nextest command produced no JUnit report".into());
+        }
+        result
+    }
     pub fn save(&self) -> Result<()> {
         fs::write(
             self.directory.join("evidence.json"),
@@ -154,7 +190,23 @@ impl Runner {
 }
 
 pub fn qualification(r: &mut Runner) -> Result<()> {
-    r.cargo("workspace-tests", &["test", "--locked", "--workspace"])?;
-    r.evidence.data = json!({"scope":"Default-feature workspace tests, including bounded models, Miri, mutations, fuzz controls, native/C++ checks and doctests"});
+    let tests = r.nextest(
+        "workspace-tests",
+        v::command("cargo").args([
+            "auditable",
+            "nextest",
+            "run",
+            "--locked",
+            "--workspace",
+            "--no-fail-fast",
+        ]),
+    );
+    let docs = r.cargo(
+        "workspace-doctests",
+        &["test", "--locked", "--workspace", "--doc"],
+    );
+    tests?;
+    docs?;
+    r.evidence.data["scope"] = "Default-feature workspace tests, including bounded models, Miri, mutations, fuzz controls, native/C++ checks and doctests".into();
     Ok(())
 }

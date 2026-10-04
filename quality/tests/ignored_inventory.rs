@@ -1,33 +1,26 @@
 //! Listing ignored controls does not execute them or repeat the workspace suite.
 use capntproto_test_support::verification as v;
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fs,
-};
+use std::{collections::BTreeMap, fs};
 #[test]
 fn ignored_controls_have_reviewed_reasons() {
-    let output = v::run(
+    let output = v::run_stdout(
         std::process::Command::new("cargo")
             .current_dir(v::root())
+            .env_remove("NEXTEST_PROFILE")
             .args([
-                "test",
+                "nextest",
+                "list",
                 "--locked",
                 "--ignore-rust-version",
                 "--workspace",
                 "--all-targets",
-                "--",
-                "--ignored",
-                "--list",
+                "--message-format=json",
             ]),
         &v::root().join("target/verification/ignored-inventory.log"),
         0,
     )
     .unwrap();
-    let actual: BTreeSet<_> = output
-        .lines()
-        .filter_map(|line| line.strip_suffix(": test"))
-        .map(str::to_owned)
-        .collect();
+    let actual = v::nextest::inventory(&output, true);
     let reviewed: BTreeMap<String, String> =
         serde_json::from_slice(&fs::read(v::root().join("quality/ignored-tests.json")).unwrap())
             .unwrap();

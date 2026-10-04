@@ -86,7 +86,7 @@ there is no automatic replay of a Join on another route.
 
 ## Verification
 
-`cargo test --test protocol_models multiparty_join_model -- --exact` checks
+`cargo nextest run --test protocol_models multiparty_join_model -- --exact` checks
 `RpcMultipartyJoin.tla`: **326 states and 392 edge-prefix replays** for two and
 three shares, equal objects, different objects on one host, different hosts,
 tampered shares, proof validation, direct acquisition, cancellation and

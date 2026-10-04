@@ -117,8 +117,8 @@ resumable file transfer, not unbounded streaming or a cross-file transaction.
 
 ## Verification
 
-Run `cargo test --test protocol_models durable_bulk_model -- --exact` or the canonical
-`cargo test --locked --workspace --all-targets`. `RpcDurableBulk.tla` models two chunks,
+Run `cargo nextest run --test protocol_models durable_bulk_model -- --exact` or the canonical
+`cargo nextest run --locked --workspace --all-targets`. `RpcDurableBulk.tla` models two chunks,
 explicit retries, incomplete/repeated completion, cancellation, restart,
 history compaction, revocation, concurrent target edits and digest failure.
 The seven graphs contain 1,625 states and 2,971 edges.

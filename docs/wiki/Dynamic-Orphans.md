@@ -246,14 +246,14 @@ unrelated message capabilities retain their normal lifetimes.
 
 ## Verification
 
-Run `cargo test --test protocol_models dynamic_orphans_model -- --exact` and
-`cargo test --test protocol_models orphan_access_model -- --exact`, or the canonical
-`cargo test --locked --workspace --all-targets`.
+Run `cargo nextest run --test protocol_models dynamic_orphans_model -- --exact` and
+`cargo nextest run --test protocol_models orphan_access_model -- --exact`, or the canonical
+`cargo nextest run --locked --workspace --all-targets`.
 The concatenation/shrink model can also be run independently with
-`cargo test --test protocol_models orphan_concat_model -- --exact`.
-Group views use `cargo test --test protocol_models orphan_groups_model -- --exact`. External
-data and arena resizing use `cargo test --test protocol_models external_data_model -- --exact` and
-`cargo test --test protocol_models arena_resize_model -- --exact` from the repository root.
+`cargo nextest run --test protocol_models orphan_concat_model -- --exact`.
+Group views use `cargo nextest run --test protocol_models orphan_groups_model -- --exact`. External
+data and arena resizing use `cargo nextest run --test protocol_models external_data_model -- --exact` and
+`cargo nextest run --test protocol_models arena_resize_model -- --exact` from the repository root.
 
 `RpcDynamicOrphans.tla` has 156 states and 320 edges. Every shortest prefix ending
 in a graph edge replays through four production API paths (pointer fields,
@@ -310,7 +310,7 @@ payload addresses, initialized bytes and physical segment lengths, with five
 rejected faults. These are bounded component checks, not a proof of complete
 RPC refinement.
 
-`cargo test --test tooling orphan_memory_safety -- --exact` runs the external-data, group-conversion and arena
+`cargo nextest run --test tooling orphan_memory_safety -- --exact` runs the external-data, group-conversion and arena
 reuse regressions under Valgrind Memcheck. The canonical suite includes this
 check and requires Valgrind, in addition to its existing Rust, C++ and TLC tools.
 

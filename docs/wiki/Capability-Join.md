@@ -83,7 +83,7 @@ membrane still treats that wrapper as its equality endpoint. `forward_join`
 does not implicitly forward shares through membrane policies. Caller-side
 authorized batches can use independent Native paths after delegation.
 
-Run `cargo test --test protocol_models membrane_join_model -- --exact` for **246 TLC states,
+Run `cargo nextest run --test protocol_models membrane_join_model -- --exact` for **246 TLC states,
 640 Rust wire trace replays and eight detected fault mutations**. The bounded
 model covers two imports, both directions, authorization, mixed boundaries,
 equal/unequal results, either response order, cancellation, revocation,
@@ -97,7 +97,7 @@ checks, not a proof for arbitrary policies or whole-runtime composition.
 
 ## Bilateral verification
 
-Run `cargo test --test protocol_models two_party_join_model -- --exact` for TLC and production
+Run `cargo nextest run --test protocol_models two_party_join_model -- --exact` for TLC and production
 Rust trace replay. `RpcTwoPartyJoin.tla` checks four local/relayed, equal/unequal
 scenarios: 408 states and 536 edges. Each edge is exercised through a shortest
 prefix and replayed through real Join wire messages. Checks cover arrival and

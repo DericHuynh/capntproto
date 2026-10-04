@@ -18,29 +18,12 @@ const SELECTION: &[&str] = &[
     "--lib",
     "--test",
     "authority",
-    "--",
-    "--skip",
-    "replay_tlc_",
-    "--skip",
-    "unix_rpc::",
+    "-E",
+    "not (test(replay_tlc_) | test(unix_rpc::))",
 ];
 
-fn native_tests(output: &str, suffix: &str) -> BTreeSet<String> {
-    output
-        .lines()
-        .filter_map(|line| {
-            let line = if suffix == " ... ok" {
-                line.strip_prefix("test ")?
-            } else {
-                line
-            };
-            line.strip_suffix(suffix).map(str::to_owned)
-        })
-        .collect()
-}
-
 fn selected_tests(output: &str) -> BTreeSet<String> {
-    let tests = native_tests(output, ": test");
+    let tests = v::nextest::inventory(output, false);
     for required in [
         "exhaustive_rights_decoding_and_attenuation",
         "revocation_waits_observe_ancestors_before_and_after_registration",
@@ -96,10 +79,10 @@ fn authority_and_transition_mutations() {
     inventory
         .current_dir(&tree)
         .env("CARGO_TARGET_DIR", &target)
-        .args(["test", "--locked", "--no-default-features"])
+        .args(["nextest", "list", "--locked", "--no-default-features"])
         .args(SELECTION)
-        .arg("--list");
-    let inventory = run(&mut inventory, &log("inventory"), 0).unwrap();
+        .arg("--message-format=json");
+    let inventory = v::run_stdout(&mut inventory, &log("inventory"), 0).unwrap();
     let tests = selected_tests(&inventory);
     let mut mutate = command("cargo");
     mutate
@@ -108,6 +91,7 @@ fn authority_and_transition_mutations() {
         .args([
             "mutants",
             "--no-config",
+            "--test-tool=nextest",
             "--no-default-features",
             "--in-place",
             "--package",
@@ -125,7 +109,9 @@ fn authority_and_transition_mutations() {
             "--cargo-arg=--locked",
             "--cargo-arg=--lib",
             "--cargo-arg=--test=authority",
-            "--cargo-arg=--no-fail-fast",
+            "--cargo-arg=--message-format=libtest-json-plus",
+            "--cargo-arg=-E",
+            "--cargo-arg=not (test(replay_tlc_) | test(unix_rpc::))",
             "--output",
         ])
         .arg(directory.join("results"));
@@ -137,7 +123,7 @@ fn authority_and_transition_mutations() {
     for file in FILES {
         mutate.args(["--file", file]);
     }
-    mutate.arg("--").args(&SELECTION[3..]);
+    mutate.env("NEXTEST_EXPERIMENTAL_LIBTEST_JSON", "1");
     let outcome = v::run_with_timeout(&mut mutate, &log("mutations"), 0, Duration::from_secs(1800));
     // Check originals even when mutants survive or a child command fails.
     assert_eq!(
@@ -207,14 +193,14 @@ fn authority_and_transition_mutations() {
                 if case["scenario"] == "Baseline" {
                     json!("Success")
                 } else {
-                    json!({"Failure":101})
+                    json!({"Failure":100})
                 }
             );
         }
         if case["scenario"] == "Baseline" {
             baseline += 1;
             assert_eq!(case["summary"], "Success");
-            assert_eq!(native_tests(&text, " ... ok"), tests);
+            assert_eq!(v::nextest::passed(&text), tests);
         } else if case["summary"] == "Unviable" {
             let mutant = &case["scenario"]["Mutant"];
             let function = mutant["function"]["function_name"].as_str().unwrap();
@@ -233,14 +219,13 @@ fn authority_and_transition_mutations() {
             assert!(!text.contains("Running unittests"));
         } else {
             assert_eq!(case["summary"], "CaughtMutant");
+            let failed = v::nextest::outcomes(&text, "failed");
             assert!(
-                text.contains("test result: FAILED."),
+                !failed.is_empty(),
                 "a tool/build failure is not a caught assertion"
             );
             assert!(
-                tests
-                    .iter()
-                    .any(|name| text.contains(&format!("test {name} ... FAILED"))),
+                failed.is_subset(&tests),
                 "failure not attributed to a selected test"
             );
         }
@@ -285,11 +270,11 @@ fn authority_and_transition_coverage() {
     )
     .unwrap();
     let inputs = v::distribution::source_hashes(&root()).unwrap();
-    let inventory = run(
+    let inventory = v::run_stdout(
         command("cargo")
-            .args(["test", "--locked", "--no-default-features"])
+            .args(["nextest", "list", "--locked", "--no-default-features"])
             .args(SELECTION)
-            .arg("--list"),
+            .arg("--message-format=json"),
         &log("inventory"),
         0,
     )
@@ -302,19 +287,29 @@ fn authority_and_transition_coverage() {
             .env("CARGO_LLVM_COV_TARGET_DIR", &target)
             .args([
                 "llvm-cov",
+                "nextest",
                 "--locked",
                 "--no-default-features",
                 "--no-cfg-coverage",
-                "--json",
-                "--output-path",
+                "--no-report",
+                "--message-format=libtest-json-plus",
             ])
-            .arg(&export)
+            .env("NEXTEST_EXPERIMENTAL_LIBTEST_JSON", "1")
             .args(SELECTION),
         &log("coverage"),
         0,
     )
     .unwrap();
-    assert_eq!(native_tests(&output, " ... ok"), tests);
+    assert_eq!(v::nextest::passed(&output), tests);
+    run(
+        command("cargo")
+            .env("CARGO_LLVM_COV_TARGET_DIR", &target)
+            .args(["llvm-cov", "report", "--json", "--output-path"])
+            .arg(&export),
+        &log("export"),
+        0,
+    )
+    .unwrap();
     run(
         command("cargo")
             .env("CARGO_LLVM_COV_TARGET_DIR", &target)

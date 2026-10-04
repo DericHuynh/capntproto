@@ -55,9 +55,12 @@ const CASES: &[(&str, &str, &str)] = &[
     ),
 ];
 
-fn child(binary: &Path, test: &str, output: &Path) -> Command {
-    let mut cmd = command(binary);
-    cmd.args(["--exact", test, "--nocapture"])
+fn child(metadata: &Path, test: &str, output: &Path) -> Command {
+    let mut cmd = command("cargo");
+    cmd.args(["nextest", "run", "--binaries-metadata"])
+        .arg(metadata);
+    v::nextest::json_output(&mut cmd);
+    cmd.args(["-E", &format!("test(={test})")])
         .env("CAPNTPROTO_SCHEDULE_OUTPUT", output)
         .env_remove("CAPNTPROTO_SCHEDULE_REPLAY");
     for (name, _) in std::env::vars_os() {
@@ -70,10 +73,7 @@ fn child(binary: &Path, test: &str, output: &Path) -> Command {
 
 fn passed(cmd: &mut Command, log: &Path) {
     let output = run(cmd, log, 0).unwrap();
-    assert!(
-        output.contains("test result: ok. 1 passed; 0 failed; 0 ignored;"),
-        "missing scenario execution: {output}"
-    );
+    assert_eq!(v::nextest::passed(&output).len(), 1, "{output}");
 }
 
 #[test]
@@ -88,9 +88,11 @@ fn recorded_async_schedules_replay_across_processes() {
         0,
     )
     .unwrap();
-    let build = run(
+    let metadata = directory.join("binaries.json");
+    let build = v::run_stdout(
         command("cargo").args([
-            "test",
+            "nextest",
+            "list",
             "--locked",
             "--no-default-features",
             "--features",
@@ -98,22 +100,24 @@ fn recorded_async_schedules_replay_across_processes() {
             "--lib",
             "--test",
             "authority_schedules",
-            "--no-run",
+            "--list-type=binaries-only",
             "--message-format=json",
         ]),
         &directory.join("build.log"),
         0,
     )
     .unwrap();
-    let binaries: BTreeMap<String, PathBuf> = build
-        .lines()
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .filter(|value| value["reason"] == "compiler-artifact" && value["profile"]["test"] == true)
-        .filter_map(|value| {
-            Some((
-                value["target"]["name"].as_str()?.to_owned(),
-                PathBuf::from(value["executable"].as_str()?),
-            ))
+    fs::write(&metadata, &build).unwrap();
+    let inventory: Value = serde_json::from_str(&build).unwrap();
+    let binaries: BTreeMap<String, PathBuf> = inventory["rust-binaries"]
+        .as_object()
+        .unwrap()
+        .values()
+        .map(|value| {
+            (
+                value["binary-name"].as_str().unwrap().to_owned(),
+                PathBuf::from(value["binary-path"].as_str().unwrap()),
+            )
         })
         .collect();
     assert_eq!(binaries.len(), 2);
@@ -124,7 +128,7 @@ fn recorded_async_schedules_replay_across_processes() {
         for process in 0..2 {
             let output = directory.join(format!("process-{process}"));
             passed(
-                &mut child(binary, test, &output),
+                &mut child(&metadata, test, &output),
                 &directory.join(format!("{name}-{process}.log")),
             );
             let bytes = fs::read(output.join(name).join("runs.json")).unwrap();
@@ -158,7 +162,7 @@ fn recorded_async_schedules_replay_across_processes() {
         let replay = directory.join(format!("{name}-single.json"));
         fs::write(&replay, serde_json::to_vec_pretty(&saved).unwrap()).unwrap();
         passed(
-            child(binary, test, &directory.join("replay"))
+            child(&metadata, test, &directory.join("replay"))
                 .env("CAPNTPROTO_SCHEDULE_REPLAY", &replay),
             &directory.join(format!("{name}-replay.log")),
         );
@@ -176,10 +180,10 @@ fn recorded_async_schedules_replay_across_processes() {
             let file = directory.join(format!("{name}-{fault}.json"));
             fs::write(&file, serde_json::to_vec_pretty(&bad).unwrap()).unwrap();
             let output = run(
-                child(binary, test, &directory.join("controls"))
+                child(&metadata, test, &directory.join("controls"))
                     .env("CAPNTPROTO_SCHEDULE_REPLAY", file),
                 &directory.join(format!("{name}-{fault}.log")),
-                101,
+                100,
             )
             .unwrap();
             assert!(
@@ -202,9 +206,9 @@ fn recorded_async_schedules_replay_across_processes() {
     ] {
         let lost = directory.join(name);
         let output = run(
-            child(&binaries["capntproto"], test, &lost).arg("--ignored"),
+            child(&metadata, test, &lost).args(["--run-ignored", "only"]),
             &directory.join(format!("{name}.log")),
-            101,
+            100,
         )
         .unwrap();
         assert!(output.contains("deadlock! blocked tasks:"));
@@ -219,15 +223,11 @@ fn recorded_async_schedules_replay_across_processes() {
             .iter()
             .any(|(name, _)| name == "case-complete"));
         let output = run(
-            child(
-                &binaries["capntproto"],
-                test,
-                &directory.join(format!("{name}-replay")),
-            )
-            .arg("--ignored")
-            .env("CAPNTPROTO_SCHEDULE_REPLAY", saved),
+            child(&metadata, test, &directory.join(format!("{name}-replay")))
+                .args(["--run-ignored", "only"])
+                .env("CAPNTPROTO_SCHEDULE_REPLAY", saved),
             &directory.join(format!("{name}-replay.log")),
-            101,
+            100,
         )
         .unwrap();
         assert!(output.contains("deadlock! blocked tasks:"));

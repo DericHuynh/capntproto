@@ -28,6 +28,7 @@ jobs:
       - name: Prevent duplicate automatic workflow runs
         run: |
           python3 -m unittest discover -s scripts/tests -p 'test_workflow_triggers.py' -v
+          python3 -m unittest discover -s scripts/tests -p 'test_nextest_ci.py' -v
           python3 -m unittest discover -s scripts/tests -p 'test_afl_fuzz.py' -v
           python3 -m unittest discover -s scripts/tests -p 'test_package_fuzz_report.py' -v
       - name: Check auditable build scripts
@@ -35,6 +36,7 @@ jobs:
           shellcheck scripts/setup-auditable.sh scripts/auditable-cargo.sh scripts/auditable-bench-rustc.sh scripts/test-auditable-cargo.sh
           bash scripts/test-auditable-cargo.sh
           pyflakes3 scripts/check_auditable.py scripts/tests/test_workflow_triggers.py scripts/afl_fuzz.py scripts/tests/test_afl_fuzz.py
+          pyflakes3 scripts/nextest_ci.py scripts/tests/test_nextest_ci.py
           pyflakes3 scripts/package_fuzz_report.py scripts/tests/test_package_fuzz_report.py
       - name: Check cloud capacity selection and cleanup
         run: |

@@ -253,8 +253,8 @@ possible after admission; retry is explicit and covers the whole snapshot.
 
 ## Verification
 
-Run `cargo test --test protocol_models realtime_model -- --exact` for the focused check, or
-`cargo test --locked --workspace --all-targets` for the complete current runtime suite.
+Run `cargo nextest run --test protocol_models realtime_model -- --exact` for the focused check, or
+`cargo nextest run --locked --workspace --all-targets` for the complete current runtime suite.
 The focused report is `reports/capntproto/realtime/verification.json`.
 
 Five `RpcRealtimeReceiver.tla` configurations contain 6,336 states across separate
@@ -272,21 +272,21 @@ resource limits, clock regression and overflow. The implementation model uses
 two immutable snapshots and bounded keys/time; its trace replay is a component
 check, not a proof of arbitrary executions or composed transport/RPC refinement.
 
-`cargo test --locked --lib realtime::lifecycle_tests -- --nocapture` additionally
+`cargo nextest run --locked --lib realtime::lifecycle_tests -- --nocapture` additionally
 checks `RealtimeReceiptLifecycle.tla`: **12,761 states / 41,966 edge prefixes**
 replayed through the receiver and real receipt futures, with seven model fault
 controls. Native tests cover payload release, reentrant wakes, waiter exhaustion
 and retained snapshot identity; **14 external compiler contracts** protect the
 immutable snapshot API. See [bounds and observations](../archive/Testing-History.md#realtime-record-and-receipt-lifecycle).
 
-`cargo test --locked --test realtime_config -- --nocapture` checks immutable
+`cargo nextest run --locked --test realtime_config -- --nocapture` checks immutable
 configuration imports and subsequent admission/publication against
 `RealtimeConfigBoundary.tla`: **15,108 states / 19,811 edge prefixes**, with eleven
 model fault controls. Native tests exercise production-width resource boundaries,
 malformed clock domains, framed RPC advertisements and sender exhaustion;
 compiler contracts reject configuration bypasses. See [scope](../archive/Testing-History.md#checked-realtime-configuration).
 
-The focused datagram checker is `cargo test --test protocol_models realtime_datagram_model -- --exact`.
+The focused datagram checker is `cargo nextest run --test protocol_models realtime_datagram_model -- --exact`.
 `RpcRealtimeDatagram.tla` explores 1,669 states and replays all 10,566 edge-prefix
 traces through the production datagram ingress and real RPC control calls.
 The model covers two copies of one immutable snapshot, packet loss, retries,
@@ -304,7 +304,7 @@ RPC control boundary; it is not a proof of cryptography, arbitrary network
 schedules or whole-program refinement. Automatic grant migration across
 three-party handoff and hard realtime execution remain outside this adapter.
 
-Run `cargo test --test protocol_models realtime_fragments_model -- --exact` for the fragmentation
+Run `cargo nextest run --test protocol_models realtime_fragments_model -- --exact` for the fragmentation
 checks, also included in the canonical runtime runner. `RpcRealtimeFragments.tla`
 has 1,191 states and 10,321 edge-prefix Rust replays with two fragment positions
 and a competing incomplete transfer. It covers reordering, duplicate and corrupt
@@ -314,7 +314,7 @@ sender and queue with two free slots, two sequence numbers, backpressure, retrie
 and shutdown. Eleven injected faults must violate their specified invariants.
 The combined report is `reports/capntproto/realtime-fragments/verification.json`.
 
-`cargo test --locked --lib transport::datagram_reentry_tests -- --nocapture`
+`cargo nextest run --locked --lib transport::datagram_reentry_tests -- --nocapture`
 also checks `DatagramReentry.tla`: **3,021 states / 3,192 native edge prefixes**,
 with eight model fault controls. It covers synchronous wake callbacks during
 submission, nested offers/retries/close, capacity reservations and commitment

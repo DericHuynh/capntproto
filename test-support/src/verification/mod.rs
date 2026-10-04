@@ -20,6 +20,7 @@ use std::{
 };
 
 mod measurement;
+pub mod nextest;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -246,6 +247,9 @@ pub fn graph_digest(text: &str) -> Result<GraphDigest> {
 pub fn command(program: impl AsRef<std::ffi::OsStr>) -> Command {
     let mut cmd = Command::new(program);
     cmd.current_dir(root());
+    // Nextest exports its profile to tests. A nested workspace must choose its
+    // own profile, not inherit the outer CI report's temporary `evidence` profile.
+    cmd.env_remove("NEXTEST_PROFILE");
     if std::env::var_os("CAPNTPROTO_COVERAGE_CHILDREN_NATIVE").is_some() {
         // Coverage of this test process is retained. Nested compiler-contract,
         // Miri, sanitizer and mutation commands must use their own toolchains

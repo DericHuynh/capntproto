@@ -46,7 +46,7 @@ fn source_bundle_roundtrip() {
 }
 
 #[test]
-#[ignore = "full clean build; cargo test --test release isolated_release_qualification -- --ignored --exact"]
+#[ignore = "full clean build; cargo nextest run --test release isolated_release_qualification -- --ignored --exact"]
 fn isolated_release_qualification() {
     let before = d::verification_hashes(&root()).unwrap();
     let work = tempfile::Builder::new()
@@ -61,7 +61,7 @@ fn isolated_release_qualification() {
     for (name, args) in [
         (
             "tests",
-            vec!["test", "--locked", "--workspace", "--all-targets"],
+            vec!["nextest", "run", "--locked", "--workspace", "--all-targets"],
         ),
         ("doctests", vec!["test", "--locked", "--workspace", "--doc"]),
         (
@@ -110,7 +110,7 @@ fn isolated_release_qualification() {
 }
 
 #[test]
-#[ignore = "requires current qualification; cargo test --test release build_qualified_source -- --ignored --exact"]
+#[ignore = "requires current qualification; cargo nextest run --test release build_qualified_source -- --ignored --exact"]
 fn build_qualified_source() {
     d::build(
         &root(),

@@ -28,8 +28,8 @@ check() {
 # Empty toolchain, spaces, empty arguments and shell metacharacters survive.
 bash "$shim_dir/cargo" build --target-dir 'space dir' '' "literal \$value" > "$test_root/actual"
 check '' auditable build --target-dir 'space dir' '' "literal \$value"
-bash "$shim_dir/cargo" +nightly test --locked > "$test_root/actual"
-check '' +nightly auditable test --locked
+bash "$shim_dir/cargo" +nightly nextest run --locked > "$test_root/actual"
+check '' +nightly auditable nextest run --locked
 bash "$shim_dir/cargo" +nightly auditable build > "$test_root/actual"
 check '' +nightly auditable build
 bash "$shim_dir/cargo" auditable build > "$test_root/actual"

@@ -197,7 +197,7 @@ fn worker(report: &Path) {
         if let TestError::Fail(_, case) = &error {
             let saved = artifact(&graph, case.clone());
             let path = save_failure(&saved);
-            eprintln!("replay: CAPNTPROTO_RPC_HISTORY_REPLAY={} cargo test --test composed_wire_boundary {TEST} -- --exact --nocapture",path.display());
+            eprintln!("replay: CAPNTPROTO_RPC_HISTORY_REPLAY={} cargo nextest run --test composed_wire_boundary {TEST} -- --exact --nocapture",path.display());
         }
         panic!("RPC history property failed: {error}");
     }

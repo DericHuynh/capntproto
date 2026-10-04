@@ -430,7 +430,7 @@ fn round_trip() {
     .unwrap();
     run(
         command("cargo")
-            .args(["test", "--offline", "--manifest-path"])
+            .args(["nextest", "run", "--offline", "--manifest-path"])
             .arg(project.path().join("Cargo.toml"))
             .env(
                 "CARGO_TARGET_DIR",
@@ -652,7 +652,7 @@ fn round_trip() {
     .unwrap();
     run(
         command("cargo")
-            .args(["test", "--offline", "--manifest-path"])
+            .args(["nextest", "run", "--offline", "--manifest-path"])
             .arg(project.path().join("Cargo.toml"))
             .env(
                 "CARGO_TARGET_DIR",
@@ -855,7 +855,7 @@ fn round_trip() {
 "#).unwrap();
     run(
         command("cargo")
-            .args(["test", "--offline", "--manifest-path"])
+            .args(["nextest", "run", "--offline", "--manifest-path"])
             .arg(project.path().join("Cargo.toml"))
             .env(
                 "CARGO_TARGET_DIR",
@@ -1310,7 +1310,7 @@ fn round_trip() {
     .unwrap();
     run(
         command("cargo")
-            .args(["test", "--offline", "--manifest-path"])
+            .args(["nextest", "run", "--offline", "--manifest-path"])
             .arg(project.path().join("Cargo.toml"))
             .env(
                 "CARGO_TARGET_DIR",
@@ -1698,7 +1698,7 @@ fn round_trip() {
 "#).unwrap();
     run(
         command("cargo")
-            .args(["test", "--offline", "--manifest-path"])
+            .args(["nextest", "run", "--offline", "--manifest-path"])
             .arg(project.path().join("Cargo.toml"))
             .env(
                 "CARGO_TARGET_DIR",

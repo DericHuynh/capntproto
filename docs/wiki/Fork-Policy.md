@@ -42,7 +42,7 @@ For an upgrade:
    transport tests, TLS/mTLS rejection tests and independent aioquic interoperability.
 6. Run the workspace and source-distribution acceptance gates.
 
-`cargo test --test tooling external_consumer_feature_matrix -- --exact` builds a
+`cargo nextest run --test tooling external_consumer_feature_matrix -- --exact` builds a
 separate client/server with the owned packages and no consumer root patches.
 The C++ reference remains a pinned submodule with a source hash inventory, so
 checks also work from an unpacked source release without Git metadata.

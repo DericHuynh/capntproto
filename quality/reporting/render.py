@@ -138,7 +138,7 @@ def test_chart(history, path, *, kind='full', title='Workspace Test Results'):
     fig, ax = plt.subplots(figsize=(15, 6.8))
     fig.subplots_adjust(left=.075, right=.975, bottom=.15, top=.74)
     fig.text(.075, .94, f'{NAME} — {title}', fontsize=25, weight='bold')
-    subtitle = 'Outer workspace tests + doctests · counts per CI run · UTC' if kind == 'full' else 'Cargo libtest results · selected partition · counts per CI run · UTC'
+    subtitle = 'Outer workspace tests + doctests · counts per CI run · UTC' if kind == 'full' else 'Nextest and doctest results · selected partition · counts per CI run · UTC'
     fig.text(.075, .885, subtitle, fontsize=12, color='#64748b')
     ax.set_facecolor('#f8fafc')
     ax.set_ylabel('Number of tests', weight='bold')
@@ -249,7 +249,7 @@ def render_artifact(data, output):
     if data['tests'] is not None:
         from .verification import chart
         charts.insert(0, chart('test-results', f"{data['kind'].title()} test results", 'Tests',
-                              'Actual selected libtest cases; filtered tests are not passes.',
+                              'Actual selected nextest/doctest cases; filtered tests are not passes.',
                               [('Results', [(key.title(), data['tests'][key])
                                             for key in ('passed', 'failed', 'errors', 'skipped')])]))
     text = f"# {data['kind'].title()} verification\n\nStatus: **{data['status']}**. {data['note']}\n\n"

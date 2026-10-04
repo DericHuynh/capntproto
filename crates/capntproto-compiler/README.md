@@ -13,5 +13,5 @@ Use the coordinated source checkout and Rust 1.97.0. This crate is unpublished.
 From the repository root, after the documented tool setup:
 
 ```sh
-cargo test --locked -p capntproto-compiler
+cargo nextest run --locked -p capntproto-compiler
 ```

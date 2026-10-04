@@ -73,5 +73,5 @@ metadata over authenticated Native UDP. These are bounded protocol checks, not a
 proof of full schema validation, arbitrary executor schedules or equivalence to
 the C++ loader.
 
-Run `cargo test --test protocol_models schema_exchange_model -- --exact` for focused verification or
-`cargo test --locked --workspace --all-targets` for the canonical runtime checks.
+Run `cargo nextest run --test protocol_models schema_exchange_model -- --exact` for focused verification or
+`cargo nextest run --locked --workspace --all-targets` for the canonical runtime checks.

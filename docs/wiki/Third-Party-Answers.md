@@ -102,7 +102,7 @@ after adoption. Invalid result transforms yield broken capabilities.
 
 ## Verification
 
-`cargo test --locked --test native_pipeline_migration` checks used and encoded
+`cargo nextest run --locked --test native_pipeline_migration` checks used and encoded
 references, early migration, deadline fallback, queued-call cancellation and
 relay disconnection over real Native sessions. `RpcPipelineFence.tla` explores
 23 states and supplies 22 native transition-prefix replays, three mutation
@@ -110,8 +110,8 @@ controls and fair-progress checks. [Deployment details](Discovery-and-Mobility.m
 describe this additional contract. The earlier caller-pipeline model below checks
 the default non-opted-in network behavior.
 
-Run `cargo test --test protocol_models answer_adoption_model -- --exact`. It is also part of
-`cargo test --locked --workspace --all-targets`.
+Run `cargo nextest run --test protocol_models answer_adoption_model -- --exact`. It is also part of
+`cargo nextest run --locked --workspace --all-targets`.
 
 * `RpcAnswerAdoption.tla`: 77 states, 114 edge-prefix Rust replays across success
   and exception scenarios. It checks either authorization order, early Return,
@@ -127,7 +127,7 @@ Run `cargo test --test protocol_models answer_adoption_model -- --exact`. It is 
   peer/kind separation, proxy fallback, self-adoption, direct pipelines, and
   real three-peer authenticated Native RPC with capability calls after the relay
   disconnects.
-* `cargo test --test protocol_models caller_pipeline_model -- --exact` checks
+* `cargo nextest run --test protocol_models caller_pipeline_model -- --exact` checks
   `RpcCallerPipeline.tla`: **2,011 states and 3,311 Rust wire trace replays**,
   plus fair-release liveness and nine detected fault mutations. It covers both
   authorization orders, early success/exception Return, unused/previously used

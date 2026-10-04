@@ -5,6 +5,7 @@ use std::io::Write;
 
 const DIRECTORIES: &[&str] = &[
     ".cargo",
+    ".config",
     ".github",
     "quality",
     "crates",
@@ -184,7 +185,7 @@ pub fn build(base: &Path, destination: &Path, qualified: bool) -> Result<Bundle>
         let checked: BTreeMap<PathBuf, String> =
             serde_json::from_value(evidence["sources"].clone())?;
         if verification_hashes(base)? != checked {
-            return Err("source qualification is stale; run cargo test --test release isolated_release_qualification -- --ignored --exact".into());
+            return Err("source qualification is stale; run cargo nextest run --test release isolated_release_qualification -- --ignored --exact".into());
         }
     }
     let mut manifest = Manifest {

@@ -448,7 +448,7 @@ opaque future types, malformed pointers, unbound and implicit parameters, and
 unchanged destinations after rejected copies. A pinned C++ differential compares
 **29 constant and member-annotation records** from a compiler-generated fixture.
 These checks validate this reflection component; they do not prove composed RPC
-refinement. Run them with `cargo test --locked --test schema_metadata`.
+refinement. Run them with `cargo nextest run --locked --test schema_metadata`.
 
 `RpcSchemaIntrospection.tla` explores **84 states and 336 edge-prefix traces**
 through production Rust brand binding/erasure/inheritance and union reads. Bounds
@@ -459,16 +459,16 @@ invariants. Runtime cases also cover nested/unused generic scopes, missing and
 out-of-range arguments, duplicate scopes, named groups, wrong-loader identity
 and a retained live capability pointer behind an inactive arm. A C++ differential
 matches **181 introspection records**. Run these checks with
-`cargo test --locked --test schema_introspection`. These are component checks,
+`cargo nextest run --locked --test schema_introspection`. These are component checks,
 not a complete runtime equivalence proof.
 
-Run `cargo test --test protocol_models schema_loader_model -- --exact` and
-`cargo test --test protocol_models dynamic_capability_model -- --exact`; orphan checks use
-`cargo test --test protocol_models dynamic_orphans_model -- --exact`, `cargo test --test protocol_models orphan_access_model -- --exact`
-and `cargo test --test protocol_models orphan_groups_model -- --exact`, or the canonical
-`cargo test --locked --workspace --all-targets`.
+Run `cargo nextest run --test protocol_models schema_loader_model -- --exact` and
+`cargo nextest run --test protocol_models dynamic_capability_model -- --exact`; orphan checks use
+`cargo nextest run --test protocol_models dynamic_orphans_model -- --exact`, `cargo nextest run --test protocol_models orphan_access_model -- --exact`
+and `cargo nextest run --test protocol_models orphan_groups_model -- --exact`, or the canonical
+`cargo nextest run --locked --workspace --all-targets`.
 
-`cargo test --locked --test schema_identity` explores `SchemaMemberIdentity` in
+`cargo nextest run --locked --test schema_identity` explores `SchemaMemberIdentity` in
 201 states / 649 edge-prefix traces, replaying every prefix through compiled and
 loaded Rust and pinned C++. It compares 3,608 cache observations plus 211 identity
 comparisons, including hash collisions, loader separation, unused brands and
@@ -476,7 +476,7 @@ inherited aliases. Five model mutations must fail. Bounds are nine handles and
 three cache operations; callbacks, lifetime rejection and exact construction
 limits have separate Cargo tests. This is a reflection component check.
 
-`cargo test --locked --test enum_brand` explores `EnumScopeIdentity` in 298 states /
+`cargo nextest run --locked --test enum_brand` explores `EnumScopeIdentity` in 298 states /
 770 edge-prefix traces. All traces replay through Rust and pinned C++: 2,914 state
 observations and 50 identity comparisons across 820 scenarios. Six model mutations
 must fail. The model bounds two reflection modes, five enum handles, three actions
@@ -484,7 +484,7 @@ and one non-union destination, checking cache identity, assignment rejection and
 unknown ordinal preservation. Nested/symbolic scopes, malformed brands and
 generated annotation callbacks have separate native tests.
 
-`cargo test --locked --test native_enum` explores `NativeEnumCast` in 494 states /
+`cargo nextest run --locked --test native_enum` explores `NativeEnumCast` in 494 states /
 917 edge-prefix traces, replayed through Rust and pinned C++ with 3,402 matching
 observations. Nine fault mutations must fail. Seven source cases, four ordinals
 and three actions check ID-only open enum casts, source-version member lookup

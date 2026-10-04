@@ -1,4 +1,4 @@
-//! CI partitions; plain `cargo test` continues to run the complete local suite.
+//! CI partitions; `cargo nextest run --workspace` continues to run the complete local suite.
 use crate::{Result, Runner};
 use capntproto_test_support::verification as v;
 
@@ -19,21 +19,18 @@ pub fn models(r: &mut Runner) -> Result<()> {
     let session = tempfile::Builder::new()
         .prefix("tlc-session-")
         .tempdir_in(&r.directory)?;
-    let result = r.run(
+    let result = r.nextest(
         "model-tests",
         v::command("cargo")
             .args([
                 "+nightly-2026-08-29",
                 "auditable",
-                "test",
+                "nextest",
+                "run",
                 "--locked",
                 "--workspace",
                 "--no-fail-fast",
                 "tlc",
-                "--",
-                "-Z",
-                "unstable-options",
-                "--format=json",
             ])
             .env("CAPNTPROTO_CI_LANE", "models")
             .env_remove("CAPNTPROTO_TLC_FRESH")
@@ -54,7 +51,7 @@ pub fn models(r: &mut Runner) -> Result<()> {
         }
     }
     models.sort_by_key(|value| value["id"].as_str().unwrap().to_owned());
-    r.evidence.data = serde_json::json!({"models": models});
+    r.evidence.data["models"] = serde_json::json!(models);
     r.save()?;
     result?;
     if models.is_empty() {
@@ -65,7 +62,10 @@ pub fn models(r: &mut Runner) -> Result<()> {
 
 /// Keep independent engines running after a finding so both retain diagnostics.
 pub fn fuzz(r: &mut Runner) -> Result<()> {
-    let libfuzzer = r.cargo("libfuzzer", &["test", "--locked", "--test", "native_fuzz"]);
+    let libfuzzer = r.cargo(
+        "libfuzzer",
+        &["nextest", "run", "--locked", "--test", "native_fuzz"],
+    );
     if libfuzzer.is_ok() {
         let bytes = std::fs::read(v::root().join("target/verification/native-fuzz/checked.json"))?;
         r.evidence.data["libfuzzer"] = serde_json::from_slice(&bytes)?;

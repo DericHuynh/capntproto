@@ -358,7 +358,7 @@ authenticated connection from setup through shutdown:
 
 ```sh
 cargo run --locked -p capntproto --example native_store -- /tmp/example.rp
-cargo test --locked -p capntproto --test rpc_ownership --test native_vat --test secure_rpc
+cargo nextest run --locked -p capntproto --test rpc_ownership --test native_vat --test secure_rpc
 ```
 
 [Native vat tests](../../tests/native_vat.rs) exercise three-party pipelining,

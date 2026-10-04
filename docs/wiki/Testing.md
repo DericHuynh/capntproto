@@ -1,15 +1,39 @@
 # Testing
 
-Run commands from the repository root. The ordinary full entry point is:
+Run commands from the repository root. Run the full suite with:
 
 ```sh
-cargo test --locked --workspace
+cargo nextest run --locked --workspace
+cargo test --locked --workspace --doc
 ```
 
 This includes runtime tests, generated API compiler contracts, bounded model
 checks and Rust replay, C++ comparisons and specialized verification subprocesses.
 It is much heavier than a compile/smoke check. Use the relevant focused target
 during development and record exactly what ran.
+
+## Test runner
+
+Install the pinned runner with `cargo install cargo-nextest --version 0.9.146 --locked`,
+or use nextest's [prebuilt binaries](https://nexte.st/docs/installation/pre-built-binaries/).
+CI installs the same version through the shared auditable setup action.
+`cargo nt` is the short form of `cargo nextest run --locked --workspace`.
+Nextest runs each test in a separate process, so the repository no longer sets
+`RUST_TEST_THREADS=1`. The [runner configuration](../../.config/nextest.toml)
+limits nested compiler and verification campaigns to two simultaneous tests;
+ordinary tests run concurrently. Retries are disabled and failures do not stop
+remaining tests. Use `-j 1` when diagnosing resource contention.
+
+Nextest does not run doctests: keep the explicit `cargo test --doc` command.
+Miri, cargo-careful, LLVM coverage, mutation testing, Valgrind and nested Rust
+fixtures use nextest too. Fuzz engines, TLC and the C++ reference retain their own
+runners; nextest executes their Rust orchestration tests. Child-process crash
+injection still directly executes its crash fixture to preserve signal semantics.
+
+CI uses JUnit for aggregate counts and failed-test links, with a distinct report
+per invocation. Tests skipped by a filter are excluded from pass counts. The
+experimental nextest JSON stream is used only for individual nested-test
+identities, never to sum suite counters. See [README reports](README-Reports.md).
 
 ## Prerequisites
 
@@ -35,20 +59,20 @@ and CI lanes. Platform smoke jobs do not qualify storage durability on every OS.
 
 | Change | Useful command |
 | --- | --- |
-| Structured replies and call ergonomics | `cargo test --locked --test rpc_reply --test field_api_rpc` |
-| Compile-time reply rejection contracts | `cargo test --locked --test api_contracts rpc_reply::structured_rpc_reply_compile_contracts -- --exact` |
-| Driver ownership and native vats | `cargo test --locked --test rpc_ownership --test native_vat` |
-| Admission, pipelining and forwarding | `cargo test --locked --test rpc_admission --test result_pipeline --test tail_transfer --test answer_adoption` |
-| TCP, TLS/mTLS and QUIC v1 | `cargo test --locked --test tcp_rpc --test secure_rpc` |
-| Native transport backends | `cargo test --locked --lib transport::backend_tests` |
-| Upstream QUIC adapter and registry pin | `cargo test --locked --lib transport:: -- --skip tlc` and `cargo test --locked --test tooling pinned_native_profile -- --exact` |
-| Native routes and migration | `cargo test --locked --test native_multiparty --test native_pipeline_migration --test native_deployment` |
-| Storage worker and component ORM | `cargo test --locked --test storage_worker --test component_orm` |
-| Storage recovery in child processes | `cargo test --locked --test tooling storage_crashes_in_isolated_process -- --exact` |
-| Rust compiler and reference comparisons | `cargo test --locked -p capntproto-compiler` and `cargo test --locked --test schema_compiler` |
-| Optional codecs and adapters | `cargo test --locked -p capntproto-compat` |
-| Generated field API contracts | `cargo test --locked --test tooling generated_api_compile_contracts -- --exact` |
-| Source archive and downstream use | `cargo test --locked --test release source_bundle_roundtrip -- --exact` and `cargo test --locked --test tooling external_consumer_default_features -- --exact` |
+| Structured replies and call ergonomics | `cargo nextest run --locked --test rpc_reply --test field_api_rpc` |
+| Compile-time reply rejection contracts | `cargo nextest run --locked --test api_contracts rpc_reply::structured_rpc_reply_compile_contracts -- --exact` |
+| Driver ownership and native vats | `cargo nextest run --locked --test rpc_ownership --test native_vat` |
+| Admission, pipelining and forwarding | `cargo nextest run --locked --test rpc_admission --test result_pipeline --test tail_transfer --test answer_adoption` |
+| TCP, TLS/mTLS and QUIC v1 | `cargo nextest run --locked --test tcp_rpc --test secure_rpc` |
+| Native transport backends | `cargo nextest run --locked --lib transport::backend_tests` |
+| Upstream QUIC adapter and registry pin | `cargo nextest run --locked --lib transport:: -- --skip tlc` and `cargo nextest run --locked --test tooling pinned_native_profile -- --exact` |
+| Native routes and migration | `cargo nextest run --locked --test native_multiparty --test native_pipeline_migration --test native_deployment` |
+| Storage worker and component ORM | `cargo nextest run --locked --test storage_worker --test component_orm` |
+| Storage recovery in child processes | `cargo nextest run --locked --test tooling storage_crashes_in_isolated_process -- --exact` |
+| Rust compiler and reference comparisons | `cargo nextest run --locked -p capntproto-compiler` and `cargo nextest run --locked --test schema_compiler` |
+| Optional codecs and adapters | `cargo nextest run --locked -p capntproto-compat` |
+| Generated field API contracts | `cargo nextest run --locked --test tooling generated_api_compile_contracts -- --exact` |
+| Source archive and downstream use | `cargo nextest run --locked --test release source_bundle_roundtrip -- --exact` and `cargo nextest run --locked --test tooling external_consumer_default_features -- --exact` |
 
 The structured reply compiler gate includes positive controls and exact expected
 Rust diagnostics for invalid ownership transitions. Runtime tests separately
@@ -59,9 +83,9 @@ For smaller feature builds:
 
 ```sh
 cargo check --locked --no-default-features --lib
-cargo test --locked --no-default-features --features tls --test secure_rpc
-cargo test --locked --no-default-features --features quic --test secure_rpc
-cargo test --locked --no-default-features --features storage --test storage_worker --test component_orm
+cargo nextest run --locked --no-default-features --features tls --test secure_rpc
+cargo nextest run --locked --no-default-features --features quic --test secure_rpc
+cargo nextest run --locked --no-default-features --features storage --test storage_worker --test component_orm
 ```
 
 Root integration tests are not all feature-gated. Use these selected targets;
@@ -71,7 +95,7 @@ Root integration tests are not all feature-gated. Use these selected targets;
 
 [models.json](../../test-support/verification/models.json) owns the active bounded
 model catalog, corpus hashes, negative controls and scope. Discover focused
-model checks with `cargo test --locked --test protocol_models -- --list`.
+model checks with `cargo nextest list --locked --test protocol_models`.
 Tests may run TLC and replay real implementation operations; read each model's
 bounds and fairness assumptions. One prefix per graph edge does not cover all
 histories or executor schedules.
@@ -87,8 +111,8 @@ Some ignored negative controls and crash tests are invoked by ordinary parent
 gates. Full composed exploration and clean release qualification are explicit:
 
 ```sh
-cargo test --locked --test protocol_models tlc_protocol_reference -- --ignored --exact
-cargo test --locked --test release isolated_release_qualification -- --ignored --exact
+cargo nextest run --locked --test protocol_models tlc_protocol_reference -- --ignored --exact
+cargo nextest run --locked --test release isolated_release_qualification -- --ignored --exact
 ```
 
 Do not run every ignored test indiscriminately: intentional negative controls
@@ -155,6 +179,6 @@ with the existing shared-oracle entry point:
 ```sh
 CAPNTPROTO_NATIVE_FUZZ_TARGET=rpc_lifecycle \
 CAPNTPROTO_NATIVE_FUZZ_REPLAY=target/afl-results/rpc_lifecycle/default/queue/INPUT \
-cargo test --locked --manifest-path fuzz/Cargo.toml --no-default-features \
+cargo nextest run --locked --manifest-path fuzz/Cargo.toml --no-default-features \
   --lib tests::replay_saved_fuzz_input -- --exact
 ```

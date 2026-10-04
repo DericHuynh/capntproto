@@ -10,7 +10,7 @@ The Cargo package is `capntproto-futures`. Its Rust library name remains `capnp_
 to preserve compatibility with generated bindings. Use a package alias when
 selecting it directly; the root `capntproto` crate already selects this coordinated set.
 All maintained crates share the root lockfile and are tested with
-`cargo test --workspace`. See the [workspace policy](../../docs/wiki/Fork-Policy.md).
+`cargo nextest run --workspace`. See the [workspace policy](../../docs/wiki/Fork-Policy.md).
 
 `BufferedRead::try_read_message_with_scratch` supports retained buffered messages.
 Here scratch includes the segment table as well as the payload. Short-lived

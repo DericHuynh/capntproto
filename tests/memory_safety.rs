@@ -18,31 +18,12 @@ const SUITES: &[(&str, usize)] = &[
     ("schema_loading", 2),
 ];
 
-fn passed(output: &str) -> BTreeSet<&str> {
-    let mut counts = output
-        .lines()
-        .filter_map(|line| {
-            line.strip_prefix("test result: ok. ")?
-                .split_once(" passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;")?
-                .0
-                .parse::<usize>()
-                .ok()
-        })
-        .collect::<Vec<_>>();
-    let mut expected: Vec<_> = SUITES.iter().map(|(_, count)| *count).collect();
-    counts.sort_unstable();
-    expected.sort_unstable();
-    assert_eq!(
-        counts, expected,
-        "suite count or unignored test inventory changed"
-    );
-    let tests: BTreeSet<_> = output
-        .lines()
-        .filter_map(|line| line.strip_prefix("test ")?.strip_suffix(" ... ok"))
-        .collect();
+fn passed(output: &str) -> BTreeSet<String> {
+    let tests = v::nextest::passed(output);
+    assert!(v::nextest::outcomes(output, "ignored").is_empty());
     assert_eq!(
         tests.len(),
-        expected.iter().sum::<usize>(),
+        SUITES.iter().map(|(_, count)| count).sum::<usize>(),
         "selected memory test inventory changed"
     );
     tests
@@ -66,6 +47,8 @@ fn source_inputs() -> BTreeMap<PathBuf, String> {
                     "schemas/field-api.capnp",
                     "tests/memory_safety.rs",
                     ".cargo/config.toml",
+                    ".config/nextest.toml",
+                    "test-support/src/verification/nextest.rs",
                     "rust-toolchain.toml",
                 ]
                 .iter()
@@ -150,7 +133,7 @@ fn serialization_and_ownership_miri() {
             selection.extend(["--test", suite]);
         }
         let native = run(
-            command("cargo").arg("test").args(&selection),
+            v::nextest::json_output(command("cargo").args(["nextest", "run"])).args(&selection),
             &log(&format!("native-{feature}")),
             0,
         )
@@ -160,7 +143,14 @@ fn serialization_and_ownership_miri() {
             let flags = format!("-Zmiri-strict-provenance -Zmiri-seed={seed}{extra}");
             let output = run(
                 command("cargo")
-                    .args([NIGHTLY, "miri", "test"])
+                    .args([
+                        NIGHTLY,
+                        "miri",
+                        "nextest",
+                        "run",
+                        "--message-format=libtest-json-plus",
+                    ])
+                    .env("NEXTEST_EXPERIMENTAL_LIBTEST_JSON", "1")
                     .args(&selection)
                     .args(["--target", TARGET])
                     // Do not inherit flags which disable UB checks or host isolation.
@@ -195,7 +185,9 @@ fn serialization_and_ownership_miri() {
                         .args([
                             NIGHTLY,
                             "miri",
-                            "test",
+                            "nextest",
+                            "run",
+                            "--message-format=libtest-json-plus",
                             "--locked",
                             "--manifest-path",
                             MANIFEST,
@@ -204,6 +196,7 @@ fn serialization_and_ownership_miri() {
                             "--target",
                             target,
                         ])
+                        .env("NEXTEST_EXPERIMENTAL_LIBTEST_JSON", "1")
                         .env("MIRIFLAGS", &flags)
                         .env_remove("RUSTFLAGS")
                         .env_remove("CARGO_ENCODED_RUSTFLAGS")
@@ -214,17 +207,7 @@ fn serialization_and_ownership_miri() {
                     0,
                 )
                 .unwrap();
-                assert!(output.contains(
-                    "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;"
-                ));
-                let names: BTreeSet<String> = output
-                    .lines()
-                    .filter_map(|line| {
-                        line.strip_prefix("test ")?
-                            .strip_suffix(" ... ok")
-                            .map(str::to_owned)
-                    })
-                    .collect();
+                let names = v::nextest::passed(&output);
                 assert_eq!(names.len(), 6);
                 if let Some(expected) = &inventory {
                     assert_eq!(&names, expected);
@@ -240,7 +223,8 @@ fn serialization_and_ownership_miri() {
             .args([
                 NIGHTLY,
                 "miri",
-                "test",
+                "nextest",
+                "run",
                 "--locked",
                 "--manifest-path",
                 MANIFEST,
@@ -260,7 +244,7 @@ fn serialization_and_ownership_miri() {
             .env_remove("MIRI_LIB_SRC")
             .env_remove("MIRI_NO_STD"),
         &log("detector-negative-control"),
-        1,
+        100,
     )
     .unwrap();
     assert!(control.contains("Undefined Behavior"));

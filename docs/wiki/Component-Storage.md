@@ -164,8 +164,8 @@ the existing encoding.
 
 ```sh
 cargo run --locked --release --no-default-features --features storage --example component_store
-cargo test --locked -p capntproto --no-default-features --features storage --lib storage::components
-cargo test --locked -p capntproto --no-default-features --features storage --test component_orm
+cargo nextest run --locked -p capntproto --no-default-features --features storage --lib storage::components
+cargo nextest run --locked -p capntproto --no-default-features --features storage --test component_orm
 ```
 
 The example performs 200 updates to an 8-byte text field beside 64 KiB of

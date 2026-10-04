@@ -18,26 +18,30 @@ fn runtime_packet_scenarios_replay_across_processes() {
         0,
     )
     .unwrap();
-    let build = run(
+    let metadata = directory.join("binaries.json");
+    let build = v::run_stdout(
         command("cargo").args([
-            "test",
+            "nextest",
+            "list",
             "--locked",
             "--no-default-features",
             "--features",
             "native",
             "--lib",
-            "--no-run",
+            "--list-type=binaries-only",
             "--message-format=json",
         ]),
         &directory.join("build.log"),
         0,
     )
     .unwrap();
-    let binaries: Vec<PathBuf> = build
-        .lines()
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .filter(|value| value["reason"] == "compiler-artifact" && value["profile"]["test"] == true)
-        .filter_map(|value| value["executable"].as_str().map(PathBuf::from))
+    fs::write(&metadata, &build).unwrap();
+    let inventory: Value = serde_json::from_str(&build).unwrap();
+    let binaries: Vec<PathBuf> = inventory["rust-binaries"]
+        .as_object()
+        .unwrap()
+        .values()
+        .map(|value| PathBuf::from(value["binary-path"].as_str().unwrap()))
         .collect();
     assert_eq!(binaries.len(), 1);
     let binary = &binaries[0];
@@ -45,15 +49,19 @@ fn runtime_packet_scenarios_replay_across_processes() {
     for process in 0..2 {
         let output = directory.join(format!("process-{process}"));
         let result = run(
-            command(binary)
-                .args(["--exact", CASE, "--nocapture"])
-                .env("CAPNTPROTO_RUNTIME_SIM_OUTPUT", &output)
-                .env_remove("CAPNTPROTO_RUNTIME_SIM_REPLAY"),
+            v::nextest::json_output(
+                command("cargo")
+                    .args(["nextest", "run", "--binaries-metadata"])
+                    .arg(&metadata),
+            )
+            .args(["--", "--exact", CASE])
+            .env("CAPNTPROTO_RUNTIME_SIM_OUTPUT", &output)
+            .env_remove("CAPNTPROTO_RUNTIME_SIM_REPLAY"),
             &directory.join(format!("sample-{process}.log")),
             0,
         )
         .unwrap();
-        assert!(result.contains("test result: ok. 1 passed; 0 failed; 0 ignored"));
+        assert_eq!(v::nextest::passed(&result).len(), 1);
         let saved: Value =
             serde_json::from_slice(&fs::read(output.join("runs.json")).unwrap()).unwrap();
         assert_eq!(saved["format"], 1);
@@ -67,24 +75,32 @@ fn runtime_packet_scenarios_replay_across_processes() {
     let replay = directory.join("process-0/runs.json");
     let output = directory.join("replay");
     let result = run(
-        command(binary)
-            .args(["--exact", CASE, "--nocapture"])
-            .env("CAPNTPROTO_RUNTIME_SIM_OUTPUT", &output)
-            .env("CAPNTPROTO_RUNTIME_SIM_REPLAY", &replay),
+        v::nextest::json_output(
+            command("cargo")
+                .args(["nextest", "run", "--binaries-metadata"])
+                .arg(&metadata),
+        )
+        .args(["--", "--exact", CASE])
+        .env("CAPNTPROTO_RUNTIME_SIM_OUTPUT", &output)
+        .env("CAPNTPROTO_RUNTIME_SIM_REPLAY", &replay),
         &directory.join("replay.log"),
         0,
     )
     .unwrap();
-    assert!(result.contains("test result: ok. 1 passed; 0 failed; 0 ignored"));
+    assert_eq!(v::nextest::passed(&result).len(), 1);
     let replayed: Value =
         serde_json::from_slice(&fs::read(output.join("runs.json")).unwrap()).unwrap();
     assert_eq!(replayed, cases[0]);
     // Replaying into the input directory must preserve the valid run.
     run(
-        command(binary)
-            .args(["--exact", CASE, "--nocapture"])
-            .env("CAPNTPROTO_RUNTIME_SIM_OUTPUT", directory.join("process-0"))
-            .env("CAPNTPROTO_RUNTIME_SIM_REPLAY", &replay),
+        v::nextest::json_output(
+            command("cargo")
+                .args(["nextest", "run", "--binaries-metadata"])
+                .arg(&metadata),
+        )
+        .args(["--", "--exact", CASE])
+        .env("CAPNTPROTO_RUNTIME_SIM_OUTPUT", directory.join("process-0"))
+        .env("CAPNTPROTO_RUNTIME_SIM_REPLAY", &replay),
         &directory.join("in-place-replay.log"),
         0,
     )
@@ -97,12 +113,16 @@ fn runtime_packet_scenarios_replay_across_processes() {
     let bad = directory.join("incorrect-receipt.json");
     fs::write(&bad, serde_json::to_vec_pretty(&corrupted).unwrap()).unwrap();
     let failure = run(
-        command(binary)
-            .args(["--exact", CASE, "--nocapture"])
-            .env("CAPNTPROTO_RUNTIME_SIM_OUTPUT", &output)
-            .env("CAPNTPROTO_RUNTIME_SIM_REPLAY", bad),
+        v::nextest::json_output(
+            command("cargo")
+                .args(["nextest", "run", "--binaries-metadata"])
+                .arg(&metadata),
+        )
+        .args(["--", "--exact", CASE])
+        .env("CAPNTPROTO_RUNTIME_SIM_OUTPUT", &output)
+        .env("CAPNTPROTO_RUNTIME_SIM_REPLAY", bad),
         &directory.join("control.log"),
-        101,
+        100,
     )
     .unwrap();
     assert!(failure.contains("runtime semantic replay diverged"));

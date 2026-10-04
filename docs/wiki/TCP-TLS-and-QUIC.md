@@ -156,12 +156,12 @@ release.
 ## Verification
 
 ```sh
-cargo test --locked --test tcp_rpc --test secure_rpc
-cargo test --locked --no-default-features --features tls --test secure_rpc
-cargo test --locked --no-default-features --features quic --test secure_rpc
-cargo test --locked --lib transport::backend_tests
-cargo test --locked --lib rpc::quic::retry
-cargo test --locked --lib transport:: -- --skip tlc
+cargo nextest run --locked --test tcp_rpc --test secure_rpc
+cargo nextest run --locked --no-default-features --features tls --test secure_rpc
+cargo nextest run --locked --no-default-features --features quic --test secure_rpc
+cargo nextest run --locked --lib transport::backend_tests
+cargo nextest run --locked --lib rpc::quic::retry
+cargo nextest run --locked --lib transport:: -- --skip tlc
 ```
 
 Loopback tests exercise TLS/mTLS, callbacks, pipelined capabilities, large

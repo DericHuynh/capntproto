@@ -212,8 +212,8 @@ and whether writing is allowed. Five controls must detect missing registration,
 wrong dispatch, ignored generation, object substitution and rights expansion.
 This is bounded safety evidence with a fixed authorized owner; lifecycle,
 revocation and restart remain covered by the models below. Run
-`cargo test --locked --test persistence_types -- --nocapture` and
-`cargo test --locked --test api_contracts persistent_descriptor_compile_contracts -- --exact --nocapture`.
+`cargo nextest run --locked --test persistence_types -- --nocapture` and
+`cargo nextest run --locked --test api_contracts persistent_descriptor_compile_contracts -- --exact --nocapture`.
 
 `RpcPersistence.tla` checks one committed reference, three owner epochs including
 key ABA, a wrong authenticated peer, asynchronous factory completion/cancellation,
@@ -250,7 +250,7 @@ epochs, inherited lease limits, counter exhaustion and `u64::MAX` time. Applicat
 actual device/writeback failures remain outside those simulations. These are bounded component checks, not complete RPC
 refinement, distributed persistence verification or a cryptographic proof.
 
-Run `cargo test --test protocol_models persistence_model -- --exact` and
-`cargo test --test protocol_models persistence_expiry_model -- --exact`, or the canonical
-`cargo test --locked --workspace --all-targets` to include the full workspace checks and
+Run `cargo nextest run --test protocol_models persistence_model -- --exact` and
+`cargo nextest run --test protocol_models persistence_expiry_model -- --exact`, or the canonical
+`cargo nextest run --locked --workspace --all-targets` to include the full workspace checks and
 source-hashed report.

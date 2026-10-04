@@ -62,7 +62,7 @@ Rust dependencies are resolved through Cargo.
 The full default verification command remains:
 
 ```sh
-cargo test --workspace
+cargo nextest run --workspace
 ```
 
 Benchmarks use individual `cargo bench --manifest-path benchmarks/rpc/Cargo.toml

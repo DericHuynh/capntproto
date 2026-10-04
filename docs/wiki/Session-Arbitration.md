@@ -64,8 +64,8 @@ select (1), acknowledge (2), and commit (3). All these bytes are carried inside
 the existing authenticated ordered Native stream. This is a Capntproto transport
 extension; the standard Cap'n Proto RPC schemas are unchanged.
 
-Run `cargo test --test protocol_models native_arbitration_model -- --exact` or the canonical
-`cargo test --locked --workspace --all-targets`. TLC checks one and two candidate sessions
+Run `cargo nextest run --test protocol_models native_arbitration_model -- --exact` or the canonical
+`cargo nextest run --locked --workspace --all-targets`. TLC checks one and two candidate sessions
 after authentication and hello exchange. It explores message delivery, commit,
 cancellation, closure, stale epochs and publication. Every graph edge prefix
 replays production Rust handshake transitions and fixed-size frame encoding.

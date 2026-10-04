@@ -93,8 +93,8 @@ unimplemented.
 
 ## Verification
 
-Run `cargo test --test protocol_models native_provisioning_model -- --exact` or the canonical
-`cargo test --locked --workspace --all-targets`. The focused report is
+Run `cargo nextest run --test protocol_models native_provisioning_model -- --exact` or the canonical
+`cargo nextest run --locked --workspace --all-targets`. The focused report is
 `reports/capntproto/native-provisioning/verification.json`.
 
 `RpcNativeProvisioning.tla` explores two successive leases, one waiter per lease,

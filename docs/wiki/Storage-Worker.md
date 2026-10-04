@@ -185,9 +185,9 @@ owner panic, append and compaction I/O quarantine, V4 atomic batches, V5 compone
 sharing/deletion, publication history and snapshot locks after shutdown.
 
 ```sh
-cargo test --locked -p capntproto --lib storage::worker
-cargo test --locked -p capntproto --test storage_worker
-cargo test --locked -p capntproto --no-default-features --features storage --test storage_worker
+cargo nextest run --locked -p capntproto --lib storage::worker
+cargo nextest run --locked -p capntproto --test storage_worker
+cargo nextest run --locked -p capntproto --no-default-features --features storage --test storage_worker
 ```
 
 Group commit, general durable receipts, execution-time capability authorization

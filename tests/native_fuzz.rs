@@ -121,8 +121,11 @@ fn native_fuzz_smoke() {
     let corpus = directory.join("corpus");
     let unit_output = run(
         command("cargo")
+            .env("NEXTEST_EXPERIMENTAL_LIBTEST_JSON", "1")
             .args([
-                "test",
+                "nextest",
+                "run",
+                "--message-format=libtest-json-plus",
                 "--locked",
                 "--manifest-path",
                 "fuzz/Cargo.toml",
@@ -135,8 +138,7 @@ fn native_fuzz_smoke() {
         0,
     )
     .unwrap();
-    assert!(unit_output.contains("16 passed; 0 failed; 0 ignored"));
-    assert!(unit_output.contains("0 filtered out"));
+    assert_eq!(v::nextest::passed(&unit_output).len(), 16);
 
     let mut campaigns = BTreeMap::new();
     for (target, seed_count, runs) in [
@@ -239,8 +241,11 @@ fn native_fuzz_smoke() {
         // point. Exercise it with a known seed even when no crash was found.
         let replay = run(
             command("cargo")
+                .env("NEXTEST_EXPERIMENTAL_LIBTEST_JSON", "1")
                 .args([
-                    "test",
+                    "nextest",
+                    "run",
+                    "--message-format=libtest-json-plus",
                     "--locked",
                     "--manifest-path",
                     "fuzz/Cargo.toml",
@@ -259,7 +264,7 @@ fn native_fuzz_smoke() {
             0,
         )
         .unwrap();
-        assert!(replay.contains("1 passed; 0 failed"));
+        assert_eq!(v::nextest::passed(&replay).len(), 1);
     }
     // cargo-fuzz 0.13.1 has no --locked switch: detect any lockfile drift.
     assert_eq!(

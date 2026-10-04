@@ -712,13 +712,14 @@ timing, inline RPC signatures, generic dependencies and deferred pointer default
 Its requests match pinned C++ without rewriting display names. Portable tests also
 verify that concurrent-cache extensions retain the same names and old snapshots.
 
-`cargo test --workspace` includes the crate's native tests/doctests and the root
+`cargo nextest run --locked --workspace` includes the crate's native tests and the root
 [C++ differential and generated-code tests](../../tests/schema_compiler.rs).
+Run doctests separately with `cargo test --locked --workspace --doc`.
 Focused checks:
 
 ```sh
-cargo test --locked -p capntproto-compiler
-cargo test --locked -p capntproto --test schema_compiler
+cargo nextest run --locked -p capntproto-compiler
+cargo nextest run --locked -p capntproto --test schema_compiler
 ```
 
 The second command needs the pinned C++ sources and CMake/C++ toolchain. Platform

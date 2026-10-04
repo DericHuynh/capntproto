@@ -120,11 +120,11 @@ invalid UTF-8, Rust uses reversible octal escapes to keep the output a valid
 
 ## Verification
 
-All tests are part of the root `cargo test --workspace` command. For focused work,
+All tests are part of the root `cargo nextest run --workspace` command. For focused work,
 retain the repository’s cargo-auditable PATH setup and run:
 
 ```sh
-cargo test --locked -p capntproto-compat
+cargo nextest run --locked -p capntproto-compat
 ```
 
 Portable tests cover codecs, annotations, handlers, generic brands, limits,

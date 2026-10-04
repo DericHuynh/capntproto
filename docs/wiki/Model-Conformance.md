@@ -89,9 +89,9 @@ obligations. See [Roadmap](Roadmap.md#verification-and-interoperability-gaps).
 Current commands are maintained in [Testing](Testing.md):
 
 ```sh
-cargo test --test tooling schema_pin_and_wire_inventory -- --exact
-cargo test --test conformance
-cargo test --test composed_wire_boundary -- --nocapture
+cargo nextest run --test tooling schema_pin_and_wire_inventory -- --exact
+cargo nextest run --test conformance
+cargo nextest run --test composed_wire_boundary -- --nocapture
 ```
 
 All 12 conformance checks run normally; none is ignored. The replay test runs a

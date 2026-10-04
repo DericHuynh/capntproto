@@ -1,0 +1,29 @@
+nextest-version = { required = "0.9.146" }
+
+# Each test owns its process, including flock descriptors and global allocators.
+# Ordinary tests run concurrently. Only nested compiler/verification campaigns
+# share a resource budget; no retries can turn a failing assertion into a pass.
+[profile.default]
+retries = 0
+fail-fast = false
+slow-timeout = { period = "60s", terminate-after = 120 }
+
+[test-groups.tooling]
+max-threads = 2
+
+[[profile.default.overrides]]
+filter = 'binary(tooling) | binary(schema_compiler) | binary(api_contracts) | binary(guard_quality) | binary(memory_safety) | binary(native_fuzz) | binary(release) | binary(runtime_simulation) | binary(schedules)'
+test-group = "tooling"
+
+[profile.ci]
+failure-output = "immediate-final"
+
+[profile.ci.junit]
+path = "junit.xml"
+report-skipped = "ignored"
+store-failure-output = true
+
+[profile.default-miri]
+retries = 0
+fail-fast = false
+slow-timeout = { period = "60s", terminate-after = 10 }

@@ -154,7 +154,7 @@ generations, uncertain outcomes, poisoned handles and held snapshots. EAE format
 To reproduce after preparing the pinned toolchain:
 
 ```sh
-cargo test --test tooling eae_feasibility_probe -- --exact
+cargo nextest run --test tooling eae_feasibility_probe -- --exact
 python3 scripts/benchmark_storage.py
 ```
 

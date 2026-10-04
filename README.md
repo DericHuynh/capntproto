@@ -51,7 +51,9 @@ git submodule update --init --depth 1 -- vendor/capnproto
 bash scripts/setup-auditable.sh
 export PATH="$PWD/target/auditable-tools/wrapper:$PWD/target/auditable-tools/bin:$PATH"
 cargo build --locked -p capntproto --lib --bins
-cargo test --workspace
+cargo install cargo-nextest --version 0.9.146 --locked
+cargo nextest run --locked --workspace
+cargo test --locked --workspace --doc
 ```
 
 The C++ reference is pinned as a Git submodule. Ordinary Rust dependencies are

@@ -43,13 +43,14 @@ date, with a latest-count/percentage box. A single run is a point, not invented
 historical progress. Every line starts at measured data; missing reports never
 become zeroes. Failed/incomplete workspace commands receive dotted markers.
 
-The coverage lane uses its existing pinned nightly toolchain for JSON libtest
-output and `--no-fail-fast`, while keeping one instrumented invocation for the Cargo partition. The TLA+ job filters `tlc` tests and records separate JSON events.
-Ordinary users still run `cargo test --workspace` with the pinned stable toolchain.
-The public counters are computed from individual events and checked against suite
-summaries and the SHA-256-bound command log:
+The coverage lane uses the pinned nightly toolchain for instrumentation and
+rustdoc JSON. Nextest unit/integration results use hash-bound JUnit reports;
+doctests run separately and their counts are merged explicitly. Missing phases
+remain incomplete. Each CI invocation has its own JUnit artifact, so feature
+checks cannot overwrite one another's failures. Nested nextest JSON suite
+summaries are never interpreted as outer test totals.
 
-- **Passed / failed:** terminal Rust libtest and doctest results.
+- **Passed / failed:** terminal nextest and doctest results.
 - **Skipped:** ignored tests. Tests filtered into another partition are excluded from its totals. Legacy full-workspace data still rejects filtered subsets.
 - **Errors:** announced tests that never returned a terminal result when a harness
   aborts. This includes cases that were announced but not reached before the abort.
@@ -138,7 +139,7 @@ run tests or benchmarks. It rejects changed logs, stale chart fingerprints,
 non-finite values and unexpected lanes/paths. Matplotlib is only needed to render;
 collection and validation use Python's standard library.
 
-Contract tests join `cargo test --workspace` through the quality crate. The chart
+Contract tests join `cargo nextest run --workspace` through the quality crate. The chart
 rendering case runs when Matplotlib is installed; the reporting CI installs the
 pinned dependencies and requires this case. Test-only synthetic plots stay under
 `target/` and are never copied into public history.

@@ -10,7 +10,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 import zipfile
 
-from reporting.data import collect, test_counts, validate_publication
+from reporting.data import collect, test_counts, junit_counts, merge_test_counts, validate_publication
 from reporting.publish import GitHub, OWNED, artifact_data, blob_sha, publish, trusted_run
 from reporting.render import empty_history, failure_report, merge, render, validate_history
 
@@ -120,6 +120,66 @@ class Counts(unittest.TestCase):
         value['charts'][0].update(name='latency-p50', panels=[dict(title='1', bars=[dict(label='x', value=float('nan'))])])
         with self.assertRaises(ValueError):
             validate_publication(value)
+
+
+class NextestCounts(unittest.TestCase):
+    XML = b'''<testsuites tests="4" failures="1" errors="1" skipped="1">
+      <testsuite name="crate" tests="4" failures="1" errors="1" skipped="1">
+        <testcase name="ok" classname="crate"/>
+        <testcase name="ignored" classname="crate"><skipped/></testcase>
+        <testcase name="bad" classname="crate"><failure>assertion failed</failure></testcase>
+        <testcase name="abort" classname="crate"><error>signal 6</error></testcase>
+      </testsuite></testsuites>'''
+
+    def test_failed_and_aborted_tests_keep_diagnostics(self):
+        counts = junit_counts(self.XML, False)
+        self.assertEqual([counts[k] for k in ('total', 'passed', 'failed', 'errors', 'skipped')], [4, 1, 1, 1, 1])
+        self.assertEqual([f['name'] for f in counts['failures']], ['bad', 'abort'])
+        value = publication()
+        value['tests'] = counts
+        validate_publication(value)
+        with self.assertRaises(ValueError):
+            junit_counts(self.XML, True)
+
+    def test_corrupt_duplicate_or_unsafe_xml_is_rejected(self):
+        for xml in [self.XML[:-5], self.XML.replace(b'tests="4"', b'tests="5"'),
+                    self.XML.replace(b'name="abort"', b'name="bad"'),
+                    b'<!DOCTYPE testsuites [<!ENTITY x "expand">]>' + self.XML,
+                    self.XML.decode().encode('utf-16-le')]:
+            with self.assertRaises(ValueError):
+                junit_counts(xml, False)
+
+    def test_doctest_results_are_separate_and_missing_phase_is_incomplete(self):
+        native = junit_counts(self.XML, False)
+        docs = test_counts(suite(5, 0, 1), True)
+        combined = merge_test_counts(native, docs)
+        self.assertEqual(combined['total'], 10)
+        self.assertFalse(combined['complete'])
+        self.assertEqual(len(combined['failures']), 2)
+        self.assertFalse(merge_test_counts(None, docs)['complete'])
+
+    def test_collector_binds_junit_to_evidence_and_requires_doctests(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {}, clear=True):
+            lane = Path(directory) / 'coverage'
+            (lane / 'logs').mkdir(parents=True)
+            (lane / 'logs/workspace-tests.log').write_bytes(b'nextest failed')
+            (lane / 'logs/workspace-tests.xml').write_bytes(self.XML)
+            evidence = dict(format=1, lane='coverage', source_id='a' * 64, passed=False,
+                steps=[dict(name='workspace-tests', command=['cargo', 'nextest', 'run', '--workspace', '--no-fail-fast', '-E', 'not test(tlc)'],
+                            passed=False, log_sha256=hashlib.sha256(b'nextest failed').hexdigest())],
+                data=dict(test_reports={'workspace-tests': dict(file='workspace-tests.xml', sha256=hashlib.sha256(self.XML).hexdigest())}))
+            (lane / 'evidence.json').write_text(json.dumps(evidence))
+            result = collect(directory, 'cargo')['tests']
+            self.assertEqual(result['total'], 4)
+            self.assertFalse(result['complete'])
+            (lane / 'logs/workspace-tests.xml').write_bytes(self.XML + b' ')
+            with self.assertRaisesRegex(ValueError, 'JUnit hash mismatch'):
+                collect(directory, 'cargo')
+            del evidence['data']['test_reports']['workspace-tests']
+            evidence['steps'][0]['passed'] = True
+            (lane / 'evidence.json').write_text(json.dumps(evidence))
+            with self.assertRaisesRegex(ValueError, 'missing JUnit'):
+                collect(directory, 'cargo')
 
 
 class History(unittest.TestCase):

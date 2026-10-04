@@ -11,5 +11,5 @@ integrations. Ordinary `capntproto` RPC does not depend on this crate.
 From the repository root with Rust 1.97.0 and the documented tool setup:
 
 ```sh
-cargo test --locked -p capntproto-compat
+cargo nextest run --locked -p capntproto-compat
 ```

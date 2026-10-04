@@ -59,10 +59,12 @@ tracked ignored files (including nested Cargo `target/` output) and blobs over
 50 MiB. CI runs the same check. Keep build artifacts local; `.gitignore` does
 not remove files that Git already tracks.
 
-All default tests have one entry point on the supported Linux verification host:
+Run all default tests and documentation examples on the supported Linux verification host:
 
 ```sh
-cargo test --workspace
+cargo install cargo-nextest --version 0.9.146 --locked
+cargo nextest run --locked --workspace
+cargo test --locked --workspace --doc
 ```
 
 This includes unit and integration tests, doctests, model checks, maintained

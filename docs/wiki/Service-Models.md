@@ -95,7 +95,7 @@ The separate [realtime snapshot contract](Realtime-Model.md) extends this collec
 Use Java 17 and TLC 2.19 through the native Cargo harness:
 
 ```sh
-CAPNTPROTO_TLC_CASES=BulkTransfer,BulkCancellation,BulkError,BulkDuplicateAck,EncryptedTransport,EncryptedReplay,EncryptedCapability,EncryptedEpoch cargo test --test protocol_models tlc_protocol_reference -- --ignored --exact
+CAPNTPROTO_TLC_CASES=BulkTransfer,BulkCancellation,BulkError,BulkDuplicateAck,EncryptedTransport,EncryptedReplay,EncryptedCapability,EncryptedEpoch cargo nextest run --test protocol_models tlc_protocol_reference -- --ignored --exact
 ```
 
 Omit `CAPNTPROTO_TLC_CASES` to check every configuration. Module and expected

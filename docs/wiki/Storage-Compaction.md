@@ -204,7 +204,7 @@ checkpoint regressions cover every truncation and torn later append, invalid
 publication/floor ordering, schema validation, quota rejection and the same
 four injected replacement-stage failures.
 
-Run `cargo test --test protocol_models storage_compaction_model -- --exact` and
-`cargo test --test protocol_models persistence_expiry_model -- --exact` and
-`cargo test --test protocol_models orm_history_model -- --exact`, or
-`cargo test --locked --workspace --all-targets` for canonical source-hashed validation.
+Run `cargo nextest run --test protocol_models storage_compaction_model -- --exact` and
+`cargo nextest run --test protocol_models persistence_expiry_model -- --exact` and
+`cargo nextest run --test protocol_models orm_history_model -- --exact`, or
+`cargo nextest run --locked --workspace --all-targets` for canonical source-hashed validation.

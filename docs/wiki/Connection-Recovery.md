@@ -104,9 +104,9 @@ require a running executor; elapsed time is not a proof of remote non-execution.
 ## Verification
 
 ```sh
-cargo test --locked --lib native_rpc::policy
-cargo test --locked --test answer_adoption
-cargo test --locked --test native_multiparty
+cargo nextest run --locked --lib native_rpc::policy
+cargo nextest run --locked --test answer_adoption
+cargo nextest run --locked --test native_multiparty
 ```
 
 `RpcAnswerSetup.tla` explores 47 states and 59 edge-prefix traces. The Rust replay

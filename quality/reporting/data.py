@@ -5,6 +5,7 @@ import math
 import os
 from pathlib import Path
 import re
+import xml.etree.ElementTree as ET
 
 FORMAT = 1
 CHARTS = {
@@ -108,6 +109,80 @@ def test_counts(log, command_passed, *, allow_filtered=False):
                 failures=failures)
 
 
+def junit_counts(xml, command_passed):
+    """Read nextest's stable JUnit, including ignored tests and abort diagnostics."""
+    if len(xml) > 64 * 1024 * 1024:
+        raise ValueError('oversized JUnit report')
+    # Nextest writes UTF-8. Reject alternate encodings before checking DTDs, so
+    # UTF-16 cannot hide entity declarations from the validation below.
+    text = xml.decode('utf-8')
+    if '\0' in text or '<!DOCTYPE' in text or '<!ENTITY' in text:
+        raise ValueError('unsafe JUnit report')
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError as error:
+        raise ValueError('invalid JUnit report') from error
+    if root.tag != 'testsuites':
+        raise ValueError('expected nextest testsuites')
+    totals = dict.fromkeys(COUNTS, 0)
+    identities, failures = set(), []
+    budget = 256 * 1024
+    suites = root.findall('testsuite')
+
+    def validate(node, counts):
+        for attr, expected in [('tests', sum(counts.values())), ('failures', counts['failed']),
+                               ('errors', counts['errors']), ('skipped', counts['skipped'])]:
+            value = node.get(attr)
+            if value is None or not value.isascii() or not value.isdigit() or integer(int(value)) != expected:
+                raise ValueError('JUnit counters disagree with test cases')
+
+    for suite in suites:
+        counts = dict.fromkeys(COUNTS, 0)
+        for case in suite.findall('testcase'):
+            name, label = case.get('name'), case.get('classname', suite.get('name'))
+            if not name or not label or (label, name) in identities:
+                raise ValueError('missing or duplicate JUnit test identity')
+            identities.add((label, name))
+            outcomes = [c for c in case if c.tag in ('failure', 'error', 'skipped')]
+            if len(outcomes) > 1:
+                raise ValueError('conflicting JUnit outcomes')
+            outcome = outcomes[0].tag if outcomes else 'passed'
+            key = {'failure': 'failed', 'error': 'errors', 'skipped': 'skipped'}.get(outcome, 'passed')
+            counts[key] += 1
+            if key in ('failed', 'errors'):
+                output = '\n'.join(''.join(c.itertext()) for c in case if c.tag in ('failure', 'error', 'system-out', 'system-err'))
+                output = re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', output)
+                limit = min(4096, budget)
+                failures.append(dict(suite=label, name=name, output=output[:limit], truncated=len(output) > limit))
+                budget -= len(output[:limit])
+        validate(suite, counts)
+        for key in COUNTS:
+            totals[key] += counts[key]
+    validate(root, totals)
+    if command_passed and (not suites or totals['failed'] or totals['errors']):
+        raise ValueError('successful nextest command has missing/failed tests')
+    return dict(totals, total=sum(totals.values()), suites=len(suites),
+                complete=command_passed, command_passed=command_passed, failures=failures)
+
+
+def merge_test_counts(native, docs):
+    # A build failure has unknown totals; never present the other phase as a full run.
+    if native is None or docs is None:
+        known = native or docs
+        if known is None:
+            return None
+        return dict(known, complete=False, command_passed=False)
+    budget, failures = 256 * 1024, []
+    for failure in native['failures'] + docs['failures']:
+        excerpt = failure['output'][:budget]
+        failures.append(dict(failure, output=excerpt, truncated=failure['truncated'] or len(excerpt) < len(failure['output'])))
+        budget -= len(excerpt)
+    return dict({key: native[key] + docs[key] for key in (*COUNTS, 'total', 'suites')},
+                complete=native['complete'] and docs['complete'],
+                command_passed=native['command_passed'] and docs['command_passed'],
+                failures=failures)
+
+
 def validate_charts(charts):
     names = set()
     if not isinstance(charts, list) or len(charts) > len(CHARTS):
@@ -158,6 +233,8 @@ def collect(directory, kind):
     result['source_id'] = source
     result['status'] = 'passed' if evidence['passed'] else 'failed'
     result['note'] = 'Evidence passed.' if evidence['passed'] else 'Lane failed or did not complete; inspect the linked CI run.'
+    nextest = False
+    docs = None
     for step in evidence['steps']:
         name = step['name']
         if not name or any(not (c.isascii() and (c.isalnum() or c == '-')) for c in name):
@@ -167,13 +244,41 @@ def collect(directory, kind):
             raise ValueError('evidence log hash mismatch')
         if (kind in ('full', 'cargo') and name == 'workspace-tests') or (kind == 'models' and name == 'model-tests'):
             command = step['command']
-            if '--workspace' not in command or '--format=json' not in command or '--no-fail-fast' not in command:
-                raise ValueError('test evidence is not the complete workspace JSON invocation')
-            if kind == 'cargo' and '--skip' not in command:
-                raise ValueError('Cargo partition must exclude dedicated checks')
+            if '--workspace' not in command or '--no-fail-fast' not in command:
+                raise ValueError('test evidence is not the complete workspace invocation')
             if kind == 'models' and 'tlc' not in command:
                 raise ValueError('model partition must select TLC tests')
-            result['tests'] = test_counts(log.decode('utf-8'), step['passed'], allow_filtered=kind != 'full')
+            if 'nextest' in command:
+                nextest = True
+                if kind == 'cargo' and '-E' not in command:
+                    raise ValueError('Cargo partition must exclude dedicated checks')
+                report = evidence.get('data', {}).get('test_reports', {}).get(name)
+                if report is None:
+                    if step['passed']:
+                        raise ValueError('successful nextest run is missing JUnit')
+                    result['tests'] = None
+                else:
+                    if report['file'] != f'{name}.xml':
+                        raise ValueError('unexpected JUnit filename')
+                    xml = (directory / lane / 'logs' / report['file']).read_bytes()
+                    if hashlib.sha256(xml).hexdigest() != report['sha256']:
+                        raise ValueError('JUnit hash mismatch')
+                    result['tests'] = junit_counts(xml, step['passed'])
+            else:
+                # Historical evidence remains readable after the runner migration.
+                if '--format=json' not in command:
+                    raise ValueError('test evidence is not a JSON invocation')
+                if kind == 'cargo' and '--skip' not in command:
+                    raise ValueError('Cargo partition must exclude dedicated checks')
+                result['tests'] = test_counts(log.decode('utf-8'), step['passed'], allow_filtered=kind != 'full')
+        elif name == 'workspace-doctests' and kind in ('full', 'cargo'):
+            if not all(arg in step['command'] for arg in ('--workspace', '--doc', '--format=json')):
+                raise ValueError('incomplete doctest invocation')
+            docs = test_counts(log.decode('utf-8'), step['passed'])
+    if nextest and kind in ('full', 'cargo'):
+        if evidence['passed'] and docs is None:
+            raise ValueError('successful coverage lane is missing doctests')
+        result['tests'] = merge_test_counts(result['tests'], docs)
     # The Rust reporter only emits these after validating raw counters, source
     # identities, regression gates and benchmark samples. Never reuse stale charts.
     path = directory / 'charts' / 'data.json'
@@ -236,7 +341,7 @@ def validate_publication(value):
         # with bounded diagnostic excerpts; full output remains in CI artifacts.
         if 'failures' in tests:
             failures = tests['failures']
-            if not isinstance(failures, list) or len(failures) != tests['failed'] or len(failures) > 4096:
+            if not isinstance(failures, list) or not tests['failed'] <= len(failures) <= tests['failed'] + tests['errors'] or len(failures) > 4096:
                 raise ValueError('failed-test inventory disagrees with count or exceeds limit')
             for failure in failures:
                 if not isinstance(failure, dict) or set(failure) != {'suite', 'name', 'output', 'truncated'}:

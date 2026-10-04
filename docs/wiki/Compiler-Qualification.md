@@ -111,11 +111,11 @@ aliases, generic erasure, implicit nodes, metadata and lazy dependency closures.
 Activate the [auditable Cargo wrapper](Quality-and-Benchmarks.md#auditable-cargo-builds), then:
 
 ```sh
-cargo test --locked -p capntproto-compiler
-cargo test --locked -p capntproto --test schema_compiler
+cargo nextest run --locked -p capntproto-compiler
+cargo nextest run --locked -p capntproto --test schema_compiler
 ```
 
-These tests are included in `cargo test --workspace`. Portable cache tests also
+These tests are included in `cargo nextest run --workspace`. Portable cache tests also
 run in the existing Linux/macOS/Windows compiler smoke jobs. The root suite needs
 the pinned C++ source and CMake/C++ toolchain and also compiles generated Rust.
 Focused filters are `--test cache` or `--test discovery` for the compiler crate

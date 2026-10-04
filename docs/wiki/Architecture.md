@@ -161,7 +161,8 @@ The production build script compiles only schemas used by enabled features.
 
 ## Verification workflow
 
-`cargo test --workspace` runs the default native acceptance tests and doctests.
+`cargo nextest run --locked --workspace` runs the native acceptance tests.
+`cargo test --locked --workspace --doc` runs doctests.
 See [Testing](Testing.md)
 for targeted checks and external tool requirements.
 
@@ -190,7 +191,7 @@ guides record each check's scope and limits. Release decisions use
 `RELEASE_ACCEPTANCE.md`, not checkbox or state totals.
 
 The distribution boundary is a coordinated source bundle with explicit core,
-RPC, generator and futures paths. `cargo test --test release isolated_release_qualification -- --ignored --exact` reconstructs and tests the
+RPC, generator and futures paths. `cargo nextest run --test release isolated_release_qualification -- --ignored --exact` reconstructs and tests the
 bundle with fresh outputs. `storage/io.rs` owns private write/sync seams; fault
 injection exists only in test builds. The production Store validates independent
 record framing before tail repair and stabilizes file and pathname on recovery.

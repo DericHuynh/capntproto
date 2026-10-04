@@ -83,8 +83,8 @@ only while the driver is alive; callers can retain their own snapshots.
 ## Verification
 
 ```sh
-cargo test --locked --lib transport::scheduling::
-cargo test --locked --test native_scheduling --test native_shutdown
+cargo nextest run --locked --lib transport::scheduling::
+cargo nextest run --locked --test native_scheduling --test native_shutdown
 ```
 
 `NativeScheduling.tla` explores **3,915 states**, with **9,135 transition-prefix

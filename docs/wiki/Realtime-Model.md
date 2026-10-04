@@ -85,9 +85,9 @@ Witnesses demonstrate successful application, expiration, replacement, capacity 
 Run the realtime model, trace replay and reference configurations through Cargo:
 
 ```sh
-cargo test --test protocol_models realtime_model -- --exact
-cargo test --test realtime replay_tlc_realtime_traces -- --exact
-cargo test --test protocol_models runtime_reference -- --exact
+cargo nextest run --test protocol_models realtime_model -- --exact
+cargo nextest run --test realtime replay_tlc_realtime_traces -- --exact
+cargo nextest run --test protocol_models runtime_reference -- --exact
 ```
 
 The reference check includes all realtime mutation and witness configurations.

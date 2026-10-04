@@ -27,7 +27,8 @@ fn main() -> Result<()> {
             .cargo(
                 "miri-and-mutations",
                 &[
-                    "test",
+                    "nextest",
+                    "run",
                     "--locked",
                     "--test",
                     "memory_safety",

@@ -58,7 +58,7 @@ to avoid losing a publication between the lookup and wait.
 
 ## Verification
 
-`cargo test --test protocol_models orm_history_model -- --exact` checks `StorageHistory.tla` and
+`cargo nextest run --test protocol_models orm_history_model -- --exact` checks `StorageHistory.tla` and
 `RpcHistory.tla` with TLC, then replays every graph edge through a shortest
 prefix against the native mmap store and both local and real two-system RPC
 capabilities. The storage model has three staged revisions, selective

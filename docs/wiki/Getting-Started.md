@@ -25,7 +25,7 @@ rustup toolchain install 1.97.0 --profile minimal --component rustfmt --componen
 bash scripts/setup-auditable.sh
 export PATH="$PWD/target/auditable-tools/wrapper:$PWD/target/auditable-tools/bin:$PATH"
 cargo fetch --locked
-cargo test --test tooling external_consumer_default_features -- --exact
+cargo nextest run --test tooling external_consumer_default_features -- --exact
 cargo run --locked --example native_store
 ```
 
@@ -140,15 +140,15 @@ the jar at `target/tools/tla2tools.jar`. The bundle excludes downloaded executab
 registry/git caches; Cargo may download the locked dependencies.
 
 ```sh
-cargo test --test release isolated_release_qualification -- --ignored --exact --nocapture
+cargo nextest run --test release isolated_release_qualification -- --ignored --exact --nocapture
 ```
 
 This reconstructs a source bundle beside the checkout and runs all native Cargo
 checks, doctests and Clippy with fresh build outputs. It records source hashes
 in `target/release-qualification/cargo-qualification.json` and creates the qualified archive
 in `dist`. For the packaging round-trip alone, run
-`cargo test --test release source_bundle_roundtrip`. For ordinary development,
-run `cargo test --workspace`; see [Testing](Testing.md).
+`cargo nextest run --test release source_bundle_roundtrip`. For ordinary development,
+run `cargo nextest run --workspace`; see [Testing](Testing.md).
 
 Native admission/security review, hostile-input fuzzing/soak, broader peer interoperability
 and deployment qualification remain listed in [release acceptance](Release-Acceptance.md).

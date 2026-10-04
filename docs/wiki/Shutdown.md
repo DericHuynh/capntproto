@@ -110,7 +110,7 @@ See [the TCP bridge](../../src/transport/tcp.rs).
 
 ## Verification
 
-`cargo test --test protocol_models native_shutdown_model -- --exact` checks **807 states** and replays
+`cargo nextest run --test protocol_models native_shutdown_model -- --exact` checks **807 states** and replays
 **1,496 graph edge prefixes** through production frame, transition and completion
 helpers. It covers empty/nonempty streams, data/control reordering, crossed
 receipts, malformed receipt rejection, failure and late completion. Healthy
@@ -129,7 +129,7 @@ arbitrated routes, both shutdown directions, queued messages larger than the
 input bridge, unread-peer timeout, cancellation, duplicate requests, generation
 replacement and listener/network drain. Packet-engine tests cover partial frames,
 loss, duplicates and malformed finished control streams. The canonical
-`cargo test --locked --workspace --all-targets` includes these tests and models.
+`cargo nextest run --locked --workspace --all-targets` includes these tests and models.
 
 The additional `NativeShutdownPacketFence` model checks **489 states / 737 edge
 prefixes**, each replayed against real encrypted mutual TLS with and without admission secrets connections

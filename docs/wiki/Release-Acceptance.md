@@ -23,8 +23,8 @@ There is no claim here that the latest tree has passed a fresh full release run
 or that an archive has been publicly published. Build it only after qualification:
 
 ```sh
-cargo test --locked --test release source_bundle_roundtrip -- --exact
-cargo test --locked --test release isolated_release_qualification -- --ignored --exact
+cargo nextest run --locked --test release source_bundle_roundtrip -- --exact
+cargo nextest run --locked --test release isolated_release_qualification -- --ignored --exact
 ```
 
 See [Testing](Testing.md) for prerequisites and [Getting started](Getting-Started.md) for

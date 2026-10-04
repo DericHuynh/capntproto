@@ -327,13 +327,13 @@ or third-party use of `senderLoopback` is introduced. See
 Run the focused checks through Cargo:
 
 ```sh
-cargo test --locked --test native_deployment --test native_pipeline_migration
-cargo test --locked --lib nat::
-cargo test --locked --lib native_discovery::publication::
-cargo test --locked --lib native_discovery::advertisement::
-cargo test --locked --lib native_discovery::readers::
-cargo test --locked --test native_discovery_failover
-cargo test --locked --lib transport::mobility::
+cargo nextest run --locked --test native_deployment --test native_pipeline_migration
+cargo nextest run --locked --lib nat::
+cargo nextest run --locked --lib native_discovery::publication::
+cargo nextest run --locked --lib native_discovery::advertisement::
+cargo nextest run --locked --lib native_discovery::readers::
+cargo nextest run --locked --test native_discovery_failover
+cargo nextest run --locked --lib transport::mobility::
 ```
 
 Fresh TLC explorations are replayed by native Rust tests:

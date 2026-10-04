@@ -3,13 +3,14 @@
 Pull requests compile default features on **Linux, macOS and Windows** and run
 smoke checks plus selected minimal storage, TLS and QUIC feature profiles.
 There is no feature powerset matrix. Full correctness
-checks use one entry point on the supported Linux verification host:
+checks use nextest and a separate doctest command on the supported Linux verification host:
 
 ```sh
-cargo test --workspace
+cargo nextest run --locked --workspace
+cargo test --locked --workspace --doc
 ```
 
-That command discovers unit/integration tests, doctests, bounded models, Miri,
+These commands cover unit/integration tests, doctests, bounded models, Miri,
 mutation controls, fuzz/sanitizer controls, owned workspace crates, upstream quiche adapters,
 C++ interoperability and downstream checks. Native tools and pinned verification
 prerequisites are still required; see [Testing](Testing.md) and the
@@ -103,12 +104,12 @@ resources. Report publication never launches another verification or benchmark r
 
 ## Independent verification partitions
 
-The local `cargo test --workspace` entry point remains comprehensive. CI gives
+The local `cargo nextest run --workspace` entry point remains comprehensive. CI gives
 expensive campaigns explicit owners:
 
 - Cargo selects all ordinary tests/doctests, filtering `tlc`, `native_fuzz_smoke`,
   `serialization_and_ownership_miri`, and the two `authority_and_transition_*`
-  controls. It collects LLVM coverage from this same invocation.
+  controls. LLVM coverage combines the nextest run and the separate doctest run.
 - TLA+ selects tests containing `tlc`, including the bounded catalog, negative
   controls, and Rust trace replays. Helpers reject TLC calls from the Cargo
   partition, so an incorrectly named new test fails visibly. Each model job uses
@@ -119,7 +120,7 @@ expensive campaigns explicit owners:
 
 `quality/src/lanes.rs` is the shared partition policy. Expected mutation violations
 are successful controls only when both TLC's exit status and the named invariant
-match. TLA+ reports retain separate libtest replay counts and unique
+match. TLA+ reports retain separate nextest replay counts and unique
 module/configuration/expected-exit checks; state totals across configurations
 are not a claim of globally distinct states. Fuzz feedback and source coverage
 have different units and are never combined. The new Cargo coverage scope is
@@ -162,7 +163,8 @@ Use the same setup locally from the repository root in bash (Git Bash on Windows
 ```sh
 bash scripts/setup-auditable.sh
 export PATH="$PWD/target/auditable-tools/wrapper:$PWD/target/auditable-tools/bin:$PATH"
-cargo test --workspace
+cargo nextest run --locked --workspace
+cargo test --locked --workspace --doc
 ```
 
 Keep that PATH active for build, benchmark, verification and release commands.
@@ -208,7 +210,7 @@ The `core_feature_profiles` test checks no-std and allocation-only builds;
 
 The platform jobs cover default-feature compile/smoke checks and selected minimal
 feature profiles; no feature powerset matrix is introduced. Allocation contracts in [allocations.rs](../../tests/allocations.rs)
-use allocation-counter **0.8.1**, run with `cargo test --workspace`, and also run on
+use allocation-counter **0.8.1**, run with `cargo nextest run --workspace`, and also run on
 Linux PRs. They require zero allocations for repeated borrowed generated field
 reads and synchronous decoding into caller storage. Async scratch decoding
 permits segment metadata allocation but must avoid allocating the 8 KiB payload
@@ -235,7 +237,7 @@ with path filters should not be unconditional required checks in branch protecti
 
 Verification / Extended has three independent, bounded jobs:
 
-- **Miri:** `CAPNTPROTO_MIRI_EXTENDED=1 cargo test --locked --test memory_safety`
+- **Miri:** `CAPNTPROTO_MIRI_EXTENDED=1 cargo nextest run --locked --test memory_safety`
   retains the existing 92 interpreted ownership executions and adds six wire
   tests with seeds 2–5 on x86-64 and big-endian `s390x-unknown-linux-gnu`: 48 more
   executions. Compiler, source hashes, exact test inventories, targets, seeds,

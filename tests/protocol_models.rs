@@ -866,7 +866,7 @@ fn tlc_guard_model() {
 }
 
 #[test]
-#[ignore = "full composed state-space exploration; cargo test --test protocol_models tlc_protocol_reference -- --ignored --exact"]
+#[ignore = "full composed state-space exploration; cargo nextest run --test protocol_models tlc_protocol_reference -- --ignored --exact"]
 fn tlc_protocol_reference() {
     verify(
         catalog()

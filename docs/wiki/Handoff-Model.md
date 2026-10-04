@@ -34,8 +34,8 @@ These positive configurations check the composed safety invariants, application/
 Run the dedicated checks:
 
 ```sh
-CAPNTPROTO_TLC_CASES=NetworkCanceledReturnHandoff,NetworkProviderLossHandoff,NetworkWitnessRuntimeHandoff,NetworkBugEmbargo,NetworkBugBarrierOrder CAPNTPROTO_CHECK_TIMEOUT=2400 cargo test --test protocol_models tlc_protocol_reference -- --ignored --exact
-cargo test --test conformance
+CAPNTPROTO_TLC_CASES=NetworkCanceledReturnHandoff,NetworkProviderLossHandoff,NetworkWitnessRuntimeHandoff,NetworkBugEmbargo,NetworkBugBarrierOrder CAPNTPROTO_CHECK_TIMEOUT=2400 cargo nextest run --test protocol_models tlc_protocol_reference -- --ignored --exact
+cargo nextest run --test conformance
 ```
 
 The independent Cargo audit checks initiation and successful completion of

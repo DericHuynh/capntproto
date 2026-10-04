@@ -186,8 +186,8 @@ outliving their parent, overlapping parent/child edits, cloning and double use.
 
 These are bounded behavioral and operation-count checks, not a wall-clock speed
 benchmark or a proof for every schema or custom `PointerType`. Run
-`cargo test --test protocol_models field_entry_model -- --exact` and
-`cargo test --test tooling generated_api_compile_contracts -- --exact`, or the canonical runtime checker.
+`cargo nextest run --test protocol_models field_entry_model -- --exact` and
+`cargo nextest run --test tooling generated_api_compile_contracts -- --exact`, or the canonical runtime checker.
 
 ## Remaining design work
 
@@ -335,13 +335,13 @@ benchmark-based performance claims.
 ## Validate
 
 ```sh
-cargo test --test field_api --test field_api_ownership --test field_api_rpc
-cargo test --test field_group_staging
-cargo test --test protocol_models field_ownership_model -- --exact
-cargo test --test protocol_models field_group_staging_model -- --exact
-cargo test --test tooling generated_api_compile_contracts -- --exact
-cargo test --workspace --all-targets
-cargo test --manifest-path crates/capntproto-core/Cargo.toml --all-targets
+cargo nextest run --test field_api --test field_api_ownership --test field_api_rpc
+cargo nextest run --test field_group_staging
+cargo nextest run --test protocol_models field_ownership_model -- --exact
+cargo nextest run --test protocol_models field_group_staging_model -- --exact
+cargo nextest run --test tooling generated_api_compile_contracts -- --exact
+cargo nextest run --workspace --all-targets
+cargo nextest run --manifest-path crates/capntproto-core/Cargo.toml --all-targets
 cargo clippy --workspace --all-targets --no-deps -- -D warnings
 ```
 

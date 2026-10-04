@@ -122,8 +122,8 @@ ORM publication use `DurableTransfer` instead.
 
 ## Verification
 
-Run `cargo test --test protocol_models bulk_model -- --exact`, or the complete suite with
-`cargo test --locked --workspace --all-targets`. The focused report is
+Run `cargo nextest run --test protocol_models bulk_model -- --exact`, or the complete suite with
+`cargo nextest run --locked --workspace --all-targets`. The focused report is
 `reports/capntproto/bulk/verification.json`.
 
 Seven configurations of `RpcBulkTransfer.tla` explore 2,147 states across
@@ -142,7 +142,7 @@ The transfer model uses two chunks and finite windows; these are bounded compone
 and RPC checks, not a proof of every executor schedule, durability or the whole
 composed runtime.
 
-`cargo test --locked --test bulk_reservations -- --nocapture` checks the additional
+`cargo nextest run --locked --test bulk_reservations -- --nocapture` checks the additional
 `BulkReservation.tla` model: **1,749 states / 8,866 edge prefixes**, each replayed
 against the production credit window. It models two independent two-byte windows,
 two issued sequences per window, one retained handle per window, duplicate and
@@ -154,7 +154,7 @@ window replacement with retained old handles and all 65,536 permitted sequences.
 The external-consumer Cargo compiler gate adds **16 contracts** for this public
 API, including a positive control and exact diagnostics for required failures.
 
-`cargo test --locked --test bulk_config -- --nocapture` checks immutable limits
+`cargo nextest run --locked --test bulk_config -- --nocapture` checks immutable limits
 and `BulkConfigBoundary.tla`: **9,421 states / 70,275 edge prefixes**, replayed
 through direct construction, JSON import or the sender's RPC describe boundary,
 then through receiver writes, completion and cancellation. Seven model fault

@@ -103,46 +103,47 @@ jobs:
         shell: bash
         run: |
           cargo run --locked --manifest-path examples/downstream/Cargo.toml
-          cargo test --locked --no-fail-fast -p capntproto-compiler
-          cargo test --locked -p capntproto-compat --test codecs --test adapters --test json_rpc
-          cargo test --locked -p capntproto --test tcp_rpc --test secure_rpc
-          cargo test --locked -p capntproto --test rpc_ownership --test native_vat
-          cargo test --locked -p capntproto --lib transport::backend_tests
-          cargo test --locked -p capntproto --lib rpc::quic::retry
+          python scripts/nextest_ci.py cargo -- --locked --no-fail-fast -p capntproto-compiler
+          python scripts/nextest_ci.py cargo -- --locked -p capntproto-compat --test codecs --test adapters --test json_rpc
+          python scripts/nextest_ci.py cargo -- --locked -p capntproto --test tcp_rpc --test secure_rpc
+          python scripts/nextest_ci.py cargo -- --locked -p capntproto --test rpc_ownership --test native_vat
+          python scripts/nextest_ci.py cargo -- --locked -p capntproto --lib transport::backend_tests
+          python scripts/nextest_ci.py cargo -- --locked -p capntproto --lib rpc::quic::retry
+          cargo test --locked -p capntproto-compiler --doc
           cargo check --locked -p capntproto --no-default-features --lib
-          cargo test --locked -p capntproto --no-default-features --test rpc_ownership
-          cargo test --locked -p capntproto --no-default-features --features storage --lib storage::components
-          cargo test --locked -p capntproto --no-default-features --features storage --test component_orm
-          cargo test --locked -p capntproto --no-default-features --features tls --test secure_rpc
-          cargo test --locked -p capntproto --no-default-features --features quic --test secure_rpc
-          cargo test --locked -p capntproto --test buffered_input scratch::
-          cargo test --locked -p capntproto --test dynamic_groups -- --skip group_resets_match_pinned_cpp
-          cargo test --locked -p capntproto --test dynamic_getters -- --skip mutable_getters_match_pinned_cpp
-          cargo test --locked -p capntproto --test dynamic_nested_lists -- --skip nested_getters_match_pinned_cpp
-          cargo test --locked -p capntproto --test dynamic_blobs -- --skip blob_access_matches_pinned_cpp
-          cargo test --locked -p capntproto --test dynamic_pointers -- --skip pointer_views_match_pinned_cpp
-          cargo test --locked -p capntproto --test loaded_view_casts -- --skip compatible_loaded_casts_match_pinned_cpp
-          cargo test --locked -p capntproto --test capnp_root
+          python scripts/nextest_ci.py cargo -- --locked -p capntproto --no-default-features --test rpc_ownership
+          python scripts/nextest_ci.py cargo -- --locked -p capntproto --no-default-features --features storage --lib storage::components
+          python scripts/nextest_ci.py cargo -- --locked -p capntproto --no-default-features --features storage --test component_orm
+          python scripts/nextest_ci.py cargo -- --locked -p capntproto --no-default-features --features tls --test secure_rpc
+          python scripts/nextest_ci.py cargo -- --locked -p capntproto --no-default-features --features quic --test secure_rpc
+          python scripts/nextest_ci.py cargo -- --locked -p capntproto --test buffered_input scratch::
+          python scripts/nextest_ci.py cargo -- --locked -p capntproto --test dynamic_groups -- --skip group_resets_match_pinned_cpp
+          python scripts/nextest_ci.py cargo -- --locked -p capntproto --test dynamic_getters -- --skip mutable_getters_match_pinned_cpp
+          python scripts/nextest_ci.py cargo -- --locked -p capntproto --test dynamic_nested_lists -- --skip nested_getters_match_pinned_cpp
+          python scripts/nextest_ci.py cargo -- --locked -p capntproto --test dynamic_blobs -- --skip blob_access_matches_pinned_cpp
+          python scripts/nextest_ci.py cargo -- --locked -p capntproto --test dynamic_pointers -- --skip pointer_views_match_pinned_cpp
+          python scripts/nextest_ci.py cargo -- --locked -p capntproto --test loaded_view_casts -- --skip compatible_loaded_casts_match_pinned_cpp
+          python scripts/nextest_ci.py cargo -- --locked -p capntproto --test capnp_root
           if test "$RUNNER_OS" != Windows; then
-            cargo test --locked -p capntproto --lib unix_rpc:: -- --skip tlc --skip pinned_cpp
-            cargo test --locked -p capntproto --test unix_facade --test fd_capabilities -- --skip tlc
+            python scripts/nextest_ci.py cargo -- --locked -p capntproto --lib unix_rpc:: -- --skip tlc --skip pinned_cpp
+            python scripts/nextest_ci.py cargo -- --locked -p capntproto --test unix_facade --test fd_capabilities -- --skip tlc
             cargo clippy --locked -p capntproto --lib --test unix_facade --test fd_capabilities -- -D warnings
           fi
           if test "$RUNNER_OS" = Linux; then
-            cargo test --locked -p capntproto --test tooling nightly_rpc_try_contracts -- --exact
+            python scripts/nextest_ci.py cargo -- --locked -p capntproto --test tooling nightly_rpc_try_contracts -- --exact
           fi
       - name: Enforce allocation budgets on Linux
         id: allocations
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          cargo test --locked -p capntproto --test allocations
+          python scripts/nextest_ci.py cargo -- --locked -p capntproto --test allocations
       - name: Upstream QUIC v1 protocol and independent interoperability checks
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          cargo test --locked -p capntproto --test tooling pinned_native_profile
-          cargo test --locked -p capntproto --lib transport:: -- --skip tlc --skip transport::backend_tests
+          python scripts/nextest_ci.py cargo -- --locked -p capntproto --test tooling pinned_native_profile
+          python scripts/nextest_ci.py cargo -- --locked -p capntproto --lib transport:: -- --skip tlc --skip transport::backend_tests
           python3 -m venv target/quic-interop-venv
           target/quic-interop-venv/bin/pip install -r scripts/requirements-quic-interop.txt
           cargo build --locked --example quic-interop --no-default-features --features quic
@@ -165,6 +166,13 @@ jobs:
           name: platform-${{ matrix.os }}
           path: target/platforms/
           if-no-files-found: error
+      - name: Upload nextest results
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: nextest-${{ matrix.os }}
+          path: target/nextest/reports/
+          if-no-files-found: warn
   report:
     name: Required CI result
     needs: [workflows, documentation, platforms]

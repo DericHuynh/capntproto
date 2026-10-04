@@ -1,4 +1,4 @@
-//! Compiler, distribution and reference checks, all launched by `cargo test`.
+//! Compiler, distribution and reference checks, all launched by `cargo nextest run`.
 use capntproto_test_support::verification::{self as v, command, root, run};
 use serde::Deserialize;
 use serde_json::Value;
@@ -13,13 +13,14 @@ fn cargo(args: &[&str], name: &str) -> String {
     cargo_with_toolchain(None, args, name)
 }
 fn cargo_with_toolchain(toolchain: Option<&str>, args: &[&str], name: &str) -> String {
+    let native_tests = args.starts_with(&["nextest", "run"]);
     let mut cmd = command("cargo");
     if let (Ok(build), Ok(profiles), Ok(flags)) = (
         std::env::var("CAPNTPROTO_FULL_COVERAGE_BUILD"),
         std::env::var("CAPNTPROTO_FULL_COVERAGE_PROFILES"),
         std::env::var("CAPNTPROTO_FULL_COVERAGE_FLAGS"),
     ) {
-        if args.first() == Some(&"test") {
+        if native_tests || args.first() == Some(&"test") {
             if let Some(manifest) = args.windows(2).find(|p| p[0] == "--manifest-path") {
                 cmd.arg("+nightly-2026-03-05")
                     .env(
@@ -33,13 +34,23 @@ fn cargo_with_toolchain(toolchain: Option<&str>, args: &[&str], name: &str) -> S
                         PathBuf::from(profiles).join("%p-%m.profraw"),
                     )
                     .env("CAPNTPROTO_COVERAGE_CHILDREN_NATIVE", "1");
-                cmd.args(["test", "--ignore-rust-version"]).args(&args[1..]);
+                cmd.args(&args[..if native_tests { 2 } else { 1 }])
+                    .arg("--ignore-rust-version");
+                if native_tests && !args.contains(&"--no-run") {
+                    v::nextest::json_output(&mut cmd);
+                }
+                cmd.args(&args[if native_tests { 2 } else { 1 }..]);
                 return run(&mut cmd, &log(name), 0).unwrap();
             }
         }
     }
     if let Some(toolchain) = toolchain {
         cmd.arg(toolchain);
+    }
+    if native_tests && !args.contains(&"--no-run") {
+        cmd.args(&args[..2]);
+        v::nextest::json_output(&mut cmd).args(&args[2..]);
+        return run(&mut cmd, &log(name), 0).unwrap();
     }
     if args.first() == Some(&"metadata") {
         // Cargo can download target-specific dependencies on a cold runner.
@@ -111,6 +122,34 @@ fn auditable_metadata_is_required_for_binary_artifacts() {
         .filter_map(|line| serde_json::from_str::<Value>(line).ok())
         .find(|value| value["target"]["name"] == "probe" && value["executable"].is_string())
         .expect("Cargo must identify the benchmark executable");
+    let tests = run(
+        command("cargo")
+            .args([
+                "+1.97.0",
+                "auditable",
+                "nextest",
+                "run",
+                "--locked",
+                "--offline",
+                "--no-run",
+                "--cargo-message-format=json",
+                "--manifest-path",
+            ])
+            .arg(project.path().join("Cargo.toml"))
+            .arg("--target-dir")
+            .arg(&target),
+        &log("auditable-nextest"),
+        0,
+    )
+    .unwrap();
+    let test_binary: Value = tests
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .find(|value| value["profile"]["test"] == true && value["executable"].is_string())
+        .expect("nextest must expose the compiled test executable");
+    // cargo-auditable supports nextest's build invocation, but Rust test
+    // harnesses are not eligible for its embedded inventory (unlike binaries).
+    assert!(std::path::Path::new(test_binary["executable"].as_str().unwrap()).is_file());
     let inventory = project.path().join("auditable.json");
     run(
         command("python3")
@@ -318,7 +357,11 @@ fn nightly_rpc_try_contracts() {
             (&["--test", "rpc_try"][..], "8 passed; 0 failed"),
             (&["--doc", "capability::Promise"][..], "2 passed; 0 failed"),
         ] {
-            let mut args = vec!["test"];
+            let mut args = if selection[0] == "--doc" {
+                vec!["test"]
+            } else {
+                vec!["nextest", "run"]
+            };
             args.extend(common);
             args.extend(extra);
             args.extend(selection);
@@ -327,7 +370,11 @@ fn nightly_rpc_try_contracts() {
                 &args,
                 &format!("rpc-try/{mode}-{}", selection[0].trim_start_matches('-')),
             );
-            assert!(output.contains(expected), "{output}");
+            if selection[0] == "--doc" {
+                assert!(output.contains(expected), "{output}");
+            } else {
+                assert_eq!(v::nextest::passed(&output).len(), 8);
+            }
         }
     }
     cargo_with_toolchain(
@@ -390,7 +437,8 @@ fn core_feature_profiles() {
 
 fn optimized_checks(filters: &[&str], name: &str) {
     let mut args = vec![
-        "test",
+        "nextest",
+        "run",
         "--locked",
         "--release",
         "--test",
@@ -423,23 +471,28 @@ fn tlc_optimized_runtime() {
 fn storage_crashes_in_isolated_process() {
     let output = cargo(
         &[
-            "test",
+            "nextest",
+            "run",
             "--locked",
             "--lib",
+            "--test-threads=1",
             "--",
             "storage::fault_tests",
             "storage::components::crash_tests",
-            "--test-threads=1",
             "--include-ignored",
         ],
         "storage-faults",
     );
-    assert!(output.contains(
-        "child_process_crashes_preserve_batch_atomicity_across_recovery_and_second_crash ... ok"
-    ));
-    assert!(output.contains(
-        "child_process_crashes_preserve_components_across_recovery_and_second_crash ... ok"
-    ));
+    let passed = v::nextest::passed(&output);
+    for case in [
+        "child_process_crashes_preserve_batch_atomicity_across_recovery_and_second_crash",
+        "child_process_crashes_preserve_components_across_recovery_and_second_crash",
+    ] {
+        assert!(
+            passed.iter().any(|name| name.ends_with(case)),
+            "missing crash recovery check: {case}"
+        );
+    }
 }
 
 #[test]
@@ -463,8 +516,9 @@ fn eae_feasibility_probe() {
     .unwrap();
     for release in [false, true] {
         let mut cmd = command("cargo");
+        cmd.args(["nextest", "run"]);
+        v::nextest::json_output(&mut cmd);
         cmd.args([
-            "test",
             "--locked",
             "--manifest-path",
             "benchmarks/storage/Cargo.toml",
@@ -476,7 +530,7 @@ fn eae_feasibility_probe() {
         }
         cmd.env("CARGO_TARGET_DIR", root().join("target/storage-benchmark"));
         let output = run(&mut cmd, &log(&format!("eae/{release}")), 0).unwrap();
-        assert!(output.contains("3 passed; 0 failed"));
+        assert_eq!(v::nextest::passed(&output).len(), 3);
     }
 }
 
@@ -490,42 +544,17 @@ fn orphan_memory_safety() {
         "loaded_orphans",
         "field_owners",
     ];
-    let mut args = vec!["test", "--locked", "--no-run", "--message-format=json"];
-    for name in &targets {
-        args.extend(["--test", name]);
-    }
-    let output = cargo(&args, "memcheck/build");
-    let artifacts: std::collections::BTreeMap<_, _> = output
-        .lines()
-        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
-        .filter(|v| v["reason"] == "compiler-artifact" && v["executable"].is_string())
-        .map(|v| {
-            (
-                v["target"]["name"].as_str().unwrap().to_owned(),
-                v["executable"].as_str().unwrap().to_owned(),
-            )
-        })
-        .collect();
     for name in targets {
         let output = run(
-            command("valgrind").args([
-                "--leak-check=full",
-                "--show-leak-kinds=definite,indirect",
-                "--errors-for-leak-kinds=definite,indirect",
-                "--error-exitcode=99",
-                &artifacts[name],
-                "--skip",
-                "replay_tlc_",
-            ]),
-            &log(&format!("memcheck/{name}")),
-            0,
-        )
-        .unwrap();
+            command("cargo").args([
+                "nextest", "run", "--locked", "--test", name,
+                "--no-capture", "-E", "not test(replay_tlc_)",
+            ]).env("CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER",
+                "valgrind --leak-check=full --show-leak-kinds=definite,indirect --errors-for-leak-kinds=definite,indirect --error-exitcode=99"),
+            &log(&format!("memcheck/{name}")), 0,
+        ).unwrap();
         assert!(output.contains("ERROR SUMMARY: 0 errors"), "{output}");
-        assert!(
-            !output.contains("0 passed; 0 failed"),
-            "empty memory test {name}"
-        );
+        // Nextest fails on an empty selection. Valgrind's nonzero exit fails the test.
     }
 }
 
@@ -871,7 +900,8 @@ fn fuzz_and_benchmark_harness_unit_tests() {
     ] {
         cargo(
             &[
-                "test",
+                "nextest",
+                "run",
                 "--locked",
                 "--manifest-path",
                 manifest,
