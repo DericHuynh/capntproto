@@ -1517,6 +1517,39 @@
         "status": "unavailable",
         "note": "This workflow attempt produced no public measurement artifact."
       }
+    },
+    {
+      "run_id": 37180167222,
+      "attempt": 1,
+      "commit": "66ece9a51e7b3faabf5c29b68db08f16bd8f1e91",
+      "date": "2026-10-04T05:32:01Z",
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/37180167222",
+      "conclusion": "failure",
+      "data": {
+        "format": 1,
+        "kind": "cargo",
+        "origin": {
+          "repository": "DericHuynh/capntproto",
+          "run_id": 37180167222,
+          "attempt": 1,
+          "commit": "66ece9a51e7b3faabf5c29b68db08f16bd8f1e91"
+        },
+        "source_id": "7da14ec1cb9f628f420fe4d8f456ff4d0c2cac05ccf40d20d3d745b7ae42661e",
+        "tests": {
+          "passed": 1248,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 19,
+          "total": 1267,
+          "suites": 199,
+          "complete": true,
+          "command_passed": true,
+          "failures": []
+        },
+        "charts": [],
+        "status": "failed",
+        "note": "Lane failed or did not complete; inspect the linked CI run."
+      }
     }
   ]
 }
