@@ -86,6 +86,9 @@ jobs:
           cargo build --locked --manifest-path examples/downstream/Cargo.toml
           cargo package --locked --manifest-path crates/capntproto-core/Cargo.toml
           cargo clippy --locked --manifest-path crates/capntproto-core/Cargo.toml --all-targets -- -D warnings
+      - name: Enforce unsafe documentation and frozen imported debt
+        if: runner.os == 'Linux'
+        run: python3 scripts/check_unsafe.py
       - name: Require embedded dependency inventories
         id: auditable
         shell: bash

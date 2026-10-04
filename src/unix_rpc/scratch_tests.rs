@@ -73,6 +73,7 @@ async fn caller_slots_bound_receipts_and_keep_exactly_one_owner() {
             assert_eq!(message.fds.len(), count);
             for fd in message.fds.iter().flatten() {
                 assert_ne!(
+                    // SAFETY: fd remains owned and live for this flags-only query.
                     unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFD) } & libc::FD_CLOEXEC,
                     0
                 );

@@ -30,10 +30,23 @@ use crate::{Error, ErrorKind, Result};
 
 pub type SegmentId = u32;
 
+/// Validated access to the segments backing a message.
+///
+/// # Safety
+/// Implementations must return stable, initialized storage for the arena's
+/// lifetime, aligned to a word unless the `unaligned` feature is enabled.
+/// Bounds checks must reject ranges outside the named segment before callers
+/// dereference them. Shared reads must not race with mutation or deallocation.
 pub unsafe trait ReaderArena {
     // return pointer to start of segment, and number of words in that segment
     fn get_segment(&self, id: u32) -> Result<(*const u8, u32)>;
 
+    /// Locate a word offset within a segment, allowing its one-past-end pointer.
+    ///
+    /// # Safety
+    /// `start` must derive from the named live segment (or its one-past-end
+    /// pointer). The returned pointer may only be dereferenced after validating
+    /// the desired access length with `contains_interval`.
     unsafe fn check_offset(
         &self,
         segment_id: u32,
@@ -56,6 +69,8 @@ pub unsafe trait ReaderArena {
                 ErrorKind::MessageContainsOutOfBoundsPointer,
             ))
         } else {
+            // SAFETY: start has segment provenance by the caller's contract;
+            // target_idx above is within that allocation or one past its end.
             unsafe { Ok(start.offset(isize::try_from(offset).unwrap())) }
         }
     }
@@ -167,6 +182,15 @@ where
     }
 }
 
+/// Allocation and mutable access for a message under construction.
+///
+/// # Safety
+/// In addition to ReaderArena's lifetime and bounds guarantees, allocations
+/// must be disjoint, initialized to zero, and remain stable until arena drop.
+/// Mutable segment pointers must refer to writable storage; external read-only
+/// segments must report `is_writable == false`. A successful resize must preserve
+/// existing words, initialize added words and retain disjoint allocation ranges.
+/// Implementations must not permit shared readers to race with mutation.
 pub unsafe trait BuilderArena: ReaderArena {
     fn allocate(&mut self, segment_id: u32, amount: WordCount32) -> Option<u32>;
     fn allocate_anywhere(&mut self, amount: u32) -> (SegmentId, u32);

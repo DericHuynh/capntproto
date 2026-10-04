@@ -140,10 +140,11 @@ impl PointerBuilder<'_> {
                 Void => (),
                 _ => {
                     if !list.is_empty() {
-                        // All nonempty primitive inputs have the same encoding,
-                        // otherwise the planning pass selected InlineComposite.
-                        // Fresh destination storage is disjoint from every source.
                         let width = target.step as usize / 8;
+                        // SAFETY: all nonempty primitive inputs have the same encoding,
+                        // otherwise the planning pass selected InlineComposite. The
+                        // planning pass checked total count; pos tracks copied entries.
+                        // Fresh destination storage is disjoint from every source.
                         unsafe {
                             ptr::copy_nonoverlapping(
                                 list.ptr,
@@ -290,7 +291,7 @@ mod tests {
                 let segments = message.get_segments_for_output();
                 assert!(segments.iter().map(|s| s.len()).sum::<usize>() <= sizes.iter().sum());
                 let old_bytes = if element == Bit { 8 } else { 24 };
-                // The allocator still owns these bytes, even when the logical
+                // SAFETY: the allocator still owns these bytes, even when the logical
                 // segment tail was reclaimed. Inspect clearing before reuse.
                 let body = unsafe { core::slice::from_raw_parts(after, old_bytes) };
                 if element == Bit {

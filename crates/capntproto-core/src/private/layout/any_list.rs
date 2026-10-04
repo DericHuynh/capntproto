@@ -88,8 +88,12 @@ impl<'a> ListReader<'a> {
                     / BITS_PER_BYTE as u64;
                 let offset = usize::try_from(offset)
                     .map_err(|_| Error::from_kind(ErrorKind::MessageSizeOverflow))?;
+                // SAFETY: construction validated the physical list extent; i is
+                // below element_count and this offset selects its pointer section.
                 let pointers = unsafe { self.ptr.add(offset).cast::<WirePointer>() };
                 for j in 0..self.struct_pointer_count {
+                    // SAFETY: j is within the validated pointer section. The
+                    // recursive traversal uses the same arena and nesting limit.
                     result += unsafe {
                         wire_helpers::total_size(
                             self.arena,

@@ -34,6 +34,7 @@ async fn fallback_cloexec_and_full_control_buffer_close_all_excess_fds() {
         );
         assert_eq!(pending.len(), limit);
         for fd in pending.slots.iter().flatten() {
+            // SAFETY: the pending set owns fd throughout this flags-only query.
             let flags = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFD) };
             assert!(flags >= 0);
             assert_ne!(flags & libc::FD_CLOEXEC, 0);
@@ -51,7 +52,11 @@ async fn fallback_cloexec_and_full_control_buffer_close_all_excess_fds() {
 // An initialized synthetic control message owns genuine duplicated descriptors,
 // just as a successful recvmsg does. The collector must adopt every one.
 fn control(fds: Vec<OwnedFd>, run: impl FnOnce(&libc::msghdr)) {
+    assert!(!fds.is_empty() && fds.len() <= 253);
     let mut buffer = control_buffer(fds.len());
+    // SAFETY: zeroed msghdr is valid; control_buffer provides aligned initialized
+    // storage for these descriptors. into_raw_fd transfers each unique owner to
+    // the synthetic message, which run consumes once before buffer is dropped.
     unsafe {
         let mut msg: libc::msghdr = mem::zeroed();
         msg.msg_control = buffer.as_mut_ptr().cast();
@@ -81,6 +86,7 @@ fn configuration_failure_closes_earlier_and_later_received_descriptors() {
         })
         .collect();
     let mut pending = PendingFds::default();
+    // SAFETY: control supplies one initialized message owning each descriptor once.
     control(fds, |msg| unsafe {
         let mut configured = 0;
         assert!(collect_fds(msg, &mut pending, 3, |_| {
@@ -103,6 +109,8 @@ fn configuration_failure_closes_earlier_and_later_received_descriptors() {
 #[test]
 fn truncated_control_length_never_reads_beyond_returned_bytes() {
     let (fd, mut peer) = witnessed();
+    // SAFETY: control owns an aligned header and one real FD. Only the claimed
+    // length is enlarged; msg_controllen stays within storage and collection runs once.
     control(vec![Rc::try_unwrap(fd).unwrap()], |msg| unsafe {
         let mut truncated = *msg;
         // Darwin may leave cmsg_len larger than msg_controllen on truncation.
@@ -130,7 +138,8 @@ async fn closed_peer_write_reports_error_with_default_sigpipe_handler() {
         );
         return;
     }
-    // Isolated test process: no process-wide signal change in the parent suite.
+    // SAFETY: SIG_DFL is a valid handler sentinel. This isolated child installs
+    // no Rust signal handler and no parent process state is changed.
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
@@ -139,6 +148,7 @@ async fn closed_peer_write_reports_error_with_default_sigpipe_handler() {
     // SIGPIPE itself. Configure while connected; Darwin rejects options after
     // the peer closes. The process-wide handler above remains SIG_DFL.
     #[cfg(target_os = "macos")]
+    // SAFETY: sender owns the socket; the live integer matches the option size.
     unsafe {
         let disabled: libc::c_int = 0;
         assert_eq!(

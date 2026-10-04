@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 // Copyright (c) 2013-2014 Sandstorm Development Group, Inc. and contributors
 // Licensed under the MIT License:
 //

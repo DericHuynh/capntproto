@@ -18,7 +18,6 @@ from urllib.parse import quote, unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 WIKI = Path('docs/wiki')
-INVENTORY = Path('docs/documentation-review.json')
 MANIFEST = 'wiki-export.json'
 FORMAT = 'capntproto-wiki-export-v1'
 # Build outputs and the optional C++ submodule need not exist in a fresh clone.
@@ -121,8 +120,8 @@ def check_links(root: Path, documents: list[Path]) -> list[str]:
     cache = {}
     for relative in documents:
         source = root / relative
-        if relative == Path('docs/README.template.md'):
-            # Rendered at repository root; its generated output is checked.
+        if relative == Path('docs/reports.template.md'):
+            # Rendered at the reports-branch root; renderer contract tests check it.
             continue
         if not source.is_file():
             errors.append(f'{relative}: missing document')
@@ -177,22 +176,6 @@ def check(root: Path) -> list[str]:
         for page in pages:
             if not page.name.startswith('_') and page.resolve() not in linked:
                 errors.append(f'wiki page absent from sidebar: {page.name}')
-    try:
-        inventory = json.loads((root / INVENTORY).read_text())
-        registered = inventory['documents']
-        if len(registered) != len(set(registered)):
-            errors.append('documentation inventory contains duplicate paths')
-        actual = {p.as_posix() for p in documents}
-        for path in sorted(actual - set(registered)):
-            errors.append(f'unregistered document: {path}')
-        for path in sorted(set(registered) - actual):
-            errors.append(f'inventory document missing: {path}')
-        for entry in inventory['migrations']:
-            for destination in entry['destinations']:
-                if destination not in actual:
-                    errors.append(f'migration destination missing: {destination}')
-    except (OSError, ValueError, KeyError, TypeError) as exc:
-        errors.append(f'invalid documentation inventory: {exc}')
     return errors
 
 
@@ -266,7 +249,7 @@ def build(root: Path, output: Path, repository: str, source_ref: str) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
-    sub.add_parser('check', help='validate local links, anchors, navigation and inventory')
+    sub.add_parser('check', help='validate local links, anchors and navigation')
     export = sub.add_parser('build', help='write a validated GitHub Wiki export')
     export.add_argument('--output', type=Path, default=ROOT / 'target/wiki')
     export.add_argument('--repository', default='DericHuynh/capntproto')

@@ -90,6 +90,7 @@ async fn unix_queue_metrics_exclude_active_io_and_cancellation_releases_queued_f
     assert_eq!(unsafe { libc::fcntl(raw_fd, libc::F_GETFD) }, -1);
     drop(connection);
     assert_eq!(
+        // SAFETY: F_GETFD safely reports EBADF for a descriptor closed above.
         unsafe { libc::fcntl(raw, libc::F_GETFD) },
         -1,
         "diagnostics retained the socket"

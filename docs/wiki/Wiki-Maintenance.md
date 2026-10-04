@@ -20,8 +20,8 @@ python3 scripts/wiki.py build --output target/wiki
 ```
 
 The checker validates local destinations, Markdown heading anchors, navigation
-and inventory coverage. It excludes upstream documentation, template-relative
-links (checked in the generated README) and explicitly identified generated or
+using automatic document discovery. It excludes upstream documentation, template-relative
+links (checked in report-rendering tests) and explicitly identified generated or
 submodule artifacts absent from a fresh checkout. External URLs are checked by
 the separate advisory Lychee CI lane. Passing local checks does not verify every
 code fragment or certify external services.
@@ -79,8 +79,8 @@ validated export artifact. It does not publish or require a new access token.
   counts, commands and former transports are historical, not current support.
 - Keep frozen measurements and original source hashes under
   [research/reports](../../research/reports/README.md). Do not silently rerun into them.
-- Edit `docs/README.template.md` for the repository README, then regenerate it
-  with `python3 scripts/update_readme.py render`; see [README reports](README-Reports.md).
-- Update `_Sidebar.md`, Home and `docs/documentation-review.json` when adding,
-  merging or retiring pages. [Documentation review](Documentation-Review.md)
-  records this migration's file-by-file decisions.
+- Edit the root README directly; see [CI reports](README-Reports.md) for the separate
+  generated dashboard.
+- Update `_Sidebar.md` and Home when adding, merging or retiring pages. The checker
+  discovers documents automatically. [Documentation review](Documentation-Review.md)
+  and its JSON ledger are historical migration records, not a second current inventory.

@@ -246,12 +246,23 @@ class Publishing(unittest.TestCase):
         self.assertEqual(artifact_data(API('publication.json'), run, 'full')['tests']['total'], 4)
 
     def test_atomic_publish_retries_and_changes_only_owned_paths(self):
+        self._publish_retry(False)
+
+    def test_initial_publication_is_orphan_and_retries_branch_creation_race(self):
+        self._publish_retry(True)
+
+    def _publish_retry(self, initial):
         calls = []
+        seed = empty_history()
+        seed['fuzz'] = [record(run_id=2, kind='fuzz')]
+        rendered = []
         class API:
             def __init__(self, *args):
                 self.attempt = 0
             def content(self, path, ref):
-                if path == 'docs/README.template.md':
+                if path in ('docs/reports/history.json', 'quality/reporting/history-seed.json'):
+                    return (json.dumps(seed).encode(), 'e' * 40)
+                if path == 'docs/reports.template.md':
                     return (f'# Template at {ref}\n{{{{REPORTS}}}}'.encode(), 'f' * 40)
                 return None
             def request(self, path, body=None, method=None):
@@ -264,6 +275,10 @@ class Publishing(unittest.TestCase):
                                 head_sha='b' * 40, created_at='2026-09-28T10:00:00Z', conclusion='success',
                                 html_url='https://github.com/example/capnt-proto/actions/runs/1')
                 if path == '/git/ref/heads/main':
+                    return dict(object=dict(sha='f' * 40))
+                if path == '/git/ref/heads/reports':
+                    if initial and self.attempt == 0:
+                        raise HTTPError('https://api.github.com/', 404, 'missing ref', None, None)
                     return dict(object=dict(sha=('c' if self.attempt == 0 else 'd') * 40))
                 if path.startswith('/compare/'):
                     return dict(merge_base_commit=dict(sha='b' * 40))
@@ -272,7 +287,9 @@ class Publishing(unittest.TestCase):
                             dict(path='docs/reports/keep.txt', sha='f' * 40, type='file')]
                 if path.startswith('/git/commits/'):
                     return dict(tree=dict(sha='e' * 40))
-                if path == '/git/refs/heads/main':
+                if path in ('/git/refs/heads/reports', '/git/refs'):
+                    if path == '/git/refs':
+                        assert body['ref'] == 'refs/heads/reports'
                     self.attempt += 1
                     if self.attempt == 1:
                         raise HTTPError('https://api.github.com/', 409, 'concurrent update', None, None)
@@ -281,6 +298,7 @@ class Publishing(unittest.TestCase):
                     return dict(sha='a' * 40)
                 raise AssertionError(path)
         def renderer(template, history, root):
+            rendered.append(history)
             root.joinpath('README.md').write_text(template)
             return [root / 'README.md']
         with tempfile.TemporaryDirectory() as directory:
@@ -290,13 +308,20 @@ class Publishing(unittest.TestCase):
                     patch('reporting.publish.GitHub', API), patch('reporting.publish.artifact_data', return_value=publication()), \
                     patch('reporting.publish.render', renderer), patch('reporting.publish.time.sleep'):
                 publish(event)
+        self.assertTrue(all(history['fuzz'] == seed['fuzz'] for history in rendered))
+        self.assertTrue(all(history['full'][0]['run_id'] == 1 for history in rendered))
+        self.assertFalse(any(path == '/git/refs/heads/main' for path, _, _ in calls))
         trees = [body for path, body, _ in calls if path == '/git/trees']
         self.assertEqual(len(trees), 2)
         self.assertTrue(all(entry['path'] in OWNED for tree in trees for entry in tree['tree']))
-        self.assertTrue(any(entry['path'] == 'docs/reports/latency-p50.svg' and entry['sha'] is None for entry in trees[0]['tree']))
+        if initial:
+            self.assertNotIn('base_tree', trees[0])
+            self.assertTrue(all(entry['sha'] is not None for entry in trees[0]['tree']))
+        else:
+            self.assertTrue(any(entry['path'] == 'docs/reports/latency-p50.svg' and entry['sha'] is None for entry in trees[0]['tree']))
         commits = [body for path, body, _ in calls if path == '/git/commits']
-        self.assertEqual([c['parents'] for c in commits], [['c' * 40], ['d' * 40]])
-        self.assertTrue(all(body['force'] is False for path, body, _ in calls if path == '/git/refs/heads/main'))
+        self.assertEqual([c['parents'] for c in commits], [[] if initial else ['c' * 40], ['d' * 40]])
+        self.assertTrue(all(body['force'] is False for path, body, _ in calls if path == '/git/refs/heads/reports'))
 
     def test_untrusted_origins_and_workflows_cannot_publish(self):
         run = dict(status='completed', path='.github/workflows/verification-coverage.yml', event='schedule',

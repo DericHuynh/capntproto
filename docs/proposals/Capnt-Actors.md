@@ -1,17 +1,19 @@
-# Capnt Actors — Rust virtual actor API specification
+# Capnt Actors — unimplemented design proposal
 
-Capnt Actors is a proposed virtual actor layer for **Capntproto**, the system in this workspace. It builds on the maintained `capnp`, `capnp-rpc`, `capnp-futures` and `capnpc` crates, the Rust schema compiler, and the `capntproto` RPC, native transport, authority and storage modules. Its wire foundation remains Cap'n Proto serialization and capability RPC. The application API combines ordinary Rust methods, authorized typed references, exclusive actor turns, and an explicit transaction boundary for durable state and effects.
+> **Design only.** No actor crate, host, placement service or durable actor transaction API exists in this workspace. For supported APIs, start with [runtime status](../wiki/Runtime-Status.md). Examples below are requirements for future work, not runnable application code.
+
+Capnt Actors is a proposed virtual actor layer for **Capntproto**, the system in this workspace. It builds on the maintained `capntproto-core`, `capntproto-rpc`, `capntproto-futures` and `capntproto-codegen` crates (imported using the compatible `capnp`, `capnp_rpc`, `capnp_futures` and `capnpc` aliases), the Rust schema compiler, and the `capntproto` RPC, native transport, authority and storage modules. Its wire foundation remains Cap'n Proto serialization and capability RPC. The application API combines ordinary Rust methods, authorized typed references, exclusive actor turns, and an explicit transaction boundary for durable state and effects.
 
 This is a normative design proposal, not an implemented actor runtime. The planned workspace crate is `capnt-actors`, imported as `capnt_actors`; the actor macros, generated clients, host, CLI and persistence guarantees below are proposed. Their examples have not been compiled or benchmarked. Existing packages and wire identifiers keep their current names. “Must” identifies a requirement for a future conforming implementation, not a property already supplied by `capntproto`. Provider construction and routine application plumbing are omitted where they do not affect the contract.
 
 ## Relationship to the current system
 
-The [runtime status](docs/wiki/Runtime-Status.md) and [RPC application guide](docs/wiki/RPC-Applications.md) describe the implemented foundation. This proposal adds actor policy above those APIs; it does not introduce another RPC engine or QUIC backend.
+The [runtime status](../wiki/Runtime-Status.md) and [RPC application guide](../wiki/RPC-Applications.md) describe the implemented foundation. This proposal adds actor policy above those APIs; it does not introduce another RPC engine or QUIC backend.
 
 | Area | Current Capntproto foundation | Capnt Actors work still required |
 | --- | --- | --- |
 | RPC ownership | `capntproto::rpc::Connection` for two-party connections; `capntproto::native_rpc::Vat` for authenticated multiparty RPC, both on a Tokio `LocalSet` | Actor host, activations, exclusive turns and bounded actor mailboxes |
-| Transport | Plain `rpc::tcp`; conventional CA-validated `rpc::tls` and `rpc::quic`; native pinned mutual-TLS sessions over TCP or quiche QUIC v1/v2 | Actor service registration and deployment policy; production actor peers use authenticated sessions |
+| Transport | Plain `rpc::tcp`; conventional CA-validated `rpc::tls` and `rpc::quic`; native pinned mutual-TLS sessions over TCP or quiche QUIC v1 | Actor service registration and deployment policy; production actor peers use authenticated sessions |
 | Capabilities and pipelines | Generated clients, `RemotePromise`, field-API `PendingCall`, `with_params`, `send().await`, `into_parts`, capability pipelines, typed tail calls and structured server replies | Lazy actor invocation builders, method modes and durable operation observation |
 | Three-party RPC | Native introductions, authenticated Join, answer adoption and pipeline migration with ordering fences | Actor ownership/placement protocol and storage fencing; capability handoff alone does not transfer an activation |
 | Authority and restoration | Authority grants and revocation; `persistence::Realm`, owner-sealed `persistence::SturdyRef`, factories and authenticated restore | Tenant/actor bindings, typed actor restoration wrappers and operation tokens |
@@ -19,7 +21,7 @@ The [runtime status](docs/wiki/Runtime-Status.md) and [RPC application guide](do
 | Async storage | Opt-in `storage::worker::Worker`, bounded count/byte/principal admission, explicit outcomes and shutdown | Actor-authorized transaction adapter, execution-time grant checks and integration with actor scheduling; existing ORM RPC handlers remain synchronous |
 | Resource observation | Opt-in per-connection outgoing Call-count limits, pending/active output metrics and protocol snapshots | Actor/tenant limits, byte budgets, unresolved-call budgets and fair scheduling across actor work |
 
-The [transport guide](docs/wiki/Native-Transports.md), [storage guide](docs/wiki/Storage-and-ORM.md), [worker contract](docs/wiki/Storage-Worker.md) and [persistence realm](docs/wiki/Persistence.md) define the limits of reuse. There is currently no actor runtime, placement service, replicated actor store, general durable operation receipt API, or distributed ownership fence in this workspace.
+The [transport guide](../wiki/Native-Transports.md), [storage guide](../wiki/Storage-and-ORM.md), [worker contract](../wiki/Storage-Worker.md) and [persistence realm](../wiki/Persistence.md) define the limits of reuse. There is currently no actor runtime, placement service, replicated actor store, general durable operation receipt API, or distributed ownership fence in this workspace.
 
 ### Terminology and identity boundaries
 
@@ -55,8 +57,8 @@ The core profile has one authoritative owner per logical actor, exclusive execut
 
 The runtime does not transparently persist Rust futures, make external HTTP effects transactional, or provide global ordering between independent callers. Single ownership does not mean that a disconnected old process immediately stops executing; fencing prevents its managed writes and effects from committing.
 
-The [ActorDB proposal](docs/wiki/ActorDB-Proposal.md) and
-[implementation checklist](docs/wiki/ActorDB-Checklist.md) describe a future
+The [ActorDB proposal](../wiki/ActorDB-Proposal.md) and
+[implementation checklist](../wiki/ActorDB-Checklist.md) describe a future
 event-sourced database profile with incremental views. That profile requires
 additional event-feed, projection-checkpoint and query-progress contracts;
 these are not implied by the generic actor core or implemented by this document.
@@ -929,11 +931,11 @@ Actor traffic uses the maintained TCP and quiche profiles:
 
 | Profile | Current integration | Actor contract |
 | --- | --- | --- |
-| Authenticated multiparty host traffic | `native_rpc::Vat` over `transport::tcp` with `Backend::Tcp`, or quiche with `Backend::Quiche` / `Backend::QuicheV2` | Pinned Ed25519 mutual TLS 1.3, authorized native routes and supported three-party capability operations |
+| Authenticated multiparty host traffic | `native_rpc::Vat` over `transport::tcp` with `Backend::Tcp`, or quiche with `Backend::Quiche` (QUIC v1) | Pinned Ed25519 mutual TLS 1.3, authorized native routes and supported three-party capability operations |
 | Conventional two-party client/service traffic | Owned `rpc::Connection` over `rpc::tls` or `rpc::quic`, with CA/name validation and configured client authentication | Actor capabilities remain application-authorized; this connection alone does not become a native multiparty vat |
 | Local explicit test traffic | Plain `rpc::tcp` | Unauthenticated; never silently selected for an authenticated actor deployment |
 
-Quiche is the sole QUIC engine, with explicitly selected v1/v2 (`rpc::QuicVersion::V1` / `V2`). Native ALPN remains `reproto/2`; conventional two-party TLS/QUIC ALPN remains `capntproto-rpc/1`. The actor rename changes neither identifier. Native reservation `psk` parameters mean an optional admission secret bound to the authenticated session, not another transport encryption protocol. Application 0-RTT is disabled, and reconnect does not restore ephemeral capabilities or deduplicate commands.
+Quiche is the sole QUIC engine and supports QUIC v1. `rpc::QuicVersion::V2` is reserved and configuration rejects it; QUIC v2 is not supported. Native QUIC uses ALPN `capntproto/3`; native TCP retains `reproto/2` for wire compatibility. Conventional two-party TLS/QUIC uses `capntproto-rpc/1`. A future actor layer must reuse these implemented transport contracts rather than assume v2 support. Native reservation `psk` parameters mean an optional admission secret bound to the authenticated session, not another transport encryption protocol. Application 0-RTT is disabled, and reconnect does not restore ephemeral capabilities or deduplicate commands.
 
 The shared actor contract uses ordered capability RPC on every selected backend. Unreliable datagrams, path migration and CID rotation are optional quiche transport controls, not portable actor semantics; TCP does not emulate them. QUIC connection/path migration, capability route migration and actor placement/ownership migration are three distinct operations. A transport delivery receipt does not acknowledge a method invocation or an actor commit.
 
@@ -1017,7 +1019,7 @@ Providers may group independent actor transactions behind a shared durability ba
 
 Read barriers may be shared only among queries already invoked before the confirming authority check, or under a lease/provider proof explicitly valid for later invocations. Each query still selects a pinned consistent view satisfying its own minimum watermark and deadline. An `AtLeast` token cannot be ignored because another query in the batch requested a lower version. Batching cannot turn an earlier cached read index into a fresh linearizability proof.
 
-Prefer state partitions based on update/access patterns, measuring encoded bytes, physical write amplification, synchronization cost and retained-snapshot memory separately. Existing V5 supports at most 256 structural components per object; `Table` needs a real indexed layout, not one component per row. The [current storage experiment](docs/wiki/Storage-Research.md) reduced logical update bytes by about 304× for its two-component workload but improved median commit time only about 1.20×. That local experiment is evidence to measure durability barriers and descriptor overhead, not an actor performance guarantee. Include retained maps/snapshots, compaction, failure recovery and slow consumers in memory/disk measurements.
+Prefer state partitions based on update/access patterns, measuring encoded bytes, physical write amplification, synchronization cost and retained-snapshot memory separately. Existing V5 supports at most 256 structural components per object; `Table` needs a real indexed layout, not one component per row. The [current storage experiment](../wiki/Storage-Research.md) reduced logical update bytes by about 304× for its two-component workload but improved median commit time only about 1.20×. That local experiment is evidence to measure durability barriers and descriptor overhead, not an actor performance guarantee. Include retained maps/snapshots, compaction, failure recovery and slow consumers in memory/disk measurements.
 
 The benchmark suite must report payload distributions, hardware, transport, storage durability, contention, and failure conditions alongside throughput and latency percentiles. Measure local and remote calls separately; compare borrowed/owned decoding, command commit, durable admission, hot-actor saturation, many idle actors, cold activation, failure recovery, and bounded-memory overload. Do not compare a process-memory command with a replicated durable commit under one undifferentiated throughput number.
 
@@ -1125,7 +1127,7 @@ The following adversarial cases are also release gates, not optional examples:
 | Group commit | Crash before/after the shared durability barrier and inject one member's fence conflict; reconcile each transaction without publishing premature or fabricated outcomes |
 | Rust boundaries | Reject shared calls with local capability payloads/borrowed views; accept explicit bounded proxies with unchanged authority; skip destructors and preserve durable correctness |
 
-Compile-fail suites cover invalid method signatures, unknown actor fields, unregistered wire types, nonpersistable durable captures/results, receipt-less command rejections, query errors containing command receipts, shared calls containing nontransferable payloads, and public access to private handlers. Runtime tests separately exercise hidden helper mutations and side effects that the type system cannot prove absent. Model checking targets ownership transfer, commit/output ordering, cancellation races, deduplication expiry, and reminder generations. Extend the existing generated-API compiler contracts, bounded TLA+/Rust replay, property/fuzz checks, isolated process-crash tests and Miri where applicable. Add bounded concurrency exploration for new synchronization; no tool substitutes for an explicit invariant. Run real TCP/TLS/mTLS and quiche v1/v2 coverage, with native three-party introductions, Join, answer adoption, late parent errors and shutdown. The [testing guide](docs/wiki/Testing.md) names current gates; actor deduplication, fencing, relocation and recovery need new acceptance evidence rather than inheriting those pass results.
+Compile-fail suites cover invalid method signatures, unknown actor fields, unregistered wire types, nonpersistable durable captures/results, receipt-less command rejections, query errors containing command receipts, shared calls containing nontransferable payloads, and public access to private handlers. Runtime tests separately exercise hidden helper mutations and side effects that the type system cannot prove absent. Model checking targets ownership transfer, commit/output ordering, cancellation races, deduplication expiry, and reminder generations. Extend the existing generated-API compiler contracts, bounded TLA+/Rust replay, property/fuzz checks, isolated process-crash tests and Miri where applicable. Add bounded concurrency exploration for new synchronization; no tool substitutes for an explicit invariant. Run real TCP/TLS/mTLS and quiche v1 coverage, plus rejection checks for unsupported QUIC versions, with native three-party introductions, Join, answer adoption, late parent errors and shutdown. The [testing guide](../wiki/Testing.md) names current gates; actor deduplication, fencing, relocation and recovery need new acceptance evidence rather than inheriting those pass results.
 
 ## Core profile and extension boundaries
 
@@ -1160,7 +1162,7 @@ Protocol and provider interfaces may be developed with simulators before the act
 
 ## Design basis
 
-The APIs and guarantees above are proposed choices. The [current architecture](docs/wiki/Architecture.md), [RPC ergonomics](docs/wiki/RPC-Applications.md), [component storage](docs/wiki/Component-Storage.md), [storage resilience](docs/wiki/Storage-Resilience.md) and [persistence realm](docs/wiki/Persistence.md) establish the local integration contract. The external sources below inform particular design decisions; this design does not inherit an existing framework’s implementation, correctness proof, or benchmark results.
+The APIs and guarantees above are proposed choices. The [current architecture](../wiki/Architecture.md), [RPC ergonomics](../wiki/RPC-Applications.md), [component storage](../wiki/Component-Storage.md), [storage resilience](../wiki/Storage-Resilience.md) and [persistence realm](../wiki/Persistence.md) establish the local integration contract. The external sources below inform particular design decisions; this design does not inherit an existing framework’s implementation, correctness proof, or benchmark results.
 
 | Source | Influence on this specification |
 | - | - |

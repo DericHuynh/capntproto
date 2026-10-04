@@ -382,7 +382,7 @@ mod tests {
 
         // no alignment requirements in "unaligned" mode
         for idx in 0..8 {
-            verify_alignment(unsafe { aligned.0.as_ptr().add(idx) }).unwrap();
+            verify_alignment(aligned.0.as_ptr().wrapping_add(idx)).unwrap();
         }
     }
 
@@ -396,7 +396,7 @@ mod tests {
 
         verify_alignment(aligned.0.as_ptr()).unwrap();
         for idx in 1..8 {
-            verify_alignment(unsafe { aligned.0.as_ptr().add(idx) }).unwrap_err();
+            verify_alignment(aligned.0.as_ptr().wrapping_add(idx)).unwrap_err();
         }
     }
 

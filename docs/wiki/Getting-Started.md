@@ -15,17 +15,42 @@ This preview is a source bundle, not a crates.io package. Unpack
 delivery channel, and keep its `SOURCE_MANIFEST.json`. That manifest identifies
 the exact files; a checksum alone does not authenticate the distributor.
 
-Install Rust/rustup, a C/C++ compiler, CMake, libclang, pkg-config, and
-Cap'n Proto's compiler/development libraries. The validation host uses installed C++ 1.5.0.
-The bundled pinned C++ source is a separate reference, not the installed peer.
-From the unpacked directory:
+Start with the part of the library your application uses. Rust **1.97** is the
+manifest minimum; **1.97.0** is the reproducible development/CI pin. This is not
+an assertion that newer compilers are rejected or qualified. Stable application
+builds do not require nightly, Java, TLC or Valgrind.
+
+| Build | Command | Additional build tools |
+| --- | --- | --- |
+| Serialization / schema compiler | `cargo build --locked -p capntproto-core -p capntproto-compiler` | Rust and platform linker |
+| TCP RPC | `cargo build --locked -p capntproto --no-default-features` | C toolchain for ring |
+| TCP with TLS/mTLS | `cargo build --locked -p capntproto --no-default-features --features tls` | C toolchain for ring; no BoringSSL/quiche |
+| Storage and services | Add `--features storage,services` to a minimal build | Schemas compile with the workspace Rust compiler |
+| Default / QUIC | `cargo build --locked -p capntproto` | C/C++, CMake, libclang for quiche/BoringSSL |
+
+The Cap'n Proto C++ compiler and headers are needed for independent compatibility
+checks, not for the library's Rust schema build. The full test suite additionally
+uses C++ reference source, nightly analysis tools and Java/TLC; see [Testing](Testing.md).
+
+TLS/TCP uses rustls with ring; quiche uses its BoringSSL integration. These are
+separate TLS implementations because the unmodified upstream QUIC engine owns
+its TLS handshake. Selecting only `tls` avoids the quiche/BoringSSL dependency
+entirely. Default features retain both transports for API compatibility.
+
+For a focused first run:
 
 ```sh
 rustup toolchain install 1.97.0 --profile minimal --component rustfmt --component clippy
+cargo install cargo-nextest --version 0.9.146 --locked
+cargo nextest run --locked -p capntproto --no-default-features --features tls --test secure_rpc
+```
+
+For the full default-feature downstream example after installing QUIC tools:
+
+```sh
 bash scripts/setup-auditable.sh
 export PATH="$PWD/target/auditable-tools/wrapper:$PWD/target/auditable-tools/bin:$PATH"
-cargo fetch --locked
-cargo nextest run --test tooling external_consumer_default_features -- --exact
+cargo nextest run --locked --test tooling external_consumer_default_features -- --exact
 cargo run --locked --example native_store
 ```
 

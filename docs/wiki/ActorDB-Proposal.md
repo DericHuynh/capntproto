@@ -12,7 +12,7 @@ reads that include a caller's own writes. Replication and owner movement must
 pass their own gates before the service advertises high availability.
 
 The [implementation checklist](ActorDB-Checklist.md) tracks the proposed work.
-The [Capnt Actors specification](<../../Capnt Actors API Specification.md>) owns
+The [Capnt Actors design proposal](../proposals/Capnt-Actors.md) owns
 actor identity, invocation errors, request fingerprints, transaction fencing,
 authority and recovery. This proposal adds a database profile above those
 contracts; it does not weaken them or change the generic actor core's scope.

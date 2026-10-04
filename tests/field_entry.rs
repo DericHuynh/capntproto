@@ -38,6 +38,7 @@ unsafe impl ReaderArena for Arena {
     }
     unsafe fn check_offset(&self, id: u32, start: *const u8, offset: i32) -> Result<*const u8> {
         self.counts.access();
+        // SAFETY: forwards the caller's segment, live pointer and offset unchanged.
         unsafe { self.inner.check_offset(id, start, offset) }
     }
     fn contains_interval(&self, id: u32, start: *const u8, size: usize) -> Result<()> {
@@ -55,6 +56,8 @@ unsafe impl ReaderArena for Arena {
         self.inner.size_in_words()
     }
 }
+// SAFETY: every allocation, segment and writable-range invariant is delegated
+// unchanged to BuilderArenaImpl; the extra counters never retain pointers.
 unsafe impl BuilderArena for Arena {
     fn allocate(&mut self, id: u32, amount: u32) -> Option<u32> {
         self.counts.allocation();

@@ -49,9 +49,9 @@ The configured repository is **DericHuynh/capntproto**; the display name is
 The [wiki publishing guide](Wiki-Maintenance.md) covers initialization, export
 and the separate wiki Git repository.
 
-The generated README and initial report SVGs are checked in. Follow
-[README Reports](README-Reports.md) to enable automatic updates after Cargo, TLA+, fuzzing and
-benchmark runs. Edit [the template](../README.template.md) for prose changes.
+The root README is hand-maintained. [CI reports](README-Reports.md) describes
+automatic dashboard publication to the separate `reports` branch. Edit
+[the report template](../reports.template.md) for dashboard prose changes.
 
 ## Community files
 

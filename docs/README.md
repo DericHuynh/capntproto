@@ -8,5 +8,6 @@ and can be read in this checkout or exported to GitHub Wiki.
 project-owned document. [Historical records](archive/README.md) retain superseded
 checklists and design proposals separately from current usage instructions.
 
-`README.template.md` generates the repository-root README. `reports/` contains
-renderer-owned public CI charts and history; see [README reports](wiki/README-Reports.md).
+Unimplemented designs live in `proposals/`, separate from supported API guides.
+`reports.template.md` generates the dashboard on the separate `reports` branch;
+see [CI reports](wiki/README-Reports.md). Edit the root README directly.

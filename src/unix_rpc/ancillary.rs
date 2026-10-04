@@ -85,9 +85,10 @@ fn set_cloexec(fd: &OwnedFd) -> io::Result<()> {
     }
 }
 
-// SAFETY: msg must refer to a live, initialized, aligned control buffer of at
-// least msg_controllen bytes, containing each newly received descriptor once.
-// It must not be processed again: this consumes ownership of every rights entry.
+/// # Safety
+/// `msg` must refer to a live, initialized, aligned control buffer of at least
+/// `msg_controllen` bytes, containing each newly received descriptor once.
+/// It must not be processed again: this consumes ownership of every rights entry.
 #[allow(
     clippy::unnecessary_cast,
     reason = "Darwin control lengths are u32, Linux uses usize."
@@ -100,8 +101,10 @@ unsafe fn collect_fds(
 ) -> io::Result<()> {
     let base = msg.msg_control as usize;
     let used = msg.msg_controllen as usize;
-    let minimum = libc::CMSG_LEN(0) as usize;
-    let mut header = libc::CMSG_FIRSTHDR(msg);
+    // SAFETY: zero payload size cannot overflow; the caller supplies a live msghdr.
+    let minimum = unsafe { libc::CMSG_LEN(0) } as usize;
+    // SAFETY: the caller guarantees the initialized, aligned control buffer.
+    let mut header = unsafe { libc::CMSG_FIRSTHDR(msg) };
     let mut error = None;
     while !header.is_null() {
         let offset = (header as usize).saturating_sub(base);
@@ -109,7 +112,10 @@ unsafe fn collect_fds(
         if remaining < minimum {
             break;
         }
-        let claimed = (*header).cmsg_len as usize;
+        // SAFETY: CMSG traversal provides alignment; the remaining-length check
+        // above proves the header fits inside the caller's live buffer.
+        let hdr = unsafe { &*header };
+        let claimed = hdr.cmsg_len as usize;
         if claimed < minimum {
             error = Some(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -120,11 +126,15 @@ unsafe fn collect_fds(
         // Darwin can retain the original cmsg_len after truncation. Never read
         // beyond the actual returned buffer, even when the header claims more.
         let available = claimed.min(remaining);
-        if (*header).cmsg_level == libc::SOL_SOCKET && (*header).cmsg_type == libc::SCM_RIGHTS {
+        if hdr.cmsg_level == libc::SOL_SOCKET && hdr.cmsg_type == libc::SCM_RIGHTS {
             let count = (available - minimum) / mem::size_of::<libc::c_int>();
-            let data = libc::CMSG_DATA(header).cast::<libc::c_int>();
+            // SAFETY: header validity was checked above. The payload reads below
+            // are bounded by min(cmsg_len, remaining), including truncation.
+            let data = unsafe { libc::CMSG_DATA(header) }.cast::<libc::c_int>();
             for i in 0..count {
-                let fd = OwnedFd::from_raw_fd(data.add(i).read_unaligned());
+                // SAFETY: count bounds this read; the caller guarantees unique,
+                // newly owned descriptors. Each entry is adopted exactly once.
+                let fd = unsafe { OwnedFd::from_raw_fd(data.add(i).read_unaligned()) };
                 if error.is_none() && fds.len() < max_fds {
                     match configure(&fd) {
                         Ok(()) => fds.push(fd),
@@ -138,7 +148,9 @@ unsafe fn collect_fds(
         if claimed > remaining {
             break;
         }
-        header = libc::CMSG_NXTHDR(msg, header);
+        // SAFETY: the current header fits the buffer and claimed <= remaining.
+        // libc checks that the next aligned header fits before returning it.
+        header = unsafe { libc::CMSG_NXTHDR(msg, header) };
     }
     if let Some(error) = error {
         fds.clear();

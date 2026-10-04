@@ -10,7 +10,7 @@ contract documentation and relevant validation evidence are linked beside it.
 Use a commit or retained report with its revision, command, result and known
 limits. Do not check an item because an API was sketched or a dependency supports
 something similar. This file is the implementation tracker; the proposal owns
-architectural intent, and the [actor specification](<../../Capnt Actors API Specification.md>)
+architectural intent, and the [actor specification](../proposals/Capnt-Actors.md)
 owns the underlying actor guarantees.
 
 The single-host prototype requires phases 0–4 plus applicable phase 7 checks.

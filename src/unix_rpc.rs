@@ -146,9 +146,9 @@ struct Inner {
 impl Inner {
     fn close(&self) {
         if !self.closed.replace(true) {
-            // SAFETY: socket owns this descriptor. shutdown does not close or
-            // transfer it; pending reads/writes wake and observe the shutdown.
             if !self.borrowed {
+                // SAFETY: socket owns this descriptor. shutdown does not close or
+                // transfer it; pending reads/writes wake and observe the shutdown.
                 unsafe {
                     libc::shutdown(self.socket.as_raw_fd(), libc::SHUT_RDWR);
                 }
@@ -528,7 +528,8 @@ pub struct FdReader<S> {
 }
 impl<S: std::borrow::Borrow<UnixStream> + Unpin> FdReader<S> {
     pub fn new(socket: S, options: Options) -> Self {
-        Self::with_buffer_size(socket, options, 8192).unwrap()
+        Self::with_buffer_size(socket, options, 8192)
+            .expect("8192 words exceeds BufferedRead minimum of 256")
     }
 
     /// Configure receive-buffer words (at least 256), independently of per-read
@@ -699,8 +700,8 @@ mod tests {
     async fn partial_writes_and_message_boundaries_keep_fds_once() {
         let (sender, receiver) = UnixStream::pair().unwrap();
         let size: libc::c_int = 4096;
-        // SAFETY: the option pointer references a live integer of the supplied size.
         assert_eq!(
+            // SAFETY: the option pointer references a live integer of the supplied size.
             unsafe {
                 libc::setsockopt(
                     sender.as_raw_fd(),
@@ -757,6 +758,7 @@ mod tests {
             for fd in first.fds.iter().chain(&second.fds) {
                 // SAFETY: descriptor remains owned and open during fcntl.
                 assert_ne!(
+                    // SAFETY: fd stays owned and live; F_GETFD has no pointer arguments.
                     unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFD) } & libc::FD_CLOEXEC,
                     0
                 );

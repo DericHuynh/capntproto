@@ -182,3 +182,32 @@ CAPNTPROTO_NATIVE_FUZZ_REPLAY=target/afl-results/rpc_lifecycle/default/queue/INP
 cargo nextest run --locked --manifest-path fuzz/Cargo.toml --no-default-features \
   --lib tests::replay_saved_fuzz_input -- --exact
 ```
+
+## Unsafe-code review gates
+
+The application crate denies undocumented unsafe blocks, missing public safety
+contracts and implicit unsafe operations inside unsafe functions. Its libc and
+mmap calls state descriptor ownership, buffer bounds and mapped-file lifetime
+requirements at each boundary. Compiler, compatibility, RPC, codegen and futures
+implementations forbid unsafe code (generated source strings are not executed
+by the generator). Test assertions may panic; production Unix `FdReader::new`
+uses an explicit assertion that its constant buffer size exceeds the minimum.
+
+CI also runs `python3 scripts/check_unsafe.py` on Linux with the pinned Clippy.
+It records all three unsafe lints, including default workspace test targets, in
+`target/quality/unsafe/`. Pre-existing debt in the owned core runtime is recorded
+in `quality/unsafe-baseline.json`, with per-lint counts and whole-file hashes.
+This includes inherited wire-layout code and is **not a safety audit or approval**.
+New diagnostics, removed diagnostics, changes to those files, and attempts to
+baseline application code fail the gate. Document new/changed unsafe code and
+review any reduction to this baseline; do not regenerate it to dismiss a failure.
+Feature-specific, non-Linux and generated code still require their respective
+review/testing; this default-feature Linux inventory does not claim to cover them.
+
+The unsafe [function-body lint](https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html)
+and Clippy's [unsafe-block documentation lint](https://rust-lang.github.io/rust-clippy/master/index.html#undocumented_unsafe_blocks)
+check obligations and explanation presence, not their correctness. Miri, fuzzing,
+bounds/aliasing tests and code review remain necessary for the pointer-heavy
+serialization runtime. Its layout implementation stays together during this
+maintenance change; RPC dispatch/capability handling and schema node generation
+are split into focused modules without altering message layout.

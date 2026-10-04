@@ -26,12 +26,13 @@ fn id(message: &Input) -> u32 {
 }
 fn fd_value(fd: &OwnedFd) -> u8 {
     let mut byte = 0u8;
-    // SAFETY: a live owned descriptor and one writable byte; pread preserves offsets.
     assert_eq!(
+        // SAFETY: a live owned descriptor and one writable byte; pread preserves offsets.
         unsafe { libc::pread(fd.as_raw_fd(), (&mut byte as *mut u8).cast(), 1, 0) },
         1
     );
     assert_ne!(
+        // SAFETY: fd remains owned and live for this flags-only query.
         unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFD) } & libc::FD_CLOEXEC,
         0
     );

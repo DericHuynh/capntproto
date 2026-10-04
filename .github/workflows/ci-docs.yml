@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - name: Validate wiki navigation, inventory and local links
+      - name: Validate wiki navigation and local links
         run: |
           python3 scripts/wiki.py check
           python3 -m unittest discover -s scripts/tests -p 'test_wiki.py'

@@ -373,6 +373,7 @@ unsafe impl capnp::message::Allocator for TrackedAllocator {
         self.inner.allocate_segment(minimum_size)
     }
     unsafe fn deallocate_segment(&mut self, ptr: *mut u8, word_size: u32, words_used: u32) {
+        // SAFETY: the caller returns the same allocation and sizes from inner.
         unsafe { self.inner.deallocate_segment(ptr, word_size, words_used) }
     }
 }

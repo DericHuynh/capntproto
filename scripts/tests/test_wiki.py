@@ -1,6 +1,5 @@
 """Contract tests for wiki migration links and non-destructive exports."""
 import importlib.util
-import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -24,11 +23,6 @@ class WikiTests(unittest.TestCase):
         (self.root / 'src').mkdir()
         (self.root / 'src/lib.rs').write_text('// source')
         self.output = self.root / 'target/wiki'
-        self.inventory()
-
-    def inventory(self):
-        (self.root / wiki.INVENTORY).write_text(json.dumps({
-            'documents': [p.as_posix() for p in wiki.owned_documents(self.root)], 'migrations': []}))
 
     def build(self):
         return wiki.build(self.root, self.output, 'owner/repository', 'release/next')
@@ -102,7 +96,6 @@ class WikiTests(unittest.TestCase):
         (self.pages / 'Guide.md').unlink()
         (self.pages / 'Home.md').write_text('# Home\n')
         (self.pages / '_Sidebar.md').write_text('[Home](Home.md)')
-        self.inventory()
         self.assertEqual(self.build(), 3)
         self.assertFalse((self.output / 'Guide.md').exists())
 
@@ -114,12 +107,16 @@ class WikiTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'symlinks'):
             wiki.build(self.root, alias, 'a/b', 'main')
 
-    def test_navigation_inventory_and_case_collisions(self):
+    def test_navigation_and_case_collisions(self):
         (self.pages / 'guide.md').write_text('# lowercase collision')
         errors = '\n'.join(wiki.check(self.root))
         self.assertIn('duplicate wiki page name', errors)
         self.assertIn('absent from sidebar', errors)
-        self.assertIn('unregistered document', errors)
+        self.assertNotIn('unregistered document', errors)
+
+    def test_new_documents_are_checked_without_manual_inventory(self):
+        (self.root / 'new.md').write_text('[broken](missing.md)')
+        self.assertIn('missing target', '\n'.join(wiki.check(self.root)))
 
     def test_escape_and_generated_output_boundary(self):
         with self.assertRaisesRegex(ValueError, 'escapes repository'):

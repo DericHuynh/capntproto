@@ -44,3 +44,18 @@
 
 This is an experimental preview, not complete C++ API parity or a production
 security qualification. See `docs/wiki/Release-Acceptance.md` for outstanding gates.
+
+## Review follow-up (2026-10-04)
+
+- Separate generated CI evidence into an orphan `reports` branch. Keep the source
+  README editable and discover documentation automatically instead of maintaining
+  a duplicate page inventory. Existing measured history is retained as a frozen seed.
+- Move the unimplemented Capnt Actors design to `docs/proposals/`; correct QUIC v1,
+  unsupported v2 and the distinct native TCP/QUIC ALPN identifiers.
+- Enforce unsafe documentation for application code; forbid unsafe in RPC/codegen/
+  futures and track source-bound core-runtime documentation debt in CI. Document
+  arena and descriptor ownership contracts without claiming a full unsafe audit.
+- Split RPC dispatch and capability handling, and schema-node generation, into
+  focused modules. Replace unresolved RPC size hints and clarify constructor checks.
+- Document minimal TCP/TLS builds separately from QUIC and full verification tools.
+  Retain nextest process isolation and the existing feature/transport contracts.

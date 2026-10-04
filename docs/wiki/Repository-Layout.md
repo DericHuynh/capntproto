@@ -194,12 +194,11 @@ Keep GitHub community files and Cargo entry points at the root. Put maintained
 guides in `docs/wiki/`, historical records in `docs/archive/`, scripts in `scripts/`, model source in `verification/`, and
 research inputs in `research/`.
 
-The root README is generated from `docs/README.template.md`. The small public
-history and SVG figures in `docs/reports/` are intentionally checked in so images
-render on GitHub and in source clones. Raw logs, samples and private/local data
-stay under `target/`. Collection, charting and publication code lives in
-`quality/reporting/`, invoked by `scripts/update_readme.py`; contract tests join
-the ordinary workspace suite. See [README Reports](README-Reports.md).
+The root README is hand-maintained. Generated public history, failure reports and
+SVGs live on the separate `reports` branch, keeping automatic report commits out
+of source history. Raw logs and samples stay in CI artifacts or `target/`.
+`docs/reports.template.md` defines the dashboard; `quality/reporting/` and
+`scripts/update_readme.py` validate and publish it. See [CI reports](README-Reports.md).
 
 The [Wiki maintenance guide](Wiki-Maintenance.md) owns page navigation, link
 validation and export. Root/community/package READMEs remain entry points; the

@@ -1,4 +1,3 @@
-<!-- Generated README: edit docs/README.template.md, then run python3 scripts/update_readme.py render. -->
 # Capntproto
 
 [![CI](https://github.com/DericHuynh/capntproto/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/ci.yml)
@@ -41,6 +40,17 @@ qualification remain work in progress; see the [release criteria](docs/wiki/Rele
 
 ## Build and test
 
+For TCP with TLS/mTLS, start with the smaller feature set (Rust and a platform C toolchain):
+
+```sh
+cargo build --locked -p capntproto --no-default-features --features tls
+```
+
+This avoids quiche/BoringSSL, CMake, libclang, Java and the C++ reference compiler.
+Default builds include QUIC and need its native toolchain. The Rust schema compiler
+builds project schemas; C++ tools and Java are for the full verification suite.
+[Build profiles and prerequisites](docs/wiki/Getting-Started.md#install-and-run).
+
 Use the pinned **Rust 1.97.0** toolchain. The full suite also needs CMake, a C++
 compiler, libclang, Cap'n Proto headers/tools and Java 17; the [setup guide](docs/wiki/Getting-Started.md)
 and [CI prerequisites](.github/actions/quality-setup/action.yml) describe them.
@@ -72,14 +82,14 @@ Benchmarks are separate from tests: CI builds individual release benchmarks with
 DigitalOcean droplet, measures Linux loopback RPC and deletes the droplet.
 Credentials stay in GitHub Actions secrets. [Benchmark setup](docs/wiki/Quality-and-Benchmarks.md).
 The [CI workflow graph](docs/wiki/Quality-and-Benchmarks.md#workflow-dependencies)
-shows the validation gates and how coverage and benchmark results reach this README.
+shows the validation gates and how coverage and benchmark results reach the report dashboard.
 Status badges link to workflow runs; the coverage badge reports verification
 status, not a coverage percentage.
 
 ## Documentation and participation
 
 [Project wiki](docs/wiki/Home.md) · [Repository boundaries](docs/wiki/Repository-Layout.md)
-· [Correctness roadmap](docs/wiki/Correctness.md) · [Reporting and README generation](docs/wiki/README-Reports.md)
+· [Correctness roadmap](docs/wiki/Correctness.md) · [CI reporting](docs/wiki/README-Reports.md)
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting changes. Use the
 [issue templates](.github/ISSUE_TEMPLATE) for bugs and questions, and follow the
@@ -91,85 +101,18 @@ Original project code is [MIT licensed](LICENSE). Vendored components retain
 their own licenses and [third-party notices](THIRD_PARTY_NOTICES.md).
 [GitHub upload/setup instructions](docs/wiki/GitHub-Setup.md).
 
-## Tests, coverage and benchmarks
+## Verification results
 
-Generated automatically from CI evidence. Each lane keeps its own measured commit and date; measurements from different commits are not combined into a single qualification claim.
+[Current reports and graphs](https://github.com/DericHuynh/capntproto/blob/reports/README.md) · [All failed tests](https://github.com/DericHuynh/capntproto/blob/reports/docs/reports/failed-tests.md) · [Failed model replays](https://github.com/DericHuynh/capntproto/blob/reports/docs/reports/failed-models.md)
 
-### Cargo tests
+The report dashboard records each lane's measured commit, date, counts and original
+CI run. Generated history and graphs live on the `reports` branch; source changes
+and this README are maintained on `main`. Different lanes may describe different
+commits and do not imply a combined release qualification.
 
-Latest Cargo run: [2026-10-04T21:39:01Z · run 37236945765 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37236945765) · commit `ee0b77b2feca` · **success**
+![Cargo test history](https://raw.githubusercontent.com/DericHuynh/capntproto/reports/docs/reports/cargo-history.svg)
 
-![Cargo test results](docs/reports/cargo-history.svg)
+![TLA+ replay history](https://raw.githubusercontent.com/DericHuynh/capntproto/reports/docs/reports/tla-history.svg)
 
-| Total | Passed | Failed | Errors | Skipped |
-| ---: | ---: | ---: | ---: | ---: |
-| 1,279 | 1,260 | [0](docs/reports/failed-tests.md) | 0 | 19 |
-
-[Show all failed tests and diagnostics](docs/reports/failed-tests.md). Cargo tests and doctests exclude the dedicated TLA+, fuzz, Miri and mutation campaigns. Filtered tests are not counted as passes or skips. [Reporting contract](docs/wiki/README-Reports.md).
-
-### TLA+ models and Rust trace replays
-
-[2026-10-04T21:39:03Z · run 37236947323 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37236947323) · commit `ee0b77b2feca` · **success**
-
-![TLA+ Rust replay results](docs/reports/tla-history.svg)
-
-![TLA+ checks and expected counterexamples](docs/reports/tla-outcomes.svg)
-
-Unique module/configuration/expected-exit checks. Expected invariant violations are successful controls.
-
-![TLA+ explored states by model](docs/reports/tla-states.svg)
-
-Counts sum independent bounded configurations; they are not globally distinct states or a proof beyond those bounds.
-
-[Failed model replay tests](docs/reports/failed-models.md). Expected mutation counterexamples are successful checks, not unexpected failures.
-
-### Fuzzing: libFuzzer and AFL++
-
-[2026-10-04T21:39:04Z · run 37236948890 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37236948890) · commit `ee0b77b2feca` · **success**
-
-![Fuzzing executions by engine](docs/reports/fuzz-executions.svg)
-
-Bounded campaigns including seed calibration; execution counts are not comparable performance benchmarks.
-
-![Fuzzer feedback by engine](docs/reports/fuzz-coverage.svg)
-
-Engine-local counters, not LLVM source coverage. Do not compare counts across engines or builds.
-
-![Saved fuzzing findings](docs/reports/fuzz-findings.svg)
-
-Saved crashes/hangs are findings requiring triage, not confirmed unique bugs. Missing results remain unknown.
-
-AFL++ guides the RPC lifecycle oracle with IJON state and progress annotations. Corpus inputs, crashes, hangs, logs and engine statistics are retained in the linked run. Fuzzer counters are not source coverage percentages.
-
-### LLVM coverage
-
-![LLVM lines: current versus reviewed baseline](docs/reports/coverage-lines.svg)
-
-![LLVM regions: current versus reviewed baseline](docs/reports/coverage-regions.svg)
-
-![LLVM functions: current versus reviewed baseline](docs/reports/coverage-functions.svg)
-
-![LLVM branches: current versus reviewed baseline](docs/reports/coverage-branches.svg)
-
-### Linux loopback benchmark comparisons
-
-Latest benchmark run: [2026-10-04T05:28:37Z · run 37179996233 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37179996233) · commit `66ece9a51e7b` · **success**
-
-Separate client/server processes, one outstanding request, several payload sizes and five repetitions. Capntproto uses encrypted Native/UDP; C++ Cap'n Proto, gRPC and WebSocket baselines use plaintext TCP. Bars compare this workload, not universal protocol performance.
-
-![Median round-trip latency (p50)](docs/reports/latency-p50.svg)
-
-![Tail round-trip latency (p95)](docs/reports/latency-p95.svg)
-
-![Tail round-trip latency (p99)](docs/reports/latency-p99.svg)
-
-![Sequential request rate](docs/reports/request-rate.svg)
-
-![Median latency difference from Capntproto](docs/reports/latency-difference.svg)
-
-![Request rate difference from Capntproto](docs/reports/request-rate-difference.svg)
-
-![Serialization CPU work (Callgrind)](docs/reports/instruction-counts.svg)
-
-[Machine-readable history and exact plotted values](docs/reports/history.json). Full logs, raw samples and LLVM exports are retained in the linked workflow artifacts.
-
+Fuzzing, coverage and benchmark graphs are available in the dashboard and each
+producer's workflow artifact.

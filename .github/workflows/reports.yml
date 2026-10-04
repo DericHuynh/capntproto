@@ -19,7 +19,7 @@ on: # zizmor: ignore[dangerous-triggers]
 permissions:
   contents: read
 concurrency:
-  group: readme-publication
+  group: report-publication
   cancel-in-progress: false
 jobs:
   publish:
@@ -45,7 +45,7 @@ jobs:
         run: |
           python3 -m venv "$RUNNER_TEMP/readme-venv"
           "$RUNNER_TEMP/readme-venv/bin/pip" install --only-binary=:all: -r quality/reporting-requirements.txt
-      - name: Publish generated README and report assets
+      - name: Publish dashboard and graphs to reports branch
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: '"$RUNNER_TEMP/readme-venv/bin/python" scripts/update_readme.py publish --event "$GITHUB_EVENT_PATH"'

@@ -134,7 +134,7 @@ in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## README and report changes
 
-Edit `docs/README.template.md` and regenerate with `python3 scripts/update_readme.py render`. Do not hand-edit public measurement history. See [the reporting guide](docs/wiki/README-Reports.md) for renderer dependencies, CI origin checks and validation.
+Edit `README.md` directly. Preview dashboard changes with `python3 scripts/update_readme.py render --output target/report-preview`; the dashboard template is `docs/reports.template.md`. Do not hand-edit public measurement history on the `reports` branch. See [the reporting guide](docs/wiki/README-Reports.md) for renderer dependencies, CI origin checks and validation.
 
 ## Wiki documentation
 

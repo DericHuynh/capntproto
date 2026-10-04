@@ -54,7 +54,7 @@
 
 **Proposals**
 
-- [Capnt Actors specification](<../../Capnt Actors API Specification.md>)
+- [Capnt Actors design proposal](../proposals/Capnt-Actors.md)
 - [ActorDB Proposal](ActorDB-Proposal.md)
 - [ActorDB Checklist](ActorDB-Checklist.md)
 

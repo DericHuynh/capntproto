@@ -14,6 +14,8 @@ pub struct ExternalData {
 // SAFETY: constructors require immutable storage, a stable address, and a
 // Send + Sync owner. No API exposes a mutable reference to this memory.
 unsafe impl Send for ExternalData {}
+// SAFETY: all readers see immutable bytes retained by a Sync owner; no API
+// exposes mutation or releases the owner while this value is shared.
 unsafe impl Sync for ExternalData {}
 
 impl ExternalData {

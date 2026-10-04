@@ -294,7 +294,7 @@ def render(template, history, output):
         t = cargo['data']['tests']
         section += '| Total | Passed | Failed | Errors | Skipped |\n| ---: | ---: | ---: | ---: | ---: |\n'
         section += f"| {t['total']:,} | {t['passed']:,} | [{t['failed']:,}](docs/reports/failed-tests.md) | {t['errors']:,} | {t['skipped']:,} |\n\n"
-    section += '[Show all failed tests and diagnostics](docs/reports/failed-tests.md). Cargo tests and doctests exclude the dedicated TLA+, fuzz, Miri and mutation campaigns. Filtered tests are not counted as passes or skips. [Reporting contract](docs/wiki/README-Reports.md).\n\n'
+    section += '[Show all failed tests and diagnostics](docs/reports/failed-tests.md). Cargo tests and doctests exclude the dedicated TLA+, fuzz, Miri and mutation campaigns. Filtered tests are not counted as passes or skips. [Reporting contract](https://github.com/DericHuynh/capntproto/blob/main/docs/wiki/README-Reports.md).\n\n'
     for kind, title in [('models', 'TLA+ models and Rust trace replays'), ('fuzz', 'Fuzzing: libFuzzer and AFL++')]:
         records = history.get(kind, [])
         latest = records[-1] if records else None

@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 // Copyright (c) 2013-2017 Sandstorm Development Group, Inc. and contributors
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy

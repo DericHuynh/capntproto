@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Collect CI data, generate README/charts, or publish trusted default-branch data."""
+"""Collect CI data, generate a report dashboard/charts, or publish trusted default-branch data."""
 import argparse
 import json
 from pathlib import Path
@@ -20,7 +20,8 @@ def main():
     command.add_argument('--report-output', type=Path)
     command = commands.add_parser('render')
     command.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[1])
-    command.add_argument('--output', type=Path)
+    command.add_argument('--output', type=Path, required=True)
+    command.add_argument('--history', type=Path, help='Downloaded reports-branch history; defaults to the frozen migration seed')
     command = commands.add_parser('publish')
     command.add_argument('--event', type=Path, required=True)
     args = parser.parse_args()
@@ -41,8 +42,10 @@ def main():
             render_artifact(value, args.report_output)
     elif args.command == 'render':
         from reporting.render import render
-        history = json.loads((args.root / 'docs/reports/history.json').read_text())
-        render((args.root / 'docs/README.template.md').read_text(), history, args.output or args.root)
+        history = json.loads((args.history or args.root / 'quality/reporting/history-seed.json').read_text())
+        if args.output.resolve() == args.root.resolve():
+            parser.error('render into a separate output directory, not the source checkout')
+        render((args.root / 'docs/reports.template.md').read_text(), history, args.output)
     else:
         from reporting.publish import publish
         publish(args.event)

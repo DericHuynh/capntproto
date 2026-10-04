@@ -1,10 +1,9 @@
-# README generation and public CI reports
+# CI reports and graphs
 
-The project is **Capntproto**; project-owned Cargo packages and imports use
-`capntproto` (see the [name migration](Repository-Layout.md#crate-name-migration)). The root [README](../../README.md) is generated from
-[README.template.md](../README.template.md). Edit the template, not the generated file.
-Template links are relative to the repository root because that is where the
-rendered README lives.
+Edit the root [README](../../README.md) directly for project prose. Generated evidence
+lives on the separate [`reports` branch](https://github.com/DericHuynh/capntproto/tree/reports).
+Its dashboard uses [reports.template.md](../reports.template.md); relative graph links
+resolve within that branch. The source README links to that dashboard and its failures.
 
 ## What updates automatically
 
@@ -16,10 +15,13 @@ remains the performance producer. Each exports an identity-bound `readme-data`
 artifact and its own README, graphs and diagnostics, including on test failure.
 
 [Reports / Publish](../../.github/workflows/reports.yml) runs after each producer
-finishes. It updates only `README.md` and renderer-owned files in `docs/reports/`,
-using one atomic, non-forced commit to the default branch. A concurrent source
-commit causes a bounded retry against the new template/history. No source files
-are rewritten, and no PR code or executable artifact is run by the publisher.
+finishes. It updates only the dashboard `README.md` and renderer-owned files in
+`docs/reports/` on the **reports branch**. The first publication creates an orphan
+branch containing reports only, seeded with the frozen history in
+`quality/reporting/history-seed.json`. Later publications are atomic, non-forced
+updates with bounded retries after concurrent report writes. The default branch
+is read only: its code and template are trusted, its ref is never mutated. No PR
+code or executable artifact is run by the publisher.
 
 The publisher accepts only completed runs of the four named workflow files (plus their former filenames for manually publishing
 runs started before the workflow migration), from
@@ -34,7 +36,7 @@ The history keeps the latest 365 attempts separately for Cargo, TLA+ and fuzzing
 source fingerprint and CI links; only current coverage/benchmark bars retain
 plotted values. The generated report assets are excluded from executable source
 fingerprints, so a report-only commit does not invalidate its own evidence.
-They remain included in source archives.
+The frozen migration seed remains in source archives; live report history is separate.
 
 ## Cargo and TLA+ test histories
 
@@ -62,8 +64,8 @@ counts are not a claim that every possible test was discovered or run. Test
 success and whole-workflow success are shown separately: coverage/security gates
 can fail even when all tests pass.
 
-The README links its failed count and **Show all failed tests and diagnostics**
-to [the current failure report](../reports/failed-tests.md). Each completed failure
+The dashboard links its failed count and **Show all failed tests and diagnostics**
+to [the current failure report](https://github.com/DericHuynh/capntproto/blob/reports/docs/reports/failed-tests.md). Each completed failure
 includes its harness/test name and escaped diagnostic output, with the original
 run, commit and attempt linked above it. The job summary also displays these
 failures; `FAILED-TESTS.md` is included in the Cargo test artifact. Excerpts are
@@ -92,7 +94,7 @@ relabeled as if the partitions had always existed.
 
 ## Labelled benchmark bar charts
 
-The README's final section includes horizontal bars for p50/p95/p99 round-trip
+The dashboard's final section includes horizontal bars for p50/p95/p99 round-trip
 latency, sequential request rate, and percentage differences from Capntproto.
 Every bar has an implementation label and numeric value; every panel identifies
 its payload size. Axes include zero, units and the direction of improvement.
@@ -102,13 +104,13 @@ The implementation labels distinguish Capntproto / Native, C++ Cap'n Proto,
 gRPC (tonic) and WebSockets. These are separate processes on the same dedicated
 Linux droplet, with one outstanding request, five repetitions and rotated order.
 Native is encrypted over UDP; the other compared transports are plaintext TCP.
-The README states these differences beside the figures. It does not combine
+The dashboard states these differences beside the figures. It does not combine
 results from different measured commits into a single claim. Failed/new missing
 benchmark data removes the prior bars from the current view; old artifacts stay
 linked through GitHub's run history.
 
-No benchmark or coverage values are fabricated for the initial upload. The
-checked-in empty state is replaced after the first corresponding CI run.
+No benchmark or coverage values are fabricated. The historical seed retains its
+original commit identities; each new run must supply fresh verified evidence.
 
 ## Local commands
 
@@ -117,11 +119,13 @@ Use Python 3.12+ and an isolated environment for chart dependencies:
 ```sh
 python3 -m venv target/readme-venv
 target/readme-venv/bin/pip install -r quality/reporting-requirements.txt
-target/readme-venv/bin/python scripts/update_readme.py render
+target/readme-venv/bin/python scripts/update_readme.py render --output target/report-preview
 ```
 
 On Windows, use `target/readme-venv/Scripts/python.exe` and `pip.exe`.
-To preview without updating tracked output:
+Rendering requires a separate output directory and never rewrites the source README.
+Pass `--history PATH` to use a downloaded reports-branch history instead of the
+frozen migration seed:
 
 ```sh
 python3 scripts/update_readme.py render --output target/readme-preview
@@ -146,8 +150,9 @@ pinned dependencies and requires this case. Test-only synthetic plots stay under
 
 ## GitHub setup
 
-Upload the template, generated README, initial `docs/reports/` files, scripts and
-workflows together. The configured repository is `DericHuynh/capntproto`; the display
+Land the template, source README, frozen history seed, scripts and workflows together.
+The first trusted producer completion creates `reports`; dashboard links become live
+after that publication. Existing producer artifacts remain accessible through Actions. The configured repository is `DericHuynh/capntproto`; the display
 name stays **Capntproto**. No owner/repository URL is hard-coded into the
 publisher. Repository identity comes from GitHub's event/API.
 
@@ -157,10 +162,9 @@ The token is only exposed to the publishing step and is not forwarded on artifac
 storage redirects. GitHub's [workflow-run security guidance](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run)
 explains why the default-branch and artifact-origin checks are required.
 
-Default-branch rules must permit this reporting bot's direct report commits.
-If repository policy blocks them, publication fails visibly; the publisher does
-not bypass rules or force-push. Run `render` and commit the generated files through
-your ordinary review process in that case. A manually dispatched publisher accepts
+Protect the source branch normally; it needs no reporting-bot bypass. Repository
+rules must permit the publishing token to create/update `reports`. If rules block
+that branch, publication fails visibly without a force-push or fallback to main. A manually dispatched publisher accepts
 a completed producer run ID for retrying after a settings failure. Commits made
 with `GITHUB_TOKEN` do not recursively trigger normal push workflows; see
 [GitHub's event guidance](https://docs.github.com/en/actions/how-tos/writing-workflows/choosing-when-your-workflow-runs/triggering-a-workflow#triggering-a-workflow-from-a-workflow).

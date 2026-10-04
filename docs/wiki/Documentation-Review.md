@@ -1,5 +1,9 @@
 # Documentation review
 
+This page and `docs/documentation-review.json` record the original migration.
+They are historical records; current links and navigation are discovered and
+validated directly from the source tree. They need no per-edit registration.
+
 This migration reviewed the 72 project-owned Markdown documents present at its
 start. Current guides now live in `docs/wiki/`, with Home, a sidebar and a footer
 for GitHub Wiki export. Root/community/package READMEs stay where GitHub and
@@ -71,7 +75,7 @@ for validation, export and the live-publication prerequisite.
 | `docs/PROTOCOL.md` | moved and revised: [Protocol-Models.md](Protocol-Models.md) | Retain bounded model specifications; distinguish active and historical conformance evidence. |
 | `docs/QUALITY.md` | moved and revised: [Quality-and-Benchmarks.md](Quality-and-Benchmarks.md) | Retain measured CI/benchmark contracts; repair guide links. |
 | `docs/README.md` | moved and revised: [Home.md](Home.md), [README.md](../README.md) | Replace flat index with task-oriented Wiki Home and local entry point. |
-| `docs/README.template.md` | revised: [README.template.md](../README.template.md) | Keep concise project/build overview; point to canonical wiki guides. |
+| `docs/README.template.md` | revised: [reports.template.md](../reports.template.md) | Keep concise project/build overview; point to canonical wiki guides. |
 | `docs/REALTIME.md` | moved and revised: [Realtime-Model.md](Realtime-Model.md) | Retain model scope; identify unbundled historical verification logs. |
 | `docs/REALTIME_RUNTIME.md` | moved and revised: [Realtime-Snapshots.md](Realtime-Snapshots.md) | Retain runtime snapshot lifecycle, bounds and examples; repair links. |
 | `docs/RELEASE_ACCEPTANCE.md` | moved and revised: [Release-Acceptance.md](Release-Acceptance.md) | Separate implemented mechanisms from fresh candidate qualification; remove stale release-complete count. |
@@ -110,7 +114,7 @@ removed as part of this documentation migration.
 
 ## Proposal added during the migration
 
-The [Capnt Actors API specification](<../../Capnt Actors API Specification.md>)
+The [Capnt Actors design proposal](../proposals/Capnt-Actors.md)
 appeared while this migration was in progress. It explicitly describes a future,
 unimplemented API. It was subsequently renamed to Capnt Actors and aligned with the current
 RPC, native transport, authority and storage terminology. A subsequent specification
@@ -118,7 +122,7 @@ review added explicit ownership/read proofs, recoverable command failures, canon
 request fingerprints, capability relocation, executor boundaries, outbox retention
 and control progress, with acceptance gates and an implementation sequence.
 These are proposed contracts, not validated runtime behavior. It remains a separate
-design input outside the supported runtime guide set; it is included in link/inventory
+design input outside the supported runtime guide set; it is included in link
 checks but is not one of the 72 original review records. This migration does not
 validate or implement that proposal.
 

@@ -12,4 +12,4 @@ exclude = [
 ]
 
 # Template links target the generated repository-root README; check that output.
-exclude_path = ["docs/README.template.md"]
+exclude_path = ["docs/reports.template.md"]

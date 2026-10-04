@@ -20,7 +20,7 @@ Documented ignored diagnostic/unbounded/release-publication controls remain
 outside the default bounded test run; [ignored-tests.json](../../quality/ignored-tests.json)
 records their rationale.
 
-| Workflow | Trigger | Scope and README artifact |
+| Workflow | Trigger | Scope and report artifact |
 | --- | --- | --- |
 | [CI](../../.github/workflows/ci.yml) | PR; push to `main`; manual | Library/binary builds and RPC/pipelining, transport and selected feature checks on all three OSes. Linux/macOS also test storage reopen; Linux enforces allocation budgets and QUIC v1 interoperability. `platform-report` |
 | [CI / Workflow validation](../../.github/workflows/ci-workflows.yml) | Called once by CI; manual | Workflow, auditable-build, trigger-test and README-reporting changes: actionlint with ShellCheck/Pyflakes, trigger regression tests, reporting tests and Zizmor |
@@ -31,7 +31,7 @@ records their rationale.
 | [Verification / Fuzzing](../../.github/workflows/verification-fuzz.yml) | Monday 03:39 UTC; manual | Six libFuzzer/ASan targets and four AFL++ targets with RPC IJON guidance. Engine-specific execution, feedback and finding graphs. `fuzz-report` |
 | [Performance / Dedicated benchmarks](../../.github/workflows/performance.yml) | Manual | Compile release artifacts on Actions, measure on a temporary dedicated CPU Linux droplet, validate downloaded samples. `dedicated-benchmark-report` |
 | [Benchmark droplet cleanup](../../.github/workflows/maintenance-benchmarks.yml) | Every hour at :17 UTC; manual | Destroy this repository's abandoned benchmark resources older than two hours |
-| [Reports / Publish](../../.github/workflows/reports.yml) | Cargo, TLA+, fuzzing or benchmark completion; manual run ID | Validate trusted default-branch producer artifacts and publish reports; it does not rerun their tests |
+| [Reports / Publish](../../.github/workflows/reports.yml) | Cargo, TLA+, fuzzing or benchmark completion; manual run ID | Validate trusted default-branch producer artifacts and publish to `reports`; it does not rerun their tests |
 
 ## Trigger and concurrency policy
 
@@ -46,7 +46,7 @@ a green result. Tag pushes do not start CI.
 New commits to the same PR cancel its stale checks. Workflow, event and PR/ref
 identity keep unrelated checks separate, including scheduled external-link
 checks versus ordinary documentation pushes. Full and extended verification
-retain their own cancellation groups. Dedicated benchmarks, cleanup and README
+retain their own cancellation groups. Dedicated benchmarks, cleanup and report
 publication each serialize their own runs without cancelling an active run;
 cleanup remains independent of the benchmark job so it can recover abandoned
 resources. Manual dispatch is an explicit additional run.

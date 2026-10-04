@@ -1,4 +1,4 @@
-"""Publish only report files using GitHub's atomic Git trees/commits API."""
+"""Publish evidence to an isolated reports branch using atomic Git API updates."""
 import base64
 import hashlib
 import io
@@ -22,6 +22,7 @@ WORKFLOWS = {'.github/workflows/full-quality.yml': 'full',
              '.github/workflows/verification-tests.yml': 'cargo',
              '.github/workflows/verification-models.yml': 'models',
              '.github/workflows/verification-fuzz.yml': 'fuzz'}
+REPORT_BRANCH = 'reports'
 MAX_ARTIFACT = 16 * 1024 * 1024
 OWNED = {f'docs/reports/{name}.svg' for name in CHARTS} | {
     'README.md', 'docs/reports/history.json', 'docs/reports/test-history.svg',
@@ -120,19 +121,32 @@ def publish(event_path):
     data = artifact_data(api, run, kind)
     record = dict(run_id=run['id'], attempt=run['run_attempt'], commit=run['head_sha'],
                   date=run['created_at'], url=run['html_url'], conclusion=run['conclusion'], data=data)
+    if branch == REPORT_BRANCH:
+        raise ValueError('report branch must not be the source default branch')
     for attempt in range(3):
-        head = api.request(f'/git/ref/heads/{quote(branch, safe="")}')['object']['sha']
-        comparison = api.request(f"/compare/{run['head_sha']}...{head}")
+        source_head = api.request(f'/git/ref/heads/{quote(branch, safe="")}')['object']['sha']
+        comparison = api.request(f"/compare/{run['head_sha']}...{source_head}")
         if comparison['merge_base_commit']['sha'] != run['head_sha']:
             raise ValueError('measured commit is not an ancestor of the current default branch')
-        old = api.content('docs/reports/history.json', head)
-        history = merge(json.loads(old[0]) if old else empty_history(), record)
-        template = api.content('docs/README.template.md', head)
-        if template is None:
-            raise ValueError('README template is missing from the default branch')
-        current_readme = api.content('README.md', head)
         try:
-            existing = {item['path']: item['sha'] for item in api.request(f'/contents/docs/reports?ref={head}') if item['type'] == 'file'}
+            head = api.request(f'/git/ref/heads/{REPORT_BRANCH}')['object']['sha']
+        except HTTPError as error:
+            if error.code != 404:
+                raise
+            error.close()
+            head = None
+        # Seed the new orphan branch once with the historical evidence from main.
+        old = (api.content('docs/reports/history.json', head) if head else
+               api.content('quality/reporting/history-seed.json', source_head))
+        if head and old is None:
+            raise ValueError('existing reports branch has no history; refusing to replace unrelated content')
+        history = merge(json.loads(old[0]) if old else empty_history(), record)
+        template = api.content('docs/reports.template.md', source_head)
+        if template is None:
+            raise ValueError('Report template is missing from the default branch')
+        current_readme = api.content('README.md', head) if head else None
+        try:
+            existing = {item['path']: item['sha'] for item in (api.request(f'/contents/docs/reports?ref={head}') if head else []) if item['type'] == 'file'}
         except HTTPError as error:
             if error.code != 404:
                 raise
@@ -156,17 +170,22 @@ def publish(event_path):
         if not entries:
             print('README reports are already current.')
             return
-        tree = api.request(f'/git/commits/{head}')['tree']['sha']
-        tree = api.request('/git/trees', {'base_tree': tree, 'tree': entries}, 'POST')['sha']
+        tree_request = {'tree': entries}
+        if head:
+            tree_request['base_tree'] = api.request(f'/git/commits/{head}')['tree']['sha']
+        tree = api.request('/git/trees', tree_request, 'POST')['sha']
         commit = api.request('/git/commits', {'message': f"docs: refresh Capntproto reports (run {run['id']})",
-                                             'tree': tree, 'parents': [head]}, 'POST')['sha']
+                                             'tree': tree, 'parents': [head] if head else []}, 'POST')['sha']
         try:
-            api.request(f'/git/refs/heads/{quote(branch, safe="")}', {'sha': commit, 'force': False}, 'PATCH')
-            print(f'Published README reports at {commit}.')
+            if head:
+                api.request(f'/git/refs/heads/{REPORT_BRANCH}', {'sha': commit, 'force': False}, 'PATCH')
+            else:
+                api.request('/git/refs', {'ref': f'refs/heads/{REPORT_BRANCH}', 'sha': commit}, 'POST')
+            print(f'Published reports on {REPORT_BRANCH} at {commit}.')
             return
         except HTTPError as error:
-            # A concurrent source commit must be preserved. Re-read its template
-            # and history, regenerate, and try a new fast-forward commit.
+            # A concurrent report publication/branch creation must be preserved.
+            # Re-read history and retry; source refs are never mutated.
             if error.code not in (409, 422) or attempt == 2:
                 raise
             error.close()
