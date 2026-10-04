@@ -95,13 +95,13 @@ Generated automatically from CI evidence. Each lane keeps its own measured commi
 
 ### Cargo tests
 
-Latest Cargo run: [2026-10-04T20:19:36Z · run 37231659688 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37231659688) · commit `f3cb761866ce` · **failure**
+Latest Cargo run: [2026-10-04T21:39:01Z · run 37236945765 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37236945765) · commit `ee0b77b2feca` · **success**
 
 ![Cargo test results](docs/reports/cargo-history.svg)
 
 | Total | Passed | Failed | Errors | Skipped |
 | ---: | ---: | ---: | ---: | ---: |
-| 1,275 | 1,256 | [0](docs/reports/failed-tests.md) | 0 | 19 |
+| 1,279 | 1,260 | [0](docs/reports/failed-tests.md) | 0 | 19 |
 
 [Show all failed tests and diagnostics](docs/reports/failed-tests.md). Cargo tests and doctests exclude the dedicated TLA+, fuzz, Miri and mutation campaigns. Filtered tests are not counted as passes or skips. [Reporting contract](docs/wiki/README-Reports.md).
 
@@ -141,7 +141,13 @@ AFL++ guides the RPC lifecycle oracle with IJON state and progress annotations. 
 
 ### LLVM coverage
 
-No validated coverage/baseline comparison is available for the latest run. Missing or unmapped counters are never presented as 100% coverage.
+![LLVM lines: current versus reviewed baseline](docs/reports/coverage-lines.svg)
+
+![LLVM regions: current versus reviewed baseline](docs/reports/coverage-regions.svg)
+
+![LLVM functions: current versus reviewed baseline](docs/reports/coverage-functions.svg)
+
+![LLVM branches: current versus reviewed baseline](docs/reports/coverage-branches.svg)
 
 ### Linux loopback benchmark comparisons
 
