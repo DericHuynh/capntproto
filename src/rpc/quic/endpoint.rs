@@ -268,3 +268,70 @@ async fn route(core: Weak<Core>, socket: Rc<UdpSocket>, incoming: mpsc::Sender<I
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn stopped_listener_rejects_initials_but_routes_existing_packets() {
+        tokio::task::LocalSet::new()
+            .run_until(async {
+                tokio::time::timeout(Duration::from_secs(5), async {
+                    let cert =
+                        rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+                    let config = server_config(
+                        tls::Identity {
+                            certificates: vec![cert.cert.der().clone()],
+                            private_key: rustls::pki_types::PrivatePkcs8KeyDer::from(
+                                cert.signing_key.serialize_der(),
+                            )
+                            .into(),
+                        },
+                        None,
+                    )
+                    .unwrap();
+                    let endpoint =
+                        Endpoint::server(config, "127.0.0.1:0".parse().unwrap()).unwrap();
+                    let peer = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+                    let address = endpoint.local_addr().unwrap();
+                    let mut config = client_config(vec![cert.cert.der().clone()], None).unwrap();
+                    let mut client = quiche::connect(
+                        Some("localhost"),
+                        &quiche::ConnectionId::from_ref(&[1; 16]),
+                        peer.local_addr().unwrap(),
+                        address,
+                        &mut config.0,
+                    )
+                    .unwrap();
+                    let mut initial = [0; 1350];
+                    let (length, _) = client.send(&mut initial).unwrap();
+                    peer.send_to(&initial[..length], address).await.unwrap();
+                    drop(endpoint.accept().await.unwrap());
+                    endpoint.wait_idle().await;
+
+                    let id = vec![42; 16];
+                    let mut existing = register(&endpoint.0, vec![id.clone()]).unwrap();
+                    endpoint.stop_accepting();
+                    peer.send_to(&initial[..length], address).await.unwrap();
+                    // A known-route packet on the same socket is a processing
+                    // barrier for the preceding Initial; no scheduling sleep.
+                    let mut packet = vec![0x40];
+                    packet.extend_from_slice(&id);
+                    packet.push(0);
+                    peer.send_to(&packet, address).await.unwrap();
+                    assert_eq!(existing.packets.recv().await.unwrap().bytes, packet);
+                    assert!(matches!(
+                        endpoint.0.incoming.borrow_mut().try_recv(),
+                        Err(mpsc::error::TryRecvError::Empty)
+                    ));
+                    assert_eq!(endpoint.0.routes.borrow().len(), 1);
+                    drop(existing);
+                    endpoint.wait_idle().await;
+                })
+                .await
+                .unwrap();
+            })
+            .await;
+    }
+}

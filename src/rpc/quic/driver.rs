@@ -65,7 +65,7 @@ async fn flush(conn: &mut quiche::Connection, core: &endpoint::Core) -> io::Resu
     for _ in 0..16 {
         match conn.send(&mut out) {
             Ok((n, info)) => {
-                tokio::time::sleep_until(info.at.into()).await;
+                crate::rpc::pacing::wait_until(info.at).await;
                 core.socket.send_to(&out[..n], info.to).await?;
             }
             Err(quiche::Error::Done) => return Ok(false),
@@ -139,6 +139,24 @@ async fn pump(
     let mut stream_seen = !conn.is_server();
     let mut detached = false;
     loop {
+        for _ in 0..16 {
+            match route.packets.try_recv() {
+                Ok(mut packet) => match conn.recv(
+                    &mut packet.bytes,
+                    quiche::RecvInfo {
+                        from: packet.from,
+                        to: local,
+                    },
+                ) {
+                    Ok(_) | Err(quiche::Error::Done | quiche::Error::CryptoFail) => (),
+                    Err(e) => return Err(io::Error::other(e)),
+                },
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
+                Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                    return Err(io::Error::other("QUIC packet router closed"));
+                }
+            }
+        }
         if conn.is_established() {
             if conn.application_proto() != tls::ALPN {
                 return Err(io::Error::new(

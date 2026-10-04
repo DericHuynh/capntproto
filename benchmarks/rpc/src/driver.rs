@@ -147,7 +147,8 @@ pub fn compare(directory: &Path, destination: &Path) -> Result<()> {
         "valgrind":output("valgrind", &["--version"])? ,
         "uname":output("uname", &["-a"])? , "cpu":output("lscpu", &[])?,
         "governor":fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor").ok(),
-        "scope":"Linux IPv4 loopback; sequential validated echo; 100 warmups/1000 samples; 5 repetitions; Native encrypted/authenticated, other protocols plaintext"});
+        "clocksource":fs::read_to_string("/sys/devices/system/clocksource/clocksource0/current_clocksource").ok(),
+        "scope":"Linux IPv4 loopback; sequential validated echo; 100 warmups/1000 samples; 5 repetitions; Native QUIC v1 / TLS 1.3 with pinned peer authentication, other protocols plaintext"});
     fs::write(
         destination.join("environment.json"),
         serde_json::to_vec_pretty(&environment)?,

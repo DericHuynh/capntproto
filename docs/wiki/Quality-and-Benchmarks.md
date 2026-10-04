@@ -386,8 +386,12 @@ Measurements use IPv4 loopback, separate single-threaded server/client
 processes, one outstanding call, 0/64/1024/65536-byte payloads, 100 warmups and
 1,000 timed requests per repetition. Every response's sequence and payload are
 validated. Setup and warmup are excluded. Reports include p50/p95/p99, sequential
-request rate, comparison ratios, raw samples, CPU/OS details and droplet plan.
-Capntproto uses authenticated encrypted Native/UDP; C++ Cap'n Proto uses plaintext
+request rate, comparison ratios, raw samples, CPU/OS details, Linux clock source
+and droplet plan. Clock-read costs matter to user-space QUIC recovery and pacing;
+compare implementations on the same host rather than extrapolating from a
+development machine with a different clock source or power governor.
+Capntproto uses Native QUIC v1 with TLS 1.3 and pinned peer authentication;
+C++ Cap'n Proto uses plaintext
 TCP, gRPC plaintext HTTP/2, and WebSockets plaintext binary echo. These security
 and semantic differences are explicit; this is not peak concurrent throughput.
 

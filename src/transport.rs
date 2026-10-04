@@ -21,6 +21,7 @@ mod stream_tests;
 pub mod tcp;
 use crate::native_shutdown::{Control, DriverGuard, Receipt};
 pub use crate::rpc::QuicVersion;
+use futures::FutureExt;
 pub use identity::{Identity, IdentityError};
 pub use mobility::{Mobility, Path};
 pub use scheduling::{DatagramPacing, Schedule, ScheduleStats, Scheduling};
@@ -51,6 +52,10 @@ pub fn config_for_version(
     let mut c = identity.quiche_config(peer, psk, context, version)?;
     c.set_application_protos(&[b"capntproto/3"])?;
     c.set_max_idle_timeout(10_000);
+    // Probe up to the adapter's packet buffer instead of staying at QUIC's
+    // 1200-byte minimum. Lost probes retain the smaller working path MTU.
+    c.set_max_send_udp_payload_size(1350);
+    c.discover_pmtu(true);
     c.set_initial_max_data(2 * 1024 * 1024);
     c.set_initial_max_stream_data_bidi_local(1024 * 1024);
     c.set_initial_max_stream_data_bidi_remote(1024 * 1024);
@@ -360,6 +365,25 @@ async fn drive_packets(
         tokio::pin!(changed);
         changed.as_mut().enable();
         socket.check_open()?;
+        let local = socket.local_addr()?;
+        // Consume a bounded receive burst before generating acknowledgements.
+        // Flushing after each datagram creates an ACK and scheduler round trip
+        // per packet even when the rest of the same stream write is queued.
+        for _ in 0..16 {
+            let Some(packet) = socket.recv_from(&mut udp).now_or_never() else {
+                break;
+            };
+            let (n, from) = packet?;
+            if !crate::nat::is_binding_message(&udp[..n]) {
+                match engine
+                    .conn
+                    .recv(&mut udp[..n], quiche::RecvInfo { from, to: local })
+                {
+                    Ok(_) | Err(quiche::Error::Done | quiche::Error::CryptoFail) => (),
+                    Err(e) => return Err(error(e)),
+                }
+            }
+        }
         let now = tokio::time::Instant::now();
         if !engine.step(now)? {
             return Ok(());
@@ -400,7 +424,7 @@ async fn drive_packets(
         while burst.permit() {
             match engine.conn.send(&mut out) {
                 Ok((n, info)) => {
-                    tokio::time::sleep_until(info.at.into()).await;
+                    crate::rpc::pacing::wait_until(info.at).await;
                     if let Some(mobility) = &mut mobility {
                         mobility.send(&socket, &out[..n], info).await?;
                     } else {

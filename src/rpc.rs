@@ -1,6 +1,8 @@
 //! Tokio adapters for TCP, TLS, standard QUIC, and Native RPC streams.
 mod connection;
 pub use connection::Connection;
+#[cfg(feature = "native")]
+pub(crate) mod pacing;
 pub(crate) mod task;
 
 /// Shared RPC task completion. Observers do not retain the task or transport.

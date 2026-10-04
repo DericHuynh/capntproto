@@ -106,6 +106,7 @@ fn config(
     config.set_max_idle_timeout(10_000);
     config.set_max_recv_udp_payload_size(1350);
     config.set_max_send_udp_payload_size(1350);
+    config.discover_pmtu(true);
     config.set_initial_max_data(2 * 1024 * 1024);
     config.set_initial_max_stream_data_bidi_local(1024 * 1024);
     config.set_initial_max_stream_data_bidi_remote(1024 * 1024);
