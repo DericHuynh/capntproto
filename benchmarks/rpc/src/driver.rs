@@ -9,10 +9,45 @@ use std::{
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::mpsc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 const PROTOCOLS: [&str; 4] = ["native", "capnp-cpp", "grpc", "websocket"];
 const PAYLOADS: [usize; 4] = [0, 64, 1024, 65536];
+
+pub fn clock_reads() -> Value {
+    const READS: u32 = 100_000;
+    for _ in 0..10_000 {
+        std::hint::black_box(Instant::now());
+    }
+    let samples: Vec<_> = (0..5)
+        .map(|_| {
+            let start = Instant::now();
+            for _ in 0..READS {
+                std::hint::black_box(Instant::now());
+            }
+            start.elapsed().as_nanos() as f64 / f64::from(READS)
+        })
+        .collect();
+    json!({"clock":"std::time::Instant", "reads_per_sample":READS,
+        "ns_per_read_including_loop":samples})
+}
+
+fn clock_diagnostics(placement: &Placement) -> Result<Value> {
+    let exe = std::env::current_exe()?;
+    let mut diagnostics = Vec::new();
+    for cpu in [placement.server_cpu, placement.client_cpu] {
+        let result = Placement::command(&exe, Some(cpu))
+            .arg("clock-reads")
+            .output()?;
+        if !result.status.success() {
+            return Err("clock diagnostic failed".into());
+        }
+        let mut sample: Value = serde_json::from_slice(&result.stdout)?;
+        sample["cpu"] = json!(cpu);
+        diagnostics.push(sample);
+    }
+    Ok(json!(diagnostics))
+}
 struct Server(Child);
 impl Drop for Server {
     fn drop(&mut self) {
@@ -151,6 +186,8 @@ pub fn compare(directory: &Path, destination: &Path) -> Result<()> {
         "uname":output("uname", &["-a"])? , "cpu":output("lscpu", &[])?,
         "governor":fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor").ok(),
         "clocksource":fs::read_to_string("/sys/devices/system/clocksource/clocksource0/current_clocksource").ok(),
+        "available_clocksources":fs::read_to_string("/sys/devices/system/clocksource/clocksource0/available_clocksource").ok(),
+        "clock_reads":clock_diagnostics(&placement)?,
         "cpu_placement":placement,
         "scope":"Linux IPv4 loopback; sequential validated echo; fixed separate physical cores for server/client across all protocols; 10000 warmups/1000 samples; 5 repetitions; Native QUIC v1 / TLS 1.3 with pinned peer authentication, other protocols plaintext"});
     fs::write(

@@ -128,7 +128,7 @@ fn spawn(
     socket: UdpSocket,
     conn: quiche::Connection,
 ) -> io::Result<(DuplexStream, tokio::task::JoinHandle<io::Result<()>>)> {
-    let (app, network) = tokio::io::duplex(64 * 1024);
+    let (app, network) = tokio::io::duplex(crate::rpc::QUIC_BUFFER_BYTES);
     Ok((
         app,
         tokio::task::spawn_local(drive(
@@ -638,7 +638,7 @@ pub(crate) async fn authenticated(
     local: [u8; 32],
     peer: [u8; 32],
 ) -> io::Result<AuthenticatedSession> {
-    let (app, network) = tokio::io::duplex(64 * 1024);
+    let (app, network) = tokio::io::duplex(crate::rpc::QUIC_BUFFER_BYTES);
     let (ready, wait) = tokio::sync::oneshot::channel();
     let (datagrams, datagram_driver) = datagram_pair();
     let shutdown = Control::new();

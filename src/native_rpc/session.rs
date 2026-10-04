@@ -297,7 +297,7 @@ impl<E: LocalExecutor> OwnedSession<E> {
         admission: Option<Admission>,
         executor: E,
     ) -> (tokio::io::DuplexStream, Self) {
-        let (io, bridge) = tokio::io::duplex(64 * 1024);
+        let (io, bridge) = tokio::io::duplex(crate::rpc::QUIC_BUFFER_BYTES);
         let owner = Self::with_executor(generation, admission, executor);
         let lifecycle = owner.lifecycle.clone();
         owner.spawn(async move {

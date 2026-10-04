@@ -95,6 +95,15 @@ pub(crate) struct PipelineInnerSender {
 }
 
 impl PipelineInnerSender {
+    // Preserve the single-use set_pipeline contract even when the caller
+    // explicitly promises not to pipeline on this answer.
+    pub(crate) fn disabled() -> Self {
+        Self {
+            inner: None,
+            resolve_on_drop: false,
+        }
+    }
+
     pub(crate) fn weak_clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),

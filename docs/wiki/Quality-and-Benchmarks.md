@@ -551,10 +551,39 @@ and lazy pipeline resolution because they did not improve latency. Local HPET
 timing has substantially higher clock-read costs than the dedicated host's
 clock; local ratios are diagnostics, not evidence that the target is met.
 
-The next candidate uses full LTO, eight bounded local reply turns, and Linux
+The [second follow-up run](https://github.com/DericHuynh/capntproto/actions/runs/37225071824)
+uses full LTO, eight bounded local reply turns, and Linux
 read-only UDP registration with temporary write interest on backpressure. A
 syscall trace identified an EPOLLOUT event after each successful UDP send;
 removing continuous write interest approximately halved client epoll calls in
-the small-call diagnostic. Its dedicated latency effect is still unverified.
+the small-call diagnostic. Its median ratios were 1.82×, 1.82×, 1.73×, and
+1.56× for 0, 64, 1,024, and 65,536 bytes respectively, still above the target.
 A stack-framing experiment and a smaller request arena showed no clear latency
 gain and were not retained.
+
+The next candidate increases QUIC staging and application bridges to 128 KiB:
+a 64 KiB payload plus framing otherwise spills over the previous 64 KiB bound.
+Local measurements reduced large-message latency by about 21%; a dedicated run
+is required to establish its effect on the target. Calls that explicitly disable
+promise pipelining also avoid allocating a queued answer pipeline and shared
+completion future. Early publication, errors, capability ownership, cancellation,
+and normal pipelining retain their existing semantics.
+
+### Clock diagnostics
+
+The report records current and available Linux clocksources and five batches of
+100,000 `std::time::Instant` reads on each assigned benchmark CPU. The reported
+nanoseconds per read include loop overhead and are diagnostics only; they are
+never subtracted from latency samples. The `clock-reads` driver command also runs
+this probe independently.
+
+Use the OS monotonic clock for benchmarks, QUIC timers, pacing, and deadlines.
+On supported systems it uses a fast TSC-backed path without application assembly.
+The dedicated host currently selects `kvm-clock`, which applies virtualization
+offsets and multipliers to TSC. An invariant TSC rate alone does not establish
+cross-CPU synchronization or migration safety; see the
+[Linux timekeeping documentation](https://cdn.kernel.org/doc/html/latest/virt/kvm/x86/timekeeping.html).
+Do not force a TSC source excluded by the kernel or disable its reliability
+checks just to improve a measurement. Local HPET clock reads measured roughly
+1.4–1.6 microseconds in October 2026, so local timing can magnify clock-heavy
+transport paths relative to the dedicated host.

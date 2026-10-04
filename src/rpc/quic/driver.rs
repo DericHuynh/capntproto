@@ -38,7 +38,7 @@ pub(super) async fn spawn(
     conn: Box<quiche::Connection>,
     timeout: Duration,
 ) -> io::Result<Stream> {
-    let (io, network) = tokio::io::duplex(64 * 1024);
+    let (io, network) = tokio::io::duplex(crate::rpc::QUIC_BUFFER_BYTES);
     let (ready, wait) = oneshot::channel();
     let (close, canceled) = oneshot::channel();
     let state = Rc::new(RefCell::new(State::default()));
@@ -147,11 +147,11 @@ async fn pump(
 ) -> io::Result<()> {
     let local = core.socket.local_addr()?;
     let (mut reader, mut writer) = tokio::io::split(network);
-    let mut tx = vec![0; 64 * 1024];
+    let mut tx = vec![0; crate::rpc::QUIC_BUFFER_BYTES];
     let (mut tx_start, mut tx_end) = (0, 0);
     let mut tx_eof = false;
     let mut fin_sent = false;
-    let mut rx = vec![0; 64 * 1024];
+    let mut rx = vec![0; crate::rpc::QUIC_BUFFER_BYTES];
     let (mut rx_start, mut rx_end) = (0, 0);
     let mut rx_fin = false;
     let mut rx_closed = false;

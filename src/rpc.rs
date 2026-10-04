@@ -9,6 +9,11 @@ pub(crate) mod packet_batch;
 pub(crate) mod packet_mtu;
 pub(crate) mod task;
 
+// Leave room for RPC framing around a 64 KiB payload while keeping each
+// QUIC application bridge and staging allocation bounded.
+#[cfg(feature = "native")]
+pub(crate) const QUIC_BUFFER_BYTES: usize = 128 * 1024;
+
 /// Shared RPC task completion. Observers do not retain the task or transport.
 pub type Completion = futures::future::Shared<capnp::capability::Promise<(), capnp::Error>>;
 

@@ -130,6 +130,7 @@ impl harness::Server for Construct {
             cap_count: 0,
         }));
         results.set_pipeline()?;
+        assert!(results.set_pipeline().is_err());
         self.ready.set(true);
         let gate = self.gate.borrow_mut().take().unwrap();
         gate.await.map_err(|_| Error::failed("gate lost".into()))?;
@@ -152,6 +153,82 @@ async fn settle() {
     for _ in 0..64 {
         tokio::task::yield_now().await;
     }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn disabled_pipelining_preserves_published_results_errors_and_capability_lifetimes() {
+    use capnp::{capability::CallHints, traits::HasTypeId};
+    use capnp_rpc::RpcSystem;
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                for fail in [false, true] {
+                    let live = Rc::new(Cell::new(0));
+                    let ready = Rc::new(Cell::new(false));
+                    let (gate, receiver) = oneshot::channel();
+                    let server: harness::Client = capnp_rpc::new_client(Construct {
+                        gate: RefCell::new(Some(receiver)),
+                        live: live.clone(),
+                        hint: None,
+                        ready: ready.clone(),
+                        fail,
+                    });
+                    let hub = Rc::new(RefCell::new(support::Hub::default()));
+                    let host = RpcSystem::new(
+                        Box::new(support::Hub::network(&hub, 1)),
+                        Some(server.client),
+                    );
+                    let mut caller = RpcSystem::new(Box::new(support::Hub::network(&hub, 2)), None);
+                    let client: harness::Client = caller.bootstrap(1);
+                    let _drivers = Drivers(vec![
+                        tokio::task::spawn_local(host),
+                        tokio::task::spawn_local(caller),
+                    ]);
+                    let request: capnp::capability::Request<
+                        harness::pending_params::Owned,
+                        harness::pending_results::Owned,
+                    > = client.client.new_call_with_hints(
+                        harness::Client::TYPE_ID,
+                        3,
+                        None,
+                        CallHints {
+                            no_promise_pipelining: true,
+                            only_promise_pipeline: false,
+                        },
+                    );
+                    let mut response = request.send();
+                    assert!(response
+                        .pipeline
+                        .get_cap()
+                        .client
+                        .when_resolved()
+                        .await
+                        .is_err());
+                    while !ready.get() {
+                        assert!((&mut response.promise).now_or_never().is_none());
+                        tokio::task::yield_now().await;
+                    }
+                    assert!((&mut response.promise).now_or_never().is_none());
+                    gate.send(()).unwrap();
+                    let result = response.promise.await;
+                    if fail {
+                        assert!(result.err().unwrap().to_string().contains("late error"));
+                    } else {
+                        let result = result.unwrap();
+                        assert_eq!(
+                            value(Some(result.get().unwrap().get_cap().unwrap())).await,
+                            73
+                        );
+                    }
+                    settle().await;
+                    assert_eq!(live.get(), 0);
+                    assert!(_drivers.0.iter().all(|task| !task.is_finished()));
+                }
+            })
+            .await
+            .unwrap();
+        })
+        .await;
 }
 
 #[tokio::test(flavor = "current_thread")]

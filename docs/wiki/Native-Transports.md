@@ -70,7 +70,10 @@ ordinary network paths still determine their own smaller MTU.
 
 Shared listeners bound each route by both its configured packet count and
 128 KiB of queued payload. The unreliable application datagram limit remains
-1,024 bytes. Reliable stream staging is bounded at 64 KiB per direction.
+1,024 bytes. Reliable QUIC stream staging and each application bridge direction
+are bounded at 128 KiB. This leaves space for RPC framing around a 64 KiB payload
+without requiring another bridge transfer. It doubles the previous buffer bounds;
+larger transfers still apply backpressure and drain incrementally.
 
 Run application futures as tasks inside the same Tokio `LocalSet` as RPC tasks
 (`spawn_local`), including the main request loop. This avoids extra executor

@@ -1371,7 +1371,13 @@ impl<VatId> ConnectionState<VatId> {
                 let (results_inner_fulfiller, results_inner_promise) = oneshot::channel();
                 let results_inner_promise = results_inner_promise.map_err(crate::canceled_to_error);
 
-                let (pipeline_sender, mut pipeline) = queued::Pipeline::new();
+                let (pipeline_sender, pipeline) =
+                    if hints.no_promise_pipelining && !only_promise_pipeline && !redirect_results {
+                        (queued::PipelineInnerSender::disabled(), None)
+                    } else {
+                        let (sender, pipeline) = queued::Pipeline::new();
+                        (sender, Some(pipeline))
+                    };
                 let mut results = Results::new(
                     &connection_state,
                     question_id,
@@ -1435,19 +1441,22 @@ impl<VatId> ConnectionState<VatId> {
                         Promise::ok(())
                     });
 
-                let fork = promise.shared();
-                pipeline.drive(fork.clone());
-
                 {
                     let slots = &mut connection_state.answers.borrow_mut().slots;
                     let Some(answer) = slots.get_mut(&question_id) else {
                         unreachable!()
                     };
-                    answer.pipeline = Some(Box::new(pipeline));
                     if redirect_results {
                         answer.redirected_results = redirected_results_done_promise;
                     }
-                    answer.call_completion_promise = Some(connection_state.eagerly_evaluate(fork));
+                    answer.call_completion_promise = Some(if let Some(mut pipeline) = pipeline {
+                        let fork = promise.shared();
+                        pipeline.drive(fork.clone());
+                        answer.pipeline = Some(Box::new(pipeline));
+                        connection_state.eagerly_evaluate(fork)
+                    } else {
+                        connection_state.eagerly_evaluate(promise)
+                    });
                 }
             }
             Ok(message::Return(oret)) => {

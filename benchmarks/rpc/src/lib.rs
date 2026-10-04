@@ -223,6 +223,10 @@ pub fn run(protocol: Option<&str>) -> Result<()> {
         .skip(1)
         .filter(|a| a != "--bench")
         .collect();
+    if protocol.is_none() && args.as_slice() == ["clock-reads"] {
+        println!("{}", driver::clock_reads());
+        return Ok(());
+    }
     if let Some(protocol) = protocol {
         if args.is_empty() {
             return driver::individual(protocol);

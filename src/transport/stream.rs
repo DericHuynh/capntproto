@@ -3,7 +3,7 @@
 
 use std::io;
 
-const BUFFER_BYTES: usize = 64 * 1024;
+const BUFFER_BYTES: usize = crate::rpc::QUIC_BUFFER_BYTES;
 
 enum SendPhase {
     Reading,
