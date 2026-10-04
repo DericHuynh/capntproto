@@ -839,6 +839,16 @@ pub mod test {
             }))
         }
 
+        // Random vectors rarely contain exactly one segment. Exercise the
+        // inline/allocated table boundary under partial IO on every run.
+        for count in 1..=5 {
+            for period in [1, 7, 8, 17] {
+                let segments = (0..count)
+                    .map(|n| capnp::Word::allocate_zeroed_vec(n + 1))
+                    .collect();
+                assert!(!round_trip(period, period, segments).is_failure());
+            }
+        }
         quickcheck(round_trip as fn(usize, usize, Vec<Vec<capnp::Word>>) -> TestResult);
     }
 }

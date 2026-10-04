@@ -18,6 +18,22 @@ fn setup() -> (Rc<TestClock>, Receiver, snapshots::Client) {
     let (receiver, client) = Receiver::new(config(), clock.clone());
     (clock, receiver, client)
 }
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn worker_applies_pending_data_and_returns_after_close() {
+    let (_clock, receiver, _client) = setup();
+    assert!(receiver.clone().run(Duration::ZERO).await.is_err());
+    let receipt = receiver.offer(1, 0, 10, b"snapshot");
+    let worker = receiver.clone().run(Duration::from_millis(2));
+    tokio::pin!(worker);
+    assert!(futures::poll!(&mut worker).is_pending());
+    tokio::time::advance(Duration::from_millis(2)).await;
+    assert!(futures::poll!(&mut worker).is_pending());
+    assert_eq!(receipt.await.unwrap(), Outcome::Applied);
+    receiver.close();
+    tokio::time::advance(Duration::from_millis(2)).await;
+    worker.await.unwrap();
+    receiver.run(Duration::from_millis(2)).await.unwrap();
+}
 #[tokio::test(flavor = "current_thread")]
 async fn replacement_expiration_busy_and_duplicates() {
     let (clock, r, _client) = setup();
