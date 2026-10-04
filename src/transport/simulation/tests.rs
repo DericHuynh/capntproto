@@ -308,7 +308,13 @@ async fn packet_schedule(psk: bool, choices: &[u8], log: &mut Vec<(usize, usize,
         }
         fixture.read();
         packet_tick().await;
-        if fixture.peers[0].received == inputs[1] && fixture.peers[1].received == inputs[0] {
+        // Retransmission may complete delivery before an intentionally delayed
+        // packet is due. Still replay that packet to exercise late duplicates
+        // before starting shutdown, rather than silently discarding the fault.
+        if fixture.peers[0].received == inputs[1]
+            && fixture.peers[1].received == inputs[0]
+            && delayed.is_empty()
+        {
             break;
         }
     }
