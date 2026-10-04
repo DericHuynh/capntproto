@@ -67,6 +67,10 @@ runs:
           fuzz)
             cargo install cargo-fuzz --version 0.13.1 --locked
             cargo install cargo-afl --version 0.18.2 --locked
+            # The cached cargo-afl executable does not imply that its separate
+            # LLVM runtime exists for this pinned rustc. Force permits both
+            # warm and cold caches; config --build alone fails on a warm cache.
+            cargo afl config --build --force
             ;;
         esac
     - name: Pinned C++ reference and model checker
