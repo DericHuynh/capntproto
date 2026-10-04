@@ -366,7 +366,7 @@ z
    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #64748b" transform="translate(37.8 87.922148)">regression baseline is established.</text>
   </g>
   <g id="text_26">
-   <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #64748b" x="37.8" y="578.34" transform="rotate(-0 37.8 578.34)">Measured 2026-10-04T01:21:08Z | commit cc5d7192670f | dedicated Linux loopback</text>
+   <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #64748b" x="37.8" y="578.34" transform="rotate(-0 37.8 578.34)">Measured 2026-10-04T05:28:37Z | commit 66ece9a51e7b | dedicated Linux loopback</text>
   </g>
  </g>
  <defs>
