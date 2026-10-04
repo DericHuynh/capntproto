@@ -11,6 +11,53 @@ use crate::{
 };
 
 const STUN: &str = "127.0.0.1:3478";
+
+#[tokio::test(start_paused = true)]
+async fn mapping_send_backpressure_retries_but_hard_failure_withdraws() {
+    use crate::nat::{Mapping, MappingState};
+    use crate::transport::socket::DatagramSocket;
+
+    let network = Network::default();
+    let socket = network.bind("127.0.0.1:54321".parse().unwrap());
+    let id = socket.id;
+    let socket = DatagramSocket::Simulated(socket);
+    let options = MappingOptions::default();
+    let state = MappingState::new(STUN.parse().unwrap(), options).unwrap();
+    let mapping = Mapping::new(state.clone());
+    network.sending(id, Send::Blocked);
+    state.tick(&socket, tokio::time::Instant::now());
+    assert_eq!(mapping.status(), MappingStatus::Discovering);
+    assert!(network.take(false).is_none());
+
+    network.sending(id, Send::Ready);
+    tokio::time::advance(Duration::from_millis(500)).await;
+    state.tick(&socket, tokio::time::Instant::now());
+    let first = network.take(false).unwrap();
+    assert_eq!(first.to, STUN.parse().unwrap());
+
+    network.sending(id, Send::Fail(io::ErrorKind::NetworkUnreachable));
+    tokio::time::advance(Duration::from_secs(1)).await;
+    state.tick(&socket, tokio::time::Instant::now());
+    assert_eq!(mapping.status(), MappingStatus::Unavailable);
+    assert!(network.take(false).is_none());
+
+    // A hard error retires the transaction; recovery starts a fresh one only
+    // after the refresh interval, rather than spinning on the failed socket.
+    network.sending(id, Send::Ready);
+    state.tick(&socket, tokio::time::Instant::now());
+    assert!(network.take(false).is_none());
+    tokio::time::advance(options.interval).await;
+    state.tick(&socket, tokio::time::Instant::now());
+    let next = network.take(false).unwrap();
+    assert_ne!(&first.bytes[8..20], &next.bytes[8..20]);
+    state.receive(
+        &response(&next.bytes, observed(1)),
+        STUN.parse().unwrap(),
+        tokio::time::Instant::now(),
+    );
+    assert_eq!(mapping.address(), Some(observed(1)));
+}
+
 fn observed(number: u64) -> SocketAddr {
     SocketAddr::from(([192, 0, 2, 42], 4000 + number as u16))
 }

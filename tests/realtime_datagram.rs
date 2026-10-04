@@ -88,13 +88,16 @@ async fn large_fragmented_snapshots_over_native_with_reliable_capability_control
                     let bytes: Vec<_> = (0..size).map(|i| (i % 251) as u8).collect();
                     let receipt = sender.offer(0, 10, &bytes).unwrap();
                     assert_eq!(receipt.sequence(), index as u64 + 1);
-                    // The lane is deliberately unreliable. An explicit immutable
-                    // retry recovers lost fragments; status does not imply delivery.
-                    while receipt.status().await.unwrap().status == Status::Unknown {
+                    // Always retry once to exercise immutable duplicate delivery,
+                    // even when loopback loses no fragments. Further retries recover
+                    // loss; queue admission alone does not imply delivery.
+                    let mut status = Status::Unknown;
+                    while status == Status::Unknown {
                         tokio::time::sleep(Duration::from_millis(20)).await;
                         if let Err(e) = receipt.resend() {
                             assert_eq!(e.kind(), std::io::ErrorKind::WouldBlock);
                         }
+                        status = receipt.status().await.unwrap().status;
                     }
                     assert_eq!(receipt.status().await.unwrap().status, Status::Pending);
                     assert_eq!(r.apply(receipt.sequence()).unwrap(), Outcome::Applied);

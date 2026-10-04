@@ -839,6 +839,12 @@ pub mod test {
             }))
         }
 
+        // These inputs must be discarded rather than entering a reader/writer
+        // that can never make progress. Do not rely on random zero periods.
+        assert!(!round_trip(1, 1, vec![]).is_failure());
+        assert!(!round_trip(0, 1, vec![vec![]]).is_failure());
+        assert!(!round_trip(1, 0, vec![vec![]]).is_failure());
+
         // Random vectors rarely contain exactly one segment. Exercise the
         // inline/allocated table boundary under partial IO on every run.
         for count in 1..=5 {
