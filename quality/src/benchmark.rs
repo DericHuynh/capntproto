@@ -297,7 +297,7 @@ pub fn import(r: &mut Runner, bundle: &Path) -> Result<()> {
     let trials: Vec<Trial> = serde_json::from_slice(&raw)?;
     if trials
         .iter()
-        .any(|t| t.iterations != 1000 || t.warmup != 100)
+        .any(|t| t.iterations != 1000 || t.warmup != 10000)
     {
         return Err("remote workload differs from fixed benchmark budget".into());
     }

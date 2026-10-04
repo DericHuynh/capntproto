@@ -48,7 +48,7 @@ fn trial(exe: &Path, protocol: &str, bytes: usize, placement: Option<&Placement>
     }
     // Each Rust request has a timeout; the enclosing remote command bounds C++ too.
     let output = client
-        .args([bytes.to_string(), "100".into(), "1000".into()])
+        .args([bytes.to_string(), "10000".into(), "1000".into()])
         .output()?;
     if !output.status.success() {
         return Err(format!(
@@ -60,7 +60,7 @@ fn trial(exe: &Path, protocol: &str, bytes: usize, placement: Option<&Placement>
     let value: Value = serde_json::from_slice(&output.stdout)?;
     if value["protocol"] != protocol
         || value["payload_bytes"] != bytes
-        || value["warmup"] != 100
+        || value["warmup"] != 10000
         || value["iterations"] != 1000
     {
         return Err("unexpected trial identity".into());
@@ -152,7 +152,7 @@ pub fn compare(directory: &Path, destination: &Path) -> Result<()> {
         "governor":fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor").ok(),
         "clocksource":fs::read_to_string("/sys/devices/system/clocksource/clocksource0/current_clocksource").ok(),
         "cpu_placement":placement,
-        "scope":"Linux IPv4 loopback; sequential validated echo; fixed separate physical cores for server/client across all protocols; 100 warmups/1000 samples; 5 repetitions; Native QUIC v1 / TLS 1.3 with pinned peer authentication, other protocols plaintext"});
+        "scope":"Linux IPv4 loopback; sequential validated echo; fixed separate physical cores for server/client across all protocols; 10000 warmups/1000 samples; 5 repetitions; Native QUIC v1 / TLS 1.3 with pinned peer authentication, other protocols plaintext"});
     fs::write(
         destination.join("environment.json"),
         serde_json::to_vec_pretty(&environment)?,
