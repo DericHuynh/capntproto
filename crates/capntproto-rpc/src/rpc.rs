@@ -4859,3 +4859,46 @@ impl PipelineHook for SingleCapPipeline {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dropped_promise_cannot_be_upgraded_on_live_connection() {
+        use crate::rpc_twoparty_capnp::Side;
+        let network = crate::twoparty::VatNetwork::new(
+            futures::io::Cursor::new(Vec::<u8>::new()),
+            futures::io::Cursor::new(Vec::<u8>::new()),
+            Side::Client,
+            Default::default(),
+        );
+        let mut system = crate::RpcSystem::new(Box::new(network), None);
+        let _bootstrap: capnp::capability::Client = system.bootstrap(Side::Server);
+        let state = system
+            .connections
+            .borrow()
+            .states
+            .values()
+            .next()
+            .unwrap()
+            .clone();
+        let client = Client::from(PromiseClient::new(
+            &state,
+            broken::new_cap(Error::failed("test promise".into())),
+            None,
+        ));
+        let weak = client.downgrade();
+        let ptr = client.get_ptr();
+        assert!(weak.upgrade().is_some());
+
+        // Keep both surrounding owners alive so only the capability expires.
+        // This exercises the cleanup ordering without relying on network timing.
+        let flow = client.flow_controller.clone();
+        drop(client);
+        assert!(state.connection.borrow().is_ok());
+        assert_eq!(Rc::strong_count(&flow), 1);
+        assert!(weak.upgrade().is_none());
+        assert!(!state.client_downcast_map.borrow().contains_key(&ptr));
+    }
+}
