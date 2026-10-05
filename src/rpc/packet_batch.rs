@@ -40,7 +40,8 @@ impl DatagramSender for UdpSocket {
 }
 
 pub(crate) struct Batch {
-    pub bytes: Vec<u8>,
+    storage: Vec<u8>,
+    len: usize,
     pub info: Option<quiche::SendInfo>,
     pub segment: usize,
     short: bool,
@@ -50,7 +51,10 @@ pub(crate) struct Batch {
 impl Batch {
     pub fn new() -> Self {
         Self {
-            bytes: Vec::with_capacity(65507),
+            // One extra packet can be generated before its path/size/pacing
+            // metadata tells us whether the current aggregate must be flushed.
+            storage: vec![0; 65507 + super::packet_mtu::SEND_MAX],
+            len: 0,
             info: None,
             segment: 0,
             short: false,
@@ -58,34 +62,62 @@ impl Batch {
             count: 0,
         }
     }
-    pub fn push(&mut self, bytes: &[u8], info: quiche::SendInfo, quantum: usize) -> bool {
+    pub fn bytes(&self) -> &[u8] {
+        &self.storage[..self.len]
+    }
+    pub fn len(&self) -> usize {
+        self.len
+    }
+    pub fn output_buffer(&mut self) -> &mut [u8] {
+        &mut self.storage[self.len..self.len + super::packet_mtu::SEND_MAX]
+    }
+    pub fn packet(&self, start: usize, len: usize) -> &[u8] {
+        &self.storage[start..start + len]
+    }
+    // Commit the packet quiche generated directly after the current aggregate.
+    // On rejection, neither the aggregate nor the candidate bytes are changed.
+    pub fn push_prepared(&mut self, len: usize, info: quiche::SendInfo, quantum: usize) -> bool {
+        assert!(len > 0 && len <= super::packet_mtu::SEND_MAX);
         if let Some(previous) = &self.info {
             if self.short
-                || bytes.len() > self.segment
+                || len > self.segment
                 || previous.from != info.from
                 || previous.to != info.to
-                || self.bytes.len() + bytes.len() > self.quantum
-                || self.bytes.len() + bytes.len() > 65507
+                || self.len + len > self.quantum
+                || self.len + len > 65507
                 || self.count == 16
             {
                 return false;
             }
         } else {
-            self.segment = bytes.len();
-            self.quantum = quantum.max(bytes.len());
+            self.segment = len;
+            self.quantum = quantum.max(len);
         }
-        self.short = bytes.len() < self.segment;
+        self.short = len < self.segment;
         self.count += 1;
         let at = self
             .info
             .as_ref()
             .map_or(info.at, |previous| previous.at.max(info.at));
         self.info = Some(quiche::SendInfo { at, ..info });
-        self.bytes.extend_from_slice(bytes);
+        self.len += len;
         true
     }
+    // A different path, quantum boundary or packet size required a flush.
+    // Only that boundary needs a copy; ordinary packets already occupy their
+    // final send buffer. clear() deliberately preserves the candidate bytes.
+    pub fn restart(&mut self, start: usize, len: usize, info: quiche::SendInfo, quantum: usize) {
+        assert_eq!(self.len, 0);
+        self.storage.copy_within(start..start + len, 0);
+        assert!(self.push_prepared(len, info, quantum));
+    }
+    #[cfg(test)]
+    fn push(&mut self, bytes: &[u8], info: quiche::SendInfo, quantum: usize) -> bool {
+        self.output_buffer()[..bytes.len()].copy_from_slice(bytes);
+        self.push_prepared(bytes.len(), info, quantum)
+    }
     pub fn clear(&mut self) {
-        self.bytes.clear();
+        self.len = 0;
         self.info = None;
         self.short = false;
         self.count = 0;
@@ -95,7 +127,7 @@ impl Batch {
         if let Some(info) = self.info {
             super::pacing::wait_until(info.at).await;
             sender
-                .send(socket, &self.bytes, self.segment, info.to)
+                .send(socket, self.bytes(), self.segment, info.to)
                 .await?;
             self.clear();
         }
@@ -144,7 +176,7 @@ mod tests {
         assert_eq!(batch.info.unwrap().at, later.at);
         assert!(!batch.push(&[4; 1], info, 3000));
         assert_eq!(
-            batch.bytes,
+            batch.bytes(),
             [&[1; 1200][..], &[2; 1200], &[3; 600]].concat()
         );
         batch.clear();
@@ -160,6 +192,41 @@ mod tests {
             assert!(batch.push(&[0; 16384], info, usize::MAX));
         }
         assert!(!batch.push(&[0; 16384], info, usize::MAX));
+    }
+
+    #[test]
+    fn generated_packet_survives_flushing_a_full_or_incompatible_batch() {
+        let first = quiche::SendInfo {
+            from: "127.0.0.1:1000".parse().unwrap(),
+            to: "127.0.0.1:2000".parse().unwrap(),
+            at: Instant::now(),
+        };
+        for size in [1, 1200, super::super::packet_mtu::SEND_MAX] {
+            for different_path in [false, true] {
+                let next = if different_path {
+                    quiche::SendInfo {
+                        to: first.from,
+                        ..first
+                    }
+                } else {
+                    first
+                };
+                let mut batch = Batch::new();
+                batch.output_buffer()[..size].fill(1);
+                assert!(batch.push_prepared(size, first, size));
+                let start = batch.len();
+                batch.output_buffer()[..size].fill(2);
+                assert!(!batch.push_prepared(size, next, size));
+                assert_eq!(batch.bytes(), vec![1; size]);
+                batch.clear(); // Sending the old aggregate never erases the candidate.
+                assert_eq!(batch.packet(start, size), vec![2; size]);
+                batch.restart(start, size, next, size);
+                assert_eq!(batch.bytes(), vec![2; size]);
+                assert_eq!(batch.info.unwrap().to, next.to);
+                batch.clear();
+                assert!(batch.bytes().is_empty());
+            }
+        }
     }
 
     #[tokio::test]

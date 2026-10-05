@@ -15,8 +15,20 @@ const DEFAULT_BUFFER_WORDS: usize = 8192;
 const MIN_BUFFER_WORDS: usize = capnp::serialize::SEGMENTS_COUNT_LIMIT / 2;
 
 struct Frame {
-    ranges: Vec<(usize, usize)>,
+    ranges: SegmentRanges,
     bytes: usize,
+}
+enum SegmentRanges {
+    Single([(usize, usize); 1]),
+    Multiple(Vec<(usize, usize)>),
+}
+impl SegmentRanges {
+    fn as_slice(&self) -> &[(usize, usize)] {
+        match self {
+            Self::Single(range) => range,
+            Self::Multiple(ranges) => ranges,
+        }
+    }
 }
 impl Frame {
     fn parse(bytes: &[u8], options: ReaderOptions) -> Result<Option<Self>> {
@@ -27,6 +39,27 @@ impl Frame {
         let table_bytes = (count / 2 + 1) * 8;
         if bytes.len() < table_bytes {
             return Ok(None);
+        }
+        // Most control messages and small RPCs have a single segment. Keep
+        // its range in the frame instead of allocating a one-element Vec.
+        if count == 1 {
+            let words = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
+            if options
+                .traversal_limit_in_words
+                .is_some_and(|limit| words > limit)
+            {
+                return Err(Error::failed(
+                    "incoming message exceeds traversal limit".into(),
+                ));
+            }
+            let bytes = words
+                .checked_mul(8)
+                .and_then(|n| n.checked_add(8))
+                .ok_or_else(|| Error::from_kind(ErrorKind::MessageSizeOverflow))?;
+            return Ok(Some(Self {
+                ranges: SegmentRanges::Single([(8, bytes)]),
+                bytes,
+            }));
         }
         let mut lengths = SegmentLengthsBuilder::with_capacity(count);
         for i in 0..count {
@@ -53,7 +86,10 @@ impl Frame {
             .into_iter()
             .map(|(start, end)| (table_bytes + start * 8, table_bytes + end * 8))
             .collect();
-        Ok(Some(Self { ranges, bytes }))
+        Ok(Some(Self {
+            ranges: SegmentRanges::Multiple(ranges),
+            bytes,
+        }))
     }
 }
 
@@ -85,12 +121,16 @@ impl BufferedSegments {
 }
 impl ReaderSegments for BufferedSegments {
     fn get_segment(&self, id: u32) -> Option<&[u8]> {
-        self.frame.ranges.get(id as usize).map(|&(start, end)| {
-            &Word::words_to_bytes(&self.storage)[self.start + start..self.start + end]
-        })
+        self.frame
+            .ranges
+            .as_slice()
+            .get(id as usize)
+            .map(|&(start, end)| {
+                &Word::words_to_bytes(&self.storage)[self.start + start..self.start + end]
+            })
     }
     fn len(&self) -> usize {
-        self.frame.ranges.len()
+        self.frame.ranges.as_slice().len()
     }
 }
 
@@ -132,6 +172,7 @@ impl ReaderSegments for BufferedScratchSegments<'_> {
             ScratchStorage::Buffered(s) => s.get_segment(id),
             ScratchStorage::Borrowed { words, frame } => frame
                 .ranges
+                .as_slice()
                 .get(id as usize)
                 .map(|&(start, end)| &Word::words_to_bytes(words)[start..end]),
         }
@@ -139,7 +180,7 @@ impl ReaderSegments for BufferedScratchSegments<'_> {
     fn len(&self) -> usize {
         match &self.0 {
             ScratchStorage::Buffered(s) => s.len(),
-            ScratchStorage::Borrowed { frame, .. } => frame.ranges.len(),
+            ScratchStorage::Borrowed { frame, .. } => frame.ranges.as_slice().len(),
         }
     }
 }
@@ -268,7 +309,8 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
     /// descriptor-bearing frames still use owned storage, as in pinned C++.
     /// Scratch is untouched on fallback, EOF, error or cancellation; copying
     /// happens only after a complete frame has been classified successfully.
-    /// Unused scratch words are never modified. Segment metadata still allocates.
+    /// Unused scratch words are never modified. Multiple-segment metadata allocates;
+    /// single-segment metadata stays in the returned frame.
     ///
     /// ```compile_fail
     /// # async fn example() -> capnp::Result<()> {

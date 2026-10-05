@@ -286,11 +286,11 @@ impl PacketSocket {
             crate::rpc::pacing::wait_until(info.at).await;
             match self {
                 Self::Dedicated(s) => {
-                    s.send_segments(sender, &batch.bytes, batch.segment, info.to)
+                    s.send_segments(sender, batch.bytes(), batch.segment, info.to)
                         .await?
                 }
                 Self::Shared(s) => {
-                    s.send_segments(sender, &batch.bytes, batch.segment, info.to)
+                    s.send_segments(sender, batch.bytes(), batch.segment, info.to)
                         .await?
                 }
             }
@@ -397,7 +397,6 @@ async fn drive_packets(
     let mut engine = engine::Engine::new(conn, established.is_some(), shutdown, scheduling);
     let mut udp = vec![0; 65535];
     let mut candidate_packet = vec![0; 65535];
-    let mut out = vec![0; crate::rpc::packet_mtu::SEND_MAX];
     let mut batch = crate::rpc::packet_batch::Batch::new();
     let sender = crate::rpc::packet_batch::Sender::default();
     let mut mtu_recovery = crate::rpc::packet_mtu::Recovery::default();
@@ -505,17 +504,18 @@ async fn drive_packets(
         let mut burst = engine.scheduling.burst();
         let mut exhausted = true;
         while burst.permit() {
-            match engine.conn.send(&mut out) {
+            let start = batch.len();
+            match engine.conn.send(batch.output_buffer()) {
                 Ok((n, info)) => {
                     if info.from == local {
-                        if !batch.push(&out[..n], info, engine.conn.send_quantum()) {
+                        if !batch.push_prepared(n, info, engine.conn.send_quantum()) {
                             socket.flush_batch(&sender, &mut batch).await?;
-                            assert!(batch.push(&out[..n], info, engine.conn.send_quantum()));
+                            batch.restart(start, n, info, engine.conn.send_quantum());
                         }
                     } else if let Some(mobility) = &mut mobility {
                         socket.flush_batch(&sender, &mut batch).await?;
                         crate::rpc::pacing::wait_until(info.at).await;
-                        mobility.send(&socket, &out[..n], info).await?;
+                        mobility.send(&socket, batch.packet(start, n), info).await?;
                     }
                     engine.scheduling.sent();
                 }

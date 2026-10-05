@@ -209,13 +209,13 @@ Specific candidates from this implementation:
 
 | Candidate | Current source behavior | Qualification needed |
 | --- | --- | --- |
-| Reuse output framing scratch | `write_messages()` creates segment metadata, a separate framing-table `Vec` per message and an `IoSlice` vector | Allocation counts, short/partial writes and cancellation; retain every referenced segment until write completion |
+| Extend output framing scratch | Small batches (up to two messages with up to two segments each) use stack framing; larger batches still allocate framing metadata | Allocation counts, short/partial writes and cancellation; retain every referenced segment until write completion |
 | Size-aware generated request construction | Generated `*_request()` passes no size hint; lower-level client calls and result builders accept hints | Typed ergonomic size hints, cap count inclusion, small/large/segmented payloads; hints must not become unchecked limits |
-| Bounded receive-buffer pools | Short-lived control messages share buffered input; retained payloads detach into owned storage | Pool byte cap, retained-reader lifetimes and no reuse while any reader/capability still owns data |
+| Bounded receive-buffer pools | Short-lived control messages share buffered input; single-segment metadata is inline, while retained payloads detach into owned storage | Pool byte cap, retained-reader lifetimes and no reuse while any reader/capability still owns data |
 | Specialize local output coordination | Generic write queue supports cross-thread `Send` use, while common RPC messages contain local `Rc` | Profile mutex/metadata cost; compare a local queue without removing the existing generic cross-thread contract |
 | Reduce transport bridge copies | Bilateral QUIC uses a 64 KiB duplex bridge and 16 KiB staging arrays | Backpressure, cancellation, stream FIN acknowledgement, TLS ownership and packet pacing under load |
 
-All are hypotheses, not measured speedups. Existing batching already uses
+Further improvements are hypotheses, not measured speedups. Existing batching already uses
 scatter/gather writes; adding batching from scratch is not missing work.
 Do not remove traversal/nesting validation to speed up decoding. The serialization
 format needs checked pointer traversal even when no separate decode allocation

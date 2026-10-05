@@ -130,10 +130,14 @@ impl Drop for PipelineInnerSender {
 }
 
 impl PipelineInnerSender {
-    pub(crate) fn complete(mut self, pipeline: Box<dyn PipelineHook>) {
+    pub(crate) fn complete(self, pipeline: Box<dyn PipelineHook>) {
+        self.complete_with(|| pipeline);
+    }
+
+    pub(crate) fn complete_with(mut self, pipeline: impl FnOnce() -> Box<dyn PipelineHook>) {
         if let Some(weak_queued) = self.inner.take() {
             if let Some(pipeline_inner) = weak_queued.upgrade() {
-                crate::queued::PipelineInner::resolve(&pipeline_inner, Ok(pipeline));
+                crate::queued::PipelineInner::resolve(&pipeline_inner, Ok(pipeline()));
             }
         }
     }

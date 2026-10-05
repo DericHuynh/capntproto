@@ -589,8 +589,24 @@ local latency improvement and was reverted.
 
 The current optimization target is at most 1.2× the pinned C++ median for each
 of the four payload sizes, with unchanged authentication, encryption, validation,
-warmups, repetitions, and sample retention. This target is not yet verified.
-The next candidate reuses write-queue buffers (discarding exceptional capacities
+warmups, repetitions, and sample retention. This target has not yet been met.
+The [first 1.2× campaign](https://github.com/DericHuynh/capntproto/actions/runs/37252316131)
+measured commit `311e7d8d5b6955bc61905a2de068bfa212dafbdf` on dedicated Xeon
+Platinum 8168 cores with fast `kvm-clock` reads. All five repetitions and 5,000
+measured samples per cell were retained; droplet cleanup succeeded.
+
+| Payload | Native p50 (µs) | C++ p50 (µs) | Native / C++ |
+| --- | ---: | ---: | ---: |
+| Empty | 63.200 | 38.090 | 1.66× |
+| 64 B | 65.710 | 47.530 | 1.38× |
+| 1 KiB | 64.390 | 64.610 | 1.00× |
+| 64 KiB | 266.770 | 194.840 | 1.37× |
+
+Several repetitions were bimodal for both implementations; the apparent 1 KiB
+parity is not a stable cross-run guarantee. Native retains TLS encryption and
+mutual authentication, while the pinned C++ reference uses plaintext TCP.
+
+That candidate reuses write-queue buffers (discarding exceptional capacities
 above 1,024 entries), borrows batches without temporary message/receipt vectors,
 and uses stack framing for up to two messages with up to two segments each.
 A non-pipelined call receives one initial poll before a background completion
@@ -598,6 +614,18 @@ task is allocated; pending calls are always queued for another poll. Native
 reliable traffic avoids reading application clocks for absent datagrams and
 migrations. Upstream QUIC recovery and transport pacing continue to use their
 normal clocks and deadlines.
+
+The following candidate stores single-segment receive ranges inline, keeps one
+input cancellation registration per connection with a bounded cooperative read
+loop, and generates QUIC packets directly into their final batch buffer. Packet
+boundaries, pacing, path changes and congestion quantum still determine flushes.
+Disabled pipelines allocate their diagnostic only on use, and dropped pipeline
+recipients do not allocate unused result wrappers. A local allocation diagnostic
+counted approximately 41 client allocations per empty RPC versus 56 in the prior
+main baseline, including setup amortized over 11,000 calls. Server Callgrind
+counts fell from 623 million to 574 million instructions for that workload.
+These diagnostics are not latency acceptance evidence; the follow-up dedicated
+measurement is pending.
 
 Allocation checks cover the warmed single-segment queue, and partial-write
 tests cover every byte boundary of small frames plus large multi-segment batches.

@@ -819,51 +819,69 @@ impl<VatId> ConnectionState<VatId> {
                 "message loop cannot continue without a connection".into(),
             ));
         };
-
-        if state.connection.borrow().is_ok() && state.call_words.get() > state.flow_limit.get() {
-            let (sender, receiver) = oneshot::channel();
-            *state.flow_waiter.borrow_mut() = Some(sender);
-            return Promise::from_future(async move {
-                let _ = receiver.await;
-                if let Some(state) = weak_state.upgrade() {
-                    state.add_task(Self::message_loop(weak_state));
-                }
-                Ok(())
-            });
-        }
-
-        let promise = match *state.connection.borrow_mut() {
-            Err(_) => return Promise::ok(()),
-            Ok(ref mut connection) => connection.receive_incoming_message(),
-        };
-
-        // Disconnect must release a pending read even if the peer never sends
-        // again. Cancel only transport input; protected application calls and
-        // already-delivered response/pipeline ownership have separate lifetimes.
+        // One cancellation registration covers transport input for this
+        // connection. It never cancels protected calls or delivered responses.
         let (canceler, registration) = future::AbortHandle::new_pair();
         *state.read_canceler.borrow_mut() = Some(canceler);
-        Promise::from_future(async move {
-            let Ok(received) = future::Abortable::new(promise, registration).await else {
-                return Ok(());
-            };
-            match received? {
-                Some(m) => {
-                    Self::handle_message(&weak_state, m)?;
-                    if let Some(state) = weak_state.upgrade() {
-                        state.add_task(Self::message_loop(weak_state));
+        drop(state);
+        let read = async move {
+            let mut budget = 0;
+            loop {
+                let Some(state) = weak_state.upgrade() else {
+                    return Ok(());
+                };
+                if state.connection.borrow().is_ok()
+                    && state.call_words.get() > state.flow_limit.get()
+                {
+                    let (sender, receiver) = oneshot::channel();
+                    *state.flow_waiter.borrow_mut() = Some(sender);
+                    drop(state);
+                    let _ = receiver.await;
+                    continue;
+                }
+                let promise = match *state.connection.borrow_mut() {
+                    Err(_) => return Ok(()),
+                    Ok(ref mut connection) => connection.receive_incoming_message(),
+                };
+                // Waiting for input must not retain the connection owner.
+                drop(state);
+                match promise.await? {
+                    Some(message) => Self::handle_message(&weak_state, message)?,
+                    None => {
+                        if let Some(state) = weak_state.upgrade() {
+                            if state.idle.get() && state.connection.borrow().is_ok() {
+                                state.idle_eof();
+                            } else {
+                                state.disconnect(Error::disconnected("Peer disconnected.".into()));
+                            }
+                        }
+                        return Ok(());
                     }
                 }
-                None => {
-                    if let Some(state) = weak_state.upgrade() {
-                        if state.idle.get() && state.connection.borrow().is_ok() {
-                            state.idle_eof();
+                budget += 1;
+                if budget == 32 {
+                    budget = 0;
+                    // A continuously readable peer cannot monopolize the RPC
+                    // task set. Resume through its normal ready queue.
+                    let mut yielded = false;
+                    future::poll_fn(move |cx| {
+                        if yielded {
+                            Poll::Ready(())
                         } else {
-                            state.disconnect(Error::disconnected("Peer disconnected.".to_string()));
+                            yielded = true;
+                            cx.waker().wake_by_ref();
+                            Poll::Pending
                         }
-                    }
+                    })
+                    .await;
                 }
             }
-            Ok(())
+        };
+        Promise::from_future(async move {
+            match future::Abortable::new(read, registration).await {
+                Ok(result) => result,
+                Err(_) => Ok(()),
+            }
         })
     }
 
@@ -1514,9 +1532,7 @@ impl<VatId> RequestHook for Request<VatId> {
                 promise: Promise::from_future(
                     promise.map_ok(|response| capnp::capability::Response::new(Box::new(response))),
                 ),
-                pipeline: any_pointer::Pipeline::new(Box::new(broken::Pipeline::new(
-                    Error::failed("promise pipelining disabled by call hint".into()),
-                ))),
+                pipeline: any_pointer::Pipeline::new(Box::new(broken::DisabledPipeline)),
             };
         }
 
@@ -1625,9 +1641,7 @@ impl<VatId> RequestHook for Request<VatId> {
 
         let question_id = question_ref.borrow().id;
         let pipeline: Box<dyn PipelineHook> = if disabled {
-            Box::new(broken::Pipeline::new(Error::failed(
-                "promise pipelining disabled by call hint".into(),
-            )))
+            Box::new(broken::DisabledPipeline)
         } else {
             Box::new(Pipeline::never_done(connection_state, question_ref))
         };
@@ -2322,7 +2336,7 @@ impl ResultsDone {
     {
         match results_inner {
             Err(e) => {
-                pipeline_sender.complete(Box::new(crate::broken::Pipeline::new(e.clone())));
+                pipeline_sender.complete_with(|| Box::new(crate::broken::Pipeline::new(e.clone())));
                 Err(e)
             }
             Ok(mut results_inner) => {
@@ -2351,7 +2365,7 @@ impl ResultsDone {
                                 let hook = Box::new(Self::rpc(Rc::new(message.take()), cap_table))
                                     as Box<dyn ResultsDoneHook>;
                                 pipeline_sender
-                                    .complete(Box::new(local::Pipeline::new(hook.clone())));
+                                    .complete_with(|| Box::new(local::Pipeline::new(hook.clone())));
 
                                 // Send a Canceled return.
                                 if let Ok(connection) =
@@ -2414,7 +2428,7 @@ impl ResultsDone {
                                 let hook =
                                     Box::new(Self::rpc(m, cap_table)) as Box<dyn ResultsDoneHook>;
                                 pipeline_sender
-                                    .complete(Box::new(local::Pipeline::new(hook.clone())));
+                                    .complete_with(|| Box::new(local::Pipeline::new(hook.clone())));
                                 Ok(hook)
                             }
                             (false, Err(e)) => {
@@ -2438,8 +2452,9 @@ impl ResultsDone {
                                 }
                                 connection_state.answer_has_sent_return(answer_id, Vec::new());
 
-                                pipeline_sender
-                                    .complete(Box::new(crate::broken::Pipeline::new(e.clone())));
+                                pipeline_sender.complete_with(|| {
+                                    Box::new(crate::broken::Pipeline::new(e.clone()))
+                                });
 
                                 Err(e)
                             }
@@ -2448,13 +2463,13 @@ impl ResultsDone {
                     Some(ResultsVariant::LocallyRedirected(results_done, cap_table)) => {
                         if let Err(error) = call_status {
                             pipeline_sender
-                                .complete(Box::new(broken::Pipeline::new(error.clone())));
+                                .complete_with(|| Box::new(broken::Pipeline::new(error.clone())));
                             return Err(error);
                         }
                         let hook = Box::new(Self::redirected(results_done, cap_table))
                             as Box<dyn ResultsDoneHook>;
                         pipeline_sender
-                            .complete(Box::new(crate::local::Pipeline::new(hook.clone())));
+                            .complete_with(|| Box::new(crate::local::Pipeline::new(hook.clone())));
                         Ok(hook)
                     }
                 }

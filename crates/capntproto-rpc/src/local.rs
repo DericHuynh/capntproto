@@ -367,9 +367,7 @@ impl RequestHook for Request {
 
         pipeline.drive(right);
         let pipeline = if hints.no_promise_pipelining {
-            any_pointer::Pipeline::new(Box::new(crate::broken::Pipeline::new(Error::failed(
-                "promise pipelining disabled by call hint".into(),
-            ))))
+            any_pointer::Pipeline::new(Box::new(crate::broken::DisabledPipeline))
         } else {
             any_pointer::Pipeline::new(Box::new(pipeline))
         };

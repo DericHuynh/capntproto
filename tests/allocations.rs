@@ -168,11 +168,8 @@ fn buffered_scratch_avoids_retained_payload_and_arc_allocations() {
         assert!(message.get_segments().uses_scratch());
         assert_eq!(message.get_root::<capnp::data::Reader>().unwrap(), payload);
     });
-    assert_eq!(fitting.count_total, 1, "{fitting:?}");
-    assert_eq!(
-        fitting.bytes_total,
-        std::mem::size_of::<(usize, usize)>() as u64
-    );
+    assert_eq!(fitting.count_total, 0, "{fitting:?}");
+    assert_eq!(fitting.bytes_total, 0);
     assert_eq!(fitting.count_current, 0);
     let mut input =
         capnp_futures::BufferedRead::new(futures::io::Cursor::new(&bytes), ReaderOptions::new());

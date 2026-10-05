@@ -3,7 +3,10 @@
 - Reuse RPC write-batch storage, keep small framing tables on the stack, and
   complete immediately-ready non-pipelined calls without a background completion
   task. Native transport samples application clocks only for pending datagrams
-  and migration. The 1.2× C++ latency target remains unverified.
+  and migration. Keep single-segment receive metadata inline, retain one input
+  cancellation registration per connection, generate QUIC packets directly into
+  bounded send batches, and construct disabled-pipeline errors only on use.
+  The 1.2× C++ latency target has not yet been met.
 - Imported the maintained Cap’n Proto Rust runtime, RPC engine, async framing and
   generator as `capntproto-{core,rpc,futures,codegen}` workspace crates, retaining
   upstream licenses and generated Rust import names.

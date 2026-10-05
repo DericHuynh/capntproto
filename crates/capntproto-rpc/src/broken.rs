@@ -49,6 +49,20 @@ impl PipelineHook for Pipeline {
     }
 }
 
+// A disabled pipeline has no per-call state. Its Box is zero-sized; construct
+// the diagnostic only if a caller actually tries to extract a capability.
+pub(crate) struct DisabledPipeline;
+impl PipelineHook for DisabledPipeline {
+    fn add_ref(&self) -> Box<dyn PipelineHook> {
+        Box::new(Self)
+    }
+    fn get_pipelined_cap(&self, _ops: &[PipelineOp]) -> Box<dyn ClientHook> {
+        new_cap(Error::failed(
+            "promise pipelining disabled by call hint".into(),
+        ))
+    }
+}
+
 pub(crate) struct Request {
     error: Error,
     message: ::capnp::message::Builder<::capnp::message::HeapAllocator>,

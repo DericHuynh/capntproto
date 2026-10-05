@@ -66,13 +66,13 @@ async fn flush(
     batch: &mut crate::rpc::packet_batch::Batch,
     sender: &crate::rpc::packet_batch::Sender,
 ) -> io::Result<bool> {
-    let mut out = [0; crate::rpc::packet_mtu::SEND_MAX];
     for _ in 0..16 {
-        match conn.send(&mut out) {
+        let start = batch.len();
+        match conn.send(batch.output_buffer()) {
             Ok((n, info)) => {
-                if !batch.push(&out[..n], info, conn.send_quantum()) {
+                if !batch.push_prepared(n, info, conn.send_quantum()) {
                     batch.send(sender, &core.socket).await?;
-                    assert!(batch.push(&out[..n], info, conn.send_quantum()));
+                    batch.restart(start, n, info, conn.send_quantum());
                 }
             }
             Err(quiche::Error::Done) => {
@@ -359,7 +359,7 @@ mod tests {
                                     .await
                                     .unwrap()
                                 {}
-                                assert!(batch.bytes.is_empty());
+                                assert!(batch.bytes().is_empty());
                                 break;
                             }
                             flush(&mut conn, &server.0, &mut batch, &sender)

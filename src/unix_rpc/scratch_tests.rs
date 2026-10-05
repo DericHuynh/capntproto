@@ -9,7 +9,7 @@ fn scratch() -> Vec<Word> {
 
 #[cfg(target_os = "linux")]
 #[tokio::test(flavor = "current_thread")]
-async fn fd_scratch_allocates_only_segment_metadata_for_a_buffered_frame() {
+async fn fd_scratch_reads_a_buffered_single_segment_without_allocating() {
     let (sender, receiver) = UnixStream::pair().unwrap();
     write_message(&sender, &control(1), &[]).await.unwrap();
     write_message(&sender, &control(2), &[descriptor(22)])
@@ -34,8 +34,8 @@ async fn fd_scratch_allocates_only_segment_metadata_for_a_buffered_frame() {
         assert_eq!(message.fds.len(), 1);
         assert_eq!(fd_value(message.fds[0].as_ref().unwrap()), 22);
     });
-    assert_eq!(counts.count_total, 1, "{counts:?}");
-    assert_eq!(counts.bytes_total, mem::size_of::<(usize, usize)>() as u64);
+    assert_eq!(counts.count_total, 0, "{counts:?}");
+    assert_eq!(counts.bytes_total, 0);
     assert_eq!(counts.count_current, 0);
     assert!(slots[0].is_some());
 }
