@@ -1,5 +1,9 @@
 # 0.1.0 developer preview (unpublished)
 
+- Keep the first 16 peer-assigned RPC IDs inline, as in C++'s import table,
+  avoiding hash lookups for ordinary answers and imports. Larger IDs remain
+  sparse, with full-range, replacement and reentrant-drop regression coverage.
+
 - Transfer owned buffers from the native RPC bridge directly into QUIC's send
   queue, removing a payload copy while preserving bounded admission, partial
   writes, cancellation and retransmission ownership. Share answer-status flags

@@ -552,17 +552,16 @@ impl<VatId: 'static> ConnectionState<VatId> {
         fd: Option<AttachedFd>,
     ) -> Box<dyn ClientHook> {
         let import_client = {
-            match state.imports.borrow_mut().slots.entry(import_id) {
-                hash_map::Entry::Occupied(occ) => occ
-                    .get()
+            let mut imports = state.imports.borrow_mut();
+            if let Some(import) = imports.slots.get(&import_id) {
+                import
                     .import_client
                     .upgrade()
-                    .expect("dangling ref to import client?"),
-                hash_map::Entry::Vacant(v) => {
-                    let import_client = ImportClient::new(state, import_id);
-                    v.insert(Import::new(&import_client));
-                    import_client
-                }
+                    .expect("dangling ref to import client?")
+            } else {
+                let import_client = ImportClient::new(state, import_id);
+                imports.slots.insert(import_id, Import::new(&import_client));
+                import_client
             }
         };
 

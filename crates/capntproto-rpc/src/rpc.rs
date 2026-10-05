@@ -940,17 +940,16 @@ impl<VatId> ConnectionState<VatId> {
     fn answer_has_sent_return(&self, id: AnswerId, result_exports: Vec<ExportId>) {
         let (removed, words) = {
             let mut answers = self.answers.borrow_mut();
-            let hash_map::Entry::Occupied(mut entry) = answers.slots.entry(id) else {
+            let Some(answer) = answers.slots.get_mut(&id) else {
                 // Disconnect already removed every answer. A retained call
                 // context can outlive the connection but cannot send more wire data.
                 debug_assert!(self.connection.borrow().is_err());
                 return;
             };
-            let answer = entry.get_mut();
             answer.status.return_has_been_sent.set(true);
             let words = mem::take(&mut answer.request_words);
             if answer.status.received_finish.get() {
-                (Some(entry.remove()), words)
+                (answers.slots.remove(&id), words)
             } else {
                 answer.result_exports = result_exports;
                 (None, words)

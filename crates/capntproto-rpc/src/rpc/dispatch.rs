@@ -166,11 +166,8 @@ impl<VatId: 'static> ConnectionState<VatId> {
         let mut join = None;
         {
             let mut answers = connection_state.answers.borrow_mut();
-            if let hash_map::Entry::Occupied(mut entry) = answers
-                .slots
-                .entry(AnswerId::from_wire(finish.get_question_id()))
-            {
-                let answer = entry.get_mut();
+            let id = AnswerId::from_wire(finish.get_question_id());
+            if let Some(answer) = answers.slots.get_mut(&id) {
                 answer.status.received_finish.set(true);
                 let result_exports = mem::take(&mut answer.result_exports);
                 if finish.get_release_result_caps() {
@@ -181,7 +178,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                 pipeline_only_guard = answer.pipeline_only_guard.take();
                 join = answer.join.take();
                 if answer.status.return_has_been_sent.get() {
-                    answer_to_release = Some(entry.remove());
+                    answer_to_release = answers.slots.remove(&id);
                 }
             }
         }
@@ -568,10 +565,10 @@ impl<VatId: 'static> ConnectionState<VatId> {
 
                 {
                     let slots = &mut connection_state.answers.borrow_mut().slots;
-                    let hash_map::Entry::Vacant(slot) = slots.entry(question_id) else {
+                    if slots.contains_key(&question_id) {
                         return Err(Error::failed("questionId is already in use".to_string()));
-                    };
-                    slot.insert(answer);
+                    }
+                    slots.insert(question_id, answer);
                 }
 
                 // No table borrow spans application code. Immediate ordinary
