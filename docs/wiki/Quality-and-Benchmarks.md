@@ -661,6 +661,18 @@ close blocks, while the closure fence waits for close and the network driver
 waits for connection handles to disappear. That corrected source requires its
 own qualification; the table measures the earlier success path only.
 
+The next candidate removes an allocated task-completion wrapper and replaces
+the RPC task set's thread-safe admission channel with a reusable local queue.
+The task set already owns non-Send futures. Queue wakeups and canceled-task
+destructors run outside mutable borrows, including reentrant callbacks. It also
+corrects two-party message allocation: a zero size hint means a bounded 2 KiB
+initial segment instead of growing from a zero-word segment. Unhinted calls
+use the same initial size, while explicit request hints reserve payload and RPC
+envelope space. Small responses consequently avoid unnecessary segmentation.
+Local diagnostics count about 29 client allocations per empty RPC, down from
+34 before these changes, over 11,000 calls including setup. Dedicated latency
+qualification remains pending; allocation counts do not establish the target.
+
 Allocation checks cover the warmed single-segment queue, and partial-write
 tests cover every byte boundary of small frames plus large multi-segment batches.
 RPC regression tests cover self-wakes, independent subsequent wakes, late errors,

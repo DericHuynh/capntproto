@@ -1199,11 +1199,20 @@ where
 {
     fn new(
         connection_state: Rc<ConnectionState<VatId>>,
-        _size_hint: Option<::capnp::MessageSize>,
+        size_hint: Option<::capnp::MessageSize>,
         target: Client<VatId>,
     ) -> ::capnp::Result<Self> {
         let permit = connection_state.admission.reserve()?;
-        let message = connection_state.new_outgoing_message(1024)?;
+        use capnp::traits::HasStructSize;
+        let envelope = 1
+            + message::Builder::STRUCT_SIZE.total()
+            + call::Builder::STRUCT_SIZE.total()
+            + message_target::Builder::STRUCT_SIZE.total()
+            + promised_answer::Builder::STRUCT_SIZE.total()
+            + payload::Builder::STRUCT_SIZE.total()
+            + 1; // inline-composite tag for a promised-answer transform list
+        let words = size_hint.map_or(256, |size| payload_size_hint(size, envelope));
+        let message = connection_state.new_outgoing_message(words)?;
         Ok(Self {
             connection_state,
             permit,
@@ -2060,18 +2069,23 @@ where
 fn result_size_hint(size: Option<capnp::MessageSize>) -> u32 {
     use capnp::traits::HasStructSize;
     size.map_or(0, |s| {
-        let descriptor = cap_descriptor::Builder::STRUCT_SIZE.total()
-            + promised_answer::Builder::STRUCT_SIZE.total();
         let envelope = 1
             + message::Builder::STRUCT_SIZE.total()
             + return_::Builder::STRUCT_SIZE.total()
             + payload::Builder::STRUCT_SIZE.total();
-        s.word_count
-            .saturating_add(u64::from(s.cap_count) * u64::from(descriptor))
-            .saturating_add(u64::from(s.cap_count > 0))
-            .min(1 << 20) as u32
-            + envelope
+        payload_size_hint(s, envelope)
     })
+}
+
+fn payload_size_hint(size: capnp::MessageSize, envelope: u32) -> u32 {
+    use capnp::traits::HasStructSize;
+    let descriptor = cap_descriptor::Builder::STRUCT_SIZE.total()
+        + promised_answer::Builder::STRUCT_SIZE.total();
+    size.word_count
+        .saturating_add(u64::from(size.cap_count) * u64::from(descriptor))
+        .saturating_add(1) // even an empty descriptor list has a composite tag
+        .min(1 << 20) as u32
+        + envelope
 }
 
 // This takes the place of both RpcCallContext and RpcServerResponse in capnproto-c++.

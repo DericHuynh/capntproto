@@ -705,6 +705,126 @@ fn diagnostics_survive_moving_network_into_rpc_system() {
 }
 
 #[test]
+fn absent_size_hints_keep_small_rpc_results_in_one_segment() {
+    use capnp_rpc::{rpc_capnp, rpc_twoparty_capnp::Side, VatNetwork};
+    for hint in [0, 1, 1024] {
+        for bytes in [0, 64, 1024] {
+            let mut network = capnp_rpc::twoparty::VatNetwork::new(
+                futures::io::empty(),
+                futures::io::sink(),
+                Side::Client,
+                Default::default(),
+            );
+            let mut connection = network.connect(Side::Server).unwrap();
+            let mut outgoing = connection.new_outgoing_message(hint);
+            let root = outgoing
+                .get_body()
+                .unwrap()
+                .init_as::<rpc_capnp::message::Builder>();
+            root.init_return()
+                .init_results()
+                .get_content()
+                .initn_as::<capnp::data::Builder>(bytes)
+                .fill(17);
+            let message = outgoing.take();
+            let segments = message.get_segments_for_output();
+            if hint == 1 {
+                assert!(segments.len() > 1, "explicit small hints remain supported");
+            } else {
+                assert_eq!(segments.len(), 1, "hint={hint}, payload={bytes}");
+            }
+            let encoded = capnp::serialize::write_message_to_words(&message);
+            let decoded = capnp::serialize::read_message(&encoded[..], Default::default()).unwrap();
+            let rpc_capnp::message::Return(result) = decoded
+                .get_root::<rpc_capnp::message::Reader>()
+                .unwrap()
+                .which()
+                .unwrap()
+            else {
+                panic!("expected return")
+            };
+            let rpc_capnp::return_::Results(result) = result.unwrap().which().unwrap() else {
+                panic!("expected results")
+            };
+            assert_eq!(
+                result
+                    .unwrap()
+                    .get_content()
+                    .get_as::<capnp::data::Reader>()
+                    .unwrap(),
+                vec![17; bytes as usize]
+            );
+        }
+    }
+}
+
+#[test]
+fn request_size_hints_reserve_payload_and_rpc_envelope_together() {
+    use capnp_rpc::{rpc_capnp, rpc_twoparty_capnp::Side, VatNetwork};
+    for hinted in [false, true] {
+        let output = Rc::new(RefCell::new(Output {
+            budget: usize::MAX,
+            chunk: usize::MAX,
+            flush: true,
+            ..Default::default()
+        }));
+        let mut network = capnp_rpc::twoparty::VatNetwork::new(
+            futures::io::empty(),
+            Writer(output.clone()),
+            Side::Client,
+            Default::default(),
+        );
+        let mut driver = Box::pin(network.drive_until_shutdown());
+        let mut rpc = capnp_rpc::RpcSystem::new(Box::new(network), None);
+        let remote: capnp::capability::Client = rpc.bootstrap(Side::Server);
+        let mut request = remote.new_call::<capnp::any_pointer::Owned, capnp::any_pointer::Owned>(
+            0,
+            0,
+            hinted.then_some(capnp::MessageSize {
+                word_count: 512,
+                cap_count: 0,
+            }),
+        );
+        request
+            .get()
+            .initn_as::<capnp::data::Builder>(4096)
+            .fill(17);
+        let _reply = request.send();
+        assert!(poll(driver.as_mut()).is_pending());
+        let output = output.borrow();
+        let mut bytes = output.bytes.as_slice();
+        let _bootstrap = capnp::serialize::read_message(&mut bytes, Default::default()).unwrap();
+        let call = capnp::serialize::read_message(&mut bytes, Default::default()).unwrap();
+        use capnp::message::ReaderSegments;
+        if hinted {
+            assert_eq!(call.get_segments().len(), 1);
+        } else {
+            assert!(
+                call.get_segments().len() > 1,
+                "large unhinted calls still grow"
+            );
+        }
+        let rpc_capnp::message::Call(call) = call
+            .get_root::<rpc_capnp::message::Reader>()
+            .unwrap()
+            .which()
+            .unwrap()
+        else {
+            panic!("expected call")
+        };
+        assert_eq!(
+            call.unwrap()
+                .get_params()
+                .unwrap()
+                .get_content()
+                .get_as::<capnp::data::Reader>()
+                .unwrap(),
+            vec![17; 4096]
+        );
+    }
+}
+
+#[test]
 fn transport_guards_survive_partial_writes_and_release_on_flush_failure_or_cancel() {
     use capnp_rpc::{rpc_twoparty_capnp::Side, VatNetwork};
     use std::cell::Cell;

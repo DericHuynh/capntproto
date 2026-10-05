@@ -12,6 +12,10 @@
   completion channels. A separate connection-level write completion signal
   fails RPC calls promptly even if input and close remain blocked. The output
   closure fence still waits for close; the network driver waits for disconnect.
+- Use bounded initial segments for unhinted calls and two-party responses, avoiding
+  tiny multi-segment responses and oversized empty-call arenas. Honor explicit
+  request size hints with space for the RPC envelope. Reap RPC tasks directly and reuse a local task
+  admission queue, with wake and destructor callbacks outside queue borrows.
 - Imported the maintained Cap’n Proto Rust runtime, RPC engine, async framing and
   generator as `capntproto-{core,rpc,futures,codegen}` workspace crates, retaining
   upstream licenses and generated Rust import names.

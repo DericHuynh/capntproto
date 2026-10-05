@@ -227,9 +227,17 @@ where
         &mut self,
         first_segment_word_size: u32,
     ) -> Box<dyn crate::OutgoingMessage> {
-        let message = ::capnp::message::Builder::new(
-            ::capnp::message::HeapAllocator::new().first_segment_words(first_segment_word_size),
+        // Zero means no hint, not a zero-word first segment. A bounded 2 KiB
+        // default fits small results without clearing an 8 KiB arena each time.
+        // Larger bodies still grow normally; explicit hints remain authoritative.
+        let allocator = ::capnp::message::HeapAllocator::new().first_segment_words(
+            if first_segment_word_size == 0 {
+                256
+            } else {
+                first_segment_word_size
+            },
         );
+        let message = ::capnp::message::Builder::new(allocator);
         Box::new(OutgoingMessage {
             message,
             sender: self.inner.borrow().sender.clone(),

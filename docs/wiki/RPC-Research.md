@@ -225,6 +225,11 @@ pipeline-only calls and writer failures must preserve this ownership rule.
 Write-queue completion is observed once per connection so failures reject calls
 even if the peer keeps input open or closing the transport blocks. This signal
 is separate from the output-closure fence, which still waits for close.
+The task set now reaps completion directly and uses a reusable local admission
+queue, avoiding per-task wrapper/channel allocations. Missing message size hints
+select a bounded 2 KiB initial segment so small two-party results stay in one
+segment. Explicit request hints reserve payload and RPC envelope space; large
+multi-segment messages remain supported.
 Do not remove traversal/nesting validation to speed up decoding. The serialization
 format needs checked pointer traversal even when no separate decode allocation
 is required. [Reader limits](https://capnproto.org/cxx.html#security).
