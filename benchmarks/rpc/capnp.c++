@@ -2,7 +2,9 @@
 #include <capnp/rpc-twoparty.h>
 #include <kj/async-io.h>
 #include <kj/debug.h>
+#include <kj/timer.h>
 #include <chrono>
+#include <cstring>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -43,17 +45,22 @@ int main(int argc, char** argv) {
     for (uint64_t sequence = 0; sequence < warmup + iterations; ++sequence) {
       if (sequence == warmup) start = Clock::now();
       auto before = Clock::now();
-      auto request = echo.echoRequest();
-      request.setSequence(sequence);
-      request.setPayload(kj::arrayPtr(payload.data(), payload.size()));
-      auto response = request.send().wait(io.waitScope);
-      auto returned = response.getPayload();
-      KJ_REQUIRE(response.getSequence() == sequence && returned.size() == bytes);
-      for (size_t n = 0; n < bytes; ++n) KJ_REQUIRE(returned[n] == payload[n]);
+      {
+        auto request = echo.echoRequest();
+        request.setSequence(sequence);
+        request.setPayload(kj::arrayPtr(payload.data(), payload.size()));
+        auto response = io.provider->getTimer()
+            .timeoutAfter(10 * kj::SECONDS, request.send().dropPipeline()).wait(io.waitScope);
+        auto returned = response.getPayload();
+        KJ_REQUIRE(response.getSequence() == sequence && returned.size() == bytes);
+        // Rust compares slices in bulk. A KJ_REQUIRE per byte measures assertion
+        // machinery instead, substantially inflating the large-payload baseline.
+        KJ_REQUIRE(bytes == 0 || std::memcmp(returned.begin(), payload.data(), bytes) == 0);
+      } // Include response/promise cleanup, just as Rust's roundtrip() does.
       if (sequence >= warmup) samples.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - before).count());
     }
     auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - start).count();
-    std::cout << "{\"protocol\":\"capnp-cpp\",\"payload_bytes\":" << bytes << ",\"warmup\":" << warmup << ",\"iterations\":" << iterations << ",\"elapsed_ns\":" << elapsed << ",\"latency_ns\":[";
+    std::cout << "{\"measurement_version\":2,\"protocol\":\"capnp-cpp\",\"payload_bytes\":" << bytes << ",\"warmup\":" << warmup << ",\"iterations\":" << iterations << ",\"elapsed_ns\":" << elapsed << ",\"latency_ns\":[";
     for (size_t n = 0; n < samples.size(); ++n) { if (n) std::cout << ','; std::cout << samples[n]; }
     std::cout << "]}" << std::endl;
   }

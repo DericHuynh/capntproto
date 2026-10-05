@@ -22,6 +22,9 @@ mod grpc {
 }
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 const CONTEXT: &[u8] = b"reproto isolated loopback benchmark v1";
+// Version 2 matches bulk payload validation, response cleanup and per-call
+// deadlines between Rust and C++. Old trials must not enter this comparison.
+const MEASUREMENT_VERSION: u32 = 2;
 
 struct Echo;
 impl echo_capnp::echo::Server for Echo {
@@ -214,7 +217,7 @@ async fn measure(args: &[String]) -> Result<()> {
     }
     println!(
         "{}",
-        json!({"protocol":args[0],"payload_bytes":bytes,"warmup":warmup,"iterations":iterations,"elapsed_ns":u64::try_from(start.elapsed().as_nanos())?,"latency_ns":samples})
+        json!({"measurement_version":MEASUREMENT_VERSION,"protocol":args[0],"payload_bytes":bytes,"warmup":warmup,"iterations":iterations,"elapsed_ns":u64::try_from(start.elapsed().as_nanos())?,"latency_ns":samples})
     );
     Ok(())
 }

@@ -239,7 +239,7 @@ pub fn generate(base: &Path, lanes: &str) -> Result<()> {
                         p50 / native["p50_ns"].as_f64().unwrap()
                     )?;
                 }
-                readme.push_str("\nThe last column compares each implementation’s median latency with Capntproto at the same payload size; lower is less latency. [Raw per-request samples](benchmark/trials.json) and [environment, compiler/binary identities, repetition ranges and source pins](benchmark/evidence.json) accompany the results.\n");
+                readme.push_str("\nMeasurement version 2 includes bulk payload validation, response cleanup and ten-second per-call deadlines. Earlier unversioned comparisons used a slower C++ validation loop and are not comparable. The last column compares each implementation’s median latency with Capntproto at the same payload size; lower is less latency. [Raw per-request samples](benchmark/trials.json) and [environment, compiler/binary identities, repetition ranges and source pins](benchmark/evidence.json) accompany the results.\n");
             }
             Err(error) => {
                 writeln!(
@@ -300,6 +300,7 @@ mod tests {
             for protocol in benchmark::PROTOCOLS {
                 for repetition in 0..5 {
                     trials.push(benchmark::Trial {
+                        measurement_version: benchmark::MEASUREMENT_VERSION,
                         protocol: protocol.into(),
                         payload_bytes: bytes,
                         iterations: 1000,
@@ -357,6 +358,7 @@ mod tests {
                 let latency = (index as u64 + 1) * 10_000 + bytes as u64;
                 for _ in 0..5 {
                     trials.push(benchmark::Trial {
+                        measurement_version: benchmark::MEASUREMENT_VERSION,
                         protocol: (*protocol).into(),
                         payload_bytes: bytes,
                         iterations: 1000,

@@ -1,5 +1,10 @@
 # 0.1.0 developer preview (unpublished)
 
+- Correct the C++ benchmark's per-byte assertion overhead and excluded response
+  cleanup. All implementations now use bulk payload comparison and ten-second
+  per-call deadlines inside timed round trips. Version measurements to reject
+  legacy or mixed comparisons; previous large-payload ratios overstated progress.
+
 - Retain the native recovery timer and scheduling notification across packet
   events. Reduce two-party RPC read-ahead storage to 8 KiB so larger frames
   reach their final allocation after a smaller copied prefix; message limits

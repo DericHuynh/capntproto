@@ -424,6 +424,17 @@ C++ Cap'n Proto uses plaintext
 TCP, gRPC plaintext HTTP/2, and WebSockets plaintext binary echo. These security
 and semantic differences are explicit; this is not peak concurrent throughput.
 
+Measurement version 2 uses bulk payload comparison and includes response/promise
+cleanup and a ten-second per-call deadline in each timed round trip. The old C++
+harness asserted each byte separately and sampled before destroying its response.
+That inflated its large-payload baseline: a five-repetition local control changed
+the C++ 64-KiB median from 156.025 to 75.219 microseconds after bulk comparison and
+cleanup were matched, before adding the matching deadline. This is a benchmark
+correction, not a protocol speedup. Historical unversioned comparisons below are
+retained as historical evidence and must not qualify the current target. The
+driver and report validator reject legacy or mixed measurement versions. No
+version-2 dedicated result or 1.2× qualification is claimed here yet.
+
 The runner destroys the droplet in `finally`, including failure/cancellation,
 and an Actions `always()` step verifies cleanup. A separate hourly janitor
 recovers hosts/keys abandoned by runner loss, scoped by repository tag, unique
