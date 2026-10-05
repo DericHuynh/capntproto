@@ -32,6 +32,30 @@ pub(crate) enum DatagramSocket {
     Simulated(super::simulation::Socket),
 }
 impl DatagramSocket {
+    pub(crate) fn enable_recv_aggregation(&self) {
+        #[cfg(target_os = "linux")]
+        match self {
+            Self::Udp(socket) => socket.enable_recv_aggregation(),
+            #[cfg(test)]
+            Self::Simulated(_) => (),
+        }
+    }
+    pub(crate) async fn recv_batch(
+        &self,
+        bytes: &mut [u8],
+    ) -> io::Result<(usize, SocketAddr, usize)> {
+        #[cfg(target_os = "linux")]
+        match self {
+            Self::Udp(socket) => return socket.recv_batch(bytes).await,
+            #[cfg(test)]
+            Self::Simulated(_) => (),
+        }
+        #[cfg(any(not(target_os = "linux"), test))]
+        {
+            let (n, from) = self.recv_from(bytes).await?;
+            Ok((n, from, n.max(1)))
+        }
+    }
     pub(crate) fn new(socket: UdpSocket) -> io::Result<Self> {
         crate::rpc::packet_mtu::prepare(&socket)?;
         #[cfg(target_os = "linux")]

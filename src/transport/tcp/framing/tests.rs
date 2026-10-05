@@ -103,3 +103,55 @@ async fn coalesces_a_ready_frame_and_propagates_write_zero_and_flush_failure() {
     );
     assert_eq!(sink.flushes, 1);
 }
+
+#[tokio::test]
+async fn batches_data_and_receipts_without_changing_framing_or_flush_fences() {
+    let data = [17; 16384];
+    let receipt = [29; crate::native_shutdown::FRAME_BYTES];
+    let frames = [
+        (0, &data[..]),
+        (0, &data[..]),
+        (0, &data[..]),
+        (0, &data[..]),
+        (0, &[31, 32][..]),
+        (1, &receipt[..]),
+    ];
+    let mut expected = Vec::new();
+    for (kind, bytes) in frames {
+        expected.push(kind);
+        expected.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+        expected.extend_from_slice(bytes);
+    }
+    for vectored in [false, true] {
+        for maximum in [16383, 16384, 16385, 65536, usize::MAX] {
+            let mut sink = output(maximum, vectored);
+            write_batch(&mut sink, &frames).await.unwrap();
+            assert_eq!(sink.bytes, expected);
+            assert_eq!(sink.flushes, 1);
+            if vectored && maximum == usize::MAX {
+                assert_eq!(sink.writes, 1);
+            }
+        }
+    }
+    let mut sink = output(usize::MAX, true);
+    sink.fail_flush = true;
+    assert_eq!(
+        write_batch(&mut sink, &frames).await.unwrap_err().kind(),
+        io::ErrorKind::BrokenPipe
+    );
+    assert_eq!(sink.bytes, expected);
+    assert_eq!(sink.flushes, 1);
+
+    let mut sink = output(usize::MAX, true);
+    assert_eq!(
+        write_batch(&mut sink, &[(0, &[][..]); BATCH_FRAMES + 1])
+            .await
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::InvalidInput
+    );
+    write_batch(&mut sink, &[]).await.unwrap();
+    assert!(sink.bytes.is_empty());
+    assert_eq!(sink.writes, 0);
+    assert_eq!(sink.flushes, 0);
+}

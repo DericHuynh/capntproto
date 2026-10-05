@@ -89,7 +89,9 @@ fn session(
     local: [u8; 32],
     peer: [u8; 32],
 ) -> AuthenticatedSession {
-    let (app, io) = crate::rpc::local_io::pair(64 * 1024);
+    // A 64 KiB RPC also has an envelope and segment table. Admit the whole
+    // common large message, rather than parking its final bytes behind a read.
+    let (app, io) = crate::rpc::local_io::pair(crate::rpc::QUIC_BUFFER_BYTES);
     let shutdown = Control::new();
     let control = shutdown.clone();
     let mobility = Mobility::unavailable();
@@ -126,18 +128,35 @@ async fn bridge(
 ) -> io::Result<()> {
     let (mut input, mut output) = tokio::io::split(stream);
     let (mut app_read, mut app_write) = app.into_split();
-    let (queue, mut frames) = mpsc::channel::<(u8, Vec<u8>)>(8);
+    let (queue, mut frames) = mpsc::channel::<(u8, Vec<u8>)>(framing::BATCH_FRAMES);
     let protocol = Rc::new(RefCell::new(Protocol::default()));
     let changed = Rc::new(Notify::new());
     let written = Rc::new(Cell::new(0u64));
     let acknowledged = Rc::new(Cell::new(false));
     let send = async {
-        while let Some((kind, bytes)) = frames.recv().await {
-            framing::write(&mut output, kind, &bytes).await?;
-            if kind == 1 && bytes[4] != 1 {
+        let mut batch = Vec::with_capacity(framing::BATCH_FRAMES);
+        while let Some(frame) = frames.recv().await {
+            batch.push(frame);
+            while batch.len() < framing::BATCH_FRAMES {
+                match frames.try_recv() {
+                    Ok(frame) => batch.push(frame),
+                    Err(_) => break,
+                }
+            }
+            let mut slices = [(0, &[][..]); framing::BATCH_FRAMES];
+            for (slice, (kind, bytes)) in slices.iter_mut().zip(&batch) {
+                *slice = (*kind, bytes);
+            }
+            framing::write_batch(&mut output, &slices[..batch.len()]).await?;
+            // Publish acknowledgement only after the entire batch flushes.
+            if batch
+                .iter()
+                .any(|(kind, bytes)| *kind == 1 && bytes[4] != 1)
+            {
                 acknowledged.set(true);
                 changed.notify_one();
             }
+            batch.clear();
         }
         Ok::<_, io::Error>(())
     };

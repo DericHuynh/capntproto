@@ -310,10 +310,28 @@ impl PacketSocket {
             Self::Shared(s) => s.local_addr(),
         }
     }
+    fn enable_recv_aggregation(&self) {
+        if let Self::Dedicated(socket) = self {
+            socket.enable_recv_aggregation();
+        }
+    }
+    // Used before the packet engine takes ownership and enables aggregation.
     pub(crate) async fn recv_from(&mut self, buf: &mut [u8]) -> io::Result<(usize, SocketAddr)> {
         match self {
             Self::Dedicated(s) => s.recv_from(buf).await,
             Self::Shared(s) => s.recv_from(buf).await,
+        }
+    }
+    pub(crate) async fn recv_batch(
+        &mut self,
+        buf: &mut [u8],
+    ) -> io::Result<(usize, SocketAddr, usize)> {
+        match self {
+            Self::Dedicated(s) => s.recv_batch(buf).await,
+            Self::Shared(s) => {
+                let (n, from) = s.recv_from(buf).await?;
+                Ok((n, from, n.max(1)))
+            }
         }
     }
     async fn send_to(&self, bytes: &[u8], to: SocketAddr) -> io::Result<usize> {
@@ -411,6 +429,7 @@ async fn drive_packets(
     let mut mtu_recovery = crate::rpc::packet_mtu::Recovery::default();
     let (mut reader, mut writer) = io;
     let mut local = socket.local_addr()?;
+    socket.enable_recv_aggregation();
     // Keep one registration alive while packet and application events run.
     // Recreating these futures per event churns notification and timer state.
     let changed = schedule_changed.notified();
@@ -423,19 +442,28 @@ async fn drive_packets(
         // Consume a bounded receive burst before generating acknowledgements.
         // Flushing after each datagram creates an ACK and scheduler round trip
         // per packet even when the rest of the same stream write is queued.
+        // Finish an aggregate already received before yielding (at most 64
+        // datagrams / 65535 bytes); never discard its tail at the burst bound.
+        let mut received_packets = 0;
         for _ in 0..16 {
-            let Some(packet) = socket.recv_from(&mut udp).now_or_never() else {
+            let Some(packet) = socket.recv_batch(&mut udp).now_or_never() else {
                 break;
             };
-            let (n, from) = packet?;
-            if !crate::nat::is_binding_message(&udp[..n]) {
-                match engine
-                    .conn
-                    .recv(&mut udp[..n], quiche::RecvInfo { from, to: local })
-                {
-                    Ok(_) | Err(quiche::Error::Done | quiche::Error::CryptoFail) => (),
-                    Err(e) => return Err(error(e)),
+            let (n, from, segment) = packet?;
+            for packet in udp[..n].chunks_mut(segment) {
+                if !crate::nat::is_binding_message(packet) {
+                    match engine
+                        .conn
+                        .recv(packet, quiche::RecvInfo { from, to: local })
+                    {
+                        Ok(_) | Err(quiche::Error::Done | quiche::Error::CryptoFail) => (),
+                        Err(e) => return Err(error(e)),
+                    }
                 }
+            }
+            received_packets += n.div_ceil(segment);
+            if received_packets >= 16 {
+                break;
             }
         }
         if !engine.step(tokio::time::Instant::now)? {
@@ -446,6 +474,7 @@ async fn drive_packets(
                 mobility.step(&mut engine.conn, &mut socket, tokio::time::Instant::now)?
             {
                 local = migrated;
+                socket.enable_recv_aggregation();
             }
         }
         if engine.ready() {
@@ -589,12 +618,14 @@ async fn drive_packets(
                     None => datagrams.as_mut().unwrap().send_closed = true,
                 }
             },
-            r=socket.recv_from(&mut udp) => {
-                let(n,from)=r?;
-                if !crate::nat::is_binding_message(&udp[..n]) {
-                    match engine.conn.recv(&mut udp[..n],quiche::RecvInfo {from,to:local}) {
-                        Ok(_)|Err(quiche::Error::Done)|Err(quiche::Error::CryptoFail) => {},
-                        Err(e)=>return Err(error(e)),
+            r=socket.recv_batch(&mut udp) => {
+                let(n,from,segment)=r?;
+                for packet in udp[..n].chunks_mut(segment) {
+                    if !crate::nat::is_binding_message(packet) {
+                        match engine.conn.recv(packet,quiche::RecvInfo {from,to:local}) {
+                            Ok(_)|Err(quiche::Error::Done)|Err(quiche::Error::CryptoFail) => {},
+                            Err(e)=>return Err(error(e)),
+                        }
                     }
                 }
             },

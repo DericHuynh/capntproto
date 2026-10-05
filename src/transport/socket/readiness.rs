@@ -6,6 +6,14 @@ use tokio::{
     net::UdpSocket,
 };
 
+// recvmsg's control headers require cmsghdr alignment, including when the
+// backing bytes live on the stack. No per-datagram allocation is needed.
+#[repr(C)]
+struct ReceiveControl {
+    _align: [nix::libc::cmsghdr; 0],
+    bytes: [u8; 256],
+}
+
 pub(crate) struct Socket {
     read: AsyncFd<std::net::UdpSocket>,
 }
@@ -17,6 +25,81 @@ impl Socket {
     }
     pub(super) fn local_addr(&self) -> io::Result<SocketAddr> {
         self.read.get_ref().local_addr()
+    }
+    pub(super) fn enable_recv_aggregation(&self) {
+        // Optional Linux offload. Unsupported kernels keep individual packets.
+        let _ = nix::sys::socket::setsockopt(
+            self.read.get_ref(),
+            nix::sys::socket::sockopt::UdpGroSegment,
+            &true,
+        );
+    }
+    pub(super) async fn recv_batch(
+        &self,
+        bytes: &mut [u8],
+    ) -> io::Result<(usize, SocketAddr, usize)> {
+        use nix::sys::socket::{recvmsg, ControlMessageOwned, MsgFlags, SockaddrStorage};
+        use std::os::fd::AsRawFd;
+        loop {
+            let mut ready = self.read.readable().await?;
+            if let Ok(result) = ready.try_io(|socket| {
+                // Leave room for ordinary ancillary options on caller-owned
+                // sockets (timestamps/pktinfo), in addition to UDP_GRO.
+                let mut control = ReceiveControl {
+                    _align: [],
+                    bytes: [0; 256],
+                };
+                let mut buffers = [io::IoSliceMut::new(bytes)];
+                let received = recvmsg::<SockaddrStorage>(
+                    socket.get_ref().as_raw_fd(),
+                    &mut buffers,
+                    Some(&mut control.bytes),
+                    MsgFlags::MSG_DONTWAIT,
+                )?;
+                let address = received
+                    .address
+                    .ok_or_else(|| io::Error::other("missing UDP source"))?;
+                let from = if let Some(v4) = address.as_sockaddr_in() {
+                    SocketAddr::new(v4.ip().into(), v4.port())
+                } else if let Some(v6) = address.as_sockaddr_in6() {
+                    SocketAddr::V6(std::net::SocketAddrV6::new(
+                        v6.ip(),
+                        v6.port(),
+                        v6.flowinfo(),
+                        v6.scope_id(),
+                    ))
+                } else {
+                    return Err(io::Error::other("invalid UDP source"));
+                };
+                // Treat truncation as packet loss. Never feed a prefix or an
+                // aggregate with missing boundaries to QUIC, and never let a
+                // bad datagram close the shared listener.
+                if received
+                    .flags
+                    .intersects(MsgFlags::MSG_TRUNC | MsgFlags::MSG_CTRUNC)
+                {
+                    return Ok((0, from, 1));
+                }
+                let mut segment = received.bytes.max(1);
+                for message in received.cmsgs()? {
+                    if let ControlMessageOwned::UdpGroSegments(size) = message {
+                        let Some(size) = usize::try_from(size)
+                            .ok()
+                            .filter(|n| *n > 0 && *n <= received.bytes)
+                        else {
+                            return Ok((0, from, 1));
+                        };
+                        segment = size;
+                    }
+                }
+                if received.bytes.div_ceil(segment) > 64 {
+                    return Ok((0, from, 1));
+                }
+                Ok((received.bytes, from, segment))
+            }) {
+                return result;
+            }
+        }
     }
     pub(super) fn try_send_to(&self, bytes: &[u8], to: SocketAddr) -> io::Result<usize> {
         self.read.get_ref().send_to(bytes, to)
@@ -68,6 +151,80 @@ mod tests {
         let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         crate::rpc::packet_mtu::prepare(&socket).unwrap();
         Socket::new(socket).unwrap()
+    }
+
+    #[tokio::test]
+    async fn receive_aggregation_preserves_boundaries_sources_and_cancellation() {
+        for address in ["127.0.0.1:0", "[::1]:0"] {
+            for aggregation in [false, true] {
+                let tx = Socket::new(UdpSocket::bind(address).await.unwrap()).unwrap();
+                let rx = Socket::new(UdpSocket::bind(address).await.unwrap()).unwrap();
+                if aggregation {
+                    rx.enable_recv_aggregation();
+                }
+                let mut output = vec![0; 65535];
+                assert!(rx.recv_batch(&mut output).now_or_never().is_none());
+                let expected = [vec![17; 1200], vec![29; 1200], vec![31; 57]];
+                let bytes = expected.concat();
+                crate::rpc::packet_batch::Sender::default()
+                    .send(&tx, &bytes, 1200, rx.local_addr().unwrap())
+                    .await
+                    .unwrap();
+                let mut packets = Vec::new();
+                while packets.len() < expected.len() {
+                    let (length, from, segment) =
+                        tokio::time::timeout(Duration::from_secs(1), rx.recv_batch(&mut output))
+                            .await
+                            .unwrap()
+                            .unwrap();
+                    assert_eq!(from, tx.local_addr().unwrap());
+                    packets.extend(output[..length].chunks(segment).map(<[u8]>::to_vec));
+                }
+                assert_eq!(packets, expected);
+                assert!(rx.recv_batch(&mut output).now_or_never().is_none());
+                tx.send_to(b"next", rx.local_addr().unwrap()).await.unwrap();
+                let (length, from, segment) =
+                    tokio::time::timeout(Duration::from_secs(1), rx.recv_batch(&mut output))
+                        .await
+                        .unwrap()
+                        .unwrap();
+                assert_eq!(&output[..length], b"next");
+                assert_eq!(segment, length);
+                assert_eq!(from, tx.local_addr().unwrap());
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn truncated_aggregates_are_discarded_without_closing_the_socket() {
+        let tx = socket().await;
+        let rx = socket().await;
+        rx.enable_recv_aggregation();
+        crate::rpc::packet_batch::Sender::default()
+            .send(&tx, &[7; 2400], 1200, rx.local_addr().unwrap())
+            .await
+            .unwrap();
+        tx.send_to(b"after loss", rx.local_addr().unwrap())
+            .await
+            .unwrap();
+        let mut output = [0; 64];
+        let mut discarded = 0;
+        loop {
+            let (length, from, segment) =
+                tokio::time::timeout(Duration::from_secs(1), rx.recv_batch(&mut output))
+                    .await
+                    .unwrap()
+                    .unwrap();
+            assert_eq!(from, tx.local_addr().unwrap());
+            if length == 0 {
+                discarded += 1;
+                assert_eq!(segment, 1);
+            } else {
+                assert_eq!(&output[..length], b"after loss");
+                break;
+            }
+        }
+        assert!((1..=2).contains(&discarded));
     }
 
     #[tokio::test]
