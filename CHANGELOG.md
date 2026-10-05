@@ -1,5 +1,10 @@
 # 0.1.0 developer preview (unpublished)
 
+- Skip redundant diagnostic clock reads when adding RPC messages to an existing
+  write batch. Recheck queue state under its locks when the receiver races the
+  producer, and keep user clock callbacks outside locks. Add timestamp, stale
+  hint and reentrant-clock regressions.
+
 - Retain owned TCP/TLS frame payloads through bounded batched writes, removing
   two outgoing staging copies. Reuse receive storage and transfer it into an
   empty RPC bridge, preserving partial admission, wire framing and receipt

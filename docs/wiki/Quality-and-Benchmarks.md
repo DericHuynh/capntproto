@@ -1162,6 +1162,68 @@ Workspace Clippy with warnings denied, the unsafe-documentation gate and all
 98 project-document checks also passed. This was a focused regression run,
 not a new complete-workspace qualification.
 
+### Queue clock and executor tracing
+
+Further release tracing on 2026-10-05 found that the bounded executor drive
+already stops after two turns on ordinary server deliveries and three on client
+deliveries. Of 10,000 observed 64-KiB receive deliveries, 48 server and ten client
+deliveries reached the eight-turn limit without producing output. Reducing that
+limit would change scheduling for the exceptional cases, rather than remove
+eight turns from every call; no scheduling change was retained. A separate
+8-KiB → 2-KiB initial reader-buffer experiment did not improve large-message
+latency (163.917 → 164.896 µs over five alternating repetitions) and was discarded.
+
+The retained queue change avoids sampling the diagnostic clock for every message
+when only the oldest timestamp in a pending batch is needed. A relaxed atomic
+hint allows producers to skip that read; the existing locks remain authoritative.
+If the receiver has drained the queue, the producer releases both locks, samples
+the clock and retries. User clocks can still reenter the queue. Concurrent
+producers may take redundant samples, but cannot leave an accepted batch without
+its timestamp. FIFO order, active-batch metrics, admission and flush receipts are
+unchanged. Pinned C++ queue-age and batch-boundary comparisons still pass.
+
+A separate native QUIC diagnostic enqueued 32 independent echo RPCs before
+awaiting all responses. Every sequence and payload was validated, using the
+same authenticated transport and ten-second batch deadline. Each latency sample
+measured completion of the entire batch. Its measurement version was `20032`,
+so the canonical version-2 acceptance validator rejects these samples.
+
+| Payload per call / experiment | Previous batch p50 (µs) | New batch p50 (µs) | Change |
+| --- | ---: | ---: | ---: |
+| 64 B / initial comparison | 270.985 | 171.740 | −36.6% |
+| 64 B / independent repeat | 268.753 | 166.504 | −38.0% |
+| 64 KiB / initial comparison | 3086.078 | 3102.701 | +0.5% |
+
+Each comparison used five alternating release repetitions, 1,000 warmup batches
+and 1,000 measured batches per repetition, on CPUs 0 and 2 of the local Ryzen
+5800H with HPET. All samples were retained, and builds and tests were stopped
+during latency runs. The 64-byte repeat improved in every paired repetition.
+A separate client counter over 2,000 batches recorded 90,161 → 28,121 clock reads:
+about 31 fewer per batch, confirming the intended mechanism. The slow local HPET
+clock magnifies the benefit; this result must not be projected onto the dedicated
+host's much faster `kvm-clock` without measuring it.
+
+Sequential RPCs do not amortize queue timestamps: the 20,000-call 64-KiB counter
+remained near 461,000 clock reads before and after. Initial five- and
+seven-repetition sequential comparisons showed approximately 1.6% and 2.0%
+higher 64-KiB medians, respectively. These results are retained along with the
+batch gains, rather than treated as progress toward the sequential target.
+A rebuilt control was byte-for-byte identical to the original executable.
+Nine further alternating repetitions increased measured calls to 10,000 after
+10,000 warmups, retaining all 90,000 samples per executable. Pooled medians
+were 165.525 → 164.617 µs (−0.5%), while p95 rose 205.544 → 214.065 µs and
+p99 rose 265.608 → 290.472 µs. The varying results establish neither a reliable
+sequential gain nor uniformly improved tails. This change is retained for the
+repeatable small-batch benefit; dedicated qualification is still needed.
+
+The change passed 69 selected nextest checks, including concurrent producer
+FIFO, partial writes, cancellation, reentrant clocks, allocations, admission,
+TCP/TLS and QUIC native vats, C++ comparisons and TLA+ trace replay. Workspace
+Clippy with warnings denied, the unsafe-documentation gate, formatting and all
+98 project-document checks also passed. This is a focused regression run. The
+last dedicated canonical 64-KiB ratio remains 2.430×; the 1.2× native QUIC/C++
+target is still unmet.
+
 ### Clock diagnostics
 
 The report records current and available Linux clocksources and five batches of
