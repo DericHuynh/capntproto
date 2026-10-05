@@ -1102,6 +1102,66 @@ With the tree held unchanged, all nine compiler tests and both qualification
 checks passed. Clippy and the unsafe-documentation gate passed; the workspace
 run also passed Miri, native fuzz smoke, C++ interop and optimized runtime checks.
 
+### Profiling and owned TCP frame buffers
+
+A 2026-10-05 follow-up profiled the release client and counted copies at their
+call sites. About 24% of sampled user cycles were in AES-GCM encryption and
+decryption; memory copies were another substantial cost. Profiling itself
+increased elapsed time, so these samples identify work rather than establish
+latency. The C++ control remains plaintext TCP. No encryption, authentication,
+congestion control, pacing or deadline checks were removed.
+
+For 2,000 native QUIC calls at 64 KiB, the copy counter identified approximately
+131 MB at each of the application payload setter, local send bridge, quiche
+send emission, quiche receive-frame ownership, quiche receive emission and
+local RPC reader. It also observed two full-payload clearing paths, the smaller
+framing-prefix copy, and about 32.8 MB of UDP batch-boundary copies. The earlier
+owned-reader experiment did remove its intended copy and clearing work, but
+that did not translate into a repeatable latency improvement. This confirms
+that removing a copy alone is insufficient evidence to keep a change.
+
+A new QUIC experiment retained the packet at a batch boundary instead of
+moving it, at the cost of another packet of buffer capacity. The counter
+confirmed removal of that roughly 16-KiB copy per call. However, seven alternating
+release repetitions measured 173.765 µs before and 177.118 µs after at 64 KiB.
+Background compilation made those timings provisional; they did not justify
+the added complexity, and the experiment was discarded. All 84 trials and
+their samples were retained locally, including slow repetitions.
+
+The retained change applies C++'s message-ownership pattern to native TCP/TLS.
+The bridge splits bounded owned chunks into views of at most 16 KiB, retaining
+them until the vectored batch finishes. It no longer copies outgoing data
+through a stack buffer and a fresh vector for each frame. The queue and active
+batch still each hold at most eight frames, and the producer retains at most
+one additional 128-KiB chunk. Views can retain their backing allocations until
+the batch completes. Receive framing reuses initialized storage, limits each
+read to the validated frame length, and transfers complete buffers into an
+empty local pipe. A full pipe still uses bounded partial admission. Receipt
+acknowledgements still require actual delivery and successful output flush.
+
+Two local release comparisons each used five alternating repetitions, CPUs 0
+and 2, 10,000 warmups and 1,000 measured calls at every canonical payload size:
+
+| Native TCP/TLS, 64 KiB | Previous p50 (µs) | Owned-frame p50 (µs) | Reduction |
+| --- | ---: | ---: | ---: |
+| First comparison | 156.445 | 149.181 | 4.6% |
+| Repeat comparison | 160.286 | 154.838 | 3.4% |
+
+Pooling all 10,000 samples per payload gives 157.981 → 151.906 µs at 64 KiB
+(3.8%); pooled small-message medians change by +0.6% / +0.3% / −0.7% at
+0 / 64 / 1024 bytes. Tail latency varied substantially with background load;
+these are local diagnostics, not dedicated acceptance results. The copy counter
+separately confirms removal of both outgoing staging copies. This TCP improvement
+does not change the canonical native QUIC/C++ acceptance ratio. The last dedicated
+64-KiB result remains 2.430×, and the 1.2× target is still unmet.
+
+The retained change passed 138 selected nextest checks covering transport
+framing, local buffer ownership, blocked-receiver receipt delivery, native vats,
+TLS/mTLS, capability pipelining, shutdown and transport TLA+ trace replay.
+Workspace Clippy with warnings denied, the unsafe-documentation gate and all
+98 project-document checks also passed. This was a focused regression run,
+not a new complete-workspace qualification.
+
 ### Clock diagnostics
 
 The report records current and available Linux clocksources and five batches of

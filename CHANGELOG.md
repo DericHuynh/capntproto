@@ -1,5 +1,10 @@
 # 0.1.0 developer preview (unpublished)
 
+- Retain owned TCP/TLS frame payloads through bounded batched writes, removing
+  two outgoing staging copies. Reuse receive storage and transfer it into an
+  empty RPC bridge, preserving partial admission, wire framing and receipt
+  fences. Add fragmented-frame, truncation and blocked-receiver regressions.
+
 - Bound retries for DigitalOcean's explicit rejection of a newly registered SSH
   key, verifying key ownership and absence of a matching host before retrying.
   Ambiguous creation responses and unrelated errors still stop provisioning.
