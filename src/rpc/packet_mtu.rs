@@ -39,7 +39,7 @@ pub(crate) struct Recovery {
     previous_acked: Option<u64>,
 }
 impl Recovery {
-    pub(crate) fn on_timeout(&mut self, conn: &mut quiche::Connection) {
+    pub(crate) fn on_timeout(&mut self, conn: &mut quiche::Connection<impl quiche::BufFactory>) {
         let acked = conn.stats().acked_bytes;
         if self.previous_acked == Some(acked) && conn.pmtu().is_some() {
             conn.revalidate_pmtu();

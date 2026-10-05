@@ -518,7 +518,7 @@ impl Reservation {
                     break (n, remote);
                 }
             };
-            let mut conn = quiche::accept(
+            let mut conn = quiche::accept_with_buf_factory::<transport::buffers::Factory>(
                 &quiche::ConnectionId::from_ref(&id),
                 None,
                 local,
@@ -633,7 +633,7 @@ async fn connect_socket_version(
         version,
     )
     .map_err(transport::error)?;
-    let conn = quiche::connect_with_dcid(
+    let conn = quiche::connect_with_dcid_and_buffer_factory::<transport::buffers::Factory>(
         None,
         &quiche::ConnectionId::from_ref(&transport::cid()),
         &quiche::ConnectionId::from_ref(&target.connection_id),

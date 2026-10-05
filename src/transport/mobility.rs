@@ -158,7 +158,7 @@ pub(super) fn pair() -> (Mobility, Driver) {
 impl Driver {
     fn issue(
         &mut self,
-        conn: &mut quiche::Connection,
+        conn: &mut quiche::Connection<impl quiche::BufFactory>,
         socket: &PacketSocket,
         retire: bool,
     ) -> io::Result<()> {
@@ -187,7 +187,7 @@ impl Driver {
     }
     pub(super) fn step(
         &mut self,
-        conn: &mut quiche::Connection,
+        conn: &mut quiche::Connection<impl quiche::BufFactory>,
         socket: &mut PacketSocket,
         now: impl FnOnce() -> Instant,
     ) -> io::Result<Option<SocketAddr>> {
@@ -297,7 +297,7 @@ impl Driver {
     pub(super) fn command(
         &mut self,
         command: Option<Command>,
-        conn: &mut quiche::Connection,
+        conn: &mut quiche::Connection<impl quiche::BufFactory>,
         socket: &PacketSocket,
         now: Instant,
     ) {

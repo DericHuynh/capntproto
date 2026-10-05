@@ -11,9 +11,9 @@ use crate::semantics::{NativeStreamGate, StreamRole};
 use std::io;
 use tokio::time::Instant;
 
-pub(super) struct Engine {
+pub(super) struct Engine<F: quiche::BufFactory<Buf = bytes::Bytes> = super::buffers::Factory> {
     pub bulk: Option<super::bulk::Driver>,
-    pub conn: Box<quiche::Connection>,
+    pub conn: Box<quiche::Connection<F>>,
     pub tx: SendStream,
     pub rx: ReceiveStream,
     pub shutdown: Option<shutdown::ShutdownDriver>,
@@ -28,9 +28,9 @@ enum Phase {
     // then reports draining, but the validated receipt must survive that turn.
     Flushing { receipt: Receipt, control: Control },
 }
-impl Engine {
+impl<F: quiche::BufFactory<Buf = bytes::Bytes>> Engine<F> {
     pub(super) fn new(
-        conn: Box<quiche::Connection>,
+        conn: Box<quiche::Connection<F>>,
         authenticate_stream: bool,
         shutdown: Option<shutdown::ShutdownDriver>,
         scheduling: scheduling::Driver,
@@ -130,9 +130,9 @@ impl Engine {
         }
         let graceful = self.shutdown.as_ref().is_some_and(|s| s.requested());
         if self.ready() {
-            if let Some((bytes, fin)) = self.tx.pending(graceful) {
-                match self.conn.stream_send(0, bytes, fin) {
-                    Ok(n) => self.tx.sent(n)?,
+            if let Some((bytes, fin)) = self.tx.pending_owned(graceful) {
+                match self.conn.stream_send_zc(0, bytes, fin) {
+                    Ok((n, _remaining)) => self.tx.sent(n)?,
                     Err(quiche::Error::Done) => (),
                     Err(e) => return Err(error(e)),
                 }

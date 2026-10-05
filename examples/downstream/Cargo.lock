@@ -125,6 +125,7 @@ name = "capntproto"
 version = "0.1.0"
 dependencies = [
  "boring",
+ "bytes",
  "capntproto-codegen",
  "capntproto-compiler",
  "capntproto-core",

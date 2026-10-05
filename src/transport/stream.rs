@@ -1,7 +1,9 @@
-//! Owned RPC stream progress. No sockets, clocks, tasks or shared mutable state.
+//! Owned RPC stream progress and bounded bridge reads. No sockets or clocks.
 #![forbid(unsafe_code)]
 
+use bytes::{BufMut, Bytes, BytesMut};
 use std::io;
+use tokio::io::{AsyncRead, AsyncReadExt};
 
 const BUFFER_BYTES: usize = crate::rpc::QUIC_BUFFER_BYTES;
 
@@ -13,14 +15,16 @@ enum SendPhase {
 }
 
 pub(super) struct SendStream {
-    buffer: Vec<u8>,
+    buffer: BytesMut,
+    pending: Bytes,
     phase: SendPhase,
     written: u64,
 }
 impl Default for SendStream {
     fn default() -> Self {
         Self {
-            buffer: vec![0; BUFFER_BYTES],
+            buffer: BytesMut::with_capacity(BUFFER_BYTES),
+            pending: Bytes::new(),
             phase: SendPhase::Reading,
             written: 0,
         }
@@ -30,11 +34,31 @@ impl SendStream {
     pub(super) fn can_read(&self) -> bool {
         matches!(self.phase, SendPhase::Reading)
     }
+    #[cfg(test)]
     pub(super) fn read_buffer(&mut self) -> io::Result<&mut [u8]> {
         if !self.can_read() {
             return Err(invalid_progress());
         }
+        self.buffer.resize(BUFFER_BYTES, 0);
         Ok(&mut self.buffer)
+    }
+    pub(super) async fn read_from(
+        &mut self,
+        reader: &mut (impl AsyncRead + Unpin),
+    ) -> io::Result<usize> {
+        if !self.can_read() {
+            return Err(invalid_progress());
+        }
+        // Reclaim acknowledged storage without allocating. While a packet still
+        // owns a view, consume the rest of that slab instead of allocating
+        // another 128 KiB for every small write. Retire at most 4 KiB of unused
+        // tail space per slab. Each read remains capped at the bridge budget.
+        if !self.buffer.try_reclaim(BUFFER_BYTES) && self.buffer.capacity() < 4096 {
+            self.buffer.reserve(BUFFER_BYTES);
+        }
+        reader
+            .read_buf(&mut (&mut self.buffer).limit(BUFFER_BYTES))
+            .await
     }
     pub(super) fn read(&mut self, count: usize) -> io::Result<()> {
         if !self.can_read() || count > self.buffer.len() {
@@ -48,12 +72,24 @@ impl SendStream {
                 length: count,
             }
         };
+        self.buffer.truncate(count);
+        self.pending = self.buffer.split().freeze();
         Ok(())
     }
+    #[cfg(test)]
     pub(super) fn pending(&self, graceful: bool) -> Option<(&[u8], bool)> {
         match self.phase {
-            SendPhase::Buffered { offset, length } => Some((&self.buffer[offset..length], false)),
+            SendPhase::Buffered { offset, length } => Some((&self.pending[offset..length], false)),
             SendPhase::Eof if !graceful => Some((&[], true)),
+            _ => None,
+        }
+    }
+    pub(super) fn pending_owned(&self, graceful: bool) -> Option<(Bytes, bool)> {
+        match self.phase {
+            SendPhase::Buffered { offset, length } => {
+                Some((self.pending.slice(offset..length), false))
+            }
+            SendPhase::Eof if !graceful => Some((Bytes::new(), true)),
             _ => None,
         }
     }
@@ -78,6 +114,9 @@ impl SendStream {
             .ok_or_else(|| io::Error::other("Native stream counter exhausted"))?;
         self.phase = next;
         self.written = written;
+        if self.can_read() {
+            self.pending = Bytes::new();
+        }
         Ok(())
     }
     pub(super) fn written(&self) -> u64 {

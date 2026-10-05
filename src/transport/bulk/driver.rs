@@ -78,7 +78,7 @@ struct Preface {
 }
 
 pub(crate) fn pair(
-    conn: &quiche::Connection,
+    conn: &quiche::Connection<impl quiche::BufFactory>,
     local: [u8; 32],
     peer: [u8; 32],
     control: crate::native_shutdown::Control,
@@ -127,7 +127,10 @@ impl Driver {
     pub fn close_admission(&self) {
         self.shared.borrow_mut().closing = true;
     }
-    fn initialize(&mut self, conn: &mut quiche::Connection) -> io::Result<()> {
+    fn initialize(
+        &mut self,
+        conn: &mut quiche::Connection<impl quiche::BufFactory>,
+    ) -> io::Result<()> {
         if self.initialized {
             return Ok(());
         }
@@ -159,7 +162,10 @@ impl Driver {
         conn.stream_priority(0, 0, false)
             .map_err(crate::transport::error)
     }
-    pub fn step(&mut self, conn: &mut quiche::Connection) -> io::Result<()> {
+    pub fn step(
+        &mut self,
+        conn: &mut quiche::Connection<impl quiche::BufFactory>,
+    ) -> io::Result<()> {
         self.initialize(conn)?;
         let pending = std::mem::take(&mut self.shared.borrow_mut().pending);
         self.entries.extend(pending);
@@ -337,7 +343,7 @@ impl Drop for Driver {
         }
     }
 }
-fn reset(conn: &mut quiche::Connection, id: u64) {
+fn reset(conn: &mut quiche::Connection<impl quiche::BufFactory>, id: u64) {
     let _ = conn.stream_shutdown(id, quiche::Shutdown::Read, RESET);
     let _ = conn.stream_shutdown(id, quiche::Shutdown::Write, RESET);
 }
@@ -417,7 +423,7 @@ impl Entry {
     }
     fn step(
         &mut self,
-        conn: &mut quiche::Connection,
+        conn: &mut quiche::Connection<impl quiche::BufFactory>,
         cx: &mut Context<'_>,
         credit: u64,
     ) -> io::Result<bool> {
@@ -434,7 +440,7 @@ impl Entry {
 impl Producer {
     fn step(
         &mut self,
-        conn: &mut quiche::Connection,
+        conn: &mut quiche::Connection<impl quiche::BufFactory>,
         id: u64,
         length: u64,
         progress: &Progress,
@@ -558,7 +564,7 @@ impl Producer {
 impl Consumer {
     fn step(
         &mut self,
-        conn: &mut quiche::Connection,
+        conn: &mut quiche::Connection<impl quiche::BufFactory>,
         id: u64,
         length: u64,
         progress: &Progress,

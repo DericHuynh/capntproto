@@ -1,6 +1,7 @@
 //! Authenticated TCP/TLS and QUIC sessions for native capability RPC.
 #[cfg(test)]
 pub(crate) mod backend_tests;
+pub(crate) mod buffers;
 pub mod bulk;
 #[cfg(test)]
 mod clock_tests;
@@ -90,7 +91,7 @@ pub async fn connect(
     config: &mut quiche::Config,
 ) -> io::Result<(DuplexStream, tokio::task::JoinHandle<io::Result<()>>)> {
     let local = socket.local_addr()?;
-    let conn = quiche::connect(
+    let conn = quiche::connect_with_buffer_factory::<buffers::Factory>(
         None,
         &quiche::ConnectionId::from_ref(&cid()),
         local,
@@ -109,7 +110,7 @@ pub async fn accept(
     let (n, remote) =
         tokio::time::timeout(Duration::from_secs(10), socket.recv_from(&mut buf)).await??;
     let local = socket.local_addr()?;
-    let mut conn = quiche::accept(
+    let mut conn = quiche::accept_with_buf_factory::<buffers::Factory>(
         &quiche::ConnectionId::from_ref(&cid()),
         None,
         local,
@@ -129,7 +130,7 @@ pub async fn accept(
 }
 fn spawn(
     socket: UdpSocket,
-    conn: quiche::Connection,
+    conn: buffers::Connection,
 ) -> io::Result<(DuplexStream, tokio::task::JoinHandle<io::Result<()>>)> {
     let (app, network) = tokio::io::duplex(crate::rpc::QUIC_BUFFER_BYTES);
     Ok((
@@ -345,7 +346,7 @@ struct SessionDrivers {
 }
 async fn drive(
     socket: PacketSocket,
-    conn: Box<quiche::Connection>,
+    conn: Box<buffers::Connection>,
     io: (
         impl tokio::io::AsyncRead + Unpin,
         impl tokio::io::AsyncWrite + Unpin,
@@ -390,7 +391,7 @@ async fn application_turn() {
 
 async fn drive_packets(
     mut socket: PacketSocket,
-    conn: Box<quiche::Connection>,
+    conn: Box<buffers::Connection>,
     io: (
         impl tokio::io::AsyncRead + Unpin,
         impl tokio::io::AsyncWrite + Unpin,
@@ -489,8 +490,7 @@ async fn drive_packets(
                     for _ in 0..8 {
                         application_turn().await;
                         if engine.tx.can_read() {
-                            if let Some(read) = reader.read(engine.tx.read_buffer()?).now_or_never()
-                            {
+                            if let Some(read) = engine.tx.read_from(&mut reader).now_or_never() {
                                 engine.tx.read(read?)?;
                                 break;
                             }
@@ -500,7 +500,7 @@ async fn drive_packets(
             }
         }
         if engine.tx.can_read() {
-            if let Some(read) = reader.read(engine.tx.read_buffer()?).now_or_never() {
+            if let Some(read) = engine.tx.read_from(&mut reader).now_or_never() {
                 engine.tx.read(read?)?;
                 application_progress = true;
             }
@@ -596,7 +596,7 @@ async fn drive_packets(
                     }
                 }
             },
-            r=async { reader.read(engine.tx.read_buffer()?).await }, if can_read => engine.tx.read(r?)?,
+            r=engine.tx.read_from(&mut reader), if can_read => engine.tx.read(r?)?,
             r=writer.write(engine.rx.pending()), if can_write => engine.delivered(r?)?,
             _=tokio::time::sleep(timeout) => mtu_recovery.on_timeout(&mut engine.conn),
         }
@@ -657,7 +657,7 @@ impl Drop for AuthenticatedSession {
 }
 pub(crate) async fn authenticated(
     socket: PacketSocket,
-    conn: Box<quiche::Connection>,
+    conn: Box<buffers::Connection>,
     local: [u8; 32],
     peer: [u8; 32],
 ) -> io::Result<AuthenticatedSession> {
@@ -744,7 +744,7 @@ pub async fn connect_for_version(
     let mut binding = b"ReProto native RPC v1\0".to_vec();
     binding.extend_from_slice(context);
     let mut config = config_for_version(identity, peer, psk, &binding, version).map_err(error)?;
-    let conn = quiche::connect(
+    let conn = quiche::connect_with_buffer_factory::<buffers::Factory>(
         None,
         &quiche::ConnectionId::from_ref(&cid()),
         socket.local_addr()?,
@@ -776,7 +776,7 @@ pub async fn accept_authenticated(
     let (n, remote) =
         tokio::time::timeout(Duration::from_secs(10), socket.recv_from(&mut buf)).await??;
     let local = socket.local_addr()?;
-    let mut conn = quiche::accept(
+    let mut conn = quiche::accept_with_buf_factory::<buffers::Factory>(
         &quiche::ConnectionId::from_ref(&cid()),
         None,
         local,

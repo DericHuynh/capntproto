@@ -9,8 +9,8 @@ use futures::FutureExt;
 use std::time::Duration;
 
 struct PacketCase {
-    a: quiche::Connection,
-    b: quiche::Connection,
+    a: crate::transport::buffers::Connection,
+    b: crate::transport::buffers::Connection,
     driver: ShutdownDriver,
     frame: [u8; FRAME_BYTES],
     failed: bool,
@@ -26,7 +26,10 @@ impl PacketCase {
         Self::from_pair(pair, crossed, valid)
     }
     fn from_pair(
-        (mut a, mut b): (quiche::Connection, quiche::Connection),
+        (mut a, mut b): (
+            crate::transport::buffers::Connection,
+            crate::transport::buffers::Connection,
+        ),
         crossed: bool,
         valid: bool,
     ) -> Self {

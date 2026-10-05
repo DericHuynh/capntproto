@@ -59,7 +59,7 @@ impl ShutdownDriver {
             .map(|f| f.encode().to_vec())
             .unwrap_or_default()
     }
-    pub fn finish_on_close(&self, conn: &quiche::Connection) {
+    pub fn finish_on_close(&self, conn: &quiche::Connection<impl quiche::BufFactory>) {
         let valid_close = conn.peer_error().is_some_and(|error| {
             error.is_app
                 && error.error_code == ACKNOWLEDGED_CLOSE
@@ -82,7 +82,7 @@ impl ShutdownDriver {
     }
     pub fn step(
         &mut self,
-        conn: &mut quiche::Connection,
+        conn: &mut quiche::Connection<impl quiche::BufFactory>,
         written: u64,
         drained: bool,
     ) -> io::Result<()> {
@@ -194,16 +194,17 @@ mod packet_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::transport::buffers::{Connection, Factory};
     use crate::transport::{config, Identity};
     use std::time::Duration;
-    fn pair(window: u64) -> (quiche::Connection, quiche::Connection) {
+    fn pair(window: u64) -> (Connection, Connection) {
         pair_profile(window, window, Some([7; 32]))
     }
     pub(super) fn pair_profile(
         a_window: u64,
         b_window: u64,
         psk: Option<[u8; 32]>,
-    ) -> (quiche::Connection, quiche::Connection) {
+    ) -> (Connection, Connection) {
         let a = Identity::generate();
         let b = Identity::generate();
         pair_identities(a_window, b_window, psk, &a, &b)
@@ -214,14 +215,14 @@ mod tests {
         psk: Option<[u8; 32]>,
         a: &Identity,
         b: &Identity,
-    ) -> (quiche::Connection, quiche::Connection) {
+    ) -> (Connection, Connection) {
         let mut ac = config(a, b.public_key(), psk, b"shutdown packet test").unwrap();
         let mut bc = config(b, a.public_key(), psk, b"shutdown packet test").unwrap();
         ac.set_initial_max_stream_data_uni(a_window);
         bc.set_initial_max_stream_data_uni(b_window);
         let aa = "127.0.0.1:1234".parse().unwrap();
         let ba = "127.0.0.1:4321".parse().unwrap();
-        let mut a = quiche::connect(
+        let mut a = quiche::connect_with_buffer_factory::<Factory>(
             None,
             &quiche::ConnectionId::from_ref(&[1; 16]),
             aa,
@@ -229,7 +230,7 @@ mod tests {
             &mut ac,
         )
         .unwrap();
-        let mut b = quiche::accept(
+        let mut b = quiche::accept_with_buf_factory::<Factory>(
             &quiche::ConnectionId::from_ref(&[2; 16]),
             None,
             ba,
@@ -244,11 +245,7 @@ mod tests {
         assert!(a.is_established() && b.is_established());
         (a, b)
     }
-    pub(super) fn pump(
-        a: &mut quiche::Connection,
-        b: &mut quiche::Connection,
-        drop_one: &mut bool,
-    ) {
+    pub(super) fn pump(a: &mut Connection, b: &mut Connection, drop_one: &mut bool) {
         let mut packet = [0; 1350];
         while let Ok((n, info)) = a.send(&mut packet) {
             if std::mem::take(drop_one) {
@@ -270,7 +267,7 @@ mod tests {
             }
         }
     }
-    fn timeout(c: &mut quiche::Connection) {
+    fn timeout(c: &mut Connection) {
         if c.timeout().is_some_and(|t| t.is_zero()) {
             c.on_timeout();
         }

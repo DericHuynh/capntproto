@@ -1,5 +1,73 @@
 use super::stream::{ReceiveStream, SendStream};
 
+#[tokio::test]
+async fn owned_send_views_survive_partial_sends_reuse_and_canceled_reads() {
+    use futures::FutureExt;
+    use tokio::io::AsyncWriteExt;
+    let mut tx = SendStream::default();
+    let (mut writer, mut reader) = tokio::io::duplex(16);
+    assert!(tx.read_from(&mut reader).now_or_never().is_none());
+    assert!(tx.can_read());
+    writer.write_all(b"old bytes").await.unwrap();
+    let count = tx.read_from(&mut reader).await.unwrap();
+    tx.read(count).unwrap();
+    let (retained, fin) = tx.pending_owned(false).unwrap();
+    assert!(!fin);
+    tx.sent(4).unwrap();
+    assert_eq!(&tx.pending_owned(false).unwrap().0[..], b"bytes");
+    tx.sent(5).unwrap();
+    assert_eq!(tx.written(), 9);
+
+    // A lost packet can retain the original view while the next read reserves
+    // storage. The full bridge capacity must not modify that immutable view.
+    let input = vec![0x72; crate::rpc::QUIC_BUFFER_BYTES + 1];
+    let mut input = &input[..];
+    let count = tx.read_from(&mut input).await.unwrap();
+    assert!((4096..=crate::rpc::QUIC_BUFFER_BYTES).contains(&count));
+    tx.read(count).unwrap();
+    let (next, _) = tx.pending_owned(false).unwrap();
+    assert_eq!(&retained[..], b"old bytes");
+    assert!(next.iter().all(|b| *b == 0x72));
+    tx.sent(count).unwrap();
+    drop(retained);
+    drop(next);
+
+    writer.shutdown().await.unwrap();
+    let count = tx.read_from(&mut reader).await.unwrap();
+    assert_eq!(count, 0);
+    tx.read(count).unwrap();
+    assert!(tx.pending_owned(true).is_none());
+    assert_eq!(
+        tx.pending_owned(false).unwrap(),
+        (bytes::Bytes::new(), true)
+    );
+    tx.sent(0).unwrap();
+    assert!(tx.drained());
+}
+
+#[test]
+fn retained_small_writes_do_not_allocate_one_slab_per_write() {
+    use futures::FutureExt;
+    let mut tx = SendStream::default();
+    let mut retained = Vec::with_capacity(1024);
+    let counts = allocation_counter::measure(|| {
+        for _ in 0..1024 {
+            let mut input = &b"x"[..];
+            let n = tx.read_from(&mut input).now_or_never().unwrap().unwrap();
+            assert_eq!(n, 1);
+            tx.read(n).unwrap();
+            retained.push(tx.pending_owned(false).unwrap().0);
+            tx.sent(n).unwrap();
+        }
+    });
+    assert!(
+        counts.bytes_total < 2 * crate::rpc::QUIC_BUFFER_BYTES as u64,
+        "{counts:?}"
+    );
+    assert!(retained.iter().all(|view| &view[..] == b"x"));
+    assert_eq!(tx.written(), 1024);
+}
+
 #[test]
 fn replay_tlc_stream_progress() {
     use capntproto_test_support::verification::exploration;

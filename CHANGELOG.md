@@ -1,5 +1,9 @@
 # 0.1.0 developer preview (unpublished)
 
+- Send owned RPC buffers through upstream quiche's zero-copy API, preserving
+  retransmission views and partial-write accounting. Reclaim acknowledged slabs
+  and use their remaining capacity before allocating; retain bounded bridge reads.
+
 - Validate near struct pointers and their complete targets with one segment
   lookup, preserving traversal and bounds checks without caching movable storage.
   Install schema compiler prerequisites in the dedicated benchmark report job.

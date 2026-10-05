@@ -849,6 +849,21 @@ Those are diagnostic samples, not a passed quality report or a demonstrated
 1.2× result. All five repetitions remain included. The report job now installs
 its schema compiler before provisioning a measurement host.
 
+The subsequent QUIC candidate uses upstream `BufFactory` and `stream_send_zc`
+with immutable `Bytes` views. Reads are capped at the existing 128-KiB bridge
+budget. An acknowledged slab can be reclaimed; a retained retransmission view
+prevents mutation, and later small writes consume the unused tail before another
+slab is allocated. At most 4 KiB of unused tail is retired per slab. A regression
+holds 1,024 outstanding one-byte views and checks that this does not allocate a
+128-KiB slab per write. Partial writes, cancellation and EOF preserve their
+existing state transitions. The production quiche crate remains unmodified.
+
+Local empty-call diagnostics for this candidate used 471.93 million server
+instructions versus 466.29 million before it, while client allocations fell
+from 242,787 to 231,787. A three-repetition local comparison showed lower 64-KiB
+latency, but the small-message instruction increase is a tradeoff and local
+timings do not qualify the 1.2× target. Dedicated measurements are still required.
+
 Allocation checks cover the warmed single-segment queue, and partial-write
 tests cover every byte boundary of small frames plus large multi-segment batches.
 RPC regression tests cover self-wakes, independent subsequent wakes, late errors,
