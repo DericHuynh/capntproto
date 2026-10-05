@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="650" viewBox="0 0 1400 650" role="img" aria-labelledby="title">
+<title id="title">TLA+ Rust Replay Results</title>
+<rect width="1400" height="650" fill="white"/>
+<g font-family="DejaVu Sans, sans-serif">
+<text x="35.00" y="45.00" font-size="27" fill="#1e293b">Capntproto — TLA+ Rust Replay Results</text>
+<text x="35.00" y="78.00" font-size="15" fill="#64748b">Nextest and doctest results · selected partition · counts per CI run · UTC</text>
+<text x="70.00" y="115.00" font-size="16" fill="#0868d4">Total</text>
+<polyline points="80.00,188.47 241.60,188.47 1300.00,180.00" fill="none" stroke="#0868d4" stroke-width="2.3"/>
+<circle cx="80.00" cy="188.47" r="3" fill="#0868d4"><title>2026-10-04T20:19:37Z: 242</title></circle>
+<circle cx="241.60" cy="188.47" r="3" fill="#0868d4"><title>2026-10-04T21:39:03Z: 242</title></circle>
+<circle cx="1300.00" cy="180.00" r="3" fill="#0868d4"><title>2026-10-05T06:19:17Z: 248</title></circle>
+<text x="10.00" y="530.00" font-size="12" fill="#64748b">0</text>
+<text x="10.00" y="442.50" font-size="12" fill="#64748b">62</text>
+<text x="10.00" y="355.00" font-size="12" fill="#64748b">124</text>
+<text x="10.00" y="267.50" font-size="12" fill="#64748b">186</text>
+<text x="10.00" y="180.00" font-size="12" fill="#64748b">248</text>
+<text x="80.00" y="565.00" font-size="13" fill="#64748b">2026-10-04 20:19 UTC</text>
+<text x="1060.00" y="565.00" font-size="13" fill="#64748b">2026-10-05 06:19 UTC</text>
+<text x="220.00" y="115.00" font-size="16" fill="#00ac7b">Pass</text>
+<polyline points="80.00,189.88 241.60,189.88 1300.00,189.88" fill="none" stroke="#00ac7b" stroke-width="2.3"/>
+<circle cx="80.00" cy="189.88" r="3" fill="#00ac7b"><title>2026-10-04T20:19:37Z: 241</title></circle>
+<circle cx="241.60" cy="189.88" r="3" fill="#00ac7b"><title>2026-10-04T21:39:03Z: 241</title></circle>
+<circle cx="1300.00" cy="189.88" r="3" fill="#00ac7b"><title>2026-10-05T06:19:17Z: 241</title></circle>
+<text x="370.00" y="115.00" font-size="16" fill="#ef4444">Fail</text>
+<polyline points="80.00,530.00 241.60,530.00 1300.00,530.00" fill="none" stroke="#ef4444" stroke-width="2.3"/>
+<circle cx="80.00" cy="530.00" r="3" fill="#ef4444"><title>2026-10-04T20:19:37Z: 0</title></circle>
+<circle cx="241.60" cy="530.00" r="3" fill="#ef4444"><title>2026-10-04T21:39:03Z: 0</title></circle>
+<circle cx="1300.00" cy="530.00" r="3" fill="#ef4444"><title>2026-10-05T06:19:17Z: 0</title></circle>
+<text x="520.00" y="115.00" font-size="16" fill="#e89200">Error</text>
+<polyline points="80.00,530.00 241.60,530.00 1300.00,530.00" fill="none" stroke="#e89200" stroke-width="2.3"/>
+<circle cx="80.00" cy="530.00" r="3" fill="#e89200"><title>2026-10-04T20:19:37Z: 0</title></circle>
+<circle cx="241.60" cy="530.00" r="3" fill="#e89200"><title>2026-10-04T21:39:03Z: 0</title></circle>
+<circle cx="1300.00" cy="530.00" r="3" fill="#e89200"><title>2026-10-05T06:19:17Z: 0</title></circle>
+<text x="670.00" y="115.00" font-size="16" fill="#8b5cf6">Skip</text>
+<polyline points="80.00,528.59 241.60,528.59 1300.00,520.12" fill="none" stroke="#8b5cf6" stroke-width="2.3"/>
+<circle cx="80.00" cy="528.59" r="3" fill="#8b5cf6"><title>2026-10-04T20:19:37Z: 1</title></circle>
+<circle cx="241.60" cy="528.59" r="3" fill="#8b5cf6"><title>2026-10-04T21:39:03Z: 1</title></circle>
+<circle cx="1300.00" cy="520.12" r="3" fill="#8b5cf6"><title>2026-10-05T06:19:17Z: 7</title></circle>
+<text x="35.00" y="620.00" font-size="13" fill="#64748b">Dotted lines: failed&#x2F;incomplete workspace command. Error = announced tests without a terminal result.</text>
+</g>
+</svg>
