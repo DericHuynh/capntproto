@@ -182,11 +182,17 @@ impl<VatId> Drop for QuestionRef<VatId> {
     }
 }
 
+#[derive(Default)]
+struct AnswerStatus {
+    return_has_been_sent: Cell<bool>,
+    received_finish: Cell<bool>,
+}
+
 struct Answer<VatId>
 where
     VatId: 'static,
 {
-    return_has_been_sent: Rc<Cell<bool>>,
+    status: Rc<AnswerStatus>,
     request_words: usize,
     pipeline_only_guard: Option<Rc<ReturnGuard<VatId>>>,
 
@@ -197,7 +203,6 @@ where
     // result, to be picked up by a subsequent `Return`.
     redirected_results: Option<Promise<Response<VatId>, Error>>,
 
-    received_finish: Rc<Cell<bool>>,
     call_completion_promise: Option<Promise<(), Error>>,
 
     // List of exports that were sent in the results.  If the finish has `releaseResultCaps` these
@@ -215,12 +220,11 @@ where
 impl<VatId> Answer<VatId> {
     fn new() -> Self {
         Self {
-            return_has_been_sent: Rc::new(Cell::new(false)),
+            status: Rc::default(),
             request_words: 0,
             pipeline_only_guard: None,
             pipeline: None,
             redirected_results: None,
-            received_finish: Rc::new(Cell::new(false)),
             call_completion_promise: None,
             result_exports: Vec::new(),
             provision: None,
@@ -708,7 +712,7 @@ impl<VatId> ConnectionState<VatId> {
         }
         let answers_to_release = mem::take(&mut self.answers.borrow_mut().slots);
         for answer in answers_to_release.values() {
-            answer.received_finish.set(true);
+            answer.status.received_finish.set(true);
         }
         let exports_to_release = mem::replace(&mut *self.exports.borrow_mut(), LocalTable::new());
         self.exports_by_cap.borrow_mut().clear();
@@ -943,9 +947,9 @@ impl<VatId> ConnectionState<VatId> {
                 return;
             };
             let answer = entry.get_mut();
-            answer.return_has_been_sent.set(true);
+            answer.status.return_has_been_sent.set(true);
             let words = mem::take(&mut answer.request_words);
-            if answer.received_finish.get() {
+            if answer.status.received_finish.get() {
                 (Some(entry.remove()), words)
             } else {
                 answer.result_exports = result_exports;
@@ -1984,13 +1988,13 @@ async fn yield_once() {
 struct ReturnGuard<VatId: 'static> {
     state: Weak<ConnectionState<VatId>>,
     id: AnswerId,
-    responded: Rc<Cell<bool>>,
+    status: Rc<AnswerStatus>,
     redirect: bool,
     only_pipeline: bool,
 }
 impl<VatId> Drop for ReturnGuard<VatId> {
     fn drop(&mut self) {
-        if self.responded.replace(true) {
+        if self.status.return_has_been_sent.replace(true) {
             return;
         }
         let Some(state) = self.state.upgrade() else {
@@ -2036,7 +2040,6 @@ where
     only_promise_pipeline: bool,
     allow_third_party: bool,
     answer_id: AnswerId,
-    finish_received: Rc<Cell<bool>>,
     pipeline_sender: Option<queued::PipelineInnerSender>,
     return_guard: Rc<ReturnGuard<VatId>>,
     retained_results: Rc<RefCell<Option<ResultsVariant>>>,
@@ -2102,7 +2105,7 @@ fn payload_size_hint(size: capnp::MessageSize, envelope: u32) -> u32 {
         + promised_answer::Builder::STRUCT_SIZE.total();
     size.word_count
         .saturating_add(u64::from(size.cap_count) * u64::from(descriptor))
-        .saturating_add(1) // even an empty descriptor list has a composite tag
+        .saturating_add(u64::from(size.cap_count != 0)) // nonempty composite-list tag
         .min(1 << 20) as u32
         + envelope
 }
@@ -2126,8 +2129,7 @@ where
         answer_id: AnswerId,
         redirect_results: bool,
         fulfiller: oneshot::Sender<ResultsInner<VatId>>,
-        finish_received: Rc<Cell<bool>>,
-        responded: Rc<Cell<bool>>,
+        status: Rc<AnswerStatus>,
         pipeline_sender: Option<queued::PipelineInnerSender>,
     ) -> Self {
         Self {
@@ -2138,13 +2140,12 @@ where
                 only_promise_pipeline: false,
                 allow_third_party: false,
                 answer_id,
-                finish_received,
                 pipeline_sender,
                 retained_results: Rc::new(RefCell::new(None)),
                 return_guard: Rc::new(ReturnGuard {
                     state: Rc::downgrade(connection_state),
                     id: answer_id,
-                    responded,
+                    status,
                     redirect: redirect_results,
                     only_pipeline: false,
                 }),
@@ -2407,7 +2408,7 @@ impl ResultsDone {
                 let connection_state = results_inner.connection_state.clone();
                 let variant = results_inner.variant.take();
                 let answer_id = results_inner.answer_id;
-                let finish_received = results_inner.finish_received.clone();
+                let status = results_inner.return_guard.status.clone();
                 // Kept until after response serialization or exception handling.
                 let _return_guard = results_inner.return_guard.clone();
                 match variant {
@@ -2423,7 +2424,7 @@ impl ResultsDone {
                     }
                     None => unreachable!(),
                     Some(ResultsVariant::Rpc(mut message, cap_table)) => {
-                        match (finish_received.get(), call_status) {
+                        match (status.received_finish.get(), call_status) {
                             (true, _) => {
                                 let hook = Box::new(Self::rpc(Rc::new(message.take()), cap_table))
                                     as Box<dyn ResultsDoneHook>;
@@ -2470,7 +2471,7 @@ impl ResultsDone {
                                         });
                                     if cap_table.is_empty() && !requires_finish {
                                         ret.set_no_finish_needed(true);
-                                        finish_received.set(true);
+                                        status.received_finish.set(true);
                                     }
                                     let crate::rpc_capnp::return_::Results(Ok(payload)) =
                                         ret.which()?

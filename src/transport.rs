@@ -133,12 +133,13 @@ fn spawn(
     conn: buffers::Connection,
 ) -> io::Result<(DuplexStream, tokio::task::JoinHandle<io::Result<()>>)> {
     let (app, network) = tokio::io::duplex(crate::rpc::QUIC_BUFFER_BYTES);
+    let (reader, writer) = tokio::io::split(network);
     Ok((
         app,
         tokio::task::spawn_local(drive(
             PacketSocket::Dedicated(DatagramSocket::new(socket)?),
             Box::new(conn),
-            tokio::io::split(network),
+            (stream::CopyInput(reader), writer),
             SessionDrivers {
                 established: None,
                 datagrams: None,
@@ -347,10 +348,7 @@ struct SessionDrivers {
 async fn drive(
     socket: PacketSocket,
     conn: Box<buffers::Connection>,
-    io: (
-        impl tokio::io::AsyncRead + Unpin,
-        impl tokio::io::AsyncWrite + Unpin,
-    ),
+    io: (impl stream::Input, impl tokio::io::AsyncWrite + Unpin),
     drivers: SessionDrivers,
 ) -> io::Result<()> {
     // Listener shutdown must also cancel packet pacing and blocked writes,
@@ -392,10 +390,7 @@ async fn application_turn() {
 async fn drive_packets(
     mut socket: PacketSocket,
     conn: Box<buffers::Connection>,
-    io: (
-        impl tokio::io::AsyncRead + Unpin,
-        impl tokio::io::AsyncWrite + Unpin,
-    ),
+    io: (impl stream::Input, impl tokio::io::AsyncWrite + Unpin),
     drivers: SessionDrivers,
 ) -> io::Result<()> {
     let SessionDrivers {
@@ -491,7 +486,7 @@ async fn drive_packets(
                         application_turn().await;
                         if engine.tx.can_read() {
                             if let Some(read) = engine.tx.read_from(&mut reader).now_or_never() {
-                                engine.tx.read(read?)?;
+                                engine.tx.read_owned(read?)?;
                                 break;
                             }
                         }
@@ -501,7 +496,7 @@ async fn drive_packets(
         }
         if engine.tx.can_read() {
             if let Some(read) = engine.tx.read_from(&mut reader).now_or_never() {
-                engine.tx.read(read?)?;
+                engine.tx.read_owned(read?)?;
                 application_progress = true;
             }
         }
@@ -596,7 +591,7 @@ async fn drive_packets(
                     }
                 }
             },
-            r=engine.tx.read_from(&mut reader), if can_read => engine.tx.read(r?)?,
+            r=engine.tx.read_from(&mut reader), if can_read => engine.tx.read_owned(r?)?,
             r=writer.write(engine.rx.pending()), if can_write => engine.delivered(r?)?,
             _=tokio::time::sleep(timeout) => mtu_recovery.on_timeout(&mut engine.conn),
         }

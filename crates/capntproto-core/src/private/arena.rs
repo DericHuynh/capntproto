@@ -244,6 +244,14 @@ where
 /// Implementations must not permit shared readers to race with mutation.
 pub unsafe trait BuilderArena: ReaderArena {
     fn allocate(&mut self, segment_id: u32, amount: WordCount32) -> Option<u32>;
+    /// Allocate initialized words and return their address. The default retains
+    /// compatibility with custom arenas; an arena can combine allocation and
+    /// segment lookup. Zero words may return the segment's one-past-end pointer.
+    fn allocate_ptr(&mut self, segment_id: u32, amount: WordCount32) -> Option<*mut u8> {
+        let index = self.allocate(segment_id, amount)?;
+        let (base, _) = self.get_segment_mut(segment_id);
+        Some(base.wrapping_add(index as usize * BYTES_PER_WORD))
+    }
     fn allocate_anywhere(&mut self, amount: u32) -> (SegmentId, u32);
     fn get_segment_mut(&mut self, id: u32) -> (*mut u8, u32);
 
@@ -279,6 +287,21 @@ struct BuilderSegment {
 
     /// Number of words already used in the segment.
     allocated: u32,
+}
+
+impl BuilderSegment {
+    fn allocate(&mut self, amount: WordCount32) -> Option<u32> {
+        #[cfg(feature = "alloc")]
+        if self.external.is_some() {
+            return None;
+        }
+        if amount > self.capacity - self.allocated {
+            return None;
+        }
+        let index = self.allocated;
+        self.allocated += amount;
+        Some(index)
+    }
 }
 
 #[derive(Default)]
@@ -513,18 +536,7 @@ where
     }
 
     fn allocate(&mut self, segment_id: u32, amount: WordCount32) -> Option<u32> {
-        let seg = &mut self.segments[segment_id as usize];
-        #[cfg(feature = "alloc")]
-        if seg.external.is_some() {
-            return None;
-        }
-        if amount > seg.capacity - seg.allocated {
-            None
-        } else {
-            let result = seg.allocated;
-            seg.allocated += amount;
-            Some(result)
-        }
+        self.segments[segment_id as usize].allocate(amount)
     }
 
     fn allocate_anywhere(&mut self, amount: u32) -> (SegmentId, u32) {
@@ -581,6 +593,12 @@ where
 {
     fn allocate(&mut self, segment_id: u32, amount: WordCount32) -> Option<u32> {
         self.inner.allocate(segment_id, amount)
+    }
+
+    fn allocate_ptr(&mut self, segment_id: u32, amount: WordCount32) -> Option<*mut u8> {
+        let segment = &mut self.inner.segments[segment_id as usize];
+        let index = segment.allocate(amount)?;
+        Some(segment.ptr.wrapping_add(index as usize * BYTES_PER_WORD))
     }
 
     fn allocate_anywhere(&mut self, amount: u32) -> (SegmentId, u32) {

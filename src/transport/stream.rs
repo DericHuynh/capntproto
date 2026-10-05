@@ -7,6 +7,28 @@ use tokio::io::{AsyncRead, AsyncReadExt};
 
 const BUFFER_BYTES: usize = crate::rpc::QUIC_BUFFER_BYTES;
 
+pub(super) trait Input {
+    async fn read_owned(&mut self, buffer: &mut BytesMut) -> io::Result<Bytes>;
+}
+
+pub(super) struct CopyInput<R>(pub R);
+impl<R: AsyncRead + Unpin> Input for CopyInput<R> {
+    async fn read_owned(&mut self, buffer: &mut BytesMut) -> io::Result<Bytes> {
+        if !buffer.try_reclaim(BUFFER_BYTES) && buffer.capacity() < 4096 {
+            buffer.reserve(BUFFER_BYTES);
+        }
+        self.0
+            .read_buf(&mut (&mut *buffer).limit(BUFFER_BYTES))
+            .await?;
+        Ok(buffer.split().freeze())
+    }
+}
+impl Input for crate::rpc::local_io::ReadHalf {
+    async fn read_owned(&mut self, _: &mut BytesMut) -> io::Result<Bytes> {
+        self.read_owned().await
+    }
+}
+
 enum SendPhase {
     Reading,
     Buffered { offset: usize, length: usize },
@@ -23,7 +45,7 @@ pub(super) struct SendStream {
 impl Default for SendStream {
     fn default() -> Self {
         Self {
-            buffer: BytesMut::with_capacity(BUFFER_BYTES),
+            buffer: BytesMut::new(),
             pending: Bytes::new(),
             phase: SendPhase::Reading,
             written: 0,
@@ -42,38 +64,34 @@ impl SendStream {
         self.buffer.resize(BUFFER_BYTES, 0);
         Ok(&mut self.buffer)
     }
-    pub(super) async fn read_from(
-        &mut self,
-        reader: &mut (impl AsyncRead + Unpin),
-    ) -> io::Result<usize> {
+    pub(super) async fn read_from(&mut self, reader: &mut impl Input) -> io::Result<Bytes> {
         if !self.can_read() {
             return Err(invalid_progress());
         }
-        // Reclaim acknowledged storage without allocating. While a packet still
-        // owns a view, consume the rest of that slab instead of allocating
-        // another 128 KiB for every small write. Retire at most 4 KiB of unused
-        // tail space per slab. Each read remains capped at the bridge budget.
-        if !self.buffer.try_reclaim(BUFFER_BYTES) && self.buffer.capacity() < 4096 {
-            self.buffer.reserve(BUFFER_BYTES);
-        }
-        reader
-            .read_buf(&mut (&mut self.buffer).limit(BUFFER_BYTES))
-            .await
+        reader.read_owned(&mut self.buffer).await
     }
+    #[cfg(test)]
     pub(super) fn read(&mut self, count: usize) -> io::Result<()> {
         if !self.can_read() || count > self.buffer.len() {
             return Err(invalid_progress());
         }
-        self.phase = if count == 0 {
+        self.buffer.truncate(count);
+        let bytes = self.buffer.split().freeze();
+        self.read_owned(bytes)
+    }
+    pub(super) fn read_owned(&mut self, bytes: Bytes) -> io::Result<()> {
+        if !self.can_read() || bytes.len() > BUFFER_BYTES {
+            return Err(invalid_progress());
+        }
+        self.phase = if bytes.is_empty() {
             SendPhase::Eof
         } else {
             SendPhase::Buffered {
                 offset: 0,
-                length: count,
+                length: bytes.len(),
             }
         };
-        self.buffer.truncate(count);
-        self.pending = self.buffer.split().freeze();
+        self.pending = bytes;
         Ok(())
     }
     #[cfg(test)]

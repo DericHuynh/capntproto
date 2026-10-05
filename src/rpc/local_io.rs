@@ -4,9 +4,9 @@
 //! those endpoints without a mutex; Rc keeps the pair confined to one thread.
 #![forbid(unsafe_code)]
 
+use bytes::{Buf, Bytes, BytesMut};
 use std::{
     cell::RefCell,
-    collections::VecDeque,
     io,
     pin::Pin,
     rc::Rc,
@@ -15,7 +15,7 @@ use std::{
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 struct Pipe {
-    bytes: VecDeque<u8>,
+    bytes: BytesMut,
     capacity: usize,
     reader_closed: bool,
     writer_closed: bool,
@@ -34,7 +34,7 @@ pub(crate) fn pair(capacity: usize) -> (Stream, Stream) {
     assert!(capacity > 0);
     let direction = || {
         Rc::new(RefCell::new(Pipe {
-            bytes: VecDeque::new(),
+            bytes: BytesMut::with_capacity(capacity.min(4096)),
             capacity,
             reader_closed: false,
             writer_closed: false,
@@ -68,28 +68,39 @@ impl AsyncRead for ReadHalf {
         cx: &mut Context<'_>,
         output: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
+        self.poll_take(cx, |bytes| {
+            let count = output.remaining().min(bytes.len());
+            output.put_slice(&bytes[..count]);
+            bytes.advance(count);
+        })
+    }
+}
+
+impl ReadHalf {
+    /// Transfer initialized bytes to QUIC while keeping later writes disjoint
+    /// from any views retained for retransmission.
+    pub(crate) async fn read_owned(&mut self) -> io::Result<Bytes> {
+        std::future::poll_fn(|cx| self.poll_take(cx, |bytes| bytes.split().freeze())).await
+    }
+
+    fn poll_take<T>(
+        &self,
+        cx: &mut Context<'_>,
+        take: impl FnOnce(&mut BytesMut) -> T,
+    ) -> Poll<io::Result<T>> {
         let coop = std::task::ready!(tokio::task::coop::poll_proceed(cx));
         let mut replacement = None;
         loop {
             let mut pipe = self.0.borrow_mut();
-            if !pipe.bytes.is_empty() {
-                let count = output.remaining().min(pipe.bytes.len());
-                let (front, back) = pipe.bytes.as_slices();
-                let first = count.min(front.len());
-                output.put_slice(&front[..first]);
-                output.put_slice(&back[..count - first]);
-                pipe.bytes.drain(..count);
+            if !pipe.bytes.is_empty() || pipe.writer_closed {
+                let result = take(&mut pipe.bytes);
                 let wake = pipe.writer.take();
                 drop(pipe);
                 if let Some(wake) = wake {
                     wake.wake();
                 }
                 coop.made_progress();
-                return Poll::Ready(Ok(()));
-            }
-            if pipe.writer_closed {
-                coop.made_progress();
-                return Poll::Ready(Ok(()));
+                return Poll::Ready(Ok(result));
             }
             if pipe
                 .reader
@@ -139,7 +150,14 @@ impl AsyncWrite for WriteHalf {
                 let mut count = 0;
                 for buffer in buffers {
                     let length = (available - count).min(buffer.len());
-                    pipe.bytes.extend(&buffer[..length]);
+                    // Reserve a small tail for tiny writes whose earlier
+                    // views are still in flight, rather than one allocation
+                    // per retained message. Logical admission stays bounded.
+                    if pipe.bytes.capacity() - pipe.bytes.len() < length {
+                        let reserve = length.max(pipe.capacity.min(4096));
+                        pipe.bytes.reserve(reserve);
+                    }
+                    pipe.bytes.extend_from_slice(&buffer[..length]);
                     count += length;
                     if count == available {
                         break;
@@ -257,6 +275,9 @@ impl AsyncWrite for Stream {
         Pin::new(&mut self.get_mut().write).poll_shutdown(cx)
     }
 }
+
+#[cfg(test)]
+mod owned_tests;
 
 #[cfg(test)]
 mod tests;

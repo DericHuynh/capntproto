@@ -141,7 +141,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
             }
         };
         let mut answer = Answer::new();
-        answer.return_has_been_sent.set(true);
+        answer.status.return_has_been_sent.set(true);
         answer.result_exports = result_exports;
         answer.pipeline = Some(Box::new(SingleCapPipeline::new(cap)));
         connection_state
@@ -171,7 +171,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                 .entry(AnswerId::from_wire(finish.get_question_id()))
             {
                 let answer = entry.get_mut();
-                answer.received_finish.set(true);
+                answer.status.received_finish.set(true);
                 let result_exports = mem::take(&mut answer.result_exports);
                 if finish.get_release_result_caps() {
                     exports = result_exports;
@@ -180,7 +180,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                 task = answer.call_completion_promise.take();
                 pipeline_only_guard = answer.pipeline_only_guard.take();
                 join = answer.join.take();
-                if answer.return_has_been_sent.get() {
+                if answer.status.return_has_been_sent.get() {
                     answer_to_release = Some(entry.remove());
                 }
             }
@@ -378,7 +378,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
             .await_third_party(provide.get_recipient(), exchange.clone())?;
         let mut answer = Answer::new();
         // Provide intentionally never sends Return. Finish can erase it immediately.
-        answer.return_has_been_sent.set(true);
+        answer.status.return_has_been_sent.set(true);
         answer.provision = Some((exchange, registration));
         answer.pipeline = Some(Box::new(broken::Pipeline::new(Error::failed(
             "cannot pipeline on Provide".into(),
@@ -415,8 +415,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
             id,
             false,
             sender,
-            answer.received_finish.clone(),
-            answer.return_has_been_sent.clone(),
+            answer.status.clone(),
             Some(pipeline_sender.weak_clone()),
         );
         state.answers.borrow_mut().slots.insert(id, answer);
@@ -546,8 +545,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                     question_id,
                     redirect_results,
                     results_inner_fulfiller,
-                    answer.received_finish.clone(),
-                    answer.return_has_been_sent.clone(),
+                    answer.status.clone(),
                     Some(pipeline_sender.weak_clone()),
                 );
 
@@ -743,7 +741,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                                 let response = answer.redirected_results.take().ok_or_else(|| Error::failed("takeFromOtherQuestion: already adopted or not redirected".into()))?;
                                 (
                                     response,
-                                    answer.return_has_been_sent.clone(),
+                                    answer.status.clone(),
                                     answer.call_completion_promise.take(),
                                 )
                             };
@@ -753,7 +751,10 @@ impl<VatId: 'static> ConnectionState<VatId> {
                             reference
                                 .borrow_mut()
                                 .fulfill(Promise::from_future(response.attach(task)));
-                            connection_state.acknowledge_redirected_answer(id, &responded)?;
+                            connection_state.acknowledge_redirected_answer(
+                                id,
+                                &responded.return_has_been_sent,
+                            )?;
                         }
                         return_::AwaitFromThirdParty(token) => {
                             let pipeline = reference.borrow().pipeline.clone();
@@ -774,12 +775,15 @@ impl<VatId: 'static> ConnectionState<VatId> {
                                 (
                                     answer.redirected_results.take(),
                                     answer.call_completion_promise.take(),
-                                    answer.return_has_been_sent.clone(),
+                                    answer.status.clone(),
                                 )
                             })
                         };
                         if let Some((response, task, responded)) = redirected {
-                            connection_state.acknowledge_redirected_answer(id, &responded)?;
+                            connection_state.acknowledge_redirected_answer(
+                                id,
+                                &responded.return_has_been_sent,
+                            )?;
                             drop(response);
                             drop(task);
                         }

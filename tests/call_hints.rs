@@ -606,9 +606,10 @@ impl Incoming {
                     } else if r.get_answer_id() == 2 {
                         self.child = match r.which().unwrap() {
                             capnp_rpc::rpc_capnp::return_::Results(p) => {
+                                let p = p.unwrap();
+                                assert!(!p.has_cap_table(), "data-only replies need no list tag");
                                 assert_eq!(
-                                    p.unwrap()
-                                        .get_content()
+                                    p.get_content()
                                         .get_as::<harness::value::Reader>()
                                         .unwrap()
                                         .get_value(),
@@ -896,6 +897,8 @@ async fn generated_result_schemas_set_conservative_wire_hints() {
                         assert_eq!(call.get_method_id(), $id);
                         assert_eq!(call.get_no_promise_pipelining(), $hint);
                         assert!(!call.get_only_promise_pipeline());
+                        assert!(!call.get_params().unwrap().has_cap_table(),
+                            "empty capability tables must use the null default");
                         f.peer.send(|m| { let mut r = m.init_return(); r.set_answer_id(call.get_question_id()); r.init_results(); });
                         promise.await.unwrap();
                     }};
@@ -917,6 +920,7 @@ async fn generated_result_schemas_set_conservative_wire_hints() {
                 assert_eq!(call.get_method_id(), 13);
                 assert!(call.get_no_promise_pipelining());
                 assert!(!call.get_only_promise_pipeline());
+                assert!(!call.get_params().unwrap().has_cap_table());
                 f.peer.send(|m| { let mut r = m.init_return(); r.set_answer_id(call.get_question_id()); r.init_results(); });
                 match readiness {
                     std::task::Poll::Ready(result) => result.unwrap(),

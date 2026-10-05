@@ -1,5 +1,11 @@
 # 0.1.0 developer preview (unpublished)
 
+- Transfer owned buffers from the native RPC bridge directly into QUIC's send
+  queue, removing a payload copy while preserving bounded admission, partial
+  writes, cancellation and retransmission ownership. Share answer-status flags
+  in one allocation, combine arena allocation with segment lookup, and omit
+  empty capability-table tags as in the C++ RPC implementation.
+
 - Send owned RPC buffers through upstream quiche's zero-copy API, preserving
   retransmission views and partial-write accounting. Reclaim acknowledged slabs
   and use their remaining capacity before allocating; retain bounded bridge reads.

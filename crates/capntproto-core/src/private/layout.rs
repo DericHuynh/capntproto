@@ -460,7 +460,7 @@ mod wire_helpers {
             return (reff as *mut _, reff, segment_id);
         }
 
-        match arena.allocate(segment_id, amount) {
+        match arena.allocate_ptr(segment_id, amount) {
             None => {
                 //# Need to allocate in a different segment. We'll need to
                 //# allocate an extra pointer worth of space to act as
@@ -484,9 +484,7 @@ mod wire_helpers {
                 (*reff).set_kind_and_target(kind, ptr1);
                 (ptr1, reff, segment_id)
             }
-            Some(idx) => {
-                let (seg_start, _seg_len) = arena.get_segment_mut(segment_id);
-                let ptr = seg_start.add(idx as usize * BYTES_PER_WORD);
+            Some(ptr) => {
                 (*reff).set_kind_and_target(kind, ptr);
                 (ptr, reff, segment_id)
             }
@@ -3128,6 +3126,7 @@ impl<'a> PointerReader<'a> {
         }
     }
 
+    #[inline]
     pub fn get_struct(self, default: Option<&'a [crate::Word]>) -> Result<StructReader<'a>> {
         let reff: *const WirePointer = if self.pointer.is_null() {
             zero_pointer()
@@ -3477,6 +3476,7 @@ impl<'a> PointerBuilder<'a> {
         unsafe { (*self.pointer).is_null() }
     }
 
+    #[inline]
     pub fn get_struct(
         self,
         size: StructSize,

@@ -515,6 +515,12 @@ impl<VatId: 'static> ConnectionState<VatId> {
         payload: payload::Builder,
         fds: &mut OutgoingFds,
     ) -> Vec<ExportId> {
+        // A null table already denotes zero capabilities. Like the C++ RPC
+        // implementation, avoid allocating a composite-list tag for every
+        // data-only request and reply.
+        if cap_table.is_empty() {
+            return Vec::new();
+        }
         let mut cap_table_builder = payload.init_cap_table(cap_table.len() as u32);
         let mut exports = Vec::new();
         for (idx, value) in cap_table.iter().enumerate() {

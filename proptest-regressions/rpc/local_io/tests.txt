@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc b2b871584d40398fe7ca5392838b8978eda0fbbbbbd9104950c10e461c0c149c # shrinks to capacity = 1, actions = [(1, 1, [0]), (1, 0, [])]
+cc f2d2bf932177503df4b09e6b0783435c857401299d44195600884ffd5f78921b # shrinks to capacity = 1, actions = [(0, 0, [])]

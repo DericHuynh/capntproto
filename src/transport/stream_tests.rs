@@ -1,4 +1,4 @@
-use super::stream::{ReceiveStream, SendStream};
+use super::stream::{CopyInput, ReceiveStream, SendStream};
 
 #[tokio::test]
 async fn owned_send_views_survive_partial_sends_reuse_and_canceled_reads() {
@@ -6,11 +6,14 @@ async fn owned_send_views_survive_partial_sends_reuse_and_canceled_reads() {
     use tokio::io::AsyncWriteExt;
     let mut tx = SendStream::default();
     let (mut writer, mut reader) = tokio::io::duplex(16);
-    assert!(tx.read_from(&mut reader).now_or_never().is_none());
+    assert!(tx
+        .read_from(&mut CopyInput(&mut reader))
+        .now_or_never()
+        .is_none());
     assert!(tx.can_read());
     writer.write_all(b"old bytes").await.unwrap();
-    let count = tx.read_from(&mut reader).await.unwrap();
-    tx.read(count).unwrap();
+    let bytes = tx.read_from(&mut CopyInput(&mut reader)).await.unwrap();
+    tx.read_owned(bytes).unwrap();
     let (retained, fin) = tx.pending_owned(false).unwrap();
     assert!(!fin);
     tx.sent(4).unwrap();
@@ -22,9 +25,10 @@ async fn owned_send_views_survive_partial_sends_reuse_and_canceled_reads() {
     // storage. The full bridge capacity must not modify that immutable view.
     let input = vec![0x72; crate::rpc::QUIC_BUFFER_BYTES + 1];
     let mut input = &input[..];
-    let count = tx.read_from(&mut input).await.unwrap();
+    let bytes = tx.read_from(&mut CopyInput(&mut input)).await.unwrap();
+    let count = bytes.len();
     assert!((4096..=crate::rpc::QUIC_BUFFER_BYTES).contains(&count));
-    tx.read(count).unwrap();
+    tx.read_owned(bytes).unwrap();
     let (next, _) = tx.pending_owned(false).unwrap();
     assert_eq!(&retained[..], b"old bytes");
     assert!(next.iter().all(|b| *b == 0x72));
@@ -33,9 +37,9 @@ async fn owned_send_views_survive_partial_sends_reuse_and_canceled_reads() {
     drop(next);
 
     writer.shutdown().await.unwrap();
-    let count = tx.read_from(&mut reader).await.unwrap();
-    assert_eq!(count, 0);
-    tx.read(count).unwrap();
+    let bytes = tx.read_from(&mut CopyInput(&mut reader)).await.unwrap();
+    assert!(bytes.is_empty());
+    tx.read_owned(bytes).unwrap();
     assert!(tx.pending_owned(true).is_none());
     assert_eq!(
         tx.pending_owned(false).unwrap(),
@@ -53,9 +57,14 @@ fn retained_small_writes_do_not_allocate_one_slab_per_write() {
     let counts = allocation_counter::measure(|| {
         for _ in 0..1024 {
             let mut input = &b"x"[..];
-            let n = tx.read_from(&mut input).now_or_never().unwrap().unwrap();
+            let bytes = tx
+                .read_from(&mut CopyInput(&mut input))
+                .now_or_never()
+                .unwrap()
+                .unwrap();
+            let n = bytes.len();
             assert_eq!(n, 1);
-            tx.read(n).unwrap();
+            tx.read_owned(bytes).unwrap();
             retained.push(tx.pending_owned(false).unwrap().0);
             tx.sent(n).unwrap();
         }

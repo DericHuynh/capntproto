@@ -27,17 +27,17 @@
       }
     },
     "crates/capntproto-core/src/private/arena.rs": {
-      "sha256": "f088b2ed035aef24737ff8f4946ccce3af61e130c0ef0f8856ea70133726095e",
+      "sha256": "b9e105e0984135ec631e9b60fa49ccf2f7f0d7ef0953134384d05ec8e3243dee",
       "diagnostics": {
         "clippy::undocumented_unsafe_blocks": 12
       }
     },
     "crates/capntproto-core/src/private/layout.rs": {
-      "sha256": "394744106a28bb0b74cac153b28ea518f79d414368fb6d0fc09901e401fae834",
+      "sha256": "815e671909ce07c2cf0e77fb0647b048612b024eb15b1f321da53170e11f8187",
       "diagnostics": {
         "clippy::missing_safety_doc": 4,
         "clippy::undocumented_unsafe_blocks": 91,
-        "unsafe_op_in_unsafe_fn": 395
+        "unsafe_op_in_unsafe_fn": 394
       }
     },
     "crates/capntproto-core/src/private/layout_test.rs": {
