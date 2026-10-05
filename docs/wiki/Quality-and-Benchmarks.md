@@ -833,6 +833,22 @@ The memory suite includes pooled multi-segment reuse with simultaneous live
 messages under both Miri aliasing models, and cancellation tests exercise an
 initially pending protected method and immediate success/error completion.
 
+Combining near-struct offset and complete-target validation into one segment
+lookup reduced the same local server profile further, from 475.29 to 466.29
+million instructions. It retains alignment, nesting, traversal and complete
+bounds validation without caching addresses into movable readers. The malformed
+offset cases passed the extended memory suite's 144 interpreted executions,
+including both aliasing models and big-endian wire decoding.
+
+The [next dedicated run](https://github.com/DericHuynh/capntproto/actions/runs/37273929820)
+measured `9d87134b2` before that pointer change. Measurement and droplet cleanup
+succeeded, but its report job lacked the schema compiler and failed before
+sample validation. Raw pooled medians were Native/C++ 44.04/39.54, 44.65/31.23,
+44.63/33.85 and 163.08/126.57 microseconds at 0/64/1024/65536 bytes, respectively.
+Those are diagnostic samples, not a passed quality report or a demonstrated
+1.2× result. All five repetitions remain included. The report job now installs
+its schema compiler before provisioning a measurement host.
+
 Allocation checks cover the warmed single-segment queue, and partial-write
 tests cover every byte boundary of small frames plus large multi-segment batches.
 RPC regression tests cover self-wakes, independent subsequent wakes, late errors,

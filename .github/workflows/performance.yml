@@ -94,6 +94,10 @@ jobs:
       - uses: ./.github/actions/auditable-setup # zizmor: ignore[self-repository]
         with:
           cache-key: dedicated-measurement
+      - name: Install report validation prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y capnproto libcapnp-dev
       - name: Restore pinned sources for bundle identity validation
         run: git submodule update --init --depth 1 -- vendor/capnproto
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c

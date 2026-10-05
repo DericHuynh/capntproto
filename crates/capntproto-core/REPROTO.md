@@ -21,6 +21,12 @@ decoding it. Short `Read` results previously left table bytes in the message bod
 Root Cargo regressions cover fragmented consecutive frames and every truncated
 table/body prefix.
 
+Near struct reads combine relative-offset and complete-target validation in one
+segment lookup. Signed offsets, alignment, full data/pointer bounds, nesting and
+traversal accounting remain checked; far pointers retain the existing path.
+No segment address is cached across reader moves. Malformed-offset regressions
+also run under Miri's aliasing models and the extended big-endian wire checks.
+
 This fork requires Rust 1.97.0, matching the repository's stable toolchain. Its
 maintained Cargo.toml explicitly includes sources, tests, schemas, license and
 documentation when packaging. The upstream Cargo.toml.orig and .cargo_vcs_info.json

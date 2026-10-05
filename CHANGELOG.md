@@ -1,5 +1,9 @@
 # 0.1.0 developer preview (unpublished)
 
+- Validate near struct pointers and their complete targets with one segment
+  lookup, preserving traversal and bounds checks without caching movable storage.
+  Install schema compiler prerequisites in the dedicated benchmark report job.
+
 - Reuse outgoing RPC segments in a pool bounded to 128 KiB and 16 segments per
   connection, clearing used words before reuse. Avoid protected background-task
   allocation for immediately completed non-streaming, non-pipelined RPC methods.

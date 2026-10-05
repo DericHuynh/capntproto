@@ -76,6 +76,25 @@ pub unsafe trait ReaderArena {
     }
 
     fn contains_interval(&self, segment_id: u32, start: *const u8, size: usize) -> Result<()>;
+
+    /// Validate a relative pointer and its complete target in one operation,
+    /// charging the same traversal budget as `contains_interval`.
+    ///
+    /// # Safety
+    /// `start` must derive from the named live segment, as for `check_offset`.
+    unsafe fn check_offset_and_read(
+        &self,
+        segment_id: u32,
+        start: *const u8,
+        offset_in_words: i32,
+        size_in_words: usize,
+    ) -> Result<*const u8> {
+        // SAFETY: the caller supplies a pointer from the named live segment.
+        let target = unsafe { self.check_offset(segment_id, start, offset_in_words)? };
+        self.contains_interval(segment_id, target, size_in_words)?;
+        Ok(target)
+    }
+
     fn amplified_read(&self, virtual_amount: u64) -> Result<()>;
 
     fn nesting_limit(&self) -> i32;
@@ -160,6 +179,38 @@ where
         } else {
             self.read_limiter.can_read(size_in_words)
         }
+    }
+
+    unsafe fn check_offset_and_read(
+        &self,
+        id: u32,
+        start: *const u8,
+        offset_in_words: i32,
+        size_in_words: usize,
+    ) -> Result<*const u8> {
+        let (base, words) = self.get_segment(id)?;
+        let offset = i64::from(offset_in_words) * i64::try_from(BYTES_PER_WORD).unwrap();
+        let invalid = || Error::from_kind(ErrorKind::MessageContainsOutOfBoundsPointer);
+        let relative = (start as usize)
+            .checked_sub(base as usize)
+            .ok_or_else(invalid)?;
+        let target = i64::try_from(relative)
+            .map_err(|_| invalid())?
+            .checked_add(offset)
+            .ok_or_else(invalid)?;
+        let target = usize::try_from(target).map_err(|_| invalid())?;
+        let bytes = size_in_words
+            .checked_mul(BYTES_PER_WORD)
+            .ok_or_else(invalid)?;
+        let segment_bytes = words as usize * BYTES_PER_WORD;
+        if target > segment_bytes || bytes > segment_bytes - target {
+            return Err(invalid());
+        }
+        self.read_limiter.can_read(size_in_words)?;
+        // SAFETY: get_segment supplies a live initialized allocation; the
+        // complete target was checked above before forming this pointer. Zero
+        // sized targets may refer to its one-past-end address.
+        Ok(unsafe { base.add(target) })
     }
 
     fn amplified_read(&self, virtual_amount: u64) -> Result<()> {
