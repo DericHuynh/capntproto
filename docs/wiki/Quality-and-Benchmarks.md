@@ -1002,6 +1002,106 @@ was rejected because system time and paused Tokio time are distinct clock domain
 Local paired timings varied with other machine activity and cannot establish
 the target; dedicated measurements remain the acceptance evidence.
 
+### Investigating the 64-KiB transport cost
+
+The 2026-10-05 version-2 size sweep covered twelve payloads from 8 to 128 KiB,
+with three repetitions and every sample retained. Native QUIC's local median
+rose from 149.04 µs at 48,000 bytes to 169.85 at 64,000, 170.34 at 65,536 and
+175.86 at 66,000. There was no isolated cliff at exactly 65,536 bytes. Larger
+steps appeared at packet boundaries near 16 and 32 KiB. Upstream quiche 0.30.0
+caps established packets at 16,383 bytes to retain a two-byte packet-length
+varint; requesting a larger loopback MTU does not remove this cap.
+
+The pinned C++ implementation provided two useful controls:
+
+- [`rpc-twoparty.c++`](https://github.com/capnproto/capnproto/blob/0de72d8d8cec6b69edaa29de51d3bd490341f9c2/c%2B%2B/src/capnp/rpc-twoparty.c%2B%2B#L176)
+  batches queued messages into `MessageStream::writeMessages`, retaining their
+  owners until completion and propagating write failures. Native TCP/TLS now
+  similarly drains up to eight queued frames into one vectored batch and one
+  flush. Its local bridge also admits 128 KiB: a 64-KiB body plus its RPC envelope
+  no longer spills across a 64-KiB capacity boundary. Frame bytes and the receipt
+  flush fence retain their original semantics. The sender holds at most eight
+  active frames beside its eight queued frames; each data frame remains limited
+  to 16 KiB.
+- [`serialize-async.c++`](https://github.com/capnproto/capnproto/blob/0de72d8d8cec6b69edaa29de51d3bd490341f9c2/c%2B%2B/src/capnp/serialize-async.c%2B%2B#L724)
+  reads large incomplete frames directly into their final allocation. Rust
+  already has that framing path. Instrumenting native receive delivery showed
+  over 99.9% of 64-KiB calls arriving at the RPC bridge as one complete chunk.
+  An additional owned-chunk API and a receive-allocation pool did not produce
+  a repeatable latency gain and were discarded.
+
+Linux UDP receive aggregation now complements the existing segmented sender.
+`recvmsg` exposes the original packet boundaries without another payload copy;
+the driver splits the aggregate before quiche processing, and the shared
+listener splits it before connection-ID routing and per-route admission.
+Unsupported kernels and other platforms retain ordinary datagrams. Truncated
+data or control metadata is discarded as packet loss, and a burst always
+finishes the bounded aggregate already received. Migration enables aggregation
+on the newly committed socket. Authentication, encryption, congestion control,
+pacing, packet limits and the crates.io quiche source are unchanged.
+
+A 20,000-call, 64-KiB client syscall diagnostic fell from 100,010 successful UDP
+reads to 40,023 (about five to two per call). The new run observed 100,002
+datagrams in GRO aggregates and no send errors. Clock reads stayed near 461,000;
+these are mechanism counts, not timing samples. The first five-repetition local
+release comparison measured:
+
+| Transport | Previous p50 (µs) | Batched p50 (µs) | Reduction |
+| --- | ---: | ---: | ---: |
+| Native TCP/TLS, 64 KiB | 160.076 | 145.060 | 9.4% |
+| Native QUIC, 64 KiB | 167.410 | 161.334 | 3.6% |
+
+Each comparison alternated executable order, used the same CPU pair, 10,000
+warmups and 1,000 measured calls per repetition, and pooled all 5,000 samples
+per row. Every QUIC 64-KiB repetition improved; QUIC small-message pooled medians
+varied by less than 1%. These Ryzen 5800H/HPET results are local diagnostics,
+not dedicated acceptance evidence. They reduce the large-message cost but do
+not establish the 1.2× native/C++ target.
+
+Regression checks cover scalar/vectored partial writes, pending writes and
+flush errors, IPv4/IPv6, canceled receives, truncated aggregates, mixed
+connection IDs, unknown routes and oversized packets. The initial focused
+transport/listener run passed all 99 tests, including the socket and listener
+TLA+ replays.
+
+After adding shared-listener support and aligned ancillary storage, a final
+five-repetition local release comparison repeated the same experiment and
+included the C++ executable. All 60 trials and their samples were retained.
+Native QUIC's 64-KiB p50 fell from 168.249 to 158.821 µs (5.6%), p95 from
+182.707 to 173.557 and p99 from 194.301 to 184.522. Every paired large-payload
+median improved. Empty/64-byte/1-KiB pooled medians changed by +0.4%/+1.0%/+2.1%,
+respectively: the small-message cost of the new receive path is a tradeoff.
+C++'s 64-KiB median in this experiment was 76.966 µs, so the final local native
+ratio was still 2.064×. These measurements ran after builds and tests exited.
+
+The [dedicated run on `eb2d04927`](https://github.com/DericHuynh/capntproto/actions/runs/37318535864)
+validated all 80 trials and confirmed deletion of droplet `606308934`. It used
+four dedicated `c-4` vCPUs in `nyc1` at $0.125/hour, a Xeon Platinum 8280 and
+`kvm-clock`. Source fingerprint:
+`6ebfc3515cb5c4ad6d8b9347f515d5c6e4607ecfddf517e9d682281e30c0a8d0`.
+
+| Payload | Native QUIC p50 (µs) | C++ TCP p50 (µs) | Native / C++ |
+| --- | ---: | ---: | ---: |
+| Empty | 54.064 | 36.011 | 1.501× |
+| 64 B | 52.615 | 35.660 | 1.475× |
+| 1 KiB | 55.742 | 40.214 | 1.386× |
+| 64 KiB | 207.927 | 85.553 | 2.430× |
+
+The target remains unmet. This host differs from the preceding Xeon 8358, so
+those two runs are not a controlled before/after measurement of batching.
+All five repetitions remain included, including native 64-KiB medians from
+202.744 to 224.804 µs. The paired local comparisons isolate the change; this
+dedicated comparison measures the remaining gap against C++ on the new host.
+
+The full workspace nextest run completed 1,574 tests: 1,572 passed, seven
+documented tests were skipped, and two checks required correction or rerun.
+A compiler CLI test reused a fixture path from another worktree while inheriting
+the current directory as its source prefix; it now explicitly uses the fixture
+root. The mutation guard correctly invalidated its run after that test edit.
+With the tree held unchanged, all nine compiler tests and both qualification
+checks passed. Clippy and the unsafe-documentation gate passed; the workspace
+run also passed Miri, native fuzz smoke, C++ interop and optimized runtime checks.
+
 ### Clock diagnostics
 
 The report records current and available Linux clocksources and five batches of
