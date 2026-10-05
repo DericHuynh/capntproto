@@ -710,6 +710,25 @@ repetition medians split between 47–48 and 70–71 µs; C++ also showed variat
 between repetitions. The slower repetitions remain included. A different host
 and these distributions prevent attributing all cross-run changes to the patch.
 
+The [sixth dedicated run](https://github.com/DericHuynh/capntproto/actions/runs/37262860181)
+at `7b91e576e` includes the result-wrapper, retained-frame, first-segment, and
+idle-check changes. Its Xeon Platinum 8280 used `kvm-clock` (23–25 ns clock-read
+diagnostics). All five repetitions and all samples were retained; sample
+validation and droplet cleanup succeeded:
+
+| Payload | Native p50 (µs) | C++ p50 (µs) | Native / C++ |
+| --- | ---: | ---: | ---: |
+| Empty | 42.53 | 27.68 | 1.54× |
+| 64 B | 42.44 | 27.99 | 1.52× |
+| 1 KiB | 45.19 | 30.09 | 1.50× |
+| 64 KiB | 213.91 | 156.76 | 1.36× |
+
+The 1.2× target remains unmet at every size. Both implementations were faster
+than in the fifth run, so lower absolute native latency alone cannot establish
+the patch's benefit across hosts. One native 1-KiB repetition had a 70.21-µs
+median; it remains included. These results precede the separate TCP/TLS
+vectored-write change, which does not alter the canonical native QUIC workload.
+
 ### Lessons from the pinned C++ implementation
 
 The comparison uses upstream commit
@@ -730,6 +749,13 @@ C++ also caches segment pointers in a non-movable reader arena. Rust readers
 can move and accept user-provided segment storage, so caching a pointer across
 moves would require an additional stable-storage guarantee. The framing change
 caches offsets instead and adds no unsafe code.
+
+Another C++ allocator optimization remembers the last segment with available
+space instead of scanning every prior segment. Rust's `allocate_anywhere()`
+currently uses first-fit scanning. A cached allocation candidate could help
+messages with many segments, but it needs fragmented-message and memory-retention
+measurements: skipping usable holes can trade CPU savings for larger messages.
+This is not a leading cost in the measured small-RPC profile and remains deferred.
 
 Local diagnostics used 10,000 warmups and 1,000 empty calls, including amortized
 setup. Client allocation counts were 299,838 for the pinned C++ executable and
