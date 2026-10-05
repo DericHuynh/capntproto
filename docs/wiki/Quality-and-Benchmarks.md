@@ -686,6 +686,14 @@ The target remains unmet. Tail latency was also variable: native p95 values were
 92.65, 94.82, 67.95, and 393.69 µs respectively. Every repetition remains in the
 report; these results do not establish a consistent improvement at every size.
 
+Further candidates use a bounded local byte stream between native RPC and its
+TCP/QUIC drivers, retaining Tokio's cooperative budget and remote receipt fences.
+Ordinary server replies construct local result wrappers only for live pipelines;
+redirected calls retain their explicit results, and each connection reuses its
+call executor. Local server instruction diagnostics fell from approximately
+549 million to 540 million instructions over 11,000 empty calls including setup.
+These are CPU-work diagnostics, not evidence that the latency target is met.
+
 Allocation checks cover the warmed single-segment queue, and partial-write
 tests cover every byte boundary of small frames plus large multi-segment batches.
 RPC regression tests cover self-wakes, independent subsequent wakes, late errors,

@@ -520,7 +520,10 @@ fn receive_self_call<VatId>(
     }
     let response = Promise::from_future(
         async move {
-            let result = result.await.map_err(crate::canceled_to_error)??;
+            let result = result
+                .await
+                .map_err(crate::canceled_to_error)??
+                .into_retained()?;
             Ok(Box::new(Response::<VatId>::redirected(result)) as Box<dyn ResponseHook>)
         }
         .boxed_local()

@@ -448,6 +448,7 @@ where
     client_downcast_map: RefCell<HashMap<usize, WeakClient<VatId>>>,
     registry: Weak<RefCell<ConnectionRegistry<VatId>>>,
     system_tasks: crate::task_set::TaskSetHandle<Error>,
+    call_executor: Rc<dyn capnp::capability::CallExecutor>,
     flow_limit: Cell<usize>,
     admission: Rc<crate::admission::Admission>,
     held_responses: Cell<usize>,
@@ -488,6 +489,7 @@ impl<VatId> ConnectionState<VatId> {
             disconnect_fulfiller: RefCell::new(Some(disconnect_fulfiller)),
             client_downcast_map: RefCell::new(HashMap::new()),
             registry,
+            call_executor: Rc::new(crate::CallTaskExecutor(system_tasks.clone())),
             system_tasks,
             flow_limit: Cell::new(flow_limit),
             admission: crate::admission::Admission::new(outgoing_call_limit),
@@ -2155,9 +2157,7 @@ impl<VatId> ResultsHook for Results<VatId> {
         )))
     }
     fn cancellation_executor(&self) -> Option<Rc<dyn capnp::capability::CallExecutor>> {
-        Some(Rc::new(crate::CallTaskExecutor(
-            self.inner.as_ref()?.connection_state.system_tasks.clone(),
-        )))
+        Some(self.inner.as_ref()?.connection_state.call_executor.clone())
     }
 
     fn get_with_size_hint(
@@ -2348,12 +2348,29 @@ struct ResultsDone {
     inner: Rc<ResultsDoneVariant>,
 }
 
+// Ordinary replies are already owned by the transport. Only local redirection
+// needs to return a results hook to the caller of from_results_inner().
+enum ResultsCompletion {
+    Sent,
+    Retained(Box<dyn ResultsDoneHook>),
+}
+impl ResultsCompletion {
+    fn into_retained(self) -> Result<Box<dyn ResultsDoneHook>, Error> {
+        match self {
+            Self::Retained(results) => Ok(results),
+            Self::Sent => Err(Error::failed(
+                "redirected call completed without local results".into(),
+            )),
+        }
+    }
+}
+
 impl ResultsDone {
     fn from_results_inner<VatId>(
         results_inner: Result<ResultsInner<VatId>, Error>,
         call_status: Result<(), Error>,
         pipeline_sender: queued::PipelineInnerSender,
-    ) -> Result<Box<dyn ResultsDoneHook>, Error>
+    ) -> Result<ResultsCompletion, Error>
     where
         VatId: 'static,
     {
@@ -2376,10 +2393,10 @@ impl ResultsDone {
                         // credit. Completion acknowledges ownership, not result data.
                         pipeline_sender.complete(pipeline);
                         call_status?;
-                        Ok(Box::new(Self::redirected(
+                        Ok(ResultsCompletion::Retained(Box::new(Self::redirected(
                             capnp::message::Builder::new_default(),
                             vec![],
-                        )))
+                        ))))
                     }
                     None => unreachable!(),
                     Some(ResultsVariant::Rpc(mut message, cap_table)) => {
@@ -2407,7 +2424,7 @@ impl ResultsDone {
                                 }
 
                                 connection_state.answer_has_sent_return(answer_id, Vec::new());
-                                Ok(hook)
+                                Ok(ResultsCompletion::Retained(hook))
                             }
                             (false, Ok(())) => {
                                 let mut fds = OutgoingFds::default();
@@ -2448,11 +2465,16 @@ impl ResultsDone {
                                 fds.attach(&mut *message);
                                 let m = message.send_detached();
                                 connection_state.answer_has_sent_return(answer_id, exports);
-                                let hook =
-                                    Box::new(Self::rpc(m, cap_table)) as Box<dyn ResultsDoneHook>;
-                                pipeline_sender
-                                    .complete_with(|| Box::new(local::Pipeline::new(hook.clone())));
-                                Ok(hook)
+                                // If no pipeline can observe the results, leave
+                                // ownership in the queued send. Creating and
+                                // immediately dropping a Box + Rc results hook
+                                // here used to cost two allocations per reply.
+                                pipeline_sender.complete_with(|| {
+                                    Box::new(local::Pipeline::new(Box::new(Self::rpc(
+                                        m, cap_table,
+                                    ))))
+                                });
+                                Ok(ResultsCompletion::Sent)
                             }
                             (false, Err(e)) => {
                                 // Send an error return.
@@ -2493,7 +2515,7 @@ impl ResultsDone {
                             as Box<dyn ResultsDoneHook>;
                         pipeline_sender
                             .complete_with(|| Box::new(crate::local::Pipeline::new(hook.clone())));
-                        Ok(hook)
+                        Ok(ResultsCompletion::Retained(hook))
                     }
                 }
             }

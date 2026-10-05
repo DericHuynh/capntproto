@@ -596,8 +596,8 @@ impl<VatId: 'static> ConnectionState<VatId> {
                     })
                     .then(move |v| {
                         if let Some(f) = redirected_results_done_fulfiller {
-                            match v {
-                                Ok(r) => drop(f.send(Ok(Response::redirected(r.clone())))),
+                            match v.and_then(ResultsCompletion::into_retained) {
+                                Ok(r) => drop(f.send(Ok(Response::redirected(r)))),
                                 Err(e) => drop(f.send(Err(e))),
                             }
                         }
