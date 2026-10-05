@@ -16,6 +16,10 @@
   tiny multi-segment responses and oversized empty-call arenas. Honor explicit
   request size hints with space for the RPC envelope. Reap RPC tasks directly and reuse a local task
   admission queue, with wake and destructor callbacks outside queue borrows.
+- Use bounded local byte streams between native RPC and its TCP/QUIC drivers.
+  The existing local runtime can split the stream without mutexes, while keeping
+  vectored writes, backpressure, cooperative scheduling, and half-close behavior.
+  Peer receipt validation still determines graceful shutdown completion.
 - Imported the maintained Cap’n Proto Rust runtime, RPC engine, async framing and
   generator as `capntproto-{core,rpc,futures,codegen}` workspace crates, retaining
   upstream licenses and generated Rust import names.

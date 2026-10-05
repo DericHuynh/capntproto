@@ -683,10 +683,10 @@ impl State {
     fn endpoint(
         self: &Rc<Self>,
         peer: VatId,
-        io: tokio::io::DuplexStream,
+        io: crate::rpc::local_io::Stream,
         session: SessionTask,
     ) -> Rc<Endpoint> {
-        let (read, write) = tokio::io::split(io);
+        let (read, write) = io.into_split();
         let mut network = capnp_rpc::twoparty::VatNetwork::new(
             read.compat(),
             write.compat_write(),

@@ -202,11 +202,11 @@ async fn outer_driver_observes_virtual_shutdown_deadline() {
     establish(&mut a, &mut b);
     let control = Control::new();
     control.begin(Duration::from_millis(40)).unwrap();
-    let (_application, io) = tokio::io::duplex(64);
+    let (_application, io) = crate::rpc::local_io::pair(64);
     let driver = super::drive(
         PacketSocket::Dedicated(crate::transport::socket::DatagramSocket::new(socket).unwrap()),
         a.conn,
-        io,
+        io.into_split(),
         super::SessionDrivers {
             established: None,
             datagrams: None,

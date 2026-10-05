@@ -296,8 +296,8 @@ impl<E: LocalExecutor> OwnedSession<E> {
             + 'static,
         admission: Option<Admission>,
         executor: E,
-    ) -> (tokio::io::DuplexStream, Self) {
-        let (io, bridge) = tokio::io::duplex(crate::rpc::QUIC_BUFFER_BYTES);
+    ) -> (crate::rpc::local_io::Stream, Self) {
+        let (io, bridge) = crate::rpc::local_io::pair(crate::rpc::QUIC_BUFFER_BYTES);
         let owner = Self::with_executor(generation, admission, executor);
         let lifecycle = owner.lifecycle.clone();
         owner.spawn(async move {
@@ -349,7 +349,7 @@ impl SessionTask {
         local: VatId,
         peer: VatId,
         session: AuthenticatedSession,
-    ) -> capnp::Result<(tokio::io::DuplexStream, Self)> {
+    ) -> capnp::Result<(crate::rpc::local_io::Stream, Self)> {
         let owner = Self::new(generation, None);
         let (io, installed) = Installed::new(local, peer, session, owner.lifecycle.clone())
             .map_err(|e| failed(&e.message))?;
@@ -363,7 +363,7 @@ impl SessionTask {
         selection: impl std::future::Future<Output = Result<AuthenticatedSession, RouteFailure>>
             + 'static,
         admission: Option<Admission>,
-    ) -> (tokio::io::DuplexStream, Self) {
+    ) -> (crate::rpc::local_io::Stream, Self) {
         Self::pending_with_executor(generation, local, peer, selection, admission, TokioExecutor)
     }
 }
@@ -393,7 +393,7 @@ impl Installed {
         peer: VatId,
         mut session: AuthenticatedSession,
         lifecycle: Rc<Lifecycle>,
-    ) -> Result<(tokio::io::DuplexStream, Self), RouteFailure> {
+    ) -> Result<(crate::rpc::local_io::Stream, Self), RouteFailure> {
         if session.local != local || session.peer != peer || local == peer {
             return Err(RouteFailure::new(
                 FailureKind::Identity,
@@ -412,7 +412,10 @@ impl Installed {
         *lifecycle.scheduling.borrow_mut() = Some(session.scheduling());
         Ok((io, Self { session, lifecycle }))
     }
-    async fn run(mut self, bridge: Option<(tokio::io::DuplexStream, tokio::io::DuplexStream)>) {
+    async fn run(
+        mut self,
+        bridge: Option<(crate::rpc::local_io::Stream, crate::rpc::local_io::Stream)>,
+    ) {
         let copy = async move {
             if let Some((mut bridge, mut io)) = bridge {
                 tokio::io::copy_bidirectional(&mut bridge, &mut io)

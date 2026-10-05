@@ -16,7 +16,7 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt, DuplexStream},
+    io::{AsyncReadExt, AsyncWriteExt},
     sync::oneshot,
 };
 
@@ -71,7 +71,7 @@ impl Task {
 }
 struct Peer {
     id: usize,
-    app: DuplexStream,
+    app: crate::rpc::local_io::Stream,
     driver: Task,
     control: Control,
     ready: oneshot::Receiver<()>,
@@ -139,13 +139,13 @@ impl Fixture {
             let socket = network.bind(addresses[index]);
             let id = socket.id;
             let control = Control::new();
-            let (app, io) = tokio::io::duplex(11);
+            let (app, io) = crate::rpc::local_io::pair(11);
             let (ready, wait) = oneshot::channel();
             let (control_mobility, driver_mobility) = transport::mobility::pair();
             let driver = Task::new(transport::drive(
                 PacketSocket::Dedicated(super::super::socket::DatagramSocket::Simulated(socket)),
                 Box::new(conn),
-                io,
+                io.into_split(),
                 SessionDrivers {
                     established: Some(ready),
                     datagrams: None,

@@ -88,7 +88,7 @@ fn session(
     local: [u8; 32],
     peer: [u8; 32],
 ) -> AuthenticatedSession {
-    let (app, io) = tokio::io::duplex(64 * 1024);
+    let (app, io) = crate::rpc::local_io::pair(64 * 1024);
     let shutdown = Control::new();
     let control = shutdown.clone();
     let mobility = Mobility::unavailable();
@@ -119,11 +119,11 @@ fn session(
 // The receive bridge acknowledges only bytes actually delivered to RPC input.
 async fn bridge(
     stream: impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
-    app: DuplexStream,
+    app: crate::rpc::local_io::Stream,
     control: Control,
 ) -> io::Result<()> {
     let (mut input, mut output) = tokio::io::split(stream);
-    let (mut app_read, mut app_write) = tokio::io::split(app);
+    let (mut app_read, mut app_write) = app.into_split();
     let (queue, mut frames) = mpsc::channel::<(u8, Vec<u8>)>(8);
     let protocol = Rc::new(RefCell::new(Protocol::default()));
     let changed = Rc::new(Notify::new());

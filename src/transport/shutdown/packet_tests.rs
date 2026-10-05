@@ -376,7 +376,7 @@ async fn outer_transport_driver_preserves_close_validation_and_deadline_errors()
                     tokio::time::advance(Duration::from_secs(61)).await;
                 }
                 let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-                let (_app, io) = tokio::io::duplex(64);
+                let (_app, io) = crate::rpc::local_io::pair(64);
                 let (_scheduling, scheduling) = scheduling::pair();
                 // The production outer driver receives a real authenticated
                 // connection already carrying peer close. This tests its close
@@ -386,7 +386,7 @@ async fn outer_transport_driver_preserves_close_validation_and_deadline_errors()
                         crate::transport::socket::DatagramSocket::new(socket).unwrap(),
                     ),
                     Box::new(case.a),
-                    io,
+                    io.into_split(),
                     SessionDrivers {
                         established: None,
                         datagrams: None,

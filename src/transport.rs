@@ -134,7 +134,7 @@ fn spawn(
         tokio::task::spawn_local(drive(
             PacketSocket::Dedicated(DatagramSocket::new(socket)?),
             Box::new(conn),
-            network,
+            tokio::io::split(network),
             SessionDrivers {
                 established: None,
                 datagrams: None,
@@ -341,7 +341,10 @@ struct SessionDrivers {
 async fn drive(
     socket: PacketSocket,
     conn: Box<quiche::Connection>,
-    io: DuplexStream,
+    io: (
+        impl tokio::io::AsyncRead + Unpin,
+        impl tokio::io::AsyncWrite + Unpin,
+    ),
     drivers: SessionDrivers,
 ) -> io::Result<()> {
     // Listener shutdown must also cancel packet pacing and blocked writes,
@@ -383,7 +386,10 @@ async fn application_turn() {
 async fn drive_packets(
     mut socket: PacketSocket,
     conn: Box<quiche::Connection>,
-    io: DuplexStream,
+    io: (
+        impl tokio::io::AsyncRead + Unpin,
+        impl tokio::io::AsyncWrite + Unpin,
+    ),
     drivers: SessionDrivers,
 ) -> io::Result<()> {
     let SessionDrivers {
@@ -400,7 +406,7 @@ async fn drive_packets(
     let mut batch = crate::rpc::packet_batch::Batch::new();
     let sender = crate::rpc::packet_batch::Sender::default();
     let mut mtu_recovery = crate::rpc::packet_mtu::Recovery::default();
-    let (mut reader, mut writer) = tokio::io::split(io);
+    let (mut reader, mut writer) = io;
     let mut local = socket.local_addr()?;
     loop {
         let changed = schedule_changed.notified();
@@ -593,7 +599,7 @@ async fn drive_packets(
 pub struct AuthenticatedSession {
     pub(crate) peer: [u8; 32],
     pub(crate) local: [u8; 32],
-    pub(crate) io: Option<DuplexStream>,
+    pub(crate) io: Option<crate::rpc::local_io::Stream>,
     datagrams: Option<DatagramPort>,
     mobility: Mobility,
     scheduling: Scheduling,
@@ -641,7 +647,7 @@ pub(crate) async fn authenticated(
     local: [u8; 32],
     peer: [u8; 32],
 ) -> io::Result<AuthenticatedSession> {
-    let (app, network) = tokio::io::duplex(crate::rpc::QUIC_BUFFER_BYTES);
+    let (app, network) = crate::rpc::local_io::pair(crate::rpc::QUIC_BUFFER_BYTES);
     let (ready, wait) = tokio::sync::oneshot::channel();
     let (datagrams, datagram_driver) = datagram_pair();
     let shutdown = Control::new();
@@ -659,7 +665,7 @@ pub(crate) async fn authenticated(
         driver: tokio::task::spawn_local(drive(
             socket,
             conn,
-            network,
+            network.into_split(),
             SessionDrivers {
                 established: Some(ready),
                 datagrams: Some(datagram_driver),

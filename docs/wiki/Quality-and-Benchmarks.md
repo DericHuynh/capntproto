@@ -670,8 +670,21 @@ initial segment instead of growing from a zero-word segment. Unhinted calls
 use the same initial size, while explicit request hints reserve payload and RPC
 envelope space. Small responses consequently avoid unnecessary segmentation.
 Local diagnostics count about 29 client allocations per empty RPC, down from
-34 before these changes, over 11,000 calls including setup. Dedicated latency
-qualification remains pending; allocation counts do not establish the target.
+34 before these changes, over 11,000 calls including setup. The
+[fourth dedicated run](https://github.com/DericHuynh/capntproto/actions/runs/37258956487)
+measured `0ea8e0fc071d40c95d52c4ad5b8445c15f9e0626`, including the corrected
+output fence, and confirmed cleanup:
+
+| Payload | Native p50 (µs) | C++ p50 (µs) | Native / C++ |
+| --- | ---: | ---: | ---: |
+| Empty | 55.27 | 37.34 | 1.48× |
+| 64 B | 55.98 | 37.46 | 1.49× |
+| 1 KiB | 57.61 | 40.52 | 1.42× |
+| 64 KiB | 254.41 | 182.98 | 1.39× |
+
+The target remains unmet. Tail latency was also variable: native p95 values were
+92.65, 94.82, 67.95, and 393.69 µs respectively. Every repetition remains in the
+report; these results do not establish a consistent improvement at every size.
 
 Allocation checks cover the warmed single-segment queue, and partial-write
 tests cover every byte boundary of small frames plus large multi-segment batches.
