@@ -20,6 +20,7 @@
 
 use std::collections::VecDeque;
 use std::future::{poll_fn, Future};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::Poll;
 use std::time::{Duration, Instant};
@@ -106,6 +107,9 @@ struct Queue<M> {
 }
 struct Shared<M> {
     queue: Mutex<Queue<M>>,
+    // A hint only: enqueue rechecks the oldest timestamp under the locks.
+    // Later messages in a batch do not need another diagnostic clock sample.
+    queued: AtomicBool,
     diagnostics: OutgoingQueue,
     ready: AtomicWaker,
 }
@@ -161,6 +165,7 @@ impl<M> Receiver<M> {
                 // The drained batch lends its capacity to the next producers.
                 // Both buffers stay owned until the driver is dropped.
                 std::mem::swap(batch, &mut queue.messages);
+                self.0.queued.store(false, Ordering::Relaxed);
                 Poll::Ready(Batch::Messages)
             } else if queue.terminal.is_some() || !queue.accepting || queue.senders == 0 {
                 queue.accepting = false;
@@ -196,6 +201,7 @@ where
     M: AsOutputSegments,
 {
     let shared = Arc::new(Shared {
+        queued: AtomicBool::new(false),
         queue: Mutex::new(Queue {
             messages: VecDeque::new(),
             terminal: None,
@@ -273,19 +279,30 @@ impl<M: AsOutputSegments> Sender<M> {
             .iter()
             .map(|s| s.len())
             .sum::<usize>();
-        let now = (self.shared.diagnostics.clock)();
-        {
+        let mut now = (!self.shared.queued.load(Ordering::Relaxed))
+            .then(|| (self.shared.diagnostics.clock)());
+        loop {
             let mut queue = self.shared.queue.lock().unwrap();
             if queue.accepting {
                 let mut metrics = self.shared.diagnostics.metrics.lock().unwrap();
+                if metrics.queued.oldest.is_none() && now.is_none() {
+                    // The receiver may have started a batch since the hint.
+                    // Sample outside both locks, including for reentrant clocks.
+                    drop(metrics);
+                    drop(queue);
+                    now = Some((self.shared.diagnostics.clock)());
+                    continue;
+                }
                 let metrics = &mut metrics.queued;
                 metrics.count += 1;
                 metrics.bytes += bytes;
                 if metrics.oldest.is_none() {
-                    metrics.oldest = Some(now);
+                    metrics.oldest = now;
                 }
                 queue.messages.push_back((message, complete));
+                self.shared.queued.store(true, Ordering::Relaxed);
             }
+            break;
         }
         self.shared.ready.wake();
     }
@@ -336,5 +353,106 @@ fn _assert_kinds() {
         let (s, f) = write_queue::<W, capnp::message::Builder<capnp::message::HeapAllocator>>(w);
         send(s);
         send(f);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use capnp::message::{Builder, HeapAllocator};
+    use futures::FutureExt;
+    use std::sync::atomic::AtomicU64;
+
+    fn message() -> Builder<HeapAllocator> {
+        let mut message = Builder::new_default();
+        message.initn_root::<capnp::data::Builder>(0);
+        message
+    }
+
+    #[test]
+    fn one_enqueue_clock_sample_per_batch_preserves_oldest_age() {
+        let ticks = Arc::new(AtomicU64::new(0));
+        let clock = ticks.clone();
+        let (mut sender, driver) = write_queue_with_clock(futures::io::sink(), move || {
+            Duration::from_secs(clock.fetch_add(1, Ordering::Relaxed))
+        });
+        futures::pin_mut!(driver);
+        for _ in 0..3 {
+            sender.send_detached(message());
+        }
+        assert_eq!(ticks.load(Ordering::Relaxed), 1);
+        let snapshot = sender.outgoing_queue().snapshot();
+        assert_eq!(snapshot.message_count, 3);
+        assert_eq!(snapshot.wait_time, Duration::from_secs(1));
+        assert!(driver.as_mut().now_or_never().is_none());
+        sender.send_detached(message());
+        assert_eq!(ticks.load(Ordering::Relaxed), 3);
+        let snapshot = sender.outgoing_queue().snapshot();
+        assert_eq!(snapshot.message_count, 1);
+        assert_eq!(snapshot.wait_time, Duration::from_secs(1));
+    }
+
+    #[test]
+    fn stale_hint_resamples_outside_locks_after_a_concurrent_batch_start() {
+        type Message = Builder<HeapAllocator>;
+        let shared = Arc::new(Mutex::new(None::<std::sync::Weak<Shared<Message>>>));
+        let observed = shared.clone();
+        let (mut sender, _driver) = write_queue_with_clock(futures::io::sink(), move || {
+            let shared = observed
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .upgrade()
+                .unwrap();
+            assert!(
+                shared.queue.try_lock().is_ok(),
+                "clock ran under queue lock"
+            );
+            assert!(
+                shared.diagnostics.metrics.try_lock().is_ok(),
+                "clock ran under metrics lock"
+            );
+            Duration::from_secs(17)
+        });
+        *shared.lock().unwrap() = Some(Arc::downgrade(&sender.shared));
+        // Model a producer observing the old hint just as the receiver drains
+        // the queue. The locked state, not the hint, determines the timestamp.
+        sender.shared.queued.store(true, Ordering::Relaxed);
+        sender.send_detached(message());
+        assert_eq!(sender.len(), 1);
+        assert_eq!(
+            sender
+                .shared
+                .diagnostics
+                .metrics
+                .lock()
+                .unwrap()
+                .queued
+                .oldest,
+            Some(Duration::from_secs(17))
+        );
+    }
+
+    #[test]
+    fn reentrant_clock_can_enqueue_without_changing_the_oldest_timestamp() {
+        type Message = Builder<HeapAllocator>;
+        let access = Arc::new(Mutex::new(None::<Sender<Message>>));
+        let weak_access = Arc::downgrade(&access);
+        let entered = AtomicBool::new(false);
+        let (mut sender, driver) = write_queue_with_clock(futures::io::sink(), move || {
+            if !entered.swap(true, Ordering::Relaxed) {
+                let access = weak_access.upgrade().unwrap();
+                let mut sender = access.lock().unwrap().as_ref().unwrap().clone();
+                sender.send_detached(message());
+            }
+            Duration::from_secs(17)
+        });
+        *access.lock().unwrap() = Some(sender.clone());
+        sender.send_detached(message());
+        assert_eq!(sender.len(), 2);
+        assert_eq!(sender.outgoing_queue().snapshot().wait_time, Duration::ZERO);
+        futures::pin_mut!(driver);
+        assert!(driver.as_mut().now_or_never().is_none());
     }
 }
