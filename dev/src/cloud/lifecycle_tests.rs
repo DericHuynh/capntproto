@@ -8,6 +8,10 @@ struct Fake {
     mode: &'static str,
 }
 impl Api for Fake {
+    fn wait_for_key_visibility(&self, cancel: &Cancellation) -> Result<()> {
+        ensure!(!cancel.cancelled(), "operation interrupted");
+        Ok(())
+    }
     fn pages(&self, _: &str, key: &str) -> Result<Vec<Value>> {
         match key {
             "droplets" => Ok(self.hosts.borrow().clone()),
@@ -39,6 +43,32 @@ impl Api for Fake {
             }
             ("POST", "/droplets") => {
                 let payload = data.unwrap();
+                let key_rejection = self.mode == "key-stuck"
+                    || self.mode == "key-missing"
+                    || self.mode == "key-foreign"
+                    || self.mode == "key-ambiguous"
+                    || (self.mode == "key-delayed"
+                        && self
+                            .calls
+                            .borrow()
+                            .iter()
+                            .filter(|(m, p, _)| m == "POST" && p == "/droplets")
+                            .count()
+                            == 1);
+                if key_rejection {
+                    return Err(ProviderError {
+                        status: if self.mode == "key-ambiguous" {
+                            500
+                        } else {
+                            422
+                        },
+                        code: "unprocessable_entity".into(),
+                        message: "9 are invalid key identifiers for Droplet creation.".into(),
+                        method: method.into(),
+                        path: path.into(),
+                    }
+                    .into());
+                }
                 let d = json!({"id":7,"name":payload["name"],"tags":payload["tags"],"status":"active","networks":{"v4":[{"type":"public","ip_address":"192.0.2.1"}]}});
                 if self.mode == "lost" {
                     self.hosts.borrow_mut().push(d);
@@ -84,8 +114,59 @@ impl Api for Fake {
                     .retain(|d| format!("/account/keys/{}", d["id"]) != p);
                 Ok(None)
             }
+            ("GET", p) if p.starts_with("/account/keys/") => Ok(self
+                .keys
+                .borrow()
+                .iter()
+                .find(|k| format!("/account/keys/{}", k["id"]) == p)
+                .map(|key| json!({"ssh_key": key}))),
             _ => bail!("unexpected request"),
         }
+    }
+}
+#[test]
+fn new_key_visibility_retry_is_narrow_bounded_and_keeps_one_host() {
+    let owner = tag("test/capntproto");
+    let name = format!("{owner}-42-1");
+    for (mode, posts) in [
+        ("key-delayed", 2),
+        ("key-stuck", 4),
+        ("key-missing", 1),
+        ("key-foreign", 1),
+        ("key-ambiguous", 1),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let api = Fake {
+            mode,
+            ..Default::default()
+        };
+        if mode != "key-missing" {
+            api.keys.borrow_mut().push(
+                json!({"id":9,"name":if mode == "key-foreign" { "unrelated" } else { &name }}),
+            );
+        }
+        let plan = select(sizes(), "auto", "auto", &BTreeSet::new()).unwrap();
+        let result = create_host(
+            &api,
+            json!({"name":name,"tags":[owner],"ssh_keys":[9]}),
+            plan,
+            dir.path(),
+            &owner,
+            &Cancellation::default(),
+            |_| panic!("key rejection is not a capacity fallback"),
+        );
+        assert_eq!(result.is_ok(), mode == "key-delayed", "{mode}: {result:?}");
+        assert_eq!(
+            api.calls
+                .borrow()
+                .iter()
+                .filter(|(m, p, _)| m == "POST" && p == "/droplets")
+                .count(),
+            posts
+        );
+        assert_eq!(api.hosts.borrow().len(), usize::from(mode == "key-delayed"));
+        let journal = crate::read_json(dir.path().join("provisioning.json")).unwrap();
+        assert_eq!(journal.as_array().unwrap().len(), posts);
     }
 }
 fn sizes() -> Vec<Value> {
@@ -270,6 +351,8 @@ fn full_benchmark_lifecycle_preserves_partial_results_and_always_cleans_up() {
         "refuse",
         "unavailable",
         "expensive",
+        "key-delayed",
+        "key-stuck",
     ] {
         let dir = tempfile::tempdir().unwrap();
         let bundle = dir.path().join("bundle");
@@ -294,7 +377,11 @@ fn full_benchmark_lifecycle_preserves_partial_results_and_always_cleans_up() {
             &Cancellation::default(),
             &commands,
         );
-        assert_eq!(result.is_ok(), mode == "success", "{mode}: {result:?}");
+        assert_eq!(
+            result.is_ok(),
+            matches!(mode, "success" | "key-delayed"),
+            "{mode}: {result:?}"
+        );
         if ["unavailable", "expensive"].contains(&mode) {
             assert!(api.calls.borrow().is_empty());
             assert!(!output.join("trials.json").exists());

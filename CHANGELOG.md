@@ -1,5 +1,9 @@
 # 0.1.0 developer preview (unpublished)
 
+- Bound retries for DigitalOcean's explicit rejection of a newly registered SSH
+  key, verifying key ownership and absence of a matching host before retrying.
+  Ambiguous creation responses and unrelated errors still stop provisioning.
+
 - Correct the C++ benchmark's per-byte assertion overhead and excluded response
   cleanup. All implementations now use bulk payload comparison and ten-second
   per-call deadlines inside timed round trips. Version measurements to reject
