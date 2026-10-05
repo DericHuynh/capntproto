@@ -30,6 +30,9 @@
 - Avoid scheduling idle checks while a live import or export proves that an RPC
   connection remains active. Preserve deferred checks on final release and
   reentrant table changes, following the C++ connection's early activity check.
+- Submit native TCP/TLS frame headers and payloads in one vectored write instead
+  of three separate TLS writes. Preserve partial-write handling, exact wire bytes,
+  flush errors, and the receipt acknowledgement fence without copying payloads.
 - Imported the maintained Cap’n Proto Rust runtime, RPC engine, async framing and
   generator as `capntproto-{core,rpc,futures,codegen}` workspace crates, retaining
   upstream licenses and generated Rust import names.

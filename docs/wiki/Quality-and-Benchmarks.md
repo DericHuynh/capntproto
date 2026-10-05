@@ -720,7 +720,7 @@ The relevant optimizations are specific ownership and scheduling decisions:
 | --- | --- |
 | `arena.h` / `arena.c++`: inline `segment0`, lazily allocated metadata for other segments | Buffered framing now keeps the first range directly, with a vector only for additional ranges. Bounds and alignment checks remain. A previous inline builder-arena experiment removed one allocation but increased measured instructions and was rejected. |
 | `serialize-async.c++`: separately owned retained frames; direct reads for large incomplete frames | Retained Rust frames now own a boxed word slice instead of allocating another `Arc` control block. Short-lived views still share the receive buffer and remain valid after the stream is dropped. Large-frame direct reads already exist. |
-| `rpc-twoparty.c++`: `evalLast()` batches related messages into one vectored write and propagates write failures to reads | Rust already batches queued messages, uses stack framing for small batches, and propagates output failure separately from transport-close completion. KJ's end-of-event-queue scheduling is stronger than a fixed number of Tokio yields; this is a remaining scheduling opportunity. |
+| `rpc-twoparty.c++`: `evalLast()` batches related messages into one vectored write and propagates write failures to reads | Rust already batches queued messages, uses stack framing for small batches, and propagates output failure separately from transport-close completion. Native TCP/TLS now also submits its kind, length, and payload together with a vectored write. KJ's end-of-event-queue scheduling is stronger than a fixed number of Tokio yields; this is a remaining scheduling opportunity. |
 | `kj/async-inl.h`: `PromiseDisposer::appendPromise()` stores continuation nodes in an existing promise arena | Prefer fusing Rust async continuations and reusing task storage before type erasure. A C++-style raw arena cannot be copied blindly: Rust futures must retain pinning, cancellation and destructor guarantees. |
 | `rpc.c++`: `checkIfBecameIdle()` first checks whether protocol tables are empty | Skip allocating and scheduling an idle-check task while an import or export proves the connection is active. Fallible borrows preserve reentrant capability destruction; the last release still requests a deferred check. |
 | `rpc.c++`: capability-free successful returns set `noFinishNeeded` and release answer state | Already supported, with explicit exceptions for joins and callee-allocated answer IDs. Errors and redirected responses retain their required pipeline/Finish semantics. |
@@ -748,6 +748,18 @@ The C++-inspired idle precheck further reduced the Rust client diagnostic to
 million. Idle model replay, both capability/question release orders, reentrant
 disconnect cleanup, joins, redirected calls, and output closure checks retain
 their original behavior. Dedicated latency qualification is still required.
+
+Following the vectored-write path exposed three separate TLS writes for each
+native TCP frame: its kind byte, length, and payload. The TCP bridge now presents
+the five-byte stack header and borrowed payload together. Partial writes resume
+at the exact byte boundary, and the caller still publishes acknowledgement only
+after flush succeeds. In the same 11,000-call local diagnostic, server instructions
+fell from 469.66 million to 393.53 million (16.2%) and client allocations fell from
+275,492 to 242,491 (about three fewer per call). This diagnostic uses native
+TCP/TLS with the same authentication and workload; it does not change the
+canonical QUIC/C++ benchmark or establish the QUIC latency target. Targeted tests
+cover partial and pending writes, write-zero and flush errors, authenticated RPC,
+large byte transfers, crossed receipts, and shutdown.
 
 Allocation checks cover the warmed single-segment queue, and partial-write
 tests cover every byte boundary of small frames plus large multi-segment batches.

@@ -1,5 +1,6 @@
 //! Native multiparty sessions over mutually authenticated TCP/TLS 1.3.
 //! TLS pins stable peer keys and the reservation context before publishing IO.
+mod framing;
 use super::*;
 use crate::native_shutdown::{Frame, Protocol, FRAME_BYTES};
 use std::{
@@ -131,10 +132,7 @@ async fn bridge(
     let acknowledged = Rc::new(Cell::new(false));
     let send = async {
         while let Some((kind, bytes)) = frames.recv().await {
-            output.write_u8(kind).await?;
-            output.write_u32(bytes.len() as u32).await?;
-            output.write_all(&bytes).await?;
-            output.flush().await?;
+            framing::write(&mut output, kind, &bytes).await?;
             if kind == 1 && bytes[4] != 1 {
                 acknowledged.set(true);
                 changed.notify_one();
