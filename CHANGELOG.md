@@ -27,6 +27,9 @@
   C++ implementation's common-segment optimization. Retained frames own their
   word storage without a separate reference-count allocation; short-lived views
   retain safe shared ownership. Preserve multi-segment bounds and empty segments.
+- Avoid scheduling idle checks while a live import or export proves that an RPC
+  connection remains active. Preserve deferred checks on final release and
+  reentrant table changes, following the C++ connection's early activity check.
 - Imported the maintained Cap’n Proto Rust runtime, RPC engine, async framing and
   generator as `capntproto-{core,rpc,futures,codegen}` workspace crates, retaining
   upstream licenses and generated Rust import names.

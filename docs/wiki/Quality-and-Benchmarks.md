@@ -722,6 +722,7 @@ The relevant optimizations are specific ownership and scheduling decisions:
 | `serialize-async.c++`: separately owned retained frames; direct reads for large incomplete frames | Retained Rust frames now own a boxed word slice instead of allocating another `Arc` control block. Short-lived views still share the receive buffer and remain valid after the stream is dropped. Large-frame direct reads already exist. |
 | `rpc-twoparty.c++`: `evalLast()` batches related messages into one vectored write and propagates write failures to reads | Rust already batches queued messages, uses stack framing for small batches, and propagates output failure separately from transport-close completion. KJ's end-of-event-queue scheduling is stronger than a fixed number of Tokio yields; this is a remaining scheduling opportunity. |
 | `kj/async-inl.h`: `PromiseDisposer::appendPromise()` stores continuation nodes in an existing promise arena | Prefer fusing Rust async continuations and reusing task storage before type erasure. A C++-style raw arena cannot be copied blindly: Rust futures must retain pinning, cancellation and destructor guarantees. |
+| `rpc.c++`: `checkIfBecameIdle()` first checks whether protocol tables are empty | Skip allocating and scheduling an idle-check task while an import or export proves the connection is active. Fallible borrows preserve reentrant capability destruction; the last release still requests a deferred check. |
 | `rpc.c++`: capability-free successful returns set `noFinishNeeded` and release answer state | Already supported, with explicit exceptions for joins and callee-allocated answer IDs. Errors and redirected responses retain their required pipeline/Finish semantics. |
 | `message.c++`: reusable scratch segments clear only their used portion | Existing Rust scratch allocators already provide this. General RPC arena pooling needs bounded retention and ownership through partial writes and retained pipelines; the benchmark must not receive special scratch-only behavior. |
 
@@ -741,6 +742,12 @@ accept an optimization. The C++ server used 293.17 million instructions in the
 same diagnostic, but its plaintext TCP transport omits QUIC recovery and TLS
 cryptography. These are instruction/allocation diagnostics, not latency results
 or an attribution of the entire performance gap to one layer.
+
+The C++-inspired idle precheck further reduced the Rust client diagnostic to
+264,786 allocations (about 24.1 per call) and server instructions to 524.67
+million. Idle model replay, both capability/question release orders, reentrant
+disconnect cleanup, joins, redirected calls, and output closure checks retain
+their original behavior. Dedicated latency qualification is still required.
 
 Allocation checks cover the warmed single-segment queue, and partial-write
 tests cover every byte boundary of small frames plus large multi-segment batches.

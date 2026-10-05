@@ -561,9 +561,26 @@ impl<VatId> ConnectionState<VatId> {
     }
 
     fn schedule_idle_check(&self) {
-        if self.idle.get() || self.idle_check_queued.replace(true) {
+        if self.idle.get() || self.idle_check_queued.get() {
             return;
         }
+        // Like C++'s checkIfBecameIdle(), reject a known-active connection
+        // before scheduling work. Releasing the last import/export requests a
+        // fresh check. Use fallible borrows because capability destructors can
+        // reach here during table mutation. If neither table proves activity,
+        // keep the deferred path instead of invoking transport callbacks here.
+        if self
+            .imports
+            .try_borrow()
+            .is_ok_and(|imports| !imports.slots.is_empty())
+            || self
+                .exports
+                .try_borrow()
+                .is_ok_and(|exports| !exports.is_empty())
+        {
+            return;
+        }
+        self.idle_check_queued.set(true);
         let weak = self.weak_self.clone();
         self.add_task(async move {
             if let Some(state) = weak.upgrade() {
