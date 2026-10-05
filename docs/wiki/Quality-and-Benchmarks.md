@@ -432,8 +432,8 @@ the C++ 64-KiB median from 156.025 to 75.219 microseconds after bulk comparison 
 cleanup were matched, before adding the matching deadline. This is a benchmark
 correction, not a protocol speedup. Historical unversioned comparisons below are
 retained as historical evidence and must not qualify the current target. The
-driver and report validator reject legacy or mixed measurement versions. No
-version-2 dedicated result or 1.2× qualification is claimed here yet.
+driver and report validator reject legacy or mixed measurement versions. The
+version-2 dedicated result below does not meet the 1.2× target.
 
 The runner destroys the droplet in `finally`, including failure/cancellation,
 and an Actions `always()` step verifies cleanup. A separate hourly janitor
@@ -943,6 +943,56 @@ pooled medians of 176.07 versus 171.60 µs. Small-call latency was essentially
 unchanged. The candidate passed 297 focused transport/RPC/model checks, ten
 bridge ownership/property checks and the unsafe-documentation gate. These
 diagnostics still require a new dedicated acceptance run.
+
+Keeping one native timer/notification registration and reducing two-party RPC
+read-ahead to 8 KiB further reduced local server instructions: 447.98 to 437.64
+million for 10,000 warmups plus 1,000 empty calls, and 1.995 to 1.861 billion for
+1,000 warmups plus 1,000 64-KiB calls. Smaller staging reduces the copied prefix;
+message limits and framing validation stay unchanged. A separate large receive
+allocation pool showed no meaningful instruction improvement and was rejected.
+The combined runtime at `ae8285127` passed all 1,568 workspace nextest checks,
+with seven documented skips, including memory-safety and mutation controls.
+
+Version-2 local controls used the same CPU pair, release flags, five repetitions
+and full sample retention. Authenticated TCP/TLS measured 45.75/45.96/47.42/161.06
+µs at 0/64/1024/65536 bytes; native QUIC in that comparison measured
+64.88/64.95/66.77/170.83 µs, and C++ plaintext TCP
+38.06/37.99/39.04/76.27 µs. In a separate plaintext two-party Rust RPC control,
+Rust/C++ measured 49.52/37.85, 49.03/37.72, 42.88/38.55 and 84.37/76.20 µs.
+These diagnostics distinguish the authenticated transport path from serialization
+and RPC machinery. The plaintext control omits native session/transport features
+and cannot qualify the native QUIC target; these local results are not dedicated
+acceptance measurements.
+
+The [first validated version-2 run on `80a470fd6`](https://github.com/DericHuynh/capntproto/actions/runs/37293782939)
+used four dedicated `c-4` vCPUs in `nyc3`, an Intel Xeon Platinum 8358 and
+`kvm-clock`, at $0.125/hour. Its source fingerprint is
+`58ad234aceb9b11239d6ddfdbb918daa6691c9dd0653852991631522892a1b90`.
+All 80 trials passed validation, and cleanup confirmed deletion of droplet
+`606256499`. Five repetitions contribute every sample to these pooled medians:
+
+| Payload | Native QUIC p50 (µs) | C++ TCP p50 (µs) | Native / C++ |
+| --- | ---: | ---: | ---: |
+| Empty | 41.803 | 30.895 | 1.353× |
+| 64 B | 42.137 | 31.607 | 1.333× |
+| 1 KiB | 44.621 | 32.898 | 1.356× |
+| 64 KiB | 144.610 | 68.046 | 2.125× |
+
+The target remains unmet for every payload. Compared with this run's baseline,
+native medians would need roughly 10–12% further reduction for small calls and
+44% at 64 KiB. This host differs from earlier Xeon 8168 runs, and the C++
+measurement contract changed; absolute times across those runs are not an
+isolated optimization comparison. Native remains authenticated QUIC, while C++
+uses plaintext TCP. The narrower local plaintext Rust control does not substitute
+for this acceptance result.
+
+The preceding attempt failed before host creation because DigitalOcean rejected
+its newly registered SSH key. The development tool now bounds retries for that
+exact rejection, checks key ownership and absence of a matching host, and still
+refuses retries for ambiguous creation responses. Ten cloud-tool regression
+tests passed. The successful follow-up created its host on the first attempt,
+so it verifies the ordinary provider path; delayed-key recovery is covered by
+the simulated tests.
 
 Allocation checks cover the warmed single-segment queue, and partial-write
 tests cover every byte boundary of small frames plus large multi-segment batches.
