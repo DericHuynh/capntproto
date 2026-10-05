@@ -4,6 +4,7 @@ use std::{
     cell::{Cell, RefCell},
     io,
     rc::{Rc, Weak},
+    sync::Arc,
     time::Duration,
 };
 use tokio::{sync::Notify, time::Instant};
@@ -113,7 +114,7 @@ struct State {
     bucket: RefCell<Bucket>,
     closed: Cell<bool>,
     stats: Cell<ScheduleStats>,
-    changed: Rc<Notify>,
+    changed: Arc<Notify>,
 }
 impl State {
     fn admit(&self, now: Instant) -> bool {
@@ -171,7 +172,7 @@ pub(super) fn pair() -> (Scheduling, Driver) {
         }),
         closed: Cell::new(false),
         stats: Cell::new(ScheduleStats::default()),
-        changed: Rc::new(Notify::new()),
+        changed: Arc::new(Notify::new()),
     });
     (Scheduling(Rc::downgrade(&state)), Driver(state))
 }
@@ -182,7 +183,7 @@ impl Drop for Driver {
     }
 }
 impl Driver {
-    pub(super) fn changed(&self) -> Rc<Notify> {
+    pub(super) fn changed(&self) -> Arc<Notify> {
         self.0.changed.clone()
     }
     pub(super) fn admit(&self, now: Instant) -> bool {

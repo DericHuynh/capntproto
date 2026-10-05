@@ -86,6 +86,7 @@ pub(super) struct Lifecycle {
     datagrams: RefCell<Option<crate::transport::DatagramPort>>,
     mobility: RefCell<Option<crate::transport::Mobility>>,
     scheduling: RefCell<Option<crate::transport::Scheduling>>,
+    bulk: RefCell<Option<crate::transport::bulk::Plane>>,
     terminal_changed: tokio::sync::Notify,
 }
 impl Lifecycle {
@@ -96,6 +97,7 @@ impl Lifecycle {
             datagrams: RefCell::new(None),
             mobility: RefCell::new(None),
             scheduling: RefCell::new(None),
+            bulk: RefCell::new(None),
             terminal_changed: tokio::sync::Notify::new(),
         })
     }
@@ -275,6 +277,12 @@ impl<E: LocalExecutor> OwnedSession<E> {
         }
         self.lifecycle.scheduling.borrow().clone()
     }
+    pub(super) fn bulk(&self) -> Option<crate::transport::bulk::Plane> {
+        if self.status() != RouteStatus::Authenticated {
+            return None;
+        }
+        self.lifecycle.bulk.borrow().clone()
+    }
     pub(super) fn spawn(&self, work: impl std::future::Future<Output = ()> + 'static) {
         let task = self.executor.spawn(work);
         self.tasks.borrow_mut().push(task);
@@ -410,6 +418,7 @@ impl Installed {
         *lifecycle.datagrams.borrow_mut() = session.take_datagrams();
         *lifecycle.mobility.borrow_mut() = Some(session.mobility());
         *lifecycle.scheduling.borrow_mut() = Some(session.scheduling());
+        *lifecycle.bulk.borrow_mut() = session.bulk();
         Ok((io, Self { session, lifecycle }))
     }
     async fn run(

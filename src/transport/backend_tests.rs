@@ -1,11 +1,11 @@
 use super::*;
 use std::time::Duration;
 #[derive(Clone, Copy, Debug)]
-enum Backend {
+pub(crate) enum Backend {
     Tcp,
     Quiche,
 }
-async fn pair(
+pub(crate) async fn pair(
     a: Backend,
     b: Backend,
     version: QuicVersion,

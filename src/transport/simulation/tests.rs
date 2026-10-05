@@ -70,6 +70,7 @@ impl Task {
     }
 }
 struct Peer {
+    bulk: transport::bulk::Plane,
     id: usize,
     app: crate::rpc::local_io::Stream,
     driver: Task,
@@ -80,6 +81,7 @@ struct Peer {
     mobility: transport::Mobility,
 }
 
+mod bulk;
 mod listener;
 mod migration;
 mod nat;
@@ -142,19 +144,29 @@ impl Fixture {
             let (app, io) = crate::rpc::local_io::pair(11);
             let (ready, wait) = oneshot::channel();
             let (control_mobility, driver_mobility) = transport::mobility::pair();
+            let (_, scheduling) = scheduling::pair();
+            let (bulk, bulk_driver) = transport::bulk::pair(
+                &conn,
+                identities[index].public_key(),
+                identities[1 - index].public_key(),
+                control.clone(),
+                scheduling.changed(),
+            );
             let driver = Task::new(transport::drive(
                 PacketSocket::Dedicated(super::super::socket::DatagramSocket::Simulated(socket)),
                 Box::new(conn),
                 io.into_split(),
                 SessionDrivers {
+                    bulk: Some(bulk_driver),
                     established: Some(ready),
                     datagrams: None,
                     shutdown: Some(ShutdownDriver::new(control.clone(), index == 1)),
                     mobility: mobility.then_some(driver_mobility),
-                    scheduling: scheduling::pair().1,
+                    scheduling,
                 },
             ));
             Peer {
+                bulk,
                 id,
                 app,
                 driver,

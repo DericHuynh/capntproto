@@ -2,11 +2,11 @@
 //! Hold encrypted packets to distinguish stream isolation from shared credits.
 use super::{config, Identity};
 
-struct Packet {
+pub(super) struct Packet {
     bytes: Vec<u8>,
     info: quiche::RecvInfo,
 }
-fn packets(connection: &mut quiche::Connection) -> Vec<Packet> {
+pub(super) fn packets(connection: &mut quiche::Connection) -> Vec<Packet> {
     let mut result = Vec::new();
     let mut bytes = [0; 1350];
     loop {
@@ -23,12 +23,15 @@ fn packets(connection: &mut quiche::Connection) -> Vec<Packet> {
         }
     }
 }
-fn deliver(connection: &mut quiche::Connection, packets: Vec<Packet>) {
+pub(super) fn deliver(connection: &mut quiche::Connection, packets: Vec<Packet>) {
     for mut packet in packets {
         connection.recv(&mut packet.bytes, packet.info).unwrap();
     }
 }
-fn pair(connection_credit: u64, stream_credit: u64) -> (quiche::Connection, quiche::Connection) {
+pub(super) fn pair(
+    connection_credit: u64,
+    stream_credit: u64,
+) -> (quiche::Connection, quiche::Connection) {
     let client = Identity::generate();
     let server = Identity::generate();
     let mut ac = config(&client, server.public_key(), None, b"stream plane probe").unwrap();

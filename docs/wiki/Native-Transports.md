@@ -50,10 +50,11 @@ discovery/provisioning, capability handoff, restoration, bounded datagrams,
 scheduling, shutdown receipts, validated migration and explicit CID rotation.
 There is no second QUIC engine with a reduced feature set.
 
-Ordinary RPC and the existing bulk services share stream 0. A proposed
-[control/bulk stream split](RPC-Research.md#split-control-and-bulk-planes-recommended-next-experiment)
-has packet-level isolation probes, but no production bulk-stream negotiation or
-API yet. Separate shutdown streams and the datagram lane already exist.
+Ordinary RPC stays on stream 0. The opt-in [split-plane API](Split-Plane.md)
+negotiates single-use bulk grants through RPC and sends payloads on separate,
+bounded bidirectional QUIC streams. Control has higher priority; consumption
+credit bounds bulk buffering. Old peers and TCP retain ordinary bulk RPC.
+Separate shutdown streams and the datagram lane retain their existing roles.
 
 TCP/TLS supports the ordered native RPC and receipt protocol. TCP has no
 unreliable datagrams or QUIC path/CID controls; applications needing these use

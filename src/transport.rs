@@ -1,6 +1,7 @@
 //! Authenticated TCP/TLS and QUIC sessions for native capability RPC.
 #[cfg(test)]
-mod backend_tests;
+pub(crate) mod backend_tests;
+pub mod bulk;
 #[cfg(test)]
 mod clock_tests;
 #[cfg(test)]
@@ -143,6 +144,7 @@ fn spawn(
                 shutdown: None,
                 mobility: None,
                 scheduling: scheduling::pair().1,
+                bulk: None,
             },
         )),
     ))
@@ -334,6 +336,7 @@ impl PacketSocket {
     }
 }
 struct SessionDrivers {
+    bulk: Option<bulk::Driver>,
     established: Option<tokio::sync::oneshot::Sender<()>>,
     datagrams: Option<DatagramDriver>,
     shutdown: Option<ShutdownDriver>,
@@ -395,6 +398,7 @@ async fn drive_packets(
     drivers: SessionDrivers,
 ) -> io::Result<()> {
     let SessionDrivers {
+        bulk,
         mut established,
         mut datagrams,
         shutdown,
@@ -403,6 +407,7 @@ async fn drive_packets(
     } = drivers;
     let schedule_changed = scheduling.changed();
     let mut engine = engine::Engine::new(conn, established.is_some(), shutdown, scheduling);
+    engine.bulk = bulk;
     let mut udp = vec![0; 65535];
     let mut candidate_packet = vec![0; 65535];
     let mut batch = crate::rpc::packet_batch::Batch::new();
@@ -552,12 +557,14 @@ async fn drive_packets(
                     .map_or(Duration::from_secs(10), |m| m.timeout(now)),
             );
         let datagram_deadline = engine.datagram_deadline(|| now);
+        let bulk_deadline = engine.bulk.as_ref().and_then(|b| b.deadline());
         let can_accept_datagram = engine.can_accept_datagram();
         let can_read = engine.tx.can_read();
         let can_write = !engine.rx.pending().is_empty();
         let more_stream_data = engine.rx.needs_shutdown()
             || (engine.rx.can_receive() && engine.conn.stream_readable(0));
         tokio::select! {
+            _ = async { tokio::time::sleep_until(bulk_deadline.unwrap()).await }, if bulk_deadline.is_some() => {},
             _ = &mut changed => {},
             _ = tokio::task::yield_now(), if exhausted => engine.scheduling.yielded(),
             _ = tokio::task::yield_now(), if more_stream_data => {},
@@ -599,6 +606,7 @@ async fn drive_packets(
 /// A session whose pinned Native handshake has completed. Its peer identity
 /// cannot be supplied separately when attaching it to the multiparty network.
 pub struct AuthenticatedSession {
+    bulk: Option<bulk::Plane>,
     pub(crate) peer: [u8; 32],
     pub(crate) local: [u8; 32],
     pub(crate) io: Option<crate::rpc::local_io::Stream>,
@@ -609,6 +617,10 @@ pub struct AuthenticatedSession {
     pub(crate) driver: tokio::task::JoinHandle<io::Result<()>>,
 }
 impl AuthenticatedSession {
+    /// Session-bound bulk grants. TCP sessions use ordinary capability RPC.
+    pub fn bulk(&self) -> Option<bulk::Plane> {
+        self.bulk.clone()
+    }
     pub fn scheduling(&self) -> Scheduling {
         self.scheduling.clone()
     }
@@ -656,7 +668,17 @@ pub(crate) async fn authenticated(
     let shutdown_driver = ShutdownDriver::new(shutdown.clone(), conn.is_server());
     let (mobility, mobility_driver) = mobility::pair();
     let (scheduling, scheduling_driver) = scheduling::pair();
+    // Bulk admission/IO shares the existing policy wakeup. Idle ordinary RPC
+    // does not register another Notify waiter or sample a bulk deadline clock.
+    let (bulk, bulk_driver) = bulk::pair(
+        &conn,
+        local,
+        peer,
+        shutdown.clone(),
+        scheduling_driver.changed(),
+    );
     let session = AuthenticatedSession {
+        bulk: Some(bulk),
         mobility,
         scheduling,
         shutdown,
@@ -674,6 +696,7 @@ pub(crate) async fn authenticated(
                 shutdown: Some(shutdown_driver),
                 mobility: Some(mobility_driver),
                 scheduling: scheduling_driver,
+                bulk: Some(bulk_driver),
             },
         )),
     };

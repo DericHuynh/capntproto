@@ -1,9 +1,16 @@
 # 0.1.0 developer preview (unpublished)
 
+- Add opt-in split control/bulk planes on the existing authenticated quiche
+  session. Single-use capability grants authorize bounded payload streams;
+  capability RPC, pipelining, cancellation and publication stay ordered on
+  stream 0. Preserve old-peer/TCP bulk fallback, reserve control credit, expose
+  bulk counters and drain reliable streams before graceful connection close.
+  See `docs/wiki/Split-Plane.md` for limits and completion semantics.
+
 - Reuse RPC write-batch storage, keep small framing tables on the stack, and
   complete immediately-ready non-pipelined calls without a background completion
   task. Native transport samples application clocks only for pending datagrams
-  and migration. Keep single-segment receive metadata inline, retain one input
+  and migration, plus deadlines for active bulk transfers. Keep single-segment receive metadata inline, retain one input
   cancellation registration per connection, generate QUIC packets directly into
   bounded send batches, and construct disabled-pipeline errors only on use.
   The 1.2× C++ latency target has not yet been met.

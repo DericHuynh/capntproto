@@ -103,6 +103,13 @@ cannot acknowledge or keep the endpoint's drain alive. Reconnecting creates a
 fresh handle and nonce; old receipts never complete a new route. Datagram lanes
 are closed as the drain proceeds and have no receipt guarantee.
 
+When [split-plane bulk streams](Split-Plane.md) are admitted, shutdown immediately
+rejects new grants and waits for those transfers to settle before issuing the
+final receipt/connection close. Successful streams retain their final consumption
+receipt until Quiche acknowledges and collects the stream. Canceled/failed
+transfers retain their own error; shutdown is not an application publication
+receipt. Its byte count continues to describe RPC input only.
+
 TCP/TLS carries the same receipt frames through bounded multiplexing alongside
 RPC data in its ordered TLS stream; it does not create QUIC control streams.
 Both transports acknowledge delivery into the peer RPC input, not method execution.

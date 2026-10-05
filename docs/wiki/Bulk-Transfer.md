@@ -4,6 +4,11 @@ The separate [durable bulk service](Durable-Bulk.md) adds resumable file upload,
 disk-backed chunk journals and atomic typed ORM publication with a durable
 receipt. The original in-memory `Transfer` contract below is unchanged.
 
+Native QUIC can opt into [split control/bulk planes](Split-Plane.md) with
+`bulk::split::{enable, send}`. `openStream @4` grants a separate payload stream;
+`done` still controls publication. The ordinary methods below remain compatible,
+and old receivers or TCP use the ordinary RPC path.
+
 `src/bulk.rs` implements `schemas/bulk.capnp`. One `Transfer` capability
 authorizes one bounded transfer into an application-owned receiver. Separate
 capabilities isolate staging, sequence numbers, failure and publication. Payloads
@@ -28,6 +33,7 @@ reconnect, retry or allocator reset on an existing capability.
 | `write(sequence, data)` | Processes one ordered chunk and returns its sequence as an acknowledgment. |
 | `done()` | Checks the exact total length and atomically exposes the complete value; returns byte/chunk counts. |
 | `cancel()` | Releases unpublished data; returns `Canceled` or `Complete` if publication already won. |
+| `openStream()` | Optional single-use QUIC grant; `Unimplemented` selects ordinary writes. |
 
 The adapter uses ordinary RPC Calls and Returns. Unlike an optimized RPC
 streaming send's readiness promise, a wire `write` reply acknowledges remote

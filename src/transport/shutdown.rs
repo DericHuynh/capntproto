@@ -4,6 +4,7 @@ use std::{collections::VecDeque, io};
 pub(super) const ACKNOWLEDGED_CLOSE: u64 = 0x525053;
 
 pub(super) struct ShutdownDriver {
+    pub bulk_drained: bool,
     pub control: Control,
     protocol: Protocol,
     nonce: [u8; 16],
@@ -22,6 +23,7 @@ pub(super) struct ShutdownDriver {
 impl ShutdownDriver {
     pub fn new(control: Control, server: bool) -> Self {
         Self {
+            bulk_drained: true,
             control,
             protocol: Protocol::default(),
             nonce: super::cid(),
@@ -155,7 +157,7 @@ impl ShutdownDriver {
         // A crossed shutdown advertises its own request in the ACK. Wait for
         // the local writer fence before emitting that ACK, even if the peer's
         // request/data arrived first. The remote side then waits for both legs.
-        if !self.requested() || self.protocol.sent.is_some() {
+        if self.bulk_drained && (!self.requested() || self.protocol.sent.is_some()) {
             if let Some(ack) = self.protocol.acknowledge() {
                 self.ack_frame = Some(ack);
                 self.outgoing
@@ -163,6 +165,7 @@ impl ShutdownDriver {
             }
         }
         while let Some((id, frame)) = self.outgoing.front() {
+            conn.stream_priority(*id, 0, false).map_err(super::error)?;
             match conn.stream_send(*id, &frame[self.send_offset..], true) {
                 Ok(n) => {
                     self.send_offset += n;

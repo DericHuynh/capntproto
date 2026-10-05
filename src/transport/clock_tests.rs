@@ -208,6 +208,7 @@ async fn outer_driver_observes_virtual_shutdown_deadline() {
         a.conn,
         io.into_split(),
         super::SessionDrivers {
+            bulk: None,
             established: None,
             datagrams: None,
             shutdown: Some(super::shutdown::ShutdownDriver::new(control.clone(), false)),

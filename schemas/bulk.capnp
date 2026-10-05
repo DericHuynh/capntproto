@@ -16,6 +16,9 @@ interface Transfer {
   write @1 (sequence :UInt64, data :Data) -> (sequence :UInt64);
   done @2 () -> (summary :Summary);
   cancel @3 () -> (status :Status);
+  # Optional, single-use, session-bound QUIC grant. Unimplemented means ordinary
+  # write RPC fallback. Stream FIN never publishes: done remains the commit gate.
+  openStream @4 () -> (offer :Data);
 }
 # Durable variant: identical retries preserve the committed prefix; describe
 # provides a checkpoint after reconnect. The host reissues this capability only

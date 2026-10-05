@@ -162,6 +162,10 @@ impl Control {
     pub(crate) fn requested(&self) -> bool {
         self.0.state.borrow().deadline.is_some()
     }
+    pub(crate) fn accepting(&self) -> bool {
+        let state = self.0.state.borrow();
+        state.deadline.is_none() && state.outcome.is_none() && !state.peer_closing
+    }
     pub(crate) fn finish(&self, outcome: io::Result<Receipt>) {
         {
             let mut state = self.0.state.borrow_mut();

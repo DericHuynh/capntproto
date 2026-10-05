@@ -489,6 +489,17 @@ impl Handle {
             .session
             .scheduling()
     }
+    /// Bulk plane for the selected authenticated QUIC session. Grants cannot
+    /// cross reconnects or routes; TCP returns None for ordinary-RPC fallback.
+    pub fn bulk(&self, peer: VatId) -> Option<crate::transport::bulk::Plane> {
+        self.0
+            .routes
+            .borrow()
+            .get(&peer)
+            .and_then(Weak::upgrade)?
+            .session
+            .bulk()
+    }
     pub fn stats(&self) -> Stats {
         let e = self.0.exchange.borrow();
         Stats {

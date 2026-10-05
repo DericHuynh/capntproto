@@ -9,6 +9,7 @@
 
 - [TCP, TLS and QUIC](TCP-TLS-and-QUIC.md)
 - [Native Transports](Native-Transports.md)
+- [Split Planes](Split-Plane.md)
 - [Third-Party Answers](Third-Party-Answers.md)
 - [Capability Join](Capability-Join.md)
 - [Multiparty Join](Multiparty-Join.md)

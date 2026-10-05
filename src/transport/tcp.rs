@@ -95,6 +95,7 @@ fn session(
     let mobility = Mobility::unavailable();
     let (scheduling, schedule_driver) = scheduling::pair();
     AuthenticatedSession {
+        bulk: None,
         peer,
         local,
         io: Some(app),

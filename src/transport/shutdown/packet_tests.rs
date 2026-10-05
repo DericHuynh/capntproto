@@ -388,6 +388,7 @@ async fn outer_transport_driver_preserves_close_validation_and_deadline_errors()
                     Box::new(case.a),
                     io.into_split(),
                     SessionDrivers {
+                        bulk: None,
                         established: None,
                         datagrams: None,
                         shutdown: Some(case.driver),

@@ -12,6 +12,7 @@ use std::io;
 use tokio::time::Instant;
 
 pub(super) struct Engine {
+    pub bulk: Option<super::bulk::Driver>,
     pub conn: Box<quiche::Connection>,
     pub tx: SendStream,
     pub rx: ReceiveStream,
@@ -42,6 +43,7 @@ impl Engine {
             })
         });
         Self {
+            bulk: None,
             conn,
             tx: SendStream::default(),
             rx: ReceiveStream::default(),
@@ -168,8 +170,25 @@ impl Engine {
             }
         }
         if self.ready() {
+            if let Some(bulk) = &mut self.bulk {
+                if self.shutdown.as_ref().is_some_and(|s| s.closing()) {
+                    bulk.close_admission();
+                }
+                bulk.step(&mut self.conn)?;
+            }
             if let Some(shutdown) = &mut self.shutdown {
-                shutdown.step(&mut self.conn, self.tx.written(), self.tx.drained())?;
+                let bulk_drained = self.bulk.as_ref().is_none_or(|b| b.drained());
+                shutdown.bulk_drained = bulk_drained;
+                shutdown.step(
+                    &mut self.conn,
+                    self.tx.written(),
+                    self.tx.drained() && bulk_drained,
+                )?;
+                if shutdown.closing() {
+                    if let Some(bulk) = &self.bulk {
+                        bulk.close_admission();
+                    }
+                }
                 if shutdown.closing() {
                     self.pending_datagram = None;
                 }
