@@ -198,7 +198,14 @@ where
         Self {
             inner: Rc::new(RefCell::new(ConnectionInner {
                 input_stream: Rc::new(RefCell::new(Some(Box::new(
-                    capnp_futures::BufferedRead::new(input_stream, receive_options),
+                    // Keep ordinary control frames buffered, but spill larger
+                    // frames into their final storage after a bounded prefix.
+                    capnp_futures::BufferedRead::with_buffer_size(
+                        input_stream,
+                        receive_options,
+                        1024,
+                    )
+                    .expect("8 KiB holds every legal RPC segment table"),
                 )))),
                 sender,
                 side,

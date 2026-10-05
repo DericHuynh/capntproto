@@ -1,5 +1,10 @@
 # 0.1.0 developer preview (unpublished)
 
+- Retain the native recovery timer and scheduling notification across packet
+  events. Reduce two-party RPC read-ahead storage to 8 KiB so larger frames
+  reach their final allocation after a smaller copied prefix; message limits
+  and the general buffered-reader API remain unchanged.
+
 - Transfer native QUIC receive buffers into an empty RPC bridge without a
   second payload copy. Reserve for readable fragments once, reuse drained
   buffers, and retain bounded copying for partial admission. Exercise owned

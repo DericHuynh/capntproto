@@ -411,10 +411,14 @@ async fn drive_packets(
     let mut mtu_recovery = crate::rpc::packet_mtu::Recovery::default();
     let (mut reader, mut writer) = io;
     let mut local = socket.local_addr()?;
+    // Keep one registration alive while packet and application events run.
+    // Recreating these futures per event churns notification and timer state.
+    let changed = schedule_changed.notified();
+    tokio::pin!(changed);
+    changed.as_mut().enable();
+    let recovery_timer = tokio::time::sleep(Duration::from_secs(10));
+    tokio::pin!(recovery_timer);
     loop {
-        let changed = schedule_changed.notified();
-        tokio::pin!(changed);
-        changed.as_mut().enable();
         socket.check_open()?;
         // Consume a bounded receive burst before generating acknowledgements.
         // Flushing after each datagram creates an ACK and scheduler round trip
@@ -555,9 +559,15 @@ async fn drive_packets(
         let can_write = !engine.rx.pending().is_empty();
         let more_stream_data = engine.rx.needs_shutdown()
             || (engine.rx.can_receive() && engine.conn.stream_readable(0));
+        recovery_timer
+            .as_mut()
+            .reset(tokio::time::Instant::now() + timeout);
         tokio::select! {
             _ = async { tokio::time::sleep_until(bulk_deadline.unwrap()).await }, if bulk_deadline.is_some() => {},
-            _ = &mut changed => {},
+            _ = &mut changed => {
+                changed.set(schedule_changed.notified());
+                changed.as_mut().enable();
+            },
             _ = tokio::task::yield_now(), if exhausted => engine.scheduling.yielded(),
             _ = tokio::task::yield_now(), if more_stream_data => {},
             _ = async { tokio::time::sleep_until(datagram_deadline.unwrap()).await }, if datagram_deadline.is_some() => {},
@@ -590,7 +600,7 @@ async fn drive_packets(
             },
             r=engine.tx.read_from(&mut reader), if can_read => engine.tx.read_owned(r?)?,
             r=writer.write_from(&mut engine.rx), if can_write => engine.delivered(r?)?,
-            _=tokio::time::sleep(timeout) => mtu_recovery.on_timeout(&mut engine.conn),
+            _=&mut recovery_timer => mtu_recovery.on_timeout(&mut engine.conn),
         }
     }
 }
