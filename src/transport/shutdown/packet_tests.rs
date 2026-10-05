@@ -8,6 +8,39 @@ use crate::native_shutdown::DriverGuard;
 use futures::FutureExt;
 use std::time::Duration;
 
+#[test]
+fn idle_control_readiness_still_observes_empty_fin_and_reset_on_every_lane() {
+    for server in [false, true] {
+        for lane in 0..3 {
+            for reset in [false, true] {
+                let (mut client, mut peer) = pair_profile(128, 128, None);
+                let (receiver, sender) = if server {
+                    (&mut peer, &mut client)
+                } else {
+                    (&mut client, &mut peer)
+                };
+                let mut driver = ShutdownDriver::new(Control::new(), server);
+                assert!(!receiver.is_readable());
+                driver.step(receiver, 0, false).unwrap();
+                let id = driver.incoming_id + 4 * lane;
+                sender.stream_send(id, &[], !reset).unwrap();
+                if reset {
+                    sender
+                        .stream_shutdown(id, quiche::Shutdown::Write, 42)
+                        .unwrap();
+                }
+                pump(sender, receiver, &mut false);
+                assert!(receiver.is_readable());
+                assert!(
+                    driver.step(receiver, 0, false).is_err(),
+                    "server={server} lane={lane} reset={reset}"
+                );
+                assert!(!driver.acknowledged());
+            }
+        }
+    }
+}
+
 struct PacketCase {
     a: crate::transport::buffers::Connection,
     b: crate::transport::buffers::Connection,

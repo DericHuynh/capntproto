@@ -247,10 +247,10 @@ impl Driver {
         }
         Ok(migrated)
     }
-    pub(super) fn timeout(&self, now: Instant) -> Duration {
+    pub(super) fn timeout(&self, now: impl FnOnce() -> Instant) -> Duration {
         self.pending.as_ref().map_or(Duration::from_secs(10), |p| {
             p.deadline
-                .saturating_duration_since(now)
+                .saturating_duration_since(now())
                 .min(Duration::from_millis(20))
         })
     }

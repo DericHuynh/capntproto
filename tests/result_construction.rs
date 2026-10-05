@@ -398,7 +398,7 @@ async fn first_result_hint_reaches_transport_once_and_is_bounded_through_membran
     tokio::task::LocalSet::new()
         .run_until(async {
             // Pinned RPC layout: 8 envelope words, 4 per capability plus a list
-            // tag even when the descriptor list is empty.
+            // tag only when capability descriptors are present.
             for (hint, expected) in [
                 (None, 0),
                 (
@@ -406,7 +406,14 @@ async fn first_result_hint_reaches_transport_once_and_is_bounded_through_membran
                         word_count: 0,
                         cap_count: 0,
                     }),
-                    9,
+                    8,
+                ),
+                (
+                    Some(MessageSize {
+                        word_count: 64,
+                        cap_count: 0,
+                    }),
+                    72,
                 ),
                 (
                     Some(MessageSize {

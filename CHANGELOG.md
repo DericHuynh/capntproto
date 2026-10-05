@@ -1,5 +1,10 @@
 # 0.1.0 developer preview (unpublished)
 
+- Skip inactive shutdown-stream reads using quiche's readiness state, while
+  retaining reset and empty-FIN errors. Keep RPC framing state in one stable
+  allocation and sample migration/datagram deadline clocks only when needed.
+  Correct result-allocation hints for the omitted empty capability table.
+
 - Keep the first 16 peer-assigned RPC IDs inline, as in C++'s import table,
   avoiding hash lookups for ordinary answers and imports. Larger IDs remain
   sparse, with full-range, replacement and reentrant-drop regression coverage.

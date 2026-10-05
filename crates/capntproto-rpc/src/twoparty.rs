@@ -149,7 +149,10 @@ struct ConnectionInner<T>
 where
     T: AsyncRead + 'static,
 {
-    input_stream: Rc<RefCell<Option<capnp_futures::BufferedRead<T>>>>,
+    // Move only this owner into each receive future; the framing state and
+    // partial message stay in place across calls. Canceling a receive still
+    // drops the input and prevents another read from a partial frame.
+    input_stream: Rc<RefCell<Option<Box<capnp_futures::BufferedRead<T>>>>>,
     sender: capnp_futures::Sender<QueuedMessage>,
     side: crate::rpc_twoparty_capnp::Side,
     on_disconnect_fulfiller: Option<oneshot::Sender<()>>,
@@ -194,9 +197,8 @@ where
     ) -> Self {
         Self {
             inner: Rc::new(RefCell::new(ConnectionInner {
-                input_stream: Rc::new(RefCell::new(Some(capnp_futures::BufferedRead::new(
-                    input_stream,
-                    receive_options,
+                input_stream: Rc::new(RefCell::new(Some(Box::new(
+                    capnp_futures::BufferedRead::new(input_stream, receive_options),
                 )))),
                 sender,
                 side,

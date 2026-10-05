@@ -38,7 +38,7 @@ fn peer_slots_match_sparse_map_across_low_boundary_replacement_and_removal() {
         assert_eq!(slots.is_empty(), reference.is_empty());
         assert_eq!(
             slots.values().copied().sum::<u64>(),
-            reference.values().copied().sum()
+            reference.values().copied().sum::<u64>()
         );
         assert_eq!(
             slots.high.len(),

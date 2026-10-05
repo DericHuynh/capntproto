@@ -541,17 +541,14 @@ async fn drive_packets(
         }
         // Quiche uses system time; Tokio may have a paused/advanced clock.
         // Preserve the relative recovery delay when crossing those domains.
-        let now = tokio::time::Instant::now();
         let timeout = engine
             .conn
             .timeout()
             .unwrap_or(Duration::from_secs(10))
-            .min(
-                mobility
-                    .as_ref()
-                    .map_or(Duration::from_secs(10), |m| m.timeout(now)),
-            );
-        let datagram_deadline = engine.datagram_deadline(|| now);
+            .min(mobility.as_ref().map_or(Duration::from_secs(10), |m| {
+                m.timeout(tokio::time::Instant::now)
+            }));
+        let datagram_deadline = engine.datagram_deadline(tokio::time::Instant::now);
         let bulk_deadline = engine.bulk.as_ref().and_then(|b| b.deadline());
         let can_accept_datagram = engine.can_accept_datagram();
         let can_read = engine.tx.can_read();

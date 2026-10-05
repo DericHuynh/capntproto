@@ -121,6 +121,10 @@ async fn application_pacing_migration_and_shutdown_deadlines_use_runtime_time() 
     let mut socket =
         PacketSocket::Dedicated(crate::transport::socket::DatagramSocket::new(socket).unwrap());
     let (_mobility, mut migration) = mobility::pair();
+    assert_eq!(
+        migration.timeout(|| panic!("idle migration sampled application clock")),
+        Duration::from_secs(10)
+    );
     // Exchange CID allowances before requesting a new path.
     migration
         .step(&mut a.conn, &mut socket, Instant::now)
@@ -164,10 +168,19 @@ async fn application_pacing_migration_and_shutdown_deadlines_use_runtime_time() 
         Instant::now(),
     );
     assert!(result.try_recv().is_err());
+    assert_eq!(migration.timeout(Instant::now), Duration::from_millis(20));
     let origin = Instant::now();
     for millis in [19, 20, 29, 30, 39, 40] {
         tokio::time::advance(origin + Duration::from_millis(millis) - Instant::now()).await;
         let now = Instant::now();
+        assert_eq!(
+            migration.timeout(|| now),
+            if millis <= 30 {
+                Duration::from_millis(30 - millis)
+            } else {
+                Duration::from_secs(10)
+            }
+        );
         migration.step(&mut a.conn, &mut socket, || now).unwrap();
         if millis < 20 {
             assert!(!a.scheduling.admit(now));

@@ -95,6 +95,12 @@ impl ShutdownDriver {
         // Request (2/3), receipt (6/7), and receipt confirmation (10/11).
         // Each stream carries exactly one bounded frame and a FIN.
         for index in 0..3 {
+            // After the RPC stream is drained there are usually no readable
+            // streams at all. Avoid three failed lookups on that common path;
+            // readable resets and zero-byte FINs still go through stream_recv.
+            if !conn.is_readable() {
+                break;
+            }
             if self.received[index] {
                 continue;
             }
