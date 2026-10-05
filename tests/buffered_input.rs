@@ -195,7 +195,41 @@ fn multisegment_even_odd_and_maximum_tables_preserve_alignment_and_boundaries() 
             assert_eq!(segment.as_ptr() as usize % 8, 0);
         }
         assert_eq!(msg.get_segments().len(), count);
+        assert!(msg.get_segments().get_segment(count as u32).is_none());
+        assert!(msg.get_segments().get_segment(u32::MAX).is_none());
         assert_data(&read(&mut reader, true).unwrap().unwrap(), 0, 0);
+    }
+}
+
+#[test]
+fn empty_first_segment_preserves_following_segments_and_owned_lifetime() {
+    // An empty segment zero is legal framing. Segment one must retain its own
+    // offset, including when an earlier frame occupied the receive buffer.
+    let bytes = [
+        1u32.to_le_bytes(),
+        0u32.to_le_bytes(),
+        1u32.to_le_bytes(),
+        0u32.to_le_bytes(),
+        [0x5a; 4],
+        [0x5a; 4],
+    ]
+    .concat();
+    for short in [false, true] {
+        let mut input = BufferedRead::new(
+            source([data(8, 9), bytes.clone(), data(8, 7)].concat()),
+            Default::default(),
+        );
+        drop(read(&mut input, true).unwrap().unwrap());
+        let message = read(&mut input, short).unwrap().unwrap();
+        if !short {
+            assert_data(&read(&mut input, true).unwrap().unwrap(), 8, 7);
+        }
+        drop(input);
+        let segments = message.get_segments();
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments.get_segment(0), Some(&[][..]));
+        assert_eq!(segments.get_segment(1), Some(&[0x5a; 8][..]));
+        assert_eq!(segments.get_segment(2), None);
     }
 }
 

@@ -15,22 +15,25 @@ const DEFAULT_BUFFER_WORDS: usize = 8192;
 const MIN_BUFFER_WORDS: usize = capnp::serialize::SEGMENTS_COUNT_LIMIT / 2;
 
 struct Frame {
-    ranges: SegmentRanges,
+    // Like C++'s segment0, the common segment needs no tagged lookup or heap
+    // metadata. Extra segments are uncommon and retain their validated ranges.
+    first: (usize, usize),
+    additional: Vec<(usize, usize)>,
     bytes: usize,
 }
-enum SegmentRanges {
-    Single([(usize, usize); 1]),
-    Multiple(Vec<(usize, usize)>),
-}
-impl SegmentRanges {
-    fn as_slice(&self) -> &[(usize, usize)] {
-        match self {
-            Self::Single(range) => range,
-            Self::Multiple(ranges) => ranges,
+impl Frame {
+    fn range(&self, id: u32) -> Option<(usize, usize)> {
+        if id == 0 {
+            Some(self.first)
+        } else {
+            self.additional.get(id as usize - 1).copied()
         }
     }
-}
-impl Frame {
+
+    fn len(&self) -> usize {
+        1 + self.additional.len()
+    }
+
     fn parse(bytes: &[u8], options: ReaderOptions) -> Result<Option<Self>> {
         if bytes.len() < 8 {
             return Ok(None);
@@ -57,7 +60,8 @@ impl Frame {
                 .and_then(|n| n.checked_add(8))
                 .ok_or_else(|| Error::from_kind(ErrorKind::MessageSizeOverflow))?;
             return Ok(Some(Self {
-                ranges: SegmentRanges::Single([(8, bytes)]),
+                first: (8, bytes),
+                additional: Vec::new(),
                 bytes,
             }));
         }
@@ -81,13 +85,13 @@ impl Frame {
             .checked_mul(8)
             .and_then(|size| size.checked_add(table_bytes))
             .ok_or_else(|| Error::from_kind(ErrorKind::MessageSizeOverflow))?;
-        let ranges = lengths
+        let mut ranges = lengths
             .to_segment_indices()
             .into_iter()
-            .map(|(start, end)| (table_bytes + start * 8, table_bytes + end * 8))
-            .collect();
+            .map(|(start, end)| (table_bytes + start * 8, table_bytes + end * 8));
         Ok(Some(Self {
-            ranges: SegmentRanges::Multiple(ranges),
+            first: ranges.next().unwrap(),
+            additional: ranges.collect(),
             bytes,
         }))
     }
@@ -97,15 +101,27 @@ impl Frame {
 /// A shared-buffer message prevents subsequent reads until it is dropped. It
 /// remains valid even if the stream itself is dropped. No unsafe aliasing is used.
 pub struct BufferedSegments {
-    storage: Arc<Vec<Word>>,
+    storage: Storage,
     start: usize,
     frame: Frame,
-    shared: bool,
+}
+enum Storage {
+    Shared(Arc<Vec<Word>>),
+    Owned(Box<[Word]>),
+}
+impl core::ops::Deref for Storage {
+    type Target = [Word];
+    fn deref(&self) -> &[Word] {
+        match self {
+            Self::Shared(words) => words,
+            Self::Owned(words) => words,
+        }
+    }
 }
 impl BufferedSegments {
     /// True when this message holds the stream's reusable receive buffer.
     pub fn is_shared_buffer(&self) -> bool {
-        self.shared
+        matches!(self.storage, Storage::Shared(_))
     }
 
     fn detach(mut self) -> Self {
@@ -113,24 +129,21 @@ impl BufferedSegments {
         Word::words_to_bytes_mut(&mut storage).copy_from_slice(
             &Word::words_to_bytes(&self.storage)[self.start..self.start + self.frame.bytes],
         );
-        self.storage = Arc::new(storage);
+        // Detached frames have one owner. Only views into the stream's receive
+        // buffer need reference counting and a separate Arc allocation.
+        self.storage = Storage::Owned(storage.into_boxed_slice());
         self.start = 0;
-        self.shared = false;
         self
     }
 }
 impl ReaderSegments for BufferedSegments {
     fn get_segment(&self, id: u32) -> Option<&[u8]> {
-        self.frame
-            .ranges
-            .as_slice()
-            .get(id as usize)
-            .map(|&(start, end)| {
-                &Word::words_to_bytes(&self.storage)[self.start + start..self.start + end]
-            })
+        self.frame.range(id).map(|(start, end)| {
+            &Word::words_to_bytes(&self.storage)[self.start + start..self.start + end]
+        })
     }
     fn len(&self) -> usize {
-        self.frame.ranges.as_slice().len()
+        self.frame.len()
     }
 }
 
@@ -158,10 +171,9 @@ impl BufferedScratchSegments<'_> {
         match self.0 {
             ScratchStorage::Buffered(s) => s,
             ScratchStorage::Borrowed { words, frame } => BufferedSegments {
-                storage: Arc::new(words.to_vec()),
+                storage: Storage::Owned(words.into()),
                 start: 0,
                 frame,
-                shared: false,
             },
         }
     }
@@ -171,16 +183,14 @@ impl ReaderSegments for BufferedScratchSegments<'_> {
         match &self.0 {
             ScratchStorage::Buffered(s) => s.get_segment(id),
             ScratchStorage::Borrowed { words, frame } => frame
-                .ranges
-                .as_slice()
-                .get(id as usize)
-                .map(|&(start, end)| &Word::words_to_bytes(words)[start..end]),
+                .range(id)
+                .map(|(start, end)| &Word::words_to_bytes(words)[start..end]),
         }
     }
     fn len(&self) -> usize {
         match &self.0 {
             ScratchStorage::Buffered(s) => s.len(),
-            ScratchStorage::Borrowed { frame, .. } => frame.ranges.as_slice().len(),
+            ScratchStorage::Borrowed { frame, .. } => frame.len(),
         }
     }
 }
@@ -378,10 +388,9 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
                 self.advance(spill.frame.bytes)?;
                 return Ok(Some(Reader::new(
                     BufferedScratchSegments(ScratchStorage::Buffered(BufferedSegments {
-                        storage: Arc::new(spill.storage),
+                        storage: Storage::Owned(spill.storage.into_boxed_slice()),
                         start: 0,
                         frame: spill.frame,
-                        shared: false,
                     })),
                     self.options,
                 )));
@@ -398,10 +407,9 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
                     let bytes = frame.bytes;
                     let view = Reader::new(
                         BufferedSegments {
-                            storage: self.buffer.clone(),
+                            storage: Storage::Shared(self.buffer.clone()),
                             start: self.begin,
                             frame,
-                            shared: true,
                         },
                         self.options,
                     );

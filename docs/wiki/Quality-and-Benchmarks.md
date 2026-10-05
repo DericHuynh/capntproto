@@ -694,6 +694,54 @@ call executor. Local server instruction diagnostics fell from approximately
 549 million to 540 million instructions over 11,000 empty calls including setup.
 These are CPU-work diagnostics, not evidence that the latency target is met.
 
+The [fifth dedicated run](https://github.com/DericHuynh/capntproto/actions/runs/37261038782)
+measured the local byte stream at `b7c0b4ea8`, before the result-wrapper changes,
+on a Xeon Platinum 8280. All samples were retained and cleanup succeeded:
+
+| Payload | Native p50 (µs) | C++ p50 (µs) | Native / C++ |
+| --- | ---: | ---: | ---: |
+| Empty | 47.70 | 30.75 | 1.55× |
+| 64 B | 69.61 | 31.48 | 2.21× |
+| 1 KiB | 50.37 | 35.62 | 1.41× |
+| 64 KiB | 225.25 | 187.41 | 1.202× |
+
+This also misses the target, including narrowly at 64 KiB. Native 64-byte
+repetition medians split between 47–48 and 70–71 µs; C++ also showed variation
+between repetitions. The slower repetitions remain included. A different host
+and these distributions prevent attributing all cross-run changes to the patch.
+
+### Lessons from the pinned C++ implementation
+
+The comparison uses upstream commit
+[`0de72d8d8cec6b69edaa29de51d3bd490341f9c2`](https://github.com/capnproto/capnproto/tree/0de72d8d8cec6b69edaa29de51d3bd490341f9c2).
+The relevant optimizations are specific ownership and scheduling decisions:
+
+| C++ mechanism | Application to the maintained Rust implementation |
+| --- | --- |
+| `arena.h` / `arena.c++`: inline `segment0`, lazily allocated metadata for other segments | Buffered framing now keeps the first range directly, with a vector only for additional ranges. Bounds and alignment checks remain. A previous inline builder-arena experiment removed one allocation but increased measured instructions and was rejected. |
+| `serialize-async.c++`: separately owned retained frames; direct reads for large incomplete frames | Retained Rust frames now own a boxed word slice instead of allocating another `Arc` control block. Short-lived views still share the receive buffer and remain valid after the stream is dropped. Large-frame direct reads already exist. |
+| `rpc-twoparty.c++`: `evalLast()` batches related messages into one vectored write and propagates write failures to reads | Rust already batches queued messages, uses stack framing for small batches, and propagates output failure separately from transport-close completion. KJ's end-of-event-queue scheduling is stronger than a fixed number of Tokio yields; this is a remaining scheduling opportunity. |
+| `kj/async-inl.h`: `PromiseDisposer::appendPromise()` stores continuation nodes in an existing promise arena | Prefer fusing Rust async continuations and reusing task storage before type erasure. A C++-style raw arena cannot be copied blindly: Rust futures must retain pinning, cancellation and destructor guarantees. |
+| `rpc.c++`: capability-free successful returns set `noFinishNeeded` and release answer state | Already supported, with explicit exceptions for joins and callee-allocated answer IDs. Errors and redirected responses retain their required pipeline/Finish semantics. |
+| `message.c++`: reusable scratch segments clear only their used portion | Existing Rust scratch allocators already provide this. General RPC arena pooling needs bounded retention and ownership through partial writes and retained pipelines; the benchmark must not receive special scratch-only behavior. |
+
+C++ also caches segment pointers in a non-movable reader arena. Rust readers
+can move and accept user-provided segment storage, so caching a pointer across
+moves would require an additional stable-storage guarantee. The framing change
+caches offsets instead and adds no unsafe code.
+
+Local diagnostics used 10,000 warmups and 1,000 empty calls, including amortized
+setup. Client allocation counts were 299,838 for the pinned C++ executable and
+308,784 for the Rust candidate (about 27.3 and 28.1 per call). C++ still allocated
+more cumulative bytes because its default message arenas are larger. Removing
+the retained-frame `Arc` alone increased Rust server instructions from 539.76
+million to 541.03 million; the simpler first-segment lookup brought that down
+to 537.35 million. This is why an allocation count alone is insufficient to
+accept an optimization. The C++ server used 293.17 million instructions in the
+same diagnostic, but its plaintext TCP transport omits QUIC recovery and TLS
+cryptography. These are instruction/allocation diagnostics, not latency results
+or an attribution of the entire performance gap to one layer.
+
 Allocation checks cover the warmed single-segment queue, and partial-write
 tests cover every byte boundary of small frames plus large multi-segment batches.
 RPC regression tests cover self-wakes, independent subsequent wakes, late errors,

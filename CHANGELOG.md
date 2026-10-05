@@ -23,6 +23,10 @@
 - Build local result wrappers only when an RPC pipeline can observe them, and
   reuse the call executor per connection. Tail-call redirection retains its
   explicit result ownership and cancellation behavior.
+- Keep the first buffered input segment's range directly, following the pinned
+  C++ implementation's common-segment optimization. Retained frames own their
+  word storage without a separate reference-count allocation; short-lived views
+  retain safe shared ownership. Preserve multi-segment bounds and empty segments.
 - Imported the maintained Cap’n Proto Rust runtime, RPC engine, async framing and
   generator as `capntproto-{core,rpc,futures,codegen}` workspace crates, retaining
   upstream licenses and generated Rust import names.

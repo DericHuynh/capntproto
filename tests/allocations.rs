@@ -171,7 +171,7 @@ fn async_scratch_allocates_only_segment_metadata_when_the_payload_fits() {
 }
 
 #[test]
-fn buffered_scratch_avoids_retained_payload_and_arc_allocations() {
+fn buffered_scratch_avoids_payload_allocations_and_owned_fallback_allocates_once() {
     use futures::FutureExt;
     let payload = vec![0x5a; 8192];
     let mut message = capnp::message::Builder::new(
@@ -211,7 +211,7 @@ fn buffered_scratch_avoids_retained_payload_and_arc_allocations() {
     });
     assert_eq!(
         fallback.count_total,
-        fitting.count_total + 2,
+        fitting.count_total + 1,
         "{fallback:?}"
     );
     assert!(fallback.bytes_total >= fitting.bytes_total + bytes.len() as u64);
