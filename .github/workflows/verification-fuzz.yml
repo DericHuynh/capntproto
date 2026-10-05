@@ -1,12 +1,13 @@
 name: Verification / Fuzzing
 on:
+  workflow_call:
   workflow_dispatch:
   schedule:
     - cron: '39 3 * * 1'
 permissions:
   contents: read
 concurrency:
-  group: verification-fuzz-${{ github.ref }}
+  group: verification-fuzz-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 env:
   CARGO_TERM_COLOR: never
@@ -40,10 +41,9 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: readme-data
+          name: readme-data-fuzz-${{ github.run_attempt }}
           path: target/readme-data/publication.json
           if-no-files-found: warn
-          overwrite: true
           retention-days: 90
       # AFL's queue/crash names contain colons, which upload-artifact rejects.
       # Archive all raw evidence even when the fuzzer or report step fails.
@@ -55,6 +55,7 @@ jobs:
         if: always()
         with:
           name: fuzz-report
+          overwrite: true
           path: target/fuzz-report.tar.gz
           if-no-files-found: error
           compression-level: 0

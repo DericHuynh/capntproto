@@ -2,7 +2,7 @@ use super::data::{matches, validate_publication, CHARTS};
 use anyhow::{ensure, Context, Result};
 use serde_json::{json, Value};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
 };
 const LANES: [&str; 5] = ["full", "cargo", "models", "fuzz", "benchmark"];
@@ -95,8 +95,9 @@ pub fn validate_history(history: &Value) -> Result<()> {
             && history["format"] == 1,
         "invalid history format"
     );
-    let mut ids = BTreeSet::new();
+    let mut identities = BTreeMap::new();
     for kind in LANES {
+        let mut ids = BTreeSet::new();
         let records: Vec<&Value> = if kind == "benchmark" {
             (!history[kind].is_null())
                 .then_some(&history[kind])
@@ -119,6 +120,13 @@ pub fn validate_history(history: &Value) -> Result<()> {
                 ids.insert(crate::number(record, "run_id")?),
                 "duplicate history run"
             );
+            // A reusable CI run publishes several lanes. They share a run ID,
+            // but must agree on the immutable source and run identity. Attempts
+            // may differ when re-running only failed jobs.
+            let identity = [&record["commit"], &record["date"], &record["url"]];
+            if let Some(previous) = identities.insert(crate::number(record, "run_id")?, identity) {
+                ensure!(previous == identity, "inconsistent cross-lane run identity");
+            }
             ensure!(record["data"]["kind"] == kind, "invalid history lane");
             let current = order(record)?;
             ensure!(

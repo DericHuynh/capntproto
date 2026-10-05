@@ -135,3 +135,47 @@ fn workflows_keep_unique_trigger_owners() {
         .unwrap()
         .contains("crate::lanes::CARGO_SKIPS"));
 }
+
+#[test]
+fn workflow_policy_rejects_missing_gates_duplicates_and_untrusted_cloud_jobs() {
+    let mut all = BTreeMap::new();
+    for entry in fs::read_dir(root().join(".github/workflows")).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_some_and(|e| e == "yml") {
+            all.insert(
+                path.file_stem().unwrap().to_str().unwrap().to_owned(),
+                serde_saphyr::from_str::<Value>(&fs::read_to_string(path).unwrap()).unwrap(),
+            );
+        }
+    }
+    workflow_policy(&all).unwrap();
+    for (file, pointer, value) in [
+        ("ci", "/jobs/performance/needs", json!(["cargo"])),
+        ("ci", "/jobs/report/needs", json!(["platforms"])),
+        (
+            "verification-fuzz",
+            "/on/push",
+            json!({"branches":["main"]}),
+        ),
+        (
+            "verification-models",
+            "/concurrency/group",
+            all["ci"]["concurrency"]["group"].clone(),
+        ),
+        ("performance", "/jobs/benchmark/if", json!("always()")),
+        (
+            "performance",
+            "/jobs/build/environment",
+            json!("Benchmarking"),
+        ),
+        ("ci", "/jobs/cleanup/if", json!("success()")),
+    ] {
+        let mut broken = all.clone();
+        let (parent, key) = pointer.rsplit_once('/').unwrap();
+        broken.get_mut(file).unwrap().pointer_mut(parent).unwrap()[key] = value;
+        assert!(
+            workflow_policy(&broken).is_err(),
+            "{file}{pointer} was accepted"
+        );
+    }
+}

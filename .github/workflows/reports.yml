@@ -5,6 +5,7 @@ on: # zizmor: ignore[dangerous-triggers]
   workflow_run:
     # Workflow names are glob patterns; match TLA+'s plus literally.
     workflows:
+      - CI
       - Verification / Cargo tests
       - 'Verification / TLA\+ models'
       - Verification / Fuzzing
@@ -13,7 +14,7 @@ on: # zizmor: ignore[dangerous-triggers]
   workflow_dispatch:
     inputs:
       run_id:
-        description: Completed Cargo, TLA+, fuzzing or benchmark run from the default branch
+        description: Completed CI, Cargo, TLA+, fuzzing or benchmark run from the default branch
         type: string
         required: true
 permissions:

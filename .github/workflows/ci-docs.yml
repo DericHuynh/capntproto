@@ -29,6 +29,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: github-wiki
+          overwrite: true
           path: target/wiki/
           if-no-files-found: error
       - name: Check local documentation links
@@ -52,5 +53,6 @@ jobs:
         if: always()
         with:
           name: documentation-links
+          overwrite: true
           path: target/links/
           if-no-files-found: error

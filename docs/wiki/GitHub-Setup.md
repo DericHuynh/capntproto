@@ -91,7 +91,7 @@ documents the setting and notification options.
 ## Code scanning
 
 Use GitHub CodeQL **default setup** with the **Extended** security query suite
-for Actions, C/C++, Python and Rust. Keep its branch/PR analysis and weekly scan
+for Actions, C/C++ and Rust. Keep its branch/PR analysis and weekly scan
 enabled. Check that the setup validation finishes successfully before treating
 a configuration change as active. Do not also enable an advanced CodeQL workflow;
 that would duplicate analysis. Include the vendored runtimes and review findings
@@ -107,8 +107,11 @@ and [resolving individual alerts](https://docs.github.com/en/code-security/how-t
 
 Follow [Quality and Benchmarks](Quality-and-Benchmarks.md) to configure the DigitalOcean GitHub Actions
 secret, run the hosted workflows, and establish a reviewed LLVM coverage
-baseline. Once the platform workflow has run, require **Required CI result** in the default branch's rules. Full verification and dedicated
-benchmarks have separate workflows; their reports identify the checked revision.
+baseline. Require **Required CI result** in the default branch's rules. CI calls
+the separate verification and benchmark workflows in dependency order on every
+PR and main push. Fork/Dependabot PRs compile release benchmarks without cloud
+credentials; trusted runs also measure on dedicated hardware. Reports identify
+the checked revision and publish only after trusted default-branch completion.
 
 ## GitHub references
 

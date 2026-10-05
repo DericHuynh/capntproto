@@ -27,7 +27,7 @@
       }
     },
     "crates/capntproto-core/src/private/arena.rs": {
-      "sha256": "d6c0b5cc6ecab9ced266c3f871fb6855ea0cc603dc83f7e261b48b88fe85809a",
+      "sha256": "e91f5c6cfc56f4f624f8b95d6e842ad2854e233843f02bf5c7b10f4c17573a52",
       "diagnostics": {
         "clippy::undocumented_unsafe_blocks": 12
       }

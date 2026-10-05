@@ -25,31 +25,46 @@ records their rationale.
 | [CI](../../.github/workflows/ci.yml) | PR; push to `main`; manual | Library/binary builds and RPC/pipelining, transport and selected feature checks on all three OSes. Linux/macOS also test storage reopen; Linux enforces allocation budgets and QUIC v1 interoperability. `platform-report` |
 | [CI / Workflow validation](../../.github/workflows/ci-workflows.yml) | Called once by CI; manual | Workflow, auditable-build, trigger-test and README-reporting changes: actionlint with ShellCheck/Pyflakes, trigger regression tests, reporting tests and Zizmor |
 | [CI / Documentation](../../.github/workflows/ci-docs.yml) | Called once by CI; Tuesday 05:43 UTC; manual | Documentation/workflow/wiki-tool changes: wiki validation/export and local links. External checks are advisory and run only weekly/manually. `github-wiki`, `documentation-links` |
-| [Verification / Extended](../../.github/workflows/verification-extended.yml) | Wednesday 04:37 UTC; manual | Bounded Miri endian/seed sweep, native cargo-careful checks, LLVM IR size reports, and guard mutation/coverage controls in independent jobs |
-| [Verification / Cargo tests](../../.github/workflows/verification-tests.yml) | Monday 03:19 UTC; manual | One LLVM-instrumented Cargo partition, un-instrumented C++ reference suites, advisory checks, coverage regression report. `cargo-test-report` |
-| [Verification / TLA+ models](../../.github/workflows/verification-models.yml) | Monday 03:29 UTC; manual | Bounded model checks, expected counterexamples and Rust trace replays. Independent replay history, check outcomes and explored-state graphs. `models-report` |
-| [Verification / Fuzzing](../../.github/workflows/verification-fuzz.yml) | Monday 03:39 UTC; manual | Six libFuzzer/ASan targets and four AFL++ targets with RPC IJON guidance. Engine-specific execution, feedback and finding graphs. `fuzz-report` |
-| [Performance / Dedicated benchmarks](../../.github/workflows/performance.yml) | Manual | Compile release artifacts on Actions, measure on a temporary dedicated CPU Linux droplet, validate downloaded samples. `dedicated-benchmark-report` |
-| [Benchmark droplet cleanup](../../.github/workflows/maintenance-benchmarks.yml) | Every hour at :17 UTC; manual | Destroy this repository's abandoned benchmark resources older than two hours |
-| [Reports / Publish](../../.github/workflows/reports.yml) | Cargo, TLA+, fuzzing or benchmark completion; manual run ID | Validate trusted default-branch producer artifacts and publish to `reports`; it does not rerun their tests |
+| [Verification / Extended](../../.github/workflows/verification-extended.yml) | Called by CI; Wednesday 04:37 UTC; manual | Bounded Miri endian/seed sweep, native cargo-careful checks, LLVM IR size reports, and guard mutation/coverage controls in independent jobs |
+| [Verification / Cargo tests](../../.github/workflows/verification-tests.yml) | Called by CI; Monday 03:19 UTC; manual | One LLVM-instrumented Cargo partition, un-instrumented C++ reference suites, advisory checks, coverage regression report. `cargo-test-report` |
+| [Verification / TLA+ models](../../.github/workflows/verification-models.yml) | Called by CI; Monday 03:29 UTC; manual | Bounded model checks, expected counterexamples and Rust trace replays. Independent replay history, check outcomes and explored-state graphs. `models-report` |
+| [Verification / Fuzzing](../../.github/workflows/verification-fuzz.yml) | Called by CI; Monday 03:39 UTC; manual | Six libFuzzer/ASan targets and four AFL++ targets with RPC IJON guidance. Engine-specific execution, feedback and finding graphs. `fuzz-report` |
+| [Performance / Dedicated benchmarks](../../.github/workflows/performance.yml) | Called by CI; manual | Compile release artifacts on every PR, measure trusted runs on a temporary dedicated CPU Linux droplet, validate downloaded samples. `benchmark-bundle`, `benchmark-build-provenance`, `dedicated-benchmark-report` |
+| [Benchmark droplet cleanup](../../.github/workflows/maintenance-benchmarks.yml) | After CI benchmarks, even on failure; every hour at :17 UTC; manual | Destroy this repository's abandoned benchmark resources older than two hours; requires trusted credentials |
+| [Reports / Publish](../../.github/workflows/reports.yml) | CI or standalone Cargo, TLA+, fuzzing or benchmark completion; manual run ID | Validate trusted default-branch producer artifacts and publish to `reports`; it does not rerun their tests |
 
 ## Trigger and concurrency policy
 
 CI is the only automatic push/PR entry point. It calls workflow validation and
 documentation as reusable workflows, then starts platform builds after workflow
-validation succeeds. Branch work runs through `pull_request`; only `main` has an
+validation succeeds. Cargo/coverage, models, fuzzing and extended verification
+then run in parallel after platform and documentation checks. Release benchmarks
+follow all four verification lanes. Branch work runs through `pull_request`; only `main` has an
 automatic `push` trigger. Feature branches without a PR can dispatch CI manually.
 The unconditional final CI job checks every required dependency, including failed
 or skipped jobs, so workflow validation and documentation failures cannot produce
 a green result. Tag pushes do not start CI.
 
-New commits to the same PR cancel its stale checks. Workflow, event and PR/ref
+New commits to the same PR cancel its stale checks. Main runs are serialized
+without cancelling an active paid measurement. Workflow, event and PR/ref
 identity keep unrelated checks separate, including scheduled external-link
 checks versus ordinary documentation pushes. Full and extended verification
 retain their own cancellation groups. Dedicated benchmarks, cleanup and report
-publication each serialize their own runs without cancelling an active run;
+publication each serialize their own jobs without cancelling an active job;
 cleanup remains independent of the benchmark job so it can recover abandoned
-resources. Manual dispatch is an explicit additional run.
+resources. Cancellation of an enclosing PR run can still interrupt a measurement;
+its unconditional cleanup and the independent hourly janitor handle that case.
+Manual dispatch is an explicit additional run.
+
+Fork and Dependabot PRs compile the same optimized benchmark bundle without
+secrets; cloud measurement and cloud cleanup are explicitly skipped. Same-repository
+PRs and main use the `Benchmarking` environment and its configured protections.
+Missing credentials fail trusted measurement instead of recording a benchmark pass.
+No PR publishes the default-branch dashboard. Four uniquely named `readme-data-*`
+artifacts share a CI run; the publisher validates each lane, attempt and commit,
+then merges all four into one atomic reports-branch update. Standalone scheduled
+or manual lane runs remain publishable. Reusable calls do not trigger separate
+publication runs.
 
 The two GitHub-managed **Dependabot Updates** jobs come from the separate Cargo
 and GitHub Actions ecosystems in [dependabot.yml](../../.github/dependabot.yml).
@@ -70,8 +85,9 @@ cargo run --locked -p capntproto-dev -- check-workflows
 ```
 
 Require **Required CI result** in branch protection (replace the former
-**Required platform report** check when adopting this workflow layout). Coverage
-and dedicated benchmarks remain separate from PR latency. Windows also exercises
+**Required platform report** check when adopting this workflow layout). This gate
+now includes coverage, all verification lanes and benchmark compilation/measurement
+according to the credential policy above. Windows also exercises
 component storage and retained snapshots; CI does not establish power-loss
 durability. Platform
 qualification requires successful hosted checks; local Linux validation is not
@@ -84,21 +100,24 @@ flowchart TD
   event[PR / main push / manual CI] --> checks[CI: workflow validation]
   event --> docs[CI: documentation]
   checks --> platforms[CI: Linux / macOS / Windows builds and tests]
-  checks --> result[Required CI result]
-  docs --> result
-  platforms --> result
-  cargo[Weekly / manual Cargo tests + LLVM coverage] --> publish[Reports: validate evidence and publish]
-  models[Weekly / manual TLA+ checks + Rust replays] --> publish
-  fuzz[Weekly / manual libFuzzer + AFL++ IJON] --> publish
-  benchmark[Manual Dedicated benchmarks] --> publish
-  cleanup[Hourly / manual Benchmark cleanup]
-  extended[Weekly / manual Extended verification]
+  platforms --> cargo[Cargo tests + LLVM coverage]
+  platforms --> models[TLA+ checks + Rust replays]
+  platforms --> fuzz[libFuzzer + AFL++ IJON]
+  platforms --> extended[Extended verification]
+  docs --> cargo & models & fuzz & extended
+  cargo & models & fuzz & extended --> benchmark[Release benchmark build; trusted cloud measurement]
+  benchmark --> cleanup[Trusted cleanup, even after failure]
+  checks & docs & platforms & cargo & models & fuzz & extended & benchmark & cleanup --> result[Required CI result]
+  result --> publish[CI completion: validate evidence and publish on main]
+  standalone[Weekly / manual lane runs] --> publish
+  janitor[Independent hourly cleanup]
   codeql[GitHub-managed CodeQL default setup]
 ```
 
 Solid edges are `needs`, reusable-workflow calls, or report-producer completion
-triggers. Extended verification, CodeQL and cleanup run independently. Benchmark
-cleanup also runs inside its producing job; the hourly workflow recovers abandoned
+triggers. CodeQL's default setup runs independently on PR/main and its weekly schedule;
+there is no second repository CodeQL workflow. Benchmark cleanup also runs inside
+its producing job; the hourly workflow recovers abandoned
 resources. Report publication never launches another verification or benchmark run.
 
 ## Independent verification partitions
@@ -737,7 +756,7 @@ The relevant optimizations are specific ownership and scheduling decisions:
 
 | C++ mechanism | Application to the maintained Rust implementation |
 | --- | --- |
-| `arena.h` / `arena.c++`: inline `segment0`, lazily allocated metadata for other segments | Buffered framing now keeps the first range directly, with a vector only for additional ranges. Bounds and alignment checks remain. A previous inline builder-arena experiment removed one allocation but increased measured instructions and was rejected. |
+| `arena.h` / `arena.c++`: inline `segment0`, lazily allocated metadata for other segments | Buffered framing keeps the first range directly. Builders now also keep the first segment's metadata inline, with a separate vector only for additional segments. Bounds and alignment checks remain. An earlier enum-based inline builder experiment increased measured instructions and was rejected; the current representation keeps segment zero directly addressable. |
 | `serialize-async.c++`: separately owned retained frames; direct reads for large incomplete frames | Retained Rust frames now own a boxed word slice instead of allocating another `Arc` control block. Short-lived views still share the receive buffer and remain valid after the stream is dropped. Large-frame direct reads already exist. |
 | `rpc-twoparty.c++`: `evalLast()` batches related messages into one vectored write and propagates write failures to reads | Rust already batches queued messages, uses stack framing for small batches, and propagates output failure separately from transport-close completion. Native TCP/TLS now also submits its kind, length, and payload together with a vectored write. KJ's end-of-event-queue scheduling is stronger than a fixed number of Tokio yields; this is a remaining scheduling opportunity. |
 | `kj/async-inl.h`: `PromiseDisposer::appendPromise()` stores continuation nodes in an existing promise arena | Prefer fusing Rust async continuations and reusing task storage before type erasure. A C++-style raw arena cannot be copied blindly: Rust futures must retain pinning, cancellation and destructor guarantees. |
@@ -786,6 +805,20 @@ TCP/TLS with the same authentication and workload; it does not change the
 canonical QUIC/C++ benchmark or establish the QUIC latency target. Targeted tests
 cover partial and pending writes, write-zero and flush errors, authenticated RPC,
 large byte transfers, crossed receipts, and shutdown.
+
+The 2026-10-05 builder-metadata diagnostic compares optimized binaries before
+and after replacing the metadata vector's first entry with an inline field.
+Across 10,000 warmups and 1,000 empty native QUIC calls, client allocations fell
+from 264,790 to 253,787 (about one fewer per call, 4.2% overall); cumulative
+allocated bytes fell from 48,584,039 to 47,703,806. In separate Callgrind runs,
+client instructions changed from 531.24 to 529.85 million and server instructions
+from 529.06 to 529.86 million. This is an allocation improvement, not a demonstrated
+latency or material instruction-count improvement. Unlike the earlier three-way
+enum experiment, segment zero stays separate when later segments are allocated.
+The tradeoff is larger inline builder metadata. Allocation contracts now require
+one allocation for a single-segment heap builder and zero for fitting scratch
+storage; moved multi-segment builders, external segments and allocator cleanup
+retain their ownership checks. Dedicated latency qualification is still required.
 
 Allocation checks cover the warmed single-segment queue, and partial-write
 tests cover every byte boundary of small frames plus large multi-segment batches.

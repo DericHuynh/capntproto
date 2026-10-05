@@ -11,11 +11,14 @@ resolve within that branch. The source README links to that dashboard and its fa
 ordinary workspace tests/doctests once with LLVM coverage. [TLA+ models](../../.github/workflows/verification-models.yml)
 owns the bounded model checks and Rust replays. [Fuzzing](../../.github/workflows/verification-fuzz.yml)
 owns libFuzzer/ASan and AFL++/IJON campaigns. [Dedicated benchmarks](../../.github/workflows/performance.yml)
-remains the performance producer. Each exports an identity-bound `readme-data`
+remains the performance producer. CI calls all four after platform validation;
+benchmarks follow the verification lanes. Each exports an identity-bound `readme-data-<lane>-<attempt>`
 artifact and its own README, graphs and diagnostics, including on test failure.
 
 [Reports / Publish](../../.github/workflows/reports.yml) runs after each producer
-finishes. It updates only the dashboard `README.md` and renderer-owned files in
+finishes, or once after the encompassing CI run completes. A CI publication
+merges all four lane artifacts atomically, with separate histories and graphs.
+It updates only the dashboard `README.md` and renderer-owned files in
 `docs/reports/` on the **reports branch**. The first publication creates an orphan
 branch containing reports only, seeded with the frozen history in
 `quality/reporting/history-seed.json`. Later publications are atomic, non-forced
@@ -23,16 +26,19 @@ updates with bounded retries after concurrent report writes. The default branch
 is read only: its code and template are trusted, its ref is never mutated. No PR
 code or executable artifact is run by the publisher.
 
-The publisher accepts only completed runs of the four named workflow files (plus their former filenames for manually publishing
+The publisher accepts only completed runs of CI or the four named workflow files (plus their former filenames for manually publishing
 runs started before the workflow migration), from
 this repository's default branch, triggered by push, schedule or manual dispatch.
 It checks the measured commit's ancestry and the artifact's repository, run ID,
 attempt and commit. It downloads only the bounded JSON publication artifact;
-archive members cannot select output paths. Reruns replace their earlier attempt;
+archive members cannot select output paths.
+CI lanes use unique immutable artifact names. Historical standalone `readme-data`
+artifacts remain readable, but CI never accepts that ambiguous shared name.
+Reruns replace their earlier attempt;
 late-finishing older runs do not replace newer benchmark results. Failed or
 cancelled runs with missing data are recorded as unavailable, never as success.
 
-The history keeps the latest 365 attempts separately for Cargo, TLA+ and fuzzing (one entry per run ID), the legacy combined history, and the latest benchmark attempt. Historical entries keep test counts, commit,
+The history keeps the latest 365 attempts separately for Cargo, TLA+ and fuzzing (one entry per run ID per lane), the legacy combined history, and the latest benchmark attempt. Shared run IDs must agree on commit, date and URL across lanes. Historical entries keep test counts, commit,
 source fingerprint and CI links; only current coverage/benchmark bars retain
 plotted values. The generated report assets are excluded from executable source
 fingerprints, so a report-only commit does not invalidate its own evidence.

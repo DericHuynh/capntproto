@@ -230,42 +230,60 @@ struct BuilderSegment {
     allocated: u32,
 }
 
-#[cfg(feature = "alloc")]
-type BuilderSegmentArray = alloc::vec::Vec<BuilderSegment>;
-
-#[cfg(not(feature = "alloc"))]
 #[derive(Default)]
 struct BuilderSegmentArray {
-    // In the no-alloc case, we only allow a single segment.
+    // Like C++ BuilderArena::segment0, the common segment's bookkeeping is
+    // inline. Moving this metadata never moves its allocator-owned word buffer.
     segment: Option<BuilderSegment>,
+    #[cfg(feature = "alloc")]
+    additional: alloc::vec::Vec<BuilderSegment>,
 }
 
-#[cfg(not(feature = "alloc"))]
 impl BuilderSegmentArray {
+    #[cfg(not(feature = "alloc"))]
     fn iter(&self) -> core::option::Iter<'_, BuilderSegment> {
         self.segment.iter()
     }
 
+    #[cfg(feature = "alloc")]
+    fn iter(&self) -> impl Iterator<Item = &BuilderSegment> {
+        self.segment.iter().chain(self.additional.iter())
+    }
+
     fn len(&self) -> usize {
-        match self.segment {
-            Some(_) => 1,
-            None => 0,
+        let first = usize::from(self.segment.is_some());
+        #[cfg(feature = "alloc")]
+        {
+            first + self.additional.len()
+        }
+        #[cfg(not(feature = "alloc"))]
+        {
+            first
         }
     }
 
     fn push(&mut self, segment: BuilderSegment) {
         if self.segment.is_some() {
+            #[cfg(feature = "alloc")]
+            {
+                self.additional.push(segment);
+                return;
+            }
+            #[cfg(not(feature = "alloc"))]
             panic!("multiple segments are not supported in no-alloc mode")
         }
         self.segment = Some(segment);
     }
 }
 
-#[cfg(not(feature = "alloc"))]
 impl core::ops::Index<usize> for BuilderSegmentArray {
     type Output = BuilderSegment;
 
     fn index(&self, index: usize) -> &Self::Output {
+        #[cfg(feature = "alloc")]
+        if index > 0 {
+            return &self.additional[index - 1];
+        }
         assert_eq!(index, 0);
         match &self.segment {
             Some(s) => s,
@@ -274,9 +292,12 @@ impl core::ops::Index<usize> for BuilderSegmentArray {
     }
 }
 
-#[cfg(not(feature = "alloc"))]
 impl core::ops::IndexMut<usize> for BuilderSegmentArray {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        #[cfg(feature = "alloc")]
+        if index > 0 {
+            return &mut self.additional[index - 1];
+        }
         assert_eq!(index, 0);
         match &mut self.segment {
             Some(s) => s,
@@ -339,7 +360,7 @@ where
             #[cfg(feature = "alloc")]
             {
                 let mut v = alloc::vec::Vec::with_capacity(reff.segments.len());
-                for seg in &reff.segments {
+                for seg in reff.segments.iter() {
                     // See safety argument in above branch.
                     let slice = unsafe {
                         slice::from_raw_parts(
@@ -477,7 +498,7 @@ where
     fn deallocate_all(&mut self) {
         if let Some(a) = &mut self.allocator {
             #[cfg(feature = "alloc")]
-            for seg in &self.segments {
+            for seg in self.segments.iter() {
                 if seg.external.is_some() {
                     continue;
                 }

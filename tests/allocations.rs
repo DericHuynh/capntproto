@@ -14,6 +14,62 @@ fn counter_detects_an_allocation() {
 }
 
 #[test]
+fn single_segment_builders_allocate_only_the_word_buffer() {
+    use capnp::message::{Builder, HeapAllocator, ScratchSpaceHeapAllocator};
+    let counts = allocation_counter::measure(|| {
+        for _ in 0..128 {
+            let mut message = Builder::new(HeapAllocator::new().first_segment_words(64));
+            message
+                .set_root::<capnp::text::Owned>("inline segment")
+                .unwrap();
+            assert_eq!(message.get_segments_for_output().len(), 1);
+            black_box(message);
+        }
+    });
+    assert_eq!(counts.count_total, 128, "{counts:?}");
+    assert_eq!(counts.bytes_total, 128 * 64 * 8, "{counts:?}");
+    assert_eq!(counts.count_current, 0);
+
+    let mut words = [capnp::word(0, 0, 0, 0, 0, 0, 0, 0); 64];
+    let counts = allocation_counter::measure(|| {
+        let mut message = Builder::new(ScratchSpaceHeapAllocator::new(
+            capnp::Word::words_to_bytes_mut(&mut words),
+        ));
+        message.set_root::<capnp::text::Owned>("scratch").unwrap();
+        assert_eq!(message.get_segments_for_output().len(), 1);
+        black_box(message);
+    });
+    assert_eq!(counts.count_total, 0, "{counts:?}");
+}
+
+#[test]
+fn moved_builder_preserves_first_segment_and_spilled_segment_ids() {
+    use capnp::message::{AllocationStrategy, Builder, HeapAllocator};
+    let mut message = Builder::new(
+        HeapAllocator::new()
+            .first_segment_words(4)
+            .allocation_strategy(AllocationStrategy::FixedSize),
+    );
+    let mut list = message.initn_root::<capnp::text_list::Builder<'_>>(24);
+    for i in 0..24 {
+        list.set(i, format!("spilled segment {i}"));
+    }
+    // Force the arena metadata to move; all segment storage must remain valid.
+    let messages = vec![message];
+    let message = black_box(messages).pop().unwrap();
+    let segments = message.get_segments_for_output();
+    assert!(segments.len() > 20);
+    let reader = capnp::message::Reader::new(segments, ReaderOptions::new());
+    let list = reader.get_root::<capnp::text_list::Reader<'_>>().unwrap();
+    for i in 0..24 {
+        assert_eq!(
+            list.get(i).unwrap().to_str().unwrap(),
+            format!("spilled segment {i}")
+        );
+    }
+}
+
+#[test]
 fn steady_write_batches_allocate_only_completion_receipts() {
     use futures::{Future, FutureExt};
     use std::{task::Context, time::Duration};

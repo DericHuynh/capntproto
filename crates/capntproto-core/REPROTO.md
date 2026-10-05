@@ -1,5 +1,12 @@
 Derived from crates.io capnp 0.25.6. Original MIT license and upstream metadata are retained. Capntproto adds Unix capability file-descriptor hooks and the public asynchronous get_fd accessor. It also adds CallHints, new_call_with_hints and typed send_for_pipeline with backward-compatible default hook methods. Error now has optional boxed exception metadata with remote-trace and opaque-detail accessors; use constructors instead of Error struct literals.
 
+Builder arenas keep the first segment's metadata inline, following the pinned
+C++ `BuilderArena::segment0`; only additional segment metadata needs a vector.
+The allocator-owned word buffers remain stable when a builder moves. Segment
+indices, external read-only segment ownership, deallocation, and the no-alloc
+single-segment restriction are unchanged. Ordinary one-segment heap builders
+allocate only their word buffer; a fitting scratch builder allocates nothing.
+
 The no-allocation synchronous stream reader fills every segment-table pair before
 decoding it. Short `Read` results previously left table bytes in the message body.
 Root Cargo regressions cover fragmented consecutive frames and every truncated

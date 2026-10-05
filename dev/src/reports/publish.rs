@@ -14,6 +14,7 @@ const MAX_ARTIFACT: u64 = 16 * 1024 * 1024;
 const BRANCH: &str = "reports";
 fn kind(path: &str) -> Option<&'static str> {
     match path {
+        ".github/workflows/ci.yml" => Some("ci"),
         ".github/workflows/full-quality.yml" | ".github/workflows/verification-coverage.yml" => {
             Some("full")
         }
@@ -207,9 +208,17 @@ fn artifact_data(api: &impl Api, run: &Value, lane: &str) -> Result<Value> {
     let artifacts = response["artifacts"]
         .as_array()
         .context("missing artifacts")?;
+    let name = format!("readme-data-{lane}-{}", crate::number(run, "run_attempt")?);
     let matches: Vec<_> = artifacts
         .iter()
-        .filter(|a| a["name"] == "readme-data" && a["expired"] == false)
+        // Accept historical standalone artifacts, never the shared legacy name
+        // for CI: each lane must own a different immutable artifact.
+        .filter(|a| {
+            (a["name"] == name
+                || (kind(run["path"].as_str().unwrap_or("")) != Some("ci")
+                    && a["name"] == "readme-data"))
+                && a["expired"] == false
+        })
         .collect();
     if matches.is_empty() {
         return Ok(data::unavailable(
@@ -266,9 +275,18 @@ fn execute(api: &impl Api, event: &Value, repository: &str) -> Result<()> {
         "only trusted producer runs from this repository default branch can publish"
     );
     let lane = kind(crate::string(&run, "path")?).unwrap();
-    let data = artifact_data(api, &run, lane)?;
-    let record = json!({"run_id":run["id"],"attempt":run["run_attempt"],"commit":run["head_sha"],"date":run["created_at"],"url":run["html_url"],"conclusion":run["conclusion"],"data":data});
-    render::validate_record(&record)?;
+    let lanes: &[&str] = if lane == "ci" {
+        &["cargo", "models", "fuzz", "benchmark"]
+    } else {
+        &[lane]
+    };
+    let mut records = Vec::new();
+    for lane in lanes {
+        let data = artifact_data(api, &run, lane)?;
+        let record = json!({"run_id":run["id"],"attempt":run["run_attempt"],"commit":run["head_sha"],"date":run["created_at"],"url":run["html_url"],"conclusion":run["conclusion"],"data":data});
+        render::validate_record(&record)?;
+        records.push(record);
+    }
     for attempt in 0..3 {
         let source_head = crate::string(
             &api.request(&format!("/git/ref/heads/{}", encode(&branch)), None, "GET")?["object"],
@@ -301,13 +319,13 @@ fn execute(api: &impl Api, event: &Value, repository: &str) -> Result<()> {
             head.is_none() || old.is_some(),
             "existing reports branch has no history; refusing to replace unrelated content"
         );
-        let history = render::merge(
-            &match old {
-                Some((bytes, _)) => serde_json::from_slice(&bytes)?,
-                None => render::empty_history(),
-            },
-            &record,
-        )?;
+        let mut history = match old {
+            Some((bytes, _)) => serde_json::from_slice(&bytes)?,
+            None => render::empty_history(),
+        };
+        for record in &records {
+            history = render::merge(&history, record)?;
+        }
         let template = api
             .content("docs/reports.template.md", &source_head)?
             .context("Report template is missing from the default branch")?
@@ -458,12 +476,19 @@ mod publication_tests {
     }
     struct Fake {
         initial: bool,
+        ci: bool,
         attempt: Cell<usize>,
         calls: RefCell<Vec<(String, Value, String)>>,
         archive: Vec<u8>,
     }
     impl Api for Fake {
-        fn download(&self, _: &str) -> Result<Vec<u8>> {
+        fn download(&self, path: &str) -> Result<Vec<u8>> {
+            if self.ci {
+                let id: usize = path.split('/').nth(3).unwrap().parse()?;
+                let mut data = publication(1);
+                data["kind"] = json!(["cargo", "models", "fuzz", "benchmark"][id - 9]);
+                return Ok(archive("publication.json", &data));
+            }
             Ok(self.archive.clone())
         }
         fn content(&self, path: &str, _: &str) -> Result<Option<(Vec<u8>, String)>> {
@@ -488,7 +513,7 @@ mod publication_tests {
             Ok(match path {
                 "" => json!({"default_branch":"main"}),
                 "/actions/runs/1" => {
-                    json!({"id":1,"run_attempt":1,"path":".github/workflows/verification-coverage.yml","status":"completed","event":"schedule","head_branch":"main","head_repository":{"full_name":"example/capntproto"},"head_sha":"b".repeat(40),"created_at":"2026-09-28T10:00:00Z","conclusion":"success","html_url":"https://github.com/example/capntproto/actions/runs/1"})
+                    json!({"id":1,"run_attempt":1,"path":if self.ci {".github/workflows/ci.yml"} else {".github/workflows/verification-coverage.yml"},"status":"completed","event":"push","head_branch":"main","head_repository":{"full_name":"example/capntproto"},"head_sha":"b".repeat(40),"created_at":"2026-09-28T10:00:00Z","conclusion":"success","html_url":"https://github.com/example/capntproto/actions/runs/1"})
                 }
                 "/git/ref/heads/main" => json!({"object":{"sha":"f".repeat(40)}}),
                 "/git/ref/heads/reports" => {
@@ -498,7 +523,12 @@ mod publication_tests {
                     json!({"object":{"sha":if self.attempt.get()==0{"c".repeat(40)}else{"d".repeat(40)}}})
                 }
                 "/actions/runs/1/artifacts?per_page=100" => {
-                    json!({"artifacts":[{"id":9,"name":"readme-data","expired":false,"size_in_bytes":self.archive.len()}]})
+                    if self.ci {
+                        let artifacts: Vec<_> = ["cargo", "models", "fuzz", "benchmark"].into_iter().enumerate().map(|(i,lane)| json!({"id":i+9,"name":format!("readme-data-{lane}-1"),"expired":false,"size_in_bytes":1024})).collect();
+                        json!({"artifacts":artifacts})
+                    } else {
+                        json!({"artifacts":[{"id":9,"name":"readme-data","expired":false,"size_in_bytes":self.archive.len()}]})
+                    }
                 }
                 "/git/refs/heads/reports" | "/git/refs" => {
                     self.attempt.set(self.attempt.get() + 1);
@@ -522,10 +552,54 @@ mod publication_tests {
     fn api(initial: bool, name: &str, attempt: u64) -> Fake {
         Fake {
             initial,
+            ci: false,
             attempt: Cell::new(0),
             calls: Default::default(),
             archive: archive(name, &publication(attempt)),
         }
+    }
+    #[test]
+    fn ci_publishes_all_four_lanes_in_one_atomic_update() {
+        let mut api = api(true, "publication.json", 1);
+        api.ci = true;
+        execute(
+            &api,
+            &json!({"workflow_run":{"id":1}}),
+            "example/capntproto",
+        )
+        .unwrap();
+        let calls = api.calls.borrow();
+        let histories: Vec<Value> = calls
+            .iter()
+            .filter(|(path, _, _)| path == "/git/blobs")
+            .filter_map(|(_, body, _)| {
+                serde_json::from_slice(&STANDARD.decode(body["content"].as_str().unwrap()).unwrap())
+                    .ok()
+            })
+            .filter(|v: &Value| v.get("cargo").is_some() && v.get("benchmark").is_some())
+            .collect();
+        assert!(!histories.is_empty());
+        for history in histories {
+            for lane in ["cargo", "models", "fuzz"] {
+                assert!(history[lane]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|r| r["run_id"] == 1 && r["data"]["kind"] == lane));
+            }
+            assert_eq!(history["benchmark"]["data"]["kind"], "benchmark");
+        }
+        drop(calls);
+        let mut run = api.request("/actions/runs/1", None, "GET").unwrap();
+        assert_eq!(
+            artifact_data(&api, &run, "full").unwrap()["status"],
+            "unavailable"
+        );
+        run["run_attempt"] = json!(2);
+        assert_eq!(
+            artifact_data(&api, &run, "cargo").unwrap()["status"],
+            "unavailable"
+        );
     }
     #[test]
     fn artifacts_are_bound_to_archive_path_and_attempt() {

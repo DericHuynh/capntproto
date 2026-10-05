@@ -1,5 +1,6 @@
 name: Maintenance / Benchmark cleanup
 on:
+  workflow_call:
   workflow_dispatch:
   schedule:
     - cron: '17 * * * *'

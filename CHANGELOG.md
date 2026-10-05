@@ -1,5 +1,14 @@
 # 0.1.0 developer preview (unpublished)
 
+- Run the complete CI graph on PRs and pushes to main: validation, platform
+  checks, Cargo/coverage, models, fuzzing and extended checks, then release
+  benchmarks and cleanup. Fork/Dependabot PRs compile benchmarks without cloud
+  credentials. Publish distinct lane artifacts from one CI run atomically to
+  the reports branch; preserve independent graphs, schedules and manual runs.
+- Inline the first message-builder segment's metadata, following C++, removing
+  its metadata allocation while preserving multi-segment and external-buffer
+  ownership. A fitting scratch builder now requires no heap allocations.
+
 - Add opt-in split control/bulk planes on the existing authenticated quiche
   session. Single-use capability grants authorize bounded payload streams;
   capability RPC, pipelining, cancellation and publication stay ordered on

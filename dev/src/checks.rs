@@ -281,8 +281,13 @@ pub fn workflows() -> Result<()> {
             all.insert(p.file_stem().unwrap().to_string_lossy().into_owned(), yaml);
         }
     }
+    workflow_policy(&all)?;
+    println!("Workflow triggers and dependencies passed");
+    Ok(())
+}
+fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
     let mut automatic = Vec::new();
-    for (name, w) in &all {
+    for (name, w) in all {
         if w["on"].get("push").is_some() || w["on"].get("pull_request").is_some() {
             automatic.push(name.as_str());
         }
@@ -307,7 +312,16 @@ pub fn workflows() -> Result<()> {
         "PR checks cannot be path filtered"
     );
     let jobs = &ci["jobs"];
-    for (job, file) in [("workflows", "ci-workflows"), ("documentation", "ci-docs")] {
+    for (job, file) in [
+        ("workflows", "ci-workflows"),
+        ("documentation", "ci-docs"),
+        ("cargo", "verification-tests"),
+        ("models", "verification-models"),
+        ("fuzz", "verification-fuzz"),
+        ("extended", "verification-extended"),
+        ("performance", "performance"),
+        ("cleanup", "maintenance-benchmarks"),
+    ] {
         ensure!(
             jobs[job]["uses"] == format!("./.github/workflows/{file}.yml")
                 && all[file]["on"].get("workflow_call").is_some(),
@@ -319,14 +333,107 @@ pub fn workflows() -> Result<()> {
         "CI dependency gate changed"
     );
     ensure!(
-        jobs["report"]["needs"] == json!(["workflows", "documentation", "platforms"]),
+        jobs["report"]["needs"]
+            == json!([
+                "workflows",
+                "documentation",
+                "platforms",
+                "cargo",
+                "models",
+                "fuzz",
+                "extended",
+                "performance",
+                "cleanup"
+            ]),
         "required CI result must depend on every gate"
     );
+    ensure!(
+        keys(jobs)?
+            == jobs["report"]["needs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_str().unwrap().to_owned())
+                .chain(["report".into()])
+                .collect(),
+        "untracked CI gate"
+    );
+    for job in ["cargo", "models", "fuzz", "extended"] {
+        ensure!(
+            jobs[job]["needs"] == json!(["platforms", "documentation"]),
+            "verification must follow platform and documentation checks"
+        );
+    }
+    ensure!(
+        jobs["performance"]["needs"] == json!(["cargo", "models", "fuzz", "extended"]),
+        "benchmark must follow every verification partition"
+    );
+    let trusted = "github.actor_id != '49699333' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)";
+    let normalized = |v: &Value| {
+        v.as_str()
+            .unwrap_or("")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    ensure!(
+        jobs["cleanup"]["needs"] == "performance"
+            && normalized(&jobs["cleanup"]["if"]) == format!("always() && {trusted}"),
+        "cleanup must run after benchmarks, including failure, only for trusted events"
+    );
+    let performance = &all["performance"]["jobs"];
+    ensure!(
+        performance["benchmark"]["needs"] == "build"
+            && normalized(&performance["benchmark"]["if"]) == trusted
+            && performance["benchmark"]["environment"] == "Benchmarking"
+            && performance["build"].get("if").is_none()
+            && performance["build"].get("environment").is_none(),
+        "every PR must build benchmarks; only trusted runs may use cloud credentials"
+    );
+    ensure!(
+        performance["build"].to_string().find("secrets.").is_none(),
+        "benchmark build must be credential-free"
+    );
+    for (file, lane) in [
+        ("verification-tests", "cargo"),
+        ("verification-models", "models"),
+        ("verification-fuzz", "fuzz"),
+        ("performance", "benchmark"),
+    ] {
+        let steps = all[file]["jobs"]
+            .as_object()
+            .unwrap()
+            .values()
+            .flat_map(|job| job["steps"].as_array().unwrap());
+        let names: Vec<_> = steps
+            .filter(|step| step["with"]["path"] == "target/readme-data/publication.json")
+            .collect();
+        ensure!(
+            names.len() == 1
+                && names[0]["with"]["name"]
+                    == format!("readme-data-{lane}-${{{{ github.run_attempt }}}}")
+                && names[0]["with"].get("overwrite").is_none(),
+            "publication artifacts must have unique immutable lane names"
+        );
+    }
     let mut groups = BTreeSet::new();
-    for name in ["ci", "ci-workflows", "ci-docs"] {
+    for name in [
+        "ci",
+        "ci-workflows",
+        "ci-docs",
+        "verification-tests",
+        "verification-models",
+        "verification-fuzz",
+        "verification-extended",
+    ] {
         let w = &all[name];
         ensure!(
-            w["concurrency"]["cancel-in-progress"] == true,
+            w["concurrency"]["cancel-in-progress"]
+                == if name == "ci" {
+                    json!("${{ github.event_name == 'pull_request' }}")
+                } else {
+                    json!(true)
+                },
             "PR checks must cancel stale runs"
         );
         for pr in [1, 2] {
@@ -366,17 +473,26 @@ pub fn workflows() -> Result<()> {
     ] {
         ensure!(
             keys(&all[name]["on"])?
-                == BTreeSet::from(["schedule".into(), "workflow_dispatch".into()]),
-            "expensive checks must not run on push/PR"
+                == BTreeSet::from([
+                    "schedule".into(),
+                    "workflow_dispatch".into(),
+                    "workflow_call".into()
+                ]),
+            "verification must be called by CI, not duplicate push/PR triggers"
         );
     }
     ensure!(
-        keys(&all["performance"]["on"])? == BTreeSet::from(["workflow_dispatch".into()]),
-        "benchmarks must remain manual"
+        keys(&all["performance"]["on"])?
+            == BTreeSet::from(["workflow_dispatch".into(), "workflow_call".into()]),
+        "benchmarks must be called by CI or explicitly dispatched"
     );
     let mut groups = BTreeSet::new();
     for name in ["performance", "maintenance-benchmarks", "reports"] {
-        let w = &all[name];
+        let w = if name == "performance" {
+            &performance["benchmark"]
+        } else {
+            &all[name]
+        };
         ensure!(
             w["concurrency"]["cancel-in-progress"] == false,
             "resource workflows must not cancel"
@@ -386,7 +502,7 @@ pub fn workflows() -> Result<()> {
             "workflow_dispatch",
             "refs/heads/main",
             None,
-            crate::string(w, "name")?,
+            crate::string(&all[name], "name")?,
         )?;
         ensure!(
             key == concurrency(
@@ -394,7 +510,7 @@ pub fn workflows() -> Result<()> {
                 "schedule",
                 "refs/heads/other",
                 None,
-                crate::string(w, "name")?
+                crate::string(&all[name], "name")?
             )? && groups.insert(key),
             "resource groups overlap"
         );
@@ -411,6 +527,7 @@ pub fn workflows() -> Result<()> {
         "report trigger changed"
     );
     let names = [
+        "ci",
         "verification-tests",
         "verification-models",
         "verification-fuzz",
@@ -443,7 +560,6 @@ pub fn workflows() -> Result<()> {
             == names,
         "publisher must name exact producers"
     );
-    println!("Workflow triggers and dependencies passed");
     Ok(())
 }
 fn keys(v: &Value) -> Result<BTreeSet<String>> {

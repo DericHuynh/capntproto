@@ -9,7 +9,8 @@ permissions:
   contents: read
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Do not interrupt paid measurements on main; obsolete PR checks may stop.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
   CARGO_TERM_COLOR: never
   CARGO_INCREMENTAL: '0'
@@ -166,6 +167,7 @@ jobs:
         if: always()
         with:
           name: platform-${{ matrix.os }}
+          overwrite: true
           path: target/platforms/
           if-no-files-found: error
       - name: Upload nextest results
@@ -173,23 +175,26 @@ jobs:
         if: always()
         with:
           name: nextest-${{ matrix.os }}
+          overwrite: true
           path: target/nextest/reports/
           if-no-files-found: warn
   report:
     name: Required CI result
-    needs: [workflows, documentation, platforms]
+    needs: [workflows, documentation, platforms, cargo, models, fuzz, extended, performance, cleanup]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          pattern: platform-*
+          pattern: platform-*-*
           path: platforms
           merge-multiple: true
       - name: Generate README
+        if: always()
         env:
-          RESULT: ${{ needs.workflows.result == 'success' && needs.documentation.result == 'success' && needs.platforms.result == 'success' && 'success' || 'failure' }}
+          RESULTS: ${{ toJSON(needs) }}
+          CLOUD: ${{ github.actor_id != '49699333' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         run: |
           # Markdown backticks in the format string are literal.
           # shellcheck disable=SC2016
@@ -197,14 +202,47 @@ jobs:
           for platform in ubuntu-24.04 macos-15 windows-2025; do
             if test -f "platforms/$platform.md"; then cat "platforms/$platform.md" >> README.md; else printf '| %s | missing | missing | missing | missing |\n' "$platform" >> README.md; fi
           done
-          printf '\nCargo tests and LLVM reporting run in Verification / Cargo tests. TLA+ models and fuzzing have independent Verification workflows. Performance runs separately in Performance / Dedicated benchmarks; unmeasured coverage/performance is not implied by a smoke pass.\n' >> README.md
+          {
+            printf '\n## Pipeline results\n\n'
+            jq -r 'to_entries[] | "- \(.key): \(.value.result)"' <<< "$RESULTS"
+            printf '\nCargo/coverage, TLA+, fuzzing and extended checks run after platform checks. Release benchmarks follow verification. Fork and Dependabot PRs build benchmarks without cloud credentials; their cloud measurement and cleanup are skipped. CodeQL runs independently through GitHub default setup.\n'
+          } >> README.md
           cat README.md >> "$GITHUB_STEP_SUMMARY"
-          test "$RESULT" = success
+          jq -e --arg cloud "$CLOUD" 'to_entries | all(.[]; if .key == "cleanup" and $cloud == "false" then .value.result == "skipped" else .value.result == "success" end)' <<< "$RESULTS"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
           name: platform-report
+          overwrite: true
           path: |
             README.md
             platforms/auditable-*.json
           if-no-files-found: error
+  cargo:
+    name: Verify Cargo tests and coverage
+    needs: [platforms, documentation]
+    uses: ./.github/workflows/verification-tests.yml # zizmor: ignore[self-repository]
+  models:
+    name: Verify TLA+ models
+    needs: [platforms, documentation]
+    uses: ./.github/workflows/verification-models.yml # zizmor: ignore[self-repository]
+  fuzz:
+    name: Verify fuzz targets
+    needs: [platforms, documentation]
+    uses: ./.github/workflows/verification-fuzz.yml # zizmor: ignore[self-repository]
+  extended:
+    name: Verify memory safety and mutation controls
+    needs: [platforms, documentation]
+    uses: ./.github/workflows/verification-extended.yml # zizmor: ignore[self-repository]
+  performance:
+    name: Build and measure release benchmarks
+    needs: [cargo, models, fuzz, extended]
+    uses: ./.github/workflows/performance.yml # zizmor: ignore[self-repository]
+  cleanup:
+    name: Recover expired benchmark resources
+    needs: performance
+    # 49699333 is Dependabot's immutable GitHub actor ID.
+    if: >-
+      always() && github.actor_id != '49699333' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    uses: ./.github/workflows/maintenance-benchmarks.yml # zizmor: ignore[self-repository]

@@ -1,12 +1,13 @@
 name: Verification / Cargo tests
 on:
+  workflow_call:
   workflow_dispatch:
   schedule:
     - cron: '19 3 * * 1'
 permissions:
   contents: read
 concurrency:
-  group: cargo-verification-${{ github.ref }}
+  group: cargo-verification-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 env:
   CARGO_TERM_COLOR: never
@@ -44,16 +45,16 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: readme-data
+          name: readme-data-cargo-${{ github.run_attempt }}
           path: target/readme-data/publication.json
           if-no-files-found: warn
-          overwrite: true
           retention-days: 90
       - id: report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
           name: cargo-test-report
+          overwrite: true
           path: target/quality/
           if-no-files-found: error
           retention-days: 30

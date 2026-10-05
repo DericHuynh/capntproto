@@ -290,6 +290,22 @@ fn history_is_bounded_and_partitions_remain_separate() {
     }
     render::validate_history(&history).unwrap();
 }
+
+#[test]
+fn shared_ci_run_ids_require_consistent_sources_and_unique_lanes() {
+    let history = render::merge(&render::empty_history(), &record(1, "cargo", DATE, 1)).unwrap();
+    let history = render::merge(&history, &record(1, "models", DATE, 1)).unwrap();
+    let mut corrupt = history.clone();
+    corrupt["models"][0]["commit"] = json!("c".repeat(40));
+    assert!(render::validate_history(&corrupt).is_err());
+    let mut duplicate = history.clone();
+    duplicate["cargo"]
+        .as_array_mut()
+        .unwrap()
+        .push(history["cargo"][0].clone());
+    assert!(render::validate_history(&duplicate).is_err());
+    render::validate_history(&history).unwrap();
+}
 #[test]
 fn renderer_has_labels_is_deterministic_and_removes_stale_charts() {
     let dir = tempfile::tempdir().unwrap();
