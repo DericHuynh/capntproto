@@ -897,6 +897,24 @@ and replacing RPC oneshots showed insufficient benefit to retain. These are
 diagnostics, not a demonstrated 1.2× result. The new candidate passed 291 focused
 tests and the unsafe documentation gate before full qualification.
 
+The [validated run on `2ef360212`](https://github.com/DericHuynh/capntproto/actions/runs/37284232525)
+retained all 80 trials and confirmed droplet deletion. It used a dedicated Xeon
+Platinum 8168 with `kvm-clock`; source identity was
+`d63ba30ce055df40f40f208fbf23e0e5b1c454f51373027d19c389f3e429bfd6`.
+
+| Payload | Native p50 (µs) | C++ p50 (µs) | Native / C++ |
+| --- | ---: | ---: | ---: |
+| Empty | 56.762 | 39.703 | 1.43× |
+| 64 B | 58.082 | 39.437 | 1.47× |
+| 1 KiB | 59.001 | 42.851 | 1.38× |
+| 64 KiB | 234.549 | 191.508 | 1.225× |
+
+The 1.2× target remains unmet at every payload. The full workspace run at this
+revision passed 1,559 tests, including extended memory-safety checks, with seven
+documented skips and one failure: an allocation-hint assertion still counted
+the omitted empty capability-table tag. That expectation needs updating; this
+is not a claim that the complete suite passed at this revision.
+
 Allocation checks cover the warmed single-segment queue, and partial-write
 tests cover every byte boundary of small frames plus large multi-segment batches.
 RPC regression tests cover self-wakes, independent subsequent wakes, late errors,
