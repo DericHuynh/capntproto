@@ -862,7 +862,40 @@ Local empty-call diagnostics for this candidate used 471.93 million server
 instructions versus 466.29 million before it, while client allocations fell
 from 242,787 to 231,787. A three-repetition local comparison showed lower 64-KiB
 latency, but the small-message instruction increase is a tradeoff and local
-timings do not qualify the 1.2× target. Dedicated measurements are still required.
+timings do not qualify the 1.2× target.
+
+The [validated dedicated run on `5ec4a320a`](https://github.com/DericHuynh/capntproto/actions/runs/37277836998)
+included the pooled arenas, combined struct validation and owned QUIC buffers.
+All 80 trials passed report validation, and resource cleanup succeeded. On its
+Xeon Platinum 8168 host, the pooled results still miss the target:
+
+| Payload | Native p50 (µs) | C++ p50 (µs) | Native / C++ |
+| --- | ---: | ---: | ---: |
+| Empty | 53.069 | 37.366 | 1.42× |
+| 64 B | 54.513 | 37.527 | 1.45× |
+| 1 KiB | 54.864 | 40.502 | 1.35× |
+| 64 KiB | 239.210 | 185.883 | 1.29× |
+
+Every repetition remains included, including native empty-call medians ranging
+from 50.97 to 87.36 µs. This host differs from earlier runs, so absolute times
+across runs are not a paired comparison. The complete workspace nextest run at
+this revision passed 1,558 tests with seven documented skips.
+
+The next candidate transfers immutable bytes from the local RPC bridge into
+QUIC without copying them into a second staging buffer. Copied adapters retain
+the bounded fallback, while partial writes and unacknowledged retransmissions
+keep their own immutable views. One-byte retention tests guard against an
+allocation per message. It also shares incoming answer flags, returns arena
+allocations without a second segment lookup, and follows C++ in leaving empty
+capability tables null instead of allocating a list tag.
+
+For 10,000 warmups plus 1,000 empty calls, local server instruction counts fell
+from 471.93 to 460.00 million. Five paired local repetitions of the buffer and
+arena changes showed only modest latency differences. Direct polling of the
+transport on each write regressed latency and was discarded; polling at flush
+and replacing RPC oneshots showed insufficient benefit to retain. These are
+diagnostics, not a demonstrated 1.2× result. The new candidate passed 291 focused
+tests and the unsafe documentation gate before full qualification.
 
 Allocation checks cover the warmed single-segment queue, and partial-write
 tests cover every byte boundary of small frames plus large multi-segment batches.
