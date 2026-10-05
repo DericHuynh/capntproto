@@ -5,57 +5,62 @@
 <text x="35.00" y="45.00" font-size="27" fill="#1e293b">Capntproto — Cargo Test Results</text>
 <text x="35.00" y="78.00" font-size="15" fill="#64748b">Nextest and doctest results · selected partition · counts per CI run · UTC</text>
 <text x="70.00" y="115.00" font-size="16" fill="#0868d4">Total</text>
-<polyline points="80.00,245.97 462.96,213.99 582.48,212.23 624.82,210.97 1027.76,208.96 1063.81,207.95 1300.00,180.00" fill="none" stroke="#0868d4" stroke-width="2.3"/>
+<polyline points="80.00,245.97 430.37,213.99 539.72,212.23 578.46,210.97 947.11,208.96 980.10,207.95 1196.19,180.00 1300.00,180.00" fill="none" stroke="#0868d4" stroke-width="2.3"/>
 <circle cx="80.00" cy="245.97" r="3" fill="#0868d4"><title>2026-10-03T09:31:53Z: 1128</title></circle>
-<circle cx="462.96" cy="213.99" r="3" fill="#0868d4"><title>2026-10-03T23:35:28Z: 1255</title></circle>
-<circle cx="582.48" cy="212.23" r="3" fill="#0868d4"><title>2026-10-04T03:58:44Z: 1262</title></circle>
-<circle cx="624.82" cy="210.97" r="3" fill="#0868d4"><title>2026-10-04T05:32:01Z: 1267</title></circle>
-<circle cx="1027.76" cy="208.96" r="3" fill="#0868d4"><title>2026-10-04T20:19:36Z: 1275</title></circle>
-<circle cx="1063.81" cy="207.95" r="3" fill="#0868d4"><title>2026-10-04T21:39:01Z: 1279</title></circle>
-<circle cx="1300.00" cy="180.00" r="3" fill="#0868d4"><title>2026-10-05T06:19:17Z: 1390</title></circle>
+<circle cx="430.37" cy="213.99" r="3" fill="#0868d4"><title>2026-10-03T23:35:28Z: 1255</title></circle>
+<circle cx="539.72" cy="212.23" r="3" fill="#0868d4"><title>2026-10-04T03:58:44Z: 1262</title></circle>
+<circle cx="578.46" cy="210.97" r="3" fill="#0868d4"><title>2026-10-04T05:32:01Z: 1267</title></circle>
+<circle cx="947.11" cy="208.96" r="3" fill="#0868d4"><title>2026-10-04T20:19:36Z: 1275</title></circle>
+<circle cx="980.10" cy="207.95" r="3" fill="#0868d4"><title>2026-10-04T21:39:01Z: 1279</title></circle>
+<circle cx="1196.19" cy="180.00" r="3" fill="#0868d4"><title>2026-10-05T06:19:17Z: 1390</title></circle>
+<circle cx="1300.00" cy="180.00" r="3" fill="#0868d4"><title>2026-10-05T10:29:14Z: 1390</title></circle>
 <text x="10.00" y="530.00" font-size="12" fill="#64748b">0</text>
 <text x="10.00" y="442.50" font-size="12" fill="#64748b">348</text>
 <text x="10.00" y="355.00" font-size="12" fill="#64748b">695</text>
 <text x="10.00" y="267.50" font-size="12" fill="#64748b">1042</text>
 <text x="10.00" y="180.00" font-size="12" fill="#64748b">1390</text>
 <text x="80.00" y="565.00" font-size="13" fill="#64748b">2026-10-03 09:31 UTC</text>
-<text x="1060.00" y="565.00" font-size="13" fill="#64748b">2026-10-05 06:19 UTC</text>
+<text x="1060.00" y="565.00" font-size="13" fill="#64748b">2026-10-05 10:29 UTC</text>
 <text x="220.00" y="115.00" font-size="16" fill="#00ac7b">Pass</text>
-<polyline points="80.00,248.49 462.96,218.78 582.48,217.01 624.82,215.76 1027.76,213.74 1063.81,212.73 1300.00,185.04" fill="none" stroke="#00ac7b" stroke-width="2.3"/>
+<polyline points="80.00,248.49 430.37,218.78 539.72,217.01 578.46,215.76 947.11,213.74 980.10,212.73 1196.19,185.04 1300.00,185.04" fill="none" stroke="#00ac7b" stroke-width="2.3"/>
 <circle cx="80.00" cy="248.49" r="3" fill="#00ac7b"><title>2026-10-03T09:31:53Z: 1118</title></circle>
-<circle cx="462.96" cy="218.78" r="3" fill="#00ac7b"><title>2026-10-03T23:35:28Z: 1236</title></circle>
-<circle cx="582.48" cy="217.01" r="3" fill="#00ac7b"><title>2026-10-04T03:58:44Z: 1243</title></circle>
-<circle cx="624.82" cy="215.76" r="3" fill="#00ac7b"><title>2026-10-04T05:32:01Z: 1248</title></circle>
-<circle cx="1027.76" cy="213.74" r="3" fill="#00ac7b"><title>2026-10-04T20:19:36Z: 1256</title></circle>
-<circle cx="1063.81" cy="212.73" r="3" fill="#00ac7b"><title>2026-10-04T21:39:01Z: 1260</title></circle>
-<circle cx="1300.00" cy="185.04" r="3" fill="#00ac7b"><title>2026-10-05T06:19:17Z: 1370</title></circle>
+<circle cx="430.37" cy="218.78" r="3" fill="#00ac7b"><title>2026-10-03T23:35:28Z: 1236</title></circle>
+<circle cx="539.72" cy="217.01" r="3" fill="#00ac7b"><title>2026-10-04T03:58:44Z: 1243</title></circle>
+<circle cx="578.46" cy="215.76" r="3" fill="#00ac7b"><title>2026-10-04T05:32:01Z: 1248</title></circle>
+<circle cx="947.11" cy="213.74" r="3" fill="#00ac7b"><title>2026-10-04T20:19:36Z: 1256</title></circle>
+<circle cx="980.10" cy="212.73" r="3" fill="#00ac7b"><title>2026-10-04T21:39:01Z: 1260</title></circle>
+<circle cx="1196.19" cy="185.04" r="3" fill="#00ac7b"><title>2026-10-05T06:19:17Z: 1370</title></circle>
+<circle cx="1300.00" cy="185.04" r="3" fill="#00ac7b"><title>2026-10-05T10:29:14Z: 1370</title></circle>
 <text x="370.00" y="115.00" font-size="16" fill="#ef4444">Fail</text>
-<polyline points="80.00,530.00 462.96,530.00 582.48,530.00 624.82,530.00 1027.76,530.00 1063.81,530.00 1300.00,530.00" fill="none" stroke="#ef4444" stroke-width="2.3"/>
+<polyline points="80.00,530.00 430.37,530.00 539.72,530.00 578.46,530.00 947.11,530.00 980.10,530.00 1196.19,530.00 1300.00,530.00" fill="none" stroke="#ef4444" stroke-width="2.3"/>
 <circle cx="80.00" cy="530.00" r="3" fill="#ef4444"><title>2026-10-03T09:31:53Z: 0</title></circle>
-<circle cx="462.96" cy="530.00" r="3" fill="#ef4444"><title>2026-10-03T23:35:28Z: 0</title></circle>
-<circle cx="582.48" cy="530.00" r="3" fill="#ef4444"><title>2026-10-04T03:58:44Z: 0</title></circle>
-<circle cx="624.82" cy="530.00" r="3" fill="#ef4444"><title>2026-10-04T05:32:01Z: 0</title></circle>
-<circle cx="1027.76" cy="530.00" r="3" fill="#ef4444"><title>2026-10-04T20:19:36Z: 0</title></circle>
-<circle cx="1063.81" cy="530.00" r="3" fill="#ef4444"><title>2026-10-04T21:39:01Z: 0</title></circle>
-<circle cx="1300.00" cy="530.00" r="3" fill="#ef4444"><title>2026-10-05T06:19:17Z: 0</title></circle>
+<circle cx="430.37" cy="530.00" r="3" fill="#ef4444"><title>2026-10-03T23:35:28Z: 0</title></circle>
+<circle cx="539.72" cy="530.00" r="3" fill="#ef4444"><title>2026-10-04T03:58:44Z: 0</title></circle>
+<circle cx="578.46" cy="530.00" r="3" fill="#ef4444"><title>2026-10-04T05:32:01Z: 0</title></circle>
+<circle cx="947.11" cy="530.00" r="3" fill="#ef4444"><title>2026-10-04T20:19:36Z: 0</title></circle>
+<circle cx="980.10" cy="530.00" r="3" fill="#ef4444"><title>2026-10-04T21:39:01Z: 0</title></circle>
+<circle cx="1196.19" cy="530.00" r="3" fill="#ef4444"><title>2026-10-05T06:19:17Z: 0</title></circle>
+<circle cx="1300.00" cy="530.00" r="3" fill="#ef4444"><title>2026-10-05T10:29:14Z: 0</title></circle>
 <text x="520.00" y="115.00" font-size="16" fill="#e89200">Error</text>
-<polyline points="80.00,530.00 462.96,530.00 582.48,530.00 624.82,530.00 1027.76,530.00 1063.81,530.00 1300.00,530.00" fill="none" stroke="#e89200" stroke-width="2.3"/>
+<polyline points="80.00,530.00 430.37,530.00 539.72,530.00 578.46,530.00 947.11,530.00 980.10,530.00 1196.19,530.00 1300.00,530.00" fill="none" stroke="#e89200" stroke-width="2.3"/>
 <circle cx="80.00" cy="530.00" r="3" fill="#e89200"><title>2026-10-03T09:31:53Z: 0</title></circle>
-<circle cx="462.96" cy="530.00" r="3" fill="#e89200"><title>2026-10-03T23:35:28Z: 0</title></circle>
-<circle cx="582.48" cy="530.00" r="3" fill="#e89200"><title>2026-10-04T03:58:44Z: 0</title></circle>
-<circle cx="624.82" cy="530.00" r="3" fill="#e89200"><title>2026-10-04T05:32:01Z: 0</title></circle>
-<circle cx="1027.76" cy="530.00" r="3" fill="#e89200"><title>2026-10-04T20:19:36Z: 0</title></circle>
-<circle cx="1063.81" cy="530.00" r="3" fill="#e89200"><title>2026-10-04T21:39:01Z: 0</title></circle>
-<circle cx="1300.00" cy="530.00" r="3" fill="#e89200"><title>2026-10-05T06:19:17Z: 0</title></circle>
+<circle cx="430.37" cy="530.00" r="3" fill="#e89200"><title>2026-10-03T23:35:28Z: 0</title></circle>
+<circle cx="539.72" cy="530.00" r="3" fill="#e89200"><title>2026-10-04T03:58:44Z: 0</title></circle>
+<circle cx="578.46" cy="530.00" r="3" fill="#e89200"><title>2026-10-04T05:32:01Z: 0</title></circle>
+<circle cx="947.11" cy="530.00" r="3" fill="#e89200"><title>2026-10-04T20:19:36Z: 0</title></circle>
+<circle cx="980.10" cy="530.00" r="3" fill="#e89200"><title>2026-10-04T21:39:01Z: 0</title></circle>
+<circle cx="1196.19" cy="530.00" r="3" fill="#e89200"><title>2026-10-05T06:19:17Z: 0</title></circle>
+<circle cx="1300.00" cy="530.00" r="3" fill="#e89200"><title>2026-10-05T10:29:14Z: 0</title></circle>
 <text x="670.00" y="115.00" font-size="16" fill="#8b5cf6">Skip</text>
-<polyline points="80.00,527.48 462.96,525.22 582.48,525.22 624.82,525.22 1027.76,525.22 1063.81,525.22 1300.00,524.96" fill="none" stroke="#8b5cf6" stroke-width="2.3"/>
+<polyline points="80.00,527.48 430.37,525.22 539.72,525.22 578.46,525.22 947.11,525.22 980.10,525.22 1196.19,524.96 1300.00,524.96" fill="none" stroke="#8b5cf6" stroke-width="2.3"/>
 <circle cx="80.00" cy="527.48" r="3" fill="#8b5cf6"><title>2026-10-03T09:31:53Z: 10</title></circle>
-<circle cx="462.96" cy="525.22" r="3" fill="#8b5cf6"><title>2026-10-03T23:35:28Z: 19</title></circle>
-<circle cx="582.48" cy="525.22" r="3" fill="#8b5cf6"><title>2026-10-04T03:58:44Z: 19</title></circle>
-<circle cx="624.82" cy="525.22" r="3" fill="#8b5cf6"><title>2026-10-04T05:32:01Z: 19</title></circle>
-<circle cx="1027.76" cy="525.22" r="3" fill="#8b5cf6"><title>2026-10-04T20:19:36Z: 19</title></circle>
-<circle cx="1063.81" cy="525.22" r="3" fill="#8b5cf6"><title>2026-10-04T21:39:01Z: 19</title></circle>
-<circle cx="1300.00" cy="524.96" r="3" fill="#8b5cf6"><title>2026-10-05T06:19:17Z: 20</title></circle>
+<circle cx="430.37" cy="525.22" r="3" fill="#8b5cf6"><title>2026-10-03T23:35:28Z: 19</title></circle>
+<circle cx="539.72" cy="525.22" r="3" fill="#8b5cf6"><title>2026-10-04T03:58:44Z: 19</title></circle>
+<circle cx="578.46" cy="525.22" r="3" fill="#8b5cf6"><title>2026-10-04T05:32:01Z: 19</title></circle>
+<circle cx="947.11" cy="525.22" r="3" fill="#8b5cf6"><title>2026-10-04T20:19:36Z: 19</title></circle>
+<circle cx="980.10" cy="525.22" r="3" fill="#8b5cf6"><title>2026-10-04T21:39:01Z: 19</title></circle>
+<circle cx="1196.19" cy="524.96" r="3" fill="#8b5cf6"><title>2026-10-05T06:19:17Z: 20</title></circle>
+<circle cx="1300.00" cy="524.96" r="3" fill="#8b5cf6"><title>2026-10-05T10:29:14Z: 20</title></circle>
 <text x="35.00" y="620.00" font-size="13" fill="#64748b">Dotted lines: failed&#x2F;incomplete workspace command. Error = announced tests without a terminal result.</text>
 </g>
 </svg>
