@@ -615,7 +615,8 @@ reliable traffic avoids reading application clocks for absent datagrams and
 migrations. Upstream QUIC recovery and transport pacing continue to use their
 normal clocks and deadlines.
 
-The following candidate stores single-segment receive ranges inline, keeps one
+The [second 1.2× campaign](https://github.com/DericHuynh/capntproto/actions/runs/37254318347)
+measured commit `fb9ee230d37d66d99fa41793bc57a06db574d8c0`, which stores single-segment receive ranges inline, keeps one
 input cancellation registration per connection with a bounded cooperative read
 loop, and generates QUIC packets directly into their final batch buffer. Packet
 boundaries, pacing, path changes and congestion quantum still determine flushes.
@@ -624,8 +625,28 @@ recipients do not allocate unused result wrappers. A local allocation diagnostic
 counted approximately 41 client allocations per empty RPC versus 56 in the prior
 main baseline, including setup amortized over 11,000 calls. Server Callgrind
 counts fell from 623 million to 574 million instructions for that workload.
-These diagnostics are not latency acceptance evidence; the follow-up dedicated
-measurement is pending.
+These diagnostics are not latency acceptance evidence. Its dedicated results
+retained all samples and again missed the target:
+
+| Payload | Native p50 (µs) | C++ p50 (µs) | Native / C++ |
+| --- | ---: | ---: | ---: |
+| Empty | 57.996 | 37.736 | 1.54× |
+| 64 B | 59.102 | 38.312 | 1.54× |
+| 1 KiB | 77.517 | 40.695 | 1.90× |
+| 64 KiB | 255.865 | 187.048 | 1.37× |
+
+Native per-repetition medians were 57.6–59.0 µs for empty calls, but 60.9–101.3 µs
+for 1 KiB. The slower repetitions remain in the result. Cleanup succeeded.
+
+The next candidate transfers outgoing-call permits to the queued write, retaining
+admission through partial writes, flush, cancellation, and failure without a
+per-call background completion task. Transports without this facility retain
+the completion-promise fallback. Sends whose completion is unobserved avoid a
+receipt channel; warmed detached batches allocate nothing. The client allocation
+diagnostic fell from about 41 to 34 allocations per empty call. Write errors now
+propagate without waiting for live connection handles or a blocked close;
+normal successful shutdown still flushes and closes. These changes need their
+own dedicated latency measurement.
 
 Allocation checks cover the warmed single-segment queue, and partial-write
 tests cover every byte boundary of small frames plus large multi-segment batches.

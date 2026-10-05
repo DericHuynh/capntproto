@@ -34,7 +34,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
             let mut root: message::Builder = out_message.get_body()?.get_as()?;
             root.set_unimplemented(message.get_body()?.get_as()?)?;
         }
-        let _ = out_message.send();
+        let _ = out_message.send_detached();
         Ok(())
     }
 
@@ -150,7 +150,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
             .slots
             .insert(answer_id, answer);
         fds.attach(&mut *response);
-        let _ = response.send();
+        let _ = response.send_detached();
         Ok(())
     }
 
@@ -303,7 +303,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                                 ));
                             }
                         }
-                        let _ = message.send();
+                        let _ = message.send_detached();
                     }
                     Ok(())
                 };

@@ -407,7 +407,7 @@ pub(super) fn receive_call<VatId>(
         .slots
         .insert(original_id, parent);
     destination.answers.borrow_mut().slots.insert(id, direct);
-    let _ = notice.send();
+    let _ = notice.send_detached();
     let invocation = capability.call_with_hints(
         interface,
         method,

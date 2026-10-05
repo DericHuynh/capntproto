@@ -58,9 +58,20 @@ impl crate::IncomingMessage for IncomingMessage {
     }
 }
 
+struct QueuedMessage {
+    body: Rc<capnp::message::Builder<capnp::message::HeapAllocator>>,
+    _guard: Option<Rc<dyn std::any::Any>>,
+}
+impl capnp_futures::serialize::AsOutputSegments for QueuedMessage {
+    fn as_output_segments(&self) -> capnp::OutputSegments<'_> {
+        self.body.get_segments_for_output()
+    }
+}
+
 struct OutgoingMessage {
     message: ::capnp::message::Builder<::capnp::message::HeapAllocator>,
-    sender: ::capnp_futures::Sender<Rc<::capnp::message::Builder<::capnp::message::HeapAllocator>>>,
+    sender: capnp_futures::Sender<QueuedMessage>,
+    guard: Option<Rc<dyn std::any::Any>>,
 }
 
 impl crate::OutgoingMessage for OutgoingMessage {
@@ -82,12 +93,47 @@ impl crate::OutgoingMessage for OutgoingMessage {
         let Self {
             message,
             mut sender,
+            guard,
         } = tmp;
         let m = Rc::new(message);
         (
-            Promise::from_future(sender.send(m.clone()).map_ok(|_| ())),
+            Promise::from_future(
+                sender
+                    .send(QueuedMessage {
+                        body: m.clone(),
+                        _guard: guard,
+                    })
+                    .map_ok(|_| ()),
+            ),
             m,
         )
+    }
+
+    fn send_detached(
+        self: Box<Self>,
+    ) -> Rc<capnp::message::Builder<capnp::message::HeapAllocator>> {
+        let Self {
+            message,
+            mut sender,
+            guard,
+        } = *self;
+        let body = Rc::new(message);
+        sender.send_detached(QueuedMessage {
+            body: body.clone(),
+            _guard: guard,
+        });
+        body
+    }
+
+    fn retain_until_sent(
+        &mut self,
+        guard: Rc<dyn std::any::Any>,
+    ) -> Result<(), Rc<dyn std::any::Any>> {
+        if self.guard.is_some() {
+            return Err(guard);
+        }
+        self.guard = Some(guard);
+        Ok(())
     }
 
     fn take(self: Box<Self>) -> ::capnp::message::Builder<::capnp::message::HeapAllocator> {
@@ -104,7 +150,7 @@ where
     T: AsyncRead + 'static,
 {
     input_stream: Rc<RefCell<Option<capnp_futures::BufferedRead<T>>>>,
-    sender: ::capnp_futures::Sender<Rc<::capnp::message::Builder<::capnp::message::HeapAllocator>>>,
+    sender: capnp_futures::Sender<QueuedMessage>,
     side: crate::rpc_twoparty_capnp::Side,
     on_disconnect_fulfiller: Option<oneshot::Sender<()>>,
     flow_control: crate::flow_control::Policy,
@@ -137,9 +183,7 @@ where
 {
     fn new(
         input_stream: T,
-        sender: ::capnp_futures::Sender<
-            Rc<::capnp::message::Builder<::capnp::message::HeapAllocator>>,
-        >,
+        sender: capnp_futures::Sender<QueuedMessage>,
         side: crate::rpc_twoparty_capnp::Side,
         receive_options: ReaderOptions,
         on_disconnect_fulfiller: oneshot::Sender<()>,
@@ -186,6 +230,7 @@ where
         Box::new(OutgoingMessage {
             message,
             sender: self.inner.borrow().sender.clone(),
+            guard: None,
         })
     }
 
@@ -385,15 +430,25 @@ where
         let (sender, write_queue) = ::capnp_futures::write_queue_with_clock(output, clock);
         let outgoing_queue = sender.outgoing_queue();
         let execution_driver = Promise::from_future(async move {
-            let written = write_queue.await;
             // Queue termination is an output fence, independent of input EOF.
-            // Even on write failure, close output and notify all fence waiters.
-            let closed = futures::AsyncWriteExt::close(&mut closer)
-                .await
-                .map_err(capnp::Error::from);
-            let result = written.and(closed);
+            // A failed writer cannot promise to flush/close gracefully: those
+            // operations may block too. Publish its error immediately so the
+            // RPC driver can disconnect even if the peer keeps input open.
+            let result = match write_queue.await {
+                Ok(()) => futures::AsyncWriteExt::close(&mut closer)
+                    .await
+                    .map_err(capnp::Error::from),
+                Err(error) => {
+                    // Give a ready close operation its normal cleanup chance,
+                    // but never hide the write failure behind a blocked close.
+                    let _ = futures::AsyncWriteExt::close(&mut closer).now_or_never();
+                    Err(error)
+                }
+            };
             let _ = closed_tx.send(result.clone());
-            let _ = disconnect_promise.await;
+            if result.is_ok() {
+                let _ = disconnect_promise.await;
+            }
             result
         })
         .shared();

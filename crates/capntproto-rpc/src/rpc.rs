@@ -166,7 +166,7 @@ impl<VatId> Drop for QuestionRef<VatId> {
                     // send Release messages when those are destroyed.
                     builder.set_release_result_caps(q.is_awaiting_return);
                 }
-                let _ = message.send();
+                let _ = message.send_detached();
             }
         }
 
@@ -524,13 +524,18 @@ impl<VatId> ConnectionState<VatId> {
 
     fn send_call(
         &self,
-        message: Box<dyn crate::OutgoingMessage>,
+        mut message: Box<dyn crate::OutgoingMessage>,
         permit: Rc<crate::admission::Permit>,
     ) {
-        let (completion, _) = message.send();
         // The transport owns the message even if all application owners vanish.
         // In particular, pipeline-only questions can finish before this flush.
-        self.add_task(Promise::from_future(completion.attach(permit)));
+        match message.retain_until_sent(permit) {
+            Ok(()) => drop(message.send_detached()),
+            Err(permit) => {
+                let (completion, _) = message.send();
+                self.add_task(Promise::from_future(completion.attach(permit)));
+            }
+        }
     }
 
     pub(crate) fn set_not_idle(&self) {
@@ -720,7 +725,7 @@ impl<VatId> ConnectionState<VatId> {
                     body.init_as::<message::Builder>().init_abort(),
                     trace.as_deref(),
                 );
-                let _ = message.send();
+                let _ = message.send_detached();
             }
         }
 
@@ -804,7 +809,7 @@ impl<VatId> ConnectionState<VatId> {
                         .init_bootstrap();
                     builder.set_question_id(question_id.to_wire());
                 }
-                let _ = message.send();
+                let _ = message.send_detached();
             }
             Err(_) => panic!(),
         }
@@ -899,7 +904,7 @@ impl<VatId> ConnectionState<VatId> {
             ret.set_answer_id(id.to_wire());
             ret.set_release_param_caps(false);
             ret.set_results_sent_elsewhere(());
-            let _ = acknowledgement.send();
+            let _ = acknowledgement.send_detached();
             self.answer_has_sent_return(id, vec![]);
         }
         Ok(())
@@ -1979,7 +1984,7 @@ impl<VatId> Drop for ReturnGuard<VatId> {
             } else {
                 ret.set_canceled(());
             }
-            let _ = message.send();
+            let _ = message.send_detached();
             Ok(())
         })();
         state.answer_has_sent_return(self.id, Vec::new());
@@ -2250,7 +2255,7 @@ impl<VatId> ResultsHook for Results<VatId> {
                 ret.set_answer_id(inner.answer_id.to_wire());
                 ret.set_release_param_caps(false);
                 ret.set_take_from_other_question(question);
-                let _ = message.send();
+                let _ = message.send_detached();
                 inner
                     .connection_state
                     .answer_has_sent_return(inner.answer_id, vec![]);
@@ -2275,7 +2280,7 @@ impl<VatId> ResultsHook for Results<VatId> {
                     if let Some(sender) = inner.pipeline_sender.take() {
                         sender.complete(pipeline.clone());
                     }
-                    let _ = redirect.send();
+                    let _ = redirect.send_detached();
                     inner
                         .connection_state
                         .answer_has_sent_return(inner.answer_id, vec![]);
@@ -2380,7 +2385,7 @@ impl ResultsDone {
                                         ret.set_release_param_caps(false);
                                         ret.set_canceled(());
                                     }
-                                    let _ = message.send();
+                                    let _ = message.send_detached();
                                 }
 
                                 connection_state.answer_has_sent_return(answer_id, Vec::new());
@@ -2423,7 +2428,7 @@ impl ResultsDone {
                                 };
 
                                 fds.attach(&mut *message);
-                                let (_promise, m) = message.send();
+                                let m = message.send_detached();
                                 connection_state.answer_has_sent_return(answer_id, exports);
                                 let hook =
                                     Box::new(Self::rpc(m, cap_table)) as Box<dyn ResultsDoneHook>;
@@ -2448,7 +2453,7 @@ impl ResultsDone {
                                         let mut exc = ret.init_exception();
                                         from_error(&e, exc.reborrow(), trace.as_deref());
                                     }
-                                    let _ = message.send();
+                                    let _ = message.send_detached();
                                 }
                                 connection_state.answer_has_sent_return(answer_id, Vec::new());
 
@@ -2651,7 +2656,7 @@ impl<VatId> ThirdPartyClient<VatId> {
                 return Err(Error::failed("forwarded vine changed connection".into()));
             }
             d.init_context().set_accept(embargo);
-            let _ = message.send();
+            let _ = message.send_detached();
             Ok(())
         }));
         let export_id = destination.exports.borrow_mut().push(export);
@@ -2773,7 +2778,7 @@ impl<VatId> Drop for ImportClient<VatId> {
                 release.set_id(self.import_id.to_wire());
                 release.set_reference_count(self.remote_ref_count);
             }
-            let _ = message.send();
+            let _ = message.send_detached();
         }
         drop(tmp);
         connection_state.schedule_idle_check();
@@ -2949,7 +2954,7 @@ impl<VatId> PromiseClient<VatId> {
             // client instead.
             replacement = Box::new(queued_client);
 
-            let _ = message.send();
+            let _ = message.send_detached();
         }
 
         self.replace_resolved(replacement);

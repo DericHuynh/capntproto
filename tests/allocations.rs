@@ -44,6 +44,32 @@ fn steady_write_batches_allocate_only_completion_receipts() {
 }
 
 #[test]
+fn detached_write_batches_do_not_allocate_after_warmup() {
+    use futures::Future;
+    use std::{rc::Rc, task::Context, time::Duration};
+
+    let (mut sender, driver) =
+        capnp_futures::write_queue_with_clock(futures::io::sink(), || Duration::ZERO);
+    let mut driver = Box::pin(driver);
+    let mut cx = Context::from_waker(futures::task::noop_waker_ref());
+    let mut message = capnp::message::Builder::new_default();
+    message.set_root::<capnp::text::Owned>("detached").unwrap();
+    let message = Rc::new(message);
+    for _ in 0..2 {
+        sender.send_detached(message.clone());
+        assert!(driver.as_mut().poll(&mut cx).is_pending());
+    }
+    let counts = allocation_counter::measure(|| {
+        for _ in 0..128 {
+            sender.send_detached(message.clone());
+            assert!(driver.as_mut().poll(&mut cx).is_pending());
+            assert_eq!(Rc::strong_count(&message), 1);
+        }
+    });
+    assert_eq!(counts.count_total, 0, "{counts:?}");
+}
+
+#[test]
 fn borrowed_generated_fields_do_not_allocate() {
     let mut message = Message::<Person>::new().unwrap();
     message.edit().id().set(73);

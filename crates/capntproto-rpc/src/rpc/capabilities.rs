@@ -208,7 +208,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                         )?;
                     }
                     fds.attach(&mut *message);
-                    let _ = message.send();
+                    let _ = message.send_detached();
                     Ok(())
                 }
                 Err(e) => {
@@ -224,7 +224,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                             connection_state.encode_trace(&e).as_deref(),
                         );
                     }
-                    let _ = message.send();
+                    let _ = message.send_detached();
                     Ok(())
                 }
             }
@@ -310,7 +310,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
         {
             provide?.set_question_id(id.to_wire());
         }
-        let _ = message.send();
+        let _ = message.send_detached();
         let mut export = Export::new(inner.add_ref());
         export.vine = Some(Rc::new(move |embargo| {
             let reference = reference.borrow();
@@ -332,7 +332,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                 .init_promised_answer()
                 .set_question_id(reference.id.to_wire());
             d.init_context().set_accept(embargo);
-            let _ = message.send();
+            let _ = message.send_detached();
             Ok(())
         }));
         let export_id = state.exports.borrow_mut().push(export);
@@ -388,7 +388,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
             return Err(Error::failed("third-party vine changed connection".into()));
         }
         d.init_context().set_accept(&embargo);
-        let _ = message.send();
+        let _ = message.send_detached();
         let Some(connection) = connection else {
             let completion = state
                 .connection
@@ -441,7 +441,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
         accept
             .get_provision()
             .set_as(completion.get_root_as_reader::<any_pointer::Reader>()?)?;
-        let _ = message.send();
+        let _ = message.send_detached();
         let promise = receiver
             .map_err(crate::canceled_to_error)
             .and_then(|p| p)

@@ -705,6 +705,83 @@ fn diagnostics_survive_moving_network_into_rpc_system() {
 }
 
 #[test]
+fn transport_guards_survive_partial_writes_and_release_on_flush_failure_or_cancel() {
+    use capnp_rpc::{rpc_twoparty_capnp::Side, VatNetwork};
+    use std::cell::Cell;
+    struct Guard(Rc<Cell<usize>>);
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+    for mode in 0..5 {
+        let output = Rc::new(RefCell::new(Output {
+            chunk: 3,
+            budget: 7,
+            ..Default::default()
+        }));
+        let mut network = capnp_rpc::twoparty::VatNetwork::new(
+            futures::io::Cursor::new(Vec::<u8>::new()),
+            Writer(output.clone()),
+            Side::Client,
+            Default::default(),
+        );
+        let mut connection = network.connect(Side::Server).unwrap();
+        let mut message = connection.new_outgoing_message(8);
+        message
+            .get_body()
+            .unwrap()
+            .set_as::<capnp::text::Owned>("guarded")
+            .unwrap();
+        let dropped = Rc::new(Cell::new(0));
+        assert!(message
+            .retain_until_sent(Rc::new(Guard(dropped.clone())))
+            .is_ok());
+        // Refusing a second guard must preserve the first one.
+        let second = Rc::new(Cell::new(0));
+        let refused = message
+            .retain_until_sent(Rc::new(Guard(second.clone())))
+            .unwrap_err();
+        assert_eq!(second.get(), 0);
+        drop(refused);
+        assert_eq!(second.get(), 1);
+        if mode == 3 {
+            drop(message.take());
+            assert_eq!(dropped.get(), 1);
+            continue;
+        }
+        drop(message.send_detached());
+        let mut driver = Box::pin(network.drive_until_shutdown());
+        assert!(poll(driver.as_mut()).is_pending());
+        assert_eq!(output.borrow().bytes.len(), 7);
+        assert_eq!(dropped.get(), 0);
+        if mode == 2 {
+            drop(driver);
+            drop(connection);
+            drop(network);
+        } else if mode == 4 {
+            output.borrow_mut().fault = 1;
+            // The close/flush path remains blocked. The original write error
+            // must still reach the network driver with connection handles live.
+            assert!(matches!(poll(driver.as_mut()), Poll::Ready(Err(_))));
+        } else {
+            output.borrow_mut().budget = usize::MAX;
+            assert!(poll(driver.as_mut()).is_pending());
+            assert_eq!(dropped.get(), 0, "a pending flush retains the guard");
+            output.borrow_mut().flush = true;
+            output.borrow_mut().fault = if mode == 1 { 2 } else { 0 };
+            let result = poll(driver.as_mut());
+            if mode == 1 {
+                assert!(matches!(result, Poll::Ready(Err(_))));
+            } else {
+                assert!(result.is_pending());
+            }
+        }
+        assert_eq!(dropped.get(), 1);
+    }
+}
+
+#[test]
 fn batch_writer_uses_scalar_fallback_without_vectored_support() {
     struct Scalar(Writer);
     impl futures::AsyncWrite for Scalar {

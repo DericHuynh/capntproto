@@ -15,6 +15,9 @@ const BUFFER_SIZE: usize = 16 * 1024;
 pub(super) trait Pump {
     /// Return whether any operation completed, allowing RPC to be polled again.
     fn poll_io(&mut self, cx: &mut Context<'_>) -> bool;
+    /// Attempt an already-requested close once before reporting an IO error.
+    /// No read/write may run here, and a blocked close cannot delay that error.
+    fn poll_pending_close(&mut self, cx: &mut Context<'_>);
 }
 
 enum WriteOp {
@@ -157,6 +160,14 @@ impl AsyncWrite for Proxy {
 }
 
 impl<T: AsyncRead + AsyncWrite + Unpin> Pump for Borrowed<'_, T> {
+    fn poll_pending_close(&mut self, cx: &mut Context<'_>) {
+        let mut state = self.state.borrow_mut();
+        if matches!(state.write_op, Some(WriteOp::Close)) {
+            let _ = Pin::new(&mut *self.stream).poll_close(cx);
+            state.write_op = None;
+        }
+    }
+
     fn poll_io(&mut self, cx: &mut Context<'_>) -> bool {
         let mut state = self.state.borrow_mut();
         state.driver = Some(cx.waker().clone());

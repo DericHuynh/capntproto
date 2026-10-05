@@ -81,8 +81,9 @@ enum Write {
     Message(
         Body,
         Vec<Rc<OwnedFd>>,
-        oneshot::Sender<capnp::Result<()>>,
+        Option<oneshot::Sender<capnp::Result<()>>>,
         queue::Pending,
+        Option<Rc<dyn std::any::Any>>,
     ),
     Shutdown(oneshot::Sender<capnp::Result<()>>),
 }
@@ -92,6 +93,7 @@ struct Output {
     sender: mpsc::UnboundedSender<Write>,
     metrics: queue::Metrics,
     send_fds: bool,
+    guard: Option<Rc<dyn std::any::Any>>,
 }
 impl OutgoingMessage for Output {
     fn get_body(&mut self) -> capnp::Result<capnp::any_pointer::Builder<'_>> {
@@ -114,14 +116,41 @@ impl OutgoingMessage for Output {
             Ok(pending) => pending,
             Err(error) => return (Promise::err(error), body),
         };
-        let queued =
-            self.sender
-                .unbounded_send(Write::Message(body.clone(), self.fds, tx, pending));
+        let queued = self.sender.unbounded_send(Write::Message(
+            body.clone(),
+            self.fds,
+            Some(tx),
+            pending,
+            self.guard,
+        ));
         let promise = match queued {
             Ok(()) => Promise::from_future(async move { rx.await.map_err(|_| stopped())? }),
             Err(_) => Promise::err(stopped()),
         };
         (promise, body)
+    }
+    fn send_detached(self: Box<Self>) -> Body {
+        let body = Rc::new(self.body);
+        if let Ok(pending) = self.metrics.enqueue(body.size_in_words() * 8) {
+            let _ = self.sender.unbounded_send(Write::Message(
+                body.clone(),
+                self.fds,
+                None,
+                pending,
+                self.guard,
+            ));
+        }
+        body
+    }
+    fn retain_until_sent(
+        &mut self,
+        guard: Rc<dyn std::any::Any>,
+    ) -> Result<(), Rc<dyn std::any::Any>> {
+        if self.guard.is_some() {
+            return Err(guard);
+        }
+        self.guard = Some(guard);
+        Ok(())
     }
     fn take(self: Box<Self>) -> Builder<HeapAllocator> {
         self.body
@@ -204,6 +233,7 @@ impl Connection<Side> for Endpoint {
             sender: self.0.sender.clone(),
             metrics: self.0.metrics.clone(),
             send_fds: self.0.send_fds,
+            guard: None,
         })
     }
     fn receive_incoming_message(&mut self) -> Promise<Option<Box<dyn IncomingMessage>>, Error> {
@@ -306,7 +336,7 @@ impl VatNetwork {
             let mut bytes = Vec::new();
             while let Some(command) = receiver.next().await {
                 match command {
-                    Write::Message(body, fds, done, pending) => {
+                    Write::Message(body, fds, done, pending, _guard) => {
                         drop(pending); // active writes are excluded from queue metrics
                         bytes.clear();
                         let result = async {
@@ -319,7 +349,9 @@ impl VatNetwork {
                         if bytes.capacity() > 64 * 1024 {
                             bytes = Vec::new();
                         }
-                        let _ = done.send(result.clone());
+                        if let Some(done) = done {
+                            let _ = done.send(result.clone());
+                        }
                         if result.is_err() {
                             if let Some(inner) = weak.upgrade() {
                                 inner.close();

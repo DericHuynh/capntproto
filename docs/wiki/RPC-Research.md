@@ -217,6 +217,11 @@ Specific candidates from this implementation:
 
 Further improvements are hypotheses, not measured speedups. Existing batching already uses
 scatter/gather writes; adding batching from scratch is not missing work.
+Built-in transports now retain outgoing Call permits with the queued write.
+This removes per-call completion tasks while keeping credit until the write
+flushes or fails. Detached sends have no receipt allocation; custom transports
+can use the existing completion-promise fallback. Partial writes, canceled
+pipeline-only calls and writer failures must preserve this ownership rule.
 Do not remove traversal/nesting validation to speed up decoding. The serialization
 format needs checked pointer traversal even when no separate decode allocation
 is required. [Reader limits](https://capnproto.org/cxx.html#security).

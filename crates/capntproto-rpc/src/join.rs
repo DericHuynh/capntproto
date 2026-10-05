@@ -257,7 +257,7 @@ pub(super) fn send<VatId>(
                 .and_then(|response| response)
                 .attach(reference);
             replies.push(Promise::from_future(promise));
-            let _ = message.send();
+            let _ = message.send_detached();
         }
         let responses = future::try_join_all(replies).await?;
         let mut succeeded = None;

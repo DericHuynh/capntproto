@@ -254,6 +254,9 @@ impl Future for TwoPartyClient<'_> {
         for _ in 0..16 {
             match Pin::new(this.system.as_mut().expect("RPC driver already completed")).poll(cx) {
                 Poll::Ready(result) => {
+                    if let Some(pump) = &mut this.borrowed {
+                        pump.poll_pending_close(cx);
+                    }
                     this.finish(result.clone());
                     return Poll::Ready(result);
                 }
@@ -267,6 +270,9 @@ impl Future for TwoPartyClient<'_> {
                         } else {
                             Err(error)
                         };
+                        if let Some(pump) = &mut this.borrowed {
+                            pump.poll_pending_close(cx);
+                        }
                         this.finish(result.clone());
                         return Poll::Ready(result);
                     }

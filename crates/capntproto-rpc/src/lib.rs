@@ -157,6 +157,27 @@ pub trait OutgoingMessage {
         Rc<message::Builder<message::HeapAllocator>>,
     );
 
+    /// Sends without observing individual write completion. The transport
+    /// still owns the message through flush, failure, or writer cancellation.
+    /// Write errors must still reach the network's execution driver. The
+    /// default preserves compatibility with transports implementing `send()`.
+    fn send_detached(self: Box<Self>) -> Rc<message::Builder<message::HeapAllocator>> {
+        self.send().1
+    }
+
+    /// Retains a local lifetime guard through write completion or failure.
+    /// `Ok(())` transfers the guard to the transport's queued write; dropping
+    /// a send receipt must not release it early. Taking or dropping an unsent
+    /// message releases its guard. Unsupported transports return the guard
+    /// unchanged so the caller can attach it to a polled completion promise.
+    /// An existing guard must never be replaced before its write completes.
+    fn retain_until_sent(
+        &mut self,
+        guard: Rc<dyn std::any::Any>,
+    ) -> Result<(), Rc<dyn std::any::Any>> {
+        Err(guard)
+    }
+
     /// Takes the inner message out of `self`.
     fn take(self: Box<Self>) -> ::capnp::message::Builder<::capnp::message::HeapAllocator>;
 

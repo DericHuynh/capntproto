@@ -134,7 +134,7 @@ impl crate::FlowController for WindowFlowController {
         let now = self.clock.as_ref().map(|clock| clock());
         // Sending must be immediate, even if earlier calls failed or blocked.
         // Do not hold our state borrow while invoking an external message/getter.
-        let _ = message.send();
+        let _ = message.send_detached();
         let needs_window = {
             let mut inner = self.inner.borrow_mut();
             inner.max_message_size = inner.max_message_size.max(size);

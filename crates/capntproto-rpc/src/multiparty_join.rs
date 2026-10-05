@@ -60,7 +60,7 @@ fn response_for<VatId>(
     let (tx, rx) = oneshot::channel();
     let reference = Rc::new(RefCell::new(QuestionRef::new(state.clone(), id, tx)));
     state.questions.borrow_mut().find(id).unwrap().self_ref = Some(Rc::downgrade(&reference));
-    let _ = message.send();
+    let _ = message.send_detached();
     Promise::from_future(
         rx.map_err(crate::canceled_to_error)
             .and_then(|r| r)

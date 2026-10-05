@@ -96,7 +96,7 @@ impl OutgoingQueue {
     }
 }
 
-type Message<M> = (M, oneshot::Sender<M>);
+type Message<M> = (M, Option<oneshot::Sender<M>>);
 type Terminal = (Result<(), Error>, oneshot::Sender<()>);
 struct Queue<M> {
     messages: VecDeque<Message<M>>,
@@ -225,7 +225,9 @@ where
                     writer.flush().await?;
                     receiver.0.diagnostics.metrics.lock().unwrap().active = BatchMetrics::default();
                     for (message, completion) in batch.drain(..) {
-                        let _ = completion.send(message);
+                        if let Some(completion) = completion {
+                            let _ = completion.send(message);
+                        }
                     }
                     // Reuse ordinary batches without pinning a burst's peak
                     // metadata allocation for the lifetime of the connection.
@@ -252,13 +254,26 @@ impl<M: AsOutputSegments> Sender<M> {
     /// Enqueues synchronously. Resolves with the message after its batch is
     /// written and flushed. Dropping this receipt never cancels the write.
     pub fn send(&mut self, message: M) -> impl Future<Output = Result<M, Error>> + Unpin {
+        let (complete, receipt) = oneshot::channel();
+        self.enqueue(message, Some(complete));
+        receipt.map_err(|_| Error::disconnected("WriteQueue has terminated".into()))
+    }
+
+    /// Enqueues without allocating a completion receipt. The driver owns the
+    /// message until its batch is flushed, fails, or is canceled. Driver errors
+    /// still propagate normally; use [`Self::send`] to observe this send alone.
+    /// A stopped queue discards the message, just like dropping a failed receipt.
+    pub fn send_detached(&mut self, message: M) {
+        self.enqueue(message, None);
+    }
+
+    fn enqueue(&mut self, message: M, complete: Option<oneshot::Sender<M>>) {
         let bytes = message
             .as_output_segments()
             .iter()
             .map(|s| s.len())
             .sum::<usize>();
         let now = (self.shared.diagnostics.clock)();
-        let (complete, receipt) = oneshot::channel();
         {
             let mut queue = self.shared.queue.lock().unwrap();
             if queue.accepting {
@@ -273,7 +288,6 @@ impl<M: AsOutputSegments> Sender<M> {
             }
         }
         self.shared.ready.wake();
-        receipt.map_err(|_| Error::disconnected("WriteQueue has terminated".into()))
     }
 
     /// Observe pending messages without keeping the queue alive.
