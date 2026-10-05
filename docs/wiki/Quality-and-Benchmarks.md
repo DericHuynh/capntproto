@@ -915,6 +915,24 @@ documented skips and one failure: an allocation-hint assertion still counted
 the omitted empty capability-table tag. That expectation needs updating; this
 is not a claim that the complete suite passed at this revision.
 
+The following candidate keeps 16 peer IDs inline with a sparse fallback,
+retains one framing-state allocation per connection, skips inactive shutdown
+reads, and defers unused application clock reads. At `c11475e00`, the full
+workspace suite passed all 1,565 tests with seven documented skips; the stale
+allocation-hint expectation was corrected. Local empty-call instructions fell
+from 460.00 to 446.53 million and five paired runs showed about 3% lower small-call
+latency. A larger MTU showed no convincing gain and was discarded.
+
+The subsequent receive-buffer handoff preserves partial admission through the
+copying path and transfers whole buffers only into an empty bridge. Reserving
+for quiche's readable fragments first prevents buffer growth from reintroducing
+the removed copy. For 1,000 warmups and 1,000 64-KiB calls, local server
+instructions fell from 2.127 to 1.995 billion; five paired local repetitions had
+pooled medians of 176.07 versus 171.60 µs. Small-call latency was essentially
+unchanged. The candidate passed 297 focused transport/RPC/model checks, ten
+bridge ownership/property checks and the unsafe-documentation gate. These
+diagnostics still require a new dedicated acceptance run.
+
 Allocation checks cover the warmed single-segment queue, and partial-write
 tests cover every byte boundary of small frames plus large multi-segment batches.
 RPC regression tests cover self-wakes, independent subsequent wakes, late errors,
