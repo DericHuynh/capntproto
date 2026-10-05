@@ -139,7 +139,7 @@ fn spawn(
         tokio::task::spawn_local(drive(
             PacketSocket::Dedicated(DatagramSocket::new(socket)?),
             Box::new(conn),
-            (stream::CopyInput(reader), writer),
+            (stream::CopyInput(reader), stream::CopyOutput(writer)),
             SessionDrivers {
                 established: None,
                 datagrams: None,
@@ -348,7 +348,7 @@ struct SessionDrivers {
 async fn drive(
     socket: PacketSocket,
     conn: Box<buffers::Connection>,
-    io: (impl stream::Input, impl tokio::io::AsyncWrite + Unpin),
+    io: (impl stream::Input, impl stream::Output),
     drivers: SessionDrivers,
 ) -> io::Result<()> {
     // Listener shutdown must also cancel packet pacing and blocked writes,
@@ -390,7 +390,7 @@ async fn application_turn() {
 async fn drive_packets(
     mut socket: PacketSocket,
     conn: Box<buffers::Connection>,
-    io: (impl stream::Input, impl tokio::io::AsyncWrite + Unpin),
+    io: (impl stream::Input, impl stream::Output),
     drivers: SessionDrivers,
 ) -> io::Result<()> {
     let SessionDrivers {
@@ -472,7 +472,7 @@ async fn drive_packets(
         // number of cooperative turns lets the RPC tasks produce their output.
         let mut application_progress = false;
         if !engine.rx.pending().is_empty() {
-            if let Some(written) = writer.write(engine.rx.pending()).now_or_never() {
+            if let Some(written) = writer.write_from(&mut engine.rx).now_or_never() {
                 engine.delivered(written?)?;
                 application_progress = true;
                 // Finish delivering already-buffered input before waiting for
@@ -589,7 +589,7 @@ async fn drive_packets(
                 }
             },
             r=engine.tx.read_from(&mut reader), if can_read => engine.tx.read_owned(r?)?,
-            r=writer.write(engine.rx.pending()), if can_write => engine.delivered(r?)?,
+            r=writer.write_from(&mut engine.rx), if can_write => engine.delivered(r?)?,
             _=tokio::time::sleep(timeout) => mtu_recovery.on_timeout(&mut engine.conn),
         }
     }

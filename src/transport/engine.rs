@@ -138,35 +138,31 @@ impl<F: quiche::BufFactory<Buf = bytes::Bytes>> Engine<F> {
                 }
             }
         }
-        if self.rx.can_receive() {
-            match self.conn.stream_recv(0, self.rx.receive_buffer()?) {
-                Ok((n, fin)) => {
-                    let skip = if self.gate.as_ref().is_some_and(|g| g.needs_receive()) && n > 0 {
-                        if !self
-                            .gate
-                            .as_mut()
-                            .unwrap()
-                            .receive(self.rx.receive_buffer()?[0])
-                        {
-                            return Err(io::Error::new(
-                                io::ErrorKind::InvalidData,
-                                "invalid native RPC stream preface",
-                            ));
-                        }
-                        1
-                    } else {
-                        0
-                    };
-                    if fin && !self.ready() {
+        if self.rx.can_receive() && self.conn.is_readable() {
+            if let Some((n, fin)) = self.rx.receive_from(&mut self.conn)? {
+                let skip = if self.gate.as_ref().is_some_and(|g| g.needs_receive()) && n > 0 {
+                    if !self
+                        .gate
+                        .as_mut()
+                        .unwrap()
+                        .receive(self.rx.first_byte().unwrap())
+                    {
                         return Err(io::Error::new(
-                            io::ErrorKind::UnexpectedEof,
-                            "missing native RPC stream preface",
+                            io::ErrorKind::InvalidData,
+                            "invalid native RPC stream preface",
                         ));
                     }
-                    self.rx.received(n, fin, skip)?;
+                    1
+                } else {
+                    0
+                };
+                if fin && !self.ready() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "missing native RPC stream preface",
+                    ));
                 }
-                Err(quiche::Error::Done) | Err(quiche::Error::InvalidStreamState(_)) => (),
-                Err(e) => return Err(error(e)),
+                self.rx.received(n, fin, skip)?;
             }
         }
         if self.ready() {

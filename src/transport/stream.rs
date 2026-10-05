@@ -3,7 +3,7 @@
 
 use bytes::{BufMut, Bytes, BytesMut};
 use std::io;
-use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 const BUFFER_BYTES: usize = crate::rpc::QUIC_BUFFER_BYTES;
 
@@ -26,6 +26,31 @@ impl<R: AsyncRead + Unpin> Input for CopyInput<R> {
 impl Input for crate::rpc::local_io::ReadHalf {
     async fn read_owned(&mut self, _: &mut BytesMut) -> io::Result<Bytes> {
         self.read_owned().await
+    }
+}
+
+pub(super) trait Output {
+    async fn write_from(&mut self, stream: &mut ReceiveStream) -> io::Result<usize>;
+    async fn shutdown(&mut self) -> io::Result<()>;
+}
+pub(super) struct CopyOutput<W>(pub W);
+impl<W: AsyncWrite + Unpin> Output for CopyOutput<W> {
+    async fn write_from(&mut self, stream: &mut ReceiveStream) -> io::Result<usize> {
+        self.0.write(stream.pending()).await
+    }
+    async fn shutdown(&mut self) -> io::Result<()> {
+        self.0.shutdown().await
+    }
+}
+impl Output for crate::rpc::local_io::WriteHalf {
+    async fn write_from(&mut self, stream: &mut ReceiveStream) -> io::Result<usize> {
+        let ReceivePhase::Buffered { offset, length, .. } = stream.phase else {
+            return Err(invalid_progress());
+        };
+        self.write_owned(&mut stream.buffer, offset..length).await
+    }
+    async fn shutdown(&mut self) -> io::Result<()> {
+        AsyncWriteExt::shutdown(self).await
     }
 }
 
@@ -156,13 +181,13 @@ enum ReceivePhase {
     Closed,
 }
 pub(super) struct ReceiveStream {
-    buffer: Vec<u8>,
+    buffer: BytesMut,
     phase: ReceivePhase,
 }
 impl Default for ReceiveStream {
     fn default() -> Self {
         Self {
-            buffer: vec![0; BUFFER_BYTES],
+            buffer: BytesMut::with_capacity(4096),
             phase: ReceivePhase::Receiving,
         }
     }
@@ -171,11 +196,36 @@ impl ReceiveStream {
     pub(super) fn can_receive(&self) -> bool {
         matches!(self.phase, ReceivePhase::Receiving)
     }
+    #[cfg(test)]
     pub(super) fn receive_buffer(&mut self) -> io::Result<&mut [u8]> {
         if !self.can_receive() {
             return Err(invalid_progress());
         }
+        self.buffer.resize(BUFFER_BYTES, 0);
         Ok(&mut self.buffer)
+    }
+    pub(super) fn receive_from(
+        &mut self,
+        conn: &mut quiche::Connection<impl quiche::BufFactory>,
+    ) -> io::Result<Option<(usize, bool)>> {
+        if !self.can_receive() {
+            return Err(invalid_progress());
+        }
+        self.buffer.clear();
+        // Reclaim/grow once before Quiche appends multiple packet fragments.
+        // Growing between fragments would copy the prefix we meant to hand off.
+        self.buffer
+            .reserve(conn.stream_readable_len(0, BUFFER_BYTES).max(4096));
+        // Quiche initializes exactly the returned bytes through BufMut. The
+        // adapter retains the same receive bound without zeroing a whole slab.
+        match conn.stream_recv_buf(0, &mut (&mut self.buffer).limit(BUFFER_BYTES)) {
+            Ok(result) => Ok(Some(result)),
+            Err(quiche::Error::Done | quiche::Error::InvalidStreamState(_)) => Ok(None),
+            Err(error) => Err(super::error(error)),
+        }
+    }
+    pub(super) fn first_byte(&self) -> Option<u8> {
+        self.buffer.first().copied()
     }
     pub(super) fn received(&mut self, count: usize, fin: bool, skip: usize) -> io::Result<()> {
         if !self.can_receive() || count > self.buffer.len() || skip > count {

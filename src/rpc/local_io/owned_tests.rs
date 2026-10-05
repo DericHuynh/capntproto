@@ -3,6 +3,77 @@ use futures::FutureExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[tokio::test]
+async fn owned_writes_transfer_exact_ranges_and_preserve_partial_admission() {
+    let (a, b) = pair(4);
+    let (_, mut writer) = a.into_split();
+    let (mut reader, _) = b.into_split();
+    let mut bytes = BytesMut::from(&b"RabcdTAIL"[..]);
+    let payload = bytes[1..].as_ptr();
+    assert_eq!(writer.write_owned(&mut bytes, 1..5).await.unwrap(), 4);
+    assert!(bytes.is_empty());
+    let retained = reader.read_owned().await.unwrap();
+    assert_eq!(retained.as_ptr(), payload, "receive handoff copied bytes");
+    assert_eq!(&retained[..], b"abcd");
+
+    writer.write_all(b"X").await.unwrap();
+    bytes.extend_from_slice(b"abcdef");
+    assert_eq!(writer.write_owned(&mut bytes, 0..6).await.unwrap(), 3);
+    assert_eq!(&bytes[..], b"abcdef");
+    assert!(writer
+        .write_owned(&mut bytes, 3..6)
+        .now_or_never()
+        .is_none());
+    let mut prefix = [0; 2];
+    reader.read_exact(&mut prefix).await.unwrap();
+    assert_eq!(&prefix, b"Xa");
+    assert_eq!(writer.write_owned(&mut bytes, 3..6).await.unwrap(), 2);
+    assert_eq!(&bytes[..], b"abcdef");
+    assert_eq!(&reader.read_owned().await.unwrap()[..], b"bcde");
+    assert_eq!(writer.write_owned(&mut bytes, 5..6).await.unwrap(), 1);
+    writer.shutdown().await.unwrap();
+    assert_eq!(&reader.read_owned().await.unwrap()[..], b"f");
+    assert!(reader.read_owned().await.unwrap().is_empty());
+    bytes.extend_from_slice(b"new data");
+    assert_eq!(&retained[..], b"abcd");
+    assert_eq!(
+        writer
+            .write_owned(&mut bytes, 0..1)
+            .await
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::BrokenPipe
+    );
+    assert_eq!(&bytes[..], b"new data");
+}
+
+#[test]
+fn owned_receive_buffers_are_reused_without_per_message_allocation() {
+    let (a, b) = pair(crate::rpc::QUIC_BUFFER_BYTES);
+    let (_, mut writer) = a.into_split();
+    let (mut reader, _) = b.into_split();
+    let mut bytes = BytesMut::with_capacity(4096);
+    let counts = allocation_counter::measure(|| {
+        for _ in 0..1024 {
+            bytes.extend_from_slice(b"x");
+            writer
+                .write_owned(&mut bytes, 0..1)
+                .now_or_never()
+                .unwrap()
+                .unwrap();
+            assert!(bytes.is_empty());
+            let mut read = [0];
+            reader
+                .read_exact(&mut read)
+                .now_or_never()
+                .unwrap()
+                .unwrap();
+            assert_eq!(read, *b"x");
+        }
+    });
+    assert_eq!(counts.count_total, 0, "{counts:?}");
+}
+
+#[tokio::test]
 async fn owned_reads_preserve_backpressure_order_cancellation_and_eof() {
     let (a, b) = pair(8);
     let (_, mut writer) = a.into_split();

@@ -1,5 +1,10 @@
 # 0.1.0 developer preview (unpublished)
 
+- Transfer native QUIC receive buffers into an empty RPC bridge without a
+  second payload copy. Reserve for readable fragments once, reuse drained
+  buffers, and retain bounded copying for partial admission. Exercise owned
+  writes against Tokio's duplex stream alongside ordinary and vectored writes.
+
 - Skip inactive shutdown-stream reads using quiche's readiness state, while
   retaining reset and empty-FIN errors. Keep RPC framing state in one stable
   allocation and sample migration/datagram deadline clocks only when needed.

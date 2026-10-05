@@ -206,6 +206,44 @@ impl AsyncWrite for WriteHalf {
 }
 
 impl WriteHalf {
+    /// Hand a complete receive buffer to an empty pipe. Return its previous
+    /// empty storage to the producer for reuse. Partial admission retains the
+    /// ordinary copy path, so ownership never escapes ahead of backpressure.
+    pub(crate) async fn write_owned(
+        &mut self,
+        bytes: &mut BytesMut,
+        range: std::ops::Range<usize>,
+    ) -> io::Result<usize> {
+        std::future::poll_fn(|cx| {
+            let coop = std::task::ready!(tokio::task::coop::poll_proceed(cx));
+            let mut pipe = self.0.borrow_mut();
+            if pipe.reader_closed || pipe.writer_closed {
+                coop.made_progress();
+                return Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()));
+            }
+            let count = range.len();
+            if count != 0 && pipe.bytes.is_empty() && count <= pipe.capacity {
+                assert!(range.end <= bytes.len());
+                std::mem::swap(&mut pipe.bytes, bytes);
+                pipe.bytes.truncate(range.end);
+                pipe.bytes.advance(range.start);
+                let wake = pipe.reader.take();
+                drop(pipe);
+                if let Some(wake) = wake {
+                    wake.wake();
+                }
+                coop.made_progress();
+                return Poll::Ready(Ok(count));
+            }
+            drop(pipe);
+            // Restore this unused cooperative reservation before the ordinary
+            // writer takes its own and registers any necessary wakeup.
+            drop(coop);
+            Pin::new(&mut *self).poll_write(cx, &bytes[range.clone()])
+        })
+        .await
+    }
+
     fn close(&self) {
         let (wake, retired) = {
             let mut pipe = self.0.borrow_mut();
