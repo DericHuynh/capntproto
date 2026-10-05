@@ -154,6 +154,7 @@ where
     side: crate::rpc_twoparty_capnp::Side,
     on_disconnect_fulfiller: Option<oneshot::Sender<()>>,
     flow_control: crate::flow_control::Policy,
+    write_finished: futures::future::Shared<Promise<(), capnp::Error>>,
 }
 
 struct Connection<T>
@@ -188,6 +189,7 @@ where
         receive_options: ReaderOptions,
         on_disconnect_fulfiller: oneshot::Sender<()>,
         flow_control: crate::flow_control::Policy,
+        write_finished: futures::future::Shared<Promise<(), capnp::Error>>,
     ) -> Self {
         Self {
             inner: Rc::new(RefCell::new(ConnectionInner {
@@ -199,6 +201,7 @@ where
                 side,
                 on_disconnect_fulfiller: Some(on_disconnect_fulfiller),
                 flow_control,
+                write_finished,
             })),
         }
     }
@@ -264,6 +267,12 @@ where
         policy.controller()
     }
 
+    fn when_write_finished(&self) -> Option<Promise<(), capnp::Error>> {
+        Some(Promise::from_future(
+            self.inner.borrow().write_finished.clone(),
+        ))
+    }
+
     fn shutdown(&mut self, result: ::capnp::Result<()>) -> Promise<(), ::capnp::Error> {
         Promise::from_future(self.inner.borrow_mut().sender.terminate(result))
     }
@@ -282,6 +291,7 @@ where
 
     execution_driver: futures::future::Shared<Promise<(), ::capnp::Error>>,
     output_closed: futures::future::Shared<Promise<(), ::capnp::Error>>,
+    write_finished: futures::future::Shared<Promise<(), ::capnp::Error>>,
     outgoing_queue: OutgoingQueue,
     side: crate::rpc_twoparty_capnp::Side,
 }
@@ -297,6 +307,13 @@ where
     /// It confirms local output closure, never peer receipt or RPC execution.
     pub fn output_closed(&self) -> futures::future::Shared<Promise<(), capnp::Error>> {
         self.output_closed.clone()
+    }
+
+    /// Resolves when queued writes finish, before closing the transport. A write
+    /// failure is observable even if close blocks. This is not a closure fence
+    /// or a peer acknowledgement. Poll the network driver concurrently.
+    pub fn when_write_finished(&self) -> futures::future::Shared<Promise<(), capnp::Error>> {
+        self.write_finished.clone()
     }
 
     /// Observe queued messages, excluding the active write batch. This handle
@@ -420,6 +437,13 @@ where
             get_send_buffer(&output)
         });
         let mut closer = output.clone();
+        let (written_tx, written_rx) = oneshot::channel();
+        let write_finished = Promise::from_future(async move {
+            written_rx
+                .await
+                .map_err(|_| capnp::Error::disconnected("output driver canceled".into()))?
+        })
+        .shared();
         let (closed_tx, closed_rx) = oneshot::channel();
         let output_closed = Promise::from_future(async move {
             closed_rx
@@ -430,25 +454,16 @@ where
         let (sender, write_queue) = ::capnp_futures::write_queue_with_clock(output, clock);
         let outgoing_queue = sender.outgoing_queue();
         let execution_driver = Promise::from_future(async move {
-            // Queue termination is an output fence, independent of input EOF.
-            // A failed writer cannot promise to flush/close gracefully: those
-            // operations may block too. Publish its error immediately so the
-            // RPC driver can disconnect even if the peer keeps input open.
-            let result = match write_queue.await {
-                Ok(()) => futures::AsyncWriteExt::close(&mut closer)
-                    .await
-                    .map_err(capnp::Error::from),
-                Err(error) => {
-                    // Give a ready close operation its normal cleanup chance,
-                    // but never hide the write failure behind a blocked close.
-                    let _ = futures::AsyncWriteExt::close(&mut closer).now_or_never();
-                    Err(error)
-                }
-            };
+            // Report write failure promptly, while preserving the distinct
+            // physical closure fence and connection lifetime below.
+            let written = write_queue.await;
+            let _ = written_tx.send(written.clone());
+            let closed = futures::AsyncWriteExt::close(&mut closer)
+                .await
+                .map_err(capnp::Error::from);
+            let result = written.and(closed);
             let _ = closed_tx.send(result.clone());
-            if result.is_ok() {
-                let _ = disconnect_promise.await;
-            }
+            let _ = disconnect_promise.await;
             result
         })
         .shared();
@@ -460,6 +475,7 @@ where
             receive_options,
             fulfiller,
             crate::flow_control::Policy::Variable(Rc::new(move || window.get())),
+            write_finished.clone(),
         );
         let weak_inner = Rc::downgrade(&connection.inner);
         Self {
@@ -467,6 +483,7 @@ where
             weak_connection_inner: weak_inner,
             execution_driver,
             output_closed,
+            write_finished,
             outgoing_queue,
             side,
         }

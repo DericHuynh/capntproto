@@ -44,9 +44,14 @@ impl QueueDiagnostics {
 pub trait TwoPartyNetwork: crate::VatNetwork<VatId> {
     fn side(&self) -> VatId;
     fn outgoing_queue(&self) -> QueueDiagnostics;
-    /// Local output completion, including write errors independently of input EOF.
+    /// Local output closure, including write errors independently of input EOF.
     /// The future must not retain the transport after the network is dropped.
     fn output_closed(&self) -> Shared<Promise<(), Error>>;
+    /// Optional earlier notification of write queue completion. An error must
+    /// be reported without waiting for transport closure. Does not retain IO.
+    fn when_write_finished(&self) -> Option<Shared<Promise<(), Error>>> {
+        None
+    }
 }
 impl<T: AsyncRead + Unpin + 'static> TwoPartyNetwork for VatNetwork<T> {
     fn side(&self) -> VatId {
@@ -58,6 +63,9 @@ impl<T: AsyncRead + Unpin + 'static> TwoPartyNetwork for VatNetwork<T> {
     }
     fn output_closed(&self) -> Shared<Promise<(), Error>> {
         self.output_closed()
+    }
+    fn when_write_finished(&self) -> Option<Shared<Promise<(), Error>>> {
+        Some(self.when_write_finished())
     }
 }
 
@@ -74,6 +82,7 @@ pub struct TwoPartyClient<'a> {
     side: VatId,
     queue: QueueDiagnostics,
     output_closed: Shared<Promise<(), Error>>,
+    write_finished: Option<Shared<Promise<(), Error>>>,
     disconnected: Shared<Promise<(), Error>>,
     completion: Option<oneshot::Sender<capnp::Result<()>>>,
     borrowed: Option<Box<dyn borrowed::Pump + 'a>>,
@@ -107,12 +116,14 @@ impl TwoPartyClient<'static> {
         let side = network.side();
         let queue = network.outgoing_queue();
         let output_closed = network.output_closed();
+        let write_finished = network.when_write_finished();
         let (completion, receiver) = oneshot::channel();
         Self {
             system: Some(RpcSystem::new(Box::new(network), bootstrap)),
             side,
             queue,
             output_closed,
+            write_finished,
             disconnected: Promise::from_future(async move {
                 receiver
                     .await
@@ -264,7 +275,21 @@ impl Future for TwoPartyClient<'_> {
                     // A write failure can occur while the peer keeps input
                     // open forever. Propagate it without waiting for input EOF
                     // or for the network's last connection handle to disappear.
-                    if let Poll::Ready(Err(error)) = Pin::new(&mut this.output_closed).poll(cx) {
+                    let written = this
+                        .write_finished
+                        .as_mut()
+                        .map_or(Poll::Pending, |written| Pin::new(written).poll(cx));
+                    if written.is_ready() {
+                        this.write_finished = None;
+                    }
+                    let failure = match written {
+                        Poll::Ready(Err(error)) => Some(error),
+                        _ => match Pin::new(&mut this.output_closed).poll(cx) {
+                            Poll::Ready(Err(error)) => Some(error),
+                            _ => None,
+                        },
+                    };
+                    if let Some(error) = failure {
                         let result = if error.kind == capnp::ErrorKind::Disconnected {
                             Ok(())
                         } else {

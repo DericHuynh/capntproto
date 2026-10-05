@@ -9,8 +9,9 @@
   The 1.2× C++ latency target has not yet been met.
 - Retain outgoing call admission permits in the queued write instead of a
   separate completion task on the built-in transports. Unobserved sends avoid
-  completion channels. Write failures now reach the two-party network driver
-  even while connection handles remain live; a blocked close cannot hide them.
+  completion channels. A separate connection-level write completion signal
+  fails RPC calls promptly even if input and close remain blocked. The output
+  closure fence still waits for close; the network driver waits for disconnect.
 - Imported the maintained Cap’n Proto Rust runtime, RPC engine, async framing and
   generator as `capntproto-{core,rpc,futures,codegen}` workspace crates, retaining
   upstream licenses and generated Rust import names.

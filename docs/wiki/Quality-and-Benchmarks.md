@@ -638,15 +638,28 @@ retained all samples and again missed the target:
 Native per-repetition medians were 57.6–59.0 µs for empty calls, but 60.9–101.3 µs
 for 1 KiB. The slower repetitions remain in the result. Cleanup succeeded.
 
-The next candidate transfers outgoing-call permits to the queued write, retaining
+The third candidate transfers outgoing-call permits to the queued write, retaining
 admission through partial writes, flush, cancellation, and failure without a
 per-call background completion task. Transports without this facility retain
 the completion-promise fallback. Sends whose completion is unobserved avoid a
 receipt channel; warmed detached batches allocate nothing. The client allocation
-diagnostic fell from about 41 to 34 allocations per empty call. Write errors now
-propagate without waiting for live connection handles or a blocked close;
-normal successful shutdown still flushes and closes. These changes need their
-own dedicated latency measurement.
+diagnostic fell from about 41 to 34 allocations per empty call. The
+[third dedicated run](https://github.com/DericHuynh/capntproto/actions/runs/37255751713)
+measured commit `bc4acf904581d64a3f3591119cb60f632c7f7581` and confirmed cleanup:
+
+| Payload | Native p50 (µs) | C++ p50 (µs) | Native / C++ |
+| --- | ---: | ---: | ---: |
+| Empty | 56.87 | 36.67 | 1.55× |
+| 64 B | 57.35 | 37.94 | 1.51× |
+| 1 KiB | 60.24 | 39.65 | 1.52× |
+| 64 KiB | 248.69 | 179.77 | 1.38× |
+
+These results still miss the target. Correctness tests subsequently caught an
+early output-closure fence on write failures in that candidate. The fix separates
+write-queue completion from transport closure: RPC errors propagate even if
+close blocks, while the closure fence waits for close and the network driver
+waits for connection handles to disappear. That corrected source requires its
+own qualification; the table measures the earlier success path only.
 
 Allocation checks cover the warmed single-segment queue, and partial-write
 tests cover every byte boundary of small frames plus large multi-segment batches.

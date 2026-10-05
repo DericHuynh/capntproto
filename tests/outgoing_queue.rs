@@ -727,6 +727,8 @@ fn transport_guards_survive_partial_writes_and_release_on_flush_failure_or_cance
             Default::default(),
         );
         let mut connection = network.connect(Side::Server).unwrap();
+        let mut written = Box::pin(connection.when_write_finished().unwrap());
+        let mut closed = Box::pin(network.output_closed());
         let mut message = connection.new_outgoing_message(8);
         message
             .get_body()
@@ -761,8 +763,16 @@ fn transport_guards_survive_partial_writes_and_release_on_flush_failure_or_cance
             drop(network);
         } else if mode == 4 {
             output.borrow_mut().fault = 1;
-            // The close/flush path remains blocked. The original write error
-            // must still reach the network driver with connection handles live.
+            // Observe the write error with a live connection and blocked close,
+            // without falsely completing either the close or disconnect fence.
+            assert!(poll(driver.as_mut()).is_pending());
+            assert!(matches!(poll(written.as_mut()), Poll::Ready(Err(_))));
+            assert!(poll(closed.as_mut()).is_pending());
+            output.borrow_mut().flush = true;
+            assert!(poll(driver.as_mut()).is_pending());
+            assert!(matches!(poll(closed.as_mut()), Poll::Ready(Err(_))));
+            drop(connection);
+            drop(network); // also releases the unaccepted connection handle
             assert!(matches!(poll(driver.as_mut()), Poll::Ready(Err(_))));
         } else {
             output.borrow_mut().budget = usize::MAX;
@@ -770,15 +780,68 @@ fn transport_guards_survive_partial_writes_and_release_on_flush_failure_or_cance
             assert_eq!(dropped.get(), 0, "a pending flush retains the guard");
             output.borrow_mut().flush = true;
             output.borrow_mut().fault = if mode == 1 { 2 } else { 0 };
-            let result = poll(driver.as_mut());
+            assert!(poll(driver.as_mut()).is_pending());
             if mode == 1 {
-                assert!(matches!(result, Poll::Ready(Err(_))));
+                assert!(matches!(poll(written.as_mut()), Poll::Ready(Err(_))));
+                assert!(matches!(poll(closed.as_mut()), Poll::Ready(Err(_))));
             } else {
-                assert!(result.is_pending());
+                assert!(poll(written.as_mut()).is_pending());
+                assert!(poll(closed.as_mut()).is_pending());
             }
         }
         assert_eq!(dropped.get(), 1);
     }
+}
+
+#[test]
+fn write_failure_rejects_rpc_calls_before_blocked_close_or_input_eof() {
+    use capnp_rpc::rpc_twoparty_capnp::Side;
+    struct PendingInput;
+    impl futures::AsyncRead for PendingInput {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+            _: &mut [u8],
+        ) -> Poll<io::Result<usize>> {
+            Poll::Pending
+        }
+    }
+    let output = Rc::new(RefCell::new(Output {
+        fault: 1,
+        ..Default::default()
+    }));
+    let network = capnp_rpc::twoparty::VatNetwork::new(
+        PendingInput,
+        Writer(output),
+        Side::Client,
+        Default::default(),
+    );
+    let mut closed = Box::pin(network.output_closed());
+    let mut rpc = Box::pin(capnp_rpc::RpcSystem::new(Box::new(network), None));
+    let remote: capnp::capability::Client = rpc.bootstrap(Side::Server);
+    let mut call = Box::pin(
+        remote
+            .new_call::<capnp::any_pointer::Owned, capnp::any_pointer::Owned>(0, 0, None)
+            .send()
+            .promise,
+    );
+    let mut failed = false;
+    for _ in 0..32 {
+        assert!(poll(rpc.as_mut()).is_pending());
+        if let Poll::Ready(result) = poll(call.as_mut()) {
+            assert!(result.is_err());
+            failed = true;
+            break;
+        }
+    }
+    assert!(
+        failed,
+        "a blocked close must not hide a write failure from RPC"
+    );
+    assert!(poll(closed.as_mut()).is_pending());
+    drop(rpc);
+    assert!(matches!(poll(closed.as_mut()), Poll::Ready(Err(error))
+        if error.to_string().contains("output driver canceled")));
 }
 
 #[test]

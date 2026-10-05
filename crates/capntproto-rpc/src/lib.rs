@@ -247,6 +247,16 @@ pub trait Connection<VatId> {
     /// returns None. If any other problem occurs, returns an Error.
     fn receive_incoming_message(&mut self) -> Promise<Option<Box<dyn IncomingMessage>>, Error>;
 
+    /// Observe termination of the outgoing write queue, independently of input
+    /// EOF or closing the transport. Errors disconnect pending RPC calls even
+    /// when a failed transport's close operation blocks. Success means queued
+    /// writes finished, not that the output is closed or the peer received them.
+    /// The observer must not retain the connection. Networks that report write
+    /// errors through another driver may leave this unsupported.
+    fn when_write_finished(&self) -> Option<Promise<(), Error>> {
+        None
+    }
+
     /// Notifies the network when RPC protocol tables become empty or active.
     /// Initially called with false. While idle, no RPC messages will be sent
     /// until incoming traffic or a network connect/accept result reactivates the

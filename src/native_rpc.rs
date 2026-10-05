@@ -870,6 +870,9 @@ impl Connection<VatId> for Route {
     fn receive_incoming_message(&mut self) -> Promise<Option<Box<dyn IncomingMessage>>, Error> {
         self.0.wire.borrow_mut().receive_incoming_message()
     }
+    fn when_write_finished(&self) -> Option<Promise<(), Error>> {
+        self.0.wire.borrow().when_write_finished()
+    }
     fn set_idle(&mut self, idle: bool) {
         self.0.wire.borrow_mut().set_idle(idle);
     }

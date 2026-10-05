@@ -466,6 +466,7 @@ impl<VatId> ConnectionState<VatId> {
         outgoing_call_limit: usize,
     ) -> (TaskSet<Error>, Rc<Self>) {
         let connection_id = connection.connection_id();
+        let write_finished = connection.when_write_finished();
         let state = Rc::new_cyclic(|weak| Self {
             bootstrap,
             weak_self: weak.clone(),
@@ -499,6 +500,9 @@ impl<VatId> ConnectionState<VatId> {
 
         state.set_not_idle();
         handle.add(Self::message_loop(Rc::downgrade(&state)));
+        if let Some(write_finished) = write_finished {
+            handle.add(write_finished);
+        }
         *state.tasks.borrow_mut() = Some(handle);
         (tasks, state)
     }

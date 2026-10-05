@@ -347,6 +347,7 @@ async fn listener_errors_are_reported_without_canceling_accepted_connections() {
 struct BrokenIo {
     closes: Rc<Cell<u64>>,
     fail_read: bool,
+    block_close: bool,
 }
 impl AsyncRead for BrokenIo {
     fn poll_read(
@@ -373,7 +374,49 @@ impl AsyncWrite for BrokenIo {
     }
     fn poll_close(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
         self.closes.set(self.closes.get() + 1);
-        Poll::Ready(Ok(()))
+        if self.block_close {
+            Poll::Pending
+        } else {
+            Poll::Ready(Ok(()))
+        }
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn write_errors_finish_owned_and_borrowed_clients_even_when_close_blocks() {
+    for borrowed in [false, true] {
+        let closes = Rc::new(Cell::new(0));
+        let mut io = BrokenIo {
+            closes: closes.clone(),
+            fail_read: false,
+            block_close: true,
+        };
+        let mut client = if borrowed {
+            TwoPartyClient::new_borrowed(&mut io, None, Side::Client, Default::default())
+        } else {
+            TwoPartyClient::new(BrokenIo {
+                closes: closes.clone(),
+                fail_read: false,
+                block_close: true,
+            })
+        };
+        let remote: harness::Client = client.bootstrap();
+        let call = remote.echo_request().send().promise;
+        let observer = client.on_disconnect();
+        let result = tokio::time::timeout(Duration::from_secs(1), &mut client)
+            .await
+            .expect("a blocked close must not hide write failure");
+        assert!(result.unwrap_err().to_string().contains("failed output"));
+        assert!(observer
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("failed output"));
+        assert!(call.await.is_err());
+        assert!(
+            closes.get() > 0,
+            "attempt cleanup before reporting the error"
+        );
     }
 }
 
@@ -392,6 +435,7 @@ async fn failed_owned_connection_is_reported_and_other_connections_remain_callab
             .accept(BrokenIo {
                 closes: closes.clone(),
                 fail_read: true,
+                block_close: false,
             })
             .unwrap();
         let (a, b) = tokio::io::duplex(128);
@@ -409,6 +453,7 @@ async fn failed_owned_connection_is_reported_and_other_connections_remain_callab
         let mut io = BrokenIo {
             closes: closes.clone(),
             fail_read: false,
+            block_close: false,
         };
         let mut client =
             TwoPartyClient::new_borrowed(&mut io, None, Side::Client, Default::default());
