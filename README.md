@@ -31,7 +31,19 @@ Latest Cargo run: [2026-10-05T06:19:17Z · run 37271823879 / attempt 1](https://
 
 ### Fuzzing: libFuzzer and AFL++
 
-[2026-10-05T06:19:17Z · run 37271823879 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37271823879) · commit `2c7265982089` · **failure**
+[2026-10-05T10:49:09Z · run 37298988581 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/37298988581) · commit `2c7265982089` · **success**
+
+![Fuzzing executions by engine](docs/reports/fuzz-executions.svg)
+
+Bounded campaigns including seed calibration&#59; execution counts are not comparable performance benchmarks&#46;
+
+![Fuzzer feedback by engine](docs/reports/fuzz-coverage.svg)
+
+Engine&#45;local counters&#44; not LLVM source coverage&#46; Do not compare counts across engines or builds&#46;
+
+![Saved fuzzing findings](docs/reports/fuzz-findings.svg)
+
+Saved crashes&#47;hangs are findings requiring triage&#44; not confirmed unique bugs&#46; Missing results remain unknown&#46;
 
 AFL++ guides the RPC lifecycle oracle with IJON state and progress annotations. Corpus inputs, crashes, hangs, logs and engine statistics are retained in the linked run. Fuzzer counters are not source coverage percentages.
 

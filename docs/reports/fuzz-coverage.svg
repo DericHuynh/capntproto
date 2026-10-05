@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="820" viewBox="0 0 1400 820" role="img" aria-labelledby="title">
+<title id="title">Fuzzer feedback by engine</title>
+<rect width="1400" height="820" fill="white"/>
+<g font-family="DejaVu Sans, sans-serif">
+<text x="35.00" y="44.00" font-size="27" fill="#1e293b">Fuzzer feedback by engine</text>
+<text x="35.00" y="78.00" font-size="14" fill="#64748b">Engine-local counters, not LLVM source coverage. Do not compare counts across engines or builds.</text>
+<text x="35.00" y="122.00" font-size="20" fill="#1e293b">libFuzzer + ASan</text>
+<text x="35.00" y="153.00" font-size="13" fill="#334155">libFuzzer &#x2F; capnp_framing</text>
+<rect x="600.00" y="138.00" width="52.13" height="23" fill="#0868d4"/>
+<text x="658.13" y="155.00" font-size="13" fill="#334155">575</text>
+<text x="35.00" y="195.00" font-size="13" fill="#334155">libFuzzer &#x2F; capnp_pointers</text>
+<rect x="600.00" y="180.00" width="105.44" height="23" fill="#00ac7b"/>
+<text x="711.44" y="197.00" font-size="13" fill="#334155">1163</text>
+<text x="35.00" y="237.00" font-size="13" fill="#334155">libFuzzer &#x2F; capnp_schema</text>
+<rect x="600.00" y="222.00" width="278.15" height="23" fill="#ef4444"/>
+<text x="884.15" y="239.00" font-size="13" fill="#334155">3068</text>
+<text x="35.00" y="279.00" font-size="13" fill="#334155">libFuzzer &#x2F; native_packet</text>
+<rect x="600.00" y="264.00" width="507.71" height="23" fill="#e89200"/>
+<text x="1113.71" y="281.00" font-size="13" fill="#334155">5600</text>
+<text x="35.00" y="321.00" font-size="13" fill="#334155">libFuzzer &#x2F; native_stream</text>
+<rect x="600.00" y="306.00" width="509.16" height="23" fill="#8b5cf6"/>
+<text x="1115.16" y="323.00" font-size="13" fill="#334155">5616</text>
+<text x="35.00" y="363.00" font-size="13" fill="#334155">libFuzzer &#x2F; rpc_lifecycle</text>
+<rect x="600.00" y="348.00" width="600.00" height="23" fill="#0868d4"/>
+<text x="1206.00" y="365.00" font-size="13" fill="#334155">6618</text>
+<text x="600.00" y="410.00" font-size="13" fill="#64748b">Feedback entries</text>
+<text x="35.00" y="474.00" font-size="20" fill="#1e293b">AFL++ + RPC IJON</text>
+<text x="35.00" y="505.00" font-size="13" fill="#334155">AFL++ &#x2F; capnp_framing</text>
+<rect x="600.00" y="490.00" width="64.32" height="23" fill="#0868d4"/>
+<text x="670.32" y="507.00" font-size="13" fill="#334155">1003</text>
+<text x="35.00" y="547.00" font-size="13" fill="#334155">AFL++ &#x2F; capnp_pointers</text>
+<rect x="600.00" y="532.00" width="99.33" height="23" fill="#00ac7b"/>
+<text x="705.33" y="549.00" font-size="13" fill="#334155">1549</text>
+<text x="35.00" y="589.00" font-size="13" fill="#334155">AFL++ &#x2F; capnp_schema</text>
+<rect x="600.00" y="574.00" width="323.69" height="23" fill="#ef4444"/>
+<text x="929.69" y="591.00" font-size="13" fill="#334155">5048</text>
+<text x="35.00" y="631.00" font-size="13" fill="#334155">AFL++ &#x2F; rpc_lifecycle</text>
+<rect x="600.00" y="616.00" width="600.00" height="23" fill="#e89200"/>
+<text x="1206.00" y="633.00" font-size="13" fill="#334155">9357</text>
+<text x="600.00" y="678.00" font-size="13" fill="#64748b">Feedback entries</text>
+<text x="35.00" y="742.00" font-size="13" fill="#64748b">Measured 2026-10-05T10:49:09Z | commit 2c7265982089</text>
+</g>
+</svg>
