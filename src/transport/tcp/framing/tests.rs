@@ -4,6 +4,49 @@ use std::{
     task::{Context, Poll},
 };
 
+#[tokio::test]
+async fn payload_reads_preserve_following_frames_across_partial_reads_and_reuse() {
+    let (mut sender, mut receiver) = tokio::io::duplex(3);
+    let payload: Vec<_> = (0..16384).map(|n| (n % 251) as u8).collect();
+    let transmit = async {
+        sender.write_all(&payload).await.unwrap();
+        sender.write_all(b"next").await.unwrap();
+        sender.shutdown().await.unwrap();
+    };
+    let receive = async {
+        let mut bytes = BytesMut::with_capacity(32768);
+        bytes.extend_from_slice(b"old contents");
+        read_payload(&mut receiver, &mut bytes, payload.len())
+            .await
+            .unwrap();
+        assert_eq!(&bytes[..], &payload);
+        read_payload(&mut receiver, &mut bytes, 4).await.unwrap();
+        assert_eq!(&bytes[..], b"next");
+        assert_eq!(
+            read_payload(&mut receiver, &mut bytes, 1)
+                .await
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::UnexpectedEof
+        );
+    };
+    tokio::join!(transmit, receive);
+}
+
+#[tokio::test]
+async fn truncated_payload_is_not_accepted_as_a_complete_frame() {
+    let mut input = &b"partial"[..];
+    let mut bytes = BytesMut::new();
+    assert_eq!(
+        read_payload(&mut input, &mut bytes, 8)
+            .await
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::UnexpectedEof
+    );
+    assert_eq!(&bytes[..], b"partial");
+}
+
 struct Output {
     bytes: Vec<u8>,
     maximum: usize,

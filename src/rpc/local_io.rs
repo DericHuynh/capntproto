@@ -77,8 +77,8 @@ impl AsyncRead for ReadHalf {
 }
 
 impl ReadHalf {
-    /// Transfer initialized bytes to QUIC while keeping later writes disjoint
-    /// from any views retained for retransmission.
+    /// Transfer initialized bytes to the transport while keeping later writes
+    /// disjoint from views retained for TLS writes or QUIC retransmission.
     pub(crate) async fn read_owned(&mut self) -> io::Result<Bytes> {
         std::future::poll_fn(|cx| self.poll_take(cx, |bytes| bytes.split().freeze())).await
     }

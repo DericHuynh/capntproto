@@ -1,10 +1,29 @@
 //! Keep one native frame in a vectored write, including its length header.
 #![forbid(unsafe_code)]
 
+use bytes::{BufMut, BytesMut};
 use std::io::{self, IoSlice};
-use tokio::io::{AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 pub(super) const BATCH_FRAMES: usize = 8;
+
+/// Read only this validated frame's payload into reusable, initialized storage.
+/// Limiting spare capacity prevents consuming the next frame's header.
+pub(super) async fn read_payload(
+    input: &mut (impl AsyncRead + Unpin),
+    bytes: &mut BytesMut,
+    length: usize,
+) -> io::Result<()> {
+    bytes.clear();
+    bytes.reserve(length);
+    while bytes.len() < length {
+        let remaining = length - bytes.len();
+        if input.read_buf(&mut (&mut *bytes).limit(remaining)).await? == 0 {
+            return Err(io::ErrorKind::UnexpectedEof.into());
+        }
+    }
+    Ok(())
+}
 
 #[cfg(test)]
 pub(super) async fn write(
