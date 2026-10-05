@@ -584,7 +584,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                     hints,
                 );
 
-                let promise = call_promise
+                let mut promise = call_promise
                     .then(move |call_result| {
                         results_inner_promise.then(move |result| {
                             future::ready(ResultsDone::from_results_inner(
@@ -604,10 +604,17 @@ impl<VatId: 'static> ConnectionState<VatId> {
                         Promise::ok(())
                     });
 
-                {
+                // A non-pipelined call may complete on its first poll. Drive
+                // that bounded step before allocating a background task and
+                // two cancellation/completion channels. No table borrow may
+                // span application code. Pending work is always enqueued and
+                // polled again with the task set's real waker.
+                let completed = pipeline.is_none() && (&mut promise).now_or_never().is_some();
+                if !completed {
                     let slots = &mut connection_state.answers.borrow_mut().slots;
                     let Some(answer) = slots.get_mut(&question_id) else {
-                        unreachable!()
+                        // The first poll may synchronously disconnect the vat.
+                        return Ok(());
                     };
                     if redirect_results {
                         answer.redirected_results = redirected_results_done_promise;

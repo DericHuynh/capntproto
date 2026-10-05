@@ -149,6 +149,89 @@ async fn echo(client: &base::Client, value: u32) -> capnp::Result<u32> {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn non_pipelined_calls_keep_pending_wakes_and_late_errors() {
+    struct DelayedEcho {
+        gate: RefCell<Option<oneshot::Receiver<bool>>>,
+        polls: Rc<Cell<usize>>,
+    }
+    impl base::Server for DelayedEcho {
+        async fn echo(
+            self: Rc<Self>,
+            p: base::EchoParams,
+            r: base::EchoResults,
+        ) -> capnp::Result<()> {
+            // The first poll wakes itself, but still returns Pending. A later
+            // independent wake must reach the scheduled continuation as well.
+            futures::future::poll_fn(|cx| {
+                let n = self.polls.get();
+                self.polls.set(n + 1);
+                if n == 0 {
+                    cx.waker().wake_by_ref();
+                    std::task::Poll::Pending
+                } else {
+                    std::task::Poll::Ready(())
+                }
+            })
+            .await;
+            let gate = self.gate.borrow_mut().take().unwrap();
+            if !gate
+                .await
+                .map_err(|_| capnp::Error::failed("gate dropped".into()))?
+            {
+                return Err(capnp::Error::failed("late echo failure".into()));
+            }
+            r.complete(|mut out| {
+                out.set_value(p.get()?.get_value());
+                Ok(())
+            })
+        }
+    }
+    run(async {
+        for succeed in [true, false] {
+            let hub = Rc::new(RefCell::new(support::Hub::default()));
+            let (release, gate) = oneshot::channel();
+            let polls = Rc::new(Cell::new(0));
+            let service: base::Client = capnp_rpc::new_client(DelayedEcho {
+                gate: RefCell::new(Some(gate)),
+                polls: polls.clone(),
+            });
+            let host = RpcSystem::new(
+                Box::new(support::Hub::network(&hub, 1)),
+                Some(service.client),
+            );
+            let mut caller = RpcSystem::new(Box::new(support::Hub::network(&hub, 2)), None);
+            let client: base::Client = caller.bootstrap(1);
+            let _drivers = Drivers(vec![
+                tokio::task::spawn_local(host),
+                tokio::task::spawn_local(caller),
+            ]);
+            let mut request = client.echo_request();
+            request.hook.set_hints(capnp::capability::CallHints {
+                no_promise_pipelining: true,
+                ..Default::default()
+            });
+            request.get().set_value(73);
+            let mut response = request.send().promise;
+            settle().await;
+            assert!(polls.get() >= 2, "pending call was never rescheduled");
+            assert!((&mut response).now_or_never().is_none());
+            release.send(succeed).unwrap();
+            match response.await {
+                Ok(reply) => {
+                    assert!(succeed);
+                    assert_eq!(reply.get().unwrap().get_value(), 73);
+                }
+                Err(error) => {
+                    assert!(!succeed);
+                    assert!(error.extra.contains("late echo failure"), "{error}");
+                }
+            }
+        }
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn structured_replies_support_inheritance_typed_tail_calls_and_legacy_clients() {
     run(async {
         for wire in [false, true] {

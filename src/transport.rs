@@ -426,12 +426,13 @@ async fn drive_packets(
                 }
             }
         }
-        let now = tokio::time::Instant::now();
-        if !engine.step(now)? {
+        if !engine.step(tokio::time::Instant::now)? {
             return Ok(());
         }
         if let Some(mobility) = &mut mobility {
-            if let Some(migrated) = mobility.step(&mut engine.conn, &mut socket, now)? {
+            if let Some(migrated) =
+                mobility.step(&mut engine.conn, &mut socket, tokio::time::Instant::now)?
+            {
                 local = migrated;
             }
         }
@@ -498,7 +499,7 @@ async fn drive_packets(
             application_progress = true;
         }
         // Delivery can complete a shutdown receipt even without a reply.
-        if application_progress && !engine.step(tokio::time::Instant::now())? {
+        if application_progress && !engine.step(tokio::time::Instant::now)? {
             return Ok(());
         }
         let mut burst = engine.scheduling.burst();
@@ -530,6 +531,8 @@ async fn drive_packets(
         if !exhausted && engine.packets_drained() {
             return Ok(());
         }
+        // Quiche uses system time; Tokio may have a paused/advanced clock.
+        // Preserve the relative recovery delay when crossing those domains.
         let now = tokio::time::Instant::now();
         let timeout = engine
             .conn
@@ -540,7 +543,7 @@ async fn drive_packets(
                     .as_ref()
                     .map_or(Duration::from_secs(10), |m| m.timeout(now)),
             );
-        let datagram_deadline = engine.datagram_deadline(now);
+        let datagram_deadline = engine.datagram_deadline(|| now);
         let can_accept_datagram = engine.can_accept_datagram();
         let can_read = engine.tx.can_read();
         let can_write = !engine.rx.pending().is_empty();

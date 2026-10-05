@@ -585,6 +585,28 @@ of a code change from host variation. CI passed on Ubuntu, macOS, and Windows.
 A later experiment removing two boxed completion futures showed no consistent
 local latency improvement and was reverted.
 
+### Current optimization target
+
+The current optimization target is at most 1.2× the pinned C++ median for each
+of the four payload sizes, with unchanged authentication, encryption, validation,
+warmups, repetitions, and sample retention. This target is not yet verified.
+The next candidate reuses write-queue buffers (discarding exceptional capacities
+above 1,024 entries), borrows batches without temporary message/receipt vectors,
+and uses stack framing for up to two messages with up to two segments each.
+A non-pipelined call receives one initial poll before a background completion
+task is allocated; pending calls are always queued for another poll. Native
+reliable traffic avoids reading application clocks for absent datagrams and
+migrations. Upstream QUIC recovery and transport pacing continue to use their
+normal clocks and deadlines.
+
+Allocation checks cover the warmed single-segment queue, and partial-write
+tests cover every byte boundary of small frames plus large multi-segment batches.
+RPC regression tests cover self-wakes, independent subsequent wakes, late errors,
+pipeline publication, cancellation, and shutdown. An absolute-deadline experiment
+was rejected because system time and paused Tokio time are distinct clock domains.
+Local paired timings varied with other machine activity and cannot establish
+the target; dedicated measurements remain the acceptance evidence.
+
 ### Clock diagnostics
 
 The report records current and available Linux clocksources and five batches of

@@ -387,6 +387,38 @@ fn vectored_batches_preserve_multisegment_framing_under_partial_writes() {
 }
 
 #[test]
+fn stack_framing_preserves_small_batches_across_every_partial_write_boundary() {
+    for batch_size in 0..=2 {
+        for first_words in [1, 1024] {
+            let messages: Vec<_> = (0..batch_size)
+                .map(|i| {
+                    let mut m = Builder::new(HeapAllocator::new().first_segment_words(first_words));
+                    m.set_root::<capnp::data::Owned>(&[i as u8; 16][..])
+                        .unwrap();
+                    m
+                })
+                .collect();
+            let expected: Vec<_> = messages
+                .iter()
+                .flat_map(capnp::serialize::write_message_to_words)
+                .collect();
+            for chunk in 1..=expected.len().max(1) {
+                let output = Rc::new(RefCell::new(Output {
+                    budget: usize::MAX,
+                    chunk,
+                    ..Default::default()
+                }));
+                capnp_futures::serialize::write_messages(Writer(output.clone()), &messages)
+                    .now_or_never()
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(output.borrow().bytes, expected);
+            }
+        }
+    }
+}
+
+#[test]
 fn tlc_queue_traces_replay_batching_flush_failure_cancellation_and_shutdown() {
     use capntproto_test_support::verification::exploration::{controls, traces};
     const MODEL: &str = "verification/RpcOutgoingQueue.tla";

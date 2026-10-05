@@ -14,6 +14,36 @@ fn counter_detects_an_allocation() {
 }
 
 #[test]
+fn steady_write_batches_allocate_only_completion_receipts() {
+    use futures::{Future, FutureExt};
+    use std::{task::Context, time::Duration};
+
+    let (mut sender, driver) =
+        capnp_futures::write_queue_with_clock(futures::io::sink(), || Duration::ZERO);
+    let mut driver = Box::pin(driver);
+    let mut cx = Context::from_waker(futures::task::noop_waker_ref());
+    let mut message = capnp::message::Builder::new_default();
+    message.set_root::<capnp::text::Owned>("reuse").unwrap();
+    // Warm both buffers: producers can enqueue while another batch is active.
+    for _ in 0..2 {
+        let receipt = sender.send(message);
+        assert!(driver.as_mut().poll(&mut cx).is_pending());
+        message = receipt.now_or_never().unwrap().unwrap();
+    }
+    let counts = allocation_counter::measure(|| {
+        for _ in 0..128 {
+            let receipt = sender.send(message);
+            assert!(driver.as_mut().poll(&mut cx).is_pending());
+            message = receipt.now_or_never().unwrap().unwrap();
+        }
+        drop(message);
+    });
+    // Message arenas and queue storage are reused; each completion channel
+    // owns one allocation. Framing must not add per-message allocations.
+    assert_eq!(counts.count_total, 128, "{counts:?}");
+}
+
+#[test]
 fn borrowed_generated_fields_do_not_allocate() {
     let mut message = Message::<Person>::new().unwrap();
     message.edit().id().set(73);

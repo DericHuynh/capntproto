@@ -76,10 +76,11 @@ impl Engine {
         self.pending_datagram = Some(bytes);
         Ok(())
     }
-    pub(super) fn datagram_deadline(&self, now: Instant) -> Option<Instant> {
-        self.pending_datagram
-            .as_ref()
-            .map(|_| self.scheduling.deadline(now).unwrap_or(now))
+    pub(super) fn datagram_deadline(&self, now: impl FnOnce() -> Instant) -> Option<Instant> {
+        self.pending_datagram.as_ref().map(|_| {
+            let now = now();
+            self.scheduling.deadline(now).unwrap_or(now)
+        })
     }
     /// Report output exhaustion, not merely consumption of one packet burst.
     pub(super) fn packets_drained(&self) -> bool {
@@ -90,9 +91,10 @@ impl Engine {
             false
         }
     }
-    /// False means the connection has terminated. The adapter supplies Tokio
-    /// time for application deadlines; upstream Quiche uses the system clock.
-    pub(super) fn step(&mut self, now: Instant) -> io::Result<bool> {
+    /// False means the connection has terminated. The adapter supplies a Tokio
+    /// clock for application deadlines; upstream Quiche uses the system clock.
+    /// Read it only when a datagram needs admission, not for reliable traffic.
+    pub(super) fn step(&mut self, now: impl FnOnce() -> Instant) -> io::Result<bool> {
         if matches!(self.phase, Phase::Flushing { .. }) {
             return Ok(true);
         }
@@ -184,7 +186,7 @@ impl Engine {
                 }
             }
         }
-        if self.pending_datagram.is_some() && self.scheduling.admit(now) {
+        if self.pending_datagram.is_some() && self.scheduling.admit(now()) {
             let bytes = self.pending_datagram.take().unwrap();
             match self.conn.dgram_send(&bytes) {
                 Ok(())

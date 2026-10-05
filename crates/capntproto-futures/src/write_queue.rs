@@ -146,19 +146,22 @@ impl<M> Drop for Receiver<M> {
     }
 }
 
-enum Batch<M> {
-    Messages(VecDeque<Message<M>>),
+enum Batch {
+    Messages,
     Done(Option<Terminal>),
 }
 impl<M> Receiver<M> {
-    async fn next(&self) -> Batch<M> {
+    async fn next(&self, batch: &mut VecDeque<Message<M>>) -> Batch {
         poll_fn(|cx| {
             self.0.ready.register(cx.waker());
             let mut queue = self.0.queue.lock().unwrap();
             if !queue.messages.is_empty() {
                 let mut metrics = self.0.diagnostics.metrics.lock().unwrap();
                 metrics.active = std::mem::take(&mut metrics.queued);
-                Poll::Ready(Batch::Messages(std::mem::take(&mut queue.messages)))
+                // The drained batch lends its capacity to the next producers.
+                // Both buffers stay owned until the driver is dropped.
+                std::mem::swap(batch, &mut queue.messages);
+                Poll::Ready(Batch::Messages)
             } else if queue.terminal.is_some() || !queue.accepting || queue.senders == 0 {
                 queue.accepting = false;
                 Poll::Ready(Batch::Done(queue.terminal.take()))
@@ -210,15 +213,24 @@ where
     };
     let receiver = Receiver(shared);
     let task = async move {
+        let mut batch = VecDeque::new();
         loop {
-            match receiver.next().await {
-                Batch::Messages(batch) => {
-                    let (messages, completions): (Vec<_>, Vec<_>) = batch.into_iter().unzip();
-                    crate::serialize::write_messages(&mut writer, &messages).await?;
+            match receiver.next(&mut batch).await {
+                Batch::Messages => {
+                    crate::serialize::write_message_refs(
+                        &mut writer,
+                        batch.iter().map(|(message, _)| message),
+                    )
+                    .await?;
                     writer.flush().await?;
                     receiver.0.diagnostics.metrics.lock().unwrap().active = BatchMetrics::default();
-                    for (message, completion) in messages.into_iter().zip(completions) {
+                    for (message, completion) in batch.drain(..) {
                         let _ = completion.send(message);
+                    }
+                    // Reuse ordinary batches without pinning a burst's peak
+                    // metadata allocation for the lifetime of the connection.
+                    if batch.capacity() > 1024 {
+                        batch = VecDeque::new();
                     }
                 }
                 Batch::Done(terminal) => {

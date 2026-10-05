@@ -323,17 +323,59 @@ where
 }
 
 /// Writes multiple messages in order with scatter/gather I/O, without copying
-/// payloads. Allocates framing tables and I/O metadata. Does not flush the writer.
+/// payloads. Small batches keep framing and I/O metadata on the stack; larger
+/// batches allocate them. Does not flush the writer.
 /// Writers without vectored I/O support use the AsyncWrite scalar fallback.
-pub async fn write_messages<W, M>(mut writer: W, messages: &[M]) -> Result<()>
+pub async fn write_messages<W, M>(writer: W, messages: &[M]) -> Result<()>
 where
     W: AsyncWrite + Unpin,
     M: AsOutputSegments,
 {
-    let segments: Vec<_> = messages
-        .iter()
-        .map(AsOutputSegments::as_output_segments)
-        .collect();
+    write_message_refs(writer, messages.iter()).await
+}
+
+// Borrow a batch in place so the write queue retains its messages and capacity
+// through flush, without unzipping messages and receipts into temporary Vecs.
+pub(crate) async fn write_message_refs<'a, W, M>(
+    mut writer: W,
+    messages: impl ExactSizeIterator<Item = &'a M> + Clone,
+) -> Result<()>
+where
+    W: AsyncWrite + Unpin,
+    M: AsOutputSegments + 'a,
+{
+    if messages.len() <= 2 {
+        let mut small = messages.clone();
+        let segments: [_; 2] =
+            std::array::from_fn(|_| small.next().map(AsOutputSegments::as_output_segments));
+        if segments
+            .iter()
+            .flatten()
+            .all(|s| !s.is_empty() && s.len() <= 2)
+        {
+            let mut tables = [[0u8; 16]; 2];
+            for (table, message) in tables.iter_mut().zip(segments.iter().flatten()) {
+                table[..4].copy_from_slice(&(message.len() as u32 - 1).to_le_bytes());
+                for (i, bytes) in message.iter().enumerate() {
+                    table[4 + i * 4..8 + i * 4]
+                        .copy_from_slice(&((bytes.len() / 8) as u32).to_le_bytes());
+                }
+            }
+            let mut buffers = [std::io::IoSlice::new(&[]); 6];
+            let mut count = 0;
+            for (table, message) in tables.iter().zip(segments.iter().flatten()) {
+                let table_len = (message.len() / 2 + 1) * 8;
+                buffers[count] = std::io::IoSlice::new(&table[..table_len]);
+                count += 1;
+                for bytes in message.iter().filter(|s| !s.is_empty()) {
+                    buffers[count] = std::io::IoSlice::new(bytes);
+                    count += 1;
+                }
+            }
+            return write_buffers(&mut writer, &mut buffers[..count]).await;
+        }
+    }
+    let segments: Vec<_> = messages.map(AsOutputSegments::as_output_segments).collect();
     let mut tables = Vec::with_capacity(segments.len());
     for message in &segments {
         let mut table = futures_util::io::Cursor::new(Vec::new());
@@ -350,7 +392,13 @@ where
                 .map(|s| std::io::IoSlice::new(s)),
         );
     }
-    let mut remaining = &mut buffers[..];
+    write_buffers(&mut writer, &mut buffers).await
+}
+
+async fn write_buffers<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    mut remaining: &mut [std::io::IoSlice<'_>],
+) -> Result<()> {
     while !remaining.is_empty() {
         // Stay below platform iovec limits, including POSIX's minimum of 16.
         let count = remaining.len().min(16);

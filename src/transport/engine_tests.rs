@@ -88,7 +88,7 @@ fn native_engine_preserves_bidirectional_bytes_preface_and_fin_under_backpressur
     for _ in 0..1000 {
         for (i, engine) in [&mut a, &mut b].into_iter().enumerate() {
             let before = engine.tx.written();
-            assert!(engine.step(now).unwrap());
+            assert!(engine.step(|| now).unwrap());
             partial |= engine.tx.written() > before
                 && engine
                     .tx
@@ -127,8 +127,8 @@ fn queued_datagram_after_shutdown_request_is_discarded_without_failing_rpc() {
     let (mut a, mut b) = pair();
     let now = Instant::now();
     for _ in 0..50 {
-        a.step(now).unwrap();
-        b.step(now).unwrap();
+        a.step(|| now).unwrap();
+        b.step(|| now).unwrap();
         packets(&mut a, &mut b);
         packets(&mut b, &mut a);
         if a.ready() && b.ready() {
@@ -140,7 +140,7 @@ fn queued_datagram_after_shutdown_request_is_discarded_without_failing_rpc() {
     a.shutdown = Some(super::shutdown::ShutdownDriver::new(control.clone(), false));
     control.begin(Duration::from_secs(1)).unwrap();
     a.datagram(b"late queued packet".to_vec()).unwrap();
-    assert!(a.datagram_deadline(now).is_none());
+    assert!(a.datagram_deadline(|| now).is_none());
 }
 
 #[test]
@@ -169,8 +169,8 @@ fn replay_tlc_receipt_survives_close_packet_burst_yield() {
         let (mut a, mut b) = pair();
         let now = Instant::now();
         for _ in 0..50 {
-            a.step(now).unwrap();
-            b.step(now).unwrap();
+            a.step(|| now).unwrap();
+            b.step(|| now).unwrap();
             packets(&mut a, &mut b);
             packets(&mut b, &mut a);
             if a.ready() && b.ready() {
@@ -190,13 +190,13 @@ fn replay_tlc_receipt_survives_close_packet_burst_yield() {
                     control.begin(Duration::from_secs(1)).unwrap();
                     a.tx.read(0).unwrap();
                     for _ in 0..50 {
-                        a.step(now).unwrap();
+                        a.step(|| now).unwrap();
                         // Keep the locally generated CLOSE queued for event 2.
                         if a.conn.local_error().is_some() {
                             break;
                         }
                         packets(&mut a, &mut b);
-                        b.step(now).unwrap();
+                        b.step(|| now).unwrap();
                         packets(&mut b, &mut a);
                     }
                     assert_eq!(
@@ -219,7 +219,7 @@ fn replay_tlc_receipt_survives_close_packet_burst_yield() {
                     assert!(a.conn.is_draining());
                 }
                 3 => assert!(
-                    a.step(now).unwrap(),
+                    a.step(|| now).unwrap(),
                     "burst yield must retain the validated receipt"
                 ),
                 4 => {

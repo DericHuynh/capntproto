@@ -7,8 +7,8 @@ use tokio::{net::UdpSocket, sync::oneshot, time::Instant};
 
 fn establish(a: &mut Engine, b: &mut Engine) {
     for _ in 0..50 {
-        a.step(Instant::now()).unwrap();
-        b.step(Instant::now()).unwrap();
+        a.step(Instant::now).unwrap();
+        b.step(Instant::now).unwrap();
         engine_tests::packets(a, b);
         engine_tests::packets(b, a);
     }
@@ -26,13 +26,40 @@ fn discard_packets(engine: &mut Engine) -> usize {
     }
 }
 
+#[test]
+fn reliable_stream_progress_does_not_sample_datagram_clock() {
+    let (mut a, mut b) = engine_tests::pair();
+    establish(&mut a, &mut b);
+    a.tx.read_buffer().unwrap()[..4].copy_from_slice(b"data");
+    a.tx.read(4).unwrap();
+    a.step(|| panic!("reliable send sampled application clock"))
+        .unwrap();
+    engine_tests::packets(&mut a, &mut b);
+    b.step(|| panic!("reliable receive sampled application clock"))
+        .unwrap();
+    assert_eq!(b.rx.pending(), b"data");
+    assert!(a
+        .datagram_deadline(|| panic!("no datagram queued"))
+        .is_none());
+    a.datagram(b"datagram".to_vec()).unwrap();
+    let now = Instant::now();
+    assert_eq!(a.datagram_deadline(|| now), Some(now));
+    let sampled = std::cell::Cell::new(false);
+    a.step(|| {
+        sampled.set(true);
+        now
+    })
+    .unwrap();
+    assert!(sampled.get());
+}
+
 #[tokio::test]
 async fn upstream_recovery_retransmits_after_real_timeout() {
     let (mut a, mut b) = engine_tests::pair();
     establish(&mut a, &mut b);
     a.tx.read_buffer().unwrap()[..4].copy_from_slice(b"lost");
     a.tx.read(4).unwrap();
-    a.step(Instant::now()).unwrap();
+    a.step(Instant::now).unwrap();
     assert!(discard_packets(&mut a) > 0);
     let timeout = a.conn.timeout().unwrap();
     assert!(timeout > Duration::ZERO && timeout < Duration::from_secs(1));
@@ -42,9 +69,9 @@ async fn upstream_recovery_retransmits_after_real_timeout() {
     a.conn.on_timeout();
     for _ in 0..50 {
         engine_tests::packets(&mut a, &mut b);
-        b.step(Instant::now()).unwrap();
+        b.step(Instant::now).unwrap();
         engine_tests::packets(&mut b, &mut a);
-        a.step(Instant::now()).unwrap();
+        a.step(Instant::now).unwrap();
         if b.rx.pending() == b"lost" {
             break;
         }
@@ -53,7 +80,7 @@ async fn upstream_recovery_retransmits_after_real_timeout() {
     b.delivered(4).unwrap();
     // Duplicated recovery traffic must not duplicate bytes in the RPC bridge.
     engine_tests::packets(&mut a, &mut b);
-    b.step(Instant::now()).unwrap();
+    b.step(Instant::now).unwrap();
     assert!(b.rx.pending().is_empty());
 }
 
@@ -74,11 +101,11 @@ async fn upstream_idle_expiry_does_not_expire_a_new_generation() {
     a.conn.on_timeout();
     assert!(a.conn.is_closed() && a.conn.is_timed_out());
     assert_eq!(
-        a.step(Instant::now()).unwrap_err().kind(),
+        a.step(Instant::now).unwrap_err().kind(),
         io::ErrorKind::TimedOut
     );
     replacement.conn.on_timeout();
-    assert!(replacement.step(Instant::now()).unwrap());
+    assert!(replacement.step(Instant::now).unwrap());
     assert!(!replacement.conn.is_closed());
 }
 
@@ -96,7 +123,7 @@ async fn application_pacing_migration_and_shutdown_deadlines_use_runtime_time() 
     let (_mobility, mut migration) = mobility::pair();
     // Exchange CID allowances before requesting a new path.
     migration
-        .step(&mut a.conn, &mut socket, Instant::now())
+        .step(&mut a.conn, &mut socket, Instant::now)
         .unwrap();
     engine_tests::packets(&mut a, &mut b);
     let mut peer_path = PacketSocket::Dedicated(
@@ -104,7 +131,7 @@ async fn application_pacing_migration_and_shutdown_deadlines_use_runtime_time() 
     );
     let (_, mut peer_migration) = mobility::pair();
     peer_migration
-        .step(&mut b.conn, &mut peer_path, Instant::now())
+        .step(&mut b.conn, &mut peer_path, Instant::now)
         .unwrap();
     engine_tests::packets(&mut b, &mut a);
     establish(&mut a, &mut b);
@@ -141,7 +168,7 @@ async fn application_pacing_migration_and_shutdown_deadlines_use_runtime_time() 
     for millis in [19, 20, 29, 30, 39, 40] {
         tokio::time::advance(origin + Duration::from_millis(millis) - Instant::now()).await;
         let now = Instant::now();
-        migration.step(&mut a.conn, &mut socket, now).unwrap();
+        migration.step(&mut a.conn, &mut socket, || now).unwrap();
         if millis < 20 {
             assert!(!a.scheduling.admit(now));
         } else if millis == 20 {

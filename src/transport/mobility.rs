@@ -189,7 +189,7 @@ impl Driver {
         &mut self,
         conn: &mut quiche::Connection,
         socket: &mut PacketSocket,
-        now: Instant,
+        now: impl FnOnce() -> Instant,
     ) -> io::Result<Option<SocketAddr>> {
         let mut migrated = None;
         while let Some(id) = conn.retired_scid_next() {
@@ -214,7 +214,7 @@ impl Driver {
                     io::ErrorKind::Interrupted,
                     "Native migration canceled",
                 )))
-            } else if now >= pending.deadline {
+            } else if now() >= pending.deadline {
                 pending.gate.retire();
                 Some(Err(io::Error::new(
                     io::ErrorKind::TimedOut,
