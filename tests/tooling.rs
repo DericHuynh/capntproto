@@ -96,7 +96,7 @@ fn auditable_metadata_is_required_for_binary_artifacts() {
         "release/audit-probe{}",
         std::env::consts::EXE_SUFFIX
     ));
-    let output = run(
+    let output = v::run_stdout(
         command("cargo")
             .args([
                 "+1.97.0",
@@ -122,7 +122,7 @@ fn auditable_metadata_is_required_for_binary_artifacts() {
         .filter_map(|line| serde_json::from_str::<Value>(line).ok())
         .find(|value| value["target"]["name"] == "probe" && value["executable"].is_string())
         .expect("Cargo must identify the benchmark executable");
-    let tests = run(
+    let tests = v::run_stdout(
         command("cargo")
             .args([
                 "+1.97.0",
