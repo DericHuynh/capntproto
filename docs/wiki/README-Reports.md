@@ -114,63 +114,28 @@ original commit identities; each new run must supply fresh verified evidence.
 
 ## Local commands
 
-Use Python 3.12+ and an isolated environment for chart dependencies:
+The `capntproto-dev` crate renders standalone SVGs without an external plotting runtime:
 
 ```sh
-python3 -m venv target/readme-venv
-target/readme-venv/bin/pip install -r quality/reporting-requirements.txt
-target/readme-venv/bin/python scripts/update_readme.py render --output target/report-preview
+cargo run --locked -p capntproto-dev -- reports render --output target/report-preview
 ```
 
-On Windows, use `target/readme-venv/Scripts/python.exe` and `pip.exe`.
 Rendering requires a separate output directory and never rewrites the source README.
-Pass `--history PATH` to use a downloaded reports-branch history instead of the
-frozen migration seed:
-
-```sh
-python3 scripts/update_readme.py render --output target/readme-preview
-```
+Pass `--history PATH` to use downloaded reports-branch history instead of the
+frozen migration seed. The same command works on Windows, macOS and Linux.
 
 To create public data from an existing source-bound CI report:
 
 ```sh
-python3 scripts/update_readme.py collect --input target/quality --kind cargo \
+cargo run --locked -p capntproto-dev -- reports collect --input target/quality --kind cargo \
   --output target/readme-data/publication.json
 ```
 
-Use `--kind models`, `--kind fuzz`, or `--kind benchmark` for the other producers. `--report-output DIRECTORY` writes standalone SVG graphs and a report README. `--kind full` is retained for historical combined evidence. The collector does not
-run tests or benchmarks. It rejects changed logs, stale chart fingerprints,
-non-finite values and unexpected lanes/paths. Matplotlib is only needed to render;
-collection and validation use Python's standard library.
+Use `--kind models`, `--kind fuzz`, or `--kind benchmark` for the other producers.
+`--report-output DIRECTORY` writes standalone SVG graphs and a report README.
+`--kind full` reads historical combined evidence. The collector does not run tests
+or benchmarks. It rejects changed logs, stale chart fingerprints, non-finite values
+and unexpected lanes or paths.
 
-Contract tests join `cargo nextest run --workspace` through the quality crate. The chart
-rendering case runs when Matplotlib is installed; the reporting CI installs the
-pinned dependencies and requires this case. Test-only synthetic plots stay under
-`target/` and are never copied into public history.
-
-## GitHub setup
-
-Land the template, source README, frozen history seed, scripts and workflows together.
-The first trusted producer completion creates `reports`; dashboard links become live
-after that publication. Existing producer artifacts remain accessible through Actions. The configured repository is `DericHuynh/capntproto`; the display
-name stays **Capntproto**. No owner/repository URL is hard-coded into the
-publisher. Repository identity comes from GitHub's event/API.
-
-The publishing job requests `contents: write` and `actions: read` on its own
-short-lived `GITHUB_TOKEN`; there is no additional personal token to configure.
-The token is only exposed to the publishing step and is not forwarded on artifact
-storage redirects. GitHub's [workflow-run security guidance](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run)
-explains why the default-branch and artifact-origin checks are required.
-
-Protect the source branch normally; it needs no reporting-bot bypass. Repository
-rules must permit the publishing token to create/update `reports`. If rules block
-that branch, publication fails visibly without a force-push or fallback to main. A manually dispatched publisher accepts
-a completed producer run ID for retrying after a settings failure. Commits made
-with `GITHUB_TOKEN` do not recursively trigger normal push workflows; see
-[GitHub's event guidance](https://docs.github.com/en/actions/how-tos/writing-workflows/choosing-when-your-workflow-runs/triggering-a-workflow#triggering-a-workflow-from-a-workflow).
-
-Keep `DIGITALOCEAN_ACCESS_TOKEN` in the **`Benchmarking`** GitHub environment
-for the benchmark producer and cleanup job, as described in
-[Quality and Benchmarks](Quality-and-Benchmarks.md). Publication does not receive
-that secret or create cloud resources. Cargo, TLA+ and fuzzing verification remain scheduled weekly;
-dedicated benchmarks remain manually dispatched to control droplet spend.
+Contract tests run with `cargo nextest run --locked -p capntproto-dev`, including
+chart rendering, failed-test inventories, artifact validation and publication races.

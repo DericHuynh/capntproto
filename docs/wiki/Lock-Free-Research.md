@@ -44,7 +44,7 @@ No virtual actor runtime is needed for these changes.
 The isolated [probe crate](../../benchmarks/concurrency) has its own lockfile and
 adds **no production dependencies**. It compares `std` and `parking_lot` mutexes,
 Crossbeam `ArrayQueue`, Tokio bounded MPSC, and `ArcSwap` reads. The
-[runner](../../scripts/concurrency_probe.py) recorded **84 serial runs: 28 scenarios,
+[runner](../../dev/src/probes.rs) recorded **84 serial runs: 28 scenarios,
 three shuffled fresh-process trials each**. Every run passed its checks: exact
 message counts and per-producer FIFO, coherent snapshot contents, or successful
 worker outcomes plus reopening and checking durable contents.
@@ -296,12 +296,12 @@ build/test workload in parallel. Use a real storage filesystem for `--base`;
 ```sh
 CARGO_TARGET_DIR="$PWD/target/concurrency-research" \
   cargo build --release --locked --manifest-path benchmarks/concurrency/Cargo.toml
-python3 scripts/concurrency_probe.py --base target \
+cargo run --locked -p capntproto-dev -- probe concurrency --base target \
   --output target/concurrency-local
 CARGO_TARGET_DIR="$PWD/target/concurrency-research" \
   cargo clippy --locked --manifest-path benchmarks/concurrency/Cargo.toml \
   --all-targets -- -D warnings
-python3 scripts/concurrency_probe.py \
+cargo run --locked -p capntproto-dev -- probe concurrency \
   --summarize research/reports/concurrency/2026-10-01
 ```
 

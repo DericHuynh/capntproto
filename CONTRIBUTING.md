@@ -54,7 +54,7 @@ checks storage reopen on Unix. It does not qualify Windows storage durability.
 
 ## Test a change
 
-After staging changes, run `python3 scripts/check_repository.py`. It rejects
+After staging changes, run `cargo run --locked -p capntproto-dev -- check-repository`. It rejects
 tracked ignored files (including nested Cargo `target/` output) and blobs over
 50 MiB. CI runs the same check. Keep build artifacts local; `.gitignore` does
 not remove files that Git already tracks.
@@ -134,12 +134,12 @@ in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## README and report changes
 
-Edit `README.md` directly. Preview dashboard changes with `python3 scripts/update_readme.py render --output target/report-preview`; the dashboard template is `docs/reports.template.md`. Do not hand-edit public measurement history on the `reports` branch. See [the reporting guide](docs/wiki/README-Reports.md) for renderer dependencies, CI origin checks and validation.
+Edit `README.md` directly. Preview dashboard changes with `cargo run --locked -p capntproto-dev -- reports render --output target/report-preview`; the dashboard template is `docs/reports.template.md`. Do not hand-edit public measurement history on the `reports` branch. See [the reporting guide](docs/wiki/README-Reports.md) for renderer dependencies, CI origin checks and validation.
 
 ## Wiki documentation
 
 Edit the relevant page under `docs/wiki/` and update its Home/sidebar links when
-adding or removing topics. Run `python3 scripts/wiki.py check` and build an export
-with `python3 scripts/wiki.py build --output target/wiki`. See
+adding or removing topics. Run `cargo run --locked -p capntproto-dev -- wiki check` and build an export
+with `cargo run --locked -p capntproto-dev -- wiki build --output target/wiki`. See
 [Wiki maintenance](docs/wiki/Wiki-Maintenance.md) for publishing and the distinction
 between current guides, historical ledgers and frozen research evidence.

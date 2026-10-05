@@ -114,8 +114,8 @@ pub fn fuzz(r: &mut Runner) -> Result<()> {
         )?;
         let result = r.run(
             "afl-campaigns",
-            v::command("python3")
-                .arg("scripts/afl_fuzz.py")
+            v::command("cargo")
+                .args(["run", "--locked", "-p", "capntproto-dev", "--", "afl-fuzz"])
                 .arg("--output")
                 .arg(&afl_output)
                 .args(["--binaries", "target/afl-build/debug", "--corpus"])

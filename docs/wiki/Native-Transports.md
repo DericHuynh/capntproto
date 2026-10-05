@@ -101,7 +101,7 @@ Backend tests exercise TCP/TLS and quiche v1, capability RPC, datagrams,
 receipts and shared reservations. Existing discovery, authorization, handoff,
 restoration, migration and scheduling tests use TLS sessions. Conventional
 TLS/mTLS tests cover CA trust, hostnames, client credentials, ALPN, deadlines
-and cancellation. The version gate rejects v2; aioquic provides
+and cancellation. The version gate rejects v2; s2n-quic provides
 an independent interoperability peer. See [secure transports](TCP-TLS-and-QUIC.md)
 and [testing](Testing.md).
 

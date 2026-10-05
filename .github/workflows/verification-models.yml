@@ -32,7 +32,7 @@ jobs:
         run: cargo run --locked -p capntproto-quality -- models target/quality/models
       - name: Collect counts, graphs and failed tests
         if: success() || failure()
-        run: python3 scripts/update_readme.py collect --input target/quality --kind models --output target/readme-data/publication.json --failures-output target/quality/models/FAILED-TESTS.md --report-output target/quality/models
+        run: cargo run --locked -p capntproto-dev -- reports collect --input target/quality --kind models --output target/readme-data/publication.json --failures-output target/quality/models/FAILED-TESTS.md --report-output target/quality/models
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:

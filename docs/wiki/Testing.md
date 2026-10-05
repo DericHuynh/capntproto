@@ -123,9 +123,9 @@ not qualify changed source. See [release acceptance](Release-Acceptance.md).
 ## Documentation checks
 
 ```sh
-python3 scripts/wiki.py check
-python3 -m unittest discover -s scripts/tests -p 'test_wiki.py'
-python3 scripts/wiki.py build --output target/wiki
+cargo run --locked -p capntproto-dev -- wiki check
+cargo nextest run --locked -p capntproto-dev --test wiki
+cargo run --locked -p capntproto-dev -- wiki build --output target/wiki
 ```
 
 The check validates local links, anchors, navigation and the documentation
@@ -147,7 +147,7 @@ AFL_NO_CFG_FUZZING=1 cargo afl build --locked --manifest-path fuzz/Cargo.toml \
   --no-default-features --features afl-targets --bins --target-dir target/afl-build
 cargo run --locked --manifest-path fuzz/Cargo.toml --no-default-features \
   --example afl_seeds -- target/afl-corpus
-python3 scripts/afl_fuzz.py --binaries target/afl-build/debug \
+cargo run --locked -p capntproto-dev -- afl-fuzz --binaries target/afl-build/debug \
   --corpus target/afl-corpus --output target/afl-results --seconds 120
 ```
 
@@ -193,7 +193,7 @@ implementations forbid unsafe code (generated source strings are not executed
 by the generator). Test assertions may panic; production Unix `FdReader::new`
 uses an explicit assertion that its constant buffer size exceeds the minimum.
 
-CI also runs `python3 scripts/check_unsafe.py` on Linux with the pinned Clippy.
+CI also runs `cargo run --locked -p capntproto-dev -- check-unsafe` on Linux with the pinned Clippy.
 It records all three unsafe lints, including default workspace test targets, in
 `target/quality/unsafe/`. Pre-existing debt in the owned core runtime is recorded
 in `quality/unsafe-baseline.json`, with per-lint counts and whole-file hashes.

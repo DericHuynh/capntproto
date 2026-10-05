@@ -1,4 +1,4 @@
-//! Controlled quiche peer for scripts/check_quic_interop.py.
+//! Controlled quiche peer for the capntproto-dev s2n-quic interoperability check.
 use capntproto::rpc::{
     quic::{self, Endpoint, Version},
     tls::{rustls, Identity},
@@ -65,7 +65,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         if mode == "server" {
             stream.write_all(&received).await?;
         }
-        // The independent peer initiates key updates in each direction.
+        // The independent s2n-quic peer rotates keys during each transfer.
     }
     if mode == "client" {
         stream.write_all(b"done").await?;
@@ -75,6 +75,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(&done, b"done");
     }
     stream.shutdown().await?;
+    // Do not close the connection before the independent peer's FIN arrives.
+    // Otherwise a normal connection close can mask its stream completion.
+    let mut trailing = [0; 1];
+    assert_eq!(stream.read(&mut trailing).await?, 0);
     drop(stream);
     endpoint.wait_idle().await;
     Ok(())

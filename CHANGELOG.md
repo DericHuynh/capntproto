@@ -47,6 +47,13 @@ security qualification. See `docs/wiki/Release-Acceptance.md` for outstanding ga
 
 ## Review follow-up (2026-10-04)
 
+- Replace repository Python tooling with the `capntproto-dev` workspace crate,
+  invoked through `cargo run --locked -p capntproto-dev -- <subcommand>`. Port CI,
+  reporting, cloud benchmark lifecycle, fuzzing, model generation and research
+  probes, with Rust regression tests. Retire obsolete archived Python runners;
+  historical measurements retain their original provenance.
+- Use independent s2n-quic peers for QUIC v1 interoperability checks, including
+  Retry, key rotation and stream shutdown. The production backend remains quiche.
 - Separate generated CI evidence into an orphan `reports` branch. Keep the source
   README editable and discover documentation automatically instead of maintaining
   a duplicate page inventory. Existing measured history is retained as a frozen seed.

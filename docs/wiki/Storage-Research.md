@@ -283,8 +283,8 @@ it does not establish packet crypto or checksumming as the dominant cost.
 export PATH="$PWD/target/auditable-tools/wrapper:$PWD/target/auditable-tools/bin:$PATH"
 cargo build --locked -p capntproto --release --no-default-features --features storage --example storage_probe
 mkdir -p target/storage-probe-data
-python3 scripts/storage_probe.py --base target/storage-probe-data --output target/storage-probe-results --trials 3
-python3 scripts/summarize_storage_probe.py target/storage-probe-results
+cargo run --locked -p capntproto-dev -- probe storage --base target/storage-probe-data --output target/storage-probe-results --trials 3
+cargo run --locked -p capntproto-dev -- probe summarize storage target/storage-probe-results
 ```
 
 The output directory must be new. The runner uses `findmnt` and records platform,
@@ -298,7 +298,7 @@ at millions of revisions, cold-cache lookup performance or deployment p99s.
 - [Environment and source hashes](../../research/reports/storage-next/2026-10-01/environment.json)
 - [All 36 runs](../../research/reports/storage-next/2026-10-01/runs.jsonl)
 - [Medians and run ranges](../../research/reports/storage-next/2026-10-01/summary.json)
-- [Serial runner](../../scripts/storage_probe.py) and [summary tool](../../scripts/summarize_storage_probe.py)
+- [Serial runner](../../dev/src/probes.rs) and [summary tool](../../dev/src/probes.rs)
 
 All trials completed their snapshot/content/reopen assertions. The research
 example passed Clippy with warnings denied. Those checks validate the probe's

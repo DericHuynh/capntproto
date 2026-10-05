@@ -13,16 +13,18 @@ jobs:
   links:
     name: Validate documentation and export wiki
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - uses: ./.github/actions/dev-setup # zizmor: ignore[self-repository]
+        with:
+          cache-key: ci-docs
       - name: Validate wiki navigation and local links
         run: |
-          python3 scripts/wiki.py check
-          python3 -m unittest discover -s scripts/tests -p 'test_wiki.py'
-          python3 scripts/wiki.py build --output target/wiki --source-ref "${GITHUB_SHA}"
+          cargo run --locked -p capntproto-dev -- wiki check
+          cargo run --locked -p capntproto-dev -- wiki build --output target/wiki --source-ref "${GITHUB_SHA}"
       - name: Upload GitHub Wiki export
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:

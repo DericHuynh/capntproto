@@ -21,8 +21,15 @@ fn audit_bundle(r: &mut Runner, bundle: &Path) -> Result<Value> {
     let inventory = r.directory.join("auditable.json");
     r.run(
         "auditable-metadata",
-        v::command("python3")
-            .arg("scripts/check_auditable.py")
+        v::command("cargo")
+            .args([
+                "run",
+                "--locked",
+                "-p",
+                "capntproto-dev",
+                "--",
+                "check-auditable",
+            ])
             .arg("--output")
             .arg(&inventory)
             .args(RUST_BINARIES.map(|name| bundle.join(name))),

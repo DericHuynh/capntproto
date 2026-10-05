@@ -40,7 +40,7 @@ jobs:
         run: cargo run --locked -p capntproto-quality -- report target/quality coverage,security
       - name: Export compact README data (including failed test runs)
         if: success() || failure()
-        run: python3 scripts/update_readme.py collect --input target/quality --kind cargo --output target/readme-data/publication.json --failures-output target/quality/FAILED-TESTS.md --report-output target/quality/cargo-tests
+        run: cargo run --locked -p capntproto-dev -- reports collect --input target/quality --kind cargo --output target/readme-data/publication.json --failures-output target/quality/FAILED-TESTS.md --report-output target/quality/cargo-tests
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:

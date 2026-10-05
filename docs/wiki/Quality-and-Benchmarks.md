@@ -63,11 +63,10 @@ Trigger changes apply when the branch contains the updated workflow files.
 Branches created before this policy must incorporate it to stop their old
 branch-push triggers. Already queued runs are not removed by a workflow edit.
 
-Workflow checks enforce this policy with regression tests. Locally, with
-PyYAML installed (`python3-yaml` on the CI runner), run:
+The Rust development tool enforces this policy. Locally, run:
 
 ```sh
-python3 -m unittest discover -s scripts/tests -p 'test_workflow_triggers.py' -v
+cargo run --locked -p capntproto-dev -- check-workflows
 ```
 
 Require **Required CI result** in branch protection (replace the former

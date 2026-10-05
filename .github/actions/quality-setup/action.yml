@@ -19,7 +19,7 @@ runs:
       shell: bash
       run: |
         sudo apt-get update
-        sudo apt-get install --no-install-recommends -y cmake ninja-build g++ binutils clang-22 libclang-rt-22-dev pkg-config capnproto libcapnp-dev protobuf-compiler valgrind openjdk-17-jre-headless unzip python3-matplotlib
+        sudo apt-get install --no-install-recommends -y cmake ninja-build g++ binutils clang-22 libclang-rt-22-dev pkg-config capnproto libcapnp-dev protobuf-compiler valgrind openjdk-17-jre-headless unzip
         echo "JAVA=/usr/lib/jvm/java-17-openjdk-amd64/bin/java" >> "$GITHUB_ENV"
         echo "CAPNTPROTO_REFERENCE_CXX=clang++-22" >> "$GITHUB_ENV"
     - name: Pinned Rust toolchains

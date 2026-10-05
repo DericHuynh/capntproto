@@ -57,7 +57,7 @@ hints, Return counts and early publication before parent completion.
 
 Frozen [results](../../research/reports/rpc-pipeline/2026-10-01/results.json) and
 [environment/source hashes](../../research/reports/rpc-pipeline/2026-10-01/environment.json)
-are captured by the [runner](../../scripts/rpc_pipeline_probe.py).
+are captured by the [runner](../../dev/src/probes.rs).
 
 For four dependent capability-returning calls followed by a scalar call:
 
@@ -317,7 +317,7 @@ Reproduce the protocol evidence without compiling during capture:
 
 ```sh
 cargo build --locked --no-default-features --example rpc_pipeline_probe
-python3 scripts/rpc_pipeline_probe.py --output target/rpc-pipeline-local
+cargo run --locked -p capntproto-dev -- probe rpc --output target/rpc-pipeline-local
 cargo clippy --locked --no-default-features --example rpc_pipeline_probe -- -D warnings
 ```
 

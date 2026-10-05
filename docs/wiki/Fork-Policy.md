@@ -39,7 +39,7 @@ For an upgrade:
 3. Regenerate bindings and compiler fixtures; check standard schema identity.
 4. Run compiler rejection tests, C++ interoperability and relevant model replays.
 5. For Quiche, update the registry pin and lockfiles, then run our encrypted
-   transport tests, TLS/mTLS rejection tests and independent aioquic interoperability.
+   transport tests, TLS/mTLS rejection tests and independent s2n-quic interoperability.
 6. Run the workspace and source-distribution acceptance gates.
 
 `cargo nextest run --test tooling external_consumer_feature_matrix -- --exact` builds a

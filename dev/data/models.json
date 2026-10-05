@@ -1,0 +1,3864 @@
+{
+  "network": [
+    {
+      "name": "NetworkBasic",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 3",
+        "MaxOps = 4",
+        "Plan <- BasicPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkCancel",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 3",
+        "MaxOps = 4",
+        "Plan <- CancelPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkPipeline",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 3",
+        "MaxOps = 4",
+        "Plan <- PipelinePlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkIds",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 1",
+        "MaxOps = 3",
+        "Plan <- SameNumericIdsPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkLocalTail",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 3",
+        "MaxOps = 4",
+        "Plan <- TailLocalPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkThirdTail",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 3",
+        "MaxOps = 6",
+        "Plan <- ThirdTailPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkHandoff",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 4",
+        "MaxOps = 9",
+        "Plan <- HandoffPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = TRUE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete",
+        "HandoffResourcesReleased",
+        "ProvidedResourcesReleased"
+      ]
+    },
+    {
+      "name": "NetworkJoin",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 4",
+        "IdCount = 4",
+        "MaxOps = 12",
+        "Plan <- JoinPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkNoFinish",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 2",
+        "MaxOps = 3",
+        "Plan <- NoFinishPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkOnly",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 2",
+        "MaxOps = 3",
+        "Plan <- OnlyPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkOnlyCompat",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 2",
+        "MaxOps = 3",
+        "Plan <- OnlyCompatPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkNoPipeline",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 2",
+        "MaxOps = 2",
+        "Plan <- NoPipelinePlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkExplicitRelease",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 3",
+        "MaxOps = 2",
+        "Plan <- ExplicitReleasePlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkWorkaround",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 3",
+        "MaxOps = 3",
+        "Plan <- WorkaroundPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkBrokenPromise",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 3",
+        "MaxOps = 3",
+        "Plan <- BrokenPromisePlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = FALSE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkPersistence",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 3",
+        "MaxOps = 5",
+        "Plan <- PersistencePlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = FALSE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkLoss",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 1",
+        "MaxOps = 1",
+        "Plan <- LossPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = FALSE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkUnsupported",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 1",
+        "MaxOps = 1",
+        "Plan <- UnsupportedPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = FALSE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkUnauthorizedAccept",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 1",
+        "MaxOps = 1",
+        "Plan <- UnauthorizedAcceptPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = FALSE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkProvide",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 2",
+        "MaxOps = 4",
+        "Plan <- DirectProvidePlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkTailFallback",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 3",
+        "MaxOps = 5",
+        "Plan <- ThirdTailFallbackPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkTailCancel",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 3",
+        "MaxOps = 6",
+        "Plan <- ThirdTailCancelPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkTailPipeline",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 3",
+        "MaxOps = 7",
+        "Plan <- ThirdTailPipelinePlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkLocalJoin",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 4",
+        "MaxOps = 4",
+        "Plan <- LocalJoinPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkUnequalJoin",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 4",
+        "MaxOps = 4",
+        "Plan <- UnequalJoinPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkCancelJoin",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 4",
+        "MaxOps = 4",
+        "Plan <- CanceledJoinPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkBugNamespace",
+      "module": "CapnpNetworkChecks",
+      "violation": "ProtocolSafety",
+      "spec": "Spec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 3",
+        "MaxOps = 6",
+        "Plan <- ThirdTailPlan",
+        "Bug = \"adoptionNamespace\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "ProtocolSafety"
+      ],
+      "properties": []
+    },
+    {
+      "name": "NetworkBugJoin",
+      "module": "CapnpNetworkChecks",
+      "violation": "JoinAgreement",
+      "spec": "Spec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 4",
+        "MaxOps = 4",
+        "Plan <- UnequalJoinPlan",
+        "Bug = \"hostOnlyJoin\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "JoinAgreement"
+      ],
+      "properties": []
+    },
+    {
+      "name": "NetworkWitnessUnequal",
+      "module": "CapnpNetworkChecks",
+      "violation": "NoUnequalNetworkWitness",
+      "spec": "Spec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 4",
+        "MaxOps = 4",
+        "Plan <- UnequalJoinPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "NoUnequalNetworkWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "NetworkWitnessRestore",
+      "module": "CapnpNetworkChecks",
+      "violation": "NoRestoreNetworkWitness",
+      "spec": "Spec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 3",
+        "MaxOps = 5",
+        "Plan <- PersistencePlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = FALSE"
+      ],
+      "invariants": [
+        "NoRestoreNetworkWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "NetworkWitnessAdoption",
+      "module": "CapnpNetworkChecks",
+      "violation": "NoEarlyAdoptionWitness",
+      "spec": "Spec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 3",
+        "MaxOps = 6",
+        "Plan <- ThirdTailPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "NoEarlyAdoptionWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "NetworkWitnessTailCleanup",
+      "module": "CapnpNetworkChecks",
+      "violation": "NoCleanupNetworkWitness",
+      "spec": "Spec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 3",
+        "MaxOps = 6",
+        "Plan <- ThirdTailPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "NoCleanupNetworkWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "NetworkNestedPipeline",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 3",
+        "MaxOps = 3",
+        "Plan <- NestedPipelinePlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkInvalidPipeline",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 3",
+        "MaxOps = 3",
+        "Plan <- InvalidPipelinePlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = FALSE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkLoopback",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 3",
+        "MaxOps = 5",
+        "Plan <- LoopbackPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkResolve",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 3",
+        "MaxOps = 2",
+        "Plan <- ReleasedResolvePlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkBugEmbargo",
+      "module": "CapnpNetworkChecks",
+      "violation": "EmbargoSafety",
+      "spec": "Spec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 4",
+        "MaxOps = 9",
+        "Plan <- HandoffPlan",
+        "Bug = \"skipEmbargo\"",
+        "AllowLoss = FALSE",
+        "Introductions = TRUE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "EmbargoSafety"
+      ],
+      "properties": []
+    },
+    {
+      "name": "NetworkBugBarrierOrder",
+      "module": "CapnpNetworkChecks",
+      "violation": "EOrder",
+      "spec": "Spec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 4",
+        "MaxOps = 9",
+        "Plan <- HandoffPlan",
+        "Bug = \"barrierOvertakes\"",
+        "AllowLoss = FALSE",
+        "Introductions = TRUE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "EOrder"
+      ],
+      "properties": []
+    },
+    {
+      "name": "NetworkWitnessHandoff",
+      "module": "CapnpNetworkChecks",
+      "violation": "NoHandoffWitness",
+      "spec": "Spec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 4",
+        "MaxOps = 9",
+        "Plan <- HandoffPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = TRUE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "NoHandoffWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "NetworkWitnessJoin",
+      "module": "CapnpNetworkChecks",
+      "violation": "NoJoinWitness",
+      "spec": "Spec",
+      "constants": [
+        "VatCount = 4",
+        "IdCount = 4",
+        "MaxOps = 12",
+        "Plan <- JoinPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "NoJoinWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "NetworkWitnessLoopback",
+      "module": "CapnpNetworkChecks",
+      "violation": "NoLoopbackNetworkWitness",
+      "spec": "Spec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 3",
+        "MaxOps = 5",
+        "Plan <- LoopbackPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "NoLoopbackNetworkWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "NetworkWitnessReleasedResolve",
+      "module": "CapnpNetworkChecks",
+      "violation": "NoReleasedResolveNetworkWitness",
+      "spec": "Spec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 3",
+        "MaxOps = 2",
+        "Plan <- ReleasedResolvePlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "NoReleasedResolveNetworkWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "NetworkWitnessAcceptRace",
+      "module": "CapnpNetworkChecks",
+      "violation": "NoAcceptBeforeProvideNetworkWitness",
+      "spec": "Spec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 2",
+        "MaxOps = 4",
+        "Plan <- DirectProvidePlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "NoAcceptBeforeProvideNetworkWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "NetworkPair",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 3",
+        "MaxOps = 3",
+        "Plan <- PairPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkDuplicate",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 3",
+        "MaxOps = 3",
+        "Plan <- DuplicatePlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkReceiverAnswer",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 3",
+        "MaxOps = 3",
+        "Plan <- ReceiverAnswerPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkExportedQuestion",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 3",
+        "MaxOps = 4",
+        "Plan <- ExportedQuestionPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkAdoptedPipeline",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 3",
+        "MaxOps = 6",
+        "Plan <- AdoptedPipelinePlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkUnimplementedCall",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 3",
+        "MaxOps = 2",
+        "Plan <- BasicPlan",
+        "Bug = \"rejectCall\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = FALSE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkUnimplementedResolve",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 2",
+        "IdCount = 3",
+        "MaxOps = 2",
+        "Plan <- ReleasedResolvePlan",
+        "Bug = \"rejectResolve\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkProvideLoss",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 2",
+        "MaxOps = 3",
+        "Plan <- ProvideLossPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = FALSE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkBugExportedQuestion",
+      "module": "CapnpNetworkChecks",
+      "violation": "ExportedQuestionLifetime",
+      "spec": "Spec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 3",
+        "MaxOps = 4",
+        "Plan <- ExportedQuestionPlan",
+        "Bug = \"finishExportedQuestion\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "ExportedQuestionLifetime"
+      ],
+      "properties": []
+    },
+    {
+      "name": "NetworkUnresolvedTailCancel",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 3",
+        "MaxOps = 6",
+        "Plan <- UnresolvedTailCancelPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkWitnessEarlyAdoptedFinish",
+      "module": "CapnpNetworkChecks",
+      "violation": "NoEarlyAdoptedFinishWitness",
+      "spec": "Spec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 3",
+        "MaxOps = 6",
+        "Plan <- UnresolvedTailCancelPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "NoEarlyAdoptedFinishWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "NetworkAdoptedLoss",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 3",
+        "MaxOps = 6",
+        "Plan <- AdoptedLossPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = FALSE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkAdoptionFailure",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 3",
+        "MaxOps = 6",
+        "Plan <- AdoptionFailurePlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = FALSE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete"
+      ]
+    },
+    {
+      "name": "NetworkWitnessAdoptionFailure",
+      "module": "CapnpNetworkChecks",
+      "violation": "NoAdoptionFailureWitness",
+      "spec": "Spec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 3",
+        "MaxOps = 6",
+        "Plan <- AdoptionFailurePlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = FALSE",
+        "ExpectSuccess = FALSE"
+      ],
+      "invariants": [
+        "NoAdoptionFailureWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "NetworkReturnHandoff",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 3",
+        "MaxOps = 7",
+        "Plan <- ReturnHandoffPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = TRUE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete",
+        "HandoffResourcesReleased",
+        "ProvidedResourcesReleased"
+      ]
+    },
+    {
+      "name": "NetworkParameterHandoff",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 2",
+        "MaxOps = 6",
+        "Plan <- ParameterHandoffPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = TRUE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete",
+        "HandoffResourcesReleased",
+        "ProvidedResourcesReleased"
+      ]
+    },
+    {
+      "name": "NetworkWitnessRuntimeHandoff",
+      "module": "CapnpNetworkChecks",
+      "violation": "NoRuntimeHandoffCallWitness",
+      "spec": "Spec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 4",
+        "MaxOps = 9",
+        "Plan <- HandoffPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = TRUE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "NoRuntimeHandoffCallWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "NetworkCanceledReturnHandoff",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 3",
+        "MaxOps = 5",
+        "Plan <- CanceledReturnHandoffPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = TRUE",
+        "ExpectSuccess = TRUE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete",
+        "HandoffResourcesReleased",
+        "ProvidedResourcesReleased"
+      ]
+    },
+    {
+      "name": "NetworkProviderLossHandoff",
+      "module": "CapnpNetworkChecks",
+      "spec": "LiveSpec",
+      "constants": [
+        "VatCount = 3",
+        "IdCount = 3",
+        "MaxOps = 7",
+        "Plan <- ProviderLossHandoffPlan",
+        "Bug = \"none\"",
+        "AllowLoss = FALSE",
+        "Introductions = TRUE",
+        "ExpectSuccess = FALSE"
+      ],
+      "invariants": [
+        "TypeOK",
+        "ProtocolSafety",
+        "ReferenceConservation",
+        "NoStaleCredits",
+        "QuestionLifetime",
+        "AnswerLifetime",
+        "AtMostOnce",
+        "CancellationSafety",
+        "EmbargoSafety",
+        "AcceptAuthority",
+        "JoinAgreement",
+        "DisconnectClean",
+        "EOrder",
+        "JoinResources",
+        "ExpectedSuccess",
+        "ExportedQuestionLifetime",
+        "VinesHeldUntilAcceptance"
+      ],
+      "properties": [
+        "PlanCompletes",
+        "EveryQuestionSettles",
+        "EveryInterestedResultSettles",
+        "AdoptedCleanup",
+        "AutomaticHandoffsComplete",
+        "HandoffResourcesReleased",
+        "ProvidedResourcesReleased"
+      ]
+    }
+  ],
+  "features": [
+    {
+      "name": "SchemaExchange",
+      "module": "CapnpSchemaExchange",
+      "spec": "LiveSpec",
+      "constants": [
+        "Revision = 1",
+        "Scenario = \"normal\"",
+        "AllowCorruption = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "SchemaIntegrity",
+        "DependencyClosure",
+        "PinnedRevision",
+        "NoRejectedUse"
+      ],
+      "properties": [
+        "SuccessfulFetch"
+      ]
+    },
+    {
+      "name": "SchemaRevisionTwo",
+      "module": "CapnpSchemaExchange",
+      "spec": "LiveSpec",
+      "constants": [
+        "Revision = 2",
+        "Scenario = \"normal\"",
+        "AllowCorruption = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "SchemaIntegrity",
+        "DependencyClosure",
+        "PinnedRevision",
+        "NoRejectedUse"
+      ],
+      "properties": [
+        "SuccessfulFetch"
+      ]
+    },
+    {
+      "name": "SchemaCycle",
+      "module": "CapnpSchemaExchange",
+      "spec": "LiveSpec",
+      "constants": [
+        "Revision = 1",
+        "Scenario = \"cycle\"",
+        "AllowCorruption = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "SchemaIntegrity",
+        "DependencyClosure",
+        "PinnedRevision",
+        "NoRejectedUse"
+      ],
+      "properties": [
+        "SuccessfulFetch"
+      ]
+    },
+    {
+      "name": "SchemaShared",
+      "module": "CapnpSchemaExchange",
+      "spec": "LiveSpec",
+      "constants": [
+        "Revision = 1",
+        "Scenario = \"shared\"",
+        "AllowCorruption = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "SchemaIntegrity",
+        "DependencyClosure",
+        "PinnedRevision",
+        "NoRejectedUse"
+      ],
+      "properties": [
+        "SuccessfulFetch"
+      ]
+    },
+    {
+      "name": "SchemaMissing",
+      "module": "CapnpSchemaExchange",
+      "spec": "LiveSpec",
+      "constants": [
+        "Revision = 1",
+        "Scenario = \"missing\"",
+        "AllowCorruption = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "SchemaIntegrity",
+        "DependencyClosure",
+        "PinnedRevision",
+        "NoRejectedUse"
+      ],
+      "properties": [
+        "MissingFails"
+      ]
+    },
+    {
+      "name": "SchemaCorruption",
+      "module": "CapnpSchemaExchange",
+      "spec": "LiveSpec",
+      "constants": [
+        "Revision = 1",
+        "Scenario = \"normal\"",
+        "AllowCorruption = TRUE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "SchemaIntegrity",
+        "DependencyClosure",
+        "PinnedRevision",
+        "NoRejectedUse"
+      ],
+      "properties": [
+        "Settles"
+      ]
+    },
+    {
+      "name": "SchemaBugRevision",
+      "module": "CapnpSchemaExchange",
+      "violation": "SchemaIntegrity",
+      "spec": "Spec",
+      "constants": [
+        "Revision = 1",
+        "Scenario = \"normal\"",
+        "AllowCorruption = TRUE",
+        "Bug = \"wrongRevision\""
+      ],
+      "invariants": [
+        "SchemaIntegrity"
+      ],
+      "properties": []
+    },
+    {
+      "name": "SchemaBugEarly",
+      "module": "CapnpSchemaExchange",
+      "violation": "DependencyClosure",
+      "spec": "Spec",
+      "constants": [
+        "Revision = 1",
+        "Scenario = \"normal\"",
+        "AllowCorruption = FALSE",
+        "Bug = \"earlyActivation\""
+      ],
+      "invariants": [
+        "DependencyClosure"
+      ],
+      "properties": []
+    },
+    {
+      "name": "SchemaWitness",
+      "module": "CapnpSchemaExchange",
+      "violation": "NoSchemaWitness",
+      "spec": "Spec",
+      "constants": [
+        "Revision = 1",
+        "Scenario = \"normal\"",
+        "AllowCorruption = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "NoSchemaWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "SchemaWitnessCycle",
+      "module": "CapnpSchemaExchange",
+      "violation": "NoCycleWitness",
+      "spec": "Spec",
+      "constants": [
+        "Revision = 1",
+        "Scenario = \"cycle\"",
+        "AllowCorruption = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "NoCycleWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "SchemaWitnessReject",
+      "module": "CapnpSchemaExchange",
+      "violation": "NoRejectionWitness",
+      "spec": "Spec",
+      "constants": [
+        "Revision = 1",
+        "Scenario = \"normal\"",
+        "AllowCorruption = TRUE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "NoRejectionWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "SchemaWitnessPinnedUpgrade",
+      "module": "CapnpSchemaExchange",
+      "violation": "NoPinnedUpgradeWitness",
+      "spec": "Spec",
+      "constants": [
+        "Revision = 1",
+        "Scenario = \"normal\"",
+        "AllowCorruption = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "NoPinnedUpgradeWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "BulkTransfer",
+      "module": "CapnpBulkTransfer",
+      "spec": "LiveSpec",
+      "constants": [
+        "ChunkCount = 4",
+        "Window = 3",
+        "FailAt = 0",
+        "AllowCancel = FALSE",
+        "AllowDuplicateAck = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "WindowBound",
+        "CreditConservation",
+        "InOrderExactlyOnce",
+        "StickyErrors",
+        "CompletionSound",
+        "TerminalCleanup"
+      ],
+      "properties": [
+        "Settles"
+      ]
+    },
+    {
+      "name": "BulkSmallWindow",
+      "module": "CapnpBulkTransfer",
+      "spec": "LiveSpec",
+      "constants": [
+        "ChunkCount = 4",
+        "Window = 2",
+        "FailAt = 0",
+        "AllowCancel = FALSE",
+        "AllowDuplicateAck = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "WindowBound",
+        "CreditConservation",
+        "InOrderExactlyOnce",
+        "StickyErrors",
+        "CompletionSound",
+        "TerminalCleanup"
+      ],
+      "properties": [
+        "Settles"
+      ]
+    },
+    {
+      "name": "BulkWideWindow",
+      "module": "CapnpBulkTransfer",
+      "spec": "LiveSpec",
+      "constants": [
+        "ChunkCount = 6",
+        "Window = 5",
+        "FailAt = 0",
+        "AllowCancel = FALSE",
+        "AllowDuplicateAck = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "WindowBound",
+        "CreditConservation",
+        "InOrderExactlyOnce",
+        "StickyErrors",
+        "CompletionSound",
+        "TerminalCleanup"
+      ],
+      "properties": [
+        "Settles"
+      ]
+    },
+    {
+      "name": "BulkCancellation",
+      "module": "CapnpBulkTransfer",
+      "spec": "LiveSpec",
+      "constants": [
+        "ChunkCount = 4",
+        "Window = 3",
+        "FailAt = 0",
+        "AllowCancel = TRUE",
+        "AllowDuplicateAck = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "WindowBound",
+        "CreditConservation",
+        "InOrderExactlyOnce",
+        "StickyErrors",
+        "CompletionSound",
+        "TerminalCleanup"
+      ],
+      "properties": [
+        "Settles"
+      ]
+    },
+    {
+      "name": "BulkError",
+      "module": "CapnpBulkTransfer",
+      "spec": "LiveSpec",
+      "constants": [
+        "ChunkCount = 4",
+        "Window = 3",
+        "FailAt = 2",
+        "AllowCancel = FALSE",
+        "AllowDuplicateAck = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "WindowBound",
+        "CreditConservation",
+        "InOrderExactlyOnce",
+        "StickyErrors",
+        "CompletionSound",
+        "TerminalCleanup"
+      ],
+      "properties": [
+        "Settles"
+      ]
+    },
+    {
+      "name": "BulkDuplicateAck",
+      "module": "CapnpBulkTransfer",
+      "spec": "LiveSpec",
+      "constants": [
+        "ChunkCount = 4",
+        "Window = 3",
+        "FailAt = 0",
+        "AllowCancel = FALSE",
+        "AllowDuplicateAck = TRUE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "WindowBound",
+        "CreditConservation",
+        "InOrderExactlyOnce",
+        "StickyErrors",
+        "CompletionSound",
+        "TerminalCleanup"
+      ],
+      "properties": [
+        "Settles"
+      ]
+    },
+    {
+      "name": "BulkCancelError",
+      "module": "CapnpBulkTransfer",
+      "spec": "LiveSpec",
+      "constants": [
+        "ChunkCount = 4",
+        "Window = 3",
+        "FailAt = 2",
+        "AllowCancel = TRUE",
+        "AllowDuplicateAck = TRUE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "WindowBound",
+        "CreditConservation",
+        "InOrderExactlyOnce",
+        "StickyErrors",
+        "CompletionSound",
+        "TerminalCleanup"
+      ],
+      "properties": [
+        "Settles"
+      ]
+    },
+    {
+      "name": "BulkBugWindow",
+      "module": "CapnpBulkTransfer",
+      "violation": "WindowBound",
+      "spec": "Spec",
+      "constants": [
+        "ChunkCount = 4",
+        "Window = 3",
+        "FailAt = 0",
+        "AllowCancel = FALSE",
+        "AllowDuplicateAck = FALSE",
+        "Bug = \"ignoreWindow\""
+      ],
+      "invariants": [
+        "WindowBound"
+      ],
+      "properties": []
+    },
+    {
+      "name": "BulkBugCredit",
+      "module": "CapnpBulkTransfer",
+      "violation": "CreditConservation",
+      "spec": "Spec",
+      "constants": [
+        "ChunkCount = 4",
+        "Window = 3",
+        "FailAt = 0",
+        "AllowCancel = FALSE",
+        "AllowDuplicateAck = TRUE",
+        "Bug = \"doubleCredit\""
+      ],
+      "invariants": [
+        "CreditConservation"
+      ],
+      "properties": []
+    },
+    {
+      "name": "BulkBugError",
+      "module": "CapnpBulkTransfer",
+      "violation": "StickyErrors",
+      "spec": "Spec",
+      "constants": [
+        "ChunkCount = 4",
+        "Window = 3",
+        "FailAt = 2",
+        "AllowCancel = FALSE",
+        "AllowDuplicateAck = FALSE",
+        "Bug = \"forgetError\""
+      ],
+      "invariants": [
+        "StickyErrors"
+      ],
+      "properties": []
+    },
+    {
+      "name": "BulkWitness",
+      "module": "CapnpBulkTransfer",
+      "violation": "NoBulkWitness",
+      "spec": "Spec",
+      "constants": [
+        "ChunkCount = 4",
+        "Window = 3",
+        "FailAt = 0",
+        "AllowCancel = FALSE",
+        "AllowDuplicateAck = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "NoBulkWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "BulkWitnessCancel",
+      "module": "CapnpBulkTransfer",
+      "violation": "NoCancelWitness",
+      "spec": "Spec",
+      "constants": [
+        "ChunkCount = 4",
+        "Window = 3",
+        "FailAt = 0",
+        "AllowCancel = TRUE",
+        "AllowDuplicateAck = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "NoCancelWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "BulkWitnessBackpressure",
+      "module": "CapnpBulkTransfer",
+      "violation": "NoBackpressureWitness",
+      "spec": "Spec",
+      "constants": [
+        "ChunkCount = 4",
+        "Window = 3",
+        "FailAt = 0",
+        "AllowCancel = FALSE",
+        "AllowDuplicateAck = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "NoBackpressureWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "BulkWitnessError",
+      "module": "CapnpBulkTransfer",
+      "violation": "NoErrorWitness",
+      "spec": "Spec",
+      "constants": [
+        "ChunkCount = 4",
+        "Window = 3",
+        "FailAt = 2",
+        "AllowCancel = FALSE",
+        "AllowDuplicateAck = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "NoErrorWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "EncryptedTransport",
+      "module": "CapnpEncryptedTransport",
+      "spec": "LiveSpec",
+      "constants": [
+        "EpochCount = 1",
+        "MessageCount = 2",
+        "Attack = \"none\"",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "AuthenticatedDelivery",
+        "CapabilityBinding",
+        "FreshSession",
+        "AtMostOnce",
+        "NonceUnique",
+        "Confidentiality"
+      ],
+      "properties": [
+        "Completes"
+      ]
+    },
+    {
+      "name": "EncryptedForge",
+      "module": "CapnpEncryptedTransport",
+      "spec": "LiveSpec",
+      "constants": [
+        "EpochCount = 1",
+        "MessageCount = 1",
+        "Attack = \"forge\"",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "AuthenticatedDelivery",
+        "CapabilityBinding",
+        "FreshSession",
+        "AtMostOnce",
+        "NonceUnique",
+        "Confidentiality"
+      ],
+      "properties": [
+        "Completes"
+      ]
+    },
+    {
+      "name": "EncryptedTamper",
+      "module": "CapnpEncryptedTransport",
+      "spec": "LiveSpec",
+      "constants": [
+        "EpochCount = 1",
+        "MessageCount = 1",
+        "Attack = \"tamper\"",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "AuthenticatedDelivery",
+        "CapabilityBinding",
+        "FreshSession",
+        "AtMostOnce",
+        "NonceUnique",
+        "Confidentiality"
+      ],
+      "properties": [
+        "Completes"
+      ]
+    },
+    {
+      "name": "EncryptedReplay",
+      "module": "CapnpEncryptedTransport",
+      "spec": "LiveSpec",
+      "constants": [
+        "EpochCount = 1",
+        "MessageCount = 1",
+        "Attack = \"replay\"",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "AuthenticatedDelivery",
+        "CapabilityBinding",
+        "FreshSession",
+        "AtMostOnce",
+        "NonceUnique",
+        "Confidentiality"
+      ],
+      "properties": [
+        "Completes"
+      ]
+    },
+    {
+      "name": "EncryptedCapability",
+      "module": "CapnpEncryptedTransport",
+      "spec": "LiveSpec",
+      "constants": [
+        "EpochCount = 1",
+        "MessageCount = 1",
+        "Attack = \"capability\"",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "AuthenticatedDelivery",
+        "CapabilityBinding",
+        "FreshSession",
+        "AtMostOnce",
+        "NonceUnique",
+        "Confidentiality"
+      ],
+      "properties": [
+        "Completes"
+      ]
+    },
+    {
+      "name": "EncryptedEpoch",
+      "module": "CapnpEncryptedTransport",
+      "spec": "LiveSpec",
+      "constants": [
+        "EpochCount = 2",
+        "MessageCount = 1",
+        "Attack = \"epoch\"",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "AuthenticatedDelivery",
+        "CapabilityBinding",
+        "FreshSession",
+        "AtMostOnce",
+        "NonceUnique",
+        "Confidentiality"
+      ],
+      "properties": [
+        "Completes"
+      ]
+    },
+    {
+      "name": "EncryptedRotation",
+      "module": "CapnpEncryptedTransport",
+      "spec": "LiveSpec",
+      "constants": [
+        "EpochCount = 2",
+        "MessageCount = 1",
+        "Attack = \"none\"",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "AuthenticatedDelivery",
+        "CapabilityBinding",
+        "FreshSession",
+        "AtMostOnce",
+        "NonceUnique",
+        "Confidentiality"
+      ],
+      "properties": [
+        "Completes"
+      ]
+    },
+    {
+      "name": "EncryptedConcurrentRotation",
+      "module": "CapnpEncryptedTransport",
+      "spec": "LiveSpec",
+      "constants": [
+        "EpochCount = 2",
+        "MessageCount = 2",
+        "Attack = \"replay\"",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "AuthenticatedDelivery",
+        "CapabilityBinding",
+        "FreshSession",
+        "AtMostOnce",
+        "NonceUnique",
+        "Confidentiality"
+      ],
+      "properties": [
+        "Completes"
+      ]
+    },
+    {
+      "name": "EncryptedBugAuthentication",
+      "module": "CapnpEncryptedTransport",
+      "violation": "AuthenticatedDelivery",
+      "spec": "Spec",
+      "constants": [
+        "EpochCount = 1",
+        "MessageCount = 1",
+        "Attack = \"forge\"",
+        "Bug = \"skipAuthentication\""
+      ],
+      "invariants": [
+        "AuthenticatedDelivery"
+      ],
+      "properties": []
+    },
+    {
+      "name": "EncryptedBugTamper",
+      "module": "CapnpEncryptedTransport",
+      "violation": "AuthenticatedDelivery",
+      "spec": "Spec",
+      "constants": [
+        "EpochCount = 1",
+        "MessageCount = 1",
+        "Attack = \"tamper\"",
+        "Bug = \"skipAuthentication\""
+      ],
+      "invariants": [
+        "AuthenticatedDelivery"
+      ],
+      "properties": []
+    },
+    {
+      "name": "EncryptedBugCapability",
+      "module": "CapnpEncryptedTransport",
+      "violation": "CapabilityBinding",
+      "spec": "Spec",
+      "constants": [
+        "EpochCount = 1",
+        "MessageCount = 1",
+        "Attack = \"capability\"",
+        "Bug = \"unboundCapability\""
+      ],
+      "invariants": [
+        "CapabilityBinding"
+      ],
+      "properties": []
+    },
+    {
+      "name": "EncryptedBugReplay",
+      "module": "CapnpEncryptedTransport",
+      "violation": "AtMostOnce",
+      "spec": "Spec",
+      "constants": [
+        "EpochCount = 1",
+        "MessageCount = 1",
+        "Attack = \"replay\"",
+        "Bug = \"replay\""
+      ],
+      "invariants": [
+        "AtMostOnce"
+      ],
+      "properties": []
+    },
+    {
+      "name": "EncryptedBugEpoch",
+      "module": "CapnpEncryptedTransport",
+      "violation": "FreshSession",
+      "spec": "Spec",
+      "constants": [
+        "EpochCount = 2",
+        "MessageCount = 1",
+        "Attack = \"epoch\"",
+        "Bug = \"staleSession\""
+      ],
+      "invariants": [
+        "FreshSession"
+      ],
+      "properties": []
+    },
+    {
+      "name": "EncryptedBugNonce",
+      "module": "CapnpEncryptedTransport",
+      "violation": "NonceUnique",
+      "spec": "Spec",
+      "constants": [
+        "EpochCount = 1",
+        "MessageCount = 2",
+        "Attack = \"none\"",
+        "Bug = \"reuseNonce\""
+      ],
+      "invariants": [
+        "NonceUnique"
+      ],
+      "properties": []
+    },
+    {
+      "name": "EncryptedBugCleartext",
+      "module": "CapnpEncryptedTransport",
+      "violation": "Confidentiality",
+      "spec": "Spec",
+      "constants": [
+        "EpochCount = 1",
+        "MessageCount = 1",
+        "Attack = \"none\"",
+        "Bug = \"cleartext\""
+      ],
+      "invariants": [
+        "Confidentiality"
+      ],
+      "properties": []
+    },
+    {
+      "name": "EncryptedWitnessZeroRtt",
+      "module": "CapnpEncryptedTransport",
+      "violation": "NoZeroRttWitness",
+      "spec": "Spec",
+      "constants": [
+        "EpochCount = 1",
+        "MessageCount = 1",
+        "Attack = \"none\"",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "NoZeroRttWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "EncryptedWitnessReplay",
+      "module": "CapnpEncryptedTransport",
+      "violation": "NoReplayRejectionWitness",
+      "spec": "Spec",
+      "constants": [
+        "EpochCount = 1",
+        "MessageCount = 1",
+        "Attack = \"replay\"",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "NoReplayRejectionWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "EncryptedWitnessRotation",
+      "module": "CapnpEncryptedTransport",
+      "violation": "NoRotationWitness",
+      "spec": "Spec",
+      "constants": [
+        "EpochCount = 2",
+        "MessageCount = 1",
+        "Attack = \"none\"",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "NoRotationWitness"
+      ],
+      "properties": []
+    }
+  ],
+  "realtime": [
+    {
+      "name": "Realtime",
+      "module": "CapnpRealtime",
+      "spec": "LiveSpec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 1",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = FALSE",
+        "AllowDuplicate = FALSE",
+        "AllowCancel = FALSE",
+        "AllowClose = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "PacketIntegrity",
+        "NoLateApplication",
+        "AtMostOnce",
+        "NoRollback",
+        "QueueBound",
+        "OnePendingPerKey",
+        "PendingFreshness",
+        "ReceiptSoundness",
+        "ReceiptsConsistent",
+        "NeverApplyCanceled",
+        "CloseBarrier",
+        "AppliedOutcome"
+      ],
+      "properties": [
+        "AllOffersDecide",
+        "CloseCompletes",
+        "EventuallyDrained"
+      ]
+    },
+    {
+      "name": "RealtimeClockSkew",
+      "module": "CapnpRealtime",
+      "spec": "LiveSpec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 1",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 1",
+        "AllowLoss = FALSE",
+        "AllowDuplicate = FALSE",
+        "AllowCancel = FALSE",
+        "AllowClose = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "PacketIntegrity",
+        "NoLateApplication",
+        "AtMostOnce",
+        "NoRollback",
+        "QueueBound",
+        "OnePendingPerKey",
+        "PendingFreshness",
+        "ReceiptSoundness",
+        "ReceiptsConsistent",
+        "NeverApplyCanceled",
+        "CloseBarrier",
+        "AppliedOutcome"
+      ],
+      "properties": [
+        "AllOffersDecide",
+        "CloseCompletes",
+        "EventuallyDrained"
+      ]
+    },
+    {
+      "name": "RealtimeMultipleKeys",
+      "module": "CapnpRealtime",
+      "spec": "LiveSpec",
+      "constants": [
+        "MessageCount = 3",
+        "KeyCount = 2",
+        "Capacity = 2",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = FALSE",
+        "AllowDuplicate = FALSE",
+        "AllowCancel = FALSE",
+        "AllowClose = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "PacketIntegrity",
+        "NoLateApplication",
+        "AtMostOnce",
+        "NoRollback",
+        "QueueBound",
+        "OnePendingPerKey",
+        "PendingFreshness",
+        "ReceiptSoundness",
+        "ReceiptsConsistent",
+        "NeverApplyCanceled",
+        "CloseBarrier",
+        "AppliedOutcome"
+      ],
+      "properties": [
+        "AllOffersDecide",
+        "CloseCompletes",
+        "EventuallyDrained"
+      ]
+    },
+    {
+      "name": "RealtimeCapacity",
+      "module": "CapnpRealtime",
+      "spec": "LiveSpec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 2",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = FALSE",
+        "AllowDuplicate = FALSE",
+        "AllowCancel = FALSE",
+        "AllowClose = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "PacketIntegrity",
+        "NoLateApplication",
+        "AtMostOnce",
+        "NoRollback",
+        "QueueBound",
+        "OnePendingPerKey",
+        "PendingFreshness",
+        "ReceiptSoundness",
+        "ReceiptsConsistent",
+        "NeverApplyCanceled",
+        "CloseBarrier",
+        "AppliedOutcome"
+      ],
+      "properties": [
+        "AllOffersDecide",
+        "CloseCompletes",
+        "EventuallyDrained"
+      ]
+    },
+    {
+      "name": "RealtimeLoss",
+      "module": "CapnpRealtime",
+      "spec": "LiveSpec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 1",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = TRUE",
+        "AllowDuplicate = FALSE",
+        "AllowCancel = FALSE",
+        "AllowClose = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "PacketIntegrity",
+        "NoLateApplication",
+        "AtMostOnce",
+        "NoRollback",
+        "QueueBound",
+        "OnePendingPerKey",
+        "PendingFreshness",
+        "ReceiptSoundness",
+        "ReceiptsConsistent",
+        "NeverApplyCanceled",
+        "CloseBarrier",
+        "AppliedOutcome"
+      ],
+      "properties": [
+        "AllOffersDecide",
+        "CloseCompletes",
+        "EventuallyDrained"
+      ]
+    },
+    {
+      "name": "RealtimeDuplicates",
+      "module": "CapnpRealtime",
+      "spec": "LiveSpec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 1",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = FALSE",
+        "AllowDuplicate = TRUE",
+        "AllowCancel = FALSE",
+        "AllowClose = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "PacketIntegrity",
+        "NoLateApplication",
+        "AtMostOnce",
+        "NoRollback",
+        "QueueBound",
+        "OnePendingPerKey",
+        "PendingFreshness",
+        "ReceiptSoundness",
+        "ReceiptsConsistent",
+        "NeverApplyCanceled",
+        "CloseBarrier",
+        "AppliedOutcome"
+      ],
+      "properties": [
+        "AllOffersDecide",
+        "CloseCompletes",
+        "EventuallyDrained"
+      ]
+    },
+    {
+      "name": "RealtimeCancellation",
+      "module": "CapnpRealtime",
+      "spec": "LiveSpec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 1",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = FALSE",
+        "AllowDuplicate = FALSE",
+        "AllowCancel = TRUE",
+        "AllowClose = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "PacketIntegrity",
+        "NoLateApplication",
+        "AtMostOnce",
+        "NoRollback",
+        "QueueBound",
+        "OnePendingPerKey",
+        "PendingFreshness",
+        "ReceiptSoundness",
+        "ReceiptsConsistent",
+        "NeverApplyCanceled",
+        "CloseBarrier",
+        "AppliedOutcome"
+      ],
+      "properties": [
+        "AllOffersDecide",
+        "CloseCompletes",
+        "EventuallyDrained"
+      ]
+    },
+    {
+      "name": "RealtimeClose",
+      "module": "CapnpRealtime",
+      "spec": "LiveSpec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 1",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = FALSE",
+        "AllowDuplicate = FALSE",
+        "AllowCancel = FALSE",
+        "AllowClose = TRUE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "PacketIntegrity",
+        "NoLateApplication",
+        "AtMostOnce",
+        "NoRollback",
+        "QueueBound",
+        "OnePendingPerKey",
+        "PendingFreshness",
+        "ReceiptSoundness",
+        "ReceiptsConsistent",
+        "NeverApplyCanceled",
+        "CloseBarrier",
+        "AppliedOutcome"
+      ],
+      "properties": [
+        "AllOffersDecide",
+        "CloseCompletes",
+        "EventuallyDrained"
+      ]
+    },
+    {
+      "name": "RealtimeDelayedSubmission",
+      "module": "CapnpRealtime",
+      "spec": "LiveSpec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 1",
+        "Capacity = 1",
+        "SubmitBefore = 2",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = FALSE",
+        "AllowDuplicate = FALSE",
+        "AllowCancel = FALSE",
+        "AllowClose = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "PacketIntegrity",
+        "NoLateApplication",
+        "AtMostOnce",
+        "NoRollback",
+        "QueueBound",
+        "OnePendingPerKey",
+        "PendingFreshness",
+        "ReceiptSoundness",
+        "ReceiptsConsistent",
+        "NeverApplyCanceled",
+        "CloseBarrier",
+        "AppliedOutcome"
+      ],
+      "properties": [
+        "AllOffersDecide",
+        "CloseCompletes",
+        "EventuallyDrained"
+      ]
+    },
+    {
+      "name": "RealtimeCombined",
+      "module": "CapnpRealtime",
+      "spec": "LiveSpec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 1",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = TRUE",
+        "AllowDuplicate = TRUE",
+        "AllowCancel = TRUE",
+        "AllowClose = TRUE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "TypeOK",
+        "PacketIntegrity",
+        "NoLateApplication",
+        "AtMostOnce",
+        "NoRollback",
+        "QueueBound",
+        "OnePendingPerKey",
+        "PendingFreshness",
+        "ReceiptSoundness",
+        "ReceiptsConsistent",
+        "NeverApplyCanceled",
+        "CloseBarrier",
+        "AppliedOutcome"
+      ],
+      "properties": [
+        "AllOffersDecide",
+        "CloseCompletes",
+        "EventuallyDrained"
+      ]
+    },
+    {
+      "name": "RealtimeBugDeadline",
+      "module": "CapnpRealtime",
+      "violation": "NoLateApplication",
+      "spec": "Spec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 1",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = FALSE",
+        "AllowDuplicate = FALSE",
+        "AllowCancel = FALSE",
+        "AllowClose = FALSE",
+        "Bug = \"admissionOnly\""
+      ],
+      "invariants": [
+        "NoLateApplication"
+      ],
+      "properties": []
+    },
+    {
+      "name": "RealtimeBugClock",
+      "module": "CapnpRealtime",
+      "violation": "NoLateApplication",
+      "spec": "Spec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 1",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 1",
+        "AllowLoss = FALSE",
+        "AllowDuplicate = FALSE",
+        "AllowCancel = FALSE",
+        "AllowClose = FALSE",
+        "Bug = \"unsafeClock\""
+      ],
+      "invariants": [
+        "NoLateApplication"
+      ],
+      "properties": []
+    },
+    {
+      "name": "RealtimeBugStale",
+      "module": "CapnpRealtime",
+      "violation": "NoRollback",
+      "spec": "Spec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 1",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = FALSE",
+        "AllowDuplicate = FALSE",
+        "AllowCancel = FALSE",
+        "AllowClose = FALSE",
+        "Bug = \"staleApply\""
+      ],
+      "invariants": [
+        "NoRollback"
+      ],
+      "properties": []
+    },
+    {
+      "name": "RealtimeBugDuplicate",
+      "module": "CapnpRealtime",
+      "violation": "AtMostOnce",
+      "spec": "Spec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 1",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = FALSE",
+        "AllowDuplicate = TRUE",
+        "AllowCancel = FALSE",
+        "AllowClose = FALSE",
+        "Bug = \"duplicateApply\""
+      ],
+      "invariants": [
+        "AtMostOnce"
+      ],
+      "properties": []
+    },
+    {
+      "name": "RealtimeBugCapacity",
+      "module": "CapnpRealtime",
+      "violation": "QueueBound",
+      "spec": "Spec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 2",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = FALSE",
+        "AllowDuplicate = FALSE",
+        "AllowCancel = FALSE",
+        "AllowClose = FALSE",
+        "Bug = \"overflow\""
+      ],
+      "invariants": [
+        "QueueBound"
+      ],
+      "properties": []
+    },
+    {
+      "name": "RealtimeBugCancel",
+      "module": "CapnpRealtime",
+      "violation": "NeverApplyCanceled",
+      "spec": "Spec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 1",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = FALSE",
+        "AllowDuplicate = FALSE",
+        "AllowCancel = TRUE",
+        "AllowClose = FALSE",
+        "Bug = \"forgetCancel\""
+      ],
+      "invariants": [
+        "NeverApplyCanceled"
+      ],
+      "properties": []
+    },
+    {
+      "name": "RealtimeBugClose",
+      "module": "CapnpRealtime",
+      "violation": "CloseBarrier",
+      "spec": "Spec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 1",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = FALSE",
+        "AllowDuplicate = FALSE",
+        "AllowCancel = FALSE",
+        "AllowClose = TRUE",
+        "Bug = \"closeLeak\""
+      ],
+      "invariants": [
+        "CloseBarrier"
+      ],
+      "properties": []
+    },
+    {
+      "name": "RealtimeBugTimeout",
+      "module": "CapnpRealtime",
+      "violation": "ReceiptSoundness",
+      "spec": "Spec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 1",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = FALSE",
+        "AllowDuplicate = FALSE",
+        "AllowCancel = FALSE",
+        "AllowClose = FALSE",
+        "Bug = \"timeoutClaimsDrop\""
+      ],
+      "invariants": [
+        "ReceiptSoundness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "RealtimeWitnessApply",
+      "module": "CapnpRealtime",
+      "violation": "NoAppliedWitness",
+      "spec": "Spec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 1",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = FALSE",
+        "AllowDuplicate = FALSE",
+        "AllowCancel = FALSE",
+        "AllowClose = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "NoAppliedWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "RealtimeWitnessExpire",
+      "module": "CapnpRealtime",
+      "violation": "NoExpiredWitness",
+      "spec": "Spec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 1",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = FALSE",
+        "AllowDuplicate = FALSE",
+        "AllowCancel = FALSE",
+        "AllowClose = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "NoExpiredWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "RealtimeWitnessSupersede",
+      "module": "CapnpRealtime",
+      "violation": "NoSupersededWitness",
+      "spec": "Spec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 1",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = FALSE",
+        "AllowDuplicate = FALSE",
+        "AllowCancel = FALSE",
+        "AllowClose = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "NoSupersededWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "RealtimeWitnessBusy",
+      "module": "CapnpRealtime",
+      "violation": "NoBusyWitness",
+      "spec": "Spec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 2",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = FALSE",
+        "AllowDuplicate = FALSE",
+        "AllowCancel = FALSE",
+        "AllowClose = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "NoBusyWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "RealtimeWitnessCancel",
+      "module": "CapnpRealtime",
+      "violation": "NoCanceledWitness",
+      "spec": "Spec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 1",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = FALSE",
+        "AllowDuplicate = FALSE",
+        "AllowCancel = TRUE",
+        "AllowClose = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "NoCanceledWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "RealtimeWitnessUnknown",
+      "module": "CapnpRealtime",
+      "violation": "NoUnknownWitness",
+      "spec": "Spec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 1",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = FALSE",
+        "AllowDuplicate = FALSE",
+        "AllowCancel = FALSE",
+        "AllowClose = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "NoUnknownWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "RealtimeWitnessLateReceipt",
+      "module": "CapnpRealtime",
+      "violation": "NoLateReceiptWitness",
+      "spec": "Spec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 1",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = FALSE",
+        "AllowDuplicate = FALSE",
+        "AllowCancel = FALSE",
+        "AllowClose = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "NoLateReceiptWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "RealtimeWitnessClose",
+      "module": "CapnpRealtime",
+      "violation": "NoClosedWitness",
+      "spec": "Spec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 1",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = FALSE",
+        "AllowDuplicate = FALSE",
+        "AllowCancel = FALSE",
+        "AllowClose = TRUE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "NoClosedWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "RealtimeWitnessCancelAfterApply",
+      "module": "CapnpRealtime",
+      "violation": "NoCancelAfterApplyWitness",
+      "spec": "Spec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 1",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = FALSE",
+        "AllowDuplicate = FALSE",
+        "AllowCancel = TRUE",
+        "AllowClose = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "NoCancelAfterApplyWitness"
+      ],
+      "properties": []
+    },
+    {
+      "name": "RealtimeWitnessLoss",
+      "module": "CapnpRealtime",
+      "violation": "NoLostWitness",
+      "spec": "Spec",
+      "constants": [
+        "MessageCount = 2",
+        "KeyCount = 1",
+        "Capacity = 1",
+        "SubmitBefore = 1",
+        "Lifetime = 2",
+        "ClockSkew = 0",
+        "AllowLoss = TRUE",
+        "AllowDuplicate = FALSE",
+        "AllowCancel = FALSE",
+        "AllowClose = FALSE",
+        "Bug = \"none\""
+      ],
+      "invariants": [
+        "NoLostWitness"
+      ],
+      "properties": []
+    }
+  ]
+}

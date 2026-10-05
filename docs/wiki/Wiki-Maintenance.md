@@ -1,7 +1,7 @@
 # Wiki maintenance
 
 Maintain the authoritative pages in `docs/wiki/` beside the code they describe.
-Review them in ordinary pull requests. `scripts/wiki.py` creates a flat GitHub
+Review them in ordinary pull requests. `dev/src/wiki.rs` creates a flat GitHub
 Wiki export with `Home.md`, `_Sidebar.md` and `_Footer.md`; generated exports
 belong under ignored `target/` and are not a second editable copy.
 
@@ -14,9 +14,9 @@ Examples that depend on an application's schema/context are fragments; linked
 Rust tests/examples provide executable forms.
 
 ```sh
-python3 scripts/wiki.py check
-python3 -m unittest discover -s scripts/tests -p 'test_wiki.py'
-python3 scripts/wiki.py build --output target/wiki
+cargo run --locked -p capntproto-dev -- wiki check
+cargo nextest run --locked -p capntproto-dev --test wiki
+cargo run --locked -p capntproto-dev -- wiki build --output target/wiki
 ```
 
 The checker validates local destinations, Markdown heading anchors, navigation
@@ -48,7 +48,7 @@ ready for export; this document does not claim live publication.
 3. Export, clone the wiki and review the copied pages:
 
 ```sh
-python3 scripts/wiki.py build --output target/wiki \
+cargo run --locked -p capntproto-dev -- wiki build --output target/wiki \
   --repository DericHuynh/capntproto --source-ref main
 git clone https://github.com/DericHuynh/capntproto.wiki.git ../capntproto.wiki
 cp target/wiki/*.md ../capntproto.wiki/

@@ -40,7 +40,7 @@ jobs:
         id: checks
         env:
           CAPNTPROTO_MIRI_EXTENDED: '1'
-        run: python3 scripts/nextest_ci.py cargo -- --locked --test memory_safety
+        run: cargo run --locked -p capntproto-dev -- nextest cargo -- --locked --test memory_safety
       - name: Summarize memory checks
         if: always()
         env:
@@ -87,8 +87,8 @@ jobs:
         run: |
           mkdir -p target/extended/careful
           rustc +nightly-2026-08-29 -vV > target/extended/careful/compiler.txt
-          python3 scripts/nextest_ci.py cargo +nightly-2026-08-29 careful -- --locked -p capntproto --lib storage::fault_tests 2>&1 | tee target/extended/careful/storage.log
-          python3 scripts/nextest_ci.py cargo +nightly-2026-08-29 careful -- --locked -p capntproto --test fd_capabilities --test serialization_reads --test allocations -- --skip replay_tlc_fd_traces 2>&1 | tee target/extended/careful/native.log
+          cargo run --locked -p capntproto-dev -- nextest cargo +nightly-2026-08-29 careful -- --locked -p capntproto --lib storage::fault_tests 2>&1 | tee target/extended/careful/storage.log
+          cargo run --locked -p capntproto-dev -- nextest cargo +nightly-2026-08-29 careful -- --locked -p capntproto --test fd_capabilities --test serialization_reads --test allocations -- --skip replay_tlc_fd_traces 2>&1 | tee target/extended/careful/native.log
       - name: Summarize native checks
         if: always()
         env:
@@ -157,7 +157,7 @@ jobs:
       - name: Require guard mutations to be detected
         env:
           TLA2TOOLS_JAR: ${{ runner.temp }}/tla2tools.jar
-        run: python3 scripts/nextest_ci.py cargo -- --locked --test guard_quality
+        run: cargo run --locked -p capntproto-dev -- nextest cargo -- --locked --test guard_quality
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:

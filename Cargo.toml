@@ -12,7 +12,7 @@ build = "build.rs"
 [workspace]
 resolver = "2"
 # Maintained Rust implementations are first-party workspace members.
-members = ["test-support", "quality", "crates/*"]
+members = ["test-support", "quality", "dev", "crates/*"]
 # These packages retain independent toolchains, lockfiles, or benchmark builds.
 exclude = [
     "vendor/capnproto",

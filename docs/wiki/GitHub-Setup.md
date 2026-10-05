@@ -8,7 +8,7 @@ settings are changed by adding these files.
 ## Source size and dependencies
 
 Commit source and Cargo.lock files, never build output. Nested `target/`
-directories are ignored, and `python3 scripts/check_repository.py` checks the
+directories are ignored, and `cargo run --locked -p capntproto-dev -- check-repository` checks the
 Git index for tracked ignored files and blobs over 50 MiB. GitHub
 [blocks files larger than 100 MiB](https://docs.github.com/en/repositories/working-with-files/managing-large-files/about-large-files-on-github).
 Adding `.gitignore` or deleting a file in a later commit does not remove blobs

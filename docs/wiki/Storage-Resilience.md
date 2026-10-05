@@ -289,8 +289,8 @@ host, without introducing an actor system into this workspace.
 ```sh
 export PATH="$PWD/target/auditable-tools/wrapper:$PWD/target/auditable-tools/bin:$PATH"
 cargo build --locked -p capntproto --release --example storage_resilience
-python3 scripts/storage_resilience.py --base target --output target/storage-resilience-results --trials 3
-python3 scripts/storage_resilience.py --summarize target/storage-resilience-results
+cargo run --locked -p capntproto-dev -- probe resilience --base target --output target/storage-resilience-results --trials 3
+cargo run --locked -p capntproto-dev -- probe resilience --summarize target/storage-resilience-results
 cargo nextest run --locked -p capntproto --test tooling storage_crashes_in_isolated_process -- --exact
 ```
 
@@ -304,7 +304,7 @@ request samples:
 - [Environment and source hashes](../../research/reports/storage-resilience/2026-10-01/environment.json)
 - [All 27 runs](../../research/reports/storage-resilience/2026-10-01/runs.jsonl)
 - [Medians and ranges](../../research/reports/storage-resilience/2026-10-01/summary.json)
-- [Runner and deterministic summary](../../scripts/storage_resilience.py)
+- [Runner and deterministic summary](../../dev/src/probes.rs)
 
 All runs passed their credit/accounting/content/reopen assertions. Validation
 also passed the 13 component unit tests, the 11-test isolated recovery gate,

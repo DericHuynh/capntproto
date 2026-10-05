@@ -152,8 +152,16 @@ fn auditable_metadata_is_required_for_binary_artifacts() {
     assert!(std::path::Path::new(test_binary["executable"].as_str().unwrap()).is_file());
     let inventory = project.path().join("auditable.json");
     run(
-        command("python3")
-            .args(["scripts/check_auditable.py", "--output"])
+        command("cargo")
+            .args([
+                "run",
+                "--locked",
+                "-p",
+                "capntproto-dev",
+                "--",
+                "check-auditable",
+                "--output",
+            ])
             .arg(&inventory)
             .arg(&binary)
             .arg(bench["executable"].as_str().unwrap()),
@@ -179,8 +187,16 @@ fn auditable_metadata_is_required_for_binary_artifacts() {
     )
     .unwrap();
     run(
-        command("python3")
-            .args(["scripts/check_auditable.py", "--output"])
+        command("cargo")
+            .args([
+                "run",
+                "--locked",
+                "-p",
+                "capntproto-dev",
+                "--",
+                "check-auditable",
+                "--output",
+            ])
             .arg(&inventory)
             .arg(&binary),
         &log("auditable-negative"),

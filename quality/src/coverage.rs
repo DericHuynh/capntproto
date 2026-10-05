@@ -91,6 +91,7 @@ fn owned_source(path: &Path) -> bool {
             "crates/capntproto-compat",
             "test-support",
             "quality",
+            "dev",
             "tests",
             "examples",
             "fuzz",
@@ -625,6 +626,8 @@ mod tests {
             "crates/capntproto-futures/src/lib.rs",
             "crates/capntproto-codegen/src/lib.rs",
             "quality/src/coverage.rs",
+            "dev/src/reports/data.rs",
+            "dev/tests/reporting.rs",
             "tests/storage.rs",
             "verification/miri/tests/ownership.rs",
         ] {

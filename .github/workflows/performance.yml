@@ -35,12 +35,6 @@ jobs:
         env:
           DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
         run: test -n "$DIGITALOCEAN_ACCESS_TOKEN"
-      - name: Check dedicated capacity before compiling
-        env:
-          DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-          DO_REGION: ${{ inputs.region }}
-          DO_SIZE: ${{ inputs.size }}
-        run: python3 scripts/digitalocean_bench.py check --output target/quality/benchmark --state "$RUNNER_TEMP/capntproto-do"
       # actionlint 1.7.12 requires the checked-out local action syntax.
       - uses: ./.github/actions/auditable-setup # zizmor: ignore[self-repository]
         with:
@@ -49,6 +43,12 @@ jobs:
             . -> target
             benchmarks/rpc -> target
             benchmarks/instructions -> target
+      - name: Check dedicated capacity before compiling benchmarks
+        env:
+          DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          DO_REGION: ${{ inputs.region }}
+          DO_SIZE: ${{ inputs.size }}
+        run: cargo run --locked -p capntproto-dev -- digitalocean-bench check --output target/quality/benchmark --state "$RUNNER_TEMP/capntproto-do"
       - name: Build prerequisites
         run: |
           sudo apt-get update
@@ -64,12 +64,12 @@ jobs:
           DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
           DO_REGION: ${{ inputs.region }}
           DO_SIZE: ${{ inputs.size }}
-        run: python3 scripts/digitalocean_bench.py run --bundle target/benchmark-build/bundle --output target/quality/benchmark --state "$RUNNER_TEMP/capntproto-do"
+        run: cargo run --locked -p capntproto-dev -- digitalocean-bench run --bundle target/benchmark-build/bundle --output target/quality/benchmark --state "$RUNNER_TEMP/capntproto-do"
       - name: Always verify droplet cleanup
         if: always()
         env:
           DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-        run: python3 scripts/digitalocean_bench.py cleanup --state "$RUNNER_TEMP/capntproto-do"
+        run: cargo run --locked -p capntproto-dev -- digitalocean-bench cleanup --state "$RUNNER_TEMP/capntproto-do"
       - name: Validate downloaded samples
         if: ${{ !cancelled() && steps.measure.outcome == 'success' }}
         run: |
@@ -79,7 +79,7 @@ jobs:
         run: cargo run --locked -p capntproto-quality -- report target/quality benchmark
       - name: Export compact README data (including failed test runs)
         if: success() || failure()
-        run: python3 scripts/update_readme.py collect --input target/quality --kind benchmark --output target/readme-data/publication.json
+        run: cargo run --locked -p capntproto-dev -- reports collect --input target/quality --kind benchmark --output target/readme-data/publication.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:

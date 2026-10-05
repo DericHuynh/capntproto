@@ -8,6 +8,7 @@ const DIRECTORIES: &[&str] = &[
     ".config",
     ".github",
     "quality",
+    "dev",
     "crates",
     "src",
     "schemas",

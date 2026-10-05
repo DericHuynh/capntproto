@@ -38,6 +38,20 @@ qualification remain work in progress; see the [release criteria](docs/wiki/Rele
   share unchanged data, mapped typed reads and atomic publication.
   [Component storage](docs/wiki/Component-Storage.md).
 
+## Development commands
+
+Repository and CI tooling lives in `capntproto-dev`:
+
+```sh
+cargo run --locked -p capntproto-dev -- --help
+cargo run --locked -p capntproto-dev -- wiki check
+cargo run --locked -p capntproto-dev -- reports render --output target/report-preview
+cargo nextest run --locked -p capntproto-dev
+```
+
+The optional `quic-interop` feature adds an independent s2n-quic test peer.
+Production QUIC remains quiche-only. See the [tooling guide](docs/wiki/Repository-Layout.md#development-subcommands).
+
 ## Build and test
 
 For TCP with TLS/mTLS, start with the smaller feature set (Rust and a platform C toolchain):

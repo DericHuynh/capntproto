@@ -25,11 +25,12 @@ the root so GitHub discovers them.
 │   └── miri/                    Isolated Miri workspace
 ├── benchmarks/                  Independent RPC, instruction and storage benchmarks
 ├── fuzz/                        Isolated fuzz package and source seed generation
-├── scripts/                     Maintenance, config generation, cloud lifecycle
+├── dev/                         Rust development subcommands and regression tests
+├── scripts/                     Auditable Cargo shell wrappers
 ├── docs/
 │   ├── wiki/                    Current guides and GitHub Wiki navigation
 │   ├── archive/                 Superseded ledgers and design proposals
-│   └── reports/                 Generated public charts and measured history
+│   └── reports.template.md      Dashboard template; outputs live on reports branch
 ├── vendor/                      Reference dependency and import provenance
 │   ├── capnproto/               Pinned C++ submodule for verification and benchmarks
 │   └── provenance/              Upstream revisions, schema snapshots, import hashes
@@ -50,6 +51,7 @@ the root so GitHub discovers them.
 | `capntproto-futures` | `crates/capntproto-futures/` | Async framing and ordered writes |
 | `capntproto-codegen` | `crates/capntproto-codegen/` | Rust schema binding generator |
 | `capntproto-test-support` | `test-support/` | Verification tools and fixtures; a dev dependency of the runtime |
+| `capntproto-dev` | `dev/` | Repository checks, reports, cloud lifecycle, fuzz runners and research probes |
 | `capntproto-quality` | `quality/` | Developer/CI tooling, not a runtime dependency |
 | `capntproto-compiler` | `crates/capntproto-compiler/` | First-party textual schema frontend and CLI; no C++ runtime dependency |
 | `capntproto-compat` | `crates/capntproto-compat/` | Opt-in JSON/text codecs and standard ByteStream, HTTP, WebSocket and JSON-RPC adapters |
@@ -79,7 +81,8 @@ Project-owned packages and Rust imports now use `capntproto`:
 | `capnp-compiler` / `capnp-compile` | `capntproto-compiler` / `capntproto-compile` | `capntproto_compiler` |
 | `capnp-compat` | `capntproto-compat` | `capntproto_compat` |
 | `reproto-test-support` | `capntproto-test-support` | `capntproto_test_support` |
-| `reproto-quality` | `capntproto-quality` | `capntproto_quality` |
+| `reproto-quality` | `capntproto-dev` | `dev/` | Repository checks, reports, cloud lifecycle, fuzz runners and research probes |
+| `capntproto-quality` | `capntproto_quality` |
 | `reproto-model` | `capntproto-model` | — |
 
 Update Cargo dependency keys, imports, command lines and `REPROTO_*` development
@@ -130,9 +133,9 @@ TLC's module search path to this directory so imports resolve from the repo root
 live in `scripts/` and can be run from any working directory:
 
 ```sh
-python3 scripts/generate_network_configs.py
-python3 scripts/generate_feature_configs.py
-python3 scripts/generate_realtime_configs.py
+cargo run --locked -p capntproto-dev -- models generate network
+cargo run --locked -p capntproto-dev -- models generate features
+cargo run --locked -p capntproto-dev -- models generate realtime
 ```
 
 `verification/audit/` holds the independent conformance checks. The Rust test
@@ -140,6 +143,11 @@ runner stages that model with its dependencies. `test-support/verification/`
 contains the checked-in model catalog, graph-bound replay corpora, and compiler
 fixtures. Those are required test inputs, not generated output to delete.
 `research/baseline/` preserves historical snapshots; active checks use `verification/`.
+Obsolete Python runners from those snapshots were retired with the Rust tooling
+migration. Their original source remains in
+[Git history](https://github.com/DericHuynh/capntproto/tree/953b180a9/research/baseline);
+recorded historical hashes still describe the original runs. Current model
+generation uses `cargo run --locked -p capntproto-dev -- models generate all`.
 
 ## Vendored and external code
 
@@ -197,9 +205,42 @@ research inputs in `research/`.
 The root README is hand-maintained. Generated public history, failure reports and
 SVGs live on the separate `reports` branch, keeping automatic report commits out
 of source history. Raw logs and samples stay in CI artifacts or `target/`.
-`docs/reports.template.md` defines the dashboard; `quality/reporting/` and
-`scripts/update_readme.py` validate and publish it. See [CI reports](README-Reports.md).
+`docs/reports.template.md` defines the dashboard; `dev/src/reports/` validates and
+publishes it. `quality/reporting/history-seed.json` retains the initial measured
+history. See [CI reports](README-Reports.md).
 
 The [Wiki maintenance guide](Wiki-Maintenance.md) owns page navigation, link
 validation and export. Root/community/package READMEs remain entry points; the
 wiki is the current guide set rather than another copy of the old docs tree.
+
+## Development subcommands
+
+Run tools with `cargo run --locked -p capntproto-dev -- COMMAND`. The dev crate
+replaces the repository's Python runners and has no dependency on the production
+runtime. Its default build needs the pinned Rust toolchain; native transport and
+schema tools are needed only by the commands that exercise those systems.
+
+| Command | Purpose |
+| --- | --- |
+| `check-repository` | Check tracked artifacts, conflicts and Git blob size |
+| `check-auditable --output FILE BINARIES…` | Verify embedded dependency inventories |
+| `check-unsafe` | Enforce documented unsafe and the imported-source baseline |
+| `check-workflows` | Validate trigger ownership and concurrency boundaries |
+| `nextest cargo -- --locked -p PACKAGE` | Run nextest with a separate JUnit report |
+| `wiki check` / `wiki build` | Validate documents and export an owned wiki directory |
+| `models generate all` | Regenerate bounded TLC configurations from the checked-in catalog |
+| `reports collect` / `render` / `publish` | Validate evidence, generate SVGs, publish trusted reports |
+| `digitalocean-bench check` / `run` / `cleanup` / `janitor` | Manage bounded dedicated benchmark hosts |
+| `afl-fuzz` / `package-fuzz-report` | Run bounded AFL++ campaigns and archive their findings |
+| `probe storage` / `resilience` / `concurrency` / `rpc` | Run prebuilt research experiments serially |
+| `probe summarize KIND DIRECTORY` | Recompute medians and ranges without pooling percentiles |
+| `probe compare-storage` | Build and run the frozen EAE comparison |
+
+Append `--help` to any command for its required paths and options. The independent
+QUIC check is `cargo run --locked -p capntproto-dev --features quic-interop -- check-quic-interop`;
+first build the `quic-interop` example as documented in [TCP, TLS and QUIC](TCP-TLS-and-QUIC.md).
+The existing `capntproto-quality` commands still drive source-bound verification lanes.
+
+Research probes record the runner, source and lockfile hashes and reject source
+changes during measurement. New runs use seeded Rust `StdRng` ordering and retain
+every command; frozen historical results retain their original runner hashes.

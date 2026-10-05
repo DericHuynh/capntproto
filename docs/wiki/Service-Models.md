@@ -100,7 +100,7 @@ CAPNTPROTO_TLC_CASES=BulkTransfer,BulkCancellation,BulkError,BulkDuplicateAck,En
 
 Omit `CAPNTPROTO_TLC_CASES` to check every configuration. Module and expected
 violation annotations live in `verification/configs/*.cfg`; see [Testing](Testing.md).
-The configuration generator is `scripts/generate_feature_configs.py`; it does not
+The configuration generator is `dev/src/models.rs`; it does not
 run tests.
 
 Every positive configuration checks its listed safety invariants and its progress property under explicit weak fairness. Mutation and witness configurations instead require the specifically named invariant counterexample; parser errors, timeouts, and unrelated failures do not pass. There are no state constraints or depth cutoffs. TLC exhausts the finite configured state graphs for positive results. This is not a theorem for arbitrary numbers of schemas, chunks, sessions, or attacker packets.

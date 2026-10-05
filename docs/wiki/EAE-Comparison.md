@@ -155,7 +155,7 @@ To reproduce after preparing the pinned toolchain:
 
 ```sh
 cargo nextest run --test tooling eae_feasibility_probe -- --exact
-python3 scripts/benchmark_storage.py
+cargo run --locked -p capntproto-dev -- probe compare-storage
 ```
 
 Run timing alone, on the filesystem you intend to evaluate. The scripts verify

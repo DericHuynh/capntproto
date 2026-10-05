@@ -170,15 +170,18 @@ untrusted issuers, wrong hostnames, expired certificates, wrong key usage,
 missing client certificates and ALPN mismatch. Retry tokens are checked against
 mutation, expiry and reuse with another address, CID or version. Unsupported v2 configuration is also tested.
 
-Independent interoperability uses aioquic 1.3.0 in both client/server roles for
+Independent interoperability uses s2n-quic 1.88.0 in both client/server roles for
 v1, with and without Retry. Each case exchanges 256 KiB in each direction;
-the independent peer initiates key updates that quiche must process.
+the independent peer rotates keys that quiche must process. The test uses the
+upstream Rustls/AWS-LC cipher implementation with a lower packet-use limit to
+trigger rotation during a short transfer; cipher operations are unchanged.
+The dev crate enables s2n-quic only with `--features quic-interop`; it is not a
+production transport dependency. Packet events verify v1, actual Retry behavior,
+no early data, and at least one 1-RTT key update.
 
 ```sh
-python3 -m venv target/quic-interop-venv
-target/quic-interop-venv/bin/pip install -r scripts/requirements-quic-interop.txt
 cargo build --locked --example quic-interop --no-default-features --features quic
-target/quic-interop-venv/bin/python scripts/check_quic_interop.py
+cargo run --locked -p capntproto-dev --features quic-interop -- check-quic-interop
 ```
 
 These tests do not establish HTTP/3 support or production qualification.
