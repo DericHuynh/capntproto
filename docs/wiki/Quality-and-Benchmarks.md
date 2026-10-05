@@ -256,7 +256,7 @@ with path filters should not be unconditional required checks in branch protecti
 Verification / Extended has three independent, bounded jobs:
 
 - **Miri:** `CAPNTPROTO_MIRI_EXTENDED=1 cargo nextest run --locked --test memory_safety`
-  retains the existing 92 interpreted ownership executions and adds six wire
+  retains the existing 96 interpreted ownership executions and adds six wire
   tests with seeds 2–5 on x86-64 and big-endian `s390x-unknown-linux-gnu`: 48 more
   executions. Compiler, source hashes, exact test inventories, targets, seeds,
   and logs are retained. This is interpretation, not native s390x qualification.
@@ -819,6 +819,19 @@ The tradeoff is larger inline builder metadata. Allocation contracts now require
 one allocation for a single-segment heap builder and zero for fitting scratch
 storage; moved multi-segment builders, external segments and allocator cleanup
 retain their ownership checks. Dedicated latency qualification is still required.
+
+The next local diagnostic adds bounded per-connection segment reuse and avoids
+background protection tasks for non-streaming, non-pipelined methods that finish
+on their first poll. Pending methods retain their executor ownership; ordinary
+local calls remain deferred. A connection retains at most 128 KiB in 16 released
+segments, with exact-size reuse and clearing of the used prefix. Against the
+inline-builder baseline above, empty-call server instructions fell from 529.86
+to 475.29 million (10.3%). Client allocations fell from 253,787 to 242,787 and
+cumulative allocated bytes from 47,703,806 to 25,353,757. These are local
+instruction/allocation diagnostics; they do not establish the 1.2× latency target.
+The memory suite includes pooled multi-segment reuse with simultaneous live
+messages under both Miri aliasing models, and cancellation tests exercise an
+initially pending protected method and immediate success/error completion.
 
 Allocation checks cover the warmed single-segment queue, and partial-write
 tests cover every byte boundary of small frames plus large multi-segment batches.

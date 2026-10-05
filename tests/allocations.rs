@@ -43,6 +43,51 @@ fn single_segment_builders_allocate_only_the_word_buffer() {
 }
 
 #[test]
+fn pooled_builders_reuse_storage_without_allocations_or_stale_data() {
+    use capnp::message::{Builder, HeapAllocator, SegmentPool};
+    let pool = SegmentPool::new(256, 4);
+    let allocator = || {
+        HeapAllocator::new()
+            .first_segment_words(64)
+            .segment_pool(pool.clone())
+    };
+    let fill = |value| {
+        let mut message = Builder::new(allocator());
+        let data = message.initn_root::<capnp::data::Builder<'_>>(128);
+        assert!(data.iter().all(|&byte| byte == 0));
+        data.fill(value);
+        message
+    };
+    drop(fill(0xff));
+    let counts = allocation_counter::measure(|| {
+        for i in 0..128 {
+            black_box(fill(i));
+        }
+    });
+    assert_eq!(counts.count_total, 0, "{counts:?}");
+    // Holding a live message cannot expose its storage to a later builder.
+    let first = fill(0x17);
+    let second = fill(0x23);
+    assert!(first
+        .get_root_as_reader::<capnp::data::Reader<'_>>()
+        .unwrap()
+        .iter()
+        .all(|&b| b == 0x17));
+    assert!(second
+        .get_root_as_reader::<capnp::data::Reader<'_>>()
+        .unwrap()
+        .iter()
+        .all(|&b| b == 0x23));
+    drop(first);
+    drop(fill(0x31));
+    assert!(second
+        .get_root_as_reader::<capnp::data::Reader<'_>>()
+        .unwrap()
+        .iter()
+        .all(|&b| b == 0x23));
+}
+
+#[test]
 fn moved_builder_preserves_first_segment_and_spilled_segment_ids() {
     use capnp::message::{AllocationStrategy, Builder, HeapAllocator};
     let mut message = Builder::new(

@@ -2114,6 +2114,7 @@ where
 {
     inner: Option<ResultsInner<VatId>>,
     results_done_fulfiller: Option<oneshot::Sender<ResultsInner<VatId>>>,
+    permits_immediate_poll: bool,
 }
 
 impl<VatId> Results<VatId>
@@ -2149,6 +2150,7 @@ where
                 }),
             }),
             results_done_fulfiller: Some(fulfiller),
+            permits_immediate_poll: false,
         }
     }
 }
@@ -2166,6 +2168,10 @@ impl<VatId> Drop for Results<VatId> {
 }
 
 impl<VatId> ResultsHook for Results<VatId> {
+    fn permits_immediate_poll(&self) -> bool {
+        self.permits_immediate_poll
+    }
+
     fn cancellation_guard(&self) -> Option<Box<dyn std::any::Any>> {
         let inner = self.inner.as_ref()?;
         Some(Box::new((

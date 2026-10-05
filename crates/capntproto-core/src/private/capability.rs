@@ -239,6 +239,13 @@ impl Clone for alloc::boxed::Box<dyn ClientHook> {
 }
 
 pub trait ResultsHook {
+    /// The caller permits one immediate poll of a non-streaming implementation
+    /// during dispatch. RPC sets this only after releasing its protocol-table
+    /// borrows. Ordinary local calls and wrappers remain deferred by default.
+    fn permits_immediate_poll(&self) -> bool {
+        false
+    }
+
     /// Retain protocol context until a non-cancellable method actually completes.
     fn cancellation_guard(&self) -> Option<alloc::boxed::Box<dyn core::any::Any>> {
         None

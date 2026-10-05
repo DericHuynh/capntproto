@@ -576,6 +576,9 @@ impl<VatId: 'static> ConnectionState<VatId> {
                     slot.insert(answer);
                 }
 
+                // No table borrow spans application code. Immediate ordinary
+                // calls need no independently scheduled cancellation owner.
+                results.permits_immediate_poll = pipeline.is_none();
                 let call_promise = capability.call_with_hints(
                     interface_id,
                     method_id,

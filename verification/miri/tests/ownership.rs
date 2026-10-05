@@ -10,6 +10,42 @@ use capntproto_memory_checks::field_api_capnp::{
 };
 use std::{cell::Cell, rc::Rc, sync::Arc};
 
+#[test]
+fn pooled_segments_keep_live_messages_disjoint_and_clear_reused_storage() -> Result<()> {
+    use capnp::message::{Builder, SegmentPool};
+    let pool = SegmentPool::new(512, 16);
+    let build = |value| {
+        let mut message = Builder::new(
+            HeapAllocator::new()
+                .first_segment_words(4)
+                .segment_pool(pool.clone()),
+        );
+        let mut list = message.initn_root::<capnp::any_pointer_list::Builder<'_>>(5);
+        for i in 0..5 {
+            let data = list
+                .reborrow()
+                .get(i)
+                .initn_as::<capnp::data::Builder<'_>>(32);
+            assert!(data.iter().all(|&byte| byte == 0));
+            data.fill(value + i as u8);
+        }
+        message
+    };
+    let first = build(17);
+    let second = build(33);
+    drop(first);
+    let third = build(49);
+    for (message, value) in [(second, 33), (third, 49)] {
+        let moved = Box::new(message);
+        let list = moved.get_root_as_reader::<capnp::data_list::Reader<'_>>()?;
+        for i in 0..5 {
+            assert!(list.get(i)?.iter().all(|&byte| byte == value + i as u8));
+        }
+    }
+    drop(build(65));
+    Ok(())
+}
+
 fn allocator(far: bool) -> HeapAllocator {
     let allocator = HeapAllocator::new();
     if far {

@@ -1,5 +1,11 @@
 # 0.1.0 developer preview (unpublished)
 
+- Reuse outgoing RPC segments in a pool bounded to 128 KiB and 16 segments per
+  connection, clearing used words before reuse. Avoid protected background-task
+  allocation for immediately completed non-streaming, non-pipelined RPC methods.
+  Pending methods retain cancellation protection and local calls remain deferred.
+  Bound task admission and reap ready work before allocating scheduler nodes.
+
 - Run the complete CI graph on PRs and pushes to main: validation, platform
   checks, Cargo/coverage, models, fuzzing and extended checks, then release
   benchmarks and cleanup. Fork/Dependabot PRs compile benchmarks without cloud

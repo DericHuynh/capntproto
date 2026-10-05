@@ -11,7 +11,7 @@ const NIGHTLY: &str = "+nightly-2026-08-29";
 const MANIFEST: &str = "verification/miri/Cargo.toml";
 const TARGET: &str = "x86_64-unknown-linux-gnu";
 const SUITES: &[(&str, usize)] = &[
-    ("ownership", 9),
+    ("ownership", 10),
     ("wire", 6),
     ("orphan_types", 4),
     ("generated", 2),

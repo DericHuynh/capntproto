@@ -155,6 +155,7 @@ where
     on_disconnect_fulfiller: Option<oneshot::Sender<()>>,
     flow_control: crate::flow_control::Policy,
     write_finished: futures::future::Shared<Promise<(), capnp::Error>>,
+    segments: capnp::message::SegmentPool,
 }
 
 struct Connection<T>
@@ -202,6 +203,9 @@ where
                 on_disconnect_fulfiller: Some(on_disconnect_fulfiller),
                 flow_control,
                 write_finished,
+                // Includes a 64 KiB body plus framing/envelope growth, while
+                // bounding retained storage independently of live messages.
+                segments: capnp::message::SegmentPool::new(16 * 1024, 16),
             })),
         }
     }
@@ -230,17 +234,18 @@ where
         // Zero means no hint, not a zero-word first segment. A bounded 2 KiB
         // default fits small results without clearing an 8 KiB arena each time.
         // Larger bodies still grow normally; explicit hints remain authoritative.
-        let allocator = ::capnp::message::HeapAllocator::new().first_segment_words(
-            if first_segment_word_size == 0 {
+        let inner = self.inner.borrow();
+        let allocator = ::capnp::message::HeapAllocator::new()
+            .segment_pool(inner.segments.clone())
+            .first_segment_words(if first_segment_word_size == 0 {
                 256
             } else {
                 first_segment_word_size
-            },
-        );
+            });
         let message = ::capnp::message::Builder::new(allocator);
         Box::new(OutgoingMessage {
             message,
-            sender: self.inner.borrow().sender.clone(),
+            sender: inner.sender.clone(),
             guard: None,
         })
     }

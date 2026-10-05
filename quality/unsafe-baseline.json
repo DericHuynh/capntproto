@@ -14,11 +14,11 @@
       }
     },
     "crates/capntproto-core/src/message.rs": {
-      "sha256": "59af886aaca98b2c02ba986d23574ddaf62462cece845a91a2c2a7b4be119042",
       "diagnostics": {
-        "clippy::undocumented_unsafe_blocks": 13,
+        "clippy::undocumented_unsafe_blocks": 10,
         "unsafe_op_in_unsafe_fn": 2
-      }
+      },
+      "sha256": "a788a312f8eba53dcd8925a21e932819f2b57300dd640ad7b34f55fa8385cf10"
     },
     "crates/capntproto-core/src/primitive_list.rs": {
       "sha256": "d9471dc7916beac5fc4db3f4ceb877f8134bd3beb3fd090b1ca33fa918adab66",

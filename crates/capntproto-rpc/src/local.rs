@@ -696,6 +696,7 @@ where
             state_ref.inner.as_ref().expect("live server").clone()
         };
 
+        let permits_immediate_poll = results.permits_immediate_poll();
         let guard = results.cancellation_guard();
         let executor = state
             .borrow()
@@ -720,6 +721,17 @@ where
                     "non-cancellable local call requires new_client_with_executor()".into(),
                 ));
             };
+            // The inbound RPC dispatcher already performs a first poll with no
+            // protocol tables borrowed. Finish synchronous non-streaming calls
+            // before allocating a shared promise and an independent task. A
+            // pending call still receives the full protected lifetime below.
+            // Streaming calls must establish their ordering barrier first.
+            if permits_immediate_poll && !f.is_streaming {
+                if let Some(result) = (&mut f.promise).now_or_never() {
+                    drop(guard);
+                    return Promise::from(result);
+                }
+            }
             let retained_server = state.clone();
             let task = Promise::from_future(async move {
                 let result = f.promise.await;
