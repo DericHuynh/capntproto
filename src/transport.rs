@@ -19,6 +19,8 @@ mod simulation;
 pub(crate) mod socket;
 mod stream;
 #[cfg(test)]
+mod stream_planes_probe;
+#[cfg(test)]
 mod stream_tests;
 pub mod tcp;
 use crate::native_shutdown::{Control, DriverGuard, Receipt};

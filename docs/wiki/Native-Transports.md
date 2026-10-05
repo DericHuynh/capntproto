@@ -50,6 +50,11 @@ discovery/provisioning, capability handoff, restoration, bounded datagrams,
 scheduling, shutdown receipts, validated migration and explicit CID rotation.
 There is no second QUIC engine with a reduced feature set.
 
+Ordinary RPC and the existing bulk services share stream 0. A proposed
+[control/bulk stream split](RPC-Research.md#split-control-and-bulk-planes-recommended-next-experiment)
+has packet-level isolation probes, but no production bulk-stream negotiation or
+API yet. Separate shutdown streams and the datagram lane already exist.
+
 TCP/TLS supports the ordered native RPC and receipt protocol. TCP has no
 unreliable datagrams or QUIC path/CID controls; applications needing these use
 quiche. TCP does not emulate these wire semantics. A receipt acknowledges bytes

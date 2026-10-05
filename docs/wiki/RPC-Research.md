@@ -1,6 +1,7 @@
 # RPC, pipelining and Cap'n Proto research
 
-Research date: 2026-10-01, America/Edmonton.
+Original research: 2026-10-01; QUIC stream-plane follow-up: 2026-10-04,
+America/Edmonton.
 
 The strongest opportunities are **bounded ordinary-call admission, visible
 in-flight resource usage, pipeline-preserving application APIs, and cheaper
@@ -270,6 +271,96 @@ promise resolution and embargo ordering currently share a connection. Design
 those dependencies and fences before splitting messages across streams. Existing
 TCP/TLS and quiche v1 support should continue using their current ordered profile
 until an additional profile is specified and tested.
+
+### Split control and bulk planes: recommended next experiment
+
+**Status: architecture assessment and transport probes, not an implemented bulk
+stream protocol.** The main benefit should be small-RPC tail latency during bulk
+transfers, loss or slow consumers. The existing single-outstanding-call benchmark
+has no competing bulk traffic, so stream separation alone is not evidence of
+meeting the 1.2× C++ latency target.
+
+The native driver also carries all ordinary RPC bytes on stream 0. Both
+`Transfer.write` and `DurableTransfer.write` put their `Data` chunks inside those
+messages. Native shutdown already uses separate unidirectional streams 2/3,
+6/7 and 10/11; unreliable realtime traffic already uses DATAGRAM frames. The
+missing separation is between RPC envelopes and explicitly declared bulk bytes,
+not between every RPC message kind.
+
+| Plane | Proposed mapping on one authenticated QUIC connection | Purpose |
+| --- | --- | --- |
+| Capability RPC | Keep stream 0 ordered; carry calls, replies, capability lifecycle, transfer descriptors and final application receipts | Preserve existing pipelines, E-order, embargoes and three-party routing |
+| Bulk data | Bounded, negotiated streams per active transfer, allocated outside reserved IDs | Isolate a stalled/lost bulk transfer and permit direct incremental consumption |
+| Session shutdown | Preserve the existing bounded receipt streams; extend the negotiated completion contract explicitly if bulk is included | Distinguish stream delivery, application completion and durable publication |
+| Realtime snapshots | Keep the existing bounded unreliable datagram lane and expiration policy | Allow disposable updates without retransmitting stale snapshots |
+
+There must still be a small-message fast path: inline small payloads and use
+an explicit bulk capability/descriptor for large transfers. Automatically moving
+arbitrary Cap'n Proto segments to another stream would require reassembly before
+RPC dispatch and could recreate the same head-of-line blocking. Splitting all
+Calls, Returns, Finish, Release and Resolve messages by type or one stream per
+Call would require a new dependency/ordering layer. Upstream's
+[Disembargo contract](https://github.com/capnproto/capnproto/blob/0de72d8d8cec6b69edaa29de51d3bd490341f9c2/c%2B%2B/src/capnp/rpc.capnp#L698)
+explains why capability resolution and three-party path changes need E-order.
+
+The pinned quiche API already supports local `stream_priority(urgency,
+incremental)` and per-stream shutdown. Prefer control over queued bulk bytes,
+with bounded bulk admission and fair progress among bulk streams. Reserve
+connection credit and buffering capacity for control **before** accepting bulk
+bytes; stream priority cannot recover credit already consumed. Streams still
+share congestion control, pacing, packet buffers and the executor. This is
+isolation from individual stream gaps, not a hard bandwidth/latency reservation.
+[quiche 0.30 APIs](https://docs.rs/quiche/0.30.0/quiche/struct.Connection.html#method.stream_priority),
+[QUIC stream and connection flow control](https://www.rfc-editor.org/rfc/rfc9000.html#section-4).
+Datagrams share congestion control too, although they do not consume STREAM flow
+credit. [RFC 9221](https://www.rfc-editor.org/rfc/rfc9221.html#section-5).
+
+Two executable [packet probes](../../src/transport/stream_planes_probe.rs) exercise
+real mutually authenticated quiche endpoints, with no sockets or timing claims:
+
+- Hold the encrypted packet containing a 128-byte bulk prefix, then deliver a
+  seven-byte control message. On the same stream the control bytes remain
+  unreadable; on separate streams they are readable immediately. Releasing the
+  held ciphertext validates all bytes and their per-stream order in both cases.
+- Fill a 256-byte bulk stream and leave its receiver unread. Control still
+  progresses with a 512-byte connection limit. With a 256-byte connection limit,
+  control stalls even at the highest urgency, then resumes after bulk consumption
+  causes a credit update. Separate streams alone do not prevent this stall.
+
+Run with `cargo nextest run --locked -p capntproto --lib transport::stream_planes_probe`.
+These four cases establish mechanism and a counterexample, not an end-to-end
+speedup, packet-loss recovery benchmark or complete split-plane implementation.
+
+Implementation and qualification order:
+
+1. Measure mixed small RPCs and existing bulk transfers as the baseline, using
+   0/2/20-ms RTT, controlled loss/reordering, multiple transfers and stalled
+   readers. Record p50/p95/p99, queue age, throughput, CPU, copies and peak memory.
+   Preserve the existing canonical single-call benchmark as a separate gate.
+2. Specify an authenticated feature agreement or new application profile before
+   sending extra bulk streams. Old peers and TCP/TLS keep the ordinary RPC bulk
+   path. A QUIC stream allocation is not evidence that the peer supports it.
+3. Bind each bounded, single-use transfer grant to its capability authority,
+   session generation, stream/direction, length and operation identity. Use an
+   owned Rust grant to prevent reuse or attachment to another session. Bound and
+   reject data arriving before its grant; QUIC does not order different streams.
+4. Have RPC dispatch publish a transfer handle without waiting for the whole
+   body. Stream bytes directly into a bounded consumer. Keep bulk memory and
+   concurrent stream limits per transfer, peer and connection, plus control
+   headroom; do not buffer the entire body again behind the RPC control queue.
+5. Keep application receipts authoritative. FIN/reset is neither durable commit
+   nor rollback. `DurableTransfer` must retain its verified checkpoint, hash and
+   atomic publication semantics. Session drain must explicitly account for all
+   admitted reliable transfers; today's receipt covers only RPC input bytes.
+6. Test cancellation/completion races, unknown or stale grants, early FIN,
+   excess bytes, stream exhaustion, fairness and reconnect. Migration of the
+   same QUIC connection retains stream identity; redial or three-party handoff
+   requires a newly authorized binding and explicit checkpoint resume.
+
+If profiling later shows bulk congestion still harms control after these bounds,
+compare a separately authenticated bulk connection. That creates a separate
+congestion controller, but still shares the network path and adds connection,
+identity-binding and shutdown costs. It should not be the first implementation.
 
 ## Priority 5: deadlines, receipts and explicit interop profiles
 
