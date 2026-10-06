@@ -1278,6 +1278,67 @@ denied, along with formatting, the unsafe-documentation gate and all 98 project
 document checks. This was a focused regression run. The last dedicated native
 QUIC/C++ 64-KiB ratio remains 2.430×, and the 1.2× target remains unmet.
 
+### C++ call-context comparison and rejected allocation experiment
+
+The pinned C++ implementation keeps cancellation and response ownership in one
+[RpcCallContext](https://github.com/capnproto/capnproto/blob/0de72d8d8cec6b69edaa29de51d3bd490341f9c2/c%2B%2B/src/capnp/rpc.c%2B%2B#L3159)
+and allocates its response through `getResults()` when needed. The October 5
+comparison also checked its batched outgoing writes, short-lived receive-buffer
+views, direct reads for large messages and capability-free `noFinishNeeded`
+returns. Those optimizations already have counterparts in this runtime.
+
+An experimental Rust call context combined the separate return guard and
+retained-results allocation. It kept protected application owners separate from
+pipeline owners, preserved cancellation Return-before-capability-release
+ordering, and released capabilities outside internal borrows. Its first form
+removed one allocation and about 32 requested heap bytes per server call. A
+refinement boxed retained results only when a protected method outlived its
+Results owner, increasing the saving to about 152 bytes per ordinary call.
+The allocator counter measured 253,753 allocations before and 242,753 after
+11,000 calls, including connection setup in both totals. These are allocation
+traffic measurements, not peak-memory or latency savings.
+
+The refined candidate passed 94 focused nextest checks, including cancellation,
+early result release, third-party answer adoption, admission, allocations,
+native vats, TLA+ trace replays and installed C++ interoperability. Workspace
+Clippy with warnings denied, formatting and the unsafe-documentation gate also
+passed. A new lifetime test covered multiple protected owners, surviving
+pipeline owners and reentrant result destruction. Correctness checks did not
+establish a performance improvement.
+
+Seven alternating release repetitions on the Ryzen 5800H/HPET host used CPUs 0
+and 2, 10,000 warmups and 1,000 measured calls for each payload and executable.
+All 112 trials and their samples were retained. The diagnostic harness checked
+each executable's protocol identity and measurement version 2, including bulk
+payload validation, response cleanup and per-call deadlines. Pooled p50 values:
+
+| Payload | C++ plaintext TCP (µs) | Rust plaintext TCP, candidate (µs) | Previous native QUIC (µs) | Candidate native QUIC (µs) |
+| --- | ---: | ---: | ---: | ---: |
+| Empty | 38.902 | 49.936 | 67.886 | 68.165 |
+| 64 B | 38.971 | 49.658 | 68.235 | 68.236 |
+| 1 KiB | 39.600 | 41.416 | 69.981 | 70.330 |
+| 64 KiB | 81.994 | 89.258 | 166.014 | 168.388 |
+
+A separate nine-repetition check retained 90,000 measured 64-KiB samples per
+native executable after 10,000 warmups per trial. The refined candidate changed
+p50 from 165.664 to 167.899 µs, a 1.35% regression, consistent with the shorter
+comparison's 1.43% regression. Its p95/p99 were lower, 212.318/348.509 versus
+229.429/438.534 µs, but tails varied across experiments. The earlier inline
+form was essentially neutral in its longer check: 168.457 versus 168.807 µs.
+Neither form established a latency win, so neither ownership change was
+retained in the shipped runtime. No builds or tests ran during the final timing
+comparisons; this remains a shared local host, not dedicated acceptance evidence.
+
+The matched plaintext transport narrows the Rust/C++ gap to 1.046× at 1 KiB and
+1.089× at 64 KiB, while small calls remain about 1.28×. Native QUIC in the same
+experiment is 1.75–2.05× C++ plaintext TCP. This supports looking beyond RPC
+ownership for the larger native gap: authenticated transport, packet protection,
+packet processing, session bridges and executor work are absent or different
+in the plaintext control. The comparison does not isolate encryption alone.
+Copying a C++ allocation strategy is therefore a hypothesis to measure, not an
+assurance of equal end-to-end performance. The 1.2× native target remains unmet;
+the last dedicated canonical 64-KiB ratio remains 2.430×.
+
 ### Clock diagnostics
 
 The report records current and available Linux clocksources and five batches of
