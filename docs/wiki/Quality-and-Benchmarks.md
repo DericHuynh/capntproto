@@ -346,12 +346,26 @@ Remaining zero-hit mappings stay in the snapshot. Examples include clock
 callbacks and queued futures which negative controls require never to execute,
 32-bit framing overflow paths unreachable on the measured 64-bit target,
 platform-specific errors, and model replays now exercised in the independent
-TLA+ lane. Moving code out of `codegen.rs` and removing covered statements from
+TLA+ lane. Burst-buffer trimming and canceled borrowed-driver paths also remain
+partly unmeasured. Assertions added to unsafe test fixtures contribute untaken
+failure branches. Moving code out of `codegen.rs` and removing covered statements from
 join handling can lower a file ratio without adding uncovered lines. Changed
 LLVM mappings in generic/generated call sites also change region counts. These
 are reviewed baseline differences, not exclusions or claims of coverage. Every
 source-group metric must still be compared with the original baseline during
 review, and CI continues enforcing per-file and per-group ratios thereafter.
+
+The reviewed replacement was collected on Linux x86-64 on 2026-10-06 from
+`8f3e05e23`, with the same pinned compiler, flags and ownership scope. All 1,349
+instrumented Cargo-partition tests and workspace doctests passed. The snapshot
+inventories 603 source files, with 558 mapped and 45 explicitly unmapped. All 36
+group metrics meet or exceed the original baseline; 32 per-file metric changes
+remain after the added tests. The complete measured summary is committed without
+altering its counters. Source hashes and every mapped metric were checked against
+the raw LLVM export. Its source fingerprint is
+`adaac8a40b0581d2903533d0ae2556b38d94c54d54d2153a1616caa535dac6d7`;
+the raw LLVM JSON SHA-256 is
+`88143aa8049c8d3b2dfe1661bbb0027fbb6c15904b3f55b7ed2524e03b1e0761`.
 
 The Fuzzing job packages its reports, logs, queues, crashes and hangs in
 `fuzz-report.tar.gz` before artifact upload. This preserves AFL's colon-containing
