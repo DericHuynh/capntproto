@@ -272,6 +272,41 @@ fn async_scratch_allocates_only_segment_metadata_when_the_payload_fits() {
 }
 
 #[test]
+fn buffered_two_segment_framing_keeps_metadata_inline() {
+    use capnp::message::ReaderSegments;
+    use futures::FutureExt;
+
+    let payload = [0x5a; 1024];
+    let mut message =
+        capnp::message::Builder::new(capnp::message::HeapAllocator::new().first_segment_words(1));
+    message
+        .set_root::<capnp::data::Owned>(payload.as_slice())
+        .unwrap();
+    let bytes = capnp::serialize::write_message_to_words(&message);
+    assert_eq!(u32::from_le_bytes(bytes[..4].try_into().unwrap()), 1);
+    for short in [true, false] {
+        let mut input = capnp_futures::BufferedRead::new(
+            futures::io::Cursor::new(&bytes),
+            ReaderOptions::new(),
+        );
+        let counts = allocation_counter::measure(|| {
+            let reader = input
+                .try_read_message(|_| Ok(short))
+                .now_or_never()
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            assert_eq!(reader.get_segments().len(), 2);
+            assert_eq!(reader.get_root::<capnp::data::Reader>().unwrap(), payload);
+        });
+        // Retained messages allocate their payload; framing itself must not
+        // allocate metadata for the common root-plus-large-body layout.
+        assert_eq!(counts.count_total, u64::from(!short), "{counts:?}");
+        assert_eq!(counts.count_current, 0);
+    }
+}
+
+#[test]
 fn buffered_scratch_avoids_payload_allocations_and_owned_fallback_allocates_once() {
     use futures::FutureExt;
     let payload = vec![0x5a; 8192];
