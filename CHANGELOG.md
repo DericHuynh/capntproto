@@ -1,5 +1,10 @@
 # 0.1.0 developer preview (unpublished)
 
+- Register the independent s2n-quic peer's endpoint shutdown before retiring
+  its last connection, avoiding a missed wakeup in the pinned dependency.
+  Report the peer role, Retry mode, and current phase on interoperability
+  failures while retaining payload, key-update, FIN, and timeout checks.
+
 - Seed packed-framing property tests with empty segments and zero blocking
   periods so discard-guard coverage does not depend on the random corpus.
 
