@@ -41,6 +41,6 @@
 <circle cx="192.14" cy="528.59" r="3" fill="#8b5cf6"><title>2026-10-04T21:39:03Z: 1</title></circle>
 <circle cx="926.56" cy="520.12" r="3" fill="#8b5cf6"><title>2026-10-05T06:19:17Z: 7</title></circle>
 <circle cx="1300.00" cy="520.12" r="3" fill="#8b5cf6"><title>2026-10-05T10:43:49Z: 7</title></circle>
-<text x="35.00" y="620.00" font-size="13" fill="#64748b">Dotted lines: failed&#x2F;incomplete workspace command. Error = announced tests without a terminal result.</text>
+<text x="35.00" y="620.00" font-size="13" fill="#64748b">LATEST RUN HAS NO TEST COUNTS — see its CI log. Earlier points are historical evidence.</text>
 </g>
 </svg>

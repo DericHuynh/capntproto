@@ -1,7 +1,7 @@
 {
   "benchmark": {
     "attempt": 1,
-    "commit": "2c7265982089baeb7940c84ec60766b5da1961c6",
+    "commit": "81e19ad93b0dfecffd17fe1d57638eb66f55ae7a",
     "conclusion": "failure",
     "data": {
       "charts": [],
@@ -13,9 +13,9 @@
       "status": "unavailable",
       "tests": null
     },
-    "date": "2026-10-05T06:19:17Z",
-    "run_id": 37271823879,
-    "url": "https://github.com/DericHuynh/capntproto/actions/runs/37271823879"
+    "date": "2026-10-06T08:34:45Z",
+    "run_id": 37437045968,
+    "url": "https://github.com/DericHuynh/capntproto/actions/runs/37437045968"
   },
   "cargo": [
     {
@@ -372,7 +372,6 @@
           "complete": true,
           "errors": 0,
           "failed": 0,
-          "failures": [],
           "passed": 1370,
           "skipped": 20,
           "suites": 191,
@@ -382,6 +381,24 @@
       "date": "2026-10-05T10:29:14Z",
       "run_id": 37296880243,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/37296880243"
+    },
+    {
+      "attempt": 1,
+      "commit": "81e19ad93b0dfecffd17fe1d57638eb66f55ae7a",
+      "conclusion": "failure",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "cargo",
+        "note": "This workflow attempt produced no public measurement artifact.",
+        "origin": null,
+        "source_id": null,
+        "status": "unavailable",
+        "tests": null
+      },
+      "date": "2026-10-06T08:34:45Z",
+      "run_id": 37437045968,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/37437045968"
     }
   ],
   "format": 1,
@@ -677,198 +694,7 @@
       "commit": "2c7265982089baeb7940c84ec60766b5da1961c6",
       "conclusion": "success",
       "data": {
-        "charts": [
-          {
-            "name": "fuzz-executions",
-            "note": "Bounded campaigns including seed calibration; execution counts are not comparable performance benchmarks.",
-            "panels": [
-              {
-                "bars": [
-                  {
-                    "label": "libFuzzer / capnp_framing",
-                    "value": 16384
-                  },
-                  {
-                    "label": "libFuzzer / capnp_pointers",
-                    "value": 16384
-                  },
-                  {
-                    "label": "libFuzzer / capnp_schema",
-                    "value": 16384
-                  },
-                  {
-                    "label": "libFuzzer / native_packet",
-                    "value": 1024
-                  },
-                  {
-                    "label": "libFuzzer / native_stream",
-                    "value": 1024
-                  },
-                  {
-                    "label": "libFuzzer / rpc_lifecycle",
-                    "value": 16384
-                  }
-                ],
-                "title": "libFuzzer + ASan"
-              },
-              {
-                "bars": [
-                  {
-                    "label": "AFL++ / capnp_framing",
-                    "value": 634747
-                  },
-                  {
-                    "label": "AFL++ / capnp_pointers",
-                    "value": 1914892
-                  },
-                  {
-                    "label": "AFL++ / capnp_schema",
-                    "value": 689445
-                  },
-                  {
-                    "label": "AFL++ / rpc_lifecycle",
-                    "value": 72616
-                  }
-                ],
-                "title": "AFL++ + RPC IJON"
-              }
-            ],
-            "title": "Fuzzing executions by engine",
-            "unit": "Executions"
-          },
-          {
-            "name": "fuzz-coverage",
-            "note": "Engine-local counters, not LLVM source coverage. Do not compare counts across engines or builds.",
-            "panels": [
-              {
-                "bars": [
-                  {
-                    "label": "libFuzzer / capnp_framing",
-                    "value": 575
-                  },
-                  {
-                    "label": "libFuzzer / capnp_pointers",
-                    "value": 1163
-                  },
-                  {
-                    "label": "libFuzzer / capnp_schema",
-                    "value": 3068
-                  },
-                  {
-                    "label": "libFuzzer / native_packet",
-                    "value": 5600
-                  },
-                  {
-                    "label": "libFuzzer / native_stream",
-                    "value": 5616
-                  },
-                  {
-                    "label": "libFuzzer / rpc_lifecycle",
-                    "value": 6618
-                  }
-                ],
-                "title": "libFuzzer + ASan"
-              },
-              {
-                "bars": [
-                  {
-                    "label": "AFL++ / capnp_framing",
-                    "value": 1003
-                  },
-                  {
-                    "label": "AFL++ / capnp_pointers",
-                    "value": 1549
-                  },
-                  {
-                    "label": "AFL++ / capnp_schema",
-                    "value": 5048
-                  },
-                  {
-                    "label": "AFL++ / rpc_lifecycle",
-                    "value": 9357
-                  }
-                ],
-                "title": "AFL++ + RPC IJON"
-              }
-            ],
-            "title": "Fuzzer feedback by engine",
-            "unit": "Feedback entries"
-          },
-          {
-            "name": "fuzz-findings",
-            "note": "Saved crashes/hangs are findings requiring triage, not confirmed unique bugs. Missing results remain unknown.",
-            "panels": [
-              {
-                "bars": [
-                  {
-                    "label": "libFuzzer / capnp_framing",
-                    "value": 0
-                  },
-                  {
-                    "label": "libFuzzer / capnp_pointers",
-                    "value": 0
-                  },
-                  {
-                    "label": "libFuzzer / capnp_schema",
-                    "value": 0
-                  },
-                  {
-                    "label": "libFuzzer / native_packet",
-                    "value": 0
-                  },
-                  {
-                    "label": "libFuzzer / native_stream",
-                    "value": 0
-                  },
-                  {
-                    "label": "libFuzzer / rpc_lifecycle",
-                    "value": 0
-                  }
-                ],
-                "title": "libFuzzer + ASan"
-              },
-              {
-                "bars": [
-                  {
-                    "label": "AFL++ / capnp_framing crashes",
-                    "value": 0
-                  },
-                  {
-                    "label": "AFL++ / capnp_framing hangs",
-                    "value": 0
-                  },
-                  {
-                    "label": "AFL++ / capnp_pointers crashes",
-                    "value": 0
-                  },
-                  {
-                    "label": "AFL++ / capnp_pointers hangs",
-                    "value": 0
-                  },
-                  {
-                    "label": "AFL++ / capnp_schema crashes",
-                    "value": 0
-                  },
-                  {
-                    "label": "AFL++ / capnp_schema hangs",
-                    "value": 0
-                  },
-                  {
-                    "label": "AFL++ / rpc_lifecycle crashes",
-                    "value": 0
-                  },
-                  {
-                    "label": "AFL++ / rpc_lifecycle hangs",
-                    "value": 0
-                  }
-                ],
-                "title": "AFL++ + RPC IJON"
-              }
-            ],
-            "title": "Saved fuzzing findings",
-            "unit": "Inputs"
-          }
-        ],
+        "charts": [],
         "format": 1,
         "kind": "fuzz",
         "note": "Evidence passed.",
@@ -885,6 +711,24 @@
       "date": "2026-10-05T10:49:09Z",
       "run_id": 37298988581,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/37298988581"
+    },
+    {
+      "attempt": 1,
+      "commit": "81e19ad93b0dfecffd17fe1d57638eb66f55ae7a",
+      "conclusion": "failure",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "fuzz",
+        "note": "This workflow attempt produced no public measurement artifact.",
+        "origin": null,
+        "source_id": null,
+        "status": "unavailable",
+        "tests": null
+      },
+      "date": "2026-10-06T08:34:45Z",
+      "run_id": 37437045968,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/37437045968"
     }
   ],
   "models": [
@@ -989,179 +833,7 @@
       "commit": "2c7265982089baeb7940c84ec60766b5da1961c6",
       "conclusion": "success",
       "data": {
-        "charts": [
-          {
-            "name": "tla-outcomes",
-            "note": "Unique module/configuration/expected-exit checks. Expected invariant violations are successful controls.",
-            "panels": [
-              {
-                "bars": [
-                  {
-                    "label": "Invariant/liveness checks",
-                    "value": 439
-                  },
-                  {
-                    "label": "Expected counterexamples",
-                    "value": 719
-                  },
-                  {
-                    "label": "Failed / incomplete checks",
-                    "value": 0
-                  }
-                ],
-                "title": "Observed outcomes"
-              }
-            ],
-            "title": "TLA+ checks and expected counterexamples",
-            "unit": "Checks"
-          },
-          {
-            "name": "tla-states",
-            "note": "Counts sum independent bounded configurations; they are not globally distinct states or a proof beyond those bounds.",
-            "panels": [
-              {
-                "bars": [
-                  {
-                    "label": "CapnpRealtime",
-                    "value": 2278206
-                  },
-                  {
-                    "label": "RpcSchemaHints",
-                    "value": 38214
-                  },
-                  {
-                    "label": "RealtimeConfigBoundary",
-                    "value": 32278
-                  },
-                  {
-                    "label": "RpcNativeProvisioning",
-                    "value": 139289
-                  },
-                  {
-                    "label": "StructuralEquality",
-                    "value": 19659
-                  },
-                  {
-                    "label": "RealtimeReceiptLifecycle",
-                    "value": 43148
-                  },
-                  {
-                    "label": "DatagramReentry",
-                    "value": 14216
-                  },
-                  {
-                    "label": "BulkConfigBoundary",
-                    "value": 71689
-                  },
-                  {
-                    "label": "RpcFieldOwners",
-                    "value": 25813
-                  },
-                  {
-                    "label": "GrantRevocation",
-                    "value": 50518
-                  },
-                  {
-                    "label": "ShutdownWaiters",
-                    "value": 49800
-                  },
-                  {
-                    "label": "RpcNativeArbitration",
-                    "value": 23013
-                  },
-                  {
-                    "label": "RpcRealtimeReceiver",
-                    "value": 34765
-                  },
-                  {
-                    "label": "RpcGenericParameters",
-                    "value": 7638
-                  },
-                  {
-                    "label": "CapnpConformance",
-                    "value": 10067
-                  },
-                  {
-                    "label": "Other models",
-                    "value": 345295
-                  }
-                ],
-                "title": "Generated states"
-              },
-              {
-                "bars": [
-                  {
-                    "label": "CapnpRealtime",
-                    "value": 365633
-                  },
-                  {
-                    "label": "RpcSchemaHints",
-                    "value": 36391
-                  },
-                  {
-                    "label": "RealtimeConfigBoundary",
-                    "value": 25585
-                  },
-                  {
-                    "label": "RpcNativeProvisioning",
-                    "value": 25385
-                  },
-                  {
-                    "label": "StructuralEquality",
-                    "value": 19659
-                  },
-                  {
-                    "label": "RealtimeReceiptLifecycle",
-                    "value": 13830
-                  },
-                  {
-                    "label": "DatagramReentry",
-                    "value": 12982
-                  },
-                  {
-                    "label": "BulkConfigBoundary",
-                    "value": 10834
-                  },
-                  {
-                    "label": "RpcFieldOwners",
-                    "value": 9907
-                  },
-                  {
-                    "label": "GrantRevocation",
-                    "value": 9664
-                  },
-                  {
-                    "label": "ShutdownWaiters",
-                    "value": 8019
-                  },
-                  {
-                    "label": "RpcNativeArbitration",
-                    "value": 7445
-                  },
-                  {
-                    "label": "RpcRealtimeReceiver",
-                    "value": 7250
-                  },
-                  {
-                    "label": "RpcGenericParameters",
-                    "value": 5606
-                  },
-                  {
-                    "label": "CapnpConformance",
-                    "value": 5062
-                  },
-                  {
-                    "label": "Other models",
-                    "value": 114221
-                  }
-                ],
-                "title": "Distinct states"
-              }
-            ],
-            "title": "TLA+ explored states by model",
-            "unit": "States"
-          }
-        ],
+        "charts": [],
         "format": 1,
         "kind": "models",
         "note": "Evidence passed.",
@@ -1178,7 +850,6 @@
           "complete": true,
           "errors": 0,
           "failed": 0,
-          "failures": [],
           "passed": 241,
           "skipped": 7,
           "suites": 91,
@@ -1188,6 +859,24 @@
       "date": "2026-10-05T10:43:49Z",
       "run_id": 37298422603,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/37298422603"
+    },
+    {
+      "attempt": 1,
+      "commit": "81e19ad93b0dfecffd17fe1d57638eb66f55ae7a",
+      "conclusion": "failure",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "models",
+        "note": "This workflow attempt produced no public measurement artifact.",
+        "origin": null,
+        "source_id": null,
+        "status": "unavailable",
+        "tests": null
+      },
+      "date": "2026-10-06T08:34:45Z",
+      "run_id": 37437045968,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/37437045968"
     }
   ]
 }
