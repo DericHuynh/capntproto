@@ -73,6 +73,9 @@ retains a working smaller size when probes fail, and revalidates a discovered
 MTU after repeated timer expirations without acknowledgement progress. Oversize
 send errors are handled as lost probes. This improves large loopback transfers;
 ordinary network paths still determine their own smaller MTU.
+Upstream quiche 0.30.0 also
+[caps established data packets at 16,383 bytes](https://docs.rs/quiche/0.30.0/src/quiche/lib.rs.html#6751-6755),
+so raising the configured discovery ceiling does not produce larger data packets.
 
 Shared listeners bound each route by both its configured packet count and
 128 KiB of queued payload. The unreliable application datagram limit remains

@@ -1224,6 +1224,60 @@ Clippy with warnings denied, the unsafe-documentation gate, formatting and all
 last dedicated canonical 64-KiB ratio remains 2.430×; the 1.2× native QUIC/C++
 target is still unmet.
 
+### Packet ceilings and inline framing metadata
+
+A follow-up raised the configured Linux packet ceiling from 16 KiB to 65,507
+bytes as an experiment. The 20,000-call client counter still observed about
+100,000 QUIC datagrams in 40,000 successful UDP reads. Upstream quiche 0.30.0
+[caps established data packets at 16,383 bytes](https://docs.rs/quiche/0.30.0/src/quiche/lib.rs.html#6751-6755)
+regardless of a larger configured ceiling. Five alternating repetitions changed
+64-KiB p50 from 165.664 to 164.546 µs without changing the packet-count mechanism;
+the experiment was discarded. The production packet bounds and upstream quiche
+implementation remain unchanged.
+
+The retained framing change stores the second segment's end offset inline.
+Frames with three or more segments build their validated ranges directly into
+an immutable allocation. The metadata structure remains 48 bytes on the tested
+x86-64 build. An allocation regression demonstrated the old two-segment path's
+one 32-byte metadata allocation and now requires zero metadata allocations for
+both shared and retained messages. Retained messages still allocate their own
+payload storage; short-lived views retain their existing lifetime checks.
+
+The initial representation reduced local 64-KiB p50 from 167.899 to 166.153 µs
+but enlarged the frame metadata. The final immutable representation preserves
+its original size. Seven alternating release repetitions on the same Ryzen
+5800H/HPET host used CPUs 0 and 2, 10,000 warmups and 1,000 measured calls:
+
+| Payload | Previous p50 (µs) | Inline framing p50 (µs) |
+| --- | ---: | ---: |
+| Empty | 67.397 | 67.188 |
+| 64 B | 67.676 | 68.096 |
+| 1 KiB | 69.423 | 69.771 |
+| 64 KiB | 166.502 | 165.594 |
+
+All 56 trials and all samples were retained. Small-message medians changed by
+less than 0.7%; the 64-KiB reduction was 0.5%, with p95/p99 increasing from
+204.496/248.007 to 206.312/264.210 µs. The allocation reduction is established;
+these timing differences are too small and variable to establish a reliable
+end-to-end speedup.
+
+A longer nine-repetition comparison used 10,000 warmups and 10,000 measured
+64-KiB calls per repetition, retaining all 90,000 samples per executable.
+Pooled p50 changed from 166.991 to 166.781 µs (−0.1%); p95/p99 changed from
+232.781/434.205 to 223.353/378.052 µs. Tail results vary between experiments.
+No builds or tests ran during these timing comparisons, but this remains a
+shared local host rather than dedicated acceptance evidence.
+
+All 68 focused nextest checks passed, including allocation budgets, maximum
+segment tables, fragmented/truncated inputs, traversal limits, cancellation,
+retained capabilities, native TCP/TLS and QUIC vats, C++ comparisons and TLA+
+replays. A property test compares the buffered parser against the independent
+synchronous decoder across randomized segment contents, read chunks, frame
+truncations and traversal budgets. Workspace Clippy also passed with warnings
+denied, along with formatting, the unsafe-documentation gate and all 98 project
+document checks. This was a focused regression run. The last dedicated native
+QUIC/C++ 64-KiB ratio remains 2.430×, and the 1.2× target remains unmet.
+
 ### Clock diagnostics
 
 The report records current and available Linux clocksources and five batches of

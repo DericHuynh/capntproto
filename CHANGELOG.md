@@ -1,5 +1,10 @@
 # 0.1.0 developer preview (unpublished)
 
+- Keep two-segment receive-frame metadata inline, eliminating its heap
+  allocation. Build larger segment tables directly into immutable ranges and
+  preserve bounded parsing, cancellation and retained-message ownership. Add
+  allocation contracts and differential fragmented-framing coverage.
+
 - Skip redundant diagnostic clock reads when adding RPC messages to an existing
   write batch. Recheck queue state under its locks when the receiver races the
   producer, and keep user clock callbacks outside locks. Add timestamp, stale
