@@ -2,7 +2,7 @@ use capnp_rpc::VatNetwork;
 use capntproto::{
     native_arbitration,
     native_listener::{self, Listener},
-    native_rpc::{Connector, FailureKind, Handle, Network, RouteStatus, Termination},
+    native_rpc::{Connector, FailureKind, Handle, Network, RouteFailure, RouteStatus, Termination},
     transport::{self, AuthenticatedSession, Identity},
 };
 use capntproto_test_support::runtime_test_capnp::harness;
@@ -135,8 +135,13 @@ async fn canceled_native_read_reports_transport_failure_when_peer_sends() {
             let mut ac = an.connect(b.public_key()).unwrap();
             let mut bc = bn.accept().await.unwrap();
             until(|| {
-                ah.route_status(b.public_key()) == Some(RouteStatus::Authenticated)
-                    && bh.route_status(a.public_key()) == Some(RouteStatus::Authenticated)
+                (
+                    ah.route_status(b.public_key()),
+                    bh.route_status(a.public_key()),
+                ) == (
+                    Some(RouteStatus::Authenticated),
+                    Some(RouteStatus::Authenticated),
+                )
             })
             .await;
             let observer = bh.observe_route(a.public_key()).unwrap();
@@ -149,11 +154,15 @@ async fn canceled_native_read_reports_transport_failure_when_peer_sends() {
             drop(receive);
             data_message(&mut *ac, 1, 8).send().0.await.unwrap();
             until(|| observer.status() == RouteStatus::Failed).await;
-            let Some(Termination::Failed(failure)) = observer.termination() else {
-                panic!("canceled reader must fail transport delivery");
-            };
-            assert_eq!(failure.kind, FailureKind::Transport);
-            assert_eq!(failure.io_kind, Some(std::io::ErrorKind::BrokenPipe));
+            let error: std::io::Error = std::io::ErrorKind::BrokenPipe.into();
+            assert_eq!(
+                observer.termination(),
+                Some(Termination::Failed(RouteFailure {
+                    kind: FailureKind::Transport,
+                    message: error.to_string(),
+                    io_kind: Some(error.kind()),
+                }))
+            );
             assert!(bc.receive_incoming_message().await.is_err());
             assert!(bh
                 .shutdown(a.public_key(), Duration::from_secs(1))
