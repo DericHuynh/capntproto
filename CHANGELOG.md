@@ -1,5 +1,8 @@
 # 0.1.0 developer preview (unpublished)
 
+- Verify that an already-closed RPC reader immediately fails the QUIC driver
+  and delivers the same error to shutdown waiters, without socket timing races.
+
 - Make schema-call cancellation wait for request admission without a timer race,
   and exercise write batches beyond the metadata-retention bound with receipts,
   a subsequent batch, and sender shutdown.

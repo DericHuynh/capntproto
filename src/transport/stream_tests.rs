@@ -1,6 +1,58 @@
 use super::stream::{CopyInput, ReceiveStream, SendStream};
 
 #[tokio::test]
+async fn driver_propagates_closed_rpc_reader_to_shutdown_waiters() {
+    use super::{engine_tests, scheduling, socket::DatagramSocket, PacketSocket, SessionDrivers};
+    use futures::FutureExt;
+    use tokio::{net::UdpSocket, time::Instant};
+
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let peer = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let (mut a, mut b) = engine_tests::pair_at(
+        [socket.local_addr().unwrap(), peer.local_addr().unwrap()],
+        |_| {},
+    );
+    for _ in 0..50 {
+        a.step(Instant::now).unwrap();
+        b.step(Instant::now).unwrap();
+        engine_tests::packets(&mut a, &mut b);
+        engine_tests::packets(&mut b, &mut a);
+    }
+    assert!(a.ready() && b.ready());
+    assert_eq!(b.conn.stream_send(0, b"rpc", false).unwrap(), 3);
+    engine_tests::packets(&mut b, &mut a);
+    assert!(a.conn.stream_readable(0));
+
+    // Close the consumer before driving the already-received data. This must
+    // fail on the immediate bridge write, without depending on socket timing
+    // or which branch a later select polls first.
+    let (application, io) = crate::rpc::local_io::pair(64);
+    let (reader, _writer) = application.into_split();
+    drop(reader);
+    let control = crate::native_shutdown::Control::new();
+    let error = super::drive(
+        PacketSocket::Dedicated(DatagramSocket::new(socket).unwrap()),
+        a.conn,
+        io.into_split(),
+        SessionDrivers {
+            bulk: None,
+            established: None,
+            datagrams: None,
+            shutdown: Some(super::shutdown::ShutdownDriver::new(control.clone(), false)),
+            mobility: None,
+            scheduling: scheduling::pair().1,
+        },
+    )
+    .now_or_never()
+    .expect("closed RPC reader must fail the first driver poll")
+    .unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+    let completion = control.wait().now_or_never().unwrap().unwrap_err();
+    assert_eq!(completion.kind(), error.kind());
+    assert_eq!(completion.to_string(), error.to_string());
+}
+
+#[tokio::test]
 async fn owned_send_views_survive_partial_sends_reuse_and_canceled_reads() {
     use futures::FutureExt;
     use tokio::io::AsyncWriteExt;
