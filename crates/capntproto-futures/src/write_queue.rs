@@ -370,6 +370,24 @@ mod tests {
     }
 
     #[test]
+    fn oversized_batch_flushes_every_receipt_and_releases_capacity_for_later_work() {
+        let (mut sender, driver) = write_queue(futures::io::sink());
+        let receipts: Vec<_> = (0..1025).map(|_| sender.send(message())).collect();
+        futures::pin_mut!(driver);
+        assert!(driver.as_mut().now_or_never().is_none());
+        for receipt in receipts {
+            receipt.now_or_never().unwrap().unwrap();
+        }
+        let later = sender.send(message());
+        assert!(driver.as_mut().now_or_never().is_none());
+        later.now_or_never().unwrap().unwrap();
+        assert_eq!(sender.outgoing_queue().snapshot().message_count, 0);
+        assert!(sender.shared.queue.lock().unwrap().messages.capacity() <= 1024);
+        drop(sender);
+        driver.now_or_never().unwrap().unwrap();
+    }
+
+    #[test]
     fn one_enqueue_clock_sample_per_batch_preserves_oldest_age() {
         let ticks = Arc::new(AtomicU64::new(0));
         let clock = ticks.clone();

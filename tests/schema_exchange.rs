@@ -470,33 +470,55 @@ async fn schema_service_over_authenticated_native() {
 #[tokio::test(flavor = "current_thread")]
 async fn cancelling_fetch_releases_outstanding_schema_calls() {
     use std::{collections::BTreeMap, time::Duration};
-    tokio::task::LocalSet::new().run_until(async {
-        let catalog=Rc::new(RefCell::new(Catalog::new(Limits::default())));
-        catalog.borrow_mut().publish(graph("shared",1)).unwrap();
-        let mut receivers=BTreeMap::new(); let mut senders=BTreeMap::new();
-        for id in 1..=3 { let (tx,rx)=futures::channel::oneshot::channel(); receivers.insert(id,rx); senders.insert(id,tx); }
-        let receivers=Rc::new(RefCell::new(receivers));
-        let service: wire::catalog::Client=capnp_rpc::new_client(Gates {catalog,receivers:receivers.clone()});
-        let (a,b)=tokio::io::duplex(4096);
-        let server=capntproto::rpc::serve(b,service.client);
-        let (client,driver): (wire::catalog::Client,_) = capntproto::rpc::client(a);
-        let _tasks=Tasks(vec![server,driver]);
-        senders.remove(&1).unwrap().send(false).unwrap();
-        let mut fetch=Box::pin(exchange::fetch(&client,key(1,1),Limits::default(),3));
-        tokio::time::timeout(Duration::from_secs(2), async {
-            loop {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let catalog = Rc::new(RefCell::new(Catalog::new(Limits::default())));
+            catalog.borrow_mut().publish(graph("shared", 1)).unwrap();
+            let mut receivers = BTreeMap::new();
+            let mut senders = BTreeMap::new();
+            for id in 1..=3 {
+                let (tx, rx) = futures::channel::oneshot::channel();
+                receivers.insert(id, rx);
+                senders.insert(id, tx);
+            }
+            let receivers = Rc::new(RefCell::new(receivers));
+            let service: wire::catalog::Client = capnp_rpc::new_client(Gates {
+                catalog,
+                receivers: receivers.clone(),
+            });
+            let (a, b) = tokio::io::duplex(4096);
+            let server = capntproto::rpc::serve(b, service.client);
+            let (client, driver): (wire::catalog::Client, _) = capntproto::rpc::client(a);
+            let _tasks = Tasks(vec![server, driver]);
+            senders.remove(&1).unwrap().send(false).unwrap();
+            let mut fetch = Box::pin(exchange::fetch(&client, key(1, 1), Limits::default(), 3));
+            tokio::time::timeout(Duration::from_secs(2), async {
                 tokio::select! {
                     _ = &mut fetch => panic!("fetch completed before dependencies"),
-                    _ = tokio::time::sleep(Duration::from_millis(1)) => if receivers.borrow().is_empty() { break; },
+                    _ = async {
+                        // The RPC drivers run on this local executor. Polling this
+                        // waiter starts before they can accept the requests, so
+                        // both waiting and completion are exercised on every run.
+                        while !receivers.borrow().is_empty() {
+                            tokio::task::yield_now().await;
+                        }
+                    } => {
+                    }
                 }
-            }
-        }).await.unwrap();
-        assert!(senders.values().all(|s| !s.is_canceled()));
-        drop(fetch);
-        tokio::time::timeout(Duration::from_secs(2), async {
-            while !senders.values().all(|s| s.is_canceled()) { tokio::task::yield_now().await; }
-        }).await.unwrap();
-    }).await;
+            })
+            .await
+            .unwrap();
+            assert!(senders.values().all(|s| !s.is_canceled()));
+            drop(fetch);
+            tokio::time::timeout(Duration::from_secs(2), async {
+                while !senders.values().all(|s| s.is_canceled()) {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+        })
+        .await;
 }
 #[test]
 fn schema_payloads_reject_live_capabilities_and_zero_type_references() {
