@@ -370,6 +370,21 @@ mod tests {
     }
 
     #[test]
+    fn stopped_queue_discards_new_messages_and_fails_outstanding_receipts() {
+        let (mut sender, driver) = write_queue(futures::io::sink());
+        let diagnostics = sender.outgoing_queue();
+        let accepted = sender.send(message());
+        assert_eq!(sender.len(), 1);
+        drop(driver);
+        assert!(accepted.now_or_never().unwrap().is_err());
+
+        sender.send_detached(message());
+        assert!(sender.send(message()).now_or_never().unwrap().is_err());
+        assert!(sender.is_empty());
+        assert_eq!(diagnostics.output_snapshot(), OutputSnapshot::default());
+    }
+
+    #[test]
     fn oversized_batch_flushes_every_receipt_and_releases_capacity_for_later_work() {
         let (mut sender, driver) = write_queue(futures::io::sink());
         let receipts: Vec<_> = (0..1025).map(|_| sender.send(message())).collect();

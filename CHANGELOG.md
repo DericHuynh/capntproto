@@ -7,7 +7,8 @@
 
 - Make schema-call cancellation wait for request admission without a timer race,
   and exercise write batches beyond the metadata-retention bound with receipts,
-  a subsequent batch, and sender shutdown.
+  a subsequent batch, and sender shutdown. Check canceled write queues reject
+  later sends, fail outstanding receipts, and clear retained metrics.
 
 - Track `LLVM_PROFILE_FILE` in owned build scripts so each coverage run records
   fresh schema-generation counters even when Cargo reuses its target directory.
