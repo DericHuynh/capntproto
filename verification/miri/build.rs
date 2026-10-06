@@ -1,4 +1,6 @@
 fn main() {
+    // A fresh coverage run needs fresh build-script and code-generation counters.
+    println!("cargo:rerun-if-env-changed=LLVM_PROFILE_FILE");
     println!("cargo:rerun-if-changed=../../schemas/field-api.capnp");
     println!("cargo:rerun-if-changed=../../crates/capntproto-codegen/rust.capnp");
     capnpc::CompilerCommand::new()

@@ -11,9 +11,9 @@ use crate::semantics::{NativeStreamGate, StreamRole};
 use std::io;
 use tokio::time::Instant;
 
-pub(super) struct Engine {
+pub(super) struct Engine<F: quiche::BufFactory<Buf = bytes::Bytes> = super::buffers::Factory> {
     pub bulk: Option<super::bulk::Driver>,
-    pub conn: Box<quiche::Connection>,
+    pub conn: Box<quiche::Connection<F>>,
     pub tx: SendStream,
     pub rx: ReceiveStream,
     pub shutdown: Option<shutdown::ShutdownDriver>,
@@ -28,9 +28,9 @@ enum Phase {
     // then reports draining, but the validated receipt must survive that turn.
     Flushing { receipt: Receipt, control: Control },
 }
-impl Engine {
+impl<F: quiche::BufFactory<Buf = bytes::Bytes>> Engine<F> {
     pub(super) fn new(
-        conn: Box<quiche::Connection>,
+        conn: Box<quiche::Connection<F>>,
         authenticate_stream: bool,
         shutdown: Option<shutdown::ShutdownDriver>,
         scheduling: scheduling::Driver,
@@ -130,43 +130,39 @@ impl Engine {
         }
         let graceful = self.shutdown.as_ref().is_some_and(|s| s.requested());
         if self.ready() {
-            if let Some((bytes, fin)) = self.tx.pending(graceful) {
-                match self.conn.stream_send(0, bytes, fin) {
-                    Ok(n) => self.tx.sent(n)?,
+            if let Some((bytes, fin)) = self.tx.pending_owned(graceful) {
+                match self.conn.stream_send_zc(0, bytes, fin) {
+                    Ok((n, _remaining)) => self.tx.sent(n)?,
                     Err(quiche::Error::Done) => (),
                     Err(e) => return Err(error(e)),
                 }
             }
         }
-        if self.rx.can_receive() {
-            match self.conn.stream_recv(0, self.rx.receive_buffer()?) {
-                Ok((n, fin)) => {
-                    let skip = if self.gate.as_ref().is_some_and(|g| g.needs_receive()) && n > 0 {
-                        if !self
-                            .gate
-                            .as_mut()
-                            .unwrap()
-                            .receive(self.rx.receive_buffer()?[0])
-                        {
-                            return Err(io::Error::new(
-                                io::ErrorKind::InvalidData,
-                                "invalid native RPC stream preface",
-                            ));
-                        }
-                        1
-                    } else {
-                        0
-                    };
-                    if fin && !self.ready() {
+        if self.rx.can_receive() && self.conn.is_readable() {
+            if let Some((n, fin)) = self.rx.receive_from(&mut self.conn)? {
+                let skip = if self.gate.as_ref().is_some_and(|g| g.needs_receive()) && n > 0 {
+                    if !self
+                        .gate
+                        .as_mut()
+                        .unwrap()
+                        .receive(self.rx.first_byte().unwrap())
+                    {
                         return Err(io::Error::new(
-                            io::ErrorKind::UnexpectedEof,
-                            "missing native RPC stream preface",
+                            io::ErrorKind::InvalidData,
+                            "invalid native RPC stream preface",
                         ));
                     }
-                    self.rx.received(n, fin, skip)?;
+                    1
+                } else {
+                    0
+                };
+                if fin && !self.ready() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "missing native RPC stream preface",
+                    ));
                 }
-                Err(quiche::Error::Done) | Err(quiche::Error::InvalidStreamState(_)) => (),
-                Err(e) => return Err(error(e)),
+                self.rx.received(n, fin, skip)?;
             }
         }
         if self.ready() {

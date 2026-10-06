@@ -460,7 +460,7 @@ mod wire_helpers {
             return (reff as *mut _, reff, segment_id);
         }
 
-        match arena.allocate(segment_id, amount) {
+        match arena.allocate_ptr(segment_id, amount) {
             None => {
                 //# Need to allocate in a different segment. We'll need to
                 //# allocate an extra pointer worth of space to act as
@@ -484,9 +484,7 @@ mod wire_helpers {
                 (*reff).set_kind_and_target(kind, ptr1);
                 (ptr1, reff, segment_id)
             }
-            Some(idx) => {
-                let (seg_start, _seg_len) = arena.get_segment_mut(segment_id);
-                let ptr = seg_start.add(idx as usize * BYTES_PER_WORD);
+            Some(ptr) => {
                 (*reff).set_kind_and_target(kind, ptr);
                 (ptr, reff, segment_id)
             }
@@ -2533,23 +2531,40 @@ mod wire_helpers {
             ));
         }
 
-        let (ptr, reff, segment_id) = follow_fars(arena, reff, segment_id)?;
+        // SAFETY: the caller validates the pointer word; the null/default and
+        // nesting cases above have already been handled.
+        let is_struct = unsafe { (*reff).kind() == WirePointerKind::Struct };
+        let (ptr, reff, segment_id) = if is_struct {
+            // SAFETY: reff is a validated pointer word in this segment (or a
+            // trusted generated default). The arena validates the relative
+            // target and complete struct while charging its traversal budget.
+            let target = unsafe {
+                arena.check_offset_and_read(
+                    segment_id,
+                    reff.cast(),
+                    (*reff).offset_in_words(),
+                    (*reff).struct_word_size() as usize,
+                )?
+            };
+            (target, reff, segment_id)
+        } else {
+            let (ptr, reff, segment_id) = follow_fars(arena, reff, segment_id)?;
+            if (*reff).kind() != WirePointerKind::Struct {
+                return Err(Error::from_kind(
+                    ErrorKind::MessageContainsNonStructPointerWhereStructPointerWasExpected,
+                ));
+            }
+            bounds_check(
+                arena,
+                segment_id,
+                ptr,
+                (*reff).struct_word_size() as usize,
+                WirePointerKind::Struct,
+            )?;
+            (ptr, reff, segment_id)
+        };
 
         let data_size_words = (*reff).struct_data_size();
-
-        if (*reff).kind() != WirePointerKind::Struct {
-            return Err(Error::from_kind(
-                ErrorKind::MessageContainsNonStructPointerWhereStructPointerWasExpected,
-            ));
-        }
-
-        bounds_check(
-            arena,
-            segment_id,
-            ptr,
-            (*reff).struct_word_size() as usize,
-            WirePointerKind::Struct,
-        )?;
 
         Ok(StructReader {
             arena,
@@ -3111,6 +3126,7 @@ impl<'a> PointerReader<'a> {
         }
     }
 
+    #[inline]
     pub fn get_struct(self, default: Option<&'a [crate::Word]>) -> Result<StructReader<'a>> {
         let reff: *const WirePointer = if self.pointer.is_null() {
             zero_pointer()
@@ -3460,6 +3476,7 @@ impl<'a> PointerBuilder<'a> {
         unsafe { (*self.pointer).is_null() }
     }
 
+    #[inline]
     pub fn get_struct(
         self,
         size: StructSize,

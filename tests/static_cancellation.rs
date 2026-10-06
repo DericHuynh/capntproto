@@ -150,7 +150,22 @@ impl Drop for Fixture {
 }
 impl Fixture {
     async fn new(mode: u32, early: bool, fail: bool, membrane: bool) -> Self {
+        Self::configured(mode, early, fail, membrane, false, false).await
+    }
+
+    async fn configured(
+        mode: u32,
+        early: bool,
+        fail: bool,
+        membrane: bool,
+        no_pipeline: bool,
+        ready: bool,
+    ) -> Self {
         let (tx, rx) = oneshot::channel();
+        let mut tx = Some(tx);
+        if ready {
+            tx.take().unwrap().send(()).unwrap();
+        }
         let state = Rc::new(State {
             fail,
             ..Default::default()
@@ -230,6 +245,7 @@ impl Fixture {
             c.set_question_id(1);
             c.set_interface_id(interface);
             c.set_method_id(method);
+            c.set_no_promise_pipelining(no_pipeline);
             c.reborrow().init_target().set_imported_cap(id);
             c.init_params()
                 .get_content()
@@ -244,7 +260,7 @@ impl Fixture {
             peer,
             driver,
             state,
-            gate: Some(tx),
+            gate: tx,
             returns: 0,
             kind: 0,
             connected: true,
@@ -407,6 +423,36 @@ async fn protected_calls_survive_finish_and_disconnect_with_early_results_releas
         })
         .await;
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn immediate_rpc_poll_preserves_pending_protection_and_reports_ready_errors() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            for fail in [false, true] {
+                for early in [false, true] {
+                    for ready in [false, true] {
+                        let mut f = Fixture::configured(0, early, fail, false, true, ready).await;
+                        if !ready {
+                            f.step("finish").await;
+                            assert!(f.state.running.get());
+                            assert!(f.state.alive.get());
+                            assert_eq!(f.returns, 0);
+                            f.step("complete").await;
+                        } else {
+                            f.drain();
+                            assert_eq!(f.kind, if fail { 3 } else { 1 });
+                            f.step("finish").await;
+                        }
+                        assert!(f.state.completed.get());
+                        assert!(!f.state.running.get());
+                        assert!(!f.state.alive.get());
+                        assert_eq!(f.returns, 1);
+                    }
+                }
+            }
+        })
+        .await;
+}
 #[tokio::test(flavor = "current_thread")]
 async fn local_executor_owns_protected_calls_after_caller_drop() {
     tokio::task::LocalSet::new()
@@ -456,6 +502,10 @@ async fn local_executor_owns_protected_calls_after_caller_drop() {
                     let mut request = client.pending_request();
                     request.get().set_early_drop(early);
                     let mut promise = Box::pin(request.send().promise);
+                    assert!(
+                        !state.started.get(),
+                        "ordinary local dispatch remains deferred"
+                    );
                     assert!(futures::poll!(&mut promise).is_pending());
                     settle().await;
                     assert!(state.started.get());

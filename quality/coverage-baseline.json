@@ -48,6 +48,12 @@
       "status": "no executable LLVM mapping in these platform/feature/test builds; not counted as covered",
       "metrics": null
     },
+    "benchmarks/rpc/benches/native_tcp.rs": {
+      "sha256": "d201875b1e1800c2e44e4f9d53e474f96acbef4dea1c34a2c983ffffc8e8e042",
+      "group": "tools-fuzz-examples-benchmarks",
+      "status": "no executable LLVM mapping in these platform/feature/test builds; not counted as covered",
+      "metrics": null
+    },
     "benchmarks/rpc/benches/websocket.rs": {
       "sha256": "6dc99ee80c65b5e44083d0aa7d30ca59625da67e26f2cea609c7111258b0f8ff",
       "group": "tools-fuzz-examples-benchmarks",
@@ -78,47 +84,70 @@
       }
     },
     "benchmarks/rpc/src/driver.rs": {
-      "sha256": "4ac996876d65f531b867058ced0ddf1de6bd77bbfb3b2ed5af140d912f0df92b",
+      "sha256": "e6e19b1700b73a81f1c6dd96705bef04838b97df7b0ca89e722a0d1c76008d8b",
       "group": "tools-fuzz-examples-benchmarks",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 143,
-          "covered": 0
+          "count": 196,
+          "covered": 33
         },
         "regions": {
-          "count": 288,
-          "covered": 0
+          "count": 387,
+          "covered": 55
         },
         "functions": {
-          "count": 9,
-          "covered": 0
+          "count": 13,
+          "covered": 4
         },
         "branches": {
-          "count": 28,
-          "covered": 0
+          "count": 36,
+          "covered": 3
+        }
+      }
+    },
+    "benchmarks/rpc/src/driver/placement.rs": {
+      "sha256": "b899f8ce93e46b25bcfcbd52ec246fc731c759c78b2003a628cb8a9317b53dff",
+      "group": "tools-fuzz-examples-benchmarks",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 86,
+          "covered": 85
+        },
+        "regions": {
+          "count": 178,
+          "covered": 170
+        },
+        "functions": {
+          "count": 10,
+          "covered": 10
+        },
+        "branches": {
+          "count": 16,
+          "covered": 14
         }
       }
     },
     "benchmarks/rpc/src/lib.rs": {
-      "sha256": "273c2f90fe399443b493b24e087f33d18993cd6fcc557c6094d61f2fa569caca",
+      "sha256": "6c08ffd6f3a6cf4eaf206ecb483c87a8174b29853127a7afb24ba2dea141074e",
       "group": "tools-fuzz-examples-benchmarks",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 188,
+          "count": 215,
           "covered": 0
         },
         "regions": {
-          "count": 399,
+          "count": 450,
           "covered": 0
         },
         "functions": {
-          "count": 18,
+          "count": 19,
           "covered": 0
         },
         "branches": {
-          "count": 34,
+          "count": 40,
           "covered": 0
         }
       }
@@ -217,25 +246,25 @@
       }
     },
     "crates/capntproto-codegen/src/codegen.rs": {
-      "sha256": "b496c81c65160d400c9d313227335d3b2753a0e71995d2f85a652b799cb4491e",
+      "sha256": "34b611e2ed816d8d86150dae9b1fcce2901c625b88f3cd88bf87e510452a91d2",
       "group": "rust-codegen",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 2500,
-          "covered": 2346
+          "count": 1427,
+          "covered": 1331
         },
         "regions": {
-          "count": 4283,
-          "covered": 3814
+          "count": 2552,
+          "covered": 2227
         },
         "functions": {
-          "count": 69,
-          "covered": 66
+          "count": 64,
+          "covered": 62
         },
         "branches": {
-          "count": 308,
-          "covered": 276
+          "count": 218,
+          "covered": 195
         }
       }
     },
@@ -308,6 +337,29 @@
         }
       }
     },
+    "crates/capntproto-codegen/src/codegen/node.rs": {
+      "sha256": "a3ab6fc46cc3f6c9f96a32d158b2f8a4380b4c5c4c6536913971f97bff495d74",
+      "group": "rust-codegen",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 1073,
+          "covered": 1015
+        },
+        "regions": {
+          "count": 1731,
+          "covered": 1587
+        },
+        "functions": {
+          "count": 5,
+          "covered": 4
+        },
+        "branches": {
+          "count": 90,
+          "covered": 81
+        }
+      }
+    },
     "crates/capntproto-codegen/src/codegen_types.rs": {
       "sha256": "237395d9289ce68b4f75a5eed12fb3728ecd8556ff4bf4583bc6e4d8c39d6df8",
       "group": "rust-codegen",
@@ -332,7 +384,7 @@
       }
     },
     "crates/capntproto-codegen/src/lib.rs": {
-      "sha256": "398a74b727e6097c49f2e36cd9a5cf9c063b1c572dfdab75bd0e12f470e52589",
+      "sha256": "16d047c888b917af11774a1a400d61e7ff331f03898fa09ce4cf62febd87496c",
       "group": "rust-codegen",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -1298,13 +1350,13 @@
       }
     },
     "crates/capntproto-compiler/tests/compiler.rs": {
-      "sha256": "e07abe86bb2d3fc709cff13b09e9e880f224c3d8b06dd6b0ec03d8c691dd47b6",
+      "sha256": "4e65d62604b08ec02c3e437bf113d7fc33c32e8050ce816c57eb427114657e83",
       "group": "schema-compiler",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 289,
-          "covered": 285
+          "count": 293,
+          "covered": 289
         },
         "regions": {
           "count": 461,
@@ -2086,7 +2138,7 @@
       }
     },
     "crates/capntproto-core/src/dynamic_orphan/external.rs": {
-      "sha256": "ce1699bdf73cd107402eb5f5cfe27c2cd8563bffcf5919741c170b6b530201a9",
+      "sha256": "5384f406e466aac545f5558cd115e9f156a58e2a215e070121be00f8973d156b",
       "group": "wire-runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -2408,25 +2460,25 @@
       }
     },
     "crates/capntproto-core/src/message.rs": {
-      "sha256": "59af886aaca98b2c02ba986d23574ddaf62462cece845a91a2c2a7b4be119042",
+      "sha256": "a788a312f8eba53dcd8925a21e932819f2b57300dd640ad7b34f55fa8385cf10",
       "group": "wire-runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 483,
-          "covered": 341
+          "count": 596,
+          "covered": 452
         },
         "regions": {
-          "count": 643,
-          "covered": 466
+          "count": 811,
+          "covered": 633
         },
         "functions": {
-          "count": 96,
-          "covered": 55
+          "count": 108,
+          "covered": 67
         },
         "branches": {
-          "count": 34,
-          "covered": 23
+          "count": 42,
+          "covered": 30
         }
       }
     },
@@ -2454,44 +2506,44 @@
       }
     },
     "crates/capntproto-core/src/private/arena.rs": {
-      "sha256": "45fb48b32a5a3b0760129aefabec067858ff87794a392fc76afd3d78f61def2f",
+      "sha256": "b9e105e0984135ec631e9b60fa49ccf2f7f0d7ef0953134384d05ec8e3243dee",
       "group": "wire-runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 313,
-          "covered": 267
+          "count": 400,
+          "covered": 351
         },
         "regions": {
-          "count": 416,
-          "covered": 362
+          "count": 566,
+          "covered": 502
         },
         "functions": {
-          "count": 51,
-          "covered": 39
+          "count": 64,
+          "covered": 51
         },
         "branches": {
-          "count": 38,
-          "covered": 29
+          "count": 48,
+          "covered": 39
         }
       }
     },
     "crates/capntproto-core/src/private/capability.rs": {
-      "sha256": "6911a79b745743e6b5ab07270be971267bb25556b9dd82d6ea95143806e72e05",
+      "sha256": "6382699b57d0b8272b1096800e08a4e95af2b6dbbdd57be6582f01944f02023c",
       "group": "wire-runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 125,
-          "covered": 93
+          "count": 128,
+          "covered": 96
         },
         "regions": {
-          "count": 113,
-          "covered": 89
+          "count": 116,
+          "covered": 92
         },
         "functions": {
-          "count": 26,
-          "covered": 19
+          "count": 27,
+          "covered": 20
         },
         "branches": {
           "count": 2,
@@ -2500,30 +2552,30 @@
       }
     },
     "crates/capntproto-core/src/private/layout.rs": {
-      "sha256": "6bacfca3bff90b2a674eef79449be53a876a04023d51b32528421df937db9251",
+      "sha256": "815e671909ce07c2cf0e77fb0647b048612b024eb15b1f321da53170e11f8187",
       "group": "wire-runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 3759,
-          "covered": 3420
+          "count": 3768,
+          "covered": 3419
         },
         "regions": {
-          "count": 4821,
-          "covered": 4382
+          "count": 4833,
+          "covered": 4388
         },
         "functions": {
           "count": 225,
           "covered": 214
         },
         "branches": {
-          "count": 458,
+          "count": 460,
           "covered": 356
         }
       }
     },
     "crates/capntproto-core/src/private/layout/any_list.rs": {
-      "sha256": "78875fb50e3eedaafe3de82ce21b338a7ab45ff1d8050cfd08927c6ef4d282ae",
+      "sha256": "b83bff85f8f0fef0aa057720b6178f5ee3d49504e8e990e4b70245f2a203a613",
       "group": "wire-runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -2569,7 +2621,7 @@
       }
     },
     "crates/capntproto-core/src/private/layout/list_edit.rs": {
-      "sha256": "ec8f3e197b472d9cd1c3500794e00832c3dbeff06c9caa86b428d890417399d2",
+      "sha256": "1dc3a0f28c87f8bf51f37b8359da2c7e83ef62cec8a5dff5c040fe580b3ddd54",
       "group": "wire-runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -3150,7 +3202,7 @@
       }
     },
     "crates/capntproto-core/src/serialize/no_alloc_buffer_segments.rs": {
-      "sha256": "f3fb27dd4065594d34ba241b4a8de9517b008ddb31ec2f36b0718aa12ccdb7dc",
+      "sha256": "345623035b72fadc26bd6f3f2a5df695f809e20561d576c027ce8670d84ea205",
       "group": "wire-runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -3449,25 +3501,25 @@
       }
     },
     "crates/capntproto-core/tests/negative_pointer_offset.rs": {
-      "sha256": "1e2ba6d9c01939ef40155b64e897a8dbab2952faae671c8d30053339c0015ea2",
+      "sha256": "60d35a93584f9f1a93604d120f3df672ecddf6550484eaab7796aadf10eca426",
       "group": "wire-runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 12,
-          "covered": 12
+          "count": 37,
+          "covered": 37
         },
         "regions": {
-          "count": 25,
-          "covered": 25
+          "count": 82,
+          "covered": 82
         },
         "functions": {
           "count": 1,
           "covered": 1
         },
         "branches": {
-          "count": 0,
-          "covered": 0
+          "count": 8,
+          "covered": 8
         }
       }
     },
@@ -3679,30 +3731,30 @@
       }
     },
     "crates/capntproto-futures/src/buffered_read.rs": {
-      "sha256": "6cf3b1b7b5fdc1c773cd878943380fb2c48784db05ad667b8ea1352b6dd358fc",
+      "sha256": "e4d50bb3e5b0ae04d1c854c2f17eb866d8157c46366551377869fe642804a738",
       "group": "async-framing",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 282,
-          "covered": 274
+          "count": 328,
+          "covered": 319
         },
         "regions": {
-          "count": 392,
-          "covered": 370
+          "count": 462,
+          "covered": 438
         },
         "functions": {
-          "count": 36,
-          "covered": 34
+          "count": 42,
+          "covered": 38
         },
         "branches": {
-          "count": 48,
-          "covered": 45
+          "count": 62,
+          "covered": 59
         }
       }
     },
     "crates/capntproto-futures/src/lib.rs": {
-      "sha256": "6d0d3da027488ef7710903a1198d0da1aba79ed115b7089f6e1e7850644f83f6",
+      "sha256": "8ee11c31563a3fb6197fc273c5d967183ab4217c680196221ad6e5b273002d9f",
       "group": "async-framing",
       "status": "no executable LLVM mapping in these platform/feature/test builds; not counted as covered",
       "metrics": null
@@ -3731,71 +3783,71 @@
       }
     },
     "crates/capntproto-futures/src/serialize.rs": {
-      "sha256": "9a3dc77953f3099211be226773c7dbdbee42e28dfa7fcd76880ed22e06d60730",
+      "sha256": "468d596c8c5c87128011435c2d6b8b1f7f0dbce0b77b7196f6fd328ad77ab6c4",
       "group": "async-framing",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 503,
-          "covered": 480
+          "count": 590,
+          "covered": 579
         },
         "regions": {
-          "count": 741,
-          "covered": 699
+          "count": 920,
+          "covered": 888
         },
         "functions": {
-          "count": 49,
-          "covered": 44
+          "count": 60,
+          "covered": 57
         },
         "branches": {
-          "count": 48,
-          "covered": 45
+          "count": 54,
+          "covered": 51
         }
       }
     },
     "crates/capntproto-futures/src/serialize_packed.rs": {
-      "sha256": "8963de038c2fba4724d05dee66fbeda28ba0a97df54e1dd65e4a04e59b454c21",
+      "sha256": "5526fcc66fc8b4e5436c4e636603a0d8413158691272ee563f0eb63f9aec3dcb",
       "group": "async-framing",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 456,
-          "covered": 420
+          "count": 517,
+          "covered": 484
         },
         "regions": {
-          "count": 541,
-          "covered": 506
+          "count": 673,
+          "covered": 641
         },
         "functions": {
-          "count": 26,
-          "covered": 23
+          "count": 34,
+          "covered": 31
         },
         "branches": {
           "count": 68,
-          "covered": 63
+          "covered": 66
         }
       }
     },
     "crates/capntproto-futures/src/write_queue.rs": {
-      "sha256": "6d2dcddeb3625a7ebece9a3d03577b9fb0416834577daed2c5c1f6c98a006493",
+      "sha256": "446a6933654306e98dfbbc49292ef04562965eb8965614eaa722acb6f5aade0b",
       "group": "async-framing",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 167,
-          "covered": 153
+          "count": 271,
+          "covered": 256
         },
         "regions": {
-          "count": 232,
-          "covered": 209
+          "count": 413,
+          "covered": 388
         },
         "functions": {
-          "count": 26,
-          "covered": 22
+          "count": 36,
+          "covered": 32
         },
         "branches": {
-          "count": 14,
-          "covered": 13
+          "count": 24,
+          "covered": 22
         }
       }
     },
@@ -3846,17 +3898,17 @@
       }
     },
     "crates/capntproto-rpc/src/answer_adoption.rs": {
-      "sha256": "68ec48609130ca14c7b59789f9fdb3b2bc08d1cefd1ad974c6ed89882d99fb58",
+      "sha256": "63c22597e38b0204ffc24ec77d7d90b1c49f6484b7b0386ab638deef56f309d6",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 484,
-          "covered": 433
+          "count": 485,
+          "covered": 434
         },
         "regions": {
-          "count": 829,
-          "covered": 695
+          "count": 827,
+          "covered": 692
         },
         "functions": {
           "count": 34,
@@ -3915,21 +3967,21 @@
       }
     },
     "crates/capntproto-rpc/src/broken.rs": {
-      "sha256": "73b2550709eb7c93b9190e759bda20dfaa05ba92eaa9520e4c705ed22699e878",
+      "sha256": "e8e725ccba15da89d0e054062004abf658fa9daff4275b283cecd7d369dff6b4",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 101,
-          "covered": 85
+          "count": 109,
+          "covered": 93
         },
         "regions": {
-          "count": 107,
-          "covered": 88
+          "count": 115,
+          "covered": 96
         },
         "functions": {
-          "count": 22,
-          "covered": 17
+          "count": 24,
+          "covered": 19
         },
         "branches": {
           "count": 2,
@@ -3961,7 +4013,7 @@
       }
     },
     "crates/capntproto-rpc/src/flow_control.rs": {
-      "sha256": "a9b70d0b39a4b1410dc067a05309ab8c1e26a6594a064fb938df433db29bbb38",
+      "sha256": "112e53b1603ce31018e35ee4435593c7ca3c8d35fa71ed44ef1cbbc968d39ceb",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -4007,17 +4059,17 @@
       }
     },
     "crates/capntproto-rpc/src/join.rs": {
-      "sha256": "f9138d350c0a6ae0b0678e6a32bf650768954e953572ebf90c557b083229904c",
+      "sha256": "96eb2ed0c8006201c2fa2a28dd9f34959a74bd5960701d2af206f1443539e1de",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 440,
-          "covered": 404
+          "count": 439,
+          "covered": 403
         },
         "regions": {
-          "count": 727,
-          "covered": 647
+          "count": 725,
+          "covered": 645
         },
         "functions": {
           "count": 38,
@@ -4030,21 +4082,21 @@
       }
     },
     "crates/capntproto-rpc/src/lib.rs": {
-      "sha256": "8e1c44f3c814115075f38f1f4bedf3f88841d0475abaaa820854ac2de7d11d91",
+      "sha256": "1837e0a10270ee02ca723868bea2b916583addc68421540a713e086f72e76a4f",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 544,
-          "covered": 460
+          "count": 556,
+          "covered": 472
         },
         "regions": {
-          "count": 711,
-          "covered": 618
+          "count": 720,
+          "covered": 627
         },
         "functions": {
-          "count": 84,
-          "covered": 71
+          "count": 87,
+          "covered": 74
         },
         "branches": {
           "count": 20,
@@ -4053,25 +4105,25 @@
       }
     },
     "crates/capntproto-rpc/src/local.rs": {
-      "sha256": "4268e1c21273da6c4adbf97d466eb20d3f7dc9469e33c9ae578a8c5ac3facebd",
+      "sha256": "0160d9e8eb7a903e9a981474f03ce639636b18a4c60b841410ed323d4bbf4d59",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 796,
-          "covered": 740
+          "count": 801,
+          "covered": 743
         },
         "regions": {
-          "count": 1112,
-          "covered": 1018
+          "count": 1122,
+          "covered": 1028
         },
         "functions": {
           "count": 92,
           "covered": 89
         },
         "branches": {
-          "count": 120,
-          "covered": 91
+          "count": 126,
+          "covered": 96
         }
       }
     },
@@ -4105,17 +4157,17 @@
       "metrics": null
     },
     "crates/capntproto-rpc/src/multiparty_join.rs": {
-      "sha256": "70309a2ba5902b36aa3ac1084ed674a8d35e093506c04d40d3df64288ffafaac",
+      "sha256": "9018ab9549d3f6f7cf058f07cfe25ca9a3c710f29b343a523f9a80124ea2d246",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 213,
-          "covered": 200
+          "count": 212,
+          "covered": 199
         },
         "regions": {
-          "count": 383,
-          "covered": 321
+          "count": 381,
+          "covered": 319
         },
         "functions": {
           "count": 17,
@@ -4151,25 +4203,25 @@
       }
     },
     "crates/capntproto-rpc/src/queued.rs": {
-      "sha256": "72a6a0f8ac5d4f3f45e641981ab13c814fb0feeabc50145ba39c5d7e5bedc507",
+      "sha256": "45d3c309fd1d64c5b9f2221c9075a677e199788eec2a7b2e1a1f16e0d154129a",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 242,
-          "covered": 223
+          "count": 251,
+          "covered": 233
         },
         "regions": {
-          "count": 322,
-          "covered": 304
+          "count": 329,
+          "covered": 312
         },
         "functions": {
-          "count": 27,
-          "covered": 25
+          "count": 29,
+          "covered": 27
         },
         "branches": {
           "count": 24,
-          "covered": 22
+          "covered": 23
         }
       }
     },
@@ -4220,25 +4272,71 @@
       }
     },
     "crates/capntproto-rpc/src/rpc.rs": {
-      "sha256": "e51cce8201b838e2298310addfe6fbbcef43ff878445145de95958899ce1d1d1",
+      "sha256": "973d391a47869375378d9e5c49452e20d8b87e26654fe315d003ce7410a18557",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 3473,
-          "covered": 3076
+          "count": 2397,
+          "covered": 2181
         },
         "regions": {
-          "count": 5462,
-          "covered": 4649
+          "count": 3594,
+          "covered": 3174
         },
         "functions": {
-          "count": 232,
-          "covered": 207
+          "count": 193,
+          "covered": 180
         },
         "branches": {
-          "count": 490,
-          "covered": 342
+          "count": 324,
+          "covered": 234
+        }
+      }
+    },
+    "crates/capntproto-rpc/src/rpc/capabilities.rs": {
+      "sha256": "ca1dd2375a4cbaad69eceb95443ff3bfa57c0c5b709173194454259f6920732b",
+      "group": "capability-rpc",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 497,
+          "covered": 446
+        },
+        "regions": {
+          "count": 832,
+          "covered": 705
+        },
+        "functions": {
+          "count": 22,
+          "covered": 16
+        },
+        "branches": {
+          "count": 72,
+          "covered": 51
+        }
+      }
+    },
+    "crates/capntproto-rpc/src/rpc/dispatch.rs": {
+      "sha256": "2abbf9596344e73c064b017ff4b7e0dd7e29707672934f8ff8258cf0ca05f489",
+      "group": "capability-rpc",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 692,
+          "covered": 549
+        },
+        "regions": {
+          "count": 1189,
+          "covered": 911
+        },
+        "functions": {
+          "count": 31,
+          "covered": 23
+        },
+        "branches": {
+          "count": 116,
+          "covered": 76
         }
       }
     },
@@ -4266,48 +4364,48 @@
       }
     },
     "crates/capntproto-rpc/src/rpc_tables.rs": {
-      "sha256": "0c4a424a9e8d2b09dee0f09ad7c62918e64e9579ece8e41375280a8e412f352e",
+      "sha256": "768a049b3e6a9111328716b771fa810307b28abaa8bf2401d5d4cbcf387f1507",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 100,
-          "covered": 97
+          "count": 149,
+          "covered": 146
         },
         "regions": {
-          "count": 166,
-          "covered": 153
+          "count": 254,
+          "covered": 243
         },
         "functions": {
-          "count": 14,
-          "covered": 14
+          "count": 24,
+          "covered": 24
         },
         "branches": {
-          "count": 24,
-          "covered": 21
+          "count": 30,
+          "covered": 27
         }
       }
     },
     "crates/capntproto-rpc/src/rpc_tables/tests.rs": {
-      "sha256": "14f9ad1a04a48dee3dd5b810949c09a608bb8db43033569cfd8c04b2fd6cf0f0",
+      "sha256": "268aeb15cc070bef9d63c9e53d7d3ed449043162fdd63c41f338521849864bb8",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 56,
-          "covered": 56
+          "count": 151,
+          "covered": 151
         },
         "regions": {
-          "count": 161,
-          "covered": 161
+          "count": 373,
+          "covered": 373
         },
         "functions": {
-          "count": 3,
-          "covered": 3
+          "count": 9,
+          "covered": 9
         },
         "branches": {
-          "count": 0,
-          "covered": 0
+          "count": 2,
+          "covered": 2
         }
       }
     },
@@ -4358,25 +4456,48 @@
       }
     },
     "crates/capntproto-rpc/src/task_set.rs": {
-      "sha256": "a11e0e0c03da583e37c9412013b9cb84031a010409b4ef50c9700e484806e9ae",
+      "sha256": "61d08b254e11841acf1ca43f4c1ac5d298adb2aa19d174df09d50ab10fa4b586",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 101,
-          "covered": 96
+          "count": 220,
+          "covered": 213
         },
         "regions": {
-          "count": 135,
-          "covered": 129
+          "count": 414,
+          "covered": 399
         },
         "functions": {
-          "count": 10,
-          "covered": 10
+          "count": 29,
+          "covered": 27
         },
         "branches": {
-          "count": 14,
-          "covered": 14
+          "count": 24,
+          "covered": 23
+        }
+      }
+    },
+    "crates/capntproto-rpc/src/task_set/queue.rs": {
+      "sha256": "bf1381c51330adc4d5502a69663eab0d0210aabbd2e51b6045a6b9ad689b48c8",
+      "group": "capability-rpc",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 153,
+          "covered": 153
+        },
+        "regions": {
+          "count": 253,
+          "covered": 253
+        },
+        "functions": {
+          "count": 20,
+          "covered": 20
+        },
+        "branches": {
+          "count": 18,
+          "covered": 18
         }
       }
     },
@@ -4404,71 +4525,71 @@
       }
     },
     "crates/capntproto-rpc/src/twoparty.rs": {
-      "sha256": "95a33c26de374c3c571dbf69b13b63a58b1f19c3a7144ed75672967394a133b5",
+      "sha256": "96bc611674cf3b2ee9a51e4c39120842872c5866b8412f837194d9638445104a",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 305,
-          "covered": 289
+          "count": 374,
+          "covered": 358
         },
         "regions": {
-          "count": 342,
-          "covered": 319
+          "count": 413,
+          "covered": 390
         },
         "functions": {
-          "count": 49,
-          "covered": 46
+          "count": 56,
+          "covered": 53
         },
         "branches": {
-          "count": 4,
-          "covered": 2
+          "count": 8,
+          "covered": 6
         }
       }
     },
     "crates/capntproto-rpc/src/twoparty/facade.rs": {
-      "sha256": "1ab624d085ab3f0f5c36d5aada70dcc36d2a245668135c344f30cc54599280ba",
+      "sha256": "8fe8f9eedf5abac04023665399ede1d419e332574c9f0cda59b2e718c0f50a00",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 346,
-          "covered": 318
+          "count": 373,
+          "covered": 344
         },
         "regions": {
-          "count": 496,
-          "covered": 440
+          "count": 537,
+          "covered": 478
         },
         "functions": {
-          "count": 63,
-          "covered": 54
+          "count": 66,
+          "covered": 57
         },
         "branches": {
-          "count": 30,
-          "covered": 23
+          "count": 36,
+          "covered": 28
         }
       }
     },
     "crates/capntproto-rpc/src/twoparty/facade/borrowed.rs": {
-      "sha256": "8bb65028371aa686822d8e7e75285e4b18c6ab909dc3deee5e7d29459821e094",
+      "sha256": "9c361c299c13852a3811a66b35d266079f7b833de6eaedac8ed0e9cb083904d9",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 142,
-          "covered": 132
+          "count": 149,
+          "covered": 140
         },
         "regions": {
-          "count": 204,
-          "covered": 192
+          "count": 215,
+          "covered": 198
         },
         "functions": {
-          "count": 9,
-          "covered": 8
+          "count": 10,
+          "covered": 9
         },
         "branches": {
           "count": 28,
-          "covered": 22
+          "covered": 24
         }
       }
     },
@@ -4491,6 +4612,426 @@
         },
         "branches": {
           "count": 4,
+          "covered": 4
+        }
+      }
+    },
+    "dev/src/checks.rs": {
+      "sha256": "35fbe7af51d524d90435ff597b9c69a8ba052b5b8c0a7e037f6565c82bb4bc68",
+      "group": "tools-fuzz-examples-benchmarks",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 523,
+          "covered": 441
+        },
+        "regions": {
+          "count": 811,
+          "covered": 622
+        },
+        "functions": {
+          "count": 36,
+          "covered": 30
+        },
+        "branches": {
+          "count": 64,
+          "covered": 39
+        }
+      }
+    },
+    "dev/src/checks/tests.rs": {
+      "sha256": "d5c42aaaa8243c6fc8519ee3dcf673a4a0900df5d272b348768e4e56c7d5ad18",
+      "group": "tools-fuzz-examples-benchmarks",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 169,
+          "covered": 169
+        },
+        "regions": {
+          "count": 315,
+          "covered": 314
+        },
+        "functions": {
+          "count": 13,
+          "covered": 13
+        },
+        "branches": {
+          "count": 2,
+          "covered": 1
+        }
+      }
+    },
+    "dev/src/cloud.rs": {
+      "sha256": "d1ad663a95a0aa5f790cf0d1f8576578889575c107c2513a044e934516d1eef7",
+      "group": "tools-fuzz-examples-benchmarks",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 755,
+          "covered": 592
+        },
+        "regions": {
+          "count": 1458,
+          "covered": 1123
+        },
+        "functions": {
+          "count": 56,
+          "covered": 44
+        },
+        "branches": {
+          "count": 140,
+          "covered": 91
+        }
+      }
+    },
+    "dev/src/cloud/lifecycle_tests.rs": {
+      "sha256": "bf5c0a7f8867cf3e67b9dc5196b0da6c1cd5154ff31014f0bc5c72cf91dd214a",
+      "group": "tools-fuzz-examples-benchmarks",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 356,
+          "covered": 353
+        },
+        "regions": {
+          "count": 597,
+          "covered": 590
+        },
+        "functions": {
+          "count": 26,
+          "covered": 25
+        },
+        "branches": {
+          "count": 68,
+          "covered": 66
+        }
+      }
+    },
+    "dev/src/fuzz.rs": {
+      "sha256": "095d17526dab95fa9f414e5e868f0043b7af9cc968fbf768a94042949dee9302",
+      "group": "tools-fuzz-examples-benchmarks",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 285,
+          "covered": 258
+        },
+        "regions": {
+          "count": 530,
+          "covered": 478
+        },
+        "functions": {
+          "count": 24,
+          "covered": 19
+        },
+        "branches": {
+          "count": 28,
+          "covered": 24
+        }
+      }
+    },
+    "dev/src/interop.rs": {
+      "sha256": "d049b6ee03f75bf875c968bddfa54d41979dff2bc9a5beb39106868496170d08",
+      "group": "tools-fuzz-examples-benchmarks",
+      "status": "no executable LLVM mapping in these platform/feature/test builds; not counted as covered",
+      "metrics": null
+    },
+    "dev/src/lib.rs": {
+      "sha256": "72868448e14839d53a0858fec28fcb024386ec051f8b137b13af181b234bf924",
+      "group": "tools-fuzz-examples-benchmarks",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 49,
+          "covered": 41
+        },
+        "regions": {
+          "count": 83,
+          "covered": 67
+        },
+        "functions": {
+          "count": 13,
+          "covered": 10
+        },
+        "branches": {
+          "count": 4,
+          "covered": 2
+        }
+      }
+    },
+    "dev/src/main.rs": {
+      "sha256": "61db49983ad8d6fe24f026b959992234039ff8481be6b2a5336d9b34ca198f91",
+      "group": "tools-fuzz-examples-benchmarks",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 23,
+          "covered": 0
+        },
+        "regions": {
+          "count": 49,
+          "covered": 0
+        },
+        "functions": {
+          "count": 1,
+          "covered": 0
+        },
+        "branches": {
+          "count": 2,
+          "covered": 0
+        }
+      }
+    },
+    "dev/src/models.rs": {
+      "sha256": "6665ebd5b23ad70fbacf984776e1347a07f5db86134d7236c9222b6bb42632c9",
+      "group": "tools-fuzz-examples-benchmarks",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 55,
+          "covered": 53
+        },
+        "regions": {
+          "count": 120,
+          "covered": 112
+        },
+        "functions": {
+          "count": 3,
+          "covered": 3
+        },
+        "branches": {
+          "count": 8,
+          "covered": 5
+        }
+      }
+    },
+    "dev/src/probes.rs": {
+      "sha256": "cd66a619b97a9eec6958e237dcd2a2f59b43840510aa5b57d1cc735b29939653",
+      "group": "tools-fuzz-examples-benchmarks",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 564,
+          "covered": 251
+        },
+        "regions": {
+          "count": 1050,
+          "covered": 408
+        },
+        "functions": {
+          "count": 39,
+          "covered": 18
+        },
+        "branches": {
+          "count": 40,
+          "covered": 12
+        }
+      }
+    },
+    "dev/src/process.rs": {
+      "sha256": "e0b31b9c4edd170c59334d2047687a53356a60fa5399208c9f065486e7162f5e",
+      "group": "tools-fuzz-examples-benchmarks",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 134,
+          "covered": 94
+        },
+        "regions": {
+          "count": 228,
+          "covered": 137
+        },
+        "functions": {
+          "count": 10,
+          "covered": 6
+        },
+        "branches": {
+          "count": 22,
+          "covered": 9
+        }
+      }
+    },
+    "dev/src/reports/data.rs": {
+      "sha256": "c6403e4397382102e8a12fd45f14a4933b2b1f97fae316dca37976f89112f379",
+      "group": "tools-fuzz-examples-benchmarks",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 535,
+          "covered": 492
+        },
+        "regions": {
+          "count": 1076,
+          "covered": 915
+        },
+        "functions": {
+          "count": 46,
+          "covered": 44
+        },
+        "branches": {
+          "count": 160,
+          "covered": 109
+        }
+      }
+    },
+    "dev/src/reports/mod.rs": {
+      "sha256": "af4868a1ef895b26d9781cdf970fb6240fefc67ad8bd0283ac79493bd8f94747",
+      "group": "tools-fuzz-examples-benchmarks",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 51,
+          "covered": 10
+        },
+        "regions": {
+          "count": 84,
+          "covered": 14
+        },
+        "functions": {
+          "count": 3,
+          "covered": 1
+        },
+        "branches": {
+          "count": 6,
+          "covered": 0
+        }
+      }
+    },
+    "dev/src/reports/publish.rs": {
+      "sha256": "e77fc87b9293ddb887b3809271a79d4844b6f62259ea422401eb34bca4758422",
+      "group": "tools-fuzz-examples-benchmarks",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 570,
+          "covered": 490
+        },
+        "regions": {
+          "count": 1261,
+          "covered": 1052
+        },
+        "functions": {
+          "count": 51,
+          "covered": 41
+        },
+        "branches": {
+          "count": 120,
+          "covered": 85
+        }
+      }
+    },
+    "dev/src/reports/render.rs": {
+      "sha256": "373fbe711364808357b7e30abc52ef0137c454689d7b67d62601e72c01e27bd4",
+      "group": "tools-fuzz-examples-benchmarks",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 626,
+          "covered": 570
+        },
+        "regions": {
+          "count": 1212,
+          "covered": 1016
+        },
+        "functions": {
+          "count": 48,
+          "covered": 47
+        },
+        "branches": {
+          "count": 104,
+          "covered": 78
+        }
+      }
+    },
+    "dev/src/reports/verification.rs": {
+      "sha256": "d9d258439b016b1023146492fc1367ff1e5439c80f6c4947defb4df0276ce1ad",
+      "group": "tools-fuzz-examples-benchmarks",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 149,
+          "covered": 125
+        },
+        "regions": {
+          "count": 415,
+          "covered": 342
+        },
+        "functions": {
+          "count": 12,
+          "covered": 10
+        },
+        "branches": {
+          "count": 26,
+          "covered": 15
+        }
+      }
+    },
+    "dev/src/wiki.rs": {
+      "sha256": "731d796180806abf2a77365e23171d51ed5fcaf00337d80db1b1e7a926059ed1",
+      "group": "tools-fuzz-examples-benchmarks",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 418,
+          "covered": 371
+        },
+        "regions": {
+          "count": 859,
+          "covered": 741
+        },
+        "functions": {
+          "count": 40,
+          "covered": 35
+        },
+        "branches": {
+          "count": 148,
+          "covered": 107
+        }
+      }
+    },
+    "dev/tests/reporting.rs": {
+      "sha256": "8402f8f919c9baaeafd10cf49f4b341d6ae9f085d736a700d4c3623ba37f1922",
+      "group": "tools-fuzz-examples-benchmarks",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 335,
+          "covered": 335
+        },
+        "regions": {
+          "count": 778,
+          "covered": 778
+        },
+        "functions": {
+          "count": 26,
+          "covered": 26
+        },
+        "branches": {
+          "count": 12,
+          "covered": 8
+        }
+      }
+    },
+    "dev/tests/wiki.rs": {
+      "sha256": "52d05fc61c3a0a8070af4f6cfa91fa2437b7072d45ee3010d310512f7ed3e3d2",
+      "group": "tools-fuzz-examples-benchmarks",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 147,
+          "covered": 147
+        },
+        "regions": {
+          "count": 235,
+          "covered": 235
+        },
+        "functions": {
+          "count": 14,
+          "covered": 14
+        },
+        "branches": {
+          "count": 6,
           "covered": 4
         }
       }
@@ -4919,25 +5460,25 @@
       }
     },
     "quality/src/benchmark.rs": {
-      "sha256": "2d9e4a776c40187816e3245629de7ca4cc9084244f9d5939bc4f381838599e2c",
+      "sha256": "552374a86e9129ff53fc4dbcfc87dd298e35b6acaa58d1e532c68b3657aaebea",
       "group": "tools-fuzz-examples-benchmarks",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 307,
-          "covered": 88
+          "count": 344,
+          "covered": 118
         },
         "regions": {
-          "count": 492,
-          "covered": 143
+          "count": 532,
+          "covered": 179
         },
         "functions": {
-          "count": 21,
-          "covered": 10
+          "count": 22,
+          "covered": 11
         },
         "branches": {
-          "count": 56,
-          "covered": 17
+          "count": 58,
+          "covered": 19
         }
       }
     },
@@ -4965,25 +5506,25 @@
       }
     },
     "quality/src/coverage.rs": {
-      "sha256": "13e1d98b3512acccba8d890fdc2cbdc0275f36059b695c9c98d90dac428a5d03",
+      "sha256": "f7ebd4942801131265345d675a0496adc57fc3baf0cdf18b7763c88feaabfca2",
       "group": "tools-fuzz-examples-benchmarks",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 580,
-          "covered": 294
+          "count": 685,
+          "covered": 446
         },
         "regions": {
-          "count": 914,
-          "covered": 431
+          "count": 1056,
+          "covered": 669
         },
         "functions": {
-          "count": 39,
-          "covered": 21
+          "count": 43,
+          "covered": 31
         },
         "branches": {
           "count": 98,
-          "covered": 38
+          "covered": 64
         }
       }
     },
@@ -5011,16 +5552,16 @@
       }
     },
     "quality/src/lanes.rs": {
-      "sha256": "9a74d8dca4794e67d51fc812c50d58d7b353e044b357bf1a479944a1c963ef68",
+      "sha256": "d13a57a380cea269e6288483b43f12e83d7b70aa26f4dc9d928fc15b7fc11af7",
       "group": "tools-fuzz-examples-benchmarks",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 112,
+          "count": 111,
           "covered": 0
         },
         "regions": {
-          "count": 169,
+          "count": 170,
           "covered": 0
         },
         "functions": {
@@ -5034,35 +5575,35 @@
       }
     },
     "quality/src/lib.rs": {
-      "sha256": "132e26e455774ab1ab384c0552246ec7554869b8b91075d023f5cf7991617a79",
+      "sha256": "9e1f56e269da0c954f925fa1b7471c3a93772dcaa98a49f152d49ecea5959a81",
       "group": "tools-fuzz-examples-benchmarks",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 101,
-          "covered": 79
+          "count": 151,
+          "covered": 119
         },
         "regions": {
-          "count": 190,
-          "covered": 131
+          "count": 279,
+          "covered": 211
         },
         "functions": {
-          "count": 14,
-          "covered": 10
+          "count": 16,
+          "covered": 13
         },
         "branches": {
-          "count": 18,
-          "covered": 10
+          "count": 32,
+          "covered": 28
         }
       }
     },
     "quality/src/main.rs": {
-      "sha256": "4096eca29acef56678541b4294d16903b261eca7542f2e093d0e3875251fd9f8",
+      "sha256": "cb36636fbffd5f0488e5e5018ad165f4eee0caec839508c3b5d79f4f337b0816",
       "group": "tools-fuzz-examples-benchmarks",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 50,
+          "count": 51,
           "covered": 0
         },
         "regions": {
@@ -5080,13 +5621,13 @@
       }
     },
     "quality/src/report.rs": {
-      "sha256": "04e3653295c116f55102b6953bedd5a853e197f431aa972f6943580203826967",
+      "sha256": "4cb9f8a8e33742c46006f7a7769c74740a56e78c2e7570da6612cef91fe369e4",
       "group": "tools-fuzz-examples-benchmarks",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 414,
-          "covered": 313
+          "count": 415,
+          "covered": 314
         },
         "regions": {
           "count": 824,
@@ -5103,25 +5644,25 @@
       }
     },
     "quality/tests/cancellation.rs": {
-      "sha256": "04e57f60b7a561ab36570eb8b33572ba0f9e917afb7c7b37596c4718b6c8dd4e",
+      "sha256": "f353ffbc12e13f5513aa7a8c02e51bea05f255b4d77953e4c152c772055af8df",
       "group": "tools-fuzz-examples-benchmarks",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 68,
-          "covered": 51
+          "count": 76,
+          "covered": 68
         },
         "regions": {
-          "count": 98,
-          "covered": 78
+          "count": 108,
+          "covered": 98
         },
         "functions": {
           "count": 2,
           "covered": 2
         },
         "branches": {
-          "count": 16,
-          "covered": 11
+          "count": 18,
+          "covered": 15
         }
       }
     },
@@ -5148,45 +5689,22 @@
         }
       }
     },
-    "quality/tests/digitalocean.rs": {
-      "sha256": "82fbd3d10c4f8ad948164c7c3abd4d8292214fdc459a5d1370a64c66486e2988",
-      "group": "tools-fuzz-examples-benchmarks",
-      "status": "measured (including zero-hit code)",
-      "metrics": {
-        "lines": {
-          "count": 6,
-          "covered": 6
-        },
-        "regions": {
-          "count": 6,
-          "covered": 6
-        },
-        "functions": {
-          "count": 1,
-          "covered": 1
-        },
-        "branches": {
-          "count": 0,
-          "covered": 0
-        }
-      }
-    },
     "quality/tests/ignored_inventory.rs": {
-      "sha256": "eeee9848caef0e830b3572508b78f4b0015d313c39b180cb401a30721d51fe67",
+      "sha256": "3098f7047523100e886a79aa270735ee67567e60deb2c61781c0563bbb0fa178",
       "group": "tools-fuzz-examples-benchmarks",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 29,
-          "covered": 29
+          "count": 24,
+          "covered": 24
         },
         "regions": {
-          "count": 39,
-          "covered": 39
+          "count": 33,
+          "covered": 33
         },
         "functions": {
-          "count": 3,
-          "covered": 3
+          "count": 2,
+          "covered": 2
         },
         "branches": {
           "count": 0,
@@ -5194,26 +5712,26 @@
         }
       }
     },
-    "quality/tests/readme.rs": {
-      "sha256": "d55532850315b96ef265bb8377270302c345cdeb0b425d20063fae2230990fcc",
+    "quality/tests/runner.rs": {
+      "sha256": "d8a9be40f9e9695fab2e3c05411d3d01c59bcc8537654489bbd8dd36a6d90226",
       "group": "tools-fuzz-examples-benchmarks",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 9,
-          "covered": 9
+          "count": 101,
+          "covered": 101
         },
         "regions": {
-          "count": 15,
-          "covered": 14
+          "count": 190,
+          "covered": 190
         },
         "functions": {
-          "count": 1,
-          "covered": 1
+          "count": 4,
+          "covered": 4
         },
         "branches": {
-          "count": 0,
-          "covered": 0
+          "count": 2,
+          "covered": 2
         }
       }
     },
@@ -5264,7 +5782,7 @@
       }
     },
     "src/bulk.rs": {
-      "sha256": "14221f32336275e259ac0ee0ede2176dd4da5caee00838de551500c1d1376c9a",
+      "sha256": "7c99f756470a3e78378894f8c4549a3a30043f76ce00568f6f8c445c0f7174ab",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -5329,6 +5847,52 @@
         "branches": {
           "count": 20,
           "covered": 16
+        }
+      }
+    },
+    "src/bulk/split.rs": {
+      "sha256": "90b9e763a48416ac8168897bf32ceca7bcf6fd708c5483f1ad883fa35fe17819",
+      "group": "runtime",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 251,
+          "covered": 239
+        },
+        "regions": {
+          "count": 416,
+          "covered": 361
+        },
+        "functions": {
+          "count": 24,
+          "covered": 22
+        },
+        "branches": {
+          "count": 40,
+          "covered": 31
+        }
+      }
+    },
+    "src/bulk/split/tests.rs": {
+      "sha256": "a437b88c833d7e3b3b67274fd6f2f00c618ad5099c82ac9d16f83f46faa1c6a8",
+      "group": "runtime",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 253,
+          "covered": 253
+        },
+        "regions": {
+          "count": 336,
+          "covered": 336
+        },
+        "functions": {
+          "count": 21,
+          "covered": 21
+        },
+        "branches": {
+          "count": 6,
+          "covered": 6
         }
       }
     },
@@ -5454,17 +6018,17 @@
       }
     },
     "src/nat/maintenance.rs": {
-      "sha256": "78a81ced0883817e7dcdfe0e3e026d842b9b5e8c7a2b0a3b73cf7dd1d9229f97",
+      "sha256": "2ac20619bed2811e4059485a09fa74e0394ca02fdfd37e90fed9dbfdd388da4e",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
           "count": 434,
-          "covered": 301
+          "covered": 302
         },
         "regions": {
-          "count": 562,
-          "covered": 452
+          "count": 563,
+          "covered": 454
         },
         "functions": {
           "count": 38,
@@ -5472,7 +6036,7 @@
         },
         "branches": {
           "count": 52,
-          "covered": 42
+          "covered": 43
         }
       }
     },
@@ -5487,7 +6051,7 @@
         },
         "regions": {
           "count": 1011,
-          "covered": 692
+          "covered": 694
         },
         "functions": {
           "count": 55,
@@ -5684,25 +6248,25 @@
       }
     },
     "src/native_listener.rs": {
-      "sha256": "93d2b37c4baa2b8f3af88b7c1547b05c0b1426a18a0d04a5a67435e53b87cb80",
+      "sha256": "8a7b7916c74c8752d95c767f198de04e3f5ef0960819c34407c0bff2868987be",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 1103,
-          "covered": 828
+          "count": 1412,
+          "covered": 1136
         },
         "regions": {
-          "count": 1376,
-          "covered": 1105
+          "count": 1697,
+          "covered": 1423
         },
         "functions": {
-          "count": 91,
-          "covered": 80
+          "count": 102,
+          "covered": 91
         },
         "branches": {
-          "count": 108,
-          "covered": 69
+          "count": 114,
+          "covered": 75
         }
       }
     },
@@ -5730,21 +6294,21 @@
       }
     },
     "src/native_rpc.rs": {
-      "sha256": "7dbf4f1336cdb988d9c4496a77c7ba7ab6c2e44f7c6dd84587c74213f0a1f10d",
+      "sha256": "25e9d2abdf348de5ee16c3a5d25de136eb465dc7e10bf016dba581d29d138343",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 832,
-          "covered": 752
+          "count": 843,
+          "covered": 763
         },
         "regions": {
-          "count": 1124,
-          "covered": 994
+          "count": 1134,
+          "covered": 1003
         },
         "functions": {
-          "count": 106,
-          "covered": 90
+          "count": 108,
+          "covered": 92
         },
         "branches": {
           "count": 100,
@@ -5822,25 +6386,25 @@
       }
     },
     "src/native_rpc/session.rs": {
-      "sha256": "4b686a7568e548b6cdd0f8bff092dbf9eca880f81032ffdf031a58bad4bbf96c",
+      "sha256": "d965f3e70a8c69e7ae2d679e02e013ecce90a95c6ac049e74de889e69f4fe25d",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 503,
-          "covered": 347
+          "count": 514,
+          "covered": 357
         },
         "regions": {
-          "count": 604,
-          "covered": 472
+          "count": 615,
+          "covered": 482
         },
         "functions": {
-          "count": 57,
-          "covered": 50
+          "count": 58,
+          "covered": 51
         },
         "branches": {
-          "count": 36,
-          "covered": 28
+          "count": 38,
+          "covered": 29
         }
       }
     },
@@ -5960,25 +6524,25 @@
       }
     },
     "src/native_shutdown.rs": {
-      "sha256": "7fa1e5bf9e52fe784af4ecb49b051d742b37deb0a9ca6309c126dd352712e097",
+      "sha256": "669f2611c79768c57026cae480b467d8ee98c5bd72933553dda17488ecd9a27c",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 398,
-          "covered": 211
+          "count": 402,
+          "covered": 215
         },
         "regions": {
-          "count": 535,
-          "covered": 357
+          "count": 545,
+          "covered": 367
         },
         "functions": {
-          "count": 28,
-          "covered": 25
+          "count": 29,
+          "covered": 26
         },
         "branches": {
-          "count": 72,
-          "covered": 57
+          "count": 76,
+          "covered": 61
         }
       }
     },
@@ -6196,11 +6760,11 @@
       "metrics": {
         "lines": {
           "count": 471,
-          "covered": 459
+          "covered": 460
         },
         "regions": {
           "count": 703,
-          "covered": 660
+          "covered": 661
         },
         "functions": {
           "count": 64,
@@ -6208,7 +6772,7 @@
         },
         "branches": {
           "count": 80,
-          "covered": 67
+          "covered": 68
         }
       }
     },
@@ -6374,7 +6938,7 @@
       }
     },
     "src/rpc.rs": {
-      "sha256": "ce2fcf536e928d339841b77191f4bbaca8672407361d41e55ba5d009e1136019",
+      "sha256": "70f3882749ae8258fbefbbf58e8af3d1793162c4cb0f25d1af39ecdd98a96eca",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -6419,6 +6983,144 @@
         }
       }
     },
+    "src/rpc/local_io.rs": {
+      "sha256": "e17bc9314d439f1ede44bafd66ad7e6a21d38c77f044f086e01385e92633db68",
+      "group": "runtime",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 241,
+          "covered": 235
+        },
+        "regions": {
+          "count": 337,
+          "covered": 329
+        },
+        "functions": {
+          "count": 29,
+          "covered": 27
+        },
+        "branches": {
+          "count": 42,
+          "covered": 41
+        }
+      }
+    },
+    "src/rpc/local_io/owned_tests.rs": {
+      "sha256": "022eb5209d24333bd4cbabbb659498ed9b631a06c0af3bc20587b9c9d461e67a",
+      "group": "runtime",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 130,
+          "covered": 130
+        },
+        "regions": {
+          "count": 285,
+          "covered": 285
+        },
+        "functions": {
+          "count": 9,
+          "covered": 9
+        },
+        "branches": {
+          "count": 0,
+          "covered": 0
+        }
+      }
+    },
+    "src/rpc/local_io/tests.rs": {
+      "sha256": "0c71c82386e356d4ad403d318e966b942bffb3d61d7d973c7d88e94c164699ad",
+      "group": "runtime",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 181,
+          "covered": 178
+        },
+        "regions": {
+          "count": 396,
+          "covered": 390
+        },
+        "functions": {
+          "count": 17,
+          "covered": 17
+        },
+        "branches": {
+          "count": 6,
+          "covered": 6
+        }
+      }
+    },
+    "src/rpc/pacing.rs": {
+      "sha256": "beaa100d3b9715bac4d1a4099eed41d5ecca729d7c3e0639b099d519a8fb9db6",
+      "group": "runtime",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 24,
+          "covered": 24
+        },
+        "regions": {
+          "count": 48,
+          "covered": 48
+        },
+        "functions": {
+          "count": 4,
+          "covered": 4
+        },
+        "branches": {
+          "count": 2,
+          "covered": 2
+        }
+      }
+    },
+    "src/rpc/packet_batch.rs": {
+      "sha256": "8a250718667ece9ac376b60679ece54f852a3df8697b1abe3d38aa03a3b5ef5b",
+      "group": "runtime",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 320,
+          "covered": 302
+        },
+        "regions": {
+          "count": 485,
+          "covered": 461
+        },
+        "functions": {
+          "count": 27,
+          "covered": 27
+        },
+        "branches": {
+          "count": 42,
+          "covered": 30
+        }
+      }
+    },
+    "src/rpc/packet_mtu.rs": {
+      "sha256": "3e408504c280451ec43971c77e019d51f597614f5da7d783b1ed5cf58d38a541",
+      "group": "runtime",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 69,
+          "covered": 67
+        },
+        "regions": {
+          "count": 129,
+          "covered": 122
+        },
+        "functions": {
+          "count": 6,
+          "covered": 6
+        },
+        "branches": {
+          "count": 16,
+          "covered": 14
+        }
+      }
+    },
     "src/rpc/quic.rs": {
       "sha256": "ce64b5cebdc6d0de93f5e4786761cf05acf916c6ba62bc342f8d13bc40f28500",
       "group": "runtime",
@@ -6426,11 +7128,11 @@
       "metrics": {
         "lines": {
           "count": 134,
-          "covered": 128
+          "covered": 129
         },
         "regions": {
           "count": 218,
-          "covered": 195
+          "covered": 197
         },
         "functions": {
           "count": 21,
@@ -6438,22 +7140,22 @@
         },
         "branches": {
           "count": 14,
-          "covered": 11
+          "covered": 12
         }
       }
     },
     "src/rpc/quic/config.rs": {
-      "sha256": "027aabdd2ac2a2e19eb0dbc8381cf4bff230b8391560bdb40917f60e1355dfd4",
+      "sha256": "0567e6a24ba9494eb438e32ee6b7ae7c5f5e1463c3dcabda0689b78d9073b7f7",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 99,
-          "covered": 91
+          "count": 100,
+          "covered": 92
         },
         "regions": {
-          "count": 159,
-          "covered": 130
+          "count": 161,
+          "covered": 132
         },
         "functions": {
           "count": 7,
@@ -6466,44 +7168,44 @@
       }
     },
     "src/rpc/quic/driver.rs": {
-      "sha256": "a73d1559dcd010dee34b60323ca73fff784c4eabb098192e9cd2dbbefb9dc512",
+      "sha256": "1c4c9528139a3217d419c46d0a092ab543b6d695cb073900a2544846406266ed",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 321,
-          "covered": 303
+          "count": 521,
+          "covered": 502
         },
         "regions": {
-          "count": 500,
-          "covered": 471
+          "count": 707,
+          "covered": 672
         },
         "functions": {
-          "count": 24,
-          "covered": 21
+          "count": 30,
+          "covered": 27
         },
         "branches": {
-          "count": 80,
-          "covered": 70
+          "count": 90,
+          "covered": 78
         }
       }
     },
     "src/rpc/quic/endpoint.rs": {
-      "sha256": "402553647e57ad60e5e17f5ba4dad7044dc8bcd1f0a70463c3033109007ff4d8",
+      "sha256": "88d0500049ca364180bc91a82435f5195c8c10a3ddd6ff556ce2ef7ac65ffd45",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 186,
-          "covered": 139
+          "count": 303,
+          "covered": 256
         },
         "regions": {
-          "count": 283,
-          "covered": 213
+          "count": 408,
+          "covered": 336
         },
         "functions": {
-          "count": 18,
-          "covered": 18
+          "count": 22,
+          "covered": 22
         },
         "branches": {
           "count": 50,
@@ -7047,71 +7749,186 @@
       }
     },
     "src/transport.rs": {
-      "sha256": "20bebb2ccb0b5c4782e6efd9f2120b0041900e5ad3417ac31ddb9b97291e4662",
+      "sha256": "f0da1e212eee70b44837b5240fb96ab7dd02d580870ccbfb719f7289ec567345",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 701,
-          "covered": 565
+          "count": 838,
+          "covered": 696
         },
         "regions": {
-          "count": 1088,
-          "covered": 906
+          "count": 1354,
+          "covered": 1146
         },
         "functions": {
-          "count": 66,
-          "covered": 60
+          "count": 76,
+          "covered": 70
         },
         "branches": {
-          "count": 42,
-          "covered": 35
+          "count": 86,
+          "covered": 73
         }
       }
     },
     "src/transport/backend_tests.rs": {
-      "sha256": "745093ca72107f1f3b3ba8556740eabc73f63c91f3ecfc858ed8a23465b51145",
+      "sha256": "65ec983311caa3532eb88a56403bbecea542dd1e763466bb59f3e8519646b0f5",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 550,
-          "covered": 548
+          "count": 621,
+          "covered": 619
         },
         "regions": {
-          "count": 585,
-          "covered": 580
+          "count": 666,
+          "covered": 661
         },
         "functions": {
-          "count": 28,
-          "covered": 28
+          "count": 35,
+          "covered": 35
         },
         "branches": {
-          "count": 10,
-          "covered": 10
+          "count": 12,
+          "covered": 12
+        }
+      }
+    },
+    "src/transport/buffers.rs": {
+      "sha256": "74c610e53123c78e0f28da9d7220551865eed319aa3c412cf908bfe261cef731",
+      "group": "runtime",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 6,
+          "covered": 6
+        },
+        "regions": {
+          "count": 8,
+          "covered": 8
+        },
+        "functions": {
+          "count": 2,
+          "covered": 2
+        },
+        "branches": {
+          "count": 0,
+          "covered": 0
+        }
+      }
+    },
+    "src/transport/bulk.rs": {
+      "sha256": "36d146e9ab27727893adb2188fec3bc9fa3139cf757fa4530a86297ddbf78b2d",
+      "group": "runtime",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 232,
+          "covered": 221
+        },
+        "regions": {
+          "count": 367,
+          "covered": 339
+        },
+        "functions": {
+          "count": 25,
+          "covered": 23
+        },
+        "branches": {
+          "count": 38,
+          "covered": 34
+        }
+      }
+    },
+    "src/transport/bulk/driver.rs": {
+      "sha256": "eb77e9a3957d96b705924f6e210d2f4cc92ed505cf03f7be74f199d72b5c2243",
+      "group": "runtime",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 507,
+          "covered": 464
+        },
+        "regions": {
+          "count": 675,
+          "covered": 612
+        },
+        "functions": {
+          "count": 22,
+          "covered": 21
+        },
+        "branches": {
+          "count": 168,
+          "covered": 128
+        }
+      }
+    },
+    "src/transport/bulk/tests.rs": {
+      "sha256": "abe304da0fa7786a2309a2ac6519a1e0b6e5e334804f683d1ae601505547cb60",
+      "group": "runtime",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 589,
+          "covered": 586
+        },
+        "regions": {
+          "count": 780,
+          "covered": 774
+        },
+        "functions": {
+          "count": 38,
+          "covered": 38
+        },
+        "branches": {
+          "count": 20,
+          "covered": 16
+        }
+      }
+    },
+    "src/transport/bulk/wire.rs": {
+      "sha256": "136149a0ed74cc223e2daf7ac2220b86437f4064e6cac2a11106f1d9390453b9",
+      "group": "runtime",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 81,
+          "covered": 80
+        },
+        "regions": {
+          "count": 119,
+          "covered": 118
+        },
+        "functions": {
+          "count": 8,
+          "covered": 8
+        },
+        "branches": {
+          "count": 22,
+          "covered": 17
         }
       }
     },
     "src/transport/clock_tests.rs": {
-      "sha256": "5768bdbf98fc795227b8e822e9d80198014d77e4b7f38b8ce28e2b677c89bf7e",
+      "sha256": "c2850419f75b630b18decc2c19f7b9d43773155ca00033f4f931dd9da6d327bb",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 262,
-          "covered": 201
+          "count": 313,
+          "covered": 248
         },
         "regions": {
-          "count": 443,
-          "covered": 361
+          "count": 512,
+          "covered": 426
         },
         "functions": {
-          "count": 15,
-          "covered": 13
+          "count": 21,
+          "covered": 15
         },
         "branches": {
-          "count": 24,
-          "covered": 15
+          "count": 26,
+          "covered": 17
         }
       }
     },
@@ -7185,30 +8002,30 @@
       }
     },
     "src/transport/engine.rs": {
-      "sha256": "ee59dcf24481b83e54c0e61a6d3c27f6a6f53dca60e785f1b9b62020594f722a",
+      "sha256": "7ead470042c218c43ea5c3603d636629f874a52510245d317d473708eaacd8fa",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 158,
-          "covered": 141
+          "count": 177,
+          "covered": 160
         },
         "regions": {
-          "count": 244,
-          "covered": 223
+          "count": 276,
+          "covered": 257
         },
         "functions": {
-          "count": 16,
-          "covered": 16
+          "count": 18,
+          "covered": 18
         },
         "branches": {
-          "count": 58,
-          "covered": 52
+          "count": 72,
+          "covered": 65
         }
       }
     },
     "src/transport/engine_tests.rs": {
-      "sha256": "6b479fa303fa1259464076d181e03ec94361f0ad2685998e00568d5c56fbf0d0",
+      "sha256": "cadf3396cd1c81429650ab547234d5974b44f9c3c35b9126ff9167c267f68601",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -7217,8 +8034,8 @@
           "covered": 122
         },
         "regions": {
-          "count": 378,
-          "covered": 243
+          "count": 370,
+          "covered": 240
         },
         "functions": {
           "count": 10,
@@ -7254,21 +8071,21 @@
       }
     },
     "src/transport/mobility.rs": {
-      "sha256": "c49966183582e8794f078e9532ac71041eb459007b3166ef72fed5a84c2b03f3",
+      "sha256": "cdd0b079332c8458321f9763aea7fa7e3562de04f6a40c3c855d91939decd3a0",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 363,
-          "covered": 288
+          "count": 390,
+          "covered": 315
         },
         "regions": {
-          "count": 466,
-          "covered": 370
+          "count": 519,
+          "covered": 423
         },
         "functions": {
-          "count": 35,
-          "covered": 29
+          "count": 37,
+          "covered": 31
         },
         "branches": {
           "count": 74,
@@ -7276,8 +8093,31 @@
         }
       }
     },
+    "src/transport/mtu_tests.rs": {
+      "sha256": "e6e24d7469082e71b389940fdc5b85785a690f7e058d33e3c779b6c9410ed10b",
+      "group": "runtime",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 99,
+          "covered": 98
+        },
+        "regions": {
+          "count": 197,
+          "covered": 194
+        },
+        "functions": {
+          "count": 10,
+          "covered": 10
+        },
+        "branches": {
+          "count": 10,
+          "covered": 10
+        }
+      }
+    },
     "src/transport/scheduling.rs": {
-      "sha256": "9c2c328db846ff42eb6b065dac46089a8ba407ff47c389b7bf1ac7d138a60fe4",
+      "sha256": "3fefefdf3c08621185c2c0a19008a78e0f9b64d1279835bc5ed902ba886e60c5",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -7300,7 +8140,7 @@
       }
     },
     "src/transport/shutdown.rs": {
-      "sha256": "f90c679006eecb836883ddb3092d8fca3815593dfcb5aa47137fad1334fc0efe",
+      "sha256": "ec9971d4aff7da86432d14c1c0e59b3a1210a0ccbb46e2b98fbd12297c9514ca",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -7309,39 +8149,39 @@
           "covered": 382
         },
         "regions": {
-          "count": 576,
-          "covered": 565
+          "count": 585,
+          "covered": 573
         },
         "functions": {
           "count": 23,
           "covered": 23
         },
         "branches": {
-          "count": 94,
-          "covered": 84
+          "count": 98,
+          "covered": 88
         }
       }
     },
     "src/transport/shutdown/packet_tests.rs": {
-      "sha256": "060c00c948a48fdbeead347921c0569351a0b081f970c6346d505c834260fef3",
+      "sha256": "512125a5d3de966ff870364886a533cc4c9066007f2009e3cecbf22c02c25e11",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 460,
-          "covered": 374
+          "count": 493,
+          "covered": 407
         },
         "regions": {
-          "count": 675,
-          "covered": 536
+          "count": 731,
+          "covered": 592
         },
         "functions": {
-          "count": 17,
-          "covered": 16
+          "count": 18,
+          "covered": 17
         },
         "branches": {
-          "count": 78,
-          "covered": 43
+          "count": 82,
+          "covered": 47
         }
       }
     },
@@ -7369,25 +8209,48 @@
       }
     },
     "src/transport/simulation/tests.rs": {
-      "sha256": "6ffbbef7c05a9ff03cebe73de026aacb96082806fa5433f0340d28444b8da2fd",
+      "sha256": "222e94b7bedd289fa0aa51b46ea936a1c2cf43fa36afdbfce1294c0ccc2be4e6",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 676,
-          "covered": 583
+          "count": 688,
+          "covered": 595
         },
         "regions": {
-          "count": 917,
-          "covered": 788
+          "count": 935,
+          "covered": 806
         },
         "functions": {
           "count": 46,
           "covered": 41
         },
         "branches": {
-          "count": 60,
-          "covered": 48
+          "count": 62,
+          "covered": 50
+        }
+      }
+    },
+    "src/transport/simulation/tests/bulk.rs": {
+      "sha256": "d8019c20f7b0a91d5665af8374d278c815824bcfbd0ad5f400e980230c705304",
+      "group": "runtime",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 310,
+          "covered": 307
+        },
+        "regions": {
+          "count": 429,
+          "covered": 418
+        },
+        "functions": {
+          "count": 24,
+          "covered": 24
+        },
+        "branches": {
+          "count": 20,
+          "covered": 16
         }
       }
     },
@@ -7415,21 +8278,21 @@
       }
     },
     "src/transport/simulation/tests/listener/mapping.rs": {
-      "sha256": "847b06173a5b23ddf3c25aa07b3e9d22c48491ddad167a1f8548e8215539e458",
+      "sha256": "b8fe91c9e1620eb51f4bbf9f013ef9ec8cd84ef7fc38ff30e39765db4f2c930e",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 312,
-          "covered": 150
+          "count": 350,
+          "covered": 188
         },
         "regions": {
-          "count": 447,
-          "covered": 155
+          "count": 554,
+          "covered": 262
         },
         "functions": {
-          "count": 14,
-          "covered": 7
+          "count": 16,
+          "covered": 9
         },
         "branches": {
           "count": 22,
@@ -7484,21 +8347,21 @@
       }
     },
     "src/transport/socket.rs": {
-      "sha256": "6997c804b3194087a0490fee342803d86180b6056e0b5fc9ed297c78849e6ee2",
+      "sha256": "caea3b62d8095a15971589057118f0f0dffc4f644ff3f46237ce680244150675",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 38,
-          "covered": 38
+          "count": 96,
+          "covered": 96
         },
         "regions": {
-          "count": 71,
-          "covered": 71
+          "count": 190,
+          "covered": 190
         },
         "functions": {
-          "count": 12,
-          "covered": 12
+          "count": 20,
+          "covered": 20
         },
         "branches": {
           "count": 0,
@@ -7506,45 +8369,114 @@
         }
       }
     },
-    "src/transport/stream.rs": {
-      "sha256": "138f266ed9c5943f89f070df6c468bc661c027a264adc5d954170dec627e31e1",
+    "src/transport/socket/readiness.rs": {
+      "sha256": "8baa78e18d63bfdd2b5e8947f8b8bdc1d88f50faeb5f329bb9f88082ca748415",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 134,
-          "covered": 131
+          "count": 309,
+          "covered": 302
         },
         "regions": {
-          "count": 139,
-          "covered": 135
+          "count": 471,
+          "covered": 455
         },
         "functions": {
-          "count": 18,
-          "covered": 17
+          "count": 36,
+          "covered": 35
         },
         "branches": {
-          "count": 40,
-          "covered": 34
+          "count": 30,
+          "covered": 23
+        }
+      }
+    },
+    "src/transport/stream.rs": {
+      "sha256": "1b6aad2a44a70a2f6cca09f1c5f65df91603a0bb6de80f0ca1eb6892c7b55aa9",
+      "group": "runtime",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 213,
+          "covered": 210
+        },
+        "regions": {
+          "count": 256,
+          "covered": 251
+        },
+        "functions": {
+          "count": 36,
+          "covered": 36
+        },
+        "branches": {
+          "count": 58,
+          "covered": 54
+        }
+      }
+    },
+    "src/transport/stream/state_tests.rs": {
+      "sha256": "d9d3b2bcb46b3187a5039b6a2c51f0d3dd8d22c41ac3c190a306581b21e46939",
+      "group": "runtime",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 104,
+          "covered": 104
+        },
+        "regions": {
+          "count": 271,
+          "covered": 271
+        },
+        "functions": {
+          "count": 7,
+          "covered": 7
+        },
+        "branches": {
+          "count": 8,
+          "covered": 6
+        }
+      }
+    },
+    "src/transport/stream_planes_probe.rs": {
+      "sha256": "fefcdcd3dc9622e8b9d922b96463b0fd84a29c81928c990476531837e8fafa3d",
+      "group": "runtime",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 99,
+          "covered": 98
+        },
+        "regions": {
+          "count": 218,
+          "covered": 216
+        },
+        "functions": {
+          "count": 5,
+          "covered": 5
+        },
+        "branches": {
+          "count": 12,
+          "covered": 10
         }
       }
     },
     "src/transport/stream_tests.rs": {
-      "sha256": "376dadcb528d2ac7fd6c4683a632a8f330e4a44594a82024a29c7aedd3cf809f",
+      "sha256": "7799f64cc0f7efcc15280c00b68447722fff665eba4679630812039a210be3bf",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 100,
-          "covered": 26
+          "count": 167,
+          "covered": 93
         },
         "regions": {
-          "count": 214,
-          "covered": 73
+          "count": 375,
+          "covered": 234
         },
         "functions": {
-          "count": 2,
-          "covered": 1
+          "count": 8,
+          "covered": 7
         },
         "branches": {
           "count": 14,
@@ -7553,63 +8485,109 @@
       }
     },
     "src/transport/tcp.rs": {
-      "sha256": "a110026b211a8438866e99b869f5fd7cdb7600170cff7cf268acee333ecca6fc",
+      "sha256": "8d6d7f677ae8c3a3e83fd651f23d10212ac99583ad0aa12b34da892c7a24ab0e",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 209,
-          "covered": 195
+          "count": 229,
+          "covered": 214
         },
         "regions": {
-          "count": 353,
-          "covered": 313
+          "count": 384,
+          "covered": 346
         },
         "functions": {
-          "count": 18,
-          "covered": 16
+          "count": 19,
+          "covered": 17
         },
         "branches": {
-          "count": 38,
-          "covered": 30
+          "count": 46,
+          "covered": 37
+        }
+      }
+    },
+    "src/transport/tcp/framing.rs": {
+      "sha256": "742642a1a3b35209b7dfd7d5fcff923946a923d180e146eba4e36d94a35cf8ad",
+      "group": "runtime",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 60,
+          "covered": 56
+        },
+        "regions": {
+          "count": 91,
+          "covered": 84
+        },
+        "functions": {
+          "count": 7,
+          "covered": 6
+        },
+        "branches": {
+          "count": 12,
+          "covered": 12
+        }
+      }
+    },
+    "src/transport/tcp/framing/tests.rs": {
+      "sha256": "68d86102f2a2f238d6350a0948254f42b295077b388803aa06e5c79f1543bac3",
+      "group": "runtime",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 175,
+          "covered": 173
+        },
+        "regions": {
+          "count": 261,
+          "covered": 259
+        },
+        "functions": {
+          "count": 20,
+          "covered": 19
+        },
+        "branches": {
+          "count": 10,
+          "covered": 10
         }
       }
     },
     "src/unix_rpc.rs": {
-      "sha256": "f619b527b69bb5d85cdeed03ac608f059942988cec0b46644092dd071d56d5ac",
+      "sha256": "dd7ec7e0880d16e9c8f3dd3e2cdbe9f7de276a4054162bb948a7ee022468f483",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 802,
-          "covered": 623
+          "count": 833,
+          "covered": 652
         },
         "regions": {
-          "count": 1143,
-          "covered": 940
+          "count": 1177,
+          "covered": 969
         },
         "functions": {
-          "count": 85,
-          "covered": 77
+          "count": 87,
+          "covered": 79
         },
         "branches": {
-          "count": 62,
-          "covered": 43
+          "count": 68,
+          "covered": 46
         }
       }
     },
     "src/unix_rpc/ancillary.rs": {
-      "sha256": "db85e50ba445f0f21130adf697742606d62a184cff9cf7c8786e83333740225c",
+      "sha256": "055121a8a68eafa042153f571c027c655b53fc38ec90e8c781dabae16a11fefa",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 147,
-          "covered": 132
+          "count": 148,
+          "covered": 133
         },
         "regions": {
-          "count": 224,
-          "covered": 214
+          "count": 226,
+          "covered": 216
         },
         "functions": {
           "count": 7,
@@ -7622,30 +8600,30 @@
       }
     },
     "src/unix_rpc/ancillary_tests.rs": {
-      "sha256": "94e57ca14853da0b476304de64bc24a44ed99d4efa77aa1e2d5b0cf1a80a1148",
+      "sha256": "131d484d6e108a8e25ce79fe8605b0dda4d6457141d2f38b697bd8c2680cad7f",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 166,
-          "covered": 165
+          "count": 168,
+          "covered": 167
         },
         "regions": {
-          "count": 231,
-          "covered": 230
+          "count": 234,
+          "covered": 233
         },
         "functions": {
           "count": 14,
           "covered": 14
         },
         "branches": {
-          "count": 4,
-          "covered": 4
+          "count": 8,
+          "covered": 6
         }
       }
     },
     "src/unix_rpc/buffered_tests.rs": {
-      "sha256": "5d92aa5e3960d95e368e4e7db7a84abb4ce7a84961da52508e48b44bba3ae38d",
+      "sha256": "3ba0a7ae5667e8297cd11a950260cda6009f4389afcd38cfec3ee16bb6a1512b",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -7691,13 +8669,13 @@
       }
     },
     "src/unix_rpc/facade_tests.rs": {
-      "sha256": "9cfb689845b4e58002b0779c81e4b5402a7cf0799bbde9bb80ab60009931aee5",
+      "sha256": "dc26042488748885f401797df07cb9f4c2f888a19c07e909bb9aabf9bfdcc2f2",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 83,
-          "covered": 83
+          "count": 84,
+          "covered": 84
         },
         "regions": {
           "count": 182,
@@ -7737,13 +8715,13 @@
       }
     },
     "src/unix_rpc/scratch_tests.rs": {
-      "sha256": "15d62519ff962b7953c2737029feb31c5624b1fd3f6af5f5100f172c74a1be7a",
+      "sha256": "ca017417231ed0c4d8928a1045b48d46452e48818959b3e13b517ae4c110eb31",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 623,
-          "covered": 622
+          "count": 624,
+          "covered": 623
         },
         "regions": {
           "count": 688,
@@ -7858,7 +8836,7 @@
       }
     },
     "test-support/src/verification/distribution.rs": {
-      "sha256": "1708c4f7f3aaa19cd3d939bde12027665ec8affdb3e8967a7dc3e9afbc947575",
+      "sha256": "0776b50e196cb4b16843f65a3e0442f5ae3cae9b19a72703e339607c928c4967",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -7876,7 +8854,7 @@
         },
         "branches": {
           "count": 68,
-          "covered": 56
+          "covered": 55
         }
       }
     },
@@ -7927,44 +8905,67 @@
       }
     },
     "test-support/src/verification/mod.rs": {
-      "sha256": "bdcaf244f9993759637484679886b685c235174ad01e28b0d70a0999008860f6",
+      "sha256": "64f0bf06463090a350e4fe7cb9858441034541ed1d6692f5892bb09f0c060ce8",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 669,
-          "covered": 451
+          "count": 685,
+          "covered": 480
         },
         "regions": {
-          "count": 1104,
-          "covered": 695
+          "count": 1131,
+          "covered": 730
         },
         "functions": {
-          "count": 56,
-          "covered": 35
+          "count": 58,
+          "covered": 37
         },
         "branches": {
-          "count": 120,
-          "covered": 55
+          "count": 124,
+          "covered": 60
         }
       }
     },
-    "tests/allocations.rs": {
-      "sha256": "24d3b25007d99e8a291c3a6cd17b5c2715ee4cada466dac7d4195b22f82adcc6",
+    "test-support/src/verification/nextest.rs": {
+      "sha256": "d4f03ed2b84a6d8261523a06c625c31364cfc830f2340818d75453a8b73775f3",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 136,
-          "covered": 136
+          "count": 68,
+          "covered": 67
         },
         "regions": {
-          "count": 229,
-          "covered": 229
+          "count": 111,
+          "covered": 110
         },
         "functions": {
           "count": 12,
           "covered": 12
+        },
+        "branches": {
+          "count": 10,
+          "covered": 9
+        }
+      }
+    },
+    "tests/allocations.rs": {
+      "sha256": "820dab20451261363dfc19667cef75c52754289abcb7c108873e16b85eec8847",
+      "group": "tests-and-verification",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 298,
+          "covered": 298
+        },
+        "regions": {
+          "count": 531,
+          "covered": 531
+        },
+        "functions": {
+          "count": 31,
+          "covered": 31
         },
         "branches": {
           "count": 0,
@@ -8226,40 +9227,40 @@
       }
     },
     "tests/buffered_input.rs": {
-      "sha256": "2b16ef7c4c4fedef1782749322ef4f72ea037d421b17632e8dfa2e9d3e6ddca8",
+      "sha256": "9e05b7be6f59466fec2da1d8caf81ae801c38c5862e1ac5877011d8b08d55a42",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 634,
-          "covered": 562
+          "count": 662,
+          "covered": 590
         },
         "regions": {
-          "count": 998,
-          "covered": 888
+          "count": 1060,
+          "covered": 950
         },
         "functions": {
-          "count": 37,
-          "covered": 33
+          "count": 38,
+          "covered": 34
         },
         "branches": {
-          "count": 22,
-          "covered": 15
+          "count": 24,
+          "covered": 17
         }
       }
     },
     "tests/buffered_input/scratch.rs": {
-      "sha256": "b95d37ae503b8a66b7b1b7dd491e5f4e653a18e4b5d114d392831a062e160975",
+      "sha256": "5d34c19bc1c1223266d26ce901280362fce2e112e47da27b238aace290f4b523",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 208,
-          "covered": 208
+          "count": 211,
+          "covered": 211
         },
         "regions": {
-          "count": 423,
-          "covered": 423
+          "count": 431,
+          "covered": 431
         },
         "functions": {
           "count": 15,
@@ -8341,17 +9342,17 @@
       }
     },
     "tests/call_hints.rs": {
-      "sha256": "252fda1d398a5b695311e91097857169e3c3e6007f1bb88a8248f55fedaf5610",
+      "sha256": "c194a98a1a097f15ec13097859b42c1e1496403731326d1a4b5da9f3f4ffaebd",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 975,
-          "covered": 724
+          "count": 984,
+          "covered": 732
         },
         "regions": {
-          "count": 1262,
-          "covered": 919
+          "count": 1270,
+          "covered": 923
         },
         "functions": {
           "count": 80,
@@ -8485,7 +9486,7 @@
       }
     },
     "tests/composed_wire_history/mod.rs": {
-      "sha256": "773a1e8b4813ccd454782c4a99d32700716bd41d1d69bdc36b13193287f22326",
+      "sha256": "c977747d3c29d0a5253533ef2014cd1bb401b6b196a9267249a450c69a4e6a3b",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -9046,7 +10047,7 @@
           "covered": 302
         },
         "regions": {
-          "count": 811,
+          "count": 812,
           "covered": 540
         },
         "functions": {
@@ -9083,7 +10084,7 @@
       }
     },
     "tests/field_entry.rs": {
-      "sha256": "77acf913c2a145d1fd008e44808181d4f371f88126488cb15f7e986164a0894f",
+      "sha256": "1f00eec233a58673c3e8e1e3295feb957afbe115d28f1f1fe7fdc8eb5d8f7a2c",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -9129,7 +10130,7 @@
       }
     },
     "tests/field_owners.rs": {
-      "sha256": "cc69159a3aae9be16551078a95edecdf0c6096112a2cef27b1b501b57a54a39a",
+      "sha256": "937df57bc173392df1608a98e079412181831fe3b09dc52a250869e11390e91b",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -9138,8 +10139,8 @@
           "covered": 362
         },
         "regions": {
-          "count": 1017,
-          "covered": 621
+          "count": 1019,
+          "covered": 622
         },
         "functions": {
           "count": 37,
@@ -9244,24 +10245,24 @@
       }
     },
     "tests/guard_quality.rs": {
-      "sha256": "7daaafe50a8ac7c75edd433c8dee2cec6f303ac486bd90b4da01b8948877c490",
+      "sha256": "f2502acc9ef8f4c2429629cb7f5c0c6febc86559d0419a4f8b241994c932d5b7",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 295,
+          "count": 292,
           "covered": 0
         },
         "regions": {
-          "count": 518,
+          "count": 512,
           "covered": 0
         },
         "functions": {
-          "count": 12,
+          "count": 9,
           "covered": 0
         },
         "branches": {
-          "count": 30,
+          "count": 28,
           "covered": 0
         }
       }
@@ -9474,16 +10475,16 @@
       }
     },
     "tests/interop/quic_peer.rs": {
-      "sha256": "5843e086140b0a4300a614d7a450918eabfad2b5f1242b25285c7d73ad3d3204",
+      "sha256": "0e6c2a811b55f9806bcf00d612a3a5e253e50ce201ae5df993f12ccc2eaccc10",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 67,
+          "count": 69,
           "covered": 0
         },
         "regions": {
-          "count": 152,
+          "count": 159,
           "covered": 0
         },
         "functions": {
@@ -9704,20 +10705,20 @@
       }
     },
     "tests/memory_safety.rs": {
-      "sha256": "d91375444eb5a2a7864d82267ffa1fb115e5d42f8f5a99a431a8a42319d5832f",
+      "sha256": "b7519a08d39b6cdc9b663299f7383659e4e8f1945395f2755eae893c0b61c0e7",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 246,
+          "count": 231,
           "covered": 0
         },
         "regions": {
-          "count": 337,
+          "count": 309,
           "covered": 0
         },
         "functions": {
-          "count": 12,
+          "count": 9,
           "covered": 0
         },
         "branches": {
@@ -9750,24 +10751,24 @@
       }
     },
     "tests/native.rs": {
-      "sha256": "0a8a16ca80668694ccaa46993317cececca9f1fce6edba5596e24fc272df9ddc",
+      "sha256": "46fe68dd20340ebaf9ccac46f80745ea3ce9dcbdb65316de3c249b71169cf6e0",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 232,
-          "covered": 226
+          "count": 229,
+          "covered": 224
         },
         "regions": {
-          "count": 457,
-          "covered": 443
+          "count": 452,
+          "covered": 440
         },
         "functions": {
-          "count": 14,
-          "covered": 14
+          "count": 13,
+          "covered": 13
         },
         "branches": {
-          "count": 44,
+          "count": 42,
           "covered": 28
         }
       }
@@ -9888,16 +10889,16 @@
       }
     },
     "tests/native_fuzz.rs": {
-      "sha256": "b3cd5889030293b7fec97caa3ed7e27482483e83bc3d0c6d463c1422bf25d937",
+      "sha256": "8806488c861dc7f40f6f54ed8da3697417e463cd64603b44fd9669a906ffa077",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 297,
+          "count": 306,
           "covered": 0
         },
         "regions": {
-          "count": 365,
+          "count": 369,
           "covered": 0
         },
         "functions": {
@@ -10348,25 +11349,25 @@
       }
     },
     "tests/outgoing_queue.rs": {
-      "sha256": "e6908aa7c9169109c6b738f889cbb2d0c114c8c29193bb3461480ac8a60f9bcc",
+      "sha256": "9386790767176217193c5ef84f461f9c46b7b9535368f6f5fbc9e6a066ef4446",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 611,
-          "covered": 519
+          "count": 844,
+          "covered": 751
         },
         "regions": {
-          "count": 1045,
-          "covered": 886
+          "count": 1461,
+          "covered": 1298
         },
         "functions": {
-          "count": 37,
-          "covered": 32
+          "count": 45,
+          "covered": 41
         },
         "branches": {
-          "count": 58,
-          "covered": 33
+          "count": 82,
+          "covered": 52
         }
       }
     },
@@ -10463,7 +11464,7 @@
       }
     },
     "tests/protocol_models.rs": {
-      "sha256": "8de8b54fa0f560466f8922f8027eade674c7f66d2a4708523128551995b7f52c",
+      "sha256": "36115446d2f77d6c729d026629936dee90118db7218a2bb7629aae1218c3c48b",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -10509,21 +11510,21 @@
       }
     },
     "tests/realtime.rs": {
-      "sha256": "87406d770691714a8ac2e4ce52e9627139cc325aa85a59f2ec7cb6d7871b66f6",
+      "sha256": "ba5f640deac63d8c2783d647af209ae2a3e58a70a71087dec61342766f4cc956",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 592,
-          "covered": 396
+          "count": 609,
+          "covered": 413
         },
         "regions": {
-          "count": 957,
-          "covered": 789
+          "count": 1004,
+          "covered": 836
         },
         "functions": {
-          "count": 46,
-          "covered": 38
+          "count": 48,
+          "covered": 40
         },
         "branches": {
           "count": 16,
@@ -10555,17 +11556,17 @@
       }
     },
     "tests/realtime_datagram.rs": {
-      "sha256": "a8a038aafdc9124db8ec352a7da369de768cc4fffffb95f4f668805f4f54688c",
+      "sha256": "bfaa937a722bd1bea533e5dbe5d8c2ef1390276131c2c7c1986d221a53317e31",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 650,
-          "covered": 641
+          "count": 655,
+          "covered": 646
         },
         "regions": {
-          "count": 755,
-          "covered": 739
+          "count": 757,
+          "covered": 741
         },
         "functions": {
           "count": 39,
@@ -10647,17 +11648,17 @@
       }
     },
     "tests/release.rs": {
-      "sha256": "33d925f00f7459bcd82862e9a8f9d932c9fd5d8420e2d0fd54e2de97c5e0482c",
+      "sha256": "807dc133e21078ecf35fd98cd5198c4ec60edccda01d644b538f737e4b8e03cb",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 89,
-          "covered": 28
+          "count": 94,
+          "covered": 33
         },
         "regions": {
-          "count": 130,
-          "covered": 48
+          "count": 142,
+          "covered": 59
         },
         "functions": {
           "count": 3,
@@ -10670,25 +11671,25 @@
       }
     },
     "tests/result_construction.rs": {
-      "sha256": "e9296230c65fb4d34d45bdc312ccd32055396e860a8b6f9dadb98732c5fbcc35",
+      "sha256": "3607a861e7c0d73d1ae45f793f6a9b37a8f2af06f6a38fa3cdb0eed8b79e19ea",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 565,
-          "covered": 559
+          "count": 717,
+          "covered": 711
         },
         "regions": {
-          "count": 497,
-          "covered": 483
+          "count": 609,
+          "covered": 595
         },
         "functions": {
-          "count": 35,
-          "covered": 34
+          "count": 40,
+          "covered": 39
         },
         "branches": {
-          "count": 14,
-          "covered": 13
+          "count": 18,
+          "covered": 17
         }
       }
     },
@@ -10946,25 +11947,25 @@
       }
     },
     "tests/rpc_reply.rs": {
-      "sha256": "d0b21f53760fda0d8e65c7047b5b86c2380fa94691fc0d0aed144aac76cc7c79",
+      "sha256": "8caa772e8a455959b36851f0d180d6a51d2f4cba908e9bd8e790cbe9779cbe66",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 507,
-          "covered": 505
+          "count": 657,
+          "covered": 654
         },
         "regions": {
-          "count": 572,
-          "covered": 558
+          "count": 691,
+          "covered": 672
         },
         "functions": {
-          "count": 42,
-          "covered": 41
+          "count": 50,
+          "covered": 48
         },
         "branches": {
-          "count": 12,
-          "covered": 12
+          "count": 16,
+          "covered": 16
         }
       }
     },
@@ -11015,53 +12016,53 @@
       }
     },
     "tests/runtime_simulation.rs": {
-      "sha256": "ce4df9baf2814afc8145c7c426499d74d66b332699fed9200aa2d9e095080bc1",
+      "sha256": "6d84ac50f8b1c9cf808c0798cc3e62ff733f785f8f0d8931c4d3ca361e49fe07",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 101,
-          "covered": 101
+          "count": 119,
+          "covered": 119
         },
         "regions": {
-          "count": 189,
-          "covered": 189
+          "count": 215,
+          "covered": 215
         },
         "functions": {
-          "count": 4,
-          "covered": 4
-        },
-        "branches": {
           "count": 2,
           "covered": 2
+        },
+        "branches": {
+          "count": 0,
+          "covered": 0
         }
       }
     },
     "tests/schedules.rs": {
-      "sha256": "38b88f1b5321c4011131094ca98932bbdb93e51bd5af29c1a0eb4650d24b08f4",
+      "sha256": "aec23888f3766ee8d9f3cf745c790c72883f43a600bdd7fa6776dd93d1ff3dad",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 160,
-          "covered": 159
+          "count": 162,
+          "covered": 161
         },
         "regions": {
-          "count": 295,
-          "covered": 291
+          "count": 308,
+          "covered": 306
         },
         "functions": {
-          "count": 7,
-          "covered": 7
+          "count": 5,
+          "covered": 5
         },
         "branches": {
-          "count": 12,
-          "covered": 9
+          "count": 10,
+          "covered": 7
         }
       }
     },
     "tests/schema_compiler.rs": {
-      "sha256": "0f55b584098c33e2437b2443055ef6a00822ba78dd816fc3649fe2cefba6ccda",
+      "sha256": "0e03f551deed715be3ef1dfc4ffebe4b6f61c1916e67b27dc1e9095c6a6648f8",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -11070,8 +12071,8 @@
           "covered": 1243
         },
         "regions": {
-          "count": 1996,
-          "covered": 1962
+          "count": 2001,
+          "covered": 1967
         },
         "functions": {
           "count": 39,
@@ -11084,7 +12085,7 @@
       }
     },
     "tests/schema_compiler/annotations.rs": {
-      "sha256": "d00b9accba26d18136c029dfec30592af702db049723f1e2cc8e0fa3c9854367",
+      "sha256": "0882cf72c9ccc0a2548727510cfdf77a6b7c3245f4a9b193c5e8ff5279ed8617",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -11093,8 +12094,8 @@
           "covered": 309
         },
         "regions": {
-          "count": 420,
-          "covered": 412
+          "count": 421,
+          "covered": 413
         },
         "functions": {
           "count": 6,
@@ -11130,7 +12131,7 @@
       }
     },
     "tests/schema_compiler/embeds.rs": {
-      "sha256": "8d3e0a2d2232624184821af8d55007b46e63613a561283bef50cc666c6329ac2",
+      "sha256": "45c5c88fb6fc23c253e977393012d846aa0999ac62ab9f6c278a2d1a56281b76",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -11139,8 +12140,8 @@
           "covered": 251
         },
         "regions": {
-          "count": 385,
-          "covered": 378
+          "count": 386,
+          "covered": 379
         },
         "functions": {
           "count": 5,
@@ -11176,7 +12177,7 @@
       }
     },
     "tests/schema_compiler/generics.rs": {
-      "sha256": "9810f895b1ef9d5f745efd99a19881d54c006af5af8bfd6da185d82346f762b9",
+      "sha256": "a3b84128833d7d1be8016b3a04038f26aed2b80b65d56792ad0658d82e44b885",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -11185,8 +12186,8 @@
           "covered": 356
         },
         "regions": {
-          "count": 503,
-          "covered": 487
+          "count": 504,
+          "covered": 488
         },
         "functions": {
           "count": 13,
@@ -11245,7 +12246,7 @@
       }
     },
     "tests/schema_compiler/interfaces.rs": {
-      "sha256": "f80b42301542fba87e461ee5fdac0d0a2e019a38dd4b2e8521bb9a2df7bb6a47",
+      "sha256": "9580a165ed1e431a830919bfd754b147980537a70e9d2bafe5723dacd543112b",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -11254,8 +12255,8 @@
           "covered": 342
         },
         "regions": {
-          "count": 491,
-          "covered": 483
+          "count": 492,
+          "covered": 484
         },
         "functions": {
           "count": 8,
@@ -11416,7 +12417,7 @@
         },
         "regions": {
           "count": 952,
-          "covered": 702
+          "covered": 703
         },
         "functions": {
           "count": 38,
@@ -11424,7 +12425,7 @@
         },
         "branches": {
           "count": 14,
-          "covered": 7
+          "covered": 8
         }
       }
     },
@@ -11596,17 +12597,17 @@
       }
     },
     "tests/secure_rpc/quic.rs": {
-      "sha256": "acee3491d04446013361d68e76c6b0d23367e74a4d6ed943dca35ede77177a3d",
+      "sha256": "e557da4739e8a0770d16b5b09641474a2b2005026ef0b95d590a3ca94c60d005",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 538,
-          "covered": 536
+          "count": 559,
+          "covered": 557
         },
         "regions": {
-          "count": 663,
-          "covered": 659
+          "count": 704,
+          "covered": 700
         },
         "functions": {
           "count": 51,
@@ -11711,25 +12712,25 @@
       }
     },
     "tests/static_cancellation.rs": {
-      "sha256": "76a962928c2f84fa605b63f2c224e835d77e32433af30f00bee26e00b36c5d7e",
+      "sha256": "1d6b361b9f49274070a4e5771e5b9cf2838bc9d361fb985c992095b959fd80be",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 688,
-          "covered": 455
+          "count": 761,
+          "covered": 531
         },
         "regions": {
-          "count": 910,
-          "covered": 558
+          "count": 983,
+          "covered": 635
         },
         "functions": {
-          "count": 53,
-          "covered": 39
+          "count": 58,
+          "covered": 44
         },
         "branches": {
-          "count": 44,
-          "covered": 26
+          "count": 50,
+          "covered": 33
         }
       }
     },
@@ -11941,48 +12942,48 @@
       }
     },
     "tests/tooling.rs": {
-      "sha256": "6a723eb31cdb0eaf41f8fcd0566960d37dd87f41fa6bbddae1d87dee18dcc6a7",
+      "sha256": "c60cfdc394d15b20fc0f2045f6635b88b3631f15616cb3868fca800a2412267e",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 765,
-          "covered": 684
+          "count": 803,
+          "covered": 722
         },
         "regions": {
-          "count": 1060,
-          "covered": 931
+          "count": 1124,
+          "covered": 995
         },
         "functions": {
           "count": 52,
           "covered": 43
         },
         "branches": {
-          "count": 52,
-          "covered": 37
+          "count": 70,
+          "covered": 52
         }
       }
     },
     "tests/twoparty_facade.rs": {
-      "sha256": "cb3ef12857e674a84e369b7b41c29579f0d4a51a7efe4bfe084bc4104ed783f6",
+      "sha256": "69b6214f1ca9dc33e0648a6cc14c01dd87ceab510059e218e812e2fe88e5413b",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 704,
-          "covered": 699
+          "count": 776,
+          "covered": 771
         },
         "regions": {
-          "count": 774,
-          "covered": 762
+          "count": 825,
+          "covered": 813
         },
         "functions": {
-          "count": 50,
-          "covered": 49
+          "count": 52,
+          "covered": 51
         },
         "branches": {
-          "count": 6,
-          "covered": 6
+          "count": 10,
+          "covered": 10
         }
       }
     },
@@ -12086,7 +13087,7 @@
       "metrics": null
     },
     "verification/miri/tests/ownership.rs": {
-      "sha256": "1ba5a9680f24bc285eac833a26245f03a1be2df6899fe2f7b5e5e259b4ff8347",
+      "sha256": "f609a6e755d309d9576557bd2a8ae79ee3ffff288db3140ee8dc76696741050f",
       "group": "tools-fuzz-examples-benchmarks",
       "status": "no executable LLVM mapping in these platform/feature/test builds; not counted as covered",
       "metrics": null
@@ -12107,38 +13108,38 @@
   "totals": {
     "async-framing": {
       "lines": {
-        "count": 1434,
-        "covered": 1327
+        "count": 1732,
+        "covered": 1638
       },
       "regions": {
-        "count": 1942,
-        "covered": 1784
+        "count": 2504,
+        "covered": 2355
       },
       "functions": {
-        "count": 141,
-        "covered": 123
+        "count": 176,
+        "covered": 158
       },
       "branches": {
-        "count": 178,
-        "covered": 166
+        "count": 208,
+        "covered": 198
       }
     },
     "capability-rpc": {
       "lines": {
-        "count": 8858,
-        "covered": 7981
+        "count": 9523,
+        "covered": 8630
       },
       "regions": {
-        "count": 13267,
-        "covered": 11620
+        "count": 14403,
+        "covered": 12729
       },
       "functions": {
-        "count": 899,
-        "covered": 800
+        "count": 986,
+        "covered": 883
       },
       "branches": {
-        "count": 1132,
-        "covered": 832
+        "count": 1206,
+        "covered": 903
       }
     },
     "optional-compatibility": {
@@ -12161,20 +13162,20 @@
     },
     "runtime": {
       "lines": {
-        "count": 30527,
-        "covered": 24709
+        "count": 35868,
+        "covered": 29920
       },
       "regions": {
-        "count": 44698,
-        "covered": 36206
+        "count": 52854,
+        "covered": 44088
       },
       "functions": {
-        "count": 2644,
-        "covered": 2354
+        "count": 3075,
+        "covered": 2772
       },
       "branches": {
-        "count": 3798,
-        "covered": 2720
+        "count": 4432,
+        "covered": 3251
       }
     },
     "rust-codegen": {
@@ -12197,8 +13198,8 @@
     },
     "schema-compiler": {
       "lines": {
-        "count": 9810,
-        "covered": 9527
+        "count": 9814,
+        "covered": 9531
       },
       "regions": {
         "count": 16842,
@@ -12215,56 +13216,56 @@
     },
     "tests-and-verification": {
       "lines": {
-        "count": 82838,
-        "covered": 63616
+        "count": 83900,
+        "covered": 64698
       },
       "regions": {
-        "count": 122536,
-        "covered": 93167
+        "count": 124014,
+        "covered": 94668
       },
       "functions": {
-        "count": 5118,
-        "covered": 3945
+        "count": 5171,
+        "covered": 4004
       },
       "branches": {
-        "count": 3982,
-        "covered": 2175
+        "count": 4050,
+        "covered": 2240
       }
     },
     "tools-fuzz-examples-benchmarks": {
       "lines": {
-        "count": 6179,
-        "covered": 3585
+        "count": 12371,
+        "covered": 8816
       },
       "regions": {
-        "count": 11046,
-        "covered": 6316
+        "count": 22980,
+        "covered": 16023
       },
       "functions": {
-        "count": 455,
-        "covered": 278
+        "count": 939,
+        "covered": 693
       },
       "branches": {
-        "count": 854,
-        "covered": 475
+        "count": 1864,
+        "covered": 1199
       }
     },
     "wire-runtime": {
       "lines": {
-        "count": 19580,
-        "covered": 16690
+        "count": 19817,
+        "covered": 16912
       },
       "regions": {
-        "count": 30799,
-        "covered": 25466
+        "count": 31189,
+        "covered": 25839
       },
       "functions": {
-        "count": 2388,
-        "covered": 1995
+        "count": 2414,
+        "covered": 2020
       },
       "branches": {
-        "count": 1948,
-        "covered": 1512
+        "count": 1976,
+        "covered": 1537
       }
     }
   },

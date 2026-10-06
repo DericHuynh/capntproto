@@ -55,6 +55,17 @@ impl ProviderError {
                 || m.contains("at capacity")
                 || (m.contains("size") && m.contains("not available") && m.contains("region")))
     }
+    fn rejected_new_key(&self, payload: &Value) -> Option<u64> {
+        let keys = payload["ssh_keys"].as_array()?;
+        let id = keys.first()?.as_u64()?;
+        (keys.len() == 1
+            && self.method == "POST"
+            && self.path == "/droplets"
+            && self.status == 422
+            && self.code == "unprocessable_entity"
+            && self.message == format!("{id} are invalid key identifiers for Droplet creation."))
+        .then_some(id)
+    }
 }
 fn regex(s: &str) -> regex::Regex {
     regex::Regex::new(s).expect("constant expression")
@@ -104,6 +115,9 @@ pub fn error_detail(body: &Value, token: &str, data: Option<&Value>) -> (String,
 }
 trait Api {
     fn request(&self, method: &str, path: &str, data: Option<&Value>) -> Result<Option<Value>>;
+    fn wait_for_key_visibility(&self, cancel: &Cancellation) -> Result<()> {
+        pause(cancel)
+    }
     fn pages(&self, path: &str, key: &str) -> Result<Vec<Value>> {
         let mut result = Vec::new();
         for page in 1..=100 {
@@ -428,6 +442,7 @@ fn create_host(
 ) -> Result<(Value, Plan)> {
     let mut attempts = Vec::new();
     let mut excluded = BTreeSet::new();
+    let mut key_rejections = 0;
     let path = output.join("provisioning.json");
     for _ in 0..24 {
         ensure!(!cancel.cancelled(), "operation interrupted");
@@ -466,7 +481,8 @@ fn create_host(
                     "ambiguous provider response".into()
                 });
                 crate::write_json(&path, &json!(attempts))?;
-                if !provider.is_some_and(ProviderError::capacity) {
+                let rejected_key = provider.and_then(|e| e.rejected_new_key(&payload));
+                if !provider.is_some_and(ProviderError::capacity) && rejected_key.is_none() {
                     return Err(error);
                 }
                 println!("{error}");
@@ -478,6 +494,30 @@ fn create_host(
                     )),
                     "Rejected creation has a matching Droplet; refusing another POST"
                 );
+                if let Some(id) = rejected_key {
+                    // A newly registered key may not yet be visible to Droplet
+                    // creation. Retry only this explicit rejection, after checking
+                    // ownership and absence of a matching host. Never retry a lost
+                    // response or a general 422/quota/authentication failure.
+                    key_rejections += 1;
+                    ensure!(
+                        key_rejections <= 3,
+                        "New SSH key remained unavailable; see provisioning.json"
+                    );
+                    ensure!(
+                        attempts.len() < 24,
+                        "Provisioning attempt limit reached; see provisioning.json"
+                    );
+                    api.wait_for_key_visibility(cancel)?;
+                    let key = api
+                        .request("GET", &format!("/account/keys/{id}"), None)?
+                        .context("New SSH key is no longer registered; refusing another POST")?;
+                    ensure!(
+                        key["ssh_key"]["id"] == id && key["ssh_key"]["name"] == payload["name"],
+                        "New SSH key identity mismatch; refusing another POST"
+                    );
+                    continue;
+                }
                 excluded.insert((
                     crate::string(&plan.size, "slug")?.to_owned(),
                     plan.region.clone(),
@@ -843,6 +883,35 @@ mod tests {
         for secret in ["TOKEN", "SECRET", "PUBLIC", "cloud-config"] {
             assert!(!msg.contains(secret));
         }
+    }
+    #[test]
+    fn key_visibility_retry_requires_the_exact_rejected_creation_identity() {
+        let mut error = ProviderError {
+            status: 422,
+            code: "unprocessable_entity".into(),
+            message: "9 are invalid key identifiers for Droplet creation.".into(),
+            method: "POST".into(),
+            path: "/droplets".into(),
+        };
+        let payload = json!({"ssh_keys":[9]});
+        assert_eq!(error.rejected_new_key(&payload), Some(9));
+        for keys in [
+            json!([]),
+            json!([8]),
+            json!([9, 10]),
+            json!(["9"]),
+            Value::Null,
+        ] {
+            assert_eq!(error.rejected_new_key(&json!({"ssh_keys":keys})), None);
+        }
+        error.method = "GET".into();
+        assert_eq!(error.rejected_new_key(&payload), None);
+        error.method = "POST".into();
+        error.path = "/account/keys".into();
+        assert_eq!(error.rejected_new_key(&payload), None);
+        error.path = "/droplets".into();
+        error.message = "invalid SSH key".into();
+        assert_eq!(error.rejected_new_key(&payload), None);
     }
     #[test]
     fn only_capacity_is_retryable() {

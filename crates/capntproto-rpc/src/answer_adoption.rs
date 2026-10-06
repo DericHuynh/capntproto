@@ -385,7 +385,7 @@ pub(super) fn receive_call<VatId>(
     let ack = Rc::new(ReturnGuard {
         state: Rc::downgrade(origin),
         id: original_id,
-        responded: parent.return_has_been_sent.clone(),
+        status: parent.status.clone(),
         redirect: true,
         only_pipeline: false,
     });
@@ -396,8 +396,7 @@ pub(super) fn receive_call<VatId>(
         id,
         false,
         sender,
-        direct.received_finish.clone(),
-        direct.return_has_been_sent.clone(),
+        direct.status.clone(),
         Some(pipeline_sender.weak_clone()),
     );
     origin.call_words.set(total);
@@ -481,8 +480,7 @@ fn receive_self_call<VatId>(
         id,
         true,
         sender,
-        answer.received_finish.clone(),
-        answer.return_has_been_sent.clone(),
+        answer.status.clone(),
         Some(pipeline_sender.weak_clone()),
     );
     origin.call_words.set(total);

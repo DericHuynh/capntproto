@@ -96,7 +96,9 @@ where
 
     fn update_on_empty_fulfillers(&mut self) {
         // There is always the one pending() future that we added in `new()`.
-        if self.in_progress.len() <= 1 {
+        if self.in_progress.len() <= 1
+            && self.enqueued.as_ref().is_none_or(|queue| queue.is_empty())
+        {
             for f in std::mem::take(&mut self.on_empty_fulfillers) {
                 let _ = f.send(());
             }
@@ -160,14 +162,13 @@ where
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let mut enqueued_stream_complete = false;
-        if let Self {
-            enqueued: Some(ref mut enqueued),
-            ref mut in_progress,
-            ref mut on_empty_fulfillers,
-            ..
-        } = self.as_mut().get_mut()
-        {
-            loop {
+        // Run newly admitted work once before allocating a FuturesUnordered
+        // node. Many RPC completions finish immediately. Pending work is then
+        // polled by the set to register its own wakeup; a wake during this first
+        // poll also wakes the parent, so no readiness can be lost in handoff.
+        // Bound admission because a completed task/reaper may enqueue more work.
+        for admission in 0..32 {
+            if let Some(enqueued) = &mut self.enqueued {
                 match enqueued.poll_next(cx) {
                     Poll::Pending => break,
                     Poll::Ready(None) => {
@@ -175,15 +176,28 @@ where
                         break;
                     }
                     Poll::Ready(Some(EnqueuedTask::Terminate(r))) => {
-                        in_progress.push(TaskInProgress::Terminate(Some(r)));
+                        self.in_progress.push(TaskInProgress::Terminate(Some(r)));
+                        break;
                     }
-                    Poll::Ready(Some(EnqueuedTask::Task(f))) => {
-                        in_progress.push(TaskInProgress::Task(f));
-                    }
+                    Poll::Ready(Some(EnqueuedTask::Task(mut f))) => match f.as_mut().poll(cx) {
+                        Poll::Ready(result) => {
+                            drop(f);
+                            match result {
+                                Ok(()) => self.reaper.task_succeeded(),
+                                Err(error) => self.reaper.task_failed(error),
+                            }
+                        }
+                        Poll::Pending => self.in_progress.push(TaskInProgress::Task(f)),
+                    },
                     Poll::Ready(Some(EnqueuedTask::OnEmpty(f))) => {
-                        on_empty_fulfillers.push(f);
+                        self.on_empty_fulfillers.push(f);
                     }
                 }
+                if admission == 31 {
+                    cx.waker().wake_by_ref();
+                }
+            } else {
+                break;
             }
         }
         if enqueued_stream_complete {
@@ -314,5 +328,56 @@ mod tests {
         shared.borrow_mut().take();
         drop(handle);
         assert_eq!(poll(&mut tasks), Poll::Ready(Ok(())));
+    }
+
+    #[test]
+    fn admission_budget_does_not_report_empty_before_all_queued_work_runs() {
+        let results = Rc::new(RefCell::new(Vec::new()));
+        let (mut handle, mut tasks) = TaskSet::new(Box::new(Reaper(results.clone())));
+        let mut drained = handle.on_empty();
+        for _ in 0..100 {
+            handle.add(async { Ok(()) });
+        }
+        assert!(poll(&mut tasks).is_pending());
+        assert_eq!(results.borrow().len(), 31);
+        assert!(poll(&mut drained).is_pending());
+        drop(handle);
+        for _ in 0..4 {
+            if poll(&mut tasks).is_ready() {
+                assert_eq!(results.borrow().len(), 100);
+                assert_eq!(poll(&mut drained), Poll::Ready(Ok(())));
+                return;
+            }
+        }
+        panic!("bounded admission must eventually drain");
+    }
+
+    #[test]
+    fn pending_first_poll_installs_a_live_waker_and_termination_stops_admission() {
+        use std::{cell::Cell, task::Waker};
+        let results = Rc::new(RefCell::new(Vec::new()));
+        let (mut handle, mut tasks) = TaskSet::new(Box::new(Reaper(results.clone())));
+        let ready = Rc::new(Cell::new(false));
+        let wake = Rc::new(RefCell::new(None::<Waker>));
+        handle.add(futures::future::poll_fn({
+            let ready = ready.clone();
+            let wake = wake.clone();
+            move |cx| {
+                if ready.get() {
+                    Poll::Ready(Ok(()))
+                } else {
+                    *wake.borrow_mut() = Some(cx.waker().clone());
+                    Poll::Pending
+                }
+            }
+        }));
+        assert!(poll(&mut tasks).is_pending());
+        ready.set(true);
+        wake.borrow_mut().take().unwrap().wake();
+        assert!(poll(&mut tasks).is_pending());
+        assert_eq!(results.borrow().as_slice(), &[Ok(())]);
+        handle.terminate(Err(17));
+        handle.add(async { panic!("work after termination must not run") });
+        assert_eq!(poll(&mut tasks), Poll::Ready(Err(17)));
     }
 }

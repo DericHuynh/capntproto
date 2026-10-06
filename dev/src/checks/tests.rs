@@ -169,6 +169,15 @@ fn workflow_policy_rejects_missing_gates_duplicates_and_untrusted_cloud_jobs() {
             json!("Benchmarking"),
         ),
         ("ci", "/jobs/cleanup/if", json!("success()")),
+        ("ci", "/jobs/performance/secrets", json!({})),
+        ("ci", "/jobs/cleanup/secrets", json!({})),
+        ("ci", "/jobs/performance/secrets", json!("inherit")),
+        ("performance", "/on/workflow_call/secrets", json!({})),
+        (
+            "maintenance-benchmarks",
+            "/on/workflow_call/secrets",
+            json!({}),
+        ),
     ] {
         let mut broken = all.clone();
         let (parent, key) = pointer.rsplit_once('/').unwrap();

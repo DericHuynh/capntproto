@@ -25,7 +25,7 @@ pub(super) fn pair_at(
         configure(config);
     }
     let [aa, ba] = addresses;
-    let a = quiche::connect(
+    let a = quiche::connect_with_buffer_factory::<super::buffers::Factory>(
         None,
         &quiche::ConnectionId::from_ref(&[1; 16]),
         aa,
@@ -33,7 +33,7 @@ pub(super) fn pair_at(
         &mut ac,
     )
     .unwrap();
-    let b = quiche::accept(
+    let b = quiche::accept_with_buf_factory::<super::buffers::Factory>(
         &quiche::ConnectionId::from_ref(&[2; 16]),
         None,
         ba,

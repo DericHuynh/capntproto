@@ -158,7 +158,7 @@ pub(super) fn pair() -> (Mobility, Driver) {
 impl Driver {
     fn issue(
         &mut self,
-        conn: &mut quiche::Connection,
+        conn: &mut quiche::Connection<impl quiche::BufFactory>,
         socket: &PacketSocket,
         retire: bool,
     ) -> io::Result<()> {
@@ -187,7 +187,7 @@ impl Driver {
     }
     pub(super) fn step(
         &mut self,
-        conn: &mut quiche::Connection,
+        conn: &mut quiche::Connection<impl quiche::BufFactory>,
         socket: &mut PacketSocket,
         now: impl FnOnce() -> Instant,
     ) -> io::Result<Option<SocketAddr>> {
@@ -247,10 +247,10 @@ impl Driver {
         }
         Ok(migrated)
     }
-    pub(super) fn timeout(&self, now: Instant) -> Duration {
+    pub(super) fn timeout(&self, now: impl FnOnce() -> Instant) -> Duration {
         self.pending.as_ref().map_or(Duration::from_secs(10), |p| {
             p.deadline
-                .saturating_duration_since(now)
+                .saturating_duration_since(now())
                 .min(Duration::from_millis(20))
         })
     }
@@ -297,7 +297,7 @@ impl Driver {
     pub(super) fn command(
         &mut self,
         command: Option<Command>,
-        conn: &mut quiche::Connection,
+        conn: &mut quiche::Connection<impl quiche::BufFactory>,
         socket: &PacketSocket,
         now: Instant,
     ) {

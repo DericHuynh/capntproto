@@ -50,7 +50,7 @@ jobs:
           mkdir -p target/verification/memory-safety
           # Markdown backticks in the format string are literal.
           # shellcheck disable=SC2016
-          printf '# Extended Miri\n\nCommit: `%s`\n\nResult: **%s**. The ordinary 23-test ownership suite covers aligned/unaligned readers and both aliasing models. The extension runs six wire tests with seeds 2–5 on x86-64 and big-endian s390x: 48 additional interpreted executions. Only recorded executions are qualified; this is not native s390x platform support.\n\n[Source-bound results and log paths](checked.json). A failed run does not retain a prior checked.json.\n' "$GITHUB_SHA" "$RESULT" > target/verification/memory-safety/README.md
+          printf '# Extended Miri\n\nCommit: `%s`\n\nResult: **%s**. The ordinary 24-test ownership suite covers aligned/unaligned readers and both aliasing models. The extension runs six wire tests with seeds 2–5 on x86-64 and big-endian s390x: 48 additional interpreted executions. Only recorded executions are qualified; this is not native s390x platform support.\n\n[Source-bound results and log paths](checked.json). A failed run does not retain a prior checked.json.\n' "$GITHUB_SHA" "$RESULT" > target/verification/memory-safety/README.md
           cat target/verification/memory-safety/README.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()

@@ -306,10 +306,13 @@ impl Listener {
             changed: Rc::new(Notify::new()),
         }));
         let guard = Guard(state.clone());
+        socket.enable_recv_aggregation();
         let input = socket.clone();
         let task = tokio::task::spawn_local(async move {
             let _guard = guard;
-            let mut packet = vec![0; MAX_PACKET_BYTES + 1];
+            // GRO combines UDP datagrams, never connection IDs. Split the
+            // aggregate before applying each route's ordinary packet limits.
+            let mut packet = vec![0; 65535];
             let mut timer =
                 tokio::time::interval(limits.reservation_timeout.min(Duration::from_millis(100)));
             timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -321,8 +324,8 @@ impl Listener {
                 tokio::select! {
                     biased;
                     _ = timer.tick() => expire(&_guard.0,Instant::now()),
-                    result = input.recv_from(&mut packet) => {
-                        let (n,from) = match result {
+                    result = input.recv_batch(&mut packet) => {
+                        let (n,from,segment) = match result {
                             Ok(packet) => packet,
                             Err(error) if transient_datagram_error(&error) => {
                                 let mapping = _guard.0.borrow().mapping.upgrade();
@@ -331,11 +334,13 @@ impl Listener {
                             }
                             Err(error) => return Err(error),
                         };
-                        if crate::nat::is_binding_message(&packet[..n]) {
-                            let mapping = _guard.0.borrow().mapping.upgrade();
-                            if let Some(mapping) = mapping { mapping.receive(&packet[..n],from,Instant::now()); }
-                        } else {
-                            dispatch(&_guard.0,&packet[..n],from,Instant::now());
+                        for packet in packet[..n].chunks(segment) {
+                            if crate::nat::is_binding_message(packet) {
+                                let mapping = _guard.0.borrow().mapping.upgrade();
+                                if let Some(mapping) = mapping { mapping.receive(packet,from,Instant::now()); }
+                            } else {
+                                dispatch(&_guard.0,packet,from,Instant::now());
+                            }
                         }
                     },
                 }
@@ -518,7 +523,7 @@ impl Reservation {
                     break (n, remote);
                 }
             };
-            let mut conn = quiche::accept(
+            let mut conn = quiche::accept_with_buf_factory::<transport::buffers::Factory>(
                 &quiche::ConnectionId::from_ref(&id),
                 None,
                 local,
@@ -633,7 +638,7 @@ async fn connect_socket_version(
         version,
     )
     .map_err(transport::error)?;
-    let conn = quiche::connect_with_dcid(
+    let conn = quiche::connect_with_dcid_and_buffer_factory::<transport::buffers::Factory>(
         None,
         &quiche::ConnectionId::from_ref(&transport::cid()),
         &quiche::ConnectionId::from_ref(&target.connection_id),
@@ -825,6 +830,60 @@ mod tests {
         packet.extend_from_slice(&id);
         packet.extend_from_slice(b"packet");
         packet
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn aggregated_datagrams_are_demultiplexed_before_route_admission() {
+        tokio::task::LocalSet::new()
+            .run_until(async {
+                let listener = Listener::bind(
+                    "127.0.0.1:0".parse().unwrap(),
+                    Rc::new(Identity::generate()),
+                    Limits::default(),
+                )
+                .await
+                .unwrap();
+                let mut first = listener.reserve([1; 32], None, b"first").unwrap();
+                let mut second = listener.reserve([2; 32], None, b"second").unwrap();
+                let mut a = packet(first.target().connection_id);
+                let mut b = packet(second.target().connection_id);
+                a.resize(1200, 1);
+                b.resize(1200, 2);
+                let mut unknown = packet([0; 16]);
+                unknown.resize(1200, 3);
+                let tail = packet(first.target().connection_id);
+                let sender = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+                let to = listener.local_addr().unwrap();
+                // An oversized ordinary datagram must not become a truncated valid
+                // packet or stop the listener before the following aggregate.
+                sender
+                    .send_to(&vec![0; MAX_PACKET_BYTES + 1], to)
+                    .await
+                    .unwrap();
+                let bytes = [a.clone(), b.clone(), unknown, tail.clone()].concat();
+                crate::rpc::packet_batch::Sender::default()
+                    .send(&sender, &bytes, 1200, to)
+                    .await
+                    .unwrap();
+                let mut output = [0; MAX_PACKET_BYTES];
+                for (is_first, expected) in [(true, &a), (false, &b), (true, &tail)] {
+                    let reservation = if is_first { &mut first } else { &mut second };
+                    let (n, from) = tokio::time::timeout(
+                        Duration::from_secs(1),
+                        reservation.socket.as_mut().unwrap().recv_from(&mut output),
+                    )
+                    .await
+                    .unwrap()
+                    .unwrap();
+                    assert_eq!(&output[..n], expected);
+                    assert_eq!(from, sender.local_addr().unwrap());
+                }
+                assert_eq!(queued(&listener, first.target().connection_id), 0);
+                assert_eq!(queued(&listener, second.target().connection_id), 0);
+                assert_eq!(listener.stats().issued, 2);
+                listener.close();
+            })
+            .await;
     }
     fn queued(listener: &Listener, id: [u8; 16]) -> usize {
         listener

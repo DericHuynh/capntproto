@@ -33,14 +33,84 @@ use std::{
 /// The peer chooses these keys. Zero and the entire u32 range remain legal at
 /// this storage boundary; individual message handlers enforce reserved ranges.
 pub(super) struct PeerTable<I: PeerId, T> {
-    pub(super) slots: HashMap<I, T>,
+    pub(super) slots: PeerSlots<I, T>,
 }
 
 impl<I: PeerId, T> PeerTable<I, T> {
     pub(super) fn new() -> Self {
         Self {
-            slots: HashMap::new(),
+            slots: PeerSlots::default(),
         }
+    }
+}
+
+// As in C++ ImportTable, ordinary peer IDs avoid hashing. Only this fixed low
+// range is dense; even u32::MAX occupies one entry in the sparse fallback.
+pub(super) struct PeerSlots<I: PeerId, T> {
+    low: [Option<T>; 16],
+    low_len: usize,
+    high: HashMap<I, T>,
+}
+impl<I: PeerId, T> Default for PeerSlots<I, T> {
+    fn default() -> Self {
+        Self {
+            low: std::array::from_fn(|_| None),
+            low_len: 0,
+            high: HashMap::new(),
+        }
+    }
+}
+impl<I: PeerId, T> PeerSlots<I, T> {
+    pub(super) fn get(&self, id: &I) -> Option<&T> {
+        match self.low.get(id.to_wire() as usize) {
+            Some(slot) => slot.as_ref(),
+            None => self.high.get(id),
+        }
+    }
+    pub(super) fn get_mut(&mut self, id: &I) -> Option<&mut T> {
+        match self.low.get_mut(id.to_wire() as usize) {
+            Some(slot) => slot.as_mut(),
+            None => self.high.get_mut(id),
+        }
+    }
+    pub(super) fn contains_key(&self, id: &I) -> bool {
+        self.get(id).is_some()
+    }
+    pub(super) fn insert(&mut self, id: I, value: T) -> Option<T> {
+        if let Some(slot) = self.low.get_mut(id.to_wire() as usize) {
+            let previous = slot.replace(value);
+            self.low_len += usize::from(previous.is_none());
+            previous
+        } else {
+            self.high.insert(id, value)
+        }
+    }
+    pub(super) fn remove(&mut self, id: &I) -> Option<T> {
+        if let Some(slot) = self.low.get_mut(id.to_wire() as usize) {
+            let previous = slot.take();
+            self.low_len -= usize::from(previous.is_some());
+            previous
+        } else {
+            self.high.remove(id)
+        }
+    }
+    pub(super) fn len(&self) -> usize {
+        self.low_len + self.high.len()
+    }
+    pub(super) fn is_empty(&self) -> bool {
+        self.low_len == 0 && self.high.is_empty()
+    }
+    pub(super) fn values(&self) -> impl Iterator<Item = &T> {
+        self.low
+            .iter()
+            .filter_map(Option::as_ref)
+            .chain(self.high.values())
+    }
+    pub(super) fn values_mut(&mut self) -> impl Iterator<Item = &mut T> {
+        self.low
+            .iter_mut()
+            .filter_map(Option::as_mut)
+            .chain(self.high.values_mut())
     }
 }
 

@@ -767,6 +767,9 @@ pub struct HeapAllocator {
 
     // Maximum number of words to allocate.
     max_segment_words: u32,
+
+    #[cfg(feature = "std")]
+    pool: Option<SegmentPool>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -789,6 +792,8 @@ impl Default for HeapAllocator {
             next_size: SUGGESTED_FIRST_SEGMENT_WORDS,
             allocation_strategy: SUGGESTED_ALLOCATION_STRATEGY,
             max_segment_words: 1 << 29,
+            #[cfg(feature = "std")]
+            pool: None,
         }
     }
 }
@@ -797,6 +802,14 @@ impl Default for HeapAllocator {
 impl HeapAllocator {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Reuse zeroed segments from a bounded pool. Live messages own their
+    /// segments exclusively; only released storage returns to the pool.
+    #[cfg(feature = "std")]
+    pub fn segment_pool(mut self, pool: SegmentPool) -> Self {
+        self.pool = Some(pool);
+        self
     }
 
     /// Sets the size of the initial segment in words, where 1 word = 8 bytes.
@@ -821,16 +834,31 @@ impl HeapAllocator {
 }
 
 #[cfg(feature = "alloc")]
+// SAFETY: allocations are disjoint, zeroed, 8-byte aligned and remain owned by
+// the caller until deallocation. Cached segments transfer exclusive ownership
+// through the pool and are cleared before they can be allocated again.
 unsafe impl Allocator for HeapAllocator {
     fn allocate_segment(&mut self, minimum_size: u32) -> (*mut u8, u32) {
         let size = core::cmp::max(minimum_size, self.next_size);
         if size == 0 {
             // passing a zero-sized layout to alloc_zeroed() leads to undefined behavior
-            return (core::ptr::NonNull::dangling().as_ptr(), 0);
+            return (
+                core::ptr::NonNull::<crate::Word>::dangling()
+                    .as_ptr()
+                    .cast(),
+                0,
+            );
         }
         let layout =
             alloc::alloc::Layout::from_size_align(size as usize * BYTES_PER_WORD, 8).unwrap();
-        let ptr = unsafe { alloc::alloc::alloc_zeroed(layout) };
+        #[cfg(feature = "std")]
+        let cached = self.pool.as_ref().and_then(|pool| pool.take(size));
+        #[cfg(not(feature = "std"))]
+        let cached: Option<*mut u8> = None;
+        let ptr = cached.unwrap_or_else(|| {
+            // SAFETY: size is nonzero and the checked layout has alignment 8.
+            unsafe { alloc::alloc::alloc_zeroed(layout) }
+        });
         if ptr.is_null() {
             alloc::alloc::handle_alloc_error(layout);
         }
@@ -848,6 +876,26 @@ unsafe impl Allocator for HeapAllocator {
     }
 
     unsafe fn deallocate_segment(&mut self, ptr: *mut u8, word_size: u32, _words_used: u32) {
+        if word_size == 0 {
+            return;
+        }
+        #[cfg(feature = "std")]
+        if let Some(pool) = &self.pool {
+            // SAFETY: the Allocator contract transfers this exact allocation
+            // back once. Word has size/alignment 8, matching allocate_segment;
+            // the unused suffix has remained zero since allocation.
+            let words = unsafe {
+                alloc::boxed::Box::from_raw(core::ptr::slice_from_raw_parts_mut(
+                    ptr.cast::<crate::Word>(),
+                    word_size as usize,
+                ))
+            };
+            pool.put(words, _words_used as usize);
+            self.next_size = SUGGESTED_FIRST_SEGMENT_WORDS;
+            return;
+        }
+        // SAFETY: the caller returns an allocation from allocate_segment with
+        // its original size, and no references to this segment remain live.
         unsafe {
             alloc::alloc::dealloc(
                 ptr,
@@ -857,6 +905,117 @@ unsafe impl Allocator for HeapAllocator {
         }
         self.next_size = SUGGESTED_FIRST_SEGMENT_WORDS;
     }
+}
+
+/// A bounded cache of released message segments. Clones share storage, but do
+/// not retain messages or their capabilities. Both the retained word count and
+/// segment count are bounded; oversized segments are freed immediately.
+#[cfg(all(feature = "std", feature = "alloc"))]
+#[derive(Clone, Debug)]
+pub struct SegmentPool(std::sync::Arc<std::sync::Mutex<SegmentPoolInner>>);
+
+#[cfg(all(feature = "std", feature = "alloc"))]
+#[derive(Debug)]
+struct SegmentPoolInner {
+    segments: alloc::vec::Vec<alloc::boxed::Box<[crate::Word]>>,
+    words: usize,
+    max_words: usize,
+    max_segments: usize,
+}
+
+#[cfg(all(feature = "std", feature = "alloc"))]
+impl SegmentPool {
+    pub fn new(max_words: usize, max_segments: usize) -> Self {
+        Self(std::sync::Arc::new(std::sync::Mutex::new(
+            SegmentPoolInner {
+                segments: alloc::vec::Vec::new(),
+                words: 0,
+                max_words,
+                max_segments,
+            },
+        )))
+    }
+
+    fn take(&self, size: u32) -> Option<*mut u8> {
+        let mut pool = self.0.lock().unwrap();
+        // Exact sizes preserve allocator limits and growth strategy.
+        let index = pool
+            .segments
+            .iter()
+            .position(|s| s.len() == size as usize)?;
+        let segment = pool.segments.swap_remove(index);
+        pool.words -= segment.len();
+        Some(
+            alloc::boxed::Box::into_raw(segment)
+                .cast::<crate::Word>()
+                .cast(),
+        )
+    }
+
+    fn put(&self, mut segment: alloc::boxed::Box<[crate::Word]>, used: usize) {
+        let mut pool = self.0.lock().unwrap();
+        if pool.segments.len() < pool.max_segments && segment.len() <= pool.max_words - pool.words {
+            crate::Word::words_to_bytes_mut(&mut segment[..used]).fill(0);
+            pool.words += segment.len();
+            pool.segments.push(segment);
+        }
+    }
+}
+
+#[cfg(all(test, feature = "std", feature = "alloc"))]
+#[test]
+fn segment_pool_bounds_and_cross_thread_ownership() {
+    let pool = SegmentPool::new(128, 2);
+    let build = |words| {
+        let mut builder = Builder::new(
+            HeapAllocator::new()
+                .first_segment_words(words)
+                .segment_pool(pool.clone()),
+        );
+        builder.set_root::<crate::text::Owned>("pooled").unwrap();
+        builder
+    };
+    let first = build(64);
+    let second = build(64);
+    let excess = build(64);
+    let oversized = build(129);
+    drop((first, second, excess, oversized));
+    assert_eq!(pool.0.lock().unwrap().words, 128);
+    assert_eq!(pool.0.lock().unwrap().segments.len(), 2);
+    let live = build(64);
+    assert_eq!(pool.0.lock().unwrap().words, 64);
+    std::thread::spawn(move || {
+        assert_eq!(
+            live.get_root_as_reader::<crate::text::Reader<'_>>()
+                .unwrap(),
+            "pooled"
+        );
+        drop(live);
+    })
+    .join()
+    .unwrap();
+    assert_eq!(pool.0.lock().unwrap().words, 128);
+    let moved_pool = pool.clone();
+    std::thread::spawn(move || {
+        let mut builder = Builder::new(
+            HeapAllocator::new()
+                .first_segment_words(64)
+                .segment_pool(moved_pool),
+        );
+        assert!(builder
+            .initn_root::<crate::data::Builder<'_>>(128)
+            .iter()
+            .all(|&b| b == 0));
+    })
+    .join()
+    .unwrap();
+    assert_eq!(pool.0.lock().unwrap().words, 128);
+    // The segment count bounds metadata even when the word limit is generous.
+    let one = SegmentPool::new(1024, 1);
+    one.put(crate::Word::allocate_zeroed_vec(16).into_boxed_slice(), 0);
+    one.put(crate::Word::allocate_zeroed_vec(32).into_boxed_slice(), 0);
+    assert_eq!(one.0.lock().unwrap().words, 16);
+    assert_eq!(one.0.lock().unwrap().segments.len(), 1);
 }
 
 #[cfg(feature = "alloc")]

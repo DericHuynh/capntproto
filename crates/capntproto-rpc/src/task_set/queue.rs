@@ -65,6 +65,14 @@ impl<T> Drop for Sender<T> {
     }
 }
 impl<T> Receiver<T> {
+    pub(super) fn is_empty(&self) -> bool {
+        self.0
+            .borrow()
+            .pending
+            .as_ref()
+            .is_none_or(|queue| queue.is_empty())
+    }
+
     pub(super) fn poll_next(&mut self, cx: &mut Context<'_>) -> Poll<Option<T>> {
         // Clone a replacement outside the borrow: custom wakers may reenter.
         let same_waker = self

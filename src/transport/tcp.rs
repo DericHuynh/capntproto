@@ -3,6 +3,7 @@
 mod framing;
 use super::*;
 use crate::native_shutdown::{Frame, Protocol, FRAME_BYTES};
+use bytes::{Bytes, BytesMut};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -89,7 +90,9 @@ fn session(
     local: [u8; 32],
     peer: [u8; 32],
 ) -> AuthenticatedSession {
-    let (app, io) = crate::rpc::local_io::pair(64 * 1024);
+    // A 64 KiB RPC also has an envelope and segment table. Admit the whole
+    // common large message, rather than parking its final bytes behind a read.
+    let (app, io) = crate::rpc::local_io::pair(crate::rpc::QUIC_BUFFER_BYTES);
     let shutdown = Control::new();
     let control = shutdown.clone();
     let mobility = Mobility::unavailable();
@@ -126,26 +129,42 @@ async fn bridge(
 ) -> io::Result<()> {
     let (mut input, mut output) = tokio::io::split(stream);
     let (mut app_read, mut app_write) = app.into_split();
-    let (queue, mut frames) = mpsc::channel::<(u8, Vec<u8>)>(8);
+    let (queue, mut frames) = mpsc::channel::<(u8, Bytes)>(framing::BATCH_FRAMES);
     let protocol = Rc::new(RefCell::new(Protocol::default()));
     let changed = Rc::new(Notify::new());
     let written = Rc::new(Cell::new(0u64));
     let acknowledged = Rc::new(Cell::new(false));
     let send = async {
-        while let Some((kind, bytes)) = frames.recv().await {
-            framing::write(&mut output, kind, &bytes).await?;
-            if kind == 1 && bytes[4] != 1 {
+        let mut batch = Vec::with_capacity(framing::BATCH_FRAMES);
+        while let Some(frame) = frames.recv().await {
+            batch.push(frame);
+            while batch.len() < framing::BATCH_FRAMES {
+                match frames.try_recv() {
+                    Ok(frame) => batch.push(frame),
+                    Err(_) => break,
+                }
+            }
+            let mut slices = [(0, &[][..]); framing::BATCH_FRAMES];
+            for (slice, (kind, bytes)) in slices.iter_mut().zip(&batch) {
+                *slice = (*kind, bytes);
+            }
+            framing::write_batch(&mut output, &slices[..batch.len()]).await?;
+            // Publish acknowledgement only after the entire batch flushes.
+            if batch
+                .iter()
+                .any(|(kind, bytes)| *kind == 1 && bytes[4] != 1)
+            {
                 acknowledged.set(true);
                 changed.notify_one();
             }
+            batch.clear();
         }
         Ok::<_, io::Error>(())
     };
     let application = async {
-        let mut bytes = [0; 16384];
         loop {
-            let n = app_read.read(&mut bytes).await?;
-            if n == 0 {
+            let mut bytes = app_read.read_owned().await?;
+            if bytes.is_empty() {
                 if !control.requested() {
                     return Err(io::Error::new(
                         io::ErrorKind::ConnectionAborted,
@@ -154,25 +173,31 @@ async fn bridge(
                 }
                 let request = protocol.borrow_mut().request(cid(), written.get())?;
                 queue
-                    .send((1, request.encode().to_vec()))
+                    .send((1, Bytes::copy_from_slice(&request.encode())))
                     .await
                     .map_err(io::Error::other)?;
                 changed.notify_one();
                 return std::future::pending::<io::Result<()>>().await;
             }
-            written.set(
-                written
-                    .get()
-                    .checked_add(n as u64)
-                    .ok_or_else(|| io::Error::other("RPC byte counter overflow"))?,
-            );
-            queue
-                .send((0, bytes[..n].to_vec()))
-                .await
-                .map_err(io::Error::other)?;
+            // Retain the bounded local pipe chunk through the TLS write, as
+            // C++ retains queued messages. Frames are views, not staged copies.
+            while !bytes.is_empty() {
+                let n = bytes.len().min(16384);
+                written.set(
+                    written
+                        .get()
+                        .checked_add(n as u64)
+                        .ok_or_else(|| io::Error::other("RPC byte counter overflow"))?,
+                );
+                queue
+                    .send((0, bytes.split_to(n)))
+                    .await
+                    .map_err(io::Error::other)?;
+            }
         }
     };
     let receive = async {
+        let mut bytes = BytesMut::new();
         loop {
             let kind = input.read_u8().await?;
             let n = input.read_u32().await? as usize;
@@ -182,8 +207,7 @@ async fn bridge(
                     "invalid native TCP frame",
                 ));
             }
-            let mut bytes = vec![0; n];
-            input.read_exact(&mut bytes).await?;
+            framing::read_payload(&mut input, &mut bytes, n).await?;
             if kind == 0 {
                 // Check the fence before copying any bytes beyond it into RPC.
                 {
@@ -192,10 +216,17 @@ async fn bridge(
                         return Err(io::Error::other("RPC bytes exceed receipt fence"));
                     }
                 }
-                app_write.write_all(&bytes).await?;
+                let mut offset = 0;
+                while offset < n {
+                    let count = app_write.write_owned(&mut bytes, offset..n).await?;
+                    if count == 0 {
+                        return Err(io::ErrorKind::WriteZero.into());
+                    }
+                    offset += count;
+                }
                 protocol.borrow_mut().deliver(n)?;
             } else {
-                let frame = Frame::decode(bytes.try_into().unwrap())?;
+                let frame = Frame::decode(bytes[..].try_into().unwrap())?;
                 protocol.borrow_mut().receive(frame)?;
                 if frame.kind == 1 {
                     control.peer_closing();
@@ -213,7 +244,7 @@ async fn bridge(
                 let ack = protocol.borrow_mut().acknowledge();
                 if let Some(ack) = ack {
                     queue
-                        .send((1, ack.encode().to_vec()))
+                        .send((1, Bytes::copy_from_slice(&ack.encode())))
                         .await
                         .map_err(io::Error::other)?;
                 }

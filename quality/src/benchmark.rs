@@ -6,6 +6,7 @@ use std::{fs, path::Path};
 pub const PROTOCOLS: [&str; 4] = ["native", "capnp-cpp", "grpc", "websocket"];
 pub const PAYLOADS: [usize; 4] = [0, 64, 1024, 65536];
 const REPETITIONS: usize = 5;
+pub const MEASUREMENT_VERSION: u32 = 2;
 // capnp-reference is C++; its pinned sources/compiler are recorded separately.
 const RUST_BINARIES: [&str; 7] = [
     "native",
@@ -39,6 +40,7 @@ fn audit_bundle(r: &mut Runner, bundle: &Path) -> Result<Value> {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Trial {
+    pub measurement_version: u32,
     pub protocol: String,
     pub payload_bytes: usize,
     pub warmup: u64,
@@ -53,6 +55,9 @@ pub fn validate(
     warmup: u64,
     iterations: u64,
 ) -> Result<()> {
+    if trial.measurement_version != MEASUREMENT_VERSION {
+        return Err("unsupported benchmark measurement version; rerun with matched C++ validation and cleanup".into());
+    }
     if iterations == 0
         || trial.protocol != protocol
         || trial.payload_bytes != bytes
@@ -329,9 +334,40 @@ pub fn import(r: &mut Runner, bundle: &Path) -> Result<()> {
 mod tests {
     use super::*;
     #[test]
+    fn legacy_or_mixed_measurement_contracts_cannot_qualify() {
+        let mut trials = Vec::new();
+        for bytes in PAYLOADS {
+            for protocol in PROTOCOLS {
+                for _ in 0..REPETITIONS {
+                    trials.push(Trial {
+                        measurement_version: MEASUREMENT_VERSION,
+                        protocol: protocol.into(),
+                        payload_bytes: bytes,
+                        warmup: 10,
+                        iterations: 2,
+                        elapsed_ns: 100,
+                        latency_ns: vec![40, 40],
+                    });
+                }
+            }
+        }
+        assert!(matrix(&trials).is_ok());
+        let mut legacy = serde_json::to_value(&trials[0]).unwrap();
+        legacy
+            .as_object_mut()
+            .unwrap()
+            .remove("measurement_version");
+        assert!(serde_json::from_value::<Trial>(legacy).is_err());
+        for version in [0, 1, MEASUREMENT_VERSION + 1] {
+            trials[7].measurement_version = version;
+            assert!(matrix(&trials).is_err());
+        }
+    }
+    #[test]
     fn incomplete_or_impossible_benchmark_measurements_fail() {
         assert!(matrix(&[]).is_err());
         let mut t = Trial {
+            measurement_version: MEASUREMENT_VERSION,
             protocol: "native".into(),
             payload_bytes: 64,
             warmup: 10,

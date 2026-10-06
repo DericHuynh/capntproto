@@ -43,6 +43,51 @@ fn single_segment_builders_allocate_only_the_word_buffer() {
 }
 
 #[test]
+fn pooled_builders_reuse_storage_without_allocations_or_stale_data() {
+    use capnp::message::{Builder, HeapAllocator, SegmentPool};
+    let pool = SegmentPool::new(256, 4);
+    let allocator = || {
+        HeapAllocator::new()
+            .first_segment_words(64)
+            .segment_pool(pool.clone())
+    };
+    let fill = |value| {
+        let mut message = Builder::new(allocator());
+        let data = message.initn_root::<capnp::data::Builder<'_>>(128);
+        assert!(data.iter().all(|&byte| byte == 0));
+        data.fill(value);
+        message
+    };
+    drop(fill(0xff));
+    let counts = allocation_counter::measure(|| {
+        for i in 0..128 {
+            black_box(fill(i));
+        }
+    });
+    assert_eq!(counts.count_total, 0, "{counts:?}");
+    // Holding a live message cannot expose its storage to a later builder.
+    let first = fill(0x17);
+    let second = fill(0x23);
+    assert!(first
+        .get_root_as_reader::<capnp::data::Reader<'_>>()
+        .unwrap()
+        .iter()
+        .all(|&b| b == 0x17));
+    assert!(second
+        .get_root_as_reader::<capnp::data::Reader<'_>>()
+        .unwrap()
+        .iter()
+        .all(|&b| b == 0x23));
+    drop(first);
+    drop(fill(0x31));
+    assert!(second
+        .get_root_as_reader::<capnp::data::Reader<'_>>()
+        .unwrap()
+        .iter()
+        .all(|&b| b == 0x23));
+}
+
+#[test]
 fn moved_builder_preserves_first_segment_and_spilled_segment_ids() {
     use capnp::message::{AllocationStrategy, Builder, HeapAllocator};
     let mut message = Builder::new(
@@ -224,6 +269,41 @@ fn async_scratch_allocates_only_segment_metadata_when_the_payload_fits() {
     });
     assert!(fallback.bytes_total >= counts.bytes_total + payload.len() as u64);
     assert_eq!(fallback.count_current, 0);
+}
+
+#[test]
+fn buffered_two_segment_framing_keeps_metadata_inline() {
+    use capnp::message::ReaderSegments;
+    use futures::FutureExt;
+
+    let payload = [0x5a; 1024];
+    let mut message =
+        capnp::message::Builder::new(capnp::message::HeapAllocator::new().first_segment_words(1));
+    message
+        .set_root::<capnp::data::Owned>(payload.as_slice())
+        .unwrap();
+    let bytes = capnp::serialize::write_message_to_words(&message);
+    assert_eq!(u32::from_le_bytes(bytes[..4].try_into().unwrap()), 1);
+    for short in [true, false] {
+        let mut input = capnp_futures::BufferedRead::new(
+            futures::io::Cursor::new(&bytes),
+            ReaderOptions::new(),
+        );
+        let counts = allocation_counter::measure(|| {
+            let reader = input
+                .try_read_message(|_| Ok(short))
+                .now_or_never()
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            assert_eq!(reader.get_segments().len(), 2);
+            assert_eq!(reader.get_root::<capnp::data::Reader>().unwrap(), payload);
+        });
+        // Retained messages allocate their payload; framing itself must not
+        // allocate metadata for the common root-plus-large-body layout.
+        assert_eq!(counts.count_total, u64::from(!short), "{counts:?}");
+        assert_eq!(counts.count_current, 0);
+    }
 }
 
 #[test]

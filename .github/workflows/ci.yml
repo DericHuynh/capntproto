@@ -31,7 +31,8 @@ jobs:
       matrix:
         os: [ubuntu-24.04, macos-15, windows-2025]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    # Cold Windows native builds and the feature matrix can exceed 25 minutes.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -73,10 +74,14 @@ jobs:
           cache-key: platform-${{ matrix.os }}
           workspaces: |
             . -> target
+            . -> target/dev-tools
             examples/downstream -> target
+      # Keep the CLI's dependency features out of the runtime build cache.
+      # --target-dir applies to the CLI only; its child Cargo commands retain
+      # the normal runtime targets and the existing artifact/report paths.
       - name: Keep generated output and large files out of Git
         shell: bash
-        run: cargo run --locked -p capntproto-dev -- check-repository
+        run: cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- check-repository
       - name: Compile applications, Rust schema compiler, compatibility adapters and core package
         id: compile
         shell: bash
@@ -89,7 +94,7 @@ jobs:
           cargo clippy --locked --manifest-path crates/capntproto-core/Cargo.toml --all-targets -- -D warnings
       - name: Enforce unsafe documentation and frozen imported debt
         if: runner.os == 'Linux'
-        run: cargo run --locked -p capntproto-dev -- check-unsafe
+        run: cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- check-unsafe
       - name: Require embedded dependency inventories
         id: auditable
         shell: bash
@@ -98,7 +103,7 @@ jobs:
         run: |
           suffix=''
           if test "$RUNNER_OS" = Windows; then suffix='.exe'; fi
-          cargo run --locked -p capntproto-dev -- check-auditable --output "target/platforms/auditable-$PLATFORM.json" \
+          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- check-auditable --output "target/platforms/auditable-$PLATFORM.json" \
             "target/debug/capntproto-model$suffix" \
             "target/debug/capntproto-compile$suffix" \
             "examples/downstream/target/debug/capntproto-preview-example$suffix"
@@ -107,50 +112,50 @@ jobs:
         shell: bash
         run: |
           cargo run --locked --manifest-path examples/downstream/Cargo.toml
-          cargo run --locked -p capntproto-dev -- nextest cargo -- --locked --no-fail-fast -p capntproto-compiler
-          cargo run --locked -p capntproto-dev -- nextest cargo -- --locked -p capntproto-compat --test codecs --test adapters --test json_rpc
-          cargo run --locked -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test tcp_rpc --test secure_rpc
-          cargo run --locked -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test rpc_ownership --test native_vat
-          cargo run --locked -p capntproto-dev -- nextest cargo -- --locked -p capntproto --lib transport::backend_tests
-          cargo run --locked -p capntproto-dev -- nextest cargo -- --locked -p capntproto --lib rpc::quic::retry
+          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked --no-fail-fast -p capntproto-compiler
+          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto-compat --test codecs --test adapters --test json_rpc
+          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test tcp_rpc --test secure_rpc
+          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test rpc_ownership --test native_vat
+          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --lib transport::backend_tests
+          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --lib rpc::quic::retry
           cargo test --locked -p capntproto-compiler --doc
           cargo check --locked -p capntproto --no-default-features --lib
-          cargo run --locked -p capntproto-dev -- nextest cargo -- --locked -p capntproto --no-default-features --test rpc_ownership
-          cargo run --locked -p capntproto-dev -- nextest cargo -- --locked -p capntproto --no-default-features --features storage --lib storage::components
-          cargo run --locked -p capntproto-dev -- nextest cargo -- --locked -p capntproto --no-default-features --features storage --test component_orm
-          cargo run --locked -p capntproto-dev -- nextest cargo -- --locked -p capntproto --no-default-features --features tls --test secure_rpc
-          cargo run --locked -p capntproto-dev -- nextest cargo -- --locked -p capntproto --no-default-features --features quic --test secure_rpc
-          cargo run --locked -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test buffered_input scratch::
-          cargo run --locked -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test dynamic_groups -- --skip group_resets_match_pinned_cpp
-          cargo run --locked -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test dynamic_getters -- --skip mutable_getters_match_pinned_cpp
-          cargo run --locked -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test dynamic_nested_lists -- --skip nested_getters_match_pinned_cpp
-          cargo run --locked -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test dynamic_blobs -- --skip blob_access_matches_pinned_cpp
-          cargo run --locked -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test dynamic_pointers -- --skip pointer_views_match_pinned_cpp
-          cargo run --locked -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test loaded_view_casts -- --skip compatible_loaded_casts_match_pinned_cpp
-          cargo run --locked -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test capnp_root
+          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --no-default-features --test rpc_ownership
+          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --no-default-features --features storage --lib storage::components
+          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --no-default-features --features storage --test component_orm
+          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --no-default-features --features tls --test secure_rpc
+          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --no-default-features --features quic --test secure_rpc
+          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test buffered_input scratch::
+          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test dynamic_groups -- --skip group_resets_match_pinned_cpp
+          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test dynamic_getters -- --skip mutable_getters_match_pinned_cpp
+          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test dynamic_nested_lists -- --skip nested_getters_match_pinned_cpp
+          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test dynamic_blobs -- --skip blob_access_matches_pinned_cpp
+          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test dynamic_pointers -- --skip pointer_views_match_pinned_cpp
+          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test loaded_view_casts -- --skip compatible_loaded_casts_match_pinned_cpp
+          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test capnp_root
           if test "$RUNNER_OS" != Windows; then
-            cargo run --locked -p capntproto-dev -- nextest cargo -- --locked -p capntproto --lib unix_rpc:: -- --skip tlc --skip pinned_cpp
-            cargo run --locked -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test unix_facade --test fd_capabilities -- --skip tlc
+            cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --lib unix_rpc:: -- --skip tlc --skip pinned_cpp
+            cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test unix_facade --test fd_capabilities -- --skip tlc
             cargo clippy --locked -p capntproto --lib --test unix_facade --test fd_capabilities -- -D warnings
           fi
           if test "$RUNNER_OS" = Linux; then
-            cargo run --locked -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test tooling nightly_rpc_try_contracts -- --exact
+            cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test tooling nightly_rpc_try_contracts -- --exact
           fi
       - name: Enforce allocation budgets on Linux
         id: allocations
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          cargo run --locked -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test allocations
+          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test allocations
       - name: Upstream QUIC v1 protocol and independent interoperability checks
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          cargo run --locked -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test tooling pinned_native_profile
-          cargo run --locked -p capntproto-dev -- nextest cargo -- --locked -p capntproto --lib transport:: -- --skip tlc --skip transport::backend_tests
+          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test tooling pinned_native_profile
+          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --lib transport:: -- --skip tlc --skip transport::backend_tests
           cargo build --locked --example quic-interop --no-default-features --features quic
           cargo clippy --locked -p capntproto-dev --features quic-interop --all-targets -- -D warnings
-          cargo run --locked -p capntproto-dev --features quic-interop -- check-quic-interop
+          cargo run --locked --target-dir target/dev-tools -p capntproto-dev --features quic-interop -- check-quic-interop
       - name: Platform result
         if: always()
         shell: bash
@@ -238,6 +243,8 @@ jobs:
     name: Build and measure release benchmarks
     needs: [cargo, models, fuzz, extended]
     uses: ./.github/workflows/performance.yml # zizmor: ignore[self-repository]
+    secrets:
+      DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
   cleanup:
     name: Recover expired benchmark resources
     needs: performance
@@ -246,3 +253,5 @@ jobs:
       always() && github.actor_id != '49699333' &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     uses: ./.github/workflows/maintenance-benchmarks.yml # zizmor: ignore[self-repository]
+    secrets:
+      DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}

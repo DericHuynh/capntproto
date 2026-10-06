@@ -81,7 +81,7 @@ fn trial(exe: &Path, protocol: &str, bytes: usize, placement: Option<&Placement>
     if protocol != "capnp-cpp" {
         client.arg(serde_json::to_string(&ready["public"])?);
     }
-    // Each Rust request has a timeout; the enclosing remote command bounds C++ too.
+    // Every implementation has a ten-second per-call deadline.
     let output = client
         .args([bytes.to_string(), "10000".into(), "1000".into()])
         .output()?;
@@ -93,7 +93,8 @@ fn trial(exe: &Path, protocol: &str, bytes: usize, placement: Option<&Placement>
         .into());
     }
     let value: Value = serde_json::from_slice(&output.stdout)?;
-    if value["protocol"] != protocol
+    if value["measurement_version"] != crate::MEASUREMENT_VERSION
+        || value["protocol"] != protocol
         || value["payload_bytes"] != bytes
         || value["warmup"] != 10000
         || value["iterations"] != 1000
@@ -181,7 +182,7 @@ pub fn compare(directory: &Path, destination: &Path) -> Result<()> {
         }
         hashes.insert(name.clone(), json!(hash));
     }
-    let environment = json!({"manifest":manifest, "binary_sha256":hashes,
+    let environment = json!({"measurement_version":crate::MEASUREMENT_VERSION,"manifest":manifest, "binary_sha256":hashes,
         "valgrind":output("valgrind", &["--version"])? ,
         "uname":output("uname", &["-a"])? , "cpu":output("lscpu", &[])?,
         "governor":fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor").ok(),
@@ -189,7 +190,7 @@ pub fn compare(directory: &Path, destination: &Path) -> Result<()> {
         "available_clocksources":fs::read_to_string("/sys/devices/system/clocksource/clocksource0/available_clocksource").ok(),
         "clock_reads":clock_diagnostics(&placement)?,
         "cpu_placement":placement,
-        "scope":"Linux IPv4 loopback; sequential validated echo; fixed separate physical cores for server/client across all protocols; 10000 warmups/1000 samples; 5 repetitions; Native QUIC v1 / TLS 1.3 with pinned peer authentication, other protocols plaintext"});
+        "scope":"Linux IPv4 loopback; sequential echo with bulk payload validation, response cleanup and ten-second per-call deadlines inside each timed roundtrip; fixed separate physical cores for server/client across all protocols; 10000 warmups/1000 samples; 5 repetitions; Native QUIC v1 / TLS 1.3 with pinned peer authentication, other protocols plaintext"});
     fs::write(
         destination.join("environment.json"),
         serde_json::to_vec_pretty(&environment)?,

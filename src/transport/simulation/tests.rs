@@ -121,7 +121,7 @@ impl Fixture {
             configure(&mut config);
             let cid = [index as u8 + 1; 16];
             let conn = if index == 0 {
-                quiche::connect(
+                quiche::connect_with_buffer_factory::<transport::buffers::Factory>(
                     None,
                     &quiche::ConnectionId::from_ref(&cid),
                     addresses[index],
@@ -129,7 +129,7 @@ impl Fixture {
                     &mut config,
                 )
             } else {
-                quiche::accept(
+                quiche::accept_with_buf_factory::<transport::buffers::Factory>(
                     &quiche::ConnectionId::from_ref(&cid),
                     None,
                     addresses[index],

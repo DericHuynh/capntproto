@@ -7,10 +7,25 @@ indices, external read-only segment ownership, deallocation, and the no-alloc
 single-segment restriction are unchanged. Ordinary one-segment heap builders
 allocate only their word buffer; a fitting scratch builder allocates nothing.
 
+The optional `std` `SegmentPool` lets heap allocators reuse released segments
+within explicit word and segment limits. Reuse requires an exact size match;
+the used prefix is cleared before a segment becomes available. Live builders
+retain exclusive ownership, including when moved between threads. Unpooled and
+no-std allocators retain their existing behavior. `ResultsHook` also has a
+default-disabled immediate-poll permission: ordinary local calls remain deferred,
+while the RPC dispatcher can avoid protected task ownership for calls that
+complete synchronously after protocol-table borrows have been released.
+
 The no-allocation synchronous stream reader fills every segment-table pair before
 decoding it. Short `Read` results previously left table bytes in the message body.
 Root Cargo regressions cover fragmented consecutive frames and every truncated
 table/body prefix.
+
+Near struct reads combine relative-offset and complete-target validation in one
+segment lookup. Signed offsets, alignment, full data/pointer bounds, nesting and
+traversal accounting remain checked; far pointers retain the existing path.
+No segment address is cached across reader moves. Malformed-offset regressions
+also run under Miri's aliasing models and the extended big-endian wire checks.
 
 This fork requires Rust 1.97.0, matching the repository's stable toolchain. Its
 maintained Cargo.toml explicitly includes sources, tests, schemas, license and

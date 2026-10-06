@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use capnp::{
     message::{Reader, ReaderOptions, ReaderSegments},
-    serialize::SegmentLengthsBuilder,
     Error, ErrorKind, Result, Word,
 };
 use futures_util::{AsyncRead, AsyncReadExt};
@@ -16,22 +15,36 @@ const MIN_BUFFER_WORDS: usize = capnp::serialize::SEGMENTS_COUNT_LIMIT / 2;
 
 struct Frame {
     // Like C++'s segment0, the common segment needs no tagged lookup or heap
-    // metadata. Extra segments are uncommon and retain their validated ranges.
+    // metadata. A second segment starts at the first one's end, so only its
+    // end offset is needed for the common root-plus-large-body layout.
     first: (usize, usize),
-    additional: Vec<(usize, usize)>,
+    additional: AdditionalSegments,
     bytes: usize,
+}
+enum AdditionalSegments {
+    None,
+    One(usize),
+    Many(Box<[(usize, usize)]>),
 }
 impl Frame {
     fn range(&self, id: u32) -> Option<(usize, usize)> {
         if id == 0 {
             Some(self.first)
         } else {
-            self.additional.get(id as usize - 1).copied()
+            match &self.additional {
+                AdditionalSegments::One(end) if id == 1 => Some((self.first.1, *end)),
+                AdditionalSegments::Many(ranges) => ranges.get(id as usize - 1).copied(),
+                _ => None,
+            }
         }
     }
 
     fn len(&self) -> usize {
-        1 + self.additional.len()
+        1 + match &self.additional {
+            AdditionalSegments::None => 0,
+            AdditionalSegments::One(_) => 1,
+            AdditionalSegments::Many(ranges) => ranges.len(),
+        }
     }
 
     fn parse(bytes: &[u8], options: ReaderOptions) -> Result<Option<Self>> {
@@ -43,10 +56,17 @@ impl Frame {
         if bytes.len() < table_bytes {
             return Ok(None);
         }
-        // Most control messages and small RPCs have a single segment. Keep
-        // its range in the frame instead of allocating a one-element Vec.
-        if count == 1 {
-            let words = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
+        // Keep both ordinary control messages and two-segment payloads inline.
+        if count <= 2 {
+            let first_words = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
+            let second_words = if count == 2 {
+                u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize
+            } else {
+                0
+            };
+            let words = first_words
+                .checked_add(second_words)
+                .ok_or_else(|| Error::from_kind(ErrorKind::MessageSizeOverflow))?;
             if options
                 .traversal_limit_in_words
                 .is_some_and(|limit| words > limit)
@@ -57,42 +77,48 @@ impl Frame {
             }
             let bytes = words
                 .checked_mul(8)
-                .and_then(|n| n.checked_add(8))
+                .and_then(|n| n.checked_add(table_bytes))
                 .ok_or_else(|| Error::from_kind(ErrorKind::MessageSizeOverflow))?;
             return Ok(Some(Self {
-                first: (8, bytes),
-                additional: Vec::new(),
+                // The validated total bounds the first segment as well.
+                first: (table_bytes, table_bytes + first_words * 8),
+                additional: if count == 2 {
+                    AdditionalSegments::One(bytes)
+                } else {
+                    AdditionalSegments::None
+                },
                 bytes,
             }));
         }
-        let mut lengths = SegmentLengthsBuilder::with_capacity(count);
+        let mut end = table_bytes;
+        let mut first = (table_bytes, table_bytes);
+        let mut ranges = Vec::with_capacity(count - 1);
         for i in 0..count {
             let offset = (i + 1) * 4;
-            lengths.try_push_segment(u32::from_le_bytes(
-                bytes[offset..offset + 4].try_into().unwrap(),
-            ) as usize)?;
+            let words = u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap()) as usize;
+            let start = end;
+            end = words
+                .checked_mul(8)
+                .and_then(|n| end.checked_add(n))
+                .ok_or_else(|| Error::from_kind(ErrorKind::MessageSizeOverflow))?;
+            if i == 0 {
+                first = (start, end);
+            } else {
+                ranges.push((start, end));
+            }
         }
         if options
             .traversal_limit_in_words
-            .is_some_and(|limit| lengths.total_words() > limit)
+            .is_some_and(|limit| (end - table_bytes) / 8 > limit)
         {
             return Err(Error::failed(
                 "incoming message exceeds traversal limit".into(),
             ));
         }
-        let bytes = lengths
-            .total_words()
-            .checked_mul(8)
-            .and_then(|size| size.checked_add(table_bytes))
-            .ok_or_else(|| Error::from_kind(ErrorKind::MessageSizeOverflow))?;
-        let mut ranges = lengths
-            .to_segment_indices()
-            .into_iter()
-            .map(|(start, end)| (table_bytes + start * 8, table_bytes + end * 8));
         Ok(Some(Self {
-            first: ranges.next().unwrap(),
-            additional: ranges.collect(),
-            bytes,
+            first,
+            additional: AdditionalSegments::Many(ranges.into_boxed_slice()),
+            bytes: end,
         }))
     }
 }

@@ -206,6 +206,9 @@ fn every_truncated_prefix_is_handled_and_successful_requests_validate() {
 #[test]
 fn cli_emits_a_framed_request_and_keeps_diagnostics_off_stdout() {
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_capntproto-compile"))
+        // The CLI's default source prefix is its working directory. Keep it
+        // paired with the fixture root, including reused nextest artifacts.
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
         .arg(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/examples/message.capnp"
@@ -231,6 +234,7 @@ fn cli_emits_a_framed_request_and_keeps_diagnostics_off_stdout() {
         5
     );
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_capntproto-compile"))
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
         .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))
         .output()
         .unwrap();

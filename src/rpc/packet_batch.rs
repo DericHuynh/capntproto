@@ -308,7 +308,7 @@ pub(crate) struct Sender {
     mtu_loss: Cell<bool>,
 }
 impl Sender {
-    pub fn check_path_mtu(&self, conn: &mut quiche::Connection) {
+    pub fn check_path_mtu(&self, conn: &mut quiche::Connection<impl quiche::BufFactory>) {
         // A probe that is too large is packet loss for quiche's DPLPMTUD. A
         // previously discovered path size can also become invalid; ask the
         // upstream engine to revalidate it rather than killing reliable RPC.

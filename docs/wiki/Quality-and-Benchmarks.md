@@ -256,7 +256,7 @@ with path filters should not be unconditional required checks in branch protecti
 Verification / Extended has three independent, bounded jobs:
 
 - **Miri:** `CAPNTPROTO_MIRI_EXTENDED=1 cargo nextest run --locked --test memory_safety`
-  retains the existing 92 interpreted ownership executions and adds six wire
+  retains the existing 96 interpreted ownership executions and adds six wire
   tests with seeds 2–5 on x86-64 and big-endian `s390x-unknown-linux-gnu`: 48 more
   executions. Compiler, source hashes, exact test inventories, targets, seeds,
   and logs are retained. This is interpretation, not native s390x qualification.
@@ -317,6 +317,14 @@ inspecting its files and counters. Changes to a baseline require review. Missing
 baselines still fail the final report; CI never creates one automatically or
 substitutes the current run for a missing comparison.
 
+Owned build scripts declare `LLVM_PROFILE_FILE` with Cargo's
+[`rerun-if-env-changed`](https://doc.rust-lang.org/cargo/reference/build-scripts.html#rerun-if-env-changed)
+directive. Each collection uses a new profile directory, so a warm Cargo target
+reruns schema generation and produces fresh counters. It must not reuse old
+profile files or silently lose build-script coverage. A regression test checks
+the real RPC package on a cold build, a warm build with a new destination, and a
+warm build whose destination is unchanged.
+
 The first `first-party-owned-crates-v3` baseline was measured on Linux x86-64 on
 2026-10-03 from commit `ed95a35ac`, using the pinned coverage compiler and flags.
 Its source fingerprint is
@@ -327,6 +335,45 @@ imported Rust crates each have measured coverage. Raw-counter hashes, source-fil
 hashes and per-group totals were checked before saving the initial summary as
 the baseline. The initial measurement is a regression reference, not a claim that
 all code paths are covered.
+
+The October 2026 CI requalification reviews the baseline after the nextest
+migration, separation of Cargo/TLA+/fuzz lanes, codegen file split, and RPC
+optimizations. The original comparison and logs remain failed evidence; changing
+the reference does not certify that run. A subsequent CI run must pass the
+unchanged comparison against the reviewed snapshot before merge.
+
+The review distinguishes executable gaps from changed denominators. Added tests
+exercise stream rejection and overflow without corrupting pending bytes, real
+QUIC reset propagation, copying-output EOF, multi-segment batch fallbacks,
+scratch segment inventories, high-ID lookup and owner destruction. Reporting
+tests run real passing/failing nextest fixtures and reject stale or absent JUnit
+reports. Coverage-parser tests preserve zero-hit sources, reject malformed or
+duplicate exports, and verify workspace/profile isolation.
+
+Remaining zero-hit mappings stay in the snapshot. Examples include clock
+callbacks and queued futures which negative controls require never to execute,
+32-bit framing overflow paths unreachable on the measured 64-bit target,
+platform-specific errors, and model replays now exercised in the independent
+TLA+ lane. Burst-buffer trimming and canceled borrowed-driver paths also remain
+partly unmeasured. Assertions added to unsafe test fixtures contribute untaken
+failure branches. Moving code out of `codegen.rs` and removing covered statements from
+join handling can lower a file ratio without adding uncovered lines. Changed
+LLVM mappings in generic/generated call sites also change region counts. These
+are reviewed baseline differences, not exclusions or claims of coverage. Every
+source-group metric must still be compared with the original baseline during
+review, and CI continues enforcing per-file and per-group ratios thereafter.
+
+The reviewed replacement was collected on Linux x86-64 on 2026-10-06 from
+`8f3e05e23`, with the same pinned compiler, flags and ownership scope. All 1,349
+instrumented Cargo-partition tests and workspace doctests passed. The snapshot
+inventories 603 source files, with 558 mapped and 45 explicitly unmapped. All 36
+group metrics meet or exceed the original baseline; 32 per-file metric changes
+remain after the added tests. The complete measured summary is committed without
+altering its counters. Source hashes and every mapped metric were checked against
+the raw LLVM export. Its source fingerprint is
+`adaac8a40b0581d2903533d0ae2556b38d94c54d54d2153a1616caa535dac6d7`;
+the raw LLVM JSON SHA-256 is
+`88143aa8049c8d3b2dfe1661bbb0027fbb6c15904b3f55b7ed2524e03b1e0761`.
 
 The Fuzzing job packages its reports, logs, queues, crashes and hangs in
 `fuzz-report.tar.gz` before artifact upload. This preserves AFL's colon-containing
@@ -423,6 +470,17 @@ Capntproto uses Native QUIC v1 with TLS 1.3 and pinned peer authentication;
 C++ Cap'n Proto uses plaintext
 TCP, gRPC plaintext HTTP/2, and WebSockets plaintext binary echo. These security
 and semantic differences are explicit; this is not peak concurrent throughput.
+
+Measurement version 2 uses bulk payload comparison and includes response/promise
+cleanup and a ten-second per-call deadline in each timed round trip. The old C++
+harness asserted each byte separately and sampled before destroying its response.
+That inflated its large-payload baseline: a five-repetition local control changed
+the C++ 64-KiB median from 156.025 to 75.219 microseconds after bulk comparison and
+cleanup were matched, before adding the matching deadline. This is a benchmark
+correction, not a protocol speedup. Historical unversioned comparisons below are
+retained as historical evidence and must not qualify the current target. The
+driver and report validator reject legacy or mixed measurement versions. The
+version-2 dedicated result below does not meet the 1.2× target.
 
 The runner destroys the droplet in `finally`, including failure/cancellation,
 and an Actions `always()` step verifies cleanup. A separate hourly janitor
@@ -820,6 +878,169 @@ one allocation for a single-segment heap builder and zero for fitting scratch
 storage; moved multi-segment builders, external segments and allocator cleanup
 retain their ownership checks. Dedicated latency qualification is still required.
 
+The next local diagnostic adds bounded per-connection segment reuse and avoids
+background protection tasks for non-streaming, non-pipelined methods that finish
+on their first poll. Pending methods retain their executor ownership; ordinary
+local calls remain deferred. A connection retains at most 128 KiB in 16 released
+segments, with exact-size reuse and clearing of the used prefix. Against the
+inline-builder baseline above, empty-call server instructions fell from 529.86
+to 475.29 million (10.3%). Client allocations fell from 253,787 to 242,787 and
+cumulative allocated bytes from 47,703,806 to 25,353,757. These are local
+instruction/allocation diagnostics; they do not establish the 1.2× latency target.
+The memory suite includes pooled multi-segment reuse with simultaneous live
+messages under both Miri aliasing models, and cancellation tests exercise an
+initially pending protected method and immediate success/error completion.
+
+Combining near-struct offset and complete-target validation into one segment
+lookup reduced the same local server profile further, from 475.29 to 466.29
+million instructions. It retains alignment, nesting, traversal and complete
+bounds validation without caching addresses into movable readers. The malformed
+offset cases passed the extended memory suite's 144 interpreted executions,
+including both aliasing models and big-endian wire decoding.
+
+The [next dedicated run](https://github.com/DericHuynh/capntproto/actions/runs/37273929820)
+measured `9d87134b2` before that pointer change. Measurement and droplet cleanup
+succeeded, but its report job lacked the schema compiler and failed before
+sample validation. Raw pooled medians were Native/C++ 44.04/39.54, 44.65/31.23,
+44.63/33.85 and 163.08/126.57 microseconds at 0/64/1024/65536 bytes, respectively.
+Those are diagnostic samples, not a passed quality report or a demonstrated
+1.2× result. All five repetitions remain included. The report job now installs
+its schema compiler before provisioning a measurement host.
+
+The subsequent QUIC candidate uses upstream `BufFactory` and `stream_send_zc`
+with immutable `Bytes` views. Reads are capped at the existing 128-KiB bridge
+budget. An acknowledged slab can be reclaimed; a retained retransmission view
+prevents mutation, and later small writes consume the unused tail before another
+slab is allocated. At most 4 KiB of unused tail is retired per slab. A regression
+holds 1,024 outstanding one-byte views and checks that this does not allocate a
+128-KiB slab per write. Partial writes, cancellation and EOF preserve their
+existing state transitions. The production quiche crate remains unmodified.
+
+Local empty-call diagnostics for this candidate used 471.93 million server
+instructions versus 466.29 million before it, while client allocations fell
+from 242,787 to 231,787. A three-repetition local comparison showed lower 64-KiB
+latency, but the small-message instruction increase is a tradeoff and local
+timings do not qualify the 1.2× target.
+
+The [validated dedicated run on `5ec4a320a`](https://github.com/DericHuynh/capntproto/actions/runs/37277836998)
+included the pooled arenas, combined struct validation and owned QUIC buffers.
+All 80 trials passed report validation, and resource cleanup succeeded. On its
+Xeon Platinum 8168 host, the pooled results still miss the target:
+
+| Payload | Native p50 (µs) | C++ p50 (µs) | Native / C++ |
+| --- | ---: | ---: | ---: |
+| Empty | 53.069 | 37.366 | 1.42× |
+| 64 B | 54.513 | 37.527 | 1.45× |
+| 1 KiB | 54.864 | 40.502 | 1.35× |
+| 64 KiB | 239.210 | 185.883 | 1.29× |
+
+Every repetition remains included, including native empty-call medians ranging
+from 50.97 to 87.36 µs. This host differs from earlier runs, so absolute times
+across runs are not a paired comparison. The complete workspace nextest run at
+this revision passed 1,558 tests with seven documented skips.
+
+The next candidate transfers immutable bytes from the local RPC bridge into
+QUIC without copying them into a second staging buffer. Copied adapters retain
+the bounded fallback, while partial writes and unacknowledged retransmissions
+keep their own immutable views. One-byte retention tests guard against an
+allocation per message. It also shares incoming answer flags, returns arena
+allocations without a second segment lookup, and follows C++ in leaving empty
+capability tables null instead of allocating a list tag.
+
+For 10,000 warmups plus 1,000 empty calls, local server instruction counts fell
+from 471.93 to 460.00 million. Five paired local repetitions of the buffer and
+arena changes showed only modest latency differences. Direct polling of the
+transport on each write regressed latency and was discarded; polling at flush
+and replacing RPC oneshots showed insufficient benefit to retain. These are
+diagnostics, not a demonstrated 1.2× result. The new candidate passed 291 focused
+tests and the unsafe documentation gate before full qualification.
+
+The [validated run on `2ef360212`](https://github.com/DericHuynh/capntproto/actions/runs/37284232525)
+retained all 80 trials and confirmed droplet deletion. It used a dedicated Xeon
+Platinum 8168 with `kvm-clock`; source identity was
+`d63ba30ce055df40f40f208fbf23e0e5b1c454f51373027d19c389f3e429bfd6`.
+
+| Payload | Native p50 (µs) | C++ p50 (µs) | Native / C++ |
+| --- | ---: | ---: | ---: |
+| Empty | 56.762 | 39.703 | 1.43× |
+| 64 B | 58.082 | 39.437 | 1.47× |
+| 1 KiB | 59.001 | 42.851 | 1.38× |
+| 64 KiB | 234.549 | 191.508 | 1.225× |
+
+The 1.2× target remains unmet at every payload. The full workspace run at this
+revision passed 1,559 tests, including extended memory-safety checks, with seven
+documented skips and one failure: an allocation-hint assertion still counted
+the omitted empty capability-table tag. That expectation needs updating; this
+is not a claim that the complete suite passed at this revision.
+
+The following candidate keeps 16 peer IDs inline with a sparse fallback,
+retains one framing-state allocation per connection, skips inactive shutdown
+reads, and defers unused application clock reads. At `c11475e00`, the full
+workspace suite passed all 1,565 tests with seven documented skips; the stale
+allocation-hint expectation was corrected. Local empty-call instructions fell
+from 460.00 to 446.53 million and five paired runs showed about 3% lower small-call
+latency. A larger MTU showed no convincing gain and was discarded.
+
+The subsequent receive-buffer handoff preserves partial admission through the
+copying path and transfers whole buffers only into an empty bridge. Reserving
+for quiche's readable fragments first prevents buffer growth from reintroducing
+the removed copy. For 1,000 warmups and 1,000 64-KiB calls, local server
+instructions fell from 2.127 to 1.995 billion; five paired local repetitions had
+pooled medians of 176.07 versus 171.60 µs. Small-call latency was essentially
+unchanged. The candidate passed 297 focused transport/RPC/model checks, ten
+bridge ownership/property checks and the unsafe-documentation gate. These
+diagnostics still require a new dedicated acceptance run.
+
+Keeping one native timer/notification registration and reducing two-party RPC
+read-ahead to 8 KiB further reduced local server instructions: 447.98 to 437.64
+million for 10,000 warmups plus 1,000 empty calls, and 1.995 to 1.861 billion for
+1,000 warmups plus 1,000 64-KiB calls. Smaller staging reduces the copied prefix;
+message limits and framing validation stay unchanged. A separate large receive
+allocation pool showed no meaningful instruction improvement and was rejected.
+The combined runtime at `ae8285127` passed all 1,568 workspace nextest checks,
+with seven documented skips, including memory-safety and mutation controls.
+
+Version-2 local controls used the same CPU pair, release flags, five repetitions
+and full sample retention. Authenticated TCP/TLS measured 45.75/45.96/47.42/161.06
+µs at 0/64/1024/65536 bytes; native QUIC in that comparison measured
+64.88/64.95/66.77/170.83 µs, and C++ plaintext TCP
+38.06/37.99/39.04/76.27 µs. In a separate plaintext two-party Rust RPC control,
+Rust/C++ measured 49.52/37.85, 49.03/37.72, 42.88/38.55 and 84.37/76.20 µs.
+These diagnostics distinguish the authenticated transport path from serialization
+and RPC machinery. The plaintext control omits native session/transport features
+and cannot qualify the native QUIC target; these local results are not dedicated
+acceptance measurements.
+
+The [first validated version-2 run on `80a470fd6`](https://github.com/DericHuynh/capntproto/actions/runs/37293782939)
+used four dedicated `c-4` vCPUs in `nyc3`, an Intel Xeon Platinum 8358 and
+`kvm-clock`, at $0.125/hour. Its source fingerprint is
+`58ad234aceb9b11239d6ddfdbb918daa6691c9dd0653852991631522892a1b90`.
+All 80 trials passed validation, and cleanup confirmed deletion of droplet
+`606256499`. Five repetitions contribute every sample to these pooled medians:
+
+| Payload | Native QUIC p50 (µs) | C++ TCP p50 (µs) | Native / C++ |
+| --- | ---: | ---: | ---: |
+| Empty | 41.803 | 30.895 | 1.353× |
+| 64 B | 42.137 | 31.607 | 1.333× |
+| 1 KiB | 44.621 | 32.898 | 1.356× |
+| 64 KiB | 144.610 | 68.046 | 2.125× |
+
+The target remains unmet for every payload. Compared with this run's baseline,
+native medians would need roughly 10–12% further reduction for small calls and
+44% at 64 KiB. This host differs from earlier Xeon 8168 runs, and the C++
+measurement contract changed; absolute times across those runs are not an
+isolated optimization comparison. Native remains authenticated QUIC, while C++
+uses plaintext TCP. The narrower local plaintext Rust control does not substitute
+for this acceptance result.
+
+The preceding attempt failed before host creation because DigitalOcean rejected
+its newly registered SSH key. The development tool now bounds retries for that
+exact rejection, checks key ownership and absence of a matching host, and still
+refuses retries for ambiguous creation responses. Ten cloud-tool regression
+tests passed. The successful follow-up created its host on the first attempt,
+so it verifies the ordinary provider path; delayed-key recovery is covered by
+the simulated tests.
+
 Allocation checks cover the warmed single-segment queue, and partial-write
 tests cover every byte boundary of small frames plus large multi-segment batches.
 RPC regression tests cover self-wakes, independent subsequent wakes, late errors,
@@ -827,6 +1048,442 @@ pipeline publication, cancellation, and shutdown. An absolute-deadline experimen
 was rejected because system time and paused Tokio time are distinct clock domains.
 Local paired timings varied with other machine activity and cannot establish
 the target; dedicated measurements remain the acceptance evidence.
+
+### Investigating the 64-KiB transport cost
+
+The 2026-10-05 version-2 size sweep covered twelve payloads from 8 to 128 KiB,
+with three repetitions and every sample retained. Native QUIC's local median
+rose from 149.04 µs at 48,000 bytes to 169.85 at 64,000, 170.34 at 65,536 and
+175.86 at 66,000. There was no isolated cliff at exactly 65,536 bytes. Larger
+steps appeared at packet boundaries near 16 and 32 KiB. Upstream quiche 0.30.0
+caps established packets at 16,383 bytes to retain a two-byte packet-length
+varint; requesting a larger loopback MTU does not remove this cap.
+
+The pinned C++ implementation provided two useful controls:
+
+- [`rpc-twoparty.c++`](https://github.com/capnproto/capnproto/blob/0de72d8d8cec6b69edaa29de51d3bd490341f9c2/c%2B%2B/src/capnp/rpc-twoparty.c%2B%2B#L176)
+  batches queued messages into `MessageStream::writeMessages`, retaining their
+  owners until completion and propagating write failures. Native TCP/TLS now
+  similarly drains up to eight queued frames into one vectored batch and one
+  flush. Its local bridge also admits 128 KiB: a 64-KiB body plus its RPC envelope
+  no longer spills across a 64-KiB capacity boundary. Frame bytes and the receipt
+  flush fence retain their original semantics. The sender holds at most eight
+  active frames beside its eight queued frames; each data frame remains limited
+  to 16 KiB.
+- [`serialize-async.c++`](https://github.com/capnproto/capnproto/blob/0de72d8d8cec6b69edaa29de51d3bd490341f9c2/c%2B%2B/src/capnp/serialize-async.c%2B%2B#L724)
+  reads large incomplete frames directly into their final allocation. Rust
+  already has that framing path. Instrumenting native receive delivery showed
+  over 99.9% of 64-KiB calls arriving at the RPC bridge as one complete chunk.
+  An additional owned-chunk API and a receive-allocation pool did not produce
+  a repeatable latency gain and were discarded.
+
+Linux UDP receive aggregation now complements the existing segmented sender.
+`recvmsg` exposes the original packet boundaries without another payload copy;
+the driver splits the aggregate before quiche processing, and the shared
+listener splits it before connection-ID routing and per-route admission.
+Unsupported kernels and other platforms retain ordinary datagrams. Truncated
+data or control metadata is discarded as packet loss, and a burst always
+finishes the bounded aggregate already received. Migration enables aggregation
+on the newly committed socket. Authentication, encryption, congestion control,
+pacing, packet limits and the crates.io quiche source are unchanged.
+
+A 20,000-call, 64-KiB client syscall diagnostic fell from 100,010 successful UDP
+reads to 40,023 (about five to two per call). The new run observed 100,002
+datagrams in GRO aggregates and no send errors. Clock reads stayed near 461,000;
+these are mechanism counts, not timing samples. The first five-repetition local
+release comparison measured:
+
+| Transport | Previous p50 (µs) | Batched p50 (µs) | Reduction |
+| --- | ---: | ---: | ---: |
+| Native TCP/TLS, 64 KiB | 160.076 | 145.060 | 9.4% |
+| Native QUIC, 64 KiB | 167.410 | 161.334 | 3.6% |
+
+Each comparison alternated executable order, used the same CPU pair, 10,000
+warmups and 1,000 measured calls per repetition, and pooled all 5,000 samples
+per row. Every QUIC 64-KiB repetition improved; QUIC small-message pooled medians
+varied by less than 1%. These Ryzen 5800H/HPET results are local diagnostics,
+not dedicated acceptance evidence. They reduce the large-message cost but do
+not establish the 1.2× native/C++ target.
+
+Regression checks cover scalar/vectored partial writes, pending writes and
+flush errors, IPv4/IPv6, canceled receives, truncated aggregates, mixed
+connection IDs, unknown routes and oversized packets. The initial focused
+transport/listener run passed all 99 tests, including the socket and listener
+TLA+ replays.
+
+After adding shared-listener support and aligned ancillary storage, a final
+five-repetition local release comparison repeated the same experiment and
+included the C++ executable. All 60 trials and their samples were retained.
+Native QUIC's 64-KiB p50 fell from 168.249 to 158.821 µs (5.6%), p95 from
+182.707 to 173.557 and p99 from 194.301 to 184.522. Every paired large-payload
+median improved. Empty/64-byte/1-KiB pooled medians changed by +0.4%/+1.0%/+2.1%,
+respectively: the small-message cost of the new receive path is a tradeoff.
+C++'s 64-KiB median in this experiment was 76.966 µs, so the final local native
+ratio was still 2.064×. These measurements ran after builds and tests exited.
+
+The [dedicated run on `eb2d04927`](https://github.com/DericHuynh/capntproto/actions/runs/37318535864)
+validated all 80 trials and confirmed deletion of droplet `606308934`. It used
+four dedicated `c-4` vCPUs in `nyc1` at $0.125/hour, a Xeon Platinum 8280 and
+`kvm-clock`. Source fingerprint:
+`6ebfc3515cb5c4ad6d8b9347f515d5c6e4607ecfddf517e9d682281e30c0a8d0`.
+
+| Payload | Native QUIC p50 (µs) | C++ TCP p50 (µs) | Native / C++ |
+| --- | ---: | ---: | ---: |
+| Empty | 54.064 | 36.011 | 1.501× |
+| 64 B | 52.615 | 35.660 | 1.475× |
+| 1 KiB | 55.742 | 40.214 | 1.386× |
+| 64 KiB | 207.927 | 85.553 | 2.430× |
+
+The target remains unmet. This host differs from the preceding Xeon 8358, so
+those two runs are not a controlled before/after measurement of batching.
+All five repetitions remain included, including native 64-KiB medians from
+202.744 to 224.804 µs. The paired local comparisons isolate the change; this
+dedicated comparison measures the remaining gap against C++ on the new host.
+
+The full workspace nextest run completed 1,574 tests: 1,572 passed, seven
+documented tests were skipped, and two checks required correction or rerun.
+A compiler CLI test reused a fixture path from another worktree while inheriting
+the current directory as its source prefix; it now explicitly uses the fixture
+root. The mutation guard correctly invalidated its run after that test edit.
+With the tree held unchanged, all nine compiler tests and both qualification
+checks passed. Clippy and the unsafe-documentation gate passed; the workspace
+run also passed Miri, native fuzz smoke, C++ interop and optimized runtime checks.
+
+### Profiling and owned TCP frame buffers
+
+A 2026-10-05 follow-up profiled the release client and counted copies at their
+call sites. About 24% of sampled user cycles were in AES-GCM encryption and
+decryption; memory copies were another substantial cost. Profiling itself
+increased elapsed time, so these samples identify work rather than establish
+latency. The C++ control remains plaintext TCP. No encryption, authentication,
+congestion control, pacing or deadline checks were removed.
+
+For 2,000 native QUIC calls at 64 KiB, the copy counter identified approximately
+131 MB at each of the application payload setter, local send bridge, quiche
+send emission, quiche receive-frame ownership, quiche receive emission and
+local RPC reader. It also observed two full-payload clearing paths, the smaller
+framing-prefix copy, and about 32.8 MB of UDP batch-boundary copies. The earlier
+owned-reader experiment did remove its intended copy and clearing work, but
+that did not translate into a repeatable latency improvement. This confirms
+that removing a copy alone is insufficient evidence to keep a change.
+
+A new QUIC experiment retained the packet at a batch boundary instead of
+moving it, at the cost of another packet of buffer capacity. The counter
+confirmed removal of that roughly 16-KiB copy per call. However, seven alternating
+release repetitions measured 173.765 µs before and 177.118 µs after at 64 KiB.
+Background compilation made those timings provisional; they did not justify
+the added complexity, and the experiment was discarded. All 84 trials and
+their samples were retained locally, including slow repetitions.
+
+The retained change applies C++'s message-ownership pattern to native TCP/TLS.
+The bridge splits bounded owned chunks into views of at most 16 KiB, retaining
+them until the vectored batch finishes. It no longer copies outgoing data
+through a stack buffer and a fresh vector for each frame. The queue and active
+batch still each hold at most eight frames, and the producer retains at most
+one additional 128-KiB chunk. Views can retain their backing allocations until
+the batch completes. Receive framing reuses initialized storage, limits each
+read to the validated frame length, and transfers complete buffers into an
+empty local pipe. A full pipe still uses bounded partial admission. Receipt
+acknowledgements still require actual delivery and successful output flush.
+
+Two local release comparisons each used five alternating repetitions, CPUs 0
+and 2, 10,000 warmups and 1,000 measured calls at every canonical payload size:
+
+| Native TCP/TLS, 64 KiB | Previous p50 (µs) | Owned-frame p50 (µs) | Reduction |
+| --- | ---: | ---: | ---: |
+| First comparison | 156.445 | 149.181 | 4.6% |
+| Repeat comparison | 160.286 | 154.838 | 3.4% |
+
+Pooling all 10,000 samples per payload gives 157.981 → 151.906 µs at 64 KiB
+(3.8%); pooled small-message medians change by +0.6% / +0.3% / −0.7% at
+0 / 64 / 1024 bytes. Tail latency varied substantially with background load;
+these are local diagnostics, not dedicated acceptance results. The copy counter
+separately confirms removal of both outgoing staging copies. This TCP improvement
+does not change the canonical native QUIC/C++ acceptance ratio. The last dedicated
+64-KiB result remains 2.430×, and the 1.2× target is still unmet.
+
+The retained change passed 138 selected nextest checks covering transport
+framing, local buffer ownership, blocked-receiver receipt delivery, native vats,
+TLS/mTLS, capability pipelining, shutdown and transport TLA+ trace replay.
+Workspace Clippy with warnings denied, the unsafe-documentation gate and all
+98 project-document checks also passed. This was a focused regression run,
+not a new complete-workspace qualification.
+
+### Queue clock and executor tracing
+
+Further release tracing on 2026-10-05 found that the bounded executor drive
+already stops after two turns on ordinary server deliveries and three on client
+deliveries. Of 10,000 observed 64-KiB receive deliveries, 48 server and ten client
+deliveries reached the eight-turn limit without producing output. Reducing that
+limit would change scheduling for the exceptional cases, rather than remove
+eight turns from every call; no scheduling change was retained. A separate
+8-KiB → 2-KiB initial reader-buffer experiment did not improve large-message
+latency (163.917 → 164.896 µs over five alternating repetitions) and was discarded.
+
+The retained queue change avoids sampling the diagnostic clock for every message
+when only the oldest timestamp in a pending batch is needed. A relaxed atomic
+hint allows producers to skip that read; the existing locks remain authoritative.
+If the receiver has drained the queue, the producer releases both locks, samples
+the clock and retries. User clocks can still reenter the queue. Concurrent
+producers may take redundant samples, but cannot leave an accepted batch without
+its timestamp. FIFO order, active-batch metrics, admission and flush receipts are
+unchanged. Pinned C++ queue-age and batch-boundary comparisons still pass.
+
+A separate native QUIC diagnostic enqueued 32 independent echo RPCs before
+awaiting all responses. Every sequence and payload was validated, using the
+same authenticated transport and ten-second batch deadline. Each latency sample
+measured completion of the entire batch. Its measurement version was `20032`,
+so the canonical version-2 acceptance validator rejects these samples.
+
+| Payload per call / experiment | Previous batch p50 (µs) | New batch p50 (µs) | Change |
+| --- | ---: | ---: | ---: |
+| 64 B / initial comparison | 270.985 | 171.740 | −36.6% |
+| 64 B / independent repeat | 268.753 | 166.504 | −38.0% |
+| 64 KiB / initial comparison | 3086.078 | 3102.701 | +0.5% |
+
+Each comparison used five alternating release repetitions, 1,000 warmup batches
+and 1,000 measured batches per repetition, on CPUs 0 and 2 of the local Ryzen
+5800H with HPET. All samples were retained, and builds and tests were stopped
+during latency runs. The 64-byte repeat improved in every paired repetition.
+A separate client counter over 2,000 batches recorded 90,161 → 28,121 clock reads:
+about 31 fewer per batch, confirming the intended mechanism. The slow local HPET
+clock magnifies the benefit; this result must not be projected onto the dedicated
+host's much faster `kvm-clock` without measuring it.
+
+Sequential RPCs do not amortize queue timestamps: the 20,000-call 64-KiB counter
+remained near 461,000 clock reads before and after. Initial five- and
+seven-repetition sequential comparisons showed approximately 1.6% and 2.0%
+higher 64-KiB medians, respectively. These results are retained along with the
+batch gains, rather than treated as progress toward the sequential target.
+A rebuilt control was byte-for-byte identical to the original executable.
+Nine further alternating repetitions increased measured calls to 10,000 after
+10,000 warmups, retaining all 90,000 samples per executable. Pooled medians
+were 165.525 → 164.617 µs (−0.5%), while p95 rose 205.544 → 214.065 µs and
+p99 rose 265.608 → 290.472 µs. The varying results establish neither a reliable
+sequential gain nor uniformly improved tails. This change is retained for the
+repeatable small-batch benefit; dedicated qualification is still needed.
+
+The change passed 69 selected nextest checks, including concurrent producer
+FIFO, partial writes, cancellation, reentrant clocks, allocations, admission,
+TCP/TLS and QUIC native vats, C++ comparisons and TLA+ trace replay. Workspace
+Clippy with warnings denied, the unsafe-documentation gate, formatting and all
+98 project-document checks also passed. This is a focused regression run. The
+last dedicated canonical 64-KiB ratio remains 2.430×; the 1.2× native QUIC/C++
+target is still unmet.
+
+### Packet ceilings and inline framing metadata
+
+A follow-up raised the configured Linux packet ceiling from 16 KiB to 65,507
+bytes as an experiment. The 20,000-call client counter still observed about
+100,000 QUIC datagrams in 40,000 successful UDP reads. Upstream quiche 0.30.0
+[caps established data packets at 16,383 bytes](https://docs.rs/quiche/0.30.0/src/quiche/lib.rs.html#6751-6755)
+regardless of a larger configured ceiling. Five alternating repetitions changed
+64-KiB p50 from 165.664 to 164.546 µs without changing the packet-count mechanism;
+the experiment was discarded. The production packet bounds and upstream quiche
+implementation remain unchanged.
+
+The retained framing change stores the second segment's end offset inline.
+Frames with three or more segments build their validated ranges directly into
+an immutable allocation. The metadata structure remains 48 bytes on the tested
+x86-64 build. An allocation regression demonstrated the old two-segment path's
+one 32-byte metadata allocation and now requires zero metadata allocations for
+both shared and retained messages. Retained messages still allocate their own
+payload storage; short-lived views retain their existing lifetime checks.
+
+The initial representation reduced local 64-KiB p50 from 167.899 to 166.153 µs
+but enlarged the frame metadata. The final immutable representation preserves
+its original size. Seven alternating release repetitions on the same Ryzen
+5800H/HPET host used CPUs 0 and 2, 10,000 warmups and 1,000 measured calls:
+
+| Payload | Previous p50 (µs) | Inline framing p50 (µs) |
+| --- | ---: | ---: |
+| Empty | 67.397 | 67.188 |
+| 64 B | 67.676 | 68.096 |
+| 1 KiB | 69.423 | 69.771 |
+| 64 KiB | 166.502 | 165.594 |
+
+All 56 trials and all samples were retained. Small-message medians changed by
+less than 0.7%; the 64-KiB reduction was 0.5%, with p95/p99 increasing from
+204.496/248.007 to 206.312/264.210 µs. The allocation reduction is established;
+these timing differences are too small and variable to establish a reliable
+end-to-end speedup.
+
+A longer nine-repetition comparison used 10,000 warmups and 10,000 measured
+64-KiB calls per repetition, retaining all 90,000 samples per executable.
+Pooled p50 changed from 166.991 to 166.781 µs (−0.1%); p95/p99 changed from
+232.781/434.205 to 223.353/378.052 µs. Tail results vary between experiments.
+No builds or tests ran during these timing comparisons, but this remains a
+shared local host rather than dedicated acceptance evidence.
+
+All 68 focused nextest checks passed, including allocation budgets, maximum
+segment tables, fragmented/truncated inputs, traversal limits, cancellation,
+retained capabilities, native TCP/TLS and QUIC vats, C++ comparisons and TLA+
+replays. A property test compares the buffered parser against the independent
+synchronous decoder across randomized segment contents, read chunks, frame
+truncations and traversal budgets. Workspace Clippy also passed with warnings
+denied, along with formatting, the unsafe-documentation gate and all 98 project
+document checks. This was a focused regression run. The last dedicated native
+QUIC/C++ 64-KiB ratio remains 2.430×, and the 1.2× target remains unmet.
+
+### C++ call-context comparison and rejected allocation experiment
+
+The pinned C++ implementation keeps cancellation and response ownership in one
+[RpcCallContext](https://github.com/capnproto/capnproto/blob/0de72d8d8cec6b69edaa29de51d3bd490341f9c2/c%2B%2B/src/capnp/rpc.c%2B%2B#L3159)
+and allocates its response through `getResults()` when needed. The October 5
+comparison also checked its batched outgoing writes, short-lived receive-buffer
+views, direct reads for large messages and capability-free `noFinishNeeded`
+returns. Those optimizations already have counterparts in this runtime.
+
+An experimental Rust call context combined the separate return guard and
+retained-results allocation. It kept protected application owners separate from
+pipeline owners, preserved cancellation Return-before-capability-release
+ordering, and released capabilities outside internal borrows. Its first form
+removed one allocation and about 32 requested heap bytes per server call. A
+refinement boxed retained results only when a protected method outlived its
+Results owner, increasing the saving to about 152 bytes per ordinary call.
+The allocator counter measured 253,753 allocations before and 242,753 after
+11,000 calls, including connection setup in both totals. These are allocation
+traffic measurements, not peak-memory or latency savings.
+
+The refined candidate passed 94 focused nextest checks, including cancellation,
+early result release, third-party answer adoption, admission, allocations,
+native vats, TLA+ trace replays and installed C++ interoperability. Workspace
+Clippy with warnings denied, formatting and the unsafe-documentation gate also
+passed. A new lifetime test covered multiple protected owners, surviving
+pipeline owners and reentrant result destruction. Correctness checks did not
+establish a performance improvement.
+
+Seven alternating release repetitions on the Ryzen 5800H/HPET host used CPUs 0
+and 2, 10,000 warmups and 1,000 measured calls for each payload and executable.
+All 112 trials and their samples were retained. The diagnostic harness checked
+each executable's protocol identity and measurement version 2, including bulk
+payload validation, response cleanup and per-call deadlines. Pooled p50 values:
+
+| Payload | C++ plaintext TCP (µs) | Rust plaintext TCP, candidate (µs) | Previous native QUIC (µs) | Candidate native QUIC (µs) |
+| --- | ---: | ---: | ---: | ---: |
+| Empty | 38.902 | 49.936 | 67.886 | 68.165 |
+| 64 B | 38.971 | 49.658 | 68.235 | 68.236 |
+| 1 KiB | 39.600 | 41.416 | 69.981 | 70.330 |
+| 64 KiB | 81.994 | 89.258 | 166.014 | 168.388 |
+
+A separate nine-repetition check retained 90,000 measured 64-KiB samples per
+native executable after 10,000 warmups per trial. The refined candidate changed
+p50 from 165.664 to 167.899 µs, a 1.35% regression, consistent with the shorter
+comparison's 1.43% regression. Its p95/p99 were lower, 212.318/348.509 versus
+229.429/438.534 µs, but tails varied across experiments. The earlier inline
+form was essentially neutral in its longer check: 168.457 versus 168.807 µs.
+Neither form established a latency win, so neither ownership change was
+retained in the shipped runtime. No builds or tests ran during the final timing
+comparisons; this remains a shared local host, not dedicated acceptance evidence.
+
+The matched plaintext transport narrows the Rust/C++ gap to 1.046× at 1 KiB and
+1.089× at 64 KiB, while small calls remain about 1.28×. Native QUIC in the same
+experiment is 1.75–2.05× C++ plaintext TCP. This supports looking beyond RPC
+ownership for the larger native gap: authenticated transport, packet protection,
+packet processing, session bridges and executor work are absent or different
+in the plaintext control. The comparison does not isolate encryption alone.
+Copying a C++ allocation strategy is therefore a hypothesis to measure, not an
+assurance of equal end-to-end performance. The 1.2× native target remains unmet;
+the last dedicated canonical 64-KiB ratio remains 2.430×.
+
+### Matched TCP/TLS and QUIC architecture comparison
+
+The `native_tcp` benchmark now uses the same native `Network`, echo service,
+pinned mutual authentication, payload validation, response cleanup and version-2
+timing contract as `native`. It selects `transport::tcp` rather than the QUIC
+adapter. Build and run the standalone diagnostic with:
+
+```sh
+cargo bench --locked --manifest-path benchmarks/rpc/Cargo.toml --bench native_tcp
+```
+
+Its protocol identity is `native-tcp`. It is deliberately outside the canonical
+four-protocol bundle and QUIC/C++ acceptance gate; TCP results cannot establish
+the QUIC target. As with other individual targets, this command retains the
+caller's CPU affinity. The comparison below instead pins server/client to
+physical cores 0/2 and alternates executable order.
+
+On October 5, seven release/full-LTO repetitions per payload, each with 10,000
+warmups and 1,000 retained samples, compared the published QUIC runtime, the
+final idle-bulk-path changes and the authenticated TCP control. Setup and handshakes are excluded. The local
+Ryzen 7 5800H uses HPET; these are local diagnostics, not dedicated-host results.
+
+| Payload | TCP/TLS p50 (µs) | QUIC before (µs) | QUIC after (µs) | After / TCP |
+| --- | ---: | ---: | ---: | ---: |
+| 0 bytes | 47.283 | 67.886 | 66.908 | 1.415× |
+| 64 bytes | 47.423 | 68.165 | 66.908 | 1.411× |
+| 1 KiB | 49.238 | 69.702 | 69.003 | 1.401× |
+| 64 KiB | 146.667 | 163.918 | 163.010 | 1.111× |
+
+The small-call median reduction is about 1.0–1.8%. The 0.6% large-call difference
+is small relative to local run variation. Every sample is retained; no best-run
+selection or outlier removal is used.
+A separate nine-repetition 64-KiB confirmation, with 10,000 warmups and 10,000
+measurements per repetition, retained 90,000 samples per executable. Its median
+was 164.476 µs before and 164.058 µs after (0.25% lower), supporting a neutral
+large-call result rather than a material speedup. p95/p99 were
+201.144/297.455 µs before and 190.109/218.674 µs after; tail variation remains
+too large to treat those tail differences as an established gain.
+
+Both paths use the local RPC byte bridge. QUIC additionally drives packet
+protection, recovery, pacing, stream state and UDP readiness in user space.
+A separate syscall counter over 20,000 64-KiB calls counted 461,840 clock reads
+for QUIC versus 218,937 for TCP/TLS, including setup. This is a count of work,
+not a division of wall time into costs. The earlier CPU profile also identified
+packet encryption/decryption and payload copies as substantial user CPU costs.
+
+Three proposed adapter changes were evaluated and rejected: using the live task
+waker for every bridge probe, caching the absolute recovery deadline (including
+a variant with a single application-deadline timer), and replacing Linux's
+temporary receive-readiness future with its single-reader waker slot. The
+recovery deadline changed too frequently in sequential RPC to reduce clock
+reads. The reader-slot variant improved small-call medians by 0.8–1.2%, but a
+separate nine-repetition 64-KiB run with 90,000 samples per executable regressed
+164.058 → 166.292 µs (1.36%). None of those three prototypes is retained.
+
+The bulk driver now keeps a small idle check separate from its full handler.
+After initialization, if there are no queued grants, active transfers, partial
+prefaces or readable streams, it avoids constructing a readable-stream snapshot
+or entering the stream-processing/initialization stack frame. Pending grants
+still run before the peer sends data, and existing transfers retain deadline,
+cancellation, flow-credit and receipt processing. The allocation-only prototype
+had regressed the 64-KiB median by 2.6%; separating the idle path removed that
+regression in the final comparison above.
+
+The allocation optimization targets active split-plane traffic: Quiche already
+returns an owned snapshot from `readable()`, so the bulk driver now iterates that
+snapshot without collecting a second `Vec`. Draining pending grants also keeps
+the bounded admission queue's capacity. A full engine regression holds an
+authorized bulk stream unread, confirms data remains readable in Quiche, then
+drives 100 further engine passes. The former code allocated 100 times / 3,200
+bytes; the new code allocates zero times. Resuming the reader delivers the exact
+payload, demonstrating that the optimization does not consume or lose readiness.
+This counter measures allocation traffic under bulk backpressure, not bulk
+throughput. The sequential timings above measure the combined changes.
+
+The timer investigation also found a correctness issue: the adapter's combined
+timer can wake for migration polling or an advanced Tokio clock before Quiche's
+system-clock recovery deadline. Such a wake previously updated the no-ACK
+observation and could spuriously revalidate the MTU. A separate, retained guard
+checks that Quiche's timer has actually expired before recording recovery or
+requesting a reprobe. The regression fails on the former implementation before
+even sending a packet; genuine loss and silent path-MTU reduction still exercise
+the encrypted recovery tests. This guard adds no work to ordinary packet events.
+
+The final source passed 158 focused nextest checks covering transport engines,
+real and simulated packet faults, bulk services and grants, TCP/QUIC native vats,
+TLS/mTLS, migration, MTU fallback and TLA+ trace replay. The benchmark harness's
+three checks, workspace and benchmark Clippy with warnings denied, formatting,
+unsafe documentation checks and validation of all 98 project documents passed.
+
+Ordinary RPC remains ordered on stream 0. QUIC's cross-stream loss isolation
+benefits independent streams, as described by [RFC 9000 §13](https://www.rfc-editor.org/rfc/rfc9000.html#section-13).
+The [split-plane API](Split-Plane.md) exercises that architecture for explicitly
+granted bulk traffic while retaining control credit. A loss-free, single-call
+echo does not exercise it. Existing encrypted packet tests cover control
+progress across a bulk packet gap, independent stream credits, packet loss,
+reordering, duplicates and stalled consumers. Those correctness tests do not
+establish a throughput advantage. The 1.2× QUIC/C++ target remains unmet.
 
 ### Clock diagnostics
 

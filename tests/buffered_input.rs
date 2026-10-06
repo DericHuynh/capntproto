@@ -78,6 +78,54 @@ fn assert_data(message: &Message, size: usize, value: u8) {
     );
 }
 
+proptest::proptest! {
+    #[test]
+    fn fragmented_segment_tables_match_the_independent_sync_decoder(
+        segments in proptest::collection::vec(
+            proptest::collection::vec(proptest::prelude::any::<u64>(), 0..32), 1..9),
+        prefix in proptest::prelude::any::<usize>(),
+        chunk in 1usize..65,
+        limit in 0usize..257,
+    ) {
+        let count = segments.len();
+        let mut bytes = vec![0; (count / 2 + 1) * 8];
+        bytes[..4].copy_from_slice(&(count as u32 - 1).to_le_bytes());
+        for (i, words) in segments.iter().enumerate() {
+            bytes[4 + i * 4..8 + i * 4]
+                .copy_from_slice(&(words.len() as u32).to_le_bytes());
+        }
+        for words in &segments {
+            for word in words {
+                bytes.extend_from_slice(&word.to_le_bytes());
+            }
+        }
+        // Compare a complete frame and an arbitrary truncation, including
+        // empty segments, partial tables and traversal-limit failures.
+        for length in [bytes.len(), prefix % (bytes.len() + 1)] {
+            let mut options = capnp::message::ReaderOptions::new();
+            options.traversal_limit_in_words(Some(limit));
+            let mut cursor = std::io::Cursor::new(&bytes[..length]);
+            let expected = capnp::serialize::try_read_message(&mut cursor, options);
+            let input = source(bytes[..length].to_vec());
+            input.0.borrow_mut().chunk = chunk;
+            let mut reader = BufferedRead::with_buffer_size(input, options, 256).unwrap();
+            match (expected, read(&mut reader, false)) {
+                (Ok(Some(expected)), Ok(Some(actual))) => {
+                    let expected = expected.get_segments();
+                    let actual = actual.get_segments();
+                    proptest::prop_assert_eq!(actual.len(), expected.len());
+                    for id in 0..expected.len() as u32 {
+                        proptest::prop_assert_eq!(actual.get_segment(id), expected.get_segment(id));
+                    }
+                    proptest::prop_assert_eq!(reader.consumed_bytes(), cursor.position());
+                }
+                (Ok(None), Ok(None)) | (Err(_), Err(_)) => (),
+                _ => proptest::prop_assert!(false, "buffered and sync framing outcomes differ"),
+            }
+        }
+    }
+}
+
 #[test]
 fn short_lived_reads_share_storage_and_reject_overlap_without_consuming() {
     let input = source([data(16, 1), data(16, 2)].concat());

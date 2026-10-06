@@ -149,12 +149,16 @@ struct ConnectionInner<T>
 where
     T: AsyncRead + 'static,
 {
-    input_stream: Rc<RefCell<Option<capnp_futures::BufferedRead<T>>>>,
+    // Move only this owner into each receive future; the framing state and
+    // partial message stay in place across calls. Canceling a receive still
+    // drops the input and prevents another read from a partial frame.
+    input_stream: Rc<RefCell<Option<Box<capnp_futures::BufferedRead<T>>>>>,
     sender: capnp_futures::Sender<QueuedMessage>,
     side: crate::rpc_twoparty_capnp::Side,
     on_disconnect_fulfiller: Option<oneshot::Sender<()>>,
     flow_control: crate::flow_control::Policy,
     write_finished: futures::future::Shared<Promise<(), capnp::Error>>,
+    segments: capnp::message::SegmentPool,
 }
 
 struct Connection<T>
@@ -193,15 +197,24 @@ where
     ) -> Self {
         Self {
             inner: Rc::new(RefCell::new(ConnectionInner {
-                input_stream: Rc::new(RefCell::new(Some(capnp_futures::BufferedRead::new(
-                    input_stream,
-                    receive_options,
+                input_stream: Rc::new(RefCell::new(Some(Box::new(
+                    // Keep ordinary control frames buffered, but spill larger
+                    // frames into their final storage after a bounded prefix.
+                    capnp_futures::BufferedRead::with_buffer_size(
+                        input_stream,
+                        receive_options,
+                        1024,
+                    )
+                    .expect("8 KiB holds every legal RPC segment table"),
                 )))),
                 sender,
                 side,
                 on_disconnect_fulfiller: Some(on_disconnect_fulfiller),
                 flow_control,
                 write_finished,
+                // Includes a 64 KiB body plus framing/envelope growth, while
+                // bounding retained storage independently of live messages.
+                segments: capnp::message::SegmentPool::new(16 * 1024, 16),
             })),
         }
     }
@@ -230,17 +243,18 @@ where
         // Zero means no hint, not a zero-word first segment. A bounded 2 KiB
         // default fits small results without clearing an 8 KiB arena each time.
         // Larger bodies still grow normally; explicit hints remain authoritative.
-        let allocator = ::capnp::message::HeapAllocator::new().first_segment_words(
-            if first_segment_word_size == 0 {
+        let inner = self.inner.borrow();
+        let allocator = ::capnp::message::HeapAllocator::new()
+            .segment_pool(inner.segments.clone())
+            .first_segment_words(if first_segment_word_size == 0 {
                 256
             } else {
                 first_segment_word_size
-            },
-        );
+            });
         let message = ::capnp::message::Builder::new(allocator);
         Box::new(OutgoingMessage {
             message,
-            sender: self.inner.borrow().sender.clone(),
+            sender: inner.sender.clone(),
             guard: None,
         })
     }

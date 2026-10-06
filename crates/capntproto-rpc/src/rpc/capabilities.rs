@@ -515,6 +515,12 @@ impl<VatId: 'static> ConnectionState<VatId> {
         payload: payload::Builder,
         fds: &mut OutgoingFds,
     ) -> Vec<ExportId> {
+        // A null table already denotes zero capabilities. Like the C++ RPC
+        // implementation, avoid allocating a composite-list tag for every
+        // data-only request and reply.
+        if cap_table.is_empty() {
+            return Vec::new();
+        }
         let mut cap_table_builder = payload.init_cap_table(cap_table.len() as u32);
         let mut exports = Vec::new();
         for (idx, value) in cap_table.iter().enumerate() {
@@ -546,17 +552,16 @@ impl<VatId: 'static> ConnectionState<VatId> {
         fd: Option<AttachedFd>,
     ) -> Box<dyn ClientHook> {
         let import_client = {
-            match state.imports.borrow_mut().slots.entry(import_id) {
-                hash_map::Entry::Occupied(occ) => occ
-                    .get()
+            let mut imports = state.imports.borrow_mut();
+            if let Some(import) = imports.slots.get(&import_id) {
+                import
                     .import_client
                     .upgrade()
-                    .expect("dangling ref to import client?"),
-                hash_map::Entry::Vacant(v) => {
-                    let import_client = ImportClient::new(state, import_id);
-                    v.insert(Import::new(&import_client));
-                    import_client
-                }
+                    .expect("dangling ref to import client?")
+            } else {
+                let import_client = ImportClient::new(state, import_id);
+                imports.slots.insert(import_id, Import::new(&import_client));
+                import_client
             }
         };
 

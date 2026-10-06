@@ -83,7 +83,7 @@ async fn authenticated_backends_exchange_rpc_datagrams_and_receipts() {
                     let (mut a, mut b) = pair(client, server, version).await;
                     assert_eq!(a.peer, b.local);
                     assert_eq!(b.peer, a.local);
-                    let bytes = vec![42; 150_000];
+                    let bytes: Vec<_> = (0..150_000).map(|i| (i % 251) as u8).collect();
                     let mut received = vec![0; bytes.len()];
                     let (sent, read) = tokio::join!(
                         a.io.as_mut().unwrap().write_all(&bytes),
@@ -122,6 +122,43 @@ async fn backends_crossed_shutdown_receipts() {
                 assert_eq!(a.unwrap().bytes, 0);
                 assert_eq!(b.unwrap().bytes, 0);
             }
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn tcp_receipt_waits_for_delivery_through_a_full_receive_bridge() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            tokio::time::timeout(Duration::from_secs(10), async {
+                let (mut a, mut b) = pair(Backend::Tcp, Backend::Tcp, QuicVersion::V1).await;
+                let bytes: Vec<_> = (0..4 * crate::rpc::QUIC_BUFFER_BYTES + 17)
+                    .map(|i| (i % 251) as u8)
+                    .collect();
+                a.io.as_mut().unwrap().write_all(&bytes).await.unwrap();
+                let shutdown = a.shutdown(Duration::from_secs(5));
+                tokio::pin!(shutdown);
+                for _ in 0..32 {
+                    assert!(futures::poll!(&mut shutdown).is_pending());
+                    tokio::task::yield_now().await;
+                }
+                let receive = async {
+                    let mut received = Vec::with_capacity(bytes.len());
+                    while received.len() < bytes.len() {
+                        // Uneven reads exercise partial admission and frame boundaries.
+                        let mut chunk = [0; 997];
+                        let n = b.io.as_mut().unwrap().read(&mut chunk).await.unwrap();
+                        assert!(n > 0);
+                        received.extend_from_slice(&chunk[..n]);
+                        tokio::task::yield_now().await;
+                    }
+                    assert_eq!(received, bytes);
+                };
+                let (receipt, ()) = tokio::join!(shutdown, receive);
+                assert_eq!(receipt.unwrap().bytes, bytes.len() as u64);
+            })
+            .await
+            .unwrap();
         })
         .await;
 }

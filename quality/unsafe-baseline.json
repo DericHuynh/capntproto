@@ -14,11 +14,11 @@
       }
     },
     "crates/capntproto-core/src/message.rs": {
-      "sha256": "59af886aaca98b2c02ba986d23574ddaf62462cece845a91a2c2a7b4be119042",
       "diagnostics": {
-        "clippy::undocumented_unsafe_blocks": 13,
+        "clippy::undocumented_unsafe_blocks": 10,
         "unsafe_op_in_unsafe_fn": 2
-      }
+      },
+      "sha256": "a788a312f8eba53dcd8925a21e932819f2b57300dd640ad7b34f55fa8385cf10"
     },
     "crates/capntproto-core/src/primitive_list.rs": {
       "sha256": "d9471dc7916beac5fc4db3f4ceb877f8134bd3beb3fd090b1ca33fa918adab66",
@@ -27,17 +27,17 @@
       }
     },
     "crates/capntproto-core/src/private/arena.rs": {
-      "sha256": "e91f5c6cfc56f4f624f8b95d6e842ad2854e233843f02bf5c7b10f4c17573a52",
+      "sha256": "b9e105e0984135ec631e9b60fa49ccf2f7f0d7ef0953134384d05ec8e3243dee",
       "diagnostics": {
         "clippy::undocumented_unsafe_blocks": 12
       }
     },
     "crates/capntproto-core/src/private/layout.rs": {
-      "sha256": "6bacfca3bff90b2a674eef79449be53a876a04023d51b32528421df937db9251",
+      "sha256": "815e671909ce07c2cf0e77fb0647b048612b024eb15b1f321da53170e11f8187",
       "diagnostics": {
         "clippy::missing_safety_doc": 4,
         "clippy::undocumented_unsafe_blocks": 91,
-        "unsafe_op_in_unsafe_fn": 395
+        "unsafe_op_in_unsafe_fn": 394
       }
     },
     "crates/capntproto-core/src/private/layout_test.rs": {

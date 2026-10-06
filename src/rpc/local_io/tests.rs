@@ -157,6 +157,16 @@ fn waking_and_closing_release_the_pipe_borrow_before_callbacks() {
     assert!(Pin::new(&mut a)
         .poll_read(&mut cx, &mut ReadBuf::new(&mut byte))
         .is_pending());
+    b.write
+        .write_owned(&mut BytesMut::from(&b"c"[..]), 0..1)
+        .now_or_never()
+        .unwrap()
+        .unwrap();
+    a.read_exact(&mut byte).now_or_never().unwrap().unwrap();
+    assert_eq!(byte, *b"c");
+    assert!(Pin::new(&mut a)
+        .poll_read(&mut cx, &mut ReadBuf::new(&mut byte))
+        .is_pending());
     drop(b);
     ON_WAKE.with(|hook| hook.borrow_mut().take());
 }
@@ -213,14 +223,26 @@ proptest::proptest! {
     #[test]
     fn matches_duplex_byte_order_backpressure_and_half_closes(
         capacity in 1usize..33,
-        actions in proptest::collection::vec((0usize..2, 0u8..4, proptest::collection::vec(proptest::prelude::any::<u8>(), 0..48)), 1..200),
+        actions in proptest::collection::vec((0usize..2, 0u8..5, proptest::collection::vec(proptest::prelude::any::<u8>(), 0..48)), 1..200),
     ) {
         let (a, b) = pair(capacity);
         let mut local = [a, b];
         let (a, b) = tokio::io::duplex(capacity);
         let mut reference = [a, b];
         for (side, kind, bytes) in actions {
-            proptest::prop_assert_eq!(operation(&mut local[side], kind, &bytes), operation(&mut reference[side], kind, &bytes));
+            let observed = if kind == 4 {
+                let mut owned = BytesMut::from(&b"prefix"[..]);
+                owned.extend_from_slice(&bytes);
+                owned.extend_from_slice(b"suffix");
+                match local[side].write.write_owned(&mut owned, 6..6 + bytes.len()).now_or_never() {
+                    None => Observation::Pending,
+                    Some(Ok(count)) => Observation::Written(count),
+                    Some(Err(error)) => Observation::Error(error.kind()),
+                }
+            } else {
+                operation(&mut local[side], kind, &bytes)
+            };
+            proptest::prop_assert_eq!(observed, operation(&mut reference[side], if kind == 4 { 1 } else { kind }, &bytes));
         }
     }
 }

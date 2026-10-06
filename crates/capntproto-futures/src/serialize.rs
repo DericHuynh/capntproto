@@ -905,4 +905,46 @@ pub mod test {
         }
         quickcheck(round_trip as fn(usize, usize, Vec<Vec<capnp::Word>>) -> TestResult);
     }
+
+    #[test]
+    fn batched_multisegment_fallback_matches_individual_frames_under_partial_io() {
+        futures::executor::block_on(async {
+            for segment_count in [1, 2, 3, 5] {
+                let segments: Vec<_> = (0..segment_count)
+                    .map(|i| vec![capnp::word(i as u8, 1, 2, 3, 4, 5, 6, 7); i])
+                    .collect();
+                // An empty input represents a valid zero-length segment, not EOF.
+                let messages = [Vec::new(), segments];
+                for batch in [&messages[..1], &messages[1..], &messages[..]] {
+                    let mut expected = Cursor::new(Vec::new());
+                    for message in batch {
+                        write_message(&mut expected, message).await.unwrap();
+                    }
+                    let mut output = BlockingWrite::new(Vec::new(), 3);
+                    super::write_messages(&mut output, batch).await.unwrap();
+                    let bytes = output.into_writer();
+                    assert_eq!(bytes, expected.into_inner());
+                    let mut input = BlockingRead::new(std::io::Cursor::new(bytes), 5);
+                    let mut options = message::ReaderOptions::new();
+                    options.traversal_limit_in_words = None;
+                    for message in batch {
+                        let reader = super::read_message(&mut input, options).await.unwrap();
+                        let expected = message.as_output_segments();
+                        assert_eq!(reader.get_segments().len(), expected.len());
+                        for (i, segment) in expected.iter().enumerate() {
+                            assert_eq!(reader.get_segments().get_segment(i as u32), Some(*segment));
+                        }
+                    }
+                    assert_eq!(
+                        super::read_message(&mut input, options)
+                            .await
+                            .err()
+                            .unwrap()
+                            .kind,
+                        capnp::ErrorKind::PrematureEndOfFile
+                    );
+                }
+            }
+        });
+    }
 }

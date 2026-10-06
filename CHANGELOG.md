@@ -1,5 +1,110 @@
 # 0.1.0 developer preview (unpublished)
 
+- Seed packed-framing property tests with empty segments and zero blocking
+  periods so discard-guard coverage does not depend on the random corpus.
+
+- Verify that an already-closed RPC reader immediately fails the QUIC driver
+  and delivers the same error to shutdown waiters, without socket timing races.
+  Exercise the same failure through public native-network read cancellation,
+  including its structured transport error and listener-route cleanup.
+
+- Make schema-call cancellation wait for request admission without a timer race,
+  and exercise write batches beyond the metadata-retention bound with receipts,
+  a subsequent batch, and sender shutdown. Check canceled write queues reject
+  later sends, fail outstanding receipts, and clear retained metrics.
+
+- Track `LLVM_PROFILE_FILE` in owned build scripts so each coverage run records
+  fresh schema-generation counters even when Cargo reuses its target directory.
+  Test cold builds, warm builds with a new profile destination, and unchanged
+  warm builds against the actual RPC package.
+
+- Invalidate prior JUnit references before repeating a quality step, including
+  runs that exit without producing a report. Exercise actual passing and failing
+  nextest fixtures, source changes, and separate stdout/stderr capture.
+  Add regression coverage for rejected stream transitions, counter overflow,
+  QUIC resets, copying-output shutdown, multi-segment write batches, scratch
+  storage fallbacks, and high-ID ownership. Requalify the measured coverage
+  baseline after reviewing the nextest/lane split and RPC refactors; retain the
+  per-file and group regression gates and all zero-hit mappings.
+
+- Forward the dedicated benchmark credential explicitly through reusable CI
+  workflows, and check this contract alongside cloud trust restrictions.
+  Use exact version comments for pinned installation actions so moving major
+  tags cannot break workflow security validation.
+  Isolate the platform CLI build from runtime feature builds to avoid repeatedly
+  recompiling shared dependencies, and allow cold Windows builds to finish.
+
+- Skip inactive bulk processing on the QUIC RPC path, keeping the full bulk
+  handler separate. Remove its duplicate readable-stream allocation and
+  reuse its bounded admission queue storage. Add a stalled-stream allocation and
+  resume regression, plus a native TCP/TLS benchmark using the same authenticated
+  RPC workload as QUIC. Record rejected timer and readiness experiments.
+  Count MTU recovery only after quiche's own timer expires, so migration polling
+  and advanced application clocks cannot trigger spurious path reprobes.
+
+- Keep two-segment receive-frame metadata inline, eliminating its heap
+  allocation. Build larger segment tables directly into immutable ranges and
+  preserve bounded parsing, cancellation and retained-message ownership. Add
+  allocation contracts and differential fragmented-framing coverage.
+
+- Skip redundant diagnostic clock reads when adding RPC messages to an existing
+  write batch. Recheck queue state under its locks when the receiver races the
+  producer, and keep user clock callbacks outside locks. Add timestamp, stale
+  hint and reentrant-clock regressions.
+
+- Retain owned TCP/TLS frame payloads through bounded batched writes, removing
+  two outgoing staging copies. Reuse receive storage and transfer it into an
+  empty RPC bridge, preserving partial admission, wire framing and receipt
+  fences. Add fragmented-frame, truncation and blocked-receiver regressions.
+
+- Bound retries for DigitalOcean's explicit rejection of a newly registered SSH
+  key, verifying key ownership and absence of a matching host before retrying.
+  Ambiguous creation responses and unrelated errors still stop provisioning.
+
+- Correct the C++ benchmark's per-byte assertion overhead and excluded response
+  cleanup. All implementations now use bulk payload comparison and ten-second
+  per-call deadlines inside timed round trips. Version measurements to reject
+  legacy or mixed comparisons; previous large-payload ratios overstated progress.
+
+- Retain the native recovery timer and scheduling notification across packet
+  events. Reduce two-party RPC read-ahead storage to 8 KiB so larger frames
+  reach their final allocation after a smaller copied prefix; message limits
+  and the general buffered-reader API remain unchanged.
+
+- Transfer native QUIC receive buffers into an empty RPC bridge without a
+  second payload copy. Reserve for readable fragments once, reuse drained
+  buffers, and retain bounded copying for partial admission. Exercise owned
+  writes against Tokio's duplex stream alongside ordinary and vectored writes.
+
+- Skip inactive shutdown-stream reads using quiche's readiness state, while
+  retaining reset and empty-FIN errors. Keep RPC framing state in one stable
+  allocation and sample migration/datagram deadline clocks only when needed.
+  Correct result-allocation hints for the omitted empty capability table.
+
+- Keep the first 16 peer-assigned RPC IDs inline, as in C++'s import table,
+  avoiding hash lookups for ordinary answers and imports. Larger IDs remain
+  sparse, with full-range, replacement and reentrant-drop regression coverage.
+
+- Transfer owned buffers from the native RPC bridge directly into QUIC's send
+  queue, removing a payload copy while preserving bounded admission, partial
+  writes, cancellation and retransmission ownership. Share answer-status flags
+  in one allocation, combine arena allocation with segment lookup, and omit
+  empty capability-table tags as in the C++ RPC implementation.
+
+- Send owned RPC buffers through upstream quiche's zero-copy API, preserving
+  retransmission views and partial-write accounting. Reclaim acknowledged slabs
+  and use their remaining capacity before allocating; retain bounded bridge reads.
+
+- Validate near struct pointers and their complete targets with one segment
+  lookup, preserving traversal and bounds checks without caching movable storage.
+  Install schema compiler prerequisites in the dedicated benchmark report job.
+
+- Reuse outgoing RPC segments in a pool bounded to 128 KiB and 16 segments per
+  connection, clearing used words before reuse. Avoid protected background-task
+  allocation for immediately completed non-streaming, non-pipelined RPC methods.
+  Pending methods retain cancellation protection and local calls remain deferred.
+  Bound task admission and reap ready work before allocating scheduler nodes.
+
 - Run the complete CI graph on PRs and pushes to main: validation, platform
   checks, Cargo/coverage, models, fuzzing and extended checks, then release
   benchmarks and cleanup. Fork/Dependabot PRs compile benchmarks without cloud

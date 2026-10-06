@@ -1,4 +1,6 @@
 fn main() {
+    // A fresh coverage run needs fresh build-script and code-generation counters.
+    println!("cargo:rerun-if-env-changed=LLVM_PROFILE_FILE");
     println!("cargo:rerun-if-env-changed=CAPNP_INCLUDE_DIR");
     for schema in ["rpc", "rpc-twoparty", "persistent"] {
         println!("cargo:rerun-if-changed=schema/{schema}.capnp");

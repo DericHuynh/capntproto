@@ -31,6 +31,8 @@ fn compile(files: &[&str], facade: bool, structured: bool) {
 }
 
 fn main() {
+    // A fresh coverage run needs fresh build-script and code-generation counters.
+    println!("cargo:rerun-if-env-changed=LLVM_PROFILE_FILE");
     compile(&["field-api", "enum-brand"], true, false);
     compile(&["runtime-test", "rpc-api"], true, true);
     compile(

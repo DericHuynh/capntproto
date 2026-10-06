@@ -4,6 +4,49 @@ use std::{
     task::{Context, Poll},
 };
 
+#[tokio::test]
+async fn payload_reads_preserve_following_frames_across_partial_reads_and_reuse() {
+    let (mut sender, mut receiver) = tokio::io::duplex(3);
+    let payload: Vec<_> = (0..16384).map(|n| (n % 251) as u8).collect();
+    let transmit = async {
+        sender.write_all(&payload).await.unwrap();
+        sender.write_all(b"next").await.unwrap();
+        sender.shutdown().await.unwrap();
+    };
+    let receive = async {
+        let mut bytes = BytesMut::with_capacity(32768);
+        bytes.extend_from_slice(b"old contents");
+        read_payload(&mut receiver, &mut bytes, payload.len())
+            .await
+            .unwrap();
+        assert_eq!(&bytes[..], &payload);
+        read_payload(&mut receiver, &mut bytes, 4).await.unwrap();
+        assert_eq!(&bytes[..], b"next");
+        assert_eq!(
+            read_payload(&mut receiver, &mut bytes, 1)
+                .await
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::UnexpectedEof
+        );
+    };
+    tokio::join!(transmit, receive);
+}
+
+#[tokio::test]
+async fn truncated_payload_is_not_accepted_as_a_complete_frame() {
+    let mut input = &b"partial"[..];
+    let mut bytes = BytesMut::new();
+    assert_eq!(
+        read_payload(&mut input, &mut bytes, 8)
+            .await
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::UnexpectedEof
+    );
+    assert_eq!(&bytes[..], b"partial");
+}
+
 struct Output {
     bytes: Vec<u8>,
     maximum: usize,
@@ -102,4 +145,56 @@ async fn coalesces_a_ready_frame_and_propagates_write_zero_and_flush_failure() {
         io::ErrorKind::BrokenPipe
     );
     assert_eq!(sink.flushes, 1);
+}
+
+#[tokio::test]
+async fn batches_data_and_receipts_without_changing_framing_or_flush_fences() {
+    let data = [17; 16384];
+    let receipt = [29; crate::native_shutdown::FRAME_BYTES];
+    let frames = [
+        (0, &data[..]),
+        (0, &data[..]),
+        (0, &data[..]),
+        (0, &data[..]),
+        (0, &[31, 32][..]),
+        (1, &receipt[..]),
+    ];
+    let mut expected = Vec::new();
+    for (kind, bytes) in frames {
+        expected.push(kind);
+        expected.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+        expected.extend_from_slice(bytes);
+    }
+    for vectored in [false, true] {
+        for maximum in [16383, 16384, 16385, 65536, usize::MAX] {
+            let mut sink = output(maximum, vectored);
+            write_batch(&mut sink, &frames).await.unwrap();
+            assert_eq!(sink.bytes, expected);
+            assert_eq!(sink.flushes, 1);
+            if vectored && maximum == usize::MAX {
+                assert_eq!(sink.writes, 1);
+            }
+        }
+    }
+    let mut sink = output(usize::MAX, true);
+    sink.fail_flush = true;
+    assert_eq!(
+        write_batch(&mut sink, &frames).await.unwrap_err().kind(),
+        io::ErrorKind::BrokenPipe
+    );
+    assert_eq!(sink.bytes, expected);
+    assert_eq!(sink.flushes, 1);
+
+    let mut sink = output(usize::MAX, true);
+    assert_eq!(
+        write_batch(&mut sink, &[(0, &[][..]); BATCH_FRAMES + 1])
+            .await
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::InvalidInput
+    );
+    write_batch(&mut sink, &[]).await.unwrap();
+    assert!(sink.bytes.is_empty());
+    assert_eq!(sink.writes, 0);
+    assert_eq!(sink.flushes, 0);
 }

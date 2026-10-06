@@ -76,6 +76,25 @@ pub unsafe trait ReaderArena {
     }
 
     fn contains_interval(&self, segment_id: u32, start: *const u8, size: usize) -> Result<()>;
+
+    /// Validate a relative pointer and its complete target in one operation,
+    /// charging the same traversal budget as `contains_interval`.
+    ///
+    /// # Safety
+    /// `start` must derive from the named live segment, as for `check_offset`.
+    unsafe fn check_offset_and_read(
+        &self,
+        segment_id: u32,
+        start: *const u8,
+        offset_in_words: i32,
+        size_in_words: usize,
+    ) -> Result<*const u8> {
+        // SAFETY: the caller supplies a pointer from the named live segment.
+        let target = unsafe { self.check_offset(segment_id, start, offset_in_words)? };
+        self.contains_interval(segment_id, target, size_in_words)?;
+        Ok(target)
+    }
+
     fn amplified_read(&self, virtual_amount: u64) -> Result<()>;
 
     fn nesting_limit(&self) -> i32;
@@ -162,6 +181,38 @@ where
         }
     }
 
+    unsafe fn check_offset_and_read(
+        &self,
+        id: u32,
+        start: *const u8,
+        offset_in_words: i32,
+        size_in_words: usize,
+    ) -> Result<*const u8> {
+        let (base, words) = self.get_segment(id)?;
+        let offset = i64::from(offset_in_words) * i64::try_from(BYTES_PER_WORD).unwrap();
+        let invalid = || Error::from_kind(ErrorKind::MessageContainsOutOfBoundsPointer);
+        let relative = (start as usize)
+            .checked_sub(base as usize)
+            .ok_or_else(invalid)?;
+        let target = i64::try_from(relative)
+            .map_err(|_| invalid())?
+            .checked_add(offset)
+            .ok_or_else(invalid)?;
+        let target = usize::try_from(target).map_err(|_| invalid())?;
+        let bytes = size_in_words
+            .checked_mul(BYTES_PER_WORD)
+            .ok_or_else(invalid)?;
+        let segment_bytes = words as usize * BYTES_PER_WORD;
+        if target > segment_bytes || bytes > segment_bytes - target {
+            return Err(invalid());
+        }
+        self.read_limiter.can_read(size_in_words)?;
+        // SAFETY: get_segment supplies a live initialized allocation; the
+        // complete target was checked above before forming this pointer. Zero
+        // sized targets may refer to its one-past-end address.
+        Ok(unsafe { base.add(target) })
+    }
+
     fn amplified_read(&self, virtual_amount: u64) -> Result<()> {
         self.read_limiter
             .can_read(usize::try_from(virtual_amount).unwrap())
@@ -193,6 +244,14 @@ where
 /// Implementations must not permit shared readers to race with mutation.
 pub unsafe trait BuilderArena: ReaderArena {
     fn allocate(&mut self, segment_id: u32, amount: WordCount32) -> Option<u32>;
+    /// Allocate initialized words and return their address. The default retains
+    /// compatibility with custom arenas; an arena can combine allocation and
+    /// segment lookup. Zero words may return the segment's one-past-end pointer.
+    fn allocate_ptr(&mut self, segment_id: u32, amount: WordCount32) -> Option<*mut u8> {
+        let index = self.allocate(segment_id, amount)?;
+        let (base, _) = self.get_segment_mut(segment_id);
+        Some(base.wrapping_add(index as usize * BYTES_PER_WORD))
+    }
     fn allocate_anywhere(&mut self, amount: u32) -> (SegmentId, u32);
     fn get_segment_mut(&mut self, id: u32) -> (*mut u8, u32);
 
@@ -228,6 +287,21 @@ struct BuilderSegment {
 
     /// Number of words already used in the segment.
     allocated: u32,
+}
+
+impl BuilderSegment {
+    fn allocate(&mut self, amount: WordCount32) -> Option<u32> {
+        #[cfg(feature = "alloc")]
+        if self.external.is_some() {
+            return None;
+        }
+        if amount > self.capacity - self.allocated {
+            return None;
+        }
+        let index = self.allocated;
+        self.allocated += amount;
+        Some(index)
+    }
 }
 
 #[derive(Default)]
@@ -462,18 +536,7 @@ where
     }
 
     fn allocate(&mut self, segment_id: u32, amount: WordCount32) -> Option<u32> {
-        let seg = &mut self.segments[segment_id as usize];
-        #[cfg(feature = "alloc")]
-        if seg.external.is_some() {
-            return None;
-        }
-        if amount > seg.capacity - seg.allocated {
-            None
-        } else {
-            let result = seg.allocated;
-            seg.allocated += amount;
-            Some(result)
-        }
+        self.segments[segment_id as usize].allocate(amount)
     }
 
     fn allocate_anywhere(&mut self, amount: u32) -> (SegmentId, u32) {
@@ -530,6 +593,12 @@ where
 {
     fn allocate(&mut self, segment_id: u32, amount: WordCount32) -> Option<u32> {
         self.inner.allocate(segment_id, amount)
+    }
+
+    fn allocate_ptr(&mut self, segment_id: u32, amount: WordCount32) -> Option<*mut u8> {
+        let segment = &mut self.inner.segments[segment_id as usize];
+        let index = segment.allocate(amount)?;
+        Some(segment.ptr.wrapping_add(index as usize * BYTES_PER_WORD))
     }
 
     fn allocate_anywhere(&mut self, amount: u32) -> (SegmentId, u32) {

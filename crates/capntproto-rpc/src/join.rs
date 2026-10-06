@@ -418,8 +418,7 @@ pub(super) fn receive<VatId>(
         id,
         false,
         sender,
-        answer.received_finish.clone(),
-        answer.return_has_been_sent.clone(),
+        answer.status.clone(),
         Some(pipeline_sender.weak_clone()),
     );
     owner.answers.borrow_mut().slots.insert(id, answer);

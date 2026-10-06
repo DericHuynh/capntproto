@@ -1,6 +1,7 @@
 //! Authenticated TCP/TLS and QUIC sessions for native capability RPC.
 #[cfg(test)]
 pub(crate) mod backend_tests;
+pub(crate) mod buffers;
 pub mod bulk;
 #[cfg(test)]
 mod clock_tests;
@@ -90,7 +91,7 @@ pub async fn connect(
     config: &mut quiche::Config,
 ) -> io::Result<(DuplexStream, tokio::task::JoinHandle<io::Result<()>>)> {
     let local = socket.local_addr()?;
-    let conn = quiche::connect(
+    let conn = quiche::connect_with_buffer_factory::<buffers::Factory>(
         None,
         &quiche::ConnectionId::from_ref(&cid()),
         local,
@@ -109,7 +110,7 @@ pub async fn accept(
     let (n, remote) =
         tokio::time::timeout(Duration::from_secs(10), socket.recv_from(&mut buf)).await??;
     let local = socket.local_addr()?;
-    let mut conn = quiche::accept(
+    let mut conn = quiche::accept_with_buf_factory::<buffers::Factory>(
         &quiche::ConnectionId::from_ref(&cid()),
         None,
         local,
@@ -129,15 +130,16 @@ pub async fn accept(
 }
 fn spawn(
     socket: UdpSocket,
-    conn: quiche::Connection,
+    conn: buffers::Connection,
 ) -> io::Result<(DuplexStream, tokio::task::JoinHandle<io::Result<()>>)> {
     let (app, network) = tokio::io::duplex(crate::rpc::QUIC_BUFFER_BYTES);
+    let (reader, writer) = tokio::io::split(network);
     Ok((
         app,
         tokio::task::spawn_local(drive(
             PacketSocket::Dedicated(DatagramSocket::new(socket)?),
             Box::new(conn),
-            tokio::io::split(network),
+            (stream::CopyInput(reader), stream::CopyOutput(writer)),
             SessionDrivers {
                 established: None,
                 datagrams: None,
@@ -308,10 +310,28 @@ impl PacketSocket {
             Self::Shared(s) => s.local_addr(),
         }
     }
+    fn enable_recv_aggregation(&self) {
+        if let Self::Dedicated(socket) = self {
+            socket.enable_recv_aggregation();
+        }
+    }
+    // Used before the packet engine takes ownership and enables aggregation.
     pub(crate) async fn recv_from(&mut self, buf: &mut [u8]) -> io::Result<(usize, SocketAddr)> {
         match self {
             Self::Dedicated(s) => s.recv_from(buf).await,
             Self::Shared(s) => s.recv_from(buf).await,
+        }
+    }
+    pub(crate) async fn recv_batch(
+        &mut self,
+        buf: &mut [u8],
+    ) -> io::Result<(usize, SocketAddr, usize)> {
+        match self {
+            Self::Dedicated(s) => s.recv_batch(buf).await,
+            Self::Shared(s) => {
+                let (n, from) = s.recv_from(buf).await?;
+                Ok((n, from, n.max(1)))
+            }
         }
     }
     async fn send_to(&self, bytes: &[u8], to: SocketAddr) -> io::Result<usize> {
@@ -345,11 +365,8 @@ struct SessionDrivers {
 }
 async fn drive(
     socket: PacketSocket,
-    conn: Box<quiche::Connection>,
-    io: (
-        impl tokio::io::AsyncRead + Unpin,
-        impl tokio::io::AsyncWrite + Unpin,
-    ),
+    conn: Box<buffers::Connection>,
+    io: (impl stream::Input, impl stream::Output),
     drivers: SessionDrivers,
 ) -> io::Result<()> {
     // Listener shutdown must also cancel packet pacing and blocked writes,
@@ -390,11 +407,8 @@ async fn application_turn() {
 
 async fn drive_packets(
     mut socket: PacketSocket,
-    conn: Box<quiche::Connection>,
-    io: (
-        impl tokio::io::AsyncRead + Unpin,
-        impl tokio::io::AsyncWrite + Unpin,
-    ),
+    conn: Box<buffers::Connection>,
+    io: (impl stream::Input, impl stream::Output),
     drivers: SessionDrivers,
 ) -> io::Result<()> {
     let SessionDrivers {
@@ -415,27 +429,41 @@ async fn drive_packets(
     let mut mtu_recovery = crate::rpc::packet_mtu::Recovery::default();
     let (mut reader, mut writer) = io;
     let mut local = socket.local_addr()?;
+    socket.enable_recv_aggregation();
+    // Keep one registration alive while packet and application events run.
+    // Recreating these futures per event churns notification and timer state.
+    let changed = schedule_changed.notified();
+    tokio::pin!(changed);
+    changed.as_mut().enable();
+    let recovery_timer = tokio::time::sleep(Duration::from_secs(10));
+    tokio::pin!(recovery_timer);
     loop {
-        let changed = schedule_changed.notified();
-        tokio::pin!(changed);
-        changed.as_mut().enable();
         socket.check_open()?;
         // Consume a bounded receive burst before generating acknowledgements.
         // Flushing after each datagram creates an ACK and scheduler round trip
         // per packet even when the rest of the same stream write is queued.
+        // Finish an aggregate already received before yielding (at most 64
+        // datagrams / 65535 bytes); never discard its tail at the burst bound.
+        let mut received_packets = 0;
         for _ in 0..16 {
-            let Some(packet) = socket.recv_from(&mut udp).now_or_never() else {
+            let Some(packet) = socket.recv_batch(&mut udp).now_or_never() else {
                 break;
             };
-            let (n, from) = packet?;
-            if !crate::nat::is_binding_message(&udp[..n]) {
-                match engine
-                    .conn
-                    .recv(&mut udp[..n], quiche::RecvInfo { from, to: local })
-                {
-                    Ok(_) | Err(quiche::Error::Done | quiche::Error::CryptoFail) => (),
-                    Err(e) => return Err(error(e)),
+            let (n, from, segment) = packet?;
+            for packet in udp[..n].chunks_mut(segment) {
+                if !crate::nat::is_binding_message(packet) {
+                    match engine
+                        .conn
+                        .recv(packet, quiche::RecvInfo { from, to: local })
+                    {
+                        Ok(_) | Err(quiche::Error::Done | quiche::Error::CryptoFail) => (),
+                        Err(e) => return Err(error(e)),
+                    }
                 }
+            }
+            received_packets += n.div_ceil(segment);
+            if received_packets >= 16 {
+                break;
             }
         }
         if !engine.step(tokio::time::Instant::now)? {
@@ -446,6 +474,7 @@ async fn drive_packets(
                 mobility.step(&mut engine.conn, &mut socket, tokio::time::Instant::now)?
             {
                 local = migrated;
+                socket.enable_recv_aggregation();
             }
         }
         if engine.ready() {
@@ -476,7 +505,7 @@ async fn drive_packets(
         // number of cooperative turns lets the RPC tasks produce their output.
         let mut application_progress = false;
         if !engine.rx.pending().is_empty() {
-            if let Some(written) = writer.write(engine.rx.pending()).now_or_never() {
+            if let Some(written) = writer.write_from(&mut engine.rx).now_or_never() {
                 engine.delivered(written?)?;
                 application_progress = true;
                 // Finish delivering already-buffered input before waiting for
@@ -489,9 +518,8 @@ async fn drive_packets(
                     for _ in 0..8 {
                         application_turn().await;
                         if engine.tx.can_read() {
-                            if let Some(read) = reader.read(engine.tx.read_buffer()?).now_or_never()
-                            {
-                                engine.tx.read(read?)?;
+                            if let Some(read) = engine.tx.read_from(&mut reader).now_or_never() {
+                                engine.tx.read_owned(read?)?;
                                 break;
                             }
                         }
@@ -500,8 +528,8 @@ async fn drive_packets(
             }
         }
         if engine.tx.can_read() {
-            if let Some(read) = reader.read(engine.tx.read_buffer()?).now_or_never() {
-                engine.tx.read(read?)?;
+            if let Some(read) = engine.tx.read_from(&mut reader).now_or_never() {
+                engine.tx.read_owned(read?)?;
                 application_progress = true;
             }
         }
@@ -546,26 +574,29 @@ async fn drive_packets(
         }
         // Quiche uses system time; Tokio may have a paused/advanced clock.
         // Preserve the relative recovery delay when crossing those domains.
-        let now = tokio::time::Instant::now();
         let timeout = engine
             .conn
             .timeout()
             .unwrap_or(Duration::from_secs(10))
-            .min(
-                mobility
-                    .as_ref()
-                    .map_or(Duration::from_secs(10), |m| m.timeout(now)),
-            );
-        let datagram_deadline = engine.datagram_deadline(|| now);
+            .min(mobility.as_ref().map_or(Duration::from_secs(10), |m| {
+                m.timeout(tokio::time::Instant::now)
+            }));
+        let datagram_deadline = engine.datagram_deadline(tokio::time::Instant::now);
         let bulk_deadline = engine.bulk.as_ref().and_then(|b| b.deadline());
         let can_accept_datagram = engine.can_accept_datagram();
         let can_read = engine.tx.can_read();
         let can_write = !engine.rx.pending().is_empty();
         let more_stream_data = engine.rx.needs_shutdown()
             || (engine.rx.can_receive() && engine.conn.stream_readable(0));
+        recovery_timer
+            .as_mut()
+            .reset(tokio::time::Instant::now() + timeout);
         tokio::select! {
             _ = async { tokio::time::sleep_until(bulk_deadline.unwrap()).await }, if bulk_deadline.is_some() => {},
-            _ = &mut changed => {},
+            _ = &mut changed => {
+                changed.set(schedule_changed.notified());
+                changed.as_mut().enable();
+            },
             _ = tokio::task::yield_now(), if exhausted => engine.scheduling.yielded(),
             _ = tokio::task::yield_now(), if more_stream_data => {},
             _ = async { tokio::time::sleep_until(datagram_deadline.unwrap()).await }, if datagram_deadline.is_some() => {},
@@ -587,18 +618,20 @@ async fn drive_packets(
                     None => datagrams.as_mut().unwrap().send_closed = true,
                 }
             },
-            r=socket.recv_from(&mut udp) => {
-                let(n,from)=r?;
-                if !crate::nat::is_binding_message(&udp[..n]) {
-                    match engine.conn.recv(&mut udp[..n],quiche::RecvInfo {from,to:local}) {
-                        Ok(_)|Err(quiche::Error::Done)|Err(quiche::Error::CryptoFail) => {},
-                        Err(e)=>return Err(error(e)),
+            r=socket.recv_batch(&mut udp) => {
+                let(n,from,segment)=r?;
+                for packet in udp[..n].chunks_mut(segment) {
+                    if !crate::nat::is_binding_message(packet) {
+                        match engine.conn.recv(packet,quiche::RecvInfo {from,to:local}) {
+                            Ok(_)|Err(quiche::Error::Done)|Err(quiche::Error::CryptoFail) => {},
+                            Err(e)=>return Err(error(e)),
+                        }
                     }
                 }
             },
-            r=async { reader.read(engine.tx.read_buffer()?).await }, if can_read => engine.tx.read(r?)?,
-            r=writer.write(engine.rx.pending()), if can_write => engine.delivered(r?)?,
-            _=tokio::time::sleep(timeout) => mtu_recovery.on_timeout(&mut engine.conn),
+            r=engine.tx.read_from(&mut reader), if can_read => engine.tx.read_owned(r?)?,
+            r=writer.write_from(&mut engine.rx), if can_write => engine.delivered(r?)?,
+            _=&mut recovery_timer => mtu_recovery.on_timeout(&mut engine.conn),
         }
     }
 }
@@ -657,7 +690,7 @@ impl Drop for AuthenticatedSession {
 }
 pub(crate) async fn authenticated(
     socket: PacketSocket,
-    conn: Box<quiche::Connection>,
+    conn: Box<buffers::Connection>,
     local: [u8; 32],
     peer: [u8; 32],
 ) -> io::Result<AuthenticatedSession> {
@@ -744,7 +777,7 @@ pub async fn connect_for_version(
     let mut binding = b"ReProto native RPC v1\0".to_vec();
     binding.extend_from_slice(context);
     let mut config = config_for_version(identity, peer, psk, &binding, version).map_err(error)?;
-    let conn = quiche::connect(
+    let conn = quiche::connect_with_buffer_factory::<buffers::Factory>(
         None,
         &quiche::ConnectionId::from_ref(&cid()),
         socket.local_addr()?,
@@ -776,7 +809,7 @@ pub async fn accept_authenticated(
     let (n, remote) =
         tokio::time::timeout(Duration::from_secs(10), socket.recv_from(&mut buf)).await??;
     let local = socket.local_addr()?;
-    let mut conn = quiche::accept(
+    let mut conn = quiche::accept_with_buf_factory::<buffers::Factory>(
         &quiche::ConnectionId::from_ref(&cid()),
         None,
         local,
