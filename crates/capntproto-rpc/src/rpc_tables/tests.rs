@@ -102,6 +102,15 @@ fn peer_slot_owners_can_reenter_after_replacement_removal_and_detachment() {
     assert!(slots.borrow().is_empty());
     drop(detached);
     assert_eq!(drops.get(), 12);
+    slots.borrow_mut().insert(
+        ImportId::from_wire(0),
+        Owner {
+            slots: Rc::downgrade(&slots),
+            drops: drops.clone(),
+        },
+    );
+    drop(slots);
+    assert_eq!(drops.get(), 13);
 }
 
 #[test]
@@ -114,9 +123,17 @@ fn wrap_skips_live_high_ids_and_keeps_low_allocator_independent() {
     table.high_counter = 0xffff_ffff;
     assert_eq!(table.push_high("last").to_wire(), 0xffff_ffff);
     assert_eq!(table.push_high("wrapped").to_wire(), 0x8000_0001);
+    assert_eq!(table.get(first), Some(&"first"));
+    assert_eq!(table.get(QuestionId::from_wire(u32::MAX)), Some(&"last"));
+    assert_eq!(
+        table.get(QuestionId::from_wire(0x8000_0001)),
+        Some(&"wrapped")
+    );
+    assert_eq!(table.get(QuestionId::from_wire(0x8000_0002)), None);
     let low = table.push("low");
     assert_eq!(low.to_wire(), 0);
     table.erase(first);
+    assert_eq!(table.get(first), None);
     table.erase(low);
     assert_eq!(table.push("reused low"), low);
     assert_eq!(table.push_high("next high").to_wire(), 0x8000_0002);

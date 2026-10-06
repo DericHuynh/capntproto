@@ -1,5 +1,14 @@
 # 0.1.0 developer preview (unpublished)
 
+- Invalidate prior JUnit references before repeating a quality step, including
+  runs that exit without producing a report. Exercise actual passing and failing
+  nextest fixtures, source changes, and separate stdout/stderr capture.
+  Add regression coverage for rejected stream transitions, counter overflow,
+  QUIC resets, copying-output shutdown, multi-segment write batches, scratch
+  storage fallbacks, and high-ID ownership. Requalify the measured coverage
+  baseline after reviewing the nextest/lane split and RPC refactors; retain the
+  per-file and group regression gates and all zero-hit mappings.
+
 - Forward the dedicated benchmark credential explicitly through reusable CI
   workflows, and check this contract alongside cloud trust restrictions.
   Use exact version comments for pinned installation actions so moving major

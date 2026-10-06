@@ -715,4 +715,95 @@ mod tests {
         assert!(regression(&additional, &old).is_err());
         assert_eq!(Metric::default().percent(), None);
     }
+
+    #[test]
+    fn export_rejects_empty_duplicate_and_malformed_owned_mappings() {
+        let count = json!({"count": 1, "covered": 1});
+        let file = json!({"filename":"/repo/src/lib.rs", "summary": {
+            "lines":count, "regions":count, "functions":count, "branches":count
+        }});
+        for files in [json!([]), json!([file, file]), json!([{"summary":{}}])] {
+            assert!(parse_export(
+                &json!({"type":"llvm.coverage.json.export",
+                "data":[{"files":files}]}),
+                Path::new("/repo")
+            )
+            .is_err());
+        }
+        for counts in [
+            json!({}),
+            json!({"count":1}),
+            json!({"count":-1,"covered":0}),
+        ] {
+            assert!(metric(&counts).is_err());
+        }
+    }
+
+    #[test]
+    fn inventory_binds_measured_files_and_keeps_unmapped_sources_explicit() {
+        let metrics = Metrics {
+            lines: Metric {
+                count: 2,
+                covered: 1,
+            },
+            ..Metrics::default()
+        };
+        let measured = BTreeMap::from([("src/lib.rs".into(), metrics.clone())]);
+        let files = inventory(&measured).unwrap();
+        let source = &files["src/lib.rs"];
+        assert_eq!(
+            source.sha256,
+            v::sha256(fs::read(root().join("src/lib.rs")).unwrap())
+        );
+        assert_eq!(source.metrics, Some(metrics.clone()));
+        assert_eq!(source.group, "runtime");
+        assert!(files["quality/src/coverage.rs"].metrics.is_none());
+        assert!(files["quality/src/coverage.rs"]
+            .status
+            .contains("not counted as covered"));
+        assert_eq!(
+            totals(&files),
+            BTreeMap::from([("runtime".into(), metrics)])
+        );
+    }
+
+    #[test]
+    fn object_inventory_skips_incremental_caches_and_builds_isolate_workspaces() {
+        let directory = tempfile::tempdir().unwrap();
+        for dir in ["debug/deps", "debug/incremental", "debug/.fingerprint"] {
+            let dir = directory.path().join(dir);
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("object"), b"mapping").unwrap();
+        }
+        let mut files = Vec::new();
+        visit(directory.path(), &mut files).unwrap();
+        assert_eq!(files, [directory.path().join("debug/deps/object")]);
+        for (args, workspace) in [
+            (vec!["nextest", "run", "--workspace"], "root"),
+            (
+                vec![
+                    "nextest",
+                    "run",
+                    "--manifest-path",
+                    "verification/miri/Cargo.toml",
+                ],
+                "verification",
+            ),
+        ] {
+            let command = instrumented(&args, directory.path(), &directory.path().join("profiles"));
+            let env: BTreeMap<_, _> = command.get_envs().collect();
+            assert_eq!(
+                env[std::ffi::OsStr::new("CARGO_TARGET_DIR")],
+                Some(directory.path().join(workspace).as_os_str())
+            );
+            assert_eq!(
+                env[std::ffi::OsStr::new("RUSTFLAGS")],
+                Some(std::ffi::OsStr::new(FLAGS))
+            );
+            assert_eq!(
+                env[std::ffi::OsStr::new("LLVM_PROFILE_FILE")],
+                Some(directory.path().join("profiles/%p-%m.profraw").as_os_str())
+            );
+        }
+    }
 }

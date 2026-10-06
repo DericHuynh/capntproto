@@ -141,6 +141,13 @@ impl Runner {
         if junit.exists() {
             fs::remove_file(&junit)?;
         }
+        // A repeated invocation must invalidate both the file and its recorded
+        // digest before starting. Failure before nextest writes a report must
+        // never retain a previous invocation's evidence.
+        if let Some(reports) = self.evidence.data["test_reports"].as_object_mut() {
+            reports.remove(name);
+        }
+        self.save()?;
         let config = tempfile::Builder::new()
             .prefix("nextest-")
             .suffix(".toml")

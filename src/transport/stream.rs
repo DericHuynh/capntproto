@@ -295,3 +295,6 @@ impl ReceiveStream {
 fn invalid_progress() -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, "invalid RPC stream progress")
 }
+
+#[cfg(test)]
+mod state_tests;

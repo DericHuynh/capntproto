@@ -29,12 +29,17 @@ fn scratch_capacity_includes_framing_and_preserves_unused_words() {
                 let borrowed = buffered && !short && capacity >= needed;
                 assert_eq!(message.get_segments().uses_scratch(), borrowed);
                 assert_eq!(message.get_segments().is_shared_buffer(), buffered && short);
+                let count = message.get_segments().len();
+                assert_eq!(
+                    count,
+                    u32::from_le_bytes(frame[..4].try_into().unwrap()) as usize + 1
+                );
+                assert!(message.get_segments().get_segment(count as u32).is_none());
                 assert_eq!(
                     message.get_root::<capnp::data::Reader>().unwrap(),
                     vec![19; size]
                 );
                 if borrowed {
-                    let count = message.get_segments().len();
                     assert_eq!(
                         message.get_segments().get_segment(0).unwrap().as_ptr() as usize,
                         start + (count / 2 + 1) * 8

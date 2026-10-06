@@ -328,6 +328,31 @@ hashes and per-group totals were checked before saving the initial summary as
 the baseline. The initial measurement is a regression reference, not a claim that
 all code paths are covered.
 
+The October 2026 CI requalification reviews the baseline after the nextest
+migration, separation of Cargo/TLA+/fuzz lanes, codegen file split, and RPC
+optimizations. The original comparison and logs remain failed evidence; changing
+the reference does not certify that run. A subsequent CI run must pass the
+unchanged comparison against the reviewed snapshot before merge.
+
+The review distinguishes executable gaps from changed denominators. Added tests
+exercise stream rejection and overflow without corrupting pending bytes, real
+QUIC reset propagation, copying-output EOF, multi-segment batch fallbacks,
+scratch segment inventories, high-ID lookup and owner destruction. Reporting
+tests run real passing/failing nextest fixtures and reject stale or absent JUnit
+reports. Coverage-parser tests preserve zero-hit sources, reject malformed or
+duplicate exports, and verify workspace/profile isolation.
+
+Remaining zero-hit mappings stay in the snapshot. Examples include clock
+callbacks and queued futures which negative controls require never to execute,
+32-bit framing overflow paths unreachable on the measured 64-bit target,
+platform-specific errors, and model replays now exercised in the independent
+TLA+ lane. Moving code out of `codegen.rs` and removing covered statements from
+join handling can lower a file ratio without adding uncovered lines. Changed
+LLVM mappings in generic/generated call sites also change region counts. These
+are reviewed baseline differences, not exclusions or claims of coverage. Every
+source-group metric must still be compared with the original baseline during
+review, and CI continues enforcing per-file and per-group ratios thereafter.
+
 The Fuzzing job packages its reports, logs, queues, crashes and hangs in
 `fuzz-report.tar.gz` before artifact upload. This preserves AFL's colon-containing
 filenames, which GitHub's artifact uploader rejects as individual files. Extract
