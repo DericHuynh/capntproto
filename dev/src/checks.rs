@@ -394,6 +394,19 @@ fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
         performance["build"].to_string().find("secrets.").is_none(),
         "benchmark build must be credential-free"
     );
+    for (job, file, required) in [
+        ("performance", "performance", false),
+        ("cleanup", "maintenance-benchmarks", true),
+    ] {
+        ensure!(
+            jobs[job]["secrets"]
+                == json!({"DIGITALOCEAN_ACCESS_TOKEN": "${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}"})
+                && all[file]["on"]["workflow_call"]["secrets"]["DIGITALOCEAN_ACCESS_TOKEN"]
+                    ["required"]
+                    == required,
+            "{job}: explicitly forward and declare the cloud credential"
+        );
+    }
     for (file, lane) in [
         ("verification-tests", "cargo"),
         ("verification-models", "models"),

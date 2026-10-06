@@ -238,6 +238,8 @@ jobs:
     name: Build and measure release benchmarks
     needs: [cargo, models, fuzz, extended]
     uses: ./.github/workflows/performance.yml # zizmor: ignore[self-repository]
+    secrets:
+      DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
   cleanup:
     name: Recover expired benchmark resources
     needs: performance
@@ -246,3 +248,5 @@ jobs:
       always() && github.actor_id != '49699333' &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     uses: ./.github/workflows/maintenance-benchmarks.yml # zizmor: ignore[self-repository]
+    secrets:
+      DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}

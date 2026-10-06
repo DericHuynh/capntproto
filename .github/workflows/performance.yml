@@ -1,6 +1,10 @@
 name: Performance / Dedicated benchmarks
 on:
   workflow_call:
+    secrets:
+      DIGITALOCEAN_ACCESS_TOKEN:
+        description: Dedicated benchmark provisioning and cleanup credential
+        required: false # Fork and Dependabot PRs only compile the bundle.
     inputs:
       region:
         default: auto

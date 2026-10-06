@@ -1,5 +1,10 @@
 # 0.1.0 developer preview (unpublished)
 
+- Forward the dedicated benchmark credential explicitly through reusable CI
+  workflows, and check this contract alongside cloud trust restrictions.
+  Use exact version comments for pinned installation actions so moving major
+  tags cannot break workflow security validation.
+
 - Skip inactive bulk processing on the QUIC RPC path, keeping the full bulk
   handler separate. Remove its duplicate readable-stream allocation and
   reuse its bounded admission queue storage. Add a stalled-stream allocation and

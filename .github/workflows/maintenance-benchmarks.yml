@@ -1,6 +1,10 @@
 name: Maintenance / Benchmark cleanup
 on:
   workflow_call:
+    secrets:
+      DIGITALOCEAN_ACCESS_TOKEN:
+        description: Credential for this repository's expired benchmark resources
+        required: true
   workflow_dispatch:
   schedule:
     - cron: '17 * * * *'
