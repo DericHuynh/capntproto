@@ -4,6 +4,8 @@
   workflows, and check this contract alongside cloud trust restrictions.
   Use exact version comments for pinned installation actions so moving major
   tags cannot break workflow security validation.
+  Isolate the platform CLI build from runtime feature builds to avoid repeatedly
+  recompiling shared dependencies, and allow cold Windows builds to finish.
 
 - Skip inactive bulk processing on the QUIC RPC path, keeping the full bulk
   handler separate. Remove its duplicate readable-stream allocation and
