@@ -317,6 +317,14 @@ inspecting its files and counters. Changes to a baseline require review. Missing
 baselines still fail the final report; CI never creates one automatically or
 substitutes the current run for a missing comparison.
 
+Owned build scripts declare `LLVM_PROFILE_FILE` with Cargo's
+[`rerun-if-env-changed`](https://doc.rust-lang.org/cargo/reference/build-scripts.html#rerun-if-env-changed)
+directive. Each collection uses a new profile directory, so a warm Cargo target
+reruns schema generation and produces fresh counters. It must not reuse old
+profile files or silently lose build-script coverage. A regression test checks
+the real RPC package on a cold build, a warm build with a new destination, and a
+warm build whose destination is unchanged.
+
 The first `first-party-owned-crates-v3` baseline was measured on Linux x86-64 on
 2026-10-03 from commit `ed95a35ac`, using the pinned coverage compiler and flags.
 Its source fingerprint is

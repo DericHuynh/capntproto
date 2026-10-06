@@ -1,5 +1,10 @@
 # 0.1.0 developer preview (unpublished)
 
+- Track `LLVM_PROFILE_FILE` in owned build scripts so each coverage run records
+  fresh schema-generation counters even when Cargo reuses its target directory.
+  Test cold builds, warm builds with a new profile destination, and unchanged
+  warm builds against the actual RPC package.
+
 - Invalidate prior JUnit references before repeating a quality step, including
   runs that exit without producing a report. Exercise actual passing and failing
   nextest fixtures, source changes, and separate stdout/stderr capture.

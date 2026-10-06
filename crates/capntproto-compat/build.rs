@@ -1,4 +1,6 @@
 fn main() {
+    // A fresh coverage run needs fresh build-script and code-generation counters.
+    println!("cargo:rerun-if-env-changed=LLVM_PROFILE_FILE");
     let mut compiler = capntproto_compiler::FileCompiler::new();
     compiler
         .src_prefix("schema/capnp/compat")

@@ -1,5 +1,7 @@
 #[cfg(any(feature = "native", feature = "storage", feature = "services"))]
 fn main() {
+    // A fresh coverage run needs fresh build-script and code-generation counters.
+    println!("cargo:rerun-if-env-changed=LLVM_PROFILE_FILE");
     println!("cargo:rerun-if-env-changed=CAPNP_INCLUDE_DIR");
     let mut compiler = capntproto_compiler::FileCompiler::new();
     if let Some(directory) = std::env::var_os("CAPNP_INCLUDE_DIR") {
@@ -39,4 +41,7 @@ fn main() {
         .expect("generate service bindings");
 }
 #[cfg(not(any(feature = "native", feature = "storage", feature = "services")))]
-fn main() {}
+fn main() {
+    // A fresh coverage run needs fresh build-script and code-generation counters.
+    println!("cargo:rerun-if-env-changed=LLVM_PROFILE_FILE");
+}
