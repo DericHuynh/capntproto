@@ -2,7 +2,7 @@ use capnp_rpc::VatNetwork;
 use capntproto::{
     native_arbitration,
     native_listener::{self, Listener},
-    native_rpc::{Connector, Handle, Network, RouteStatus, Termination},
+    native_rpc::{Connector, FailureKind, Handle, Network, RouteStatus, Termination},
     transport::{self, AuthenticatedSession, Identity},
 };
 use capntproto_test_support::runtime_test_capnp::harness;
@@ -119,6 +119,51 @@ fn data_message(
         .fill(value);
     message
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn canceled_native_read_reports_transport_failure_when_peer_sends() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let a = Rc::new(Identity::generate());
+            let b = Rc::new(Identity::generate());
+            let bl = listener(b.clone()).await;
+            let (ca, cb) = pair(&bl, &a).await;
+            let (mut an, ah) = network(a.public_key(), false, None);
+            let (mut bn, bh) = network(b.public_key(), false, None);
+            ah.attach(ca).unwrap();
+            bh.attach(cb).unwrap();
+            let mut ac = an.connect(b.public_key()).unwrap();
+            let mut bc = bn.accept().await.unwrap();
+            until(|| {
+                ah.route_status(b.public_key()) == Some(RouteStatus::Authenticated)
+                    && bh.route_status(a.public_key()) == Some(RouteStatus::Authenticated)
+            })
+            .await;
+            let observer = bh.observe_route(a.public_key()).unwrap();
+
+            // Cancel before sending anything. The receive future owns the read
+            // half, so dropping it closes the consumer while its route and
+            // transport driver remain alive to report the delivery failure.
+            let mut receive = bc.receive_incoming_message();
+            assert!(futures::poll!(&mut receive).is_pending());
+            drop(receive);
+            data_message(&mut *ac, 1, 8).send().0.await.unwrap();
+            until(|| observer.status() == RouteStatus::Failed).await;
+            let Some(Termination::Failed(failure)) = observer.termination() else {
+                panic!("canceled reader must fail transport delivery");
+            };
+            assert_eq!(failure.kind, FailureKind::Transport);
+            assert_eq!(failure.io_kind, Some(std::io::ErrorKind::BrokenPipe));
+            assert!(bc.receive_incoming_message().await.is_err());
+            assert!(bh
+                .shutdown(a.public_key(), Duration::from_secs(1))
+                .await
+                .is_err());
+            until(|| bl.stats().authenticated == 0).await;
+        })
+        .await;
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn dedicated_and_shared_sessions_acknowledge_empty_drains() {
     tokio::task::LocalSet::new()
