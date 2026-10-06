@@ -1339,6 +1339,105 @@ Copying a C++ allocation strategy is therefore a hypothesis to measure, not an
 assurance of equal end-to-end performance. The 1.2× native target remains unmet;
 the last dedicated canonical 64-KiB ratio remains 2.430×.
 
+### Matched TCP/TLS and QUIC architecture comparison
+
+The `native_tcp` benchmark now uses the same native `Network`, echo service,
+pinned mutual authentication, payload validation, response cleanup and version-2
+timing contract as `native`. It selects `transport::tcp` rather than the QUIC
+adapter. Build and run the standalone diagnostic with:
+
+```sh
+cargo bench --locked --manifest-path benchmarks/rpc/Cargo.toml --bench native_tcp
+```
+
+Its protocol identity is `native-tcp`. It is deliberately outside the canonical
+four-protocol bundle and QUIC/C++ acceptance gate; TCP results cannot establish
+the QUIC target. As with other individual targets, this command retains the
+caller's CPU affinity. The comparison below instead pins server/client to
+physical cores 0/2 and alternates executable order.
+
+On October 5, seven release/full-LTO repetitions per payload, each with 10,000
+warmups and 1,000 retained samples, compared the published QUIC runtime, the
+final idle-bulk-path changes and the authenticated TCP control. Setup and handshakes are excluded. The local
+Ryzen 7 5800H uses HPET; these are local diagnostics, not dedicated-host results.
+
+| Payload | TCP/TLS p50 (µs) | QUIC before (µs) | QUIC after (µs) | After / TCP |
+| --- | ---: | ---: | ---: | ---: |
+| 0 bytes | 47.283 | 67.886 | 66.908 | 1.415× |
+| 64 bytes | 47.423 | 68.165 | 66.908 | 1.411× |
+| 1 KiB | 49.238 | 69.702 | 69.003 | 1.401× |
+| 64 KiB | 146.667 | 163.918 | 163.010 | 1.111× |
+
+The small-call median reduction is about 1.0–1.8%. The 0.6% large-call difference
+is small relative to local run variation. Every sample is retained; no best-run
+selection or outlier removal is used.
+A separate nine-repetition 64-KiB confirmation, with 10,000 warmups and 10,000
+measurements per repetition, retained 90,000 samples per executable. Its median
+was 164.476 µs before and 164.058 µs after (0.25% lower), supporting a neutral
+large-call result rather than a material speedup. p95/p99 were
+201.144/297.455 µs before and 190.109/218.674 µs after; tail variation remains
+too large to treat those tail differences as an established gain.
+
+Both paths use the local RPC byte bridge. QUIC additionally drives packet
+protection, recovery, pacing, stream state and UDP readiness in user space.
+A separate syscall counter over 20,000 64-KiB calls counted 461,840 clock reads
+for QUIC versus 218,937 for TCP/TLS, including setup. This is a count of work,
+not a division of wall time into costs. The earlier CPU profile also identified
+packet encryption/decryption and payload copies as substantial user CPU costs.
+
+Three proposed adapter changes were evaluated and rejected: using the live task
+waker for every bridge probe, caching the absolute recovery deadline (including
+a variant with a single application-deadline timer), and replacing Linux's
+temporary receive-readiness future with its single-reader waker slot. The
+recovery deadline changed too frequently in sequential RPC to reduce clock
+reads. The reader-slot variant improved small-call medians by 0.8–1.2%, but a
+separate nine-repetition 64-KiB run with 90,000 samples per executable regressed
+164.058 → 166.292 µs (1.36%). None of those three prototypes is retained.
+
+The bulk driver now keeps a small idle check separate from its full handler.
+After initialization, if there are no queued grants, active transfers, partial
+prefaces or readable streams, it avoids constructing a readable-stream snapshot
+or entering the stream-processing/initialization stack frame. Pending grants
+still run before the peer sends data, and existing transfers retain deadline,
+cancellation, flow-credit and receipt processing. The allocation-only prototype
+had regressed the 64-KiB median by 2.6%; separating the idle path removed that
+regression in the final comparison above.
+
+The allocation optimization targets active split-plane traffic: Quiche already
+returns an owned snapshot from `readable()`, so the bulk driver now iterates that
+snapshot without collecting a second `Vec`. Draining pending grants also keeps
+the bounded admission queue's capacity. A full engine regression holds an
+authorized bulk stream unread, confirms data remains readable in Quiche, then
+drives 100 further engine passes. The former code allocated 100 times / 3,200
+bytes; the new code allocates zero times. Resuming the reader delivers the exact
+payload, demonstrating that the optimization does not consume or lose readiness.
+This counter measures allocation traffic under bulk backpressure, not bulk
+throughput. The sequential timings above measure the combined changes.
+
+The timer investigation also found a correctness issue: the adapter's combined
+timer can wake for migration polling or an advanced Tokio clock before Quiche's
+system-clock recovery deadline. Such a wake previously updated the no-ACK
+observation and could spuriously revalidate the MTU. A separate, retained guard
+checks that Quiche's timer has actually expired before recording recovery or
+requesting a reprobe. The regression fails on the former implementation before
+even sending a packet; genuine loss and silent path-MTU reduction still exercise
+the encrypted recovery tests. This guard adds no work to ordinary packet events.
+
+The final source passed 158 focused nextest checks covering transport engines,
+real and simulated packet faults, bulk services and grants, TCP/QUIC native vats,
+TLS/mTLS, migration, MTU fallback and TLA+ trace replay. The benchmark harness's
+three checks, workspace and benchmark Clippy with warnings denied, formatting,
+unsafe documentation checks and validation of all 98 project documents passed.
+
+Ordinary RPC remains ordered on stream 0. QUIC's cross-stream loss isolation
+benefits independent streams, as described by [RFC 9000 §13](https://www.rfc-editor.org/rfc/rfc9000.html#section-13).
+The [split-plane API](Split-Plane.md) exercises that architecture for explicitly
+granted bulk traffic while retaining control credit. A loss-free, single-call
+echo does not exercise it. Existing encrypted packet tests cover control
+progress across a bulk packet gap, independent stream credits, packet loss,
+reordering, duplicates and stalled consumers. Those correctness tests do not
+establish a throughput advantage. The 1.2× QUIC/C++ target remains unmet.
+
 ### Clock diagnostics
 
 The report records current and available Linux clocksources and five batches of

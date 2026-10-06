@@ -40,6 +40,12 @@ pub(crate) struct Recovery {
 }
 impl Recovery {
     pub(crate) fn on_timeout(&mut self, conn: &mut quiche::Connection<impl quiche::BufFactory>) {
+        // The adapter also wakes for migration polling and application-clock
+        // deadlines. Those are not evidence of packet loss. In particular,
+        // Tokio's clock may advance before quiche's system-clock timer expires.
+        if conn.timeout() != Some(std::time::Duration::ZERO) {
+            return;
+        }
         let acked = conn.stats().acked_bytes;
         if self.previous_acked == Some(acked) && conn.pmtu().is_some() {
             conn.revalidate_pmtu();
@@ -52,6 +58,37 @@ impl Recovery {
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn early_application_wakeups_do_not_count_as_recovery_expirations() {
+        use crate::transport::{config, Identity};
+        use std::time::Duration;
+        let local = Identity::generate();
+        let peer = Identity::generate();
+        let mut config = config(&local, peer.public_key(), None, b"early recovery").unwrap();
+        config.set_initial_rtt(Duration::from_secs(30));
+        config.set_max_idle_timeout(60_000);
+        let mut conn = quiche::connect(
+            None,
+            &quiche::ConnectionId::from_ref(&[1; 16]),
+            "127.0.0.1:1234".parse().unwrap(),
+            "127.0.0.1:4321".parse().unwrap(),
+            &mut config,
+        )
+        .unwrap();
+        let mut recovery = Recovery::default();
+        // Before packet output there may be no armed recovery timer at all.
+        recovery.on_timeout(&mut conn);
+        assert_eq!(recovery.previous_acked, None);
+        conn.send(&mut [0; 1350]).unwrap();
+        assert!(conn.timeout().unwrap() > Duration::from_secs(1));
+        // Two migration/cancellation polls without ACK progress must not look
+        // like two expired recovery timers and initiate a spurious MTU reprobe.
+        recovery.on_timeout(&mut conn);
+        recovery.on_timeout(&mut conn);
+        assert_eq!(recovery.previous_acked, None);
+        assert!(!conn.is_closed());
+    }
 
     #[tokio::test]
     async fn probes_forbid_fragmentation_for_ipv4_ipv6_and_mapped_ipv4() {

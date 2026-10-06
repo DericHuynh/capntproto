@@ -7,6 +7,87 @@ use futures::FutureExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 const TIMEOUT: Duration = Duration::from_secs(5);
 
+#[tokio::test]
+async fn stalled_bulk_does_not_allocate_while_other_planes_drive_the_connection() {
+    use crate::{native_shutdown::Control, transport::engine_tests};
+    let addresses = [
+        "127.0.0.1:1234".parse().unwrap(),
+        "127.0.0.1:4321".parse().unwrap(),
+    ];
+    let (mut a, mut b) = engine_tests::pair_at(addresses, |config| {
+        config.set_initial_max_stream_data_bidi_local(1024 * 1024);
+        config.set_initial_max_stream_data_bidi_remote(1024 * 1024);
+    });
+    let (_, sender) = super::pair(
+        &a.conn,
+        [1; 32],
+        [2; 32],
+        Control::new(),
+        Arc::new(Notify::new()),
+    );
+    let (receiver, driver) = super::pair(
+        &b.conn,
+        [2; 32],
+        [1; 32],
+        Control::new(),
+        Arc::new(Notify::new()),
+    );
+    a.bulk = Some(sender);
+    b.bulk = Some(driver);
+    for _ in 0..50 {
+        a.step(Instant::now).unwrap();
+        engine_tests::packets(&mut a, &mut b);
+        b.step(Instant::now).unwrap();
+        engine_tests::packets(&mut b, &mut a);
+    }
+    assert!(a.ready() && b.ready());
+    // Drive the sender's wire input directly below; it must not interpret the
+    // reverse stream's consumption receipts as an unknown local transfer.
+    a.bulk = None;
+    let length = 3 * BUFFER;
+    let (offer, mut input) = receiver.receive(length as u64, TIMEOUT).unwrap();
+    a.conn.stream_send(4, &offer.header(), false).unwrap();
+    let payload = vec![29; length];
+    assert_eq!(a.conn.stream_send(4, &payload, true).unwrap(), length);
+    // Fill the bounded application pipe and staging buffer while withholding
+    // application consumption. The remainder must stay readable in quiche.
+    for _ in 0..100 {
+        engine_tests::packets(&mut a, &mut b);
+        b.step(Instant::now).unwrap();
+        engine_tests::packets(&mut b, &mut a);
+        a.step(Instant::now).unwrap();
+        tokio::task::yield_now().await;
+    }
+    assert!(b.conn.stream_readable(4));
+    let allocations = allocation_counter::measure(|| {
+        for _ in 0..100 {
+            b.step(Instant::now).unwrap();
+        }
+    });
+    assert_eq!(allocations.count_total, 0, "{allocations:?}");
+    assert!(b.conn.stream_readable(4));
+    // The stalled stream must still finish with exact data after the reader
+    // resumes; avoiding allocation must not consume its readiness indication.
+    let mut output = Vec::new();
+    for _ in 0..100 {
+        while let Some(read) = input.read_buf(&mut output).now_or_never() {
+            if read.unwrap() == 0 {
+                break;
+            }
+        }
+        b.step(Instant::now).unwrap();
+        engine_tests::packets(&mut b, &mut a);
+        a.step(Instant::now).unwrap();
+        engine_tests::packets(&mut a, &mut b);
+        tokio::task::yield_now().await;
+        if output.len() == length {
+            break;
+        }
+    }
+    assert_eq!(output, payload);
+    assert_eq!(input.read(&mut [0; 1]).now_or_never().unwrap().unwrap(), 0);
+}
+
 async fn peers() -> (
     crate::transport::AuthenticatedSession,
     crate::transport::AuthenticatedSession,

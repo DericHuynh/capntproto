@@ -35,6 +35,10 @@ name = "native"
 harness = false
 
 [[bench]]
+name = "native_tcp"
+harness = false
+
+[[bench]]
 name = "grpc"
 harness = false
 

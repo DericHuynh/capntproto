@@ -162,19 +162,43 @@ impl Driver {
         conn.stream_priority(0, 0, false)
             .map_err(crate::transport::error)
     }
+    #[inline]
     pub fn step(
         &mut self,
         conn: &mut quiche::Connection<impl quiche::BufFactory>,
     ) -> io::Result<()> {
+        // RPC usually drains the only readable stream before calling us. Keep
+        // inactive bulk work out of its hot path, including initialization's
+        // stack frame and the readable-stream snapshot. Newly admitted grants
+        // must still run even when the peer has not sent any stream data yet.
+        if self.initialized
+            && self.entries.is_empty()
+            && self.prefaces.is_empty()
+            && self.shared.borrow().pending.is_empty()
+            && !conn.is_readable()
+        {
+            return Ok(());
+        }
+        self.step_streams(conn)
+    }
+
+    #[inline(never)]
+    fn step_streams(
+        &mut self,
+        conn: &mut quiche::Connection<impl quiche::BufFactory>,
+    ) -> io::Result<()> {
         self.initialize(conn)?;
-        let pending = std::mem::take(&mut self.shared.borrow_mut().pending);
-        self.entries.extend(pending);
+        // Move entries without discarding the bounded admission queue's storage.
+        // The borrow ends before driving pipes or waking application handles.
+        self.entries.append(&mut self.shared.borrow_mut().pending);
         // Do not read a clock on the ordinary RPC-only fast path.
-        let readable: Vec<_> = conn
+        // Quiche already returns an owned snapshot. Inspect it directly instead
+        // of allocating another stream-ID list on every packet/control event.
+        let mut readable = conn
             .readable()
             .filter(|id| *id != 0 && *id % 4 < 2)
-            .collect();
-        if self.entries.is_empty() && readable.is_empty() && self.prefaces.is_empty() {
+            .peekable();
+        if self.entries.is_empty() && readable.peek().is_none() && self.prefaces.is_empty() {
             return Ok(());
         }
         let now = Instant::now();

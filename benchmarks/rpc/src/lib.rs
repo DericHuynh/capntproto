@@ -58,16 +58,29 @@ fn ready(address: std::net::SocketAddr, public: Option<[u8; 32]>) -> Result<()> 
     Ok(())
 }
 async fn serve(protocol: &str) -> Result<()> {
-    if protocol == "native" {
+    if matches!(protocol, "native" | "native-tcp") {
         // Only this benchmark's loopback client uses the published fixture key.
         // The server gets a fresh key and the client pins it from the readiness pipe.
         let identity = Identity::generate();
         let client = Identity::from_private_key([1; 32])?;
-        let socket = UdpSocket::bind("127.0.0.1:0").await?;
-        ready(socket.local_addr()?, Some(identity.public_key()))?;
-        let session =
+        let session = if protocol == "native" {
+            let socket = UdpSocket::bind("127.0.0.1:0").await?;
+            ready(socket.local_addr()?, Some(identity.public_key()))?;
             transport::accept_authenticated(socket, &identity, client.public_key(), None, CONTEXT)
-                .await?;
+                .await?
+        } else {
+            let socket = TcpListener::bind("127.0.0.1:0").await?;
+            ready(socket.local_addr()?, Some(identity.public_key()))?;
+            transport::tcp::accept(
+                socket.accept().await?.0,
+                &identity,
+                client.public_key(),
+                None,
+                CONTEXT,
+                Duration::from_secs(10),
+            )
+            .await?
+        };
         let (network, handle) = Network::new(identity.public_key());
         handle.attach(session)?;
         let bootstrap: echo_capnp::echo::Client = capnp_rpc::new_client(Echo);
@@ -116,18 +129,30 @@ enum Client {
 impl Client {
     async fn connect(protocol: &str, address: &str, public: &str) -> Result<Self> {
         match protocol {
-            "native" => {
+            "native" | "native-tcp" => {
                 let identity = Identity::from_private_key([1; 32])?;
                 let public: [u8; 32] = serde_json::from_str(public)?;
-                let session = transport::connect_authenticated(
-                    UdpSocket::bind("127.0.0.1:0").await?,
-                    address.parse()?,
-                    &identity,
-                    public,
-                    None,
-                    CONTEXT,
-                )
-                .await?;
+                let session = if protocol == "native" {
+                    transport::connect_authenticated(
+                        UdpSocket::bind("127.0.0.1:0").await?,
+                        address.parse()?,
+                        &identity,
+                        public,
+                        None,
+                        CONTEXT,
+                    )
+                    .await?
+                } else {
+                    transport::tcp::connect(
+                        address.parse()?,
+                        &identity,
+                        public,
+                        None,
+                        CONTEXT,
+                        Duration::from_secs(10),
+                    )
+                    .await?
+                };
                 let (network, handle) = Network::new(identity.public_key());
                 handle.attach(session)?;
                 let mut system = capnp_rpc::RpcSystem::new(Box::new(network), None);

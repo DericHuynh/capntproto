@@ -1,5 +1,13 @@
 # 0.1.0 developer preview (unpublished)
 
+- Skip inactive bulk processing on the QUIC RPC path, keeping the full bulk
+  handler separate. Remove its duplicate readable-stream allocation and
+  reuse its bounded admission queue storage. Add a stalled-stream allocation and
+  resume regression, plus a native TCP/TLS benchmark using the same authenticated
+  RPC workload as QUIC. Record rejected timer and readiness experiments.
+  Count MTU recovery only after quiche's own timer expires, so migration polling
+  and advanced application clocks cannot trigger spurious path reprobes.
+
 - Keep two-segment receive-frame metadata inline, eliminating its heap
   allocation. Build larger segment tables directly into immutable ranges and
   preserve bounded parsing, cancellation and retained-message ownership. Add

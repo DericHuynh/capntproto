@@ -55,6 +55,13 @@ negotiates single-use bulk grants through RPC and sends payloads on separate,
 bounded bidirectional QUIC streams. Control has higher priority; consumption
 credit bounds bulk buffering. Old peers and TCP retain ordinary bulk RPC.
 Separate shutdown streams and the datagram lane retain their existing roles.
+An initialized, idle bulk plane skips stream processing after RPC drains the
+readable data. Pending grants, active transfers and incomplete prefaces still
+drive their state and deadlines. The full handler is kept outside the ordinary
+RPC path. The bulk driver iterates Quiche's owned readable-stream snapshot directly and
+retains its bounded admission queue storage between transfers. A stalled bulk
+reader therefore does not require a second stream-ID allocation on each control
+or packet event. Stream readiness remains available when consumption resumes.
 
 TCP/TLS supports the ordered native RPC and receipt protocol. TCP has no
 unreliable datagrams or QUIC path/CID controls; applications needing these use
@@ -73,6 +80,8 @@ retains a working smaller size when probes fail, and revalidates a discovered
 MTU after repeated timer expirations without acknowledgement progress. Oversize
 send errors are handled as lost probes. This improves large loopback transfers;
 ordinary network paths still determine their own smaller MTU.
+Only expired Quiche recovery timers count toward MTU revalidation; migration
+polls and application-clock wakeups do not indicate packet loss.
 Upstream quiche 0.30.0 also
 [caps established data packets at 16,383 bytes](https://docs.rs/quiche/0.30.0/src/quiche/lib.rs.html#6751-6755),
 so raising the configured discovery ceiling does not produce larger data packets.
