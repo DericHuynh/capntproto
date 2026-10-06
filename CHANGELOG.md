@@ -1,5 +1,8 @@
 # 0.1.0 developer preview (unpublished)
 
+- Seed packed-framing property tests with empty segments and zero blocking
+  periods so discard-guard coverage does not depend on the random corpus.
+
 - Verify that an already-closed RPC reader immediately fails the QUIC driver
   and delivers the same error to shutdown waiters, without socket timing races.
   Exercise the same failure through public native-network read cancellation,

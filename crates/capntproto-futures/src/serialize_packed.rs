@@ -707,6 +707,11 @@ pub mod test {
     #[cfg_attr(miri, ignore)]
     #[test]
     fn check_packed_round_trip_async() {
+        // Invalid driver configurations cannot make progress. Exercise each
+        // discard guard without relying on QuickCheck to generate zero periods.
+        assert!(!round_trip(1, 1, vec![]).is_failure());
+        assert!(!round_trip(0, 1, vec![vec![]]).is_failure());
+        assert!(!round_trip(1, 0, vec![vec![]]).is_failure());
         quickcheck(round_trip as fn(usize, usize, Vec<Vec<capnp::Word>>) -> TestResult);
     }
 
