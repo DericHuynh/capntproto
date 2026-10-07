@@ -1510,8 +1510,11 @@ The pinned [quiche 0.30.0 congestion-control API](https://docs.rs/quiche/0.30.0/
 provides Reno, CUBIC and `Bbr2Gcongestion`. CUBIC remains the production default.
 Algorithm experiments change the selected upstream controller on both peers;
 they do not modify quiche, disable encryption, increase the congestion window,
-or bypass pacing. BBRv2 and BBRv3 are different algorithms; the pinned backend's
-BBRv2 implementation is not a BBRv3 implementation.
+or bypass pacing. The pinned backend exposes no separate BBRv3 controller or
+public custom-controller hook. Its `Bbr2Gcongestion` implementation includes
+[some BBRv3 parameter updates](https://github.com/cloudflare/quiche/blob/0.30.0/quiche/src/recovery/gcongestion/bbr2.rs),
+but these trials retain the upstream BBRv2 label. BBRv3 trials will wait for
+official upstream support; the project keeps the unmodified quiche dependency.
 
 The experiments exposed a pacing problem in the adapter:
 [Tokio's sleep timer has millisecond granularity](https://docs.rs/tokio/latest/tokio/time/fn.sleep_until.html).
@@ -1558,6 +1561,30 @@ the CUBIC 64-KiB median by 2.3%; retaining the fallback timer outside the packet
 loop's future removed that regression in this comparison.
 Raw trials, executable hashes, CPU topology and clock source are retained in
 `target/quic-ci-algorithms/pacing-reuse-comparison/` during local development.
+
+A longer 64-KiB confirmation used nine repetitions with 10,000 retained samples
+after 10,000 warmups per executable and repetition (180,000 samples total).
+The old/new CUBIC medians were 173.695/172.927 µs, a 0.4% difference; p95 was
+324.622/321.479 µs and p99 was 721.950/783.968 µs. This supports treating CUBIC
+performance as effectively unchanged, without claiming a tail-latency benefit.
+The complete confirmation is in `target/quic-ci-algorithms/pacing-reuse-long/`.
+
+A separate paired BBRv2 confirmation compared the old and retained adapters,
+with three repetitions, the same 10,000 warmups and 1,000 retained samples per
+payload and executable (24,000 samples total). Both peers used upstream
+`Bbr2Gcongestion` in both builds. Median latency changed as follows:
+
+| Payload | Old BBRv2 p50 (µs) | Timer-reuse BBRv2 p50 (µs) |
+| --- | ---: | ---: |
+| 0 bytes | 2,314.471 | 144.572 |
+| 64 bytes | 2,313.911 | 168.247 |
+| 1 KiB | 2,326.483 | 205.263 |
+| 64 KiB | 6,778.166 | 454.946 |
+
+The 11–16× improvement isolates the adapter's coarse timer as a major obstacle
+to these BBRv2 trials. It does not establish an advantage over CUBIC or predict
+behavior under network congestion. Complete measurements and executable hashes
+are in `target/quic-ci-algorithms/bbr2-reuse-confirmation/`.
 
 The research points to the following evaluation order:
 

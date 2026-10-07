@@ -239,7 +239,7 @@ mod tests {
                 tokio::time::advance(Duration::from_millis(2)).await;
                 future.await;
             }
-            assert!(matches!(pacer.timer, Some(Err(()))));
+            assert!(pacer.timer.as_ref().unwrap().is_err());
         }
     }
 
@@ -284,7 +284,7 @@ mod tests {
             let deadline = Instant::now() + Duration::from_millis(2);
             pacer.wait_until(deadline.into_std()).await;
             assert!(Instant::now() >= deadline);
-            assert!(matches!(pacer.timer, Some(Err(()))));
+            assert!(pacer.timer.as_ref().unwrap().is_err());
         });
     }
 
@@ -325,7 +325,7 @@ mod tests {
             let deadline = Instant::now() + Duration::from_millis(2);
             pacer.wait_until(deadline.into_std()).await;
             assert!(Instant::now() >= deadline);
-            assert!(matches!(pacer.timer, Some(Err(()))));
+            assert!(pacer.timer.as_ref().unwrap().is_err());
         });
         setrlimit(Resource::Nofile, saved).unwrap();
     }
