@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="426" viewBox="0 0 1400 426" role="img" aria-labelledby="title">
+<title id="title">TLA+ checks and expected counterexamples</title>
+<rect width="1400" height="426" fill="white"/>
+<g font-family="DejaVu Sans, sans-serif">
+<text x="35.00" y="44.00" font-size="27" fill="#1e293b">TLA+ checks and expected counterexamples</text>
+<text x="35.00" y="78.00" font-size="14" fill="#64748b">Unique module&#x2F;configuration&#x2F;expected-exit checks. Expected invariant violations are successful controls.</text>
+<text x="35.00" y="122.00" font-size="20" fill="#1e293b">Observed outcomes</text>
+<text x="35.00" y="153.00" font-size="13" fill="#334155">Invariant&#x2F;liveness checks</text>
+<rect x="600.00" y="138.00" width="366.34" height="23" fill="#0868d4"/>
+<text x="972.34" y="155.00" font-size="13" fill="#334155">439</text>
+<text x="35.00" y="195.00" font-size="13" fill="#334155">Expected counterexamples</text>
+<rect x="600.00" y="180.00" width="600.00" height="23" fill="#00ac7b"/>
+<text x="1206.00" y="197.00" font-size="13" fill="#334155">719</text>
+<text x="35.00" y="237.00" font-size="13" fill="#334155">Failed &#x2F; incomplete checks</text>
+<rect x="600.00" y="222.00" width="0.00" height="23" fill="#ef4444"/>
+<text x="606.00" y="239.00" font-size="13" fill="#334155">0</text>
+<text x="600.00" y="284.00" font-size="13" fill="#64748b">Checks</text>
+<text x="35.00" y="348.00" font-size="13" fill="#64748b">Measured 2026-10-07T02:35:55Z | commit d2b163dbf50c</text>
+</g>
+</svg>

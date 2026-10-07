@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1272" viewBox="0 0 1400 1272" role="img" aria-labelledby="title">
+<title id="title">Sequential request rate</title>
+<rect width="1400" height="1272" fill="white"/>
+<g font-family="DejaVu Sans, sans-serif">
+<text x="35.00" y="44.00" font-size="27" fill="#1e293b">Sequential request rate</text>
+<text x="35.00" y="78.00" font-size="14" fill="#64748b">Each panel uses a linear axis including zero. Native is encrypted; other baselines are plaintext.</text>
+<text x="35.00" y="122.00" font-size="20" fill="#1e293b">0 byte payload</text>
+<text x="35.00" y="153.00" font-size="13" fill="#334155">Capntproto &#x2F; Native</text>
+<rect x="600.00" y="138.00" width="325.18" height="23" fill="#0868d4"/>
+<text x="931.18" y="155.00" font-size="13" fill="#334155">21029.78</text>
+<text x="35.00" y="195.00" font-size="13" fill="#334155">Cap&#x27;n Proto C++</text>
+<rect x="600.00" y="180.00" width="466.08" height="23" fill="#00ac7b"/>
+<text x="1072.08" y="197.00" font-size="13" fill="#334155">30142.20</text>
+<text x="35.00" y="237.00" font-size="13" fill="#334155">gRPC (tonic)</text>
+<rect x="600.00" y="222.00" width="285.44" height="23" fill="#ef4444"/>
+<text x="891.44" y="239.00" font-size="13" fill="#334155">18459.78</text>
+<text x="35.00" y="279.00" font-size="13" fill="#334155">WebSockets</text>
+<rect x="600.00" y="264.00" width="600.00" height="23" fill="#e89200"/>
+<text x="1206.00" y="281.00" font-size="13" fill="#334155">38802.68</text>
+<text x="600.00" y="326.00" font-size="13" fill="#64748b">Requests &#x2F; second - higher is better</text>
+<text x="35.00" y="390.00" font-size="20" fill="#1e293b">64 byte payload</text>
+<text x="35.00" y="421.00" font-size="13" fill="#334155">Capntproto &#x2F; Native</text>
+<rect x="600.00" y="406.00" width="277.92" height="23" fill="#0868d4"/>
+<text x="883.92" y="423.00" font-size="13" fill="#334155">17687.31</text>
+<text x="35.00" y="463.00" font-size="13" fill="#334155">Cap&#x27;n Proto C++</text>
+<rect x="600.00" y="448.00" width="438.77" height="23" fill="#00ac7b"/>
+<text x="1044.77" y="465.00" font-size="13" fill="#334155">27923.73</text>
+<text x="35.00" y="505.00" font-size="13" fill="#334155">gRPC (tonic)</text>
+<rect x="600.00" y="490.00" width="291.49" height="23" fill="#ef4444"/>
+<text x="897.49" y="507.00" font-size="13" fill="#334155">18550.85</text>
+<text x="35.00" y="547.00" font-size="13" fill="#334155">WebSockets</text>
+<rect x="600.00" y="532.00" width="600.00" height="23" fill="#e89200"/>
+<text x="1206.00" y="549.00" font-size="13" fill="#334155">38184.53</text>
+<text x="600.00" y="594.00" font-size="13" fill="#64748b">Requests &#x2F; second - higher is better</text>
+<text x="35.00" y="658.00" font-size="20" fill="#1e293b">1024 byte payload</text>
+<text x="35.00" y="689.00" font-size="13" fill="#334155">Capntproto &#x2F; Native</text>
+<rect x="600.00" y="674.00" width="292.66" height="23" fill="#0868d4"/>
+<text x="898.66" y="691.00" font-size="13" fill="#334155">19506.52</text>
+<text x="35.00" y="731.00" font-size="13" fill="#334155">Cap&#x27;n Proto C++</text>
+<rect x="600.00" y="716.00" width="403.28" height="23" fill="#00ac7b"/>
+<text x="1009.28" y="733.00" font-size="13" fill="#334155">26879.33</text>
+<text x="35.00" y="773.00" font-size="13" fill="#334155">gRPC (tonic)</text>
+<rect x="600.00" y="758.00" width="242.74" height="23" fill="#ef4444"/>
+<text x="848.74" y="775.00" font-size="13" fill="#334155">16179.39</text>
+<text x="35.00" y="815.00" font-size="13" fill="#334155">WebSockets</text>
+<rect x="600.00" y="800.00" width="600.00" height="23" fill="#e89200"/>
+<text x="1206.00" y="817.00" font-size="13" fill="#334155">39991.33</text>
+<text x="600.00" y="862.00" font-size="13" fill="#64748b">Requests &#x2F; second - higher is better</text>
+<text x="35.00" y="926.00" font-size="20" fill="#1e293b">65536 byte payload</text>
+<text x="35.00" y="957.00" font-size="13" fill="#334155">Capntproto &#x2F; Native</text>
+<rect x="600.00" y="942.00" width="238.29" height="23" fill="#0868d4"/>
+<text x="844.29" y="959.00" font-size="13" fill="#334155">5035.03</text>
+<text x="35.00" y="999.00" font-size="13" fill="#334155">Cap&#x27;n Proto C++</text>
+<rect x="600.00" y="984.00" width="596.71" height="23" fill="#00ac7b"/>
+<text x="1202.71" y="1001.00" font-size="13" fill="#334155">12608.52</text>
+<text x="35.00" y="1041.00" font-size="13" fill="#334155">gRPC (tonic)</text>
+<rect x="600.00" y="1026.00" width="299.95" height="23" fill="#ef4444"/>
+<text x="905.95" y="1043.00" font-size="13" fill="#334155">6337.82</text>
+<text x="35.00" y="1083.00" font-size="13" fill="#334155">WebSockets</text>
+<rect x="600.00" y="1068.00" width="600.00" height="23" fill="#e89200"/>
+<text x="1206.00" y="1085.00" font-size="13" fill="#334155">12677.94</text>
+<text x="600.00" y="1130.00" font-size="13" fill="#64748b">Requests &#x2F; second - higher is better</text>
+<text x="35.00" y="1194.00" font-size="13" fill="#64748b">Measured 2026-10-07T02:35:55Z | commit d2b163dbf50c</text>
+</g>
+</svg>

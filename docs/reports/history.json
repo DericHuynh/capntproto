@@ -1,21 +1,1138 @@
 {
   "benchmark": {
     "attempt": 1,
-    "commit": "81e19ad93b0dfecffd17fe1d57638eb66f55ae7a",
-    "conclusion": "failure",
+    "commit": "d2b163dbf50c377dedf8c38519fa08374eb65451",
+    "conclusion": "success",
     "data": {
-      "charts": [],
+      "charts": [
+        {
+          "coverage": false,
+          "name": "latency-p50",
+          "note": "Each panel uses a linear axis including zero. Native is encrypted; other baselines are plaintext.",
+          "panels": [
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto / Native",
+                  "value": 45.958
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 31.893
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 52.371
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 23.964
+                }
+              ],
+              "title": "0 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto / Native",
+                  "value": 50.502
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 32.518
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 52.179
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 24.298
+                }
+              ],
+              "title": "64 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto / Native",
+                  "value": 49.888
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 34.129
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 57.005
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 24.087
+                }
+              ],
+              "title": "1024 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto / Native",
+                  "value": 196.287
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 77.107
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 157.856
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 71.274
+                }
+              ],
+              "title": "65536 byte payload"
+            }
+          ],
+          "title": "Median round-trip latency (p50)",
+          "unit": "Microseconds - lower is better"
+        },
+        {
+          "coverage": false,
+          "name": "latency-p95",
+          "note": "Each panel uses a linear axis including zero. Native is encrypted; other baselines are plaintext.",
+          "panels": [
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto / Native",
+                  "value": 59.24
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 43.01
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 67.917
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 32.458
+                }
+              ],
+              "title": "0 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto / Native",
+                  "value": 75.389
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 49.488
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 66.989
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 36.575
+                }
+              ],
+              "title": "64 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto / Native",
+                  "value": 64.28
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 49.086
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 87.285
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 32.308
+                }
+              ],
+              "title": "1024 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto / Native",
+                  "value": 225.243
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 95.311
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 193.336
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 109.48
+                }
+              ],
+              "title": "65536 byte payload"
+            }
+          ],
+          "title": "Tail round-trip latency (p95)",
+          "unit": "Microseconds - lower is better"
+        },
+        {
+          "coverage": false,
+          "name": "latency-p99",
+          "note": "Each panel uses a linear axis including zero. Native is encrypted; other baselines are plaintext.",
+          "panels": [
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto / Native",
+                  "value": 69.917
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 51.037
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 76.756
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 42.055
+                }
+              ],
+              "title": "0 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto / Native",
+                  "value": 87.591
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 60.371
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 78.401
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 43.745
+                }
+              ],
+              "title": "64 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto / Native",
+                  "value": 73.727
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 58.169
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 98.541
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 42.955
+                }
+              ],
+              "title": "1024 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto / Native",
+                  "value": 242.324
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 107.97
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 215.676
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 128.468
+                }
+              ],
+              "title": "65536 byte payload"
+            }
+          ],
+          "title": "Tail round-trip latency (p99)",
+          "unit": "Microseconds - lower is better"
+        },
+        {
+          "coverage": false,
+          "name": "request-rate",
+          "note": "Each panel uses a linear axis including zero. Native is encrypted; other baselines are plaintext.",
+          "panels": [
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto / Native",
+                  "value": 21029.781636505304
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 30142.19556644715
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 18459.77915938559
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 38802.68329557211
+                }
+              ],
+              "title": "0 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto / Native",
+                  "value": 17687.307936618396
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 27923.729371323985
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 18550.849557488964
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 38184.525589650024
+                }
+              ],
+              "title": "64 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto / Native",
+                  "value": 19506.51977138905
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 26879.32918139804
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 16179.385114117895
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 39991.32923995951
+                }
+              ],
+              "title": "1024 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto / Native",
+                  "value": 5035.032979038035
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 12608.515726461712
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 6337.8232323755865
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 12677.94243373841
+                }
+              ],
+              "title": "65536 byte payload"
+            }
+          ],
+          "title": "Sequential request rate",
+          "unit": "Requests / second - higher is better"
+        },
+        {
+          "coverage": false,
+          "name": "latency-difference",
+          "note": "Each panel uses a linear axis including zero. Native is encrypted; other baselines are plaintext.",
+          "panels": [
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto / Native",
+                  "value": 0.0
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": -30.604029766308372
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 13.954044997606507
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": -47.85673876147787
+                }
+              ],
+              "title": "0 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto / Native",
+                  "value": 0.0
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": -35.61047087244069
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 3.3206605678983037
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": -51.88705397806028
+                }
+              ],
+              "title": "64 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto / Native",
+                  "value": 0.0
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": -31.588758819756258
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 14.265955740859514
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": -51.71784797947403
+                }
+              ],
+              "title": "1024 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto / Native",
+                  "value": 0.0
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": -60.71721509829994
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": -19.578983834894824
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": -63.68888413394672
+                }
+              ],
+              "title": "65536 byte payload"
+            }
+          ],
+          "title": "Median latency difference from Capntproto",
+          "unit": "Percent difference - negative is less latency"
+        },
+        {
+          "coverage": false,
+          "name": "request-rate-difference",
+          "note": "Each panel uses a linear axis including zero. Native is encrypted; other baselines are plaintext.",
+          "panels": [
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto / Native",
+                  "value": 0.0
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 43.330996429005864
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": -12.220775857503352
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 84.51301095877798
+                }
+              ],
+              "title": "0 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto / Native",
+                  "value": 0.0
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 57.874389202626574
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 4.882267126037654
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 115.88658786561759
+                }
+              ],
+              "title": "64 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto / Native",
+                  "value": 0.0
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 37.79664182240734
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": -17.056526209002122
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 105.01519342582219
+                }
+              ],
+              "title": "1024 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto / Native",
+                  "value": 0.0
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 150.41575256713858
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 25.874512813746374
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 151.79462550731074
+                }
+              ],
+              "title": "65536 byte payload"
+            }
+          ],
+          "title": "Request rate difference from Capntproto",
+          "unit": "Percent difference - positive is more requests"
+        },
+        {
+          "coverage": false,
+          "name": "instruction-counts",
+          "note": "Maintained Rust serialization only; includes validation and ownership cleanup. Payload sizes perform different amounts of work. These are not RPC latency or cross-protocol comparisons; no historical regression baseline is established.",
+          "panels": [
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "64 bytes",
+                  "value": 771.0
+                },
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "1024 bytes",
+                  "value": 5714.0
+                },
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "65536 bytes",
+                  "value": 328737.0
+                }
+              ],
+              "title": "decode"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "64 bytes",
+                  "value": 447.0
+                },
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "1024 bytes",
+                  "value": 548.0
+                },
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "65536 bytes",
+                  "value": 66641.0
+                }
+              ],
+              "title": "encode"
+            }
+          ],
+          "title": "Serialization CPU work (Callgrind)",
+          "unit": "Executed instructions"
+        }
+      ],
       "format": 1,
       "kind": "benchmark",
-      "note": "This workflow attempt produced no public measurement artifact.",
-      "origin": null,
-      "source_id": null,
-      "status": "unavailable",
+      "note": "Evidence passed.",
+      "origin": {
+        "attempt": 1,
+        "commit": "d2b163dbf50c377dedf8c38519fa08374eb65451",
+        "repository": "DericHuynh/capntproto",
+        "run_id": 37562742141
+      },
+      "source_id": "eab617cc9fc63469b926aa07adc1630bbc052ef91e6a34750290e697db56ba69",
+      "status": "passed",
       "tests": null
     },
-    "date": "2026-10-06T08:34:45Z",
-    "run_id": 37437045968,
-    "url": "https://github.com/DericHuynh/capntproto/actions/runs/37437045968"
+    "date": "2026-10-07T02:35:55Z",
+    "run_id": 37562742141,
+    "url": "https://github.com/DericHuynh/capntproto/actions/runs/37562742141"
   },
   "cargo": [
     {
@@ -399,6 +1516,744 @@
       "date": "2026-10-06T08:34:45Z",
       "run_id": 37437045968,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/37437045968"
+    },
+    {
+      "attempt": 1,
+      "commit": "d2b163dbf50c377dedf8c38519fa08374eb65451",
+      "conclusion": "success",
+      "data": {
+        "charts": [
+          {
+            "coverage": true,
+            "name": "coverage-lines",
+            "note": "Gray: reviewed baseline. Blue: current run. N/A: no mapped counters; never treated as 0% or 100%.",
+            "panels": [
+              {
+                "bars": [
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "async framing / baseline",
+                    "value": 94.57274826789839
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "async framing / current",
+                    "value": 94.67120181405896
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "capability rpc / baseline",
+                    "value": 90.62270292974902
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "capability rpc / current",
+                    "value": 90.64468710625788
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "optional compatibility / baseline",
+                    "value": 89.99655053466712
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "optional compatibility / current",
+                    "value": 89.99827556475255
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "runtime / baseline",
+                    "value": 83.41697334671574
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "runtime / current",
+                    "value": 83.56599861782999
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "rust codegen / baseline",
+                    "value": 91.8932527693857
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "rust codegen / current",
+                    "value": 91.8932527693857
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "schema compiler / baseline",
+                    "value": 97.11636437742001
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "schema compiler / current",
+                    "value": 97.11636437742001
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "tests and verification / baseline",
+                    "value": 77.11323003575686
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "tests and verification / current",
+                    "value": 77.15135649690623
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "tools fuzz examples benchmarks / baseline",
+                    "value": 71.26343868725245
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "tools fuzz examples benchmarks / current",
+                    "value": 71.35836287463745
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "wire runtime / baseline",
+                    "value": 85.34086895090074
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "wire runtime / current",
+                    "value": 85.34086895090074
+                  }
+                ],
+                "title": "Source groups (different groups cover different code)"
+              }
+            ],
+            "title": "LLVM lines: current versus reviewed baseline",
+            "unit": "Coverage (%) - higher is better"
+          },
+          {
+            "coverage": true,
+            "name": "coverage-regions",
+            "note": "Gray: reviewed baseline. Blue: current run. N/A: no mapped counters; never treated as 0% or 100%.",
+            "panels": [
+              {
+                "bars": [
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "async framing / baseline",
+                    "value": 94.04952076677316
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "async framing / current",
+                    "value": 94.26040061633282
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "capability rpc / baseline",
+                    "value": 88.37742137054781
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "capability rpc / current",
+                    "value": 88.40599833379616
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "optional compatibility / baseline",
+                    "value": 86.87672395501804
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "optional compatibility / current",
+                    "value": 86.87811604964463
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "runtime / baseline",
+                    "value": 83.4146895220797
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "runtime / current",
+                    "value": 83.56691244066715
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "rust codegen / baseline",
+                    "value": 87.84980011422044
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "rust codegen / current",
+                    "value": 87.84980011422044
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "schema compiler / baseline",
+                    "value": 96.3187269920437
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "schema compiler / current",
+                    "value": 96.3187269920437
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "tests and verification / baseline",
+                    "value": 76.33654264841066
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "tests and verification / current",
+                    "value": 76.35713249867067
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "tools fuzz examples benchmarks / baseline",
+                    "value": 69.72584856396867
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "tools fuzz examples benchmarks / current",
+                    "value": 69.85112201050393
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "wire runtime / baseline",
+                    "value": 82.84651640001283
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "wire runtime / current",
+                    "value": 82.84651640001283
+                  }
+                ],
+                "title": "Source groups (different groups cover different code)"
+              }
+            ],
+            "title": "LLVM regions: current versus reviewed baseline",
+            "unit": "Coverage (%) - higher is better"
+          },
+          {
+            "coverage": true,
+            "name": "coverage-functions",
+            "note": "Gray: reviewed baseline. Blue: current run. N/A: no mapped counters; never treated as 0% or 100%.",
+            "panels": [
+              {
+                "bars": [
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "async framing / baseline",
+                    "value": 89.77272727272727
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "async framing / current",
+                    "value": 89.94413407821229
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "capability rpc / baseline",
+                    "value": 89.55375253549695
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "capability rpc / current",
+                    "value": 89.55375253549695
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "optional compatibility / baseline",
+                    "value": 82.84132841328413
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "optional compatibility / current",
+                    "value": 82.84132841328413
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "runtime / baseline",
+                    "value": 90.14634146341463
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "runtime / current",
+                    "value": 90.23525620367387
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "rust codegen / baseline",
+                    "value": 88.15789473684211
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "rust codegen / current",
+                    "value": 88.15789473684211
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "schema compiler / baseline",
+                    "value": 94.78260869565217
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "schema compiler / current",
+                    "value": 94.78260869565217
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "tests and verification / baseline",
+                    "value": 77.43183136724038
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "tests and verification / current",
+                    "value": 77.46234067207416
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "tools fuzz examples benchmarks / baseline",
+                    "value": 73.80191693290735
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "tools fuzz examples benchmarks / current",
+                    "value": 73.85759829968119
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "wire runtime / baseline",
+                    "value": 83.67854183927092
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "wire runtime / current",
+                    "value": 83.67854183927092
+                  }
+                ],
+                "title": "Source groups (different groups cover different code)"
+              }
+            ],
+            "title": "LLVM functions: current versus reviewed baseline",
+            "unit": "Coverage (%) - higher is better"
+          },
+          {
+            "coverage": true,
+            "name": "coverage-branches",
+            "note": "Gray: reviewed baseline. Blue: current run. N/A: no mapped counters; never treated as 0% or 100%.",
+            "panels": [
+              {
+                "bars": [
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "async framing / baseline",
+                    "value": 95.1923076923077
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "async framing / current",
+                    "value": 95.1923076923077
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "capability rpc / baseline",
+                    "value": 74.87562189054727
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "capability rpc / current",
+                    "value": 74.87562189054727
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "optional compatibility / baseline",
+                    "value": 73.45013477088949
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "optional compatibility / current",
+                    "value": 73.45013477088949
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "runtime / baseline",
+                    "value": 73.3528880866426
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "runtime / current",
+                    "value": 73.47259658580413
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "rust codegen / baseline",
+                    "value": 87.93706293706293
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "rust codegen / current",
+                    "value": 87.93706293706293
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "schema compiler / baseline",
+                    "value": 83.28290468986384
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "schema compiler / current",
+                    "value": 83.28290468986384
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "tests and verification / baseline",
+                    "value": 55.30864197530864
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "tests and verification / current",
+                    "value": 55.30864197530864
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "tools fuzz examples benchmarks / baseline",
+                    "value": 64.32403433476395
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "tools fuzz examples benchmarks / current",
+                    "value": 64.32403433476395
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "wire runtime / baseline",
+                    "value": 77.7834008097166
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "wire runtime / current",
+                    "value": 77.7834008097166
+                  }
+                ],
+                "title": "Source groups (different groups cover different code)"
+              }
+            ],
+            "title": "LLVM branches: current versus reviewed baseline",
+            "unit": "Coverage (%) - higher is better"
+          }
+        ],
+        "format": 1,
+        "kind": "cargo",
+        "note": "Evidence passed.",
+        "origin": {
+          "attempt": 1,
+          "commit": "d2b163dbf50c377dedf8c38519fa08374eb65451",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 37562742141
+        },
+        "source_id": "eab617cc9fc63469b926aa07adc1630bbc052ef91e6a34750290e697db56ba69",
+        "status": "passed",
+        "tests": {
+          "command_passed": true,
+          "complete": true,
+          "errors": 0,
+          "failed": 0,
+          "failures": [],
+          "passed": 1425,
+          "skipped": 20,
+          "suites": 193,
+          "total": 1445
+        }
+      },
+      "date": "2026-10-07T02:35:55Z",
+      "run_id": 37562742141,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/37562742141"
     }
   ],
   "format": 1,
@@ -729,6 +2584,220 @@
       "date": "2026-10-06T08:34:45Z",
       "run_id": 37437045968,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/37437045968"
+    },
+    {
+      "attempt": 1,
+      "commit": "d2b163dbf50c377dedf8c38519fa08374eb65451",
+      "conclusion": "success",
+      "data": {
+        "charts": [
+          {
+            "name": "fuzz-executions",
+            "note": "Bounded campaigns including seed calibration; execution counts are not comparable performance benchmarks.",
+            "panels": [
+              {
+                "bars": [
+                  {
+                    "label": "libFuzzer / capnp_framing",
+                    "value": 16384
+                  },
+                  {
+                    "label": "libFuzzer / capnp_pointers",
+                    "value": 16384
+                  },
+                  {
+                    "label": "libFuzzer / capnp_schema",
+                    "value": 16384
+                  },
+                  {
+                    "label": "libFuzzer / native_packet",
+                    "value": 1024
+                  },
+                  {
+                    "label": "libFuzzer / native_stream",
+                    "value": 1024
+                  },
+                  {
+                    "label": "libFuzzer / rpc_lifecycle",
+                    "value": 16384
+                  }
+                ],
+                "title": "libFuzzer + ASan"
+              },
+              {
+                "bars": [
+                  {
+                    "label": "AFL++ / capnp_framing",
+                    "value": 615472
+                  },
+                  {
+                    "label": "AFL++ / capnp_pointers",
+                    "value": 1807408
+                  },
+                  {
+                    "label": "AFL++ / capnp_schema",
+                    "value": 691079
+                  },
+                  {
+                    "label": "AFL++ / rpc_lifecycle",
+                    "value": 78716
+                  }
+                ],
+                "title": "AFL++ + RPC IJON"
+              }
+            ],
+            "title": "Fuzzing executions by engine",
+            "unit": "Executions"
+          },
+          {
+            "name": "fuzz-coverage",
+            "note": "Engine-local counters, not LLVM source coverage. Do not compare counts across engines or builds.",
+            "panels": [
+              {
+                "bars": [
+                  {
+                    "label": "libFuzzer / capnp_framing",
+                    "value": 575
+                  },
+                  {
+                    "label": "libFuzzer / capnp_pointers",
+                    "value": 1198
+                  },
+                  {
+                    "label": "libFuzzer / capnp_schema",
+                    "value": 3081
+                  },
+                  {
+                    "label": "libFuzzer / native_packet",
+                    "value": 5592
+                  },
+                  {
+                    "label": "libFuzzer / native_stream",
+                    "value": 5612
+                  },
+                  {
+                    "label": "libFuzzer / rpc_lifecycle",
+                    "value": 6765
+                  }
+                ],
+                "title": "libFuzzer + ASan"
+              },
+              {
+                "bars": [
+                  {
+                    "label": "AFL++ / capnp_framing",
+                    "value": 1003
+                  },
+                  {
+                    "label": "AFL++ / capnp_pointers",
+                    "value": 1598
+                  },
+                  {
+                    "label": "AFL++ / capnp_schema",
+                    "value": 4644
+                  },
+                  {
+                    "label": "AFL++ / rpc_lifecycle",
+                    "value": 9598
+                  }
+                ],
+                "title": "AFL++ + RPC IJON"
+              }
+            ],
+            "title": "Fuzzer feedback by engine",
+            "unit": "Feedback entries"
+          },
+          {
+            "name": "fuzz-findings",
+            "note": "Saved crashes/hangs are findings requiring triage, not confirmed unique bugs. Missing results remain unknown.",
+            "panels": [
+              {
+                "bars": [
+                  {
+                    "label": "libFuzzer / capnp_framing",
+                    "value": 0
+                  },
+                  {
+                    "label": "libFuzzer / capnp_pointers",
+                    "value": 0
+                  },
+                  {
+                    "label": "libFuzzer / capnp_schema",
+                    "value": 0
+                  },
+                  {
+                    "label": "libFuzzer / native_packet",
+                    "value": 0
+                  },
+                  {
+                    "label": "libFuzzer / native_stream",
+                    "value": 0
+                  },
+                  {
+                    "label": "libFuzzer / rpc_lifecycle",
+                    "value": 0
+                  }
+                ],
+                "title": "libFuzzer + ASan"
+              },
+              {
+                "bars": [
+                  {
+                    "label": "AFL++ / capnp_framing crashes",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / capnp_framing hangs",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / capnp_pointers crashes",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / capnp_pointers hangs",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / capnp_schema crashes",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / capnp_schema hangs",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / rpc_lifecycle crashes",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / rpc_lifecycle hangs",
+                    "value": 0
+                  }
+                ],
+                "title": "AFL++ + RPC IJON"
+              }
+            ],
+            "title": "Saved fuzzing findings",
+            "unit": "Inputs"
+          }
+        ],
+        "format": 1,
+        "kind": "fuzz",
+        "note": "Evidence passed.",
+        "origin": {
+          "attempt": 1,
+          "commit": "d2b163dbf50c377dedf8c38519fa08374eb65451",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 37562742141
+        },
+        "source_id": "eab617cc9fc63469b926aa07adc1630bbc052ef91e6a34750290e697db56ba69",
+        "status": "passed",
+        "tests": null
+      },
+      "date": "2026-10-07T02:35:55Z",
+      "run_id": 37562742141,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/37562742141"
     }
   ],
   "models": [
@@ -877,6 +2946,211 @@
       "date": "2026-10-06T08:34:45Z",
       "run_id": 37437045968,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/37437045968"
+    },
+    {
+      "attempt": 1,
+      "commit": "d2b163dbf50c377dedf8c38519fa08374eb65451",
+      "conclusion": "success",
+      "data": {
+        "charts": [
+          {
+            "name": "tla-outcomes",
+            "note": "Unique module/configuration/expected-exit checks. Expected invariant violations are successful controls.",
+            "panels": [
+              {
+                "bars": [
+                  {
+                    "label": "Invariant/liveness checks",
+                    "value": 439
+                  },
+                  {
+                    "label": "Expected counterexamples",
+                    "value": 719
+                  },
+                  {
+                    "label": "Failed / incomplete checks",
+                    "value": 0
+                  }
+                ],
+                "title": "Observed outcomes"
+              }
+            ],
+            "title": "TLA+ checks and expected counterexamples",
+            "unit": "Checks"
+          },
+          {
+            "name": "tla-states",
+            "note": "Counts sum independent bounded configurations; they are not globally distinct states or a proof beyond those bounds.",
+            "panels": [
+              {
+                "bars": [
+                  {
+                    "label": "CapnpRealtime",
+                    "value": 2278095
+                  },
+                  {
+                    "label": "RpcSchemaHints",
+                    "value": 38212
+                  },
+                  {
+                    "label": "RealtimeConfigBoundary",
+                    "value": 32130
+                  },
+                  {
+                    "label": "RpcNativeProvisioning",
+                    "value": 139180
+                  },
+                  {
+                    "label": "StructuralEquality",
+                    "value": 19827
+                  },
+                  {
+                    "label": "RealtimeReceiptLifecycle",
+                    "value": 43231
+                  },
+                  {
+                    "label": "DatagramReentry",
+                    "value": 14196
+                  },
+                  {
+                    "label": "BulkConfigBoundary",
+                    "value": 71653
+                  },
+                  {
+                    "label": "RpcFieldOwners",
+                    "value": 25811
+                  },
+                  {
+                    "label": "GrantRevocation",
+                    "value": 50501
+                  },
+                  {
+                    "label": "ShutdownWaiters",
+                    "value": 49827
+                  },
+                  {
+                    "label": "RpcNativeArbitration",
+                    "value": 23152
+                  },
+                  {
+                    "label": "RpcRealtimeReceiver",
+                    "value": 34661
+                  },
+                  {
+                    "label": "RpcGenericParameters",
+                    "value": 7639
+                  },
+                  {
+                    "label": "CapnpConformance",
+                    "value": 10067
+                  },
+                  {
+                    "label": "Other models",
+                    "value": 344792
+                  }
+                ],
+                "title": "Generated states"
+              },
+              {
+                "bars": [
+                  {
+                    "label": "CapnpRealtime",
+                    "value": 365592
+                  },
+                  {
+                    "label": "RpcSchemaHints",
+                    "value": 36389
+                  },
+                  {
+                    "label": "RealtimeConfigBoundary",
+                    "value": 25437
+                  },
+                  {
+                    "label": "RpcNativeProvisioning",
+                    "value": 25313
+                  },
+                  {
+                    "label": "StructuralEquality",
+                    "value": 19827
+                  },
+                  {
+                    "label": "RealtimeReceiptLifecycle",
+                    "value": 13893
+                  },
+                  {
+                    "label": "DatagramReentry",
+                    "value": 12967
+                  },
+                  {
+                    "label": "BulkConfigBoundary",
+                    "value": 10798
+                  },
+                  {
+                    "label": "RpcFieldOwners",
+                    "value": 9897
+                  },
+                  {
+                    "label": "GrantRevocation",
+                    "value": 9656
+                  },
+                  {
+                    "label": "ShutdownWaiters",
+                    "value": 8042
+                  },
+                  {
+                    "label": "RpcNativeArbitration",
+                    "value": 7527
+                  },
+                  {
+                    "label": "RpcRealtimeReceiver",
+                    "value": 7209
+                  },
+                  {
+                    "label": "RpcGenericParameters",
+                    "value": 5607
+                  },
+                  {
+                    "label": "CapnpConformance",
+                    "value": 5062
+                  },
+                  {
+                    "label": "Other models",
+                    "value": 114218
+                  }
+                ],
+                "title": "Distinct states"
+              }
+            ],
+            "title": "TLA+ explored states by model",
+            "unit": "States"
+          }
+        ],
+        "format": 1,
+        "kind": "models",
+        "note": "Evidence passed.",
+        "origin": {
+          "attempt": 1,
+          "commit": "d2b163dbf50c377dedf8c38519fa08374eb65451",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 37562742141
+        },
+        "source_id": "eab617cc9fc63469b926aa07adc1630bbc052ef91e6a34750290e697db56ba69",
+        "status": "passed",
+        "tests": {
+          "command_passed": true,
+          "complete": true,
+          "errors": 0,
+          "failed": 0,
+          "failures": [],
+          "passed": 241,
+          "skipped": 7,
+          "suites": 91,
+          "total": 248
+        }
+      },
+      "date": "2026-10-07T02:35:55Z",
+      "run_id": 37562742141,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/37562742141"
     }
   ]
 }

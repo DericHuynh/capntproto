@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="672" viewBox="0 0 1400 672" role="img" aria-labelledby="title">
+<title id="title">Serialization CPU work (Callgrind)</title>
+<rect width="1400" height="672" fill="white"/>
+<g font-family="DejaVu Sans, sans-serif">
+<text x="35.00" y="44.00" font-size="27" fill="#1e293b">Serialization CPU work (Callgrind)</text>
+<text x="35.00" y="78.00" font-size="14" fill="#64748b">Maintained Rust serialization only; includes validation and ownership cleanup. Payload sizes perform different amounts of work. These are not RPC</text>
+<text x="35.00" y="98.00" font-size="14" fill="#64748b">latency or cross-protocol comparisons; no historical regression baseline is established.</text>
+<text x="35.00" y="142.00" font-size="20" fill="#1e293b">decode</text>
+<text x="35.00" y="173.00" font-size="13" fill="#334155">64 bytes</text>
+<rect x="600.00" y="158.00" width="1.41" height="23" fill="#0868d4"/>
+<text x="607.41" y="175.00" font-size="13" fill="#334155">771.00</text>
+<text x="35.00" y="215.00" font-size="13" fill="#334155">1024 bytes</text>
+<rect x="600.00" y="200.00" width="10.43" height="23" fill="#00ac7b"/>
+<text x="616.43" y="217.00" font-size="13" fill="#334155">5714.00</text>
+<text x="35.00" y="257.00" font-size="13" fill="#334155">65536 bytes</text>
+<rect x="600.00" y="242.00" width="600.00" height="23" fill="#ef4444"/>
+<text x="1206.00" y="259.00" font-size="13" fill="#334155">328737.00</text>
+<text x="600.00" y="304.00" font-size="13" fill="#64748b">Executed instructions</text>
+<text x="35.00" y="368.00" font-size="20" fill="#1e293b">encode</text>
+<text x="35.00" y="399.00" font-size="13" fill="#334155">64 bytes</text>
+<rect x="600.00" y="384.00" width="4.02" height="23" fill="#0868d4"/>
+<text x="610.02" y="401.00" font-size="13" fill="#334155">447.00</text>
+<text x="35.00" y="441.00" font-size="13" fill="#334155">1024 bytes</text>
+<rect x="600.00" y="426.00" width="4.93" height="23" fill="#00ac7b"/>
+<text x="610.93" y="443.00" font-size="13" fill="#334155">548.00</text>
+<text x="35.00" y="483.00" font-size="13" fill="#334155">65536 bytes</text>
+<rect x="600.00" y="468.00" width="600.00" height="23" fill="#ef4444"/>
+<text x="1206.00" y="485.00" font-size="13" fill="#334155">66641.00</text>
+<text x="600.00" y="530.00" font-size="13" fill="#64748b">Executed instructions</text>
+<text x="35.00" y="594.00" font-size="13" fill="#64748b">Measured 2026-10-07T02:35:55Z | commit d2b163dbf50c</text>
+</g>
+</svg>

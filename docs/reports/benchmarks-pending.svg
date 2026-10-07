@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="240" viewBox="0 0 1400 240" role="img" aria-labelledby="title">
-<title id="title">Capntproto — Linux Loopback Benchmarks</title>
-<rect width="1400" height="240" fill="white"/>
-<g font-family="DejaVu Sans, sans-serif">
-<text x="35.00" y="65.00" font-size="27" fill="#1e293b">Capntproto — Linux Loopback Benchmarks</text>
-<text x="35.00" y="130.00" font-size="21" fill="#64748b">Awaiting a validated dedicated-host benchmark run</text>
-<text x="35.00" y="190.00" font-size="15" fill="#334155">Capntproto &#x2F; Native · C++ Cap&#x27;n Proto · gRPC (tonic) · WebSockets</text>
-</g>
-</svg>
