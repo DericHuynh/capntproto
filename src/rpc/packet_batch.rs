@@ -40,6 +40,7 @@ impl DatagramSender for UdpSocket {
 }
 
 pub(crate) struct Batch {
+    pub pacer: super::pacing::Pacer,
     storage: Vec<u8>,
     len: usize,
     pub info: Option<quiche::SendInfo>,
@@ -51,6 +52,7 @@ pub(crate) struct Batch {
 impl Batch {
     pub fn new() -> Self {
         Self {
+            pacer: super::pacing::Pacer::default(),
             // One extra packet can be generated before its path/size/pacing
             // metadata tells us whether the current aggregate must be flushed.
             storage: vec![0; 65507 + super::packet_mtu::SEND_MAX],
@@ -125,7 +127,7 @@ impl Batch {
     #[cfg(any(feature = "quic", test))]
     pub async fn send(&mut self, sender: &Sender, socket: &UdpSocket) -> io::Result<()> {
         if let Some(info) = self.info {
-            super::pacing::wait_until(info.at).await;
+            self.pacer.wait_until(info.at).await;
             sender
                 .send(socket, self.bytes(), self.segment, info.to)
                 .await?;

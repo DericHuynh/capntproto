@@ -1,5 +1,16 @@
 # 0.1.0 developer preview (unpublished)
 
+- Use a reusable Linux monotonic timerfd for QUIC packet pacing below Tokio's
+  millisecond timer resolution. Keep portable fallback timers, virtual-clock
+  packet simulations, upstream congestion control, and packet deadlines intact.
+  Allocate timer resources only when a packet actually needs to wait.
+
+- Register the independent s2n-quic peer's endpoint shutdown before exchanging
+  payloads, avoiding a missed wakeup even if the peer retires first. Exercise
+  that race with a delayed post-FIN continuation in the interoperability check.
+  Report the peer role, Retry mode, and current phase on interoperability
+  failures while retaining payload, key-update, FIN, and timeout checks.
+
 - Seed packed-framing property tests with empty segments and zero blocking
   periods so discard-guard coverage does not depend on the random corpus.
 

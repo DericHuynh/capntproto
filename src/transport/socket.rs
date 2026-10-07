@@ -32,6 +32,16 @@ pub(crate) enum DatagramSocket {
     Simulated(super::simulation::Socket),
 }
 impl DatagramSocket {
+    pub(crate) fn pacer(&self) -> crate::rpc::pacing::Pacer {
+        match self {
+            Self::Udp(_) => crate::rpc::pacing::Pacer::default(),
+            // Simulated sockets can run with no reactor. Their pacing must use
+            // the same virtual clock as packet delivery and injected faults.
+            #[cfg(test)]
+            Self::Simulated(_) => crate::rpc::pacing::Pacer::portable(),
+        }
+    }
+
     pub(crate) fn enable_recv_aggregation(&self) {
         #[cfg(target_os = "linux")]
         match self {

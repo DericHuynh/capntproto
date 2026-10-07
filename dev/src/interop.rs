@@ -8,6 +8,7 @@ use s2n_quic::{
     Client, Server,
 };
 use std::{
+    cell::Cell,
     path::Path,
     process::Stdio,
     sync::{Arc, Mutex, OnceLock},
@@ -16,6 +17,13 @@ use std::{
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 const ALPN: &[u8] = b"capntproto-rpc/1";
 const SIZE: usize = 131_072;
+struct Progress(Cell<&'static str>);
+impl Progress {
+    fn set(&self, phase: &'static str) {
+        self.0.set(phase);
+        eprintln!("QUIC interop: {phase}");
+    }
+}
 #[derive(Default)]
 struct Observed {
     version_one: bool,
@@ -173,35 +181,53 @@ fn spawn(
         .kill_on_drop(true)
         .spawn()?)
 }
-async fn exchange(stream: &mut s2n_quic::stream::BidirectionalStream, client: bool) -> Result<()> {
+async fn exchange(
+    stream: &mut s2n_quic::stream::BidirectionalStream,
+    client: bool,
+    progress: &Progress,
+) -> Result<()> {
     for round in 1..=2 {
         let expected = vec![round; SIZE];
         let mut received = vec![0; SIZE];
         if client {
+            progress.set("send payload");
             stream.write_all(&expected).await?;
         }
+        progress.set("receive payload");
         stream.read_exact(&mut received).await?;
         ensure!(received == expected, "independent peer payload mismatch");
         if !client {
+            progress.set("echo payload");
             stream.write_all(&received).await?;
         }
     }
     if client {
+        progress.set("send completion marker");
         stream.write_all(b"done").await?;
     } else {
+        progress.set("receive completion marker");
         let mut done = [0; 4];
         stream.read_exact(&mut done).await?;
         ensure!(&done == b"done", "completion marker mismatch");
     }
+    progress.set("send stream FIN");
     stream.shutdown().await?;
+    progress.set("receive stream FIN");
     let mut final_byte = [0; 1];
     ensure!(
         stream.read(&mut final_byte).await? == 0,
         "unexpected trailing stream data"
     );
+    if client {
+        // Regression probe: the independent peer can retire while this task
+        // is delayed after FIN. Shutdown interest must already be registered;
+        // closing an already-retired s2n connection does not wake its endpoint.
+        progress.set("allow quiche peer retirement after FIN");
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
     Ok(())
 }
-async fn case(binary: &Path, quiche_server: bool, retry: bool) -> Result<()> {
+async fn case(binary: &Path, quiche_server: bool, retry: bool, progress: &Progress) -> Result<()> {
     let directory = tempfile::tempdir()?;
     let generated = rcgen::generate_simple_self_signed(vec!["localhost".into()])?;
     crate::write(directory.path().join("cert.der"), generated.cert.der())?;
@@ -217,6 +243,7 @@ async fn case(binary: &Path, quiche_server: bool, retry: bool) -> Result<()> {
         let mut reader =
             tokio::io::BufReader::new(child.stdout.take().context("missing peer output")?);
         let mut port = String::new();
+        progress.set("read quiche server address");
         reader.read_line(&mut port).await?;
         let address = std::net::SocketAddr::from(([127, 0, 0, 1], port.trim().parse::<u16>()?));
         let mut config = rustls::ClientConfig::builder_with_provider(crypto())
@@ -233,6 +260,7 @@ async fn case(binary: &Path, quiche_server: bool, retry: bool) -> Result<()> {
             .with_event(events.clone())?
             .start()
             .map_err(|e| anyhow::anyhow!("{e}"))?;
+        progress.set("connect s2n client");
         let mut connection = client
             .connect(s2n_quic::client::Connect::new(address).with_server_name("localhost"))
             .await?;
@@ -240,13 +268,27 @@ async fn case(binary: &Path, quiche_server: bool, retry: bool) -> Result<()> {
             connection.application_protocol()?.as_ref() == ALPN,
             "ALPN mismatch"
         );
+        progress.set("open s2n stream");
         let mut stream = connection.open_bidirectional_stream().await?;
-        exchange(&mut stream, true).await?;
-        connection.close(0u32.into());
-        ensure!(child.wait().await?.success(), "quiche server failed");
-        drop(stream);
-        drop(connection);
-        client.wait_idle().await?;
+        // Register close interest before the peer can complete the exchange
+        // and retire its connection. In pinned s2n-quic 1.88, CloseHandle's
+        // try_recv() does not register a waker, and close() need not wake an
+        // already-closed connection. Biased polling registers wait_idle()
+        // before exchange() starts, even if the peer closes first after FIN.
+        tokio::try_join!(
+            biased;
+            async { client.wait_idle().await.context("s2n client shutdown") },
+            async {
+                exchange(&mut stream, true, progress).await?;
+                connection.close(0u32.into());
+                progress.set("wait for quiche server exit");
+                ensure!(child.wait().await?.success(), "quiche server failed");
+                drop(stream);
+                drop(connection);
+                progress.set("wait for s2n client idle");
+                Ok(())
+            }
+        )?;
     } else {
         let mut config = rustls::ServerConfig::builder_with_provider(crypto())
             .with_protocol_versions(&[&rustls::version::TLS13])?
@@ -276,17 +318,20 @@ async fn case(binary: &Path, quiche_server: bool, retry: bool) -> Result<()> {
             directory.path(),
             retry,
         )?;
+        progress.set("accept s2n connection");
         let mut connection = server.accept().await.context("s2n server closed")?;
         ensure!(
             connection.application_protocol()?.as_ref() == ALPN,
             "ALPN mismatch"
         );
+        progress.set("accept s2n stream");
         let mut stream = connection
             .accept_bidirectional_stream()
             .await?
             .context("independent server saw no stream")?;
-        exchange(&mut stream, false).await?;
+        exchange(&mut stream, false, progress).await?;
         connection.close(0u32.into());
+        progress.set("wait for quiche client exit");
         ensure!(child.wait().await?.success(), "quiche client failed");
     }
     let observed = events.0.lock().unwrap();
@@ -315,8 +360,15 @@ pub fn run(binary: &Path) -> Result<()> {
     runtime.block_on(async {
         for quiche_server in [true, false] {
             for retry in [false, true] {
-                tokio::time::timeout(Duration::from_secs(35), case(&binary, quiche_server, retry))
-                    .await??;
+                let progress = Progress(Cell::new("configure peers"));
+                eprintln!("QUIC interop: quiche_server={quiche_server}, retry={retry}");
+                tokio::time::timeout(
+                    Duration::from_secs(35),
+                    case(&binary, quiche_server, retry, &progress),
+                )
+                .await
+                .with_context(|| format!("QUIC interop timed out: quiche_server={quiche_server}, retry={retry}, phase={}", progress.0.get()))?
+                .with_context(|| format!("QUIC interop failed: quiche_server={quiche_server}, retry={retry}, phase={}", progress.0.get()))?;
             }
         }
         Ok(())
