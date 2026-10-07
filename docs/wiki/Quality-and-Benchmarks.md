@@ -579,10 +579,6 @@ fixed server/client CPU pair for every protocol. Its median ratios meet the
 | 1 KiB | 75.189 | 30.775 | 2.44× | 3.61× | 3.17× |
 | 64 KiB | 439.405 | 159.986 | 2.75× | 3.04× | 3.18× |
 
-Mean elapsed time per request also stays below 3× in both longer-warmup runs:
-2.27–2.85× in the confirmation run and 2.40–2.82× in the preceding run. These
-include loop overhead and determine the reported sequential request rate.
-
 Before the timer and packet-loop fixes, [the 100-warmup workload](https://github.com/DericHuynh/capntproto/actions/runs/37167747551)
 measured roughly 4.65 ms for an empty Native RPC and 142.69 ms for 64 KiB.
 Those are separate dedicated-host runs, not paired samples. Ratios in the table
