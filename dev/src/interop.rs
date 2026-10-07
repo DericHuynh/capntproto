@@ -218,6 +218,13 @@ async fn exchange(
         stream.read(&mut final_byte).await? == 0,
         "unexpected trailing stream data"
     );
+    if client {
+        // Regression probe: the independent peer can retire while this task
+        // is delayed after FIN. Shutdown interest must already be registered;
+        // closing an already-retired s2n connection does not wake its endpoint.
+        progress.set("allow quiche peer retirement after FIN");
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
     Ok(())
 }
 async fn case(binary: &Path, quiche_server: bool, retry: bool, progress: &Progress) -> Result<()> {
@@ -263,16 +270,16 @@ async fn case(binary: &Path, quiche_server: bool, retry: bool, progress: &Progre
         );
         progress.set("open s2n stream");
         let mut stream = connection.open_bidirectional_stream().await?;
-        exchange(&mut stream, true, progress).await?;
-        // Register close interest while the connection still has a wakeup to
-        // deliver. In pinned s2n-quic 1.88, CloseHandle::poll_interest uses
-        // try_recv(), so a wait_idle() first polled after the last connection
-        // retires can wait forever without waking the idle endpoint. Biased
-        // polling registers the request before close() wakes the connection.
+        // Register close interest before the peer can complete the exchange
+        // and retire its connection. In pinned s2n-quic 1.88, CloseHandle's
+        // try_recv() does not register a waker, and close() need not wake an
+        // already-closed connection. Biased polling registers wait_idle()
+        // before exchange() starts, even if the peer closes first after FIN.
         tokio::try_join!(
             biased;
             async { client.wait_idle().await.context("s2n client shutdown") },
             async {
+                exchange(&mut stream, true, progress).await?;
                 connection.close(0u32.into());
                 progress.set("wait for quiche server exit");
                 ensure!(child.wait().await?.success(), "quiche server failed");

@@ -5,8 +5,9 @@
   packet simulations, upstream congestion control, and packet deadlines intact.
   Allocate timer resources only when a packet actually needs to wait.
 
-- Register the independent s2n-quic peer's endpoint shutdown before retiring
-  its last connection, avoiding a missed wakeup in the pinned dependency.
+- Register the independent s2n-quic peer's endpoint shutdown before exchanging
+  payloads, avoiding a missed wakeup even if the peer retires first. Exercise
+  that race with a delayed post-FIN continuation in the interoperability check.
   Report the peer role, Retry mode, and current phase on interoperability
   failures while retaining payload, key-update, FIN, and timeout checks.
 
