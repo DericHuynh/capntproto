@@ -1,5 +1,10 @@
 # 0.1.0 developer preview (unpublished)
 
+- Use a reusable Linux monotonic timerfd for QUIC packet pacing below Tokio's
+  millisecond timer resolution. Keep portable fallback timers, virtual-clock
+  packet simulations, upstream congestion control, and packet deadlines intact.
+  Allocate timer resources only when a packet actually needs to wait.
+
 - Register the independent s2n-quic peer's endpoint shutdown before retiring
   its last connection, avoiding a missed wakeup in the pinned dependency.
   Report the peer role, Retry mode, and current phase on interoperability

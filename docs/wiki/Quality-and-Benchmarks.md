@@ -1503,6 +1503,75 @@ Do not force a TSC source excluded by the kernel or disable its reliability
 checks just to improve a measurement. Local HPET clock reads measured roughly
 1.4–1.6 microseconds in October 2026, so local timing can magnify clock-heavy
 transport paths relative to the dedicated host.
+
+### Congestion control and submillisecond pacing
+
+The pinned [quiche 0.30.0 congestion-control API](https://docs.rs/quiche/0.30.0/quiche/enum.CongestionControlAlgorithm.html)
+provides Reno, CUBIC and `Bbr2Gcongestion`. CUBIC remains the production default.
+Algorithm experiments change the selected upstream controller on both peers;
+they do not modify quiche, disable encryption, increase the congestion window,
+or bypass pacing. BBRv2 and BBRv3 are different algorithms; the pinned backend's
+BBRv2 implementation is not a BBRv3 implementation.
+
+The experiments exposed a pacing problem in the adapter:
+[Tokio's sleep timer has millisecond granularity](https://docs.rs/tokio/latest/tokio/time/fn.sleep_until.html).
+Waiting for a short future `SendInfo.at` could therefore add a millisecond-scale
+pause. The BBRv2 comparison was particularly sensitive to this delay. Expired deadlines already
+had a fast path; the missing piece was waiting accurately for future deadlines.
+
+Real Linux sockets now lazily create one nonblocking, close-on-exec timerfd per
+connection, use the OS monotonic clock, and reuse the descriptor. The fallback
+runtime timer is also retained outside the packet driver's future. Already-due
+packets allocate no timer resources. Creation, arming or reactor failures select
+the portable timer. Simulated sockets use their virtual-clock timer, including
+simulations with no OS I/O reactor. A kernel wakeup cannot advance a paused
+runtime clock, and stale readiness from a canceled wait cannot release the next
+packet early. Other platforms retain the portable timer.
+
+The pinned C++ KJ event port also lazily creates and reuses a monotonic timerfd
+in [`updateNextTimerEvent()`](https://github.com/capnproto/capnproto/blob/0de72d8d8cec6b69edaa29de51d3bd490341f9c2/c%2B%2B/src/kj/async-unix.c%2B%2B#L785).
+That is a useful implementation reference, not evidence that the plaintext
+C++ benchmark measures QUIC pacing. The adapter preserves each batch's latest
+upstream pacing deadline and congestion quantum. It adds no busy-wait loop,
+clock-source override, kernel configuration requirement or unsafe Rust.
+
+Seven release/full-LTO repetitions per payload on the local Ryzen 7 5800H
+(HPET clock) compared the old adapter, the timer-reuse implementation, upstream
+BBRv2 with timer reuse, and authenticated TCP/TLS. Server/client used physical
+cores 0/2, executable order alternated, and each trial kept 1,000 samples after
+10,000 warmups. The 112 trials retained all 112,000 measurements. These are
+sequential loopback diagnostics, not a controlled wide-area congestion test or
+the dedicated QUIC/C++ acceptance run.
+
+| Payload | Old CUBIC p50 (µs) | Timer-reuse CUBIC p50 (µs) | Timer-reuse BBRv2 p50 (µs) | TCP/TLS p50 (µs) |
+| --- | ---: | ---: | ---: | ---: |
+| 0 bytes | 68.305 | 67.676 | 156.444 | 47.283 |
+| 64 bytes | 69.073 | 67.816 | 172.648 | 47.213 |
+| 1 KiB | 70.469 | 70.051 | 207.568 | 49.378 |
+| 64 KiB | 170.552 | 167.969 | 459.486 | 151.137 |
+
+The CUBIC median differences are small (0.6–1.8%). The 64-KiB p95/p99 changed
+from 265.187/564.737 µs to 230.407/432.806 µs, but tail variation is substantial.
+BBRv2 remains slower than CUBIC here even with the more accurate timer. An earlier
+prototype recreated a combined waiting future on every paced send and regressed
+the CUBIC 64-KiB median by 2.3%; retaining the fallback timer outside the packet
+loop's future removed that regression in this comparison.
+Raw trials, executable hashes, CPU topology and clock source are retained in
+`target/quic-ci-algorithms/pacing-reuse-comparison/` during local development.
+
+The research points to the following evaluation order:
+
+| Candidate | Decision and next evidence needed |
+| --- | --- |
+| CUBIC | Keep as default; measure packet-loop changes against it. [RFC 9438](https://www.rfc-editor.org/rfc/rfc9438.html) describes its window growth and behavior over high-bandwidth, long-delay paths. |
+| Reno | Useful as a simpler loss-based comparison. A loopback latency result alone cannot establish its suitability for large bandwidth-delay products. |
+| Upstream BBRv2 | Evaluate with accurate pacing, then controlled RTT, bottleneck rate, loss, competing flows and application-limited traffic. Sequential loopback results do not justify changing the default. [RFC 9743](https://www.rfc-editor.org/rfc/rfc9743.html) describes the broader congestion-control assessment needed. |
+| Deficit round robin for bulk producers | Consider only after measuring contention between independent transfers. [DRR](https://repository.library.washu.edu/cse_research/339/) accounts for service in bytes, but it does not itself solve ownership of unconsumed flow credit. Retain the per-transfer caps: lending a stalled transfer every unused slot's credit could block later transfers indefinitely. |
+| Kernel timestamp pacing with FQ/ETF | A separate, optional experiment for hosts with suitable queue configuration. [QUIC Steps](https://arxiv.org/html/2505.09222v1) evaluates interactions between pacing, GSO and queue disciplines. Timerfd improves wakeup precision without requiring those host changes; it is not hardware transmit-time scheduling. |
+
+Every controller must retain congestion response, authenticated transport,
+bounded buffering and [QUIC's pacing requirements](https://www.rfc-editor.org/rfc/rfc9002.html#section-7.7).
+The 1.2× QUIC/C++ target remains unmet.
 The third follow-up run measured 26–31 ns per `Instant` read on both assigned
 droplet cores using `kvm-clock` (TSC was also listed as available). Its clock is
 already fast; raw TSC cannot account for the remaining several-microsecond gap

@@ -676,6 +676,10 @@ impl Drop for SharedSocket {
     }
 }
 impl SharedSocket {
+    pub(crate) fn pacer(&self) -> crate::rpc::pacing::Pacer {
+        self.socket.pacer()
+    }
+
     pub(crate) async fn send_segments(
         &self,
         sender: &crate::rpc::packet_batch::Sender,

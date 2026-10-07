@@ -283,13 +283,20 @@ pub(crate) enum PacketSocket {
     Shared(crate::native_listener::SharedSocket),
 }
 impl PacketSocket {
+    fn pacer(&self) -> crate::rpc::pacing::Pacer {
+        match self {
+            Self::Dedicated(socket) => socket.pacer(),
+            Self::Shared(socket) => socket.pacer(),
+        }
+    }
+
     async fn flush_batch(
         &self,
         sender: &crate::rpc::packet_batch::Sender,
         batch: &mut crate::rpc::packet_batch::Batch,
     ) -> io::Result<()> {
         if let Some(info) = batch.info {
-            crate::rpc::pacing::wait_until(info.at).await;
+            batch.pacer.wait_until(info.at).await;
             match self {
                 Self::Dedicated(s) => {
                     s.send_segments(sender, batch.bytes(), batch.segment, info.to)
@@ -425,6 +432,7 @@ async fn drive_packets(
     let mut udp = vec![0; 65535];
     let mut candidate_packet = vec![0; 65535];
     let mut batch = crate::rpc::packet_batch::Batch::new();
+    batch.pacer = socket.pacer();
     let sender = crate::rpc::packet_batch::Sender::default();
     let mut mtu_recovery = crate::rpc::packet_mtu::Recovery::default();
     let (mut reader, mut writer) = io;
@@ -555,7 +563,7 @@ async fn drive_packets(
                         }
                     } else if let Some(mobility) = &mut mobility {
                         socket.flush_batch(&sender, &mut batch).await?;
-                        crate::rpc::pacing::wait_until(info.at).await;
+                        batch.pacer.wait_until(info.at).await;
                         mobility.send(&socket, batch.packet(start, n), info).await?;
                     }
                     engine.scheduling.sent();
