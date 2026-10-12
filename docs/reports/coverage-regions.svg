@@ -27,8 +27,8 @@
 <rect x="600.00" y="390.00" width="519.62" height="23" fill="#00ac7b"/>
 <text x="1125.62" y="407.00" font-size="13" fill="#334155">83.41</text>
 <text x="35.00" y="447.00" font-size="13" fill="#334155">runtime &#x2F; current</text>
-<rect x="600.00" y="432.00" width="520.56" height="23" fill="#ef4444"/>
-<text x="1126.56" y="449.00" font-size="13" fill="#334155">83.57</text>
+<rect x="600.00" y="432.00" width="520.55" height="23" fill="#ef4444"/>
+<text x="1126.55" y="449.00" font-size="13" fill="#334155">83.57</text>
 <text x="35.00" y="489.00" font-size="13" fill="#334155">rust codegen &#x2F; baseline</text>
 <rect x="600.00" y="474.00" width="547.24" height="23" fill="#e89200"/>
 <text x="1153.24" y="491.00" font-size="13" fill="#334155">87.85</text>
@@ -57,9 +57,9 @@
 <rect x="600.00" y="810.00" width="516.08" height="23" fill="#00ac7b"/>
 <text x="1122.08" y="827.00" font-size="13" fill="#334155">82.85</text>
 <text x="35.00" y="867.00" font-size="13" fill="#334155">wire runtime &#x2F; current</text>
-<rect x="600.00" y="852.00" width="516.08" height="23" fill="#ef4444"/>
-<text x="1122.08" y="869.00" font-size="13" fill="#334155">82.85</text>
+<rect x="600.00" y="852.00" width="516.10" height="23" fill="#ef4444"/>
+<text x="1122.10" y="869.00" font-size="13" fill="#334155">82.85</text>
 <text x="600.00" y="914.00" font-size="13" fill="#64748b">Coverage (%) - higher is better</text>
-<text x="35.00" y="978.00" font-size="13" fill="#64748b">Measured 2026-10-07T02:35:55Z | commit d2b163dbf50c</text>
+<text x="35.00" y="978.00" font-size="13" fill="#64748b">Measured 2026-10-12T10:53:06Z | commit d2b163dbf50c</text>
 </g>
 </svg>

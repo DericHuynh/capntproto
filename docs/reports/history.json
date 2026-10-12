@@ -1522,6 +1522,38 @@
       "commit": "d2b163dbf50c377dedf8c38519fa08374eb65451",
       "conclusion": "success",
       "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "cargo",
+        "note": "Evidence passed.",
+        "origin": {
+          "attempt": 1,
+          "commit": "d2b163dbf50c377dedf8c38519fa08374eb65451",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 37562742141
+        },
+        "source_id": "eab617cc9fc63469b926aa07adc1630bbc052ef91e6a34750290e697db56ba69",
+        "status": "passed",
+        "tests": {
+          "command_passed": true,
+          "complete": true,
+          "errors": 0,
+          "failed": 0,
+          "passed": 1425,
+          "skipped": 20,
+          "suites": 193,
+          "total": 1445
+        }
+      },
+      "date": "2026-10-07T02:35:55Z",
+      "run_id": 37562742141,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/37562742141"
+    },
+    {
+      "attempt": 1,
+      "commit": "d2b163dbf50c377dedf8c38519fa08374eb65451",
+      "conclusion": "success",
+      "data": {
         "charts": [
           {
             "coverage": true,
@@ -1600,7 +1632,7 @@
                       178
                     ],
                     "label": "runtime / current",
-                    "value": 83.56599861782999
+                    "value": 83.56323427781616
                   },
                   {
                     "color": [
@@ -1776,7 +1808,7 @@
                       178
                     ],
                     "label": "runtime / current",
-                    "value": 83.56691244066715
+                    "value": 83.56503630325885
                   },
                   {
                     "color": [
@@ -1866,7 +1898,7 @@
                       178
                     ],
                     "label": "wire runtime / current",
-                    "value": 82.84651640001283
+                    "value": 82.84972265862964
                   }
                 ],
                 "title": "Source groups (different groups cover different code)"
@@ -2128,7 +2160,7 @@
                       178
                     ],
                     "label": "runtime / current",
-                    "value": 73.47259658580413
+                    "value": 73.45013477088949
                   },
                   {
                     "color": [
@@ -2235,7 +2267,7 @@
           "attempt": 1,
           "commit": "d2b163dbf50c377dedf8c38519fa08374eb65451",
           "repository": "DericHuynh/capntproto",
-          "run_id": 37562742141
+          "run_id": 38239101685
         },
         "source_id": "eab617cc9fc63469b926aa07adc1630bbc052ef91e6a34750290e697db56ba69",
         "status": "passed",
@@ -2251,9 +2283,9 @@
           "total": 1445
         }
       },
-      "date": "2026-10-07T02:35:55Z",
-      "run_id": 37562742141,
-      "url": "https://github.com/DericHuynh/capntproto/actions/runs/37562742141"
+      "date": "2026-10-12T10:53:06Z",
+      "run_id": 38239101685,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/38239101685"
     }
   ],
   "format": 1,

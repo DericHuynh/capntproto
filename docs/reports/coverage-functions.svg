@@ -60,6 +60,6 @@
 <rect x="600.00" y="852.00" width="529.71" height="23" fill="#ef4444"/>
 <text x="1135.71" y="869.00" font-size="13" fill="#334155">83.68</text>
 <text x="600.00" y="914.00" font-size="13" fill="#64748b">Coverage (%) - higher is better</text>
-<text x="35.00" y="978.00" font-size="13" fill="#64748b">Measured 2026-10-07T02:35:55Z | commit d2b163dbf50c</text>
+<text x="35.00" y="978.00" font-size="13" fill="#64748b">Measured 2026-10-12T10:53:06Z | commit d2b163dbf50c</text>
 </g>
 </svg>
