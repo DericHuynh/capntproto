@@ -18,7 +18,10 @@ jobs:
   kani:
     name: Prove portable Rust with Kani and mutation controls
     runs-on: ubuntu-26.04
-    timeout-minutes: 30
+    # The campaign includes 68 proofs and 58 separately compiled fault controls.
+    # Leave room for the complete campaign and reports; each proof retains its
+    # own 180-second verifier deadline.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:

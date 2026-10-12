@@ -1,0 +1,372 @@
+//! Hosted result envelopes whose ancestors cannot be edited by the application.
+//! Data-only replies can be copied without rebuilding pointers or flattening
+//! their segments. Far pointers keep the same segment IDs and offsets.
+use super::*;
+use capnp::{field_api::Schema, traits::IntoInternalStructReader};
+
+/// An immutable empty Return header. Each instance owns independent storage.
+pub struct PreparedReturnTemplate {
+    message: capnp::message::SelectedBuilderTemplate<capnp::message::HeapAllocator>,
+    returned: usize,
+}
+impl PreparedReturnTemplate {
+    /// Ancestor words to add to a payload hint; excludes the message root word.
+    pub const ENVELOPE_WORDS: u64 = (rpc_capnp::api::Message::SIZE.data
+        + rpc_capnp::api::Message::SIZE.pointers
+        + rpc_capnp::api::Return::SIZE.data
+        + rpc_capnp::api::Return::SIZE.pointers
+        + rpc_capnp::api::Payload::SIZE.data
+        + rpc_capnp::api::Payload::SIZE.pointers) as u64;
+}
+impl Default for PreparedReturnTemplate {
+    fn default() -> Self {
+        let mut returned = 0;
+        let message = capnp::message::Builder::new(
+            capnp::message::HeapAllocator::new().first_segment_words(16),
+        )
+        .select(|root| {
+            let mut result = root.init_as::<rpc_capnp::message::Builder>().init_return();
+            result.set_release_param_caps(false);
+            returned = result
+                .reborrow_as_reader()
+                .into_internal_struct_reader()
+                .get_data_section_as_blob()
+                .as_ptr() as usize;
+            Ok(result.init_results().get_content())
+        })
+        .expect("empty Return envelope");
+        let segments = message.message().get_segments_for_output();
+        let capnp::OutputSegments::SingleSegment([segment]) = segments else {
+            unreachable!("empty Return fits its first segment")
+        };
+        returned -= segment.as_ptr() as usize;
+        Self {
+            message: message.into_template().expect("data-only Return header"),
+            returned,
+        }
+    }
+}
+
+/// A private Return header with application-mutable result content. It carries
+/// no answer authority; only the driver's live answer token permits publication.
+pub struct PreparedReturn<A: capnp::message::Allocator> {
+    message: capnp::message::SelectedBuilder<A>,
+    returned: usize,
+}
+impl<A: capnp::message::Allocator> PreparedReturn<A> {
+    pub fn from_template(template: &PreparedReturnTemplate, allocator: A) -> Self {
+        Self {
+            message: template.message.instantiate(allocator),
+            returned: template.returned,
+        }
+    }
+    pub fn results(&mut self) -> capnp::any_pointer::Builder<'_> {
+        self.message.get()
+    }
+    /// Exact framed length when the private envelope's segment count fits the
+    /// wire reader. This is a storage hint, not a validation certificate.
+    pub fn framed_len(&self) -> Option<usize> {
+        frame_layout(&self.message.message().get_segments_for_output()).map(|(_, length)| length)
+    }
+    pub fn reader(&self) -> capnp::Result<capnp::any_pointer::Reader<'_>> {
+        let rpc_capnp::message::Return(result) = self
+            .message
+            .message()
+            .get_root_as_reader::<rpc_capnp::message::Reader>()?
+            .which()?
+        else {
+            unreachable!("private Return header")
+        };
+        let rpc_capnp::return_::Results(payload) = result?.which()? else {
+            unreachable!("private result selection")
+        };
+        Ok(payload?.get_content())
+    }
+    fn copy<'pool>(
+        &self,
+        answer: AnswerId,
+        no_finish: bool,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        options: capnp::message::ReaderOptions,
+    ) -> Result<Option<Frame<'pool>>, super::super::Error> {
+        let segments = self.message.message().get_segments_for_output();
+        let Some((header, length)) = frame_layout(&segments) else {
+            return Ok(None);
+        };
+        let words = (length - header) / 8;
+        if options
+            .traversal_limit_in_words
+            .is_some_and(|limit| words > limit)
+        {
+            return Err(capnp::Error::from_kind(capnp::ErrorKind::MessageTooLarge(words)).into());
+        }
+        // Charge all three immutable ancestor structs, then validate the selected
+        // pointer and its entire subtree using ordinary reader bounds and limits.
+        let prefix_words = [
+            rpc_capnp::api::Message::SIZE,
+            rpc_capnp::api::Return::SIZE,
+            rpc_capnp::api::Payload::SIZE,
+        ]
+        .iter()
+        .map(|size| usize::from(size.data) + usize::from(size.pointers))
+        .sum::<usize>();
+        let mut selected = options;
+        selected.nesting_limit = options
+            .nesting_limit
+            .checked_sub(3)
+            .filter(|n| *n >= 0)
+            .ok_or_else(|| {
+                capnp::Error::from_kind(capnp::ErrorKind::MessageIsTooDeeplyNestedOrContainsCycles)
+            })?;
+        if let Some(limit) = &mut selected.traversal_limit_in_words {
+            *limit = limit
+                .checked_sub(prefix_words)
+                .ok_or_else(|| capnp::Error::from_kind(capnp::ErrorKind::ReadLimitExceeded))?;
+        }
+        self.message.validate_capability_indices(0, selected)?;
+        let mut writer = messages
+            .reserve_exact(length)
+            .map_err(super::super::Error::Storage)?;
+        let copied = (|| {
+            let mut bytes = messages
+                .write_borrowed(&mut writer)
+                .map_err(super::super::Error::Storage)?;
+            bytes[..4].copy_from_slice(&((segments.len() - 1) as u32).to_le_bytes());
+            let mut start = header;
+            for (index, segment) in segments.iter().enumerate() {
+                let slot = (index + 1) * 4;
+                bytes[slot..slot + 4].copy_from_slice(&((segment.len() / 8) as u32).to_le_bytes());
+                let end = start + segment.len();
+                bytes[start..end].copy_from_slice(segment);
+                start = end;
+            }
+            bytes[(segments.len() + 1) * 4..header].fill(0);
+            // rpc.capnp: answerId is UInt32 slot 0; noFinishNeeded is bit 33.
+            // The safe private builder ensures these scalars cannot overlap
+            // pointers or application content. releaseParamCaps remains false.
+            let returned = self.returned + header;
+            bytes[returned..returned + 4].copy_from_slice(&answer.to_wire().to_le_bytes());
+            bytes[returned + 4] = (bytes[returned + 4] & !2) | (u8::from(no_finish) << 1);
+            Ok(())
+        })();
+        if let Err(error) = copied {
+            messages.discard(writer);
+            return Err(error);
+        }
+        match messages.seal(writer, length) {
+            Ok(lease) => Ok(Some(Frame::new(lease, options))),
+            Err(rejected) => {
+                messages.discard(rejected.writer);
+                Err(super::super::Error::Storage(rejected.error))
+            }
+        }
+    }
+}
+
+fn frame_layout(segments: &[&[u8]]) -> Option<(usize, usize)> {
+    if segments.is_empty() || segments.len() >= capnp::serialize::SEGMENTS_COUNT_LIMIT {
+        return None;
+    }
+    let header = (segments.len() / 2 + 1) * 8;
+    let length = segments.iter().try_fold(header, |length, segment| {
+        u32::try_from(segment.len() / 8).ok()?;
+        length.checked_add(segment.len())
+    })?;
+    Some((header, length))
+}
+impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
+    Driver<'pool, 'id, 's, I, A, P, S, CAPS, PATH>
+{
+    /// Prepare a data-only hosted answer without walking and rebuilding its
+    /// envelope. None requests the normal codec to compact too many segments.
+    /// Capability indices, traversal/nesting limits and publication ownership
+    /// use the same checks as ordinary local answers. This does not send bytes.
+    #[allow(clippy::too_many_arguments)]
+    pub fn local_answer_prepared<B: capnp::message::Allocator>(
+        &mut self,
+        answer: answers::Key<'id>,
+        interface: u64,
+        method: u16,
+        source: &PreparedReturn<B>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        options: capnp::message::ReaderOptions,
+    ) -> Result<Option<LocalResult<'pool, 'id, CAPS>>, Error> {
+        self.check_live()?;
+        let no_finish = self
+            .ledgers
+            .answers
+            .prepare_return(answer)
+            .map_err(|e| Error::Pipeline(pipelines::Error::Answer(e)))?
+            .can_omit_finish();
+        let Some(frame) = source
+            .copy(answer.id(), no_finish, messages, options)
+            .map_err(Error::Input)?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(LocalResult {
+            capacity: self.message_capabilities,
+            frame,
+            capabilities: Buffer::Inline(core::array::from_fn(|_| None)),
+            count: 0,
+            interface,
+            method,
+            prepared_return: Some((answer.id(), no_finish)),
+        }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use capnp::{word, Word};
+    use capntproto_rpc_engine::ids::WireId;
+    #[test]
+    fn template_copies_preserve_independent_headers_payloads_and_limits() {
+        let template = PreparedReturnTemplate::default();
+        let mut first =
+            PreparedReturn::from_template(&template, capnp::message::HeapAllocator::new());
+        let mut second =
+            PreparedReturn::from_template(&template, capnp::message::HeapAllocator::new());
+        first
+            .results()
+            .set_as::<capnp::data::Owned>(b"first".as_slice())
+            .unwrap();
+        second
+            .results()
+            .set_as::<capnp::data::Owned>(b"second".as_slice())
+            .unwrap();
+        drop(template);
+        let mut a = [word(0, 0, 0, 0, 0, 0, 0, 0); 64];
+        let mut b = a;
+        let mut buffers = [
+            messages::Buffer::new(Word::words_to_bytes_mut(&mut a)),
+            messages::Buffer::new(Word::words_to_bytes_mut(&mut b)),
+        ];
+        messages::with_messages(&mut buffers, &mut [], |messages| {
+            for options in [
+                capnp::message::ReaderOptions {
+                    nesting_limit: 3,
+                    ..Default::default()
+                },
+                capnp::message::ReaderOptions {
+                    traversal_limit_in_words: Some(1),
+                    ..Default::default()
+                },
+            ] {
+                assert!(first
+                    .copy(AnswerId::from_wire(0), false, messages, options)
+                    .is_err());
+            }
+            let first_frame = first
+                .copy(
+                    AnswerId::from_wire(u32::MAX),
+                    true,
+                    messages,
+                    Default::default(),
+                )
+                .unwrap()
+                .unwrap();
+            // Earlier validation failures consumed neither buffer. Header edits
+            // affect this copy alone, even while both frames remain retained.
+            let second_frame = second
+                .copy(AnswerId::from_wire(0), false, messages, Default::default())
+                .unwrap()
+                .unwrap();
+            first
+                .results()
+                .set_as::<capnp::data::Owned>(b"replaced".as_slice())
+                .unwrap();
+            for (frame, id, no_finish, expected) in [
+                (&first_frame, u32::MAX, true, b"first".as_slice()),
+                (&second_frame, 0, false, b"second".as_slice()),
+            ] {
+                frame
+                    .with(messages, |root| {
+                        let rpc_capnp::message::Return(result) = root.which().unwrap() else {
+                            panic!()
+                        };
+                        let result = result.unwrap();
+                        assert_eq!(result.get_answer_id(), id);
+                        assert_eq!(result.get_no_finish_needed(), no_finish);
+                        assert!(!result.get_release_param_caps());
+                        let rpc_capnp::return_::Results(payload) = result.which().unwrap() else {
+                            panic!()
+                        };
+                        let payload = payload.unwrap();
+                        assert!(payload.get_cap_table().unwrap().is_empty());
+                        assert_eq!(
+                            payload
+                                .get_content()
+                                .get_as::<capnp::data::Reader>()
+                                .unwrap(),
+                            expected
+                        );
+                    })
+                    .unwrap();
+            }
+            first_frame.release(messages);
+            second_frame.release(messages);
+        })
+        .unwrap();
+    }
+    #[test]
+    fn segmented_returns_preserve_far_pointers_and_respect_the_reader_segment_limit() {
+        for count in [1, 2, 509, 510] {
+            let mut source = PreparedReturn::from_template(
+                &PreparedReturnTemplate::default(),
+                capnp::message::HeapAllocator::new()
+                    .first_segment_words(8)
+                    .allocation_strategy(capnp::message::AllocationStrategy::FixedSize),
+            );
+            let mut data = source
+                .results()
+                .initn_as::<capnp::data_list::Builder>(count);
+            for index in 0..count {
+                data.set(index, &[index as u8; 64]);
+            }
+            let segments = source.message.message().get_segments_for_output().len();
+            assert_eq!(segments, count as usize + 2);
+            let mut words = alloc::vec![word(0, 0, 0, 0, 0, 0, 0, 0); 10_000];
+            let mut buffers = [messages::Buffer::new(Word::words_to_bytes_mut(&mut words))];
+            messages::with_messages(&mut buffers, &mut [], |messages| {
+                let frame = source
+                    .copy(AnswerId::from_wire(7), true, messages, Default::default())
+                    .unwrap();
+                if segments >= capnp::serialize::SEGMENTS_COUNT_LIMIT {
+                    assert!(frame.is_none());
+                    // Compaction is delegated before acquiring pool storage.
+                    let writer = messages.reserve_exact(1).unwrap();
+                    messages.discard(writer);
+                    return;
+                }
+                let frame = frame.unwrap();
+                frame
+                    .with(messages, |root| {
+                        let rpc_capnp::message::Return(returned) = root.which().unwrap() else {
+                            panic!()
+                        };
+                        let returned = returned.unwrap();
+                        assert_eq!(returned.get_answer_id(), 7);
+                        assert!(returned.get_no_finish_needed());
+                        assert!(!returned.get_release_param_caps());
+                        let rpc_capnp::return_::Results(payload) = returned.which().unwrap() else {
+                            panic!()
+                        };
+                        let data = payload
+                            .unwrap()
+                            .get_content()
+                            .get_as::<capnp::data_list::Reader>()
+                            .unwrap();
+                        assert_eq!(data.len(), count);
+                        for index in 0..count {
+                            assert_eq!(data.get(index).unwrap(), &[index as u8; 64]);
+                        }
+                    })
+                    .unwrap();
+                frame.release(messages);
+            })
+            .unwrap();
+        }
+    }
+}

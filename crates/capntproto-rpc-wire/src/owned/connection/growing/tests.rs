@@ -120,53 +120,55 @@ fn idle_certificate_observes_new_retirement_without_invalidation() {
 
 #[test]
 fn maintenance_idle_scan_keeps_its_budget_after_empty_tables_grow() {
-    with_driver(|mut driver, messages| {
-        // Exercise the general scanner even when the hosted simple-client
-        // certificate could otherwise prove quiescence without a scan.
-        assert!(driver.tails.grow(1, || TailSlot::EMPTY));
-        let mut queue = messages::Queue::new_growing(0, 8).unwrap();
-        macro_rules! poll {
-            () => {
-                driver
-                    .poll_maintenance(
-                        messages,
-                        &mut queue,
-                        128,
-                        Default::default(),
-                        &mut [0; 8],
-                        NonZeroUsize::new(1).unwrap(),
-                    )
-                    .unwrap()
-            };
-        }
-        for _ in 1..18 {
-            assert!(matches!(poll!(), Progress::Yield));
-        }
-        assert!(matches!(poll!(), Progress::Idle));
-        let mut receipts = core::array::from_fn::<_, 7, _>(|index| {
-            imports::ReceiveSlot::new(ImportId::from_wire(index as u32), ())
-        });
-        driver
-            .ledgers
-            .imports
-            .prepare_receive(&mut receipts)
-            .unwrap()
-            .commit();
-        driver.invalidate_maintenance();
-        let total = 17 + driver.ledgers.imports.capacity();
-        for _ in 1..total {
-            assert!(matches!(poll!(), Progress::Yield));
-        }
-        assert!(matches!(poll!(), Progress::Idle));
-        assert_eq!(driver.maintenance_total, total);
-        for receipt in &mut receipts {
+    for quantum in [1, 2, 7, 32] {
+        with_driver(|mut driver, messages| {
+            // Exercise the general scanner even when the hosted simple-client
+            // certificate could otherwise prove quiescence without a scan.
+            assert!(driver.tails.grow(1, || TailSlot::EMPTY));
+            let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+            macro_rules! poll {
+                () => {
+                    driver
+                        .poll_maintenance(
+                            messages,
+                            &mut queue,
+                            128,
+                            Default::default(),
+                            &mut [0; 8],
+                            NonZeroUsize::new(quantum).unwrap(),
+                        )
+                        .unwrap()
+                };
+            }
+            for _ in 1..18usize.div_ceil(quantum) {
+                assert!(matches!(poll!(), Progress::Yield));
+            }
+            assert!(matches!(poll!(), Progress::Idle));
+            let mut receipts = core::array::from_fn::<_, 7, _>(|index| {
+                imports::ReceiveSlot::new(ImportId::from_wire(index as u32), ())
+            });
             driver
                 .ledgers
                 .imports
-                .release(receipt.take_local().unwrap());
-        }
-        close(driver, messages, &mut queue);
-    });
+                .prepare_receive(&mut receipts)
+                .unwrap()
+                .commit();
+            driver.invalidate_maintenance();
+            let total = 17 + driver.ledgers.imports.capacity();
+            for _ in 1..total.div_ceil(quantum) {
+                assert!(matches!(poll!(), Progress::Yield));
+            }
+            assert!(matches!(poll!(), Progress::Idle));
+            assert_eq!(driver.maintenance_total, total);
+            for receipt in &mut receipts {
+                driver
+                    .ledgers
+                    .imports
+                    .release(receipt.take_local().unwrap());
+            }
+            close(driver, messages, &mut queue);
+        });
+    }
 }
 
 fn drain<'p>(

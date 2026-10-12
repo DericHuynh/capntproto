@@ -35,6 +35,7 @@ pub(crate) struct Payload {
 }
 enum PayloadBody {
     Owned(Box<capnp::message::Builder<capnp::message::HeapAllocator>>),
+    Return(Box<connection::PreparedReturn<capnp::message::HeapAllocator>>),
     Admitted(Box<owned::PlainResults>),
     Shared { message: Box<SharedPayload> },
 }
@@ -166,6 +167,7 @@ impl Payload {
     fn reader(&self) -> capnp::Result<any_pointer::Reader<'_>> {
         let mut root: any_pointer::Reader<'_> = match &self.body {
             PayloadBody::Owned(message) => message.get_root_as_reader()?,
+            PayloadBody::Return(message) => message.reader()?,
             PayloadBody::Admitted(message) => {
                 capnp::private::capability::ResponseHook::get(&**message)?
             }

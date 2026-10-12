@@ -30,6 +30,7 @@ fn resolution_is_once_and_preserves_promise_references() {
         #[cfg(feature = "alloc")]
         observation: Default::default(),
         slots: crate::storage::Storage::borrowed(&mut slots),
+        pending_releases: 0,
         brand: PhantomData,
     };
     let mut receipts = [ReceiveSlot::new(ImportId::from_wire(23), 47)];
@@ -86,6 +87,7 @@ fn duplicate_batch_admission_is_atomic_for_all_reference_counts() {
         #[cfg(feature = "alloc")]
         observation: Default::default(),
         slots: crate::storage::Storage::borrowed(&mut slots),
+        pending_releases: usize::from(local == 0),
         brand: PhantomData,
     };
     let mut receipts = [ReceiveSlot::alias(wire), ReceiveSlot::alias(wire)];
@@ -111,6 +113,7 @@ fn duplicate_batch_admission_is_atomic_for_all_reference_counts() {
         "batch reference rejection is atomic",
     );
     assert_eq!(entry.remote.count(), remote + if accepted { 2 } else { 0 });
+    assert_eq!(imports.has_pending_release(), !accepted && local == 0);
     assert_eq!(
         imports.slots[0].generation,
         generation + u64::from(accepted && local == 0)

@@ -130,14 +130,10 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             self.scan_remaining = self.maintenance_total;
             self.maintenance_sizes = sizes;
         }
-        for _ in 0..budget.get() {
+        let mut remaining = budget.get();
+        while remaining != 0 {
             let phase = self.maintenance_phase;
             let index = self.maintenance_index;
-            self.maintenance_index += 1;
-            if self.maintenance_index == self.maintenance_sizes[phase] {
-                self.maintenance_index = 0;
-                self.maintenance_phase = (phase + 1) % self.maintenance_sizes.len();
-            }
             // Keep empty lanes out of the ownership-bearing transition call.
             // They still consume one budget unit and advance the idle scan in
             // exactly the same order. Inspect live storage on every step so a
@@ -162,6 +158,26 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 16 => self.invocation_pipelines.is_empty(),
                 _ => false,
             };
+            // An empty lane cannot change until a transition/callback runs.
+            // Charge the same slots and stop at the same budget/idle boundary,
+            // but skip its remaining vacant capacity with one cursor update.
+            let visited = if empty {
+                (self.maintenance_sizes[phase] - index)
+                    .min(remaining)
+                    .min(self.scan_remaining)
+            } else {
+                1
+            };
+            remaining -= visited;
+            self.maintenance_index += visited;
+            if self.maintenance_index == self.maintenance_sizes[phase] {
+                self.maintenance_index = 0;
+                self.maintenance_phase = if phase + 1 == self.maintenance_sizes.len() {
+                    0
+                } else {
+                    phase + 1
+                };
+            }
             let result = if empty {
                 Ok(None)
             } else {
@@ -172,7 +188,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             };
             match result {
                 Ok(None) => {
-                    self.scan_remaining -= 1;
+                    self.scan_remaining -= visited;
                     if self.scan_remaining == 0 {
                         self.scan_remaining = self.maintenance_total;
                         return Ok(Progress::Idle);

@@ -197,6 +197,17 @@ impl Results {
                 .borrow()
                 .clone()
                 .ok_or_else(|| Error::overloaded("server still owns its results".into()))?;
+            if payload.caps.is_empty() {
+                if let PayloadBody::Return(message) = &payload.body {
+                    if let Some(bytes) = message.framed_len() {
+                        // Whole-envelope copies need no payload traversal for
+                        // sizing. Retain the general codec's two staging/tag
+                        // words as well: transferred results can use that path.
+                        // The driver still validates before publication.
+                        return bytes.checked_add(16).ok_or_else(overflow);
+                    }
+                }
+            }
             let content = payload.reader()?.target_size()?.word_count;
             let descriptors = (payload.caps.len() as u64)
                 .checked_mul(words::<CapDescriptor>())
@@ -352,16 +363,20 @@ impl Drop for Execution {
 
 struct Hook {
     results: Results,
-    message: Option<capnp::message::Builder<capnp::message::HeapAllocator>>,
+    message: Option<connection::PreparedReturn<capnp::message::HeapAllocator>>,
     caps: Vec<Option<Box<dyn ClientHook>>>,
     executor: Option<Rc<dyn capability::CallExecutor>>,
 }
 impl Drop for Hook {
     fn drop(&mut self) {
-        let payload = Rc::new(Payload::owned(
-            self.message.take().unwrap_or_default(),
-            std::mem::take(&mut self.caps),
-        ));
+        let caps = std::mem::take(&mut self.caps);
+        let payload = Rc::new(match self.message.take() {
+            Some(message) => Payload {
+                body: PayloadBody::Return(Box::new(message)),
+                caps,
+            },
+            None => Payload::owned(Default::default(), caps),
+        });
         let previous = self.results.0.payload.borrow_mut().replace(payload);
         drop(previous);
         self.results.0.notify();
@@ -390,14 +405,24 @@ impl ResultsHook for Hook {
         let mut root: any_pointer::Builder = self
             .message
             .get_or_insert_with(|| {
+                let hint = hint.map(|mut size| {
+                    size.word_count = size
+                        .word_count
+                        .saturating_add(connection::PreparedReturnTemplate::ENVELOPE_WORDS);
+                    size
+                });
                 let allocator = crate::local::result_allocator(hint);
                 let allocator = match &self.results.0.message_pool {
                     Some(pool) => allocator.segment_pool(pool.clone()),
                     None => allocator,
                 };
-                capnp::message::Builder::new(allocator)
+                thread_local! {
+                    static TEMPLATE: connection::PreparedReturnTemplate = Default::default();
+                }
+                TEMPLATE
+                    .with(|template| connection::PreparedReturn::from_template(template, allocator))
             })
-            .get_root()?;
+            .results();
         root.imbue_mut(&mut self.caps);
         Ok(root)
     }
@@ -636,6 +661,23 @@ impl<'id> ClientHooks<'id> {
             .ok_or_else(|| Error::overloaded("server still owns its results".into()))?;
         let mut retained = Vec::with_capacity(payload.caps.len());
         let result = (|| {
+            if payload.caps.is_empty() {
+                if let (Some(answer), PayloadBody::Return(source)) = (answer, &payload.body) {
+                    if let Some(result) = driver
+                        .local_answer_prepared(
+                            answer,
+                            method.interface,
+                            method.method,
+                            source,
+                            messages,
+                            options,
+                        )
+                        .map_err(wire_error)?
+                    {
+                        return Ok(result);
+                    }
+                }
+            }
             if payload.caps.len() > driver.capability_capacity() {
                 return Err(Error::overloaded(
                     "wire result capability capacity exhausted".into(),

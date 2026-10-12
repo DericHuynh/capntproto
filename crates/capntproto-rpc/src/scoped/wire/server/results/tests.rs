@@ -84,6 +84,32 @@ fn pooled_results_keep_retained_payloads_and_clear_reused_segments() {
 }
 
 #[test]
+fn prepared_return_rejects_capability_content_before_reserving_storage() {
+    let mut source = connection::PreparedReturn::from_template(
+        &connection::PreparedReturnTemplate::default(),
+        capnp::message::HeapAllocator::new(),
+    );
+    let mut caps = Vec::new();
+    let mut root = source.results();
+    root.imbue_mut(&mut caps);
+    root.set_as_capability(crate::broken::new_cap(Error::failed(
+        "test capability".into(),
+    )));
+    with_driver(|mut driver, messages| {
+        let (call, target) = request(&mut driver, messages, Results::new());
+        assert!(driver
+            .local_answer_prepared(call.answer(), 7, 9, &source, messages, Default::default())
+            .is_err());
+        assert!(driver.ledgers.answers.prepare_return(call.answer()).is_ok());
+        driver.release_call(call, messages);
+        driver.runtime.release(target);
+        let mut slots = [None];
+        let mut queue = messages::Queue::new(&mut slots).unwrap();
+        close(driver, messages, &mut queue);
+    });
+}
+
+#[test]
 fn exception_trace_is_sized_once_and_reentrant_policy_changes_apply_to_next_result() {
     use rpc_capnp::api::{Message, Return};
     let policy = coordinator::policy::Policy::new();

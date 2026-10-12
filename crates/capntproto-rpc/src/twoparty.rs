@@ -187,26 +187,27 @@ impl capnp_futures::serialize::AsOutputSegments for QueuedMessage {
 enum MessageBuilder {
     Root(capnp::message::Builder<capnp::message::HeapAllocator>),
     Call(capnp::message::SelectedStructBuilder<capnp::message::HeapAllocator>),
+    Return(capnp::message::SelectedStructBuilder<capnp::message::HeapAllocator>),
 }
 impl MessageBuilder {
     #[inline]
     fn message(&self) -> &capnp::message::Builder<capnp::message::HeapAllocator> {
         match self {
             Self::Root(message) => message,
-            Self::Call(call) => call.message(),
+            Self::Call(call) | Self::Return(call) => call.message(),
         }
     }
     fn into_inner(self) -> capnp::message::Builder<capnp::message::HeapAllocator> {
         match self {
             Self::Root(message) => message,
-            Self::Call(call) => call.into_inner(),
+            Self::Call(call) | Self::Return(call) => call.into_inner(),
         }
     }
     fn take(&mut self) -> capnp::message::Builder<capnp::message::HeapAllocator> {
         std::mem::replace(self, Self::Root(capnp::message::Builder::new_default())).into_inner()
     }
     fn root(&mut self) -> &mut capnp::message::Builder<capnp::message::HeapAllocator> {
-        if matches!(self, Self::Call(_)) {
+        if !matches!(self, Self::Root(_)) {
             *self = Self::Root(self.take());
         }
         let Self::Root(message) = self else {
@@ -240,13 +241,38 @@ impl MessageBuilder {
 
     #[inline(always)]
     fn call(&mut self, initialize: bool) -> capnp::Result<crate::rpc_capnp::call::Builder<'_>> {
-        if initialize || matches!(self, Self::Root(_)) {
+        if initialize || !matches!(self, Self::Call(_)) {
             self.select_call(initialize)?;
         }
         let Self::Call(call) = self else {
             unreachable!()
         };
         call.get_as::<crate::rpc_capnp::call::Owned>()
+    }
+
+    fn returned(&mut self) -> capnp::Result<crate::rpc_capnp::return_::Builder<'_>> {
+        if !matches!(self, Self::Return(_)) {
+            let selected = self.take().try_select_struct(|root| {
+                let message = root.get_as::<crate::rpc_capnp::message::Builder>()?;
+                let crate::rpc_capnp::message::Return(returned) = message.which()? else {
+                    return Err(capnp::Error::failed(
+                        "response does not contain Return".into(),
+                    ));
+                };
+                capnp::any_struct::Builder::from_builder(returned?)
+            });
+            match selected {
+                Ok(returned) => *self = Self::Return(returned),
+                Err((message, error)) => {
+                    *self = Self::Root(message);
+                    return Err(error);
+                }
+            }
+        }
+        let Self::Return(returned) = self else {
+            unreachable!()
+        };
+        returned.get_as::<crate::rpc_capnp::return_::Owned>()
     }
 }
 
@@ -271,6 +297,9 @@ impl crate::OutgoingMessage for OutgoingMessage {
     }
     fn get_call(&mut self) -> capnp::Result<crate::rpc_capnp::call::Builder<'_>> {
         self.message.call(false)
+    }
+    fn get_return(&mut self) -> capnp::Result<crate::rpc_capnp::return_::Builder<'_>> {
+        self.message.returned()
     }
 
     fn send(
@@ -431,6 +460,8 @@ where
     segments: capnp::message::SegmentPool,
     call_template:
         Option<capnp::message::SelectedStructBuilderTemplate<capnp::message::HeapAllocator>>,
+    return_template:
+        Option<capnp::message::SelectedStructBuilderTemplate<capnp::message::HeapAllocator>>,
     finish_template:
         Option<capnp::message::SelectedStructBuilderTemplate<capnp::message::HeapAllocator>>,
 }
@@ -522,6 +553,7 @@ where
                 // bounding retained storage independently of live messages.
                 segments: capnp::message::SegmentPool::new(16 * 1024, 16),
                 call_template: None,
+                return_template: None,
                 finish_template: None,
             })),
         }
@@ -623,6 +655,46 @@ where
         let message = inner.call_template.as_ref().unwrap().instantiate(allocator);
         Ok(Box::new(OutgoingMessage {
             message: MessageBuilder::Call(message),
+            sender: Some(inner.sender.clone()),
+            guard: None,
+            driver: inner.output_driver.clone(),
+        }))
+    }
+
+    fn new_outgoing_return(
+        &mut self,
+        first_segment_word_size: u32,
+    ) -> capnp::Result<Box<dyn crate::OutgoingMessage>> {
+        let mut inner = self.inner.borrow_mut();
+        if inner.return_template.is_none() {
+            let message = capnp::message::Builder::new(
+                capnp::message::HeapAllocator::new().first_segment_words(16),
+            );
+            let selected = message
+                .try_select_struct(|root| {
+                    let mut returned = root
+                        .init_as::<crate::rpc_capnp::message::Builder>()
+                        .init_return();
+                    let _ = returned.reborrow().init_results();
+                    capnp::any_struct::Builder::from_builder(returned)
+                })
+                .map_err(|(_, error)| error)?;
+            inner.return_template = Some(selected.into_template()?);
+        }
+        let allocator = capnp::message::HeapAllocator::new()
+            .segment_pool(inner.segments.clone())
+            .first_segment_words(if first_segment_word_size == 0 {
+                256
+            } else {
+                first_segment_word_size
+            });
+        let message = inner
+            .return_template
+            .as_ref()
+            .unwrap()
+            .instantiate(allocator);
+        Ok(Box::new(OutgoingMessage {
+            message: MessageBuilder::Return(message),
             sender: Some(inner.sender.clone()),
             guard: None,
             driver: inner.output_driver.clone(),

@@ -895,6 +895,54 @@ tests (7 documented skips), including Miri, mutation, fuzz and release checks,
 and all 43 supported workflow cells plus 36 C++ interoperability checks. The
 allocation-free profile passed 86 tests and compiled for `thumbv7em-none-eabi`.
 
+### Reply envelope reuse in both drivers
+
+Portable hosted results now build inside a private Return envelope. Data-only
+publication copies the framed segments, preserving far pointers and validating
+the payload under the caller's reader limits. Capability-bearing results and
+messages beyond the reader's segment-count limit use the general codec. Legacy
+TCP reuses a Return template and a checked header selection, invalidated by
+unrestricted message edits. Empty portable maintenance lanes advance in batches
+while charging the same caller budget and preserving the rotating cursor.
+
+Three alternating ordinary full-LTO Callgrind repetitions (generic CPU, one
+codegen unit, overflow checks, no PGO) measured the complete processes, including
+100 warmups and 1,000 empty calls:
+
+| Driver / process | Before | After | Change |
+|---|---:|---:|---:|
+| Legacy client | 17,777,557 | 17,763,900 | −0.08% |
+| Legacy server | 18,045,548 | 17,272,688 | −4.28% |
+| Portable client | 26,020,829 | 26,048,884 | +0.11% |
+| Portable server | 35,910,444 | 32,109,549 | −10.58% |
+
+With compilers, profilers and tests stopped, five alternating Rust/C++ trials
+per payload used 10,000 warmups and 1,000 retained samples on separate physical
+cores. These are pooled p50 ratios against each paired C++ control:
+
+| Payload | Legacy before / C++ | Legacy after / C++ | Portable before / C++ | Portable after / C++ |
+|---|---:|---:|---:|---:|
+| Empty | 0.989× | 0.977× | 1.156× | 1.127× |
+| 64 B | 0.989× | 0.982× | 1.165× | 1.134× |
+| 1 KiB | 0.984× | 0.979× | 1.155× | 1.127× |
+| 64 KiB | 0.931× | 0.899× | 1.160× | 1.147× |
+
+Portable's small-call medians are approximately **1.15× legacy**, comparing
+their independently measured Rust trials. The **1.00× portable target remains
+unmet**, and its client cost is essentially unchanged, still above 25 million
+instructions. These local sequential plaintext TCP results do not qualify live
+cross-host performance. Raw trials, profiles, source patch and binary identities
+are retained in `target/remote-workflows/reply-final/`; its `README.md` records
+the measurement conditions and all comparison rows.
+
+The final runtime passed all 2,214 workspace nextest tests (7 documented skips),
+85 doctests (13 ignored), 230 engine/wire tests without default features, and
+bare-metal RPC checks with and without `alloc`. Release workflow validation
+passed all 58 supported cells and 48 C++ interoperability checks. Each of the
+256 KiB, 1 MiB and 4 MiB cases also completed 250 warmups and 1,000 retained
+calls on all five implementations. These local checks establish correctness,
+not remote latency qualification.
+
 ## Comparison bar charts
 
 The final **Comparison bar charts** section of each generated report README

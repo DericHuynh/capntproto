@@ -1578,6 +1578,10 @@ pub use replies::{
 };
 mod local_result;
 pub use local_result::{LocalPayload, LocalResult};
+#[cfg(feature = "alloc")]
+mod prepared_return;
+#[cfg(feature = "alloc")]
+pub use prepared_return::{PreparedReturn, PreparedReturnTemplate};
 mod bootstrap;
 mod result_draft;
 mod server_output;

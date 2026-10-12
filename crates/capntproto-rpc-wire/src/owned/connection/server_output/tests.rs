@@ -7,27 +7,62 @@ type Peer<'p, 'id, 's> = Driver<'p, 'id, 's, (), u32, u8, u32, 4, 4>;
 
 #[test]
 fn prepared_data_reply_reuses_storage_and_late_cancel_rebuilds_without_allocating() {
+    check_prepared_data_reply(false);
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn hosted_return_template_preserves_retry_cancellation_and_allocation_free_publication() {
+    check_prepared_data_reply(true);
+}
+
+fn check_prepared_data_reply(_hosted: bool) {
+    // Only the hosted application builder allocates. Its envelope relocation,
+    // validation and publication must still use the caller's fixed storage.
+    #[cfg(feature = "alloc")]
+    let prepared = _hosted.then(|| {
+        let mut source = PreparedReturn::from_template(
+            &PreparedReturnTemplate::default(),
+            capnp::message::HeapAllocator::new(),
+        );
+        source
+            .results()
+            .set_as::<capnp::text::Owned>("retained result")
+            .unwrap();
+        source
+    });
     for canceled in [false, true] {
         let measured = allocation_counter::measure(|| {
             with_driver(|mut driver, messages| {
                 let (call, target) = request(&mut driver, messages, false);
                 let key = call.answer();
-                let result = driver
-                    .local_answer_dynamic(
-                        key,
-                        7,
-                        9,
-                        &[],
-                        messages,
-                        512,
-                        Default::default(),
-                        |field| {
-                            field
-                                .cast::<capnp::field_api::Text>()
-                                .copy_from("retained result")
-                        },
-                    )
-                    .unwrap();
+                #[cfg(feature = "alloc")]
+                let result = prepared.as_ref().map(|source| {
+                    driver
+                        .local_answer_prepared(key, 7, 9, source, messages, Default::default())
+                        .unwrap()
+                        .unwrap()
+                });
+                #[cfg(not(feature = "alloc"))]
+                let result = None;
+                let result = result.unwrap_or_else(|| {
+                    driver
+                        .local_answer_dynamic(
+                            key,
+                            7,
+                            9,
+                            &[],
+                            messages,
+                            512,
+                            Default::default(),
+                            |field| {
+                                field
+                                    .cast::<capnp::field_api::Text>()
+                                    .copy_from("retained result")
+                            },
+                        )
+                        .unwrap()
+                });
                 let original = messages.read(&result.frame.lease).as_ptr();
                 driver
                     .complete_answer(&call, Ok(result), messages)

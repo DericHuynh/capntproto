@@ -191,7 +191,15 @@ fn invoke(
         Some(&output.join(format!("{name}.log"))),
         cancel,
     )?;
-    Ok((result.code, crate::read_json(path)?))
+    let data = crate::read_json(&path).with_context(|| {
+        format!(
+            "Kani {name} exited with code {} without readable results at {}; see {}",
+            result.code,
+            path.display(),
+            output.join(format!("{name}.log")).display()
+        )
+    })?;
+    Ok((result.code, data))
 }
 
 pub fn run(args: Args) -> Result<()> {

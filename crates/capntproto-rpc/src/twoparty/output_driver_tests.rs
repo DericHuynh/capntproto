@@ -141,6 +141,69 @@ fn cached_call_is_invalidated_by_root_mutation_and_failed_selection_preserves_me
 }
 
 #[test]
+fn return_templates_preserve_payloads_and_invalidate_selections_after_root_edits() {
+    let mut network = VatNetwork::new(
+        futures::io::Cursor::new(Vec::<u8>::new()),
+        futures::io::sink(),
+        VatId::Client,
+        Default::default(),
+    );
+    let mut connection = network.connection.take().unwrap();
+    for hint in [1, 256] {
+        let mut message = connection.new_outgoing_return(hint).unwrap();
+        message.get_return().unwrap().set_answer_id(17);
+        message.get_return().unwrap().set_release_param_caps(false);
+        let mut second = connection.new_outgoing_return(hint).unwrap();
+        assert_eq!(second.get_return().unwrap().get_answer_id(), 0);
+        assert!(second.get_return().unwrap().get_release_param_caps());
+        second.get_return().unwrap().set_answer_id(u32::MAX);
+        let crate::rpc_capnp::return_::Results(payload) =
+            message.get_return().unwrap().which().unwrap()
+        else {
+            panic!()
+        };
+        payload
+            .unwrap()
+            .get_content()
+            .set_as::<capnp::data::Owned>(&[23; 8192][..])
+            .unwrap();
+        assert!(message.get_call().is_err());
+        assert_eq!(message.get_return().unwrap().get_answer_id(), 17);
+        assert!(!message.get_return().unwrap().get_release_param_caps());
+        let crate::rpc_capnp::return_::Results(payload) =
+            message.get_return().unwrap().which().unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(
+            payload
+                .unwrap()
+                .get_content()
+                .get_as::<capnp::data::Builder>()
+                .unwrap(),
+            &[23; 8192]
+        );
+        message
+            .get_body()
+            .unwrap()
+            .init_as::<crate::rpc_capnp::message::Builder>()
+            .init_call()
+            .set_question_id(29);
+        assert!(message.get_return().is_err());
+        assert_eq!(message.get_call().unwrap().get_question_id(), 29);
+        message
+            .get_body()
+            .unwrap()
+            .get_as::<crate::rpc_capnp::message::Builder>()
+            .unwrap()
+            .init_return()
+            .set_answer_id(41);
+        assert_eq!(message.get_return().unwrap().get_answer_id(), 41);
+        assert_eq!(second.get_return().unwrap().get_answer_id(), u32::MAX);
+    }
+}
+
+#[test]
 fn detached_drive_writes_immediately_but_keeps_ownership_until_flush() {
     struct Guard(Rc<Cell<usize>>);
     impl Drop for Guard {

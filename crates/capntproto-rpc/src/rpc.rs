@@ -2052,7 +2052,7 @@ impl<VatId> ResultsInner<VatId>
 where
     VatId: 'static,
 {
-    fn ensure_initialized(&mut self, size_hint: Option<capnp::MessageSize>) {
+    fn ensure_initialized(&mut self, size_hint: Option<capnp::MessageSize>) -> capnp::Result<()> {
         let answer_id = self.answer_id;
         if self.variant.is_none() {
             match (
@@ -2060,11 +2060,10 @@ where
                 self.connection_state.connection.borrow_mut().as_mut(),
             ) {
                 (false, Ok(c)) => {
-                    let mut message = c.new_outgoing_message(result_size_hint(size_hint));
+                    let mut message = c.new_outgoing_return(result_size_hint(size_hint))?;
 
                     {
-                        let root: message::Builder = message.get_body().unwrap().init_as();
-                        let mut ret = root.init_return();
+                        let mut ret = message.get_return()?;
                         ret.set_answer_id(answer_id.to_wire());
                         ret.set_release_param_caps(false);
                     }
@@ -2078,6 +2077,7 @@ where
                 }
             }
         }
+        Ok(())
     }
 }
 
@@ -2193,18 +2193,14 @@ impl<VatId> ResultsHook for Results<VatId> {
         let Some(ref mut inner) = self.inner else {
             unreachable!();
         };
-        inner.ensure_initialized(size_hint);
+        inner.ensure_initialized(size_hint)?;
         match inner.variant {
             Some(ResultsVariant::Transferred(_)) => {
                 Err(Error::failed("tail results transferred".into()))
             }
             None => unreachable!(),
             Some(ResultsVariant::Rpc(ref mut message, ref mut cap_table)) => {
-                let root: message::Builder = message.get_body()?.get_as()?;
-                let message::Return(ret) = root.which()? else {
-                    unreachable!();
-                };
-                let return_::Results(payload) = ret?.which()? else {
+                let return_::Results(payload) = message.get_return()?.which()? else {
                     unreachable!()
                 };
                 let mut content = payload?.get_content();
@@ -2421,7 +2417,7 @@ impl ResultsDone {
                 Err(e)
             }
             Ok(mut results_inner) => {
-                results_inner.ensure_initialized(None);
+                results_inner.ensure_initialized(None)?;
                 let connection_state = results_inner.connection_state.clone();
                 let variant = results_inner.variant.take();
                 let answer_id = results_inner.answer_id;
@@ -2473,10 +2469,7 @@ impl ResultsDone {
                             (false, Ok(())) => {
                                 let mut fds = OutgoingFds::default();
                                 let exports = {
-                                    let root: message::Builder = message.get_body()?.get_as()?;
-                                    let message::Return(Ok(mut ret)) = root.which()? else {
-                                        unreachable!()
-                                    };
+                                    let mut ret = message.get_return()?;
                                     // Join retains downstream responses; callee-allocated
                                     // answer IDs also require explicit Finish before reuse.
                                     let requires_finish = connection_state

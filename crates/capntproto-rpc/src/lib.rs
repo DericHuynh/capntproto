@@ -228,6 +228,19 @@ pub trait OutgoingMessage {
         }
     }
 
+    /// Borrow an existing Return. Unrestricted body access must invalidate any
+    /// cached selection, just as it does for Call envelopes.
+    fn get_return(&mut self) -> capnp::Result<crate::rpc_capnp::return_::Builder<'_>> {
+        match self
+            .get_body()?
+            .get_as::<crate::rpc_capnp::message::Builder<'_>>()?
+            .which()?
+        {
+            crate::rpc_capnp::message::Return(returned) => returned,
+            _ => Err(Error::failed("response does not contain Return".into())),
+        }
+    }
+
     /// Set Call metadata without exporting a temporary builder across the
     /// transport boundary. Existing parameters and question ID are preserved.
     fn set_call_header(
@@ -462,6 +475,19 @@ pub trait Connection<VatId> {
     ) -> Result<Box<dyn OutgoingMessage>, Error> {
         let mut message = self.new_outgoing_message(first_segment_word_size);
         message.init_call()?;
+        Ok(message)
+    }
+
+    /// Allocate an initialized Return envelope with independent mutable storage.
+    fn new_outgoing_return(
+        &mut self,
+        first_segment_word_size: u32,
+    ) -> Result<Box<dyn OutgoingMessage>, Error> {
+        let mut message = self.new_outgoing_message(first_segment_word_size);
+        message
+            .get_body()?
+            .init_as::<crate::rpc_capnp::message::Builder>()
+            .init_return();
         Ok(message)
     }
 

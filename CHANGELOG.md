@@ -1,5 +1,16 @@
 # 0.1.0 developer preview (unpublished)
 
+- Reuse Return envelopes in the legacy and portable drivers, preserving segmented
+  payloads without rebuilding their pointer graphs. Keep reader limits,
+  capability validation, cancellation and retry ownership intact; batch empty
+  maintenance slots within the caller's existing polling budget. Local ordinary
+  full-LTO profiles reduce legacy server instructions 4.3% and portable server
+  instructions 10.6%. Portable small-call latency is about 1.13× C++ and 1.15×
+  legacy; the 1.00× target remains unmet. Add header-mutation, segment-limit and
+  publication regressions. Repair Kani import fixtures for pending-release
+  accounting, report proof-build failures with their diagnostic log paths, and
+  budget CI for the complete proof and fault-control campaign.
+
 - Extend the two-droplet workflow suite with validated 256 KiB, 1 MiB and 4 MiB
   echoes across legacy/portable RPC, C++, gRPC and WebSockets. Bound the larger
   workflow messages at 8 MiB, including framing, without changing the small-call
