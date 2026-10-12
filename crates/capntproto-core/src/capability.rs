@@ -213,6 +213,7 @@ where
             hook,
         }
     }
+    #[inline(always)]
     pub fn get(&self) -> crate::Result<Results::Reader<'_>> {
         self.hook.get()?.get_as()
     }
@@ -252,6 +253,7 @@ where
         }
     }
 
+    #[inline(always)]
     pub fn get(&mut self) -> Params::Builder<'_> {
         self.hook.get().get_as().unwrap()
     }
@@ -322,6 +324,7 @@ where
         Ok(self)
     }
 
+    #[inline(always)]
     pub fn get(&mut self) -> Params::Builder<'_> {
         self.hook.get().get_as().unwrap()
     }
@@ -346,6 +349,7 @@ impl<T> Params<T> {
             hook,
         }
     }
+    #[inline(always)]
     pub fn get(&self) -> crate::Result<T::Reader<'_>>
     where
         T: Owned,
@@ -380,6 +384,7 @@ where
         }
     }
 
+    #[inline(always)]
     pub fn get(&mut self) -> T::Builder<'_> {
         self.get_with_size_hint(None)
     }

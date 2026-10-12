@@ -69,7 +69,7 @@ pub(super) fn fence<VatId>(
     let registry = state.registry.upgrade()?;
     let (network, context) = {
         let registry = registry.borrow();
-        if registry.closing {
+        if registry.is_closing() {
             return None;
         }
         (
@@ -98,7 +98,8 @@ pub(super) fn fence<VatId>(
             let brand = cap.get_brand();
             let ptr = cap.get_ptr();
             let native = registry.upgrade().is_some_and(|registry| {
-                registry.borrow().states.values().any(|state| {
+                let states = registry.borrow().states();
+                states.iter().any(|state| {
                     brand == state.get_brand() && Client::from_ptr(ptr, state).is_some()
                 })
             });
@@ -145,7 +146,7 @@ pub(super) fn await_answer<VatId>(
     };
     let registration = crate::pry!(registration);
     let answer = setup(
-        Promise::from_future(receiver.map_err(crate::canceled_to_error)),
+        Promise::from_future(receiver.map_err(|_| Error::failed("oneshot was canceled".into()))),
         deadline(state),
     );
     Promise::from_future(async move {
@@ -331,7 +332,7 @@ pub(super) fn receive_call<VatId>(
         .registry
         .upgrade()
         .ok_or_else(|| Error::disconnected("RPC system ended".into()))?;
-    if registry.borrow().closing {
+    if registry.borrow().is_closing() {
         return Err(Error::disconnected("RPC system is closing".into()));
     }
     let destination = crate::RpcSystem::get_connection_state(
@@ -339,7 +340,7 @@ pub(super) fn receive_call<VatId>(
         origin.bootstrap.clone(),
         connection,
         origin.system_tasks.clone(),
-    );
+    )?;
     if !supported(&destination) {
         return Err(Error::unimplemented(
             "destination cannot adopt answers".into(),

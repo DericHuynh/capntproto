@@ -5,7 +5,8 @@ CONSTANTS Fault, ErrorAt
 \* route writer watcher. Gates model write/flush/close readiness. ErrorAt picks
 \* no error (0), write (1), flush (2), or close (3) failure.
 \* Phase: writing=0, flushing=1, closing=2, awaiting disconnect=3, done=4,
-\* canceled=5. Fence: pending=0, success=1, IO error=2, driver canceled=3.
+\* canceled=5. Queue marker and output fence: pending=0, success=1,
+\* IO error=2, driver canceled=3. The queue observer excludes physical close.
 \* This model stops at local output closure, not an authenticated peer receipt.
 VARIABLES writeGate, flushGate, closeGate, phase, wrote, flushed, closed,
           marker, fence, draining, stopped, disconnected, cause, first,
@@ -38,7 +39,7 @@ PollWorker ==
           /\ wrote'=(IF ~abort /\ phase=0 /\ writeGate=1 /\ ErrorAt#1 THEN 1 ELSE wrote)
           /\ flushed'=(IF ~abort /\ pw=1 /\ flushGate=1 /\ ErrorAt#2 THEN 1 ELSE flushed)
           /\ closed'=(IF ~abort /\ pc>=3 THEN 1 ELSE closed)
-          /\ marker'=(IF marker#0 THEN marker ELSE IF abort THEN 2
+          /\ marker'=(IF marker#0 THEN marker ELSE IF abort THEN 3
                        ELSE IF pf>=2 THEN (IF ErrorAt\in {1,2} THEN 2 ELSE 1) ELSE 0)
           /\ fence'=(IF abort THEN (IF fence=0 THEN 3 ELSE fence) ELSE out)
           /\ cause'=(IF report THEN 1 ELSE cause)
@@ -61,7 +62,7 @@ Spec == Init /\ [][Next]_vars
 FairSpec == Spec /\ WF_vars(PollWorker)
 TypeOK == /\ \A x\in {writeGate,flushGate,closeGate,wrote,flushed,closed,draining,
                        stopped,disconnected,canceledPoll}: x\in 0..1
-          /\ phase\in 0..5 /\ marker\in 0..2 /\ fence\in 0..3
+          /\ phase\in 0..5 /\ marker\in 0..3 /\ fence\in 0..3
           /\ cause\in 0..2 /\ first\in 0..2 /\ event\in 0..7
 MarkerFence == marker=1 => wrote=1 /\ flushed=1
 OutputPublication == fence\in {1,2} => closed=1

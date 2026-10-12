@@ -78,6 +78,151 @@ fn assert_data(message: &Message, size: usize, value: u8) {
     );
 }
 
+#[test]
+fn borrowed_frames_preserve_fragmentation_ownership_and_receive_mode_switches() {
+    for size in [0, 16, 8192] {
+        for chunk in [1, 7, usize::MAX] {
+            let first = data(size, 11);
+            let second = data(32, 23);
+            let input = source([first.clone(), second.clone(), first.clone()].concat());
+            input.0.borrow_mut().available = 1;
+            input.0.borrow_mut().closed = false;
+            input.0.borrow_mut().chunk = chunk;
+            let mut reader =
+                BufferedRead::with_buffer_size(input.clone(), Default::default(), 256).unwrap();
+            let mut cx = Context::from_waker(std::task::Waker::noop());
+            assert!(reader.poll_borrowed_frame(&mut cx).is_pending());
+            reader.finish_borrowed_frame(); // An unfinished poll retains its prefix.
+            let available = input.0.borrow().bytes.len();
+            input.0.borrow_mut().available = available;
+            input.0.borrow_mut().closed = true;
+            let Poll::Ready(Ok(Some(bytes))) = reader.poll_borrowed_frame(&mut cx) else {
+                panic!("complete first frame");
+            };
+            assert_eq!(bytes, first);
+            let address = bytes.as_ptr();
+            let calls = input.0.borrow().calls;
+            assert_eq!(reader.consumed_bytes(), first.len() as u64);
+            assert!(reader.has_outstanding_short_lived_message());
+            assert!(matches!(
+                reader.poll_read_short_lived_message(&mut cx),
+                Poll::Ready(Err(_))
+            ));
+            let Poll::Ready(Ok(Some(bytes))) = reader.poll_borrowed_frame(&mut cx) else {
+                panic!("retain first frame");
+            };
+            assert_eq!(bytes.as_ptr(), address);
+            assert_eq!(bytes, first);
+            assert_eq!(input.0.borrow().calls, calls);
+            reader.finish_borrowed_frame();
+            assert!(!reader.has_outstanding_short_lived_message());
+
+            let message = read(&mut reader, true).unwrap().unwrap();
+            assert_data(&message, 32, 23);
+            assert!(matches!(
+                reader.poll_borrowed_frame(&mut cx),
+                Poll::Ready(Err(_))
+            ));
+            drop(message);
+            let Poll::Ready(Ok(Some(bytes))) = reader.poll_borrowed_frame(&mut cx) else {
+                panic!("read third frame after dropping shared message");
+            };
+            assert_eq!(bytes, first);
+            reader.finish_borrowed_frame();
+            assert_eq!(
+                reader.consumed_bytes(),
+                (2 * first.len() + second.len()) as u64
+            );
+            assert!(matches!(
+                reader.poll_borrowed_frame(&mut cx),
+                Poll::Ready(Ok(None))
+            ));
+            let calls = input.0.borrow().calls;
+            assert!(read(&mut reader, false).unwrap().is_none());
+            assert_eq!(input.0.borrow().calls, calls);
+        }
+    }
+}
+
+#[test]
+fn borrowed_frame_errors_are_sticky_and_preserve_reader_limits() {
+    for size in [16, 8192] {
+        let frame = data(size, 17);
+        for end in [1, 7, frame.len() - 1] {
+            let input = source(frame[..end].to_vec());
+            let mut reader =
+                BufferedRead::with_buffer_size(input.clone(), Default::default(), 256).unwrap();
+            let mut cx = Context::from_waker(std::task::Waker::noop());
+            assert!(matches!(
+                reader.poll_borrowed_frame(&mut cx),
+                Poll::Ready(Err(_))
+            ));
+            reader.finish_borrowed_frame();
+            let calls = input.0.borrow().calls;
+            assert!(matches!(
+                reader.poll_borrowed_frame(&mut cx),
+                Poll::Ready(Err(_))
+            ));
+            assert!(read(&mut reader, false).is_err());
+            assert_eq!(input.0.borrow().calls, calls);
+        }
+    }
+    let mut options = capnp::message::ReaderOptions::new();
+    options.traversal_limit_in_words(Some(1));
+    let mut reader = BufferedRead::new(source(data(16, 3)), options);
+    let mut cx = Context::from_waker(std::task::Waker::noop());
+    assert!(matches!(
+        reader.poll_borrowed_frame(&mut cx),
+        Poll::Ready(Err(_))
+    ));
+}
+
+#[test]
+fn reusable_poller_preserves_fragmented_frames_overlap_errors_and_sticky_eof() {
+    for size in [0, 16, 8192] {
+        for chunk in [1, 7, usize::MAX] {
+            let first = data(size, 11);
+            let second = data(32, 23);
+            let input = source([first.clone(), second.clone()].concat());
+            input.0.borrow_mut().available = 1;
+            input.0.borrow_mut().closed = false;
+            input.0.borrow_mut().chunk = chunk;
+            let mut reader =
+                BufferedRead::with_buffer_size(input.clone(), Default::default(), 256).unwrap();
+            let mut cx = Context::from_waker(std::task::Waker::noop());
+            assert!(reader.poll_read_short_lived_message(&mut cx).is_pending());
+            input.0.borrow_mut().available = first.len() + second.len();
+            input.0.borrow_mut().closed = true;
+            for (bytes, value) in [(&first, 11), (&second, 23)] {
+                let Poll::Ready(Ok(Some(message))) = reader.poll_read_short_lived_message(&mut cx)
+                else {
+                    panic!()
+                };
+                assert_eq!(message.get_segments().framed_bytes(), bytes);
+                if message.get_segments().is_shared_buffer() {
+                    assert!(matches!(
+                        reader.poll_read_short_lived_message(&mut cx),
+                        Poll::Ready(Err(_))
+                    ));
+                }
+                let actual = message.get_root::<capnp::data::Reader>().unwrap();
+                assert!(actual.iter().all(|byte| *byte == value));
+                drop(message);
+            }
+            assert!(matches!(
+                reader.poll_read_short_lived_message(&mut cx),
+                Poll::Ready(Ok(None))
+            ));
+            let calls = input.0.borrow().calls;
+            assert!(matches!(
+                reader.poll_read_short_lived_message(&mut cx),
+                Poll::Ready(Ok(None))
+            ));
+            assert_eq!(input.0.borrow().calls, calls);
+        }
+    }
+}
+
 proptest::proptest! {
     #[test]
     fn fragmented_segment_tables_match_the_independent_sync_decoder(

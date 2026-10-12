@@ -11,15 +11,16 @@ use std::{
 const VERSION: &str = "cargo-mutants 27.1.0";
 const FILES: &[&str] = &[
     "src/authority.rs",
-    "src/semantics/handoff.rs",
+    "crates/capntproto-rpc-engine/src/handoff.rs",
     "src/semantics/stream.rs",
 ];
 const SELECTION: &[&str] = &[
+    "-p", "capntproto", "-p", "capntproto-rpc-engine",
     "--lib",
     "--test",
     "authority",
     "-E",
-    "not (test(replay_tlc_) | test(unix_rpc::))",
+    "not (test(replay_tlc_) | test(unix_rpc::)) & (not package(capntproto-rpc-engine) | test(handoff::))",
 ];
 
 fn selected_tests(output: &str) -> BTreeSet<String> {
@@ -31,7 +32,7 @@ fn selected_tests(output: &str) -> BTreeSet<String> {
         "embargo_and_replay",
         "native_stream_gate_enforces_roles_and_terminal_preface_failure",
         "revocation_preserves_phase_and_allows_only_pending_cleanup",
-        "semantics::handoff::tests::enqueue_reserves_drain_capacity_before_reporting_success",
+        "handoff::tests::enqueue_reserves_drain_capacity_before_reporting_success",
     ] {
         assert!(
             tests.contains(required),
@@ -96,6 +97,10 @@ fn authority_and_transition_mutations() {
             "--in-place",
             "--package",
             "capntproto",
+            "--package",
+            "capntproto-rpc-engine",
+            "--test-package",
+            "capntproto,capntproto-rpc-engine",
             "--baseline",
             "run",
             "--build-timeout",
@@ -111,7 +116,7 @@ fn authority_and_transition_mutations() {
             "--cargo-arg=--test=authority",
             "--cargo-arg=--message-format=libtest-json-plus",
             "--cargo-arg=-E",
-            "--cargo-arg=not (test(replay_tlc_) | test(unix_rpc::))",
+            "--cargo-arg=not (test(replay_tlc_) | test(unix_rpc::)) & (not package(capntproto-rpc-engine) | test(handoff::))",
             "--output",
         ])
         .arg(directory.join("results"));
@@ -304,7 +309,16 @@ fn authority_and_transition_coverage() {
     run(
         command("cargo")
             .env("CARGO_LLVM_COV_TARGET_DIR", &target)
-            .args(["llvm-cov", "report", "--json", "--output-path"])
+            .args([
+                "llvm-cov",
+                "report",
+                "-p",
+                "capntproto",
+                "-p",
+                "capntproto-rpc-engine",
+                "--json",
+                "--output-path",
+            ])
             .arg(&export),
         &log("export"),
         0,
@@ -313,7 +327,16 @@ fn authority_and_transition_coverage() {
     run(
         command("cargo")
             .env("CARGO_LLVM_COV_TARGET_DIR", &target)
-            .args(["llvm-cov", "report", "--html", "--output-dir"])
+            .args([
+                "llvm-cov",
+                "report",
+                "-p",
+                "capntproto",
+                "-p",
+                "capntproto-rpc-engine",
+                "--html",
+                "--output-dir",
+            ])
             .arg(directory.join("html")),
         &log("html"),
         0,

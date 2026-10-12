@@ -5,6 +5,12 @@
 //! `init` rejects occupied pointers. Recursive copies stage in the destination
 //! arena before publication. Allocation uses the underlying `message::Allocator`
 //! contract (which does not represent recoverable allocation failure).
+//!
+//! Borrowed data views and in-place edits are available without `alloc` or
+//! `std`. Owned messages, staged replacements, orphan transfers, native value
+//! conversion and capability hooks require `alloc`. Legacy allocator-backed
+//! builders can panic on exhaustion. [`crate::message::FixedBuilder`] instead
+//! exposes bounded struct/list editors with fallible growth and no heap fallback.
 use crate::private::layout::{
     self, ElementSize, ListBuilder, ListReader, PointerBuilder, PointerReader, StructBuilder,
     StructReader, StructSize,
@@ -13,15 +19,51 @@ use crate::{Error, ErrorKind, Result, Word};
 use core::marker::PhantomData;
 
 pub mod diagnostics;
+mod fixed;
+mod wire;
+pub use fixed::{
+    FixedElement, FixedEnum, FixedField, FixedGroup, FixedList, FixedSchema, FixedStruct,
+    FixedType, GroupDescriptor, ScalarDescriptor, VoidDescriptor,
+};
+pub use wire::WireCapability;
+#[cfg(feature = "alloc")]
 pub mod native;
+#[cfg(feature = "alloc")]
 mod owners;
 use diagnostics::Location;
+#[cfg(feature = "alloc")]
 pub use owners::{CapabilityTable, FrozenMessage, Message, MessageReader, MessageView};
+#[cfg(feature = "alloc")]
+mod staged;
+#[cfg(feature = "alloc")]
+pub use staged::*;
+#[cfg(feature = "alloc")]
+mod calls;
+#[cfg(feature = "alloc")]
+pub use calls::*;
+
+// Evaluate this in the target runtime, not in the host generator or the schema
+// consumer's feature namespace. Both target profiles use identical bindings.
+#[doc(hidden)]
+#[cfg(feature = "alloc")]
+#[macro_export]
+macro_rules! __capntproto_field_api_alloc {
+    ($($item:item)*) => { $($item)* };
+}
+#[doc(hidden)]
+#[cfg(not(feature = "alloc"))]
+#[macro_export]
+macro_rules! __capntproto_field_api_alloc {
+    ($($item:item)*) => {};
+}
+#[doc(hidden)]
+pub use crate::__capntproto_field_api_alloc as alloc_only;
 
 mod sealed {
     pub trait Mode {}
     pub trait State {}
     pub trait Native {}
+    #[cfg(feature = "alloc")]
     pub trait Bytes {}
 }
 /// Sealed storage representations; write views cannot be cloned.
@@ -164,6 +206,7 @@ impl<'a, S: Schema> GroupField<'a, S> {
         self.raw.into()
     }
 }
+#[cfg(feature = "alloc")]
 impl<S: GroupSchema> GroupField<'_, S> {
     /// Build a default-valued group in detached storage, then select and replace
     /// the whole arm on success. Errors and callback unwinding preserve the old
@@ -484,6 +527,7 @@ impl<'a, K: PointerType> PointerField<'a, K> {
         self.slot.pointer().clear();
         self.slot.commit();
     }
+    #[cfg(feature = "alloc")]
     fn initialize(mut self, n: usize, vacant: bool) -> Result<K::Mut<'a>> {
         let location = self.location;
         location.run(|| {
@@ -517,7 +561,10 @@ pub enum Entry<'a, K: PointerType> {
     Vacant(VacantField<'a, K>),
     Occupied(OccupiedField<'a, K>),
 }
-pub struct VacantField<'a, K: PointerType>(PointerField<'a, K>);
+pub struct VacantField<'a, K: PointerType>(
+    // Retain the exclusive borrow even when allocating initialization is absent.
+    #[cfg_attr(not(feature = "alloc"), allow(dead_code))] PointerField<'a, K>,
+);
 /// Retains the exclusive field borrow and an acquired editor. Undersized
 /// layouts retain the slot for an explicit upgrade instead of allocating here.
 pub struct OccupiedField<'a, K: PointerType> {
@@ -560,6 +607,7 @@ impl<'a, K: PointerType> OccupiedField<'a, K> {
         .map_err(|e| self.location.error(e))
     }
 }
+#[cfg(feature = "alloc")]
 impl<'a, S: Schema> PointerField<'a, Struct<S>> {
     pub fn init(self) -> Result<S::Mut<'a>> {
         self.initialize(0, true)
@@ -580,11 +628,13 @@ impl<'a, S: Schema> PointerField<'a, Struct<S>> {
         })
     }
 }
+#[cfg(feature = "alloc")]
 impl<'a, S: Schema> VacantField<'a, Struct<S>> {
     pub fn init(self) -> Result<S::Mut<'a>> {
         self.0.initialize(0, false)
     }
 }
+#[cfg(feature = "alloc")]
 impl<'a> PointerField<'a, Text> {
     pub fn copy_from(mut self, value: &str) -> Result<()> {
         let location = self.location;
@@ -621,6 +671,7 @@ impl<'a> PointerField<'a, Text> {
         })
     }
 }
+#[cfg(feature = "alloc")]
 impl<'a> PointerField<'a, Data> {
     pub fn init(self, n: usize) -> Result<&'a mut [u8]> {
         self.initialize(n, true)
@@ -652,386 +703,19 @@ impl<'a> PointerField<'a, Data> {
         })
     }
 }
+#[cfg(feature = "alloc")]
 impl<'a> VacantField<'a, Data> {
     pub fn init(self, n: usize) -> Result<&'a mut [u8]> {
         self.0.initialize(n, false)
     }
 }
-/// Message-scoped identity token; it grants no access to the arena by itself.
-pub struct Orphanage<'message> {
-    identity: layout::ArenaIdentity,
-    lifetime: PhantomData<&'message mut ()>,
-}
-/// Unique ownership of an unreachable encoded object in a borrowed message.
-/// Drop releases capabilities. Arena bytes remain allocated until compaction
-/// or message destruction, just like other replaced objects.
-pub struct Orphan<'message, K: PointerType> {
-    object: layout::DetachedObject,
-    lifetime: PhantomData<&'message mut ()>,
-    kind: PhantomData<K>,
-}
-/// Failed adoption returns ownership to the caller and leaves the field intact.
-pub struct AdoptError<T> {
-    pub error: Error,
-    pub orphan: T,
-}
-impl<T> core::fmt::Debug for AdoptError<T> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("AdoptError")
-            .field("error", &self.error)
-            .finish_non_exhaustive()
-    }
-}
-impl<K: PointerType> PointerField<'_, K> {
-    pub fn take<'message>(
-        mut self,
-        orphanage: &Orphanage<'message>,
-    ) -> Result<Option<Orphan<'message, K>>> {
-        let location = self.location;
-        location.run(|| {
-            self.slot.check_arm()?;
-            let mut pointer = self.slot.pointer();
-            if pointer.identity() != orphanage.identity {
-                return Err(Error::from_kind(ErrorKind::WrongArena));
-            }
-            if pointer.is_null() {
-                return Ok(None);
-            }
-            K::read(pointer.as_reader(), None)?;
-            Ok(Some(Orphan {
-                object: pointer.disown()?,
-                lifetime: PhantomData,
-                kind: PhantomData,
-            }))
-        })
-    }
-    pub fn adopt<'message>(
-        mut self,
-        mut orphan: Orphan<'message, K>,
-    ) -> core::result::Result<(), AdoptError<Orphan<'message, K>>> {
-        if let Err(error) = self.slot.pointer().adopt(&mut orphan.object) {
-            return Err(AdoptError {
-                error: self.location.error(error),
-                orphan,
-            });
-        }
-        self.slot.commit();
-        Ok(())
-    }
-}
-
-type InvariantBrand<'brand> = PhantomData<fn(&'brand ()) -> &'brand ()>;
-/// Controlled constructor: fields and brands cannot be constructed externally.
-pub struct EditSession<'message, 'brand, S: Schema> {
-    raw: StructBuilder<'message>,
-    schema: PhantomData<S>,
-    brand: InvariantBrand<'brand>,
-}
-pub struct ScopedRoot<'message, 'brand, S: Schema>(EditSession<'message, 'brand, S>);
-pub struct ScopedOrphanage<'message, 'brand> {
-    inner: Orphanage<'message>,
-    brand: InvariantBrand<'brand>,
-}
-pub struct ScopedOrphan<'message, 'brand, K: PointerType> {
-    inner: Orphan<'message, K>,
-    brand: InvariantBrand<'brand>,
-}
-pub struct ScopedField<'a, 'brand, K: PointerType> {
-    inner: PointerField<'a, K>,
-    brand: InvariantBrand<'brand>,
-}
-impl<'message, 'brand, S: Schema> EditSession<'message, 'brand, S> {
-    pub fn into_parts(
-        self,
-    ) -> (
-        ScopedRoot<'message, 'brand, S>,
-        ScopedOrphanage<'message, 'brand>,
-    ) {
-        let orphanage = ScopedOrphanage {
-            inner: Orphanage {
-                identity: self.raw.identity(),
-                lifetime: PhantomData,
-            },
-            brand: PhantomData,
-        };
-        (ScopedRoot(self), orphanage)
-    }
-}
-impl<'brand, S: Schema> ScopedRoot<'_, 'brand, S> {
-    pub fn read(&self) -> S::Ref<'_> {
-        self.0.raw.as_reader().into()
-    }
-    pub fn edit(&mut self) -> S::Mut<'_> {
-        self.0.raw.reborrow().into()
-    }
-    /// Pointer descriptors retain union selection metadata as well as defaults.
-    pub fn field<K: PointerType>(&mut self, descriptor: Field<S, K>) -> ScopedField<'_, 'brand, K> {
-        ScopedField {
-            inner: PointerField::new(
-                self.0.raw.reborrow(),
-                descriptor.offset,
-                descriptor.default,
-                descriptor.selection,
-            )
-            .with_location(descriptor.location()),
-            brand: PhantomData,
-        }
-    }
-}
-impl<'a, 'brand, K: PointerType> ScopedField<'a, 'brand, K> {
-    pub fn take<'message>(
-        self,
-        orphanage: &ScopedOrphanage<'message, 'brand>,
-    ) -> Result<Option<ScopedOrphan<'message, 'brand, K>>> {
-        Ok(self
-            .inner
-            .take(&orphanage.inner)?
-            .map(|inner| ScopedOrphan {
-                inner,
-                brand: PhantomData,
-            }))
-    }
-    pub fn adopt<'message>(
-        self,
-        orphan: ScopedOrphan<'message, 'brand, K>,
-    ) -> core::result::Result<(), AdoptError<ScopedOrphan<'message, 'brand, K>>> {
-        self.inner.adopt(orphan.inner).map_err(|e| AdoptError {
-            error: e.error,
-            orphan: ScopedOrphan {
-                inner: e.orphan,
-                brand: PhantomData,
-            },
-        })
-    }
-    pub fn edit(self) -> Result<K::Mut<'a>> {
-        self.inner.edit()
-    }
-    pub fn ensure(self) -> Result<K::Mut<'a>> {
-        self.inner.ensure()
-    }
-    pub fn clear(self) {
-        self.inner.clear();
-    }
-}
-
-/// A staged replacement that cannot be published before its construction step
-/// succeeds. Forgetting it leaves the old field intact and all bytes initialized.
-pub struct Draft;
-pub struct Ready;
-impl sealed::State for Draft {}
-impl sealed::State for Ready {}
-pub struct Pending<'a, K: PointerType, State: MessageState = Draft> {
-    field: Option<PointerField<'a, K>>,
-    candidate: Option<layout::DetachedSlot>,
-    length: usize,
-    filled: usize,
-    state: PhantomData<State>,
-}
-impl<K: PointerType, State: MessageState> Drop for Pending<'_, K, State> {
-    fn drop(&mut self) {
-        if let (Some(field), Some(candidate)) = (&mut self.field, &self.candidate) {
-            field.slot.pointer().detached(candidate).clear();
-        }
-    }
-}
-impl<K: PointerType, State: MessageState> Pending<'_, K, State> {
-    /// Inspect the still-published value while holding the replacement borrow.
-    pub fn previous(&mut self) -> Result<K::Ref<'_>> {
-        let location = self.field.as_ref().unwrap().location;
-        location.run(|| {
-            let field = self.field.as_mut().unwrap();
-            field.slot.check_arm()?;
-            K::read(field.slot.pointer().into_reader(), field.default)
-        })
-    }
-}
-impl<'a, K: PointerType> Pending<'a, K, Draft> {
-    fn new(mut field: PointerField<'a, K>, n: usize, vacant: bool) -> Result<Self> {
-        let location = field.location;
-        location.run(|| {
-            if vacant && !field.slot.pointer().is_null() {
-                return Err(Error::from_kind(ErrorKind::AlreadyPresent));
-            }
-            let candidate = field.slot.pointer().allocate_detached();
-            let mut result = Self {
-                field: Some(field),
-                candidate: Some(candidate),
-                length: n,
-                filled: 0,
-                state: PhantomData,
-            };
-            K::init(
-                result
-                    .field
-                    .as_mut()
-                    .unwrap()
-                    .slot
-                    .pointer()
-                    .detached(result.candidate.as_ref().unwrap()),
-                n,
-            )?;
-            Ok(result)
-        })
-    }
-    fn into_ready(mut self) -> Result<Pending<'a, K, Ready>> {
-        let location = self.field.as_ref().unwrap().location;
-        location.run(|| {
-            let mut pointer = self.field.as_mut().unwrap().slot.pointer();
-            K::read(
-                pointer
-                    .detached(self.candidate.as_ref().unwrap())
-                    .as_reader(),
-                None,
-            )?;
-            Ok(Pending {
-                field: self.field.take(),
-                candidate: self.candidate.take(),
-                length: self.length,
-                filled: self.length,
-                state: PhantomData,
-            })
-        })
-    }
-    /// The callback cannot retain an editor. For text this also checks UTF-8.
-    /// Struct construction checks the root shape; descendant reads remain lazy.
-    pub fn fill_with(
-        mut self,
-        fill: impl for<'b> FnOnce(K::Mut<'b>) -> Result<()>,
-    ) -> Result<Pending<'a, K, Ready>> {
-        let location = self.field.as_ref().unwrap().location;
-        let mut pointer = self.field.as_mut().unwrap().slot.pointer();
-        location.run(|| fill(K::edit(pointer.detached(self.candidate.as_ref().unwrap()))?))?;
-        self.into_ready()
-    }
-}
-impl<K: PointerType> Pending<'_, K, Ready> {
-    pub fn commit(mut self) -> Result<()> {
-        let location = self.field.as_ref().unwrap().location;
-        location.run(|| {
-            let field = self.field.as_mut().unwrap();
-            field
-                .slot
-                .pointer()
-                .publish_detached(self.candidate.as_ref().unwrap())?;
-            field.slot.commit();
-            Ok(())
-        })
-    }
-}
-/// The sealed byte-oriented staging kinds: Data and Text.
-pub trait ByteKind: PointerType + sealed::Bytes {
-    #[doc(hidden)]
-    fn bytes<'a>(value: Self::Mut<'a>) -> &'a mut [u8];
-}
-impl sealed::Bytes for Data {}
-impl sealed::Bytes for Text {}
-impl ByteKind for Data {
-    fn bytes<'a>(value: Self::Mut<'a>) -> &'a mut [u8] {
-        value
-    }
-}
-impl ByteKind for Text {
-    fn bytes<'a>(value: Self::Mut<'a>) -> &'a mut [u8] {
-        value.as_bytes_mut()
-    }
-}
-impl<'a, K: ByteKind> Pending<'a, K, Draft> {
-    pub fn remaining(&self) -> usize {
-        self.length - self.filled
-    }
-    /// Append one complete chunk into final arena storage. Overlong chunks fail
-    /// before changing the candidate, and never change the published field.
-    pub fn write_chunk(&mut self, bytes: &[u8]) -> Result<()> {
-        let location = self.field.as_ref().unwrap().location;
-        location.run(|| {
-            if bytes.len() > self.remaining() {
-                return Err(Error::from_kind(ErrorKind::LengthOverflow));
-            }
-            let mut pointer = self.field.as_mut().unwrap().slot.pointer();
-            let target = K::bytes(K::edit(pointer.detached(self.candidate.as_ref().unwrap()))?);
-            target[self.filled..self.filled + bytes.len()].copy_from_slice(bytes);
-            self.filled += bytes.len();
-            Ok(())
-        })
-    }
-    pub fn finish(self) -> Result<Pending<'a, K, Ready>> {
-        if self.remaining() != 0 {
-            return Err(self
-                .field
-                .as_ref()
-                .unwrap()
-                .location
-                .error(Error::from_kind(ErrorKind::IncompleteFill)));
-        }
-        self.into_ready()
-    }
-    /// Fill only the remaining suffix after any already-written chunks.
-    pub fn read_exact_from(
-        mut self,
-        source: &mut impl crate::io::Read,
-    ) -> Result<Pending<'a, K, Ready>> {
-        let location = self.field.as_ref().unwrap().location;
-        location.run(|| {
-            let mut pointer = self.field.as_mut().unwrap().slot.pointer();
-            let target = K::bytes(K::edit(pointer.detached(self.candidate.as_ref().unwrap()))?);
-            source.read_exact(&mut target[self.filled..])
-        })?;
-        self.filled = self.length;
-        self.finish()
-    }
-}
-impl<'a> PointerField<'a, Data> {
-    pub fn stage_replace(self, n: usize) -> Result<Pending<'a, Data>> {
-        Pending::new(self, n, false)
-    }
-    pub fn init_with(self, n: usize, fill: impl FnOnce(&mut [u8]) -> Result<()>) -> Result<()> {
-        Pending::new(self, n, true)?.fill_with(fill)?.commit()
-    }
-    pub fn replace_with(self, n: usize, fill: impl FnOnce(&mut [u8]) -> Result<()>) -> Result<()> {
-        self.stage_replace(n)?.fill_with(fill)?.commit()
-    }
-}
-impl<'a> PointerField<'a, Text> {
-    pub fn stage_replace(self, n: usize) -> Result<Pending<'a, Text>> {
-        Pending::new(self, n, false)
-    }
-    pub fn init_with(
-        self,
-        n: usize,
-        fill: impl for<'b> FnOnce(crate::text::Builder<'b>) -> Result<()>,
-    ) -> Result<()> {
-        Pending::new(self, n, true)?.fill_with(fill)?.commit()
-    }
-    pub fn replace_with(
-        self,
-        n: usize,
-        fill: impl for<'b> FnOnce(crate::text::Builder<'b>) -> Result<()>,
-    ) -> Result<()> {
-        self.stage_replace(n)?.fill_with(fill)?.commit()
-    }
-}
-impl<'a, S: Schema> PointerField<'a, Struct<S>> {
-    pub fn stage_replace(self) -> Result<Pending<'a, Struct<S>>> {
-        Pending::new(self, 0, false)
-    }
-    pub fn init_with(self, fill: impl for<'b> FnOnce(S::Mut<'b>) -> Result<()>) -> Result<()> {
-        Pending::new(self, 0, true)?.fill_with(fill)?.commit()
-    }
-    pub fn replace_with(self, fill: impl for<'b> FnOnce(S::Mut<'b>) -> Result<()>) -> Result<()> {
-        self.stage_replace()?.fill_with(fill)?.commit()
-    }
-}
-impl<'a, E: Element> PointerField<'a, List<E>> {
-    pub fn stage_replace(self, n: usize) -> Result<Pending<'a, List<E>>> {
-        Pending::new(self, n, false)
-    }
-}
-
 /// Schema-specific descriptor. Its owner parameter prevents applying it to another schema.
 pub struct Field<S, K: PointerType> {
     schema: &'static str,
     offset: usize,
     default: Option<&'static [Word]>,
+    // The orphan editing session uses this when `alloc` is enabled.
+    #[cfg_attr(not(feature = "alloc"), allow(dead_code))]
     selection: Option<Selection>,
     pub name: &'static str,
     pub ordinal: u16,
@@ -1044,6 +728,15 @@ impl<S, K: PointerType> Clone for Field<S, K> {
     }
 }
 impl<S, K: PointerType> Field<S, K> {
+    pub(crate) fn pipeline_offset(
+        self,
+    ) -> core::result::Result<u16, crate::wire_capability::path::Error> {
+        use crate::wire_capability::path::Error;
+        if self.selection.is_some() {
+            return Err(Error::UnionSelection);
+        }
+        u16::try_from(self.offset).map_err(|_| Error::PointerOffset)
+    }
     #[doc(hidden)]
     pub const fn new(
         offset: usize,
@@ -1270,6 +963,7 @@ impl<E: Element> PointerType for List<E> {
         })
     }
 }
+#[cfg(feature = "alloc")]
 impl<'a, E: Element> PointerField<'a, List<E>> {
     pub fn init(self, n: usize) -> Result<ListMut<'a, E>> {
         self.initialize(n, true)
@@ -1312,6 +1006,7 @@ impl<'a, E: Element> PointerField<'a, List<E>> {
             .commit()
     }
 }
+#[cfg(feature = "alloc")]
 impl<'a, E: Element> VacantField<'a, List<E>> {
     pub fn init(self, n: usize) -> Result<ListMut<'a, E>> {
         self.0.initialize(n, false)
@@ -1405,7 +1100,10 @@ impl<T: crate::traits::Owned> Generic<T> {
             let crate::schema_capnp::node::Struct(s) =
                 crate::schema::StructSchema::new(raw).get_proto().which()?
             else {
+                #[cfg(feature = "alloc")]
                 return Err(Error::failed("struct metadata has another kind".into()));
+                #[cfg(not(feature = "alloc"))]
+                return Err(Error::from_kind(ErrorKind::Failed));
             };
             Ok(StructSize {
                 data: s.get_data_word_count(),
@@ -1438,20 +1136,27 @@ impl<T: crate::traits::Owned> Generic<T> {
                 reader.get_data(None)?;
             }
             TypeVariant::Capability | TypeVariant::Interface(_) => {
+                #[cfg(feature = "alloc")]
                 reader.get_capability()?;
+                #[cfg(not(feature = "alloc"))]
+                return Err(Error::from_kind(ErrorKind::Unimplemented));
             }
             TypeVariant::AnyPointer => {
                 reader.get_pointer_type()?;
             }
             _ => {
+                #[cfg(feature = "alloc")]
                 return Err(Error::failed(
                     "generic pointer metadata is not a pointer type".into(),
-                ))
+                ));
+                #[cfg(not(feature = "alloc"))]
+                return Err(Error::from_kind(ErrorKind::Failed));
             }
         }
         Ok(())
     }
 }
+#[cfg(feature = "alloc")]
 impl<T: crate::traits::Owned> PointerField<'_, Generic<T>> {
     pub fn copy_from(mut self, value: T::Reader<'_>) -> Result<()> {
         let location = self.location;
@@ -1464,7 +1169,9 @@ impl<T: crate::traits::Owned> PointerField<'_, Generic<T>> {
         })
     }
 }
+#[cfg(feature = "alloc")]
 pub struct Capability<C: crate::capability::FromClientHook>(PhantomData<C>);
+#[cfg(feature = "alloc")]
 impl<C: crate::capability::FromClientHook> PointerType for Capability<C> {
     type Ref<'a> = C;
     type Mut<'a> = C;
@@ -1489,6 +1196,7 @@ impl<C: crate::capability::FromClientHook> PointerType for Capability<C> {
         Self::edit(p)
     }
 }
+#[cfg(feature = "alloc")]
 impl<C: crate::capability::FromClientHook> PointerField<'_, Capability<C>> {
     pub fn copy_from(mut self, value: C) -> Result<()> {
         let location = self.location;
@@ -1514,6 +1222,7 @@ impl<T: crate::traits::Owned> Element for Generic<T> {
         PointerField::element(raw.get_pointer_element(i), i)
     }
 }
+#[cfg(feature = "alloc")]
 impl<C: crate::capability::FromClientHook> Element for Capability<C> {
     type Ref<'a> = Result<C>;
     type Mut<'a> = PointerField<'a, Self>;
@@ -1568,139 +1277,5 @@ impl<'a, E: NativeElement> ListRef<'a, E> {
         // SAFETY: sealed native types accept all bits; actual physical stride,
         // alignment and endianness match E, and the reader already checked bounds.
         Some(unsafe { core::slice::from_raw_parts(bytes.as_ptr().cast::<E>(), self.len()) })
-    }
-}
-
-/// Unsent RPC request with the generated field-operation parameter editor.
-#[must_use = "an unsent request does nothing; send or forward it"]
-pub struct Request<P: Schema, R: Schema + crate::traits::Pipelined> {
-    hook: alloc::boxed::Box<dyn crate::private::capability::RequestHook>,
-    marker: PhantomData<(P, R)>,
-}
-impl<P: Schema, R: Schema + crate::traits::Pipelined> Request<P, R> {
-    /// Fill parameters before sending; failure drops the unsent request.
-    pub fn with_params(
-        mut self,
-        fill: impl for<'a> FnOnce(P::Mut<'a>) -> Result<()>,
-    ) -> Result<Self> {
-        fill(self.edit())?;
-        Ok(self)
-    }
-    #[doc(hidden)]
-    pub fn new(hook: alloc::boxed::Box<dyn crate::private::capability::RequestHook>) -> Self {
-        Self {
-            hook,
-            marker: PhantomData,
-        }
-    }
-    pub fn edit(&mut self) -> P::Mut<'_> {
-        self.hook
-            .get()
-            .builder
-            .get_struct(P::SIZE, None)
-            .expect("typed request root")
-            .into()
-    }
-    pub fn copy_from(&mut self, params: P::Ref<'_>) -> Result<()> {
-        use crate::traits::IntoInternalStructReader;
-        self.hook
-            .get()
-            .builder
-            .stage(|mut pointer| pointer.set_struct(&params.into_internal_struct_reader(), false))
-    }
-    /// Send and await completion, discarding response data while preserving errors
-    /// and the method's cancellation policy. The result pipeline is dropped at send.
-    pub fn send_ignoring_result(self) -> crate::capability::Promise<(), Error> {
-        crate::capability::Request::<crate::any_pointer::Owned, crate::any_pointer::Owned>::new(
-            self.hook,
-        )
-        .send_ignoring_result()
-    }
-}
-impl<P: Schema, R: Schema + crate::traits::Pipelined + 'static> Request<P, R>
-where
-    R::Pipeline: crate::capability::FromTypelessPipeline,
-{
-    pub fn send(self) -> PendingCall<R> {
-        let sent = self.hook.send();
-        PendingCall {
-            response: crate::capability::Promise::from_future(async move {
-                Ok(Response {
-                    hook: sent.promise.await?.hook,
-                    marker: PhantomData,
-                })
-            }),
-            pipeline: crate::capability::FromTypelessPipeline::new(sent.pipeline),
-        }
-    }
-    pub fn send_for_pipeline(self) -> R::Pipeline {
-        crate::capability::FromTypelessPipeline::new(self.hook.send_for_pipeline())
-    }
-}
-/// Owns the response hook and lends results without allocating a native graph.
-pub struct Response<R: Schema> {
-    hook: alloc::boxed::Box<dyn crate::private::capability::ResponseHook>,
-    marker: PhantomData<R>,
-}
-impl<R: Schema> Response<R> {
-    pub fn read(&self) -> Result<R::Ref<'_>> {
-        Ok(self.hook.get()?.reader.get_struct(None)?.into())
-    }
-}
-/// Awaitable response plus a pipeline available before awaiting. Derived
-/// capability clients retain their own hooks. This does not make local RPC Send.
-#[must_use]
-pub struct PendingCall<R: Schema + crate::traits::Pipelined> {
-    response: crate::capability::Promise<Response<R>, Error>,
-    pub pipeline: R::Pipeline,
-}
-// No field is exposed through a pinned projection; the only polled field is
-// Promise, which is Unpin independently of its output type.
-impl<R: Schema + crate::traits::Pipelined> Unpin for PendingCall<R> {}
-impl<R: Schema + crate::traits::Pipelined> core::future::Future for PendingCall<R> {
-    type Output = Result<Response<R>>;
-    fn poll(
-        self: core::pin::Pin<&mut Self>,
-        cx: &mut core::task::Context<'_>,
-    ) -> core::task::Poll<Self::Output> {
-        core::pin::Pin::new(&mut self.get_mut().response).poll(cx)
-    }
-}
-impl<R: Schema + crate::traits::Pipelined> PendingCall<R> {
-    pub fn into_parts(self) -> (crate::capability::Promise<Response<R>, Error>, R::Pipeline) {
-        (self.response, self.pipeline)
-    }
-}
-#[must_use = "an unsent streaming request does nothing; send it"]
-pub struct StreamingRequest<P: Schema> {
-    hook: alloc::boxed::Box<dyn crate::private::capability::RequestHook>,
-    marker: PhantomData<P>,
-}
-impl<P: Schema> StreamingRequest<P> {
-    /// Fill parameters before sending; failure drops the unsent request.
-    pub fn with_params(
-        mut self,
-        fill: impl for<'a> FnOnce(P::Mut<'a>) -> Result<()>,
-    ) -> Result<Self> {
-        fill(self.edit())?;
-        Ok(self)
-    }
-    #[doc(hidden)]
-    pub fn new(hook: alloc::boxed::Box<dyn crate::private::capability::RequestHook>) -> Self {
-        Self {
-            hook,
-            marker: PhantomData,
-        }
-    }
-    pub fn edit(&mut self) -> P::Mut<'_> {
-        self.hook
-            .get()
-            .builder
-            .get_struct(P::SIZE, None)
-            .expect("typed request root")
-            .into()
-    }
-    pub fn send(self) -> crate::capability::Promise<(), Error> {
-        self.hook.send_streaming()
     }
 }

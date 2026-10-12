@@ -26,6 +26,9 @@ package = "capntproto-core"
 version = "0.25.0"
 path = "../capntproto-core"
 
+[dependencies.capntproto-rpc-engine]
+path = "../capntproto-rpc-engine"
+
 [dependencies.futures-channel]
 version = "0.3.0"
 features = ["std"]
@@ -52,5 +55,8 @@ default-features = false
 
 [dev-dependencies.quickcheck]
 version = "1"
+
+[dev-dependencies.allocation-counter]
+version = "=0.8.1"
 
 [lints]

@@ -270,7 +270,7 @@ fn batch_metrics_exclude_active_io_and_restart_age_after_idle() {
 #[test]
 fn shutdown_rejects_all_clones_before_poll_and_drain_error_is_preserved() {
     let mut h = Harness::new();
-    let mut clone = h.sender.clone();
+    let clone = h.sender.clone();
     h.send(8);
     let mut terminated = Box::pin(
         h.sender
@@ -326,7 +326,7 @@ fn last_sender_drop_drains_and_observer_does_not_keep_driver_alive() {
         flush: true,
         ..Default::default()
     }));
-    let (mut sender, driver) = capnp_futures::write_queue(Writer(output.clone()));
+    let (sender, driver) = capnp_futures::write_queue(Writer(output.clone()));
     let observer = sender.outgoing_queue();
     let receipt = sender.send(message(8));
     drop(sender);
@@ -638,7 +638,7 @@ fn cloned_senders_wake_driver_and_preserve_each_threads_fifo() {
         let (sender, driver) = capnp_futures::write_queue(&mut writer);
         scope.spawn(move || futures::executor::block_on(driver).unwrap());
         for thread in 0u32..4 {
-            let mut sender = sender.clone();
+            let sender = sender.clone();
             scope.spawn(move || {
                 for sequence in 0u32..64 {
                     let mut msg = message(8);

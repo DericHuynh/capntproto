@@ -15,12 +15,19 @@ use std::{collections::BTreeSet, fmt::Write as _, fs, path::Path};
 
 const BLUE: [u8; 3] = [0, 114, 178];
 const GRAY: [u8; 3] = [148, 163, 184];
-const COLORS: [[u8; 3]; 4] = [BLUE, [230, 159, 0], [0, 158, 115], [204, 121, 167]];
-const LABELS: [&str; 4] = [
-    "Capntproto / Native",
+const COLORS: [[u8; 3]; 5] = [
+    BLUE,
+    [230, 159, 0],
+    [0, 158, 115],
+    [204, 121, 167],
+    [213, 94, 0],
+];
+const LABELS: [&str; 5] = [
+    "Capntproto TCP",
     "Cap'n Proto C++",
     "gRPC (tonic)",
     "WebSockets",
+    "Capntproto QUIC/TLS",
 ];
 const FILES: [&str; 11] = [
     "latency-p50",
@@ -90,7 +97,10 @@ pub(crate) fn instructions(rows: &[crate::instructions::Row]) -> Chart {
     }
 }
 
-pub(crate) fn performance(rows: &[Value]) -> Result<Vec<Chart>> {
+pub(crate) fn performance(rows: &[Value], driver: &str) -> Result<Vec<Chart>> {
+    if !["legacy", "portable"].contains(&driver) {
+        return Err("missing or unknown measured TCP driver".into());
+    }
     let mut charts = vec![];
     for (name, title, field, unit, divisor, relative) in [
         (
@@ -127,7 +137,7 @@ pub(crate) fn performance(rows: &[Value]) -> Result<Vec<Chart>> {
         ),
         (
             "latency-difference",
-            "Median latency difference from Capntproto",
+            "Median latency difference from C++ Cap'n Proto",
             "p50_ns",
             "Percent difference - negative is less latency",
             1.0,
@@ -135,7 +145,7 @@ pub(crate) fn performance(rows: &[Value]) -> Result<Vec<Chart>> {
         ),
         (
             "request-rate-difference",
-            "Request rate difference from Capntproto",
+            "Request rate difference from C++ Cap'n Proto",
             "sequential_requests_per_second",
             "Percent difference - positive is more requests",
             1.0,
@@ -157,7 +167,7 @@ pub(crate) fn performance(rows: &[Value]) -> Result<Vec<Chart>> {
                 }
                 Ok(value)
             };
-            let reference = cell("native")?;
+            let reference = cell("capnp-cpp")?;
             let mut bars = vec![];
             for (index, protocol) in benchmark::PROTOCOLS.iter().enumerate() {
                 let value = cell(protocol)?;
@@ -170,7 +180,11 @@ pub(crate) fn performance(rows: &[Value]) -> Result<Vec<Chart>> {
                     return Err("chart conversion overflow".into());
                 }
                 bars.push(Bar {
-                    label: LABELS[index].into(),
+                    label: if index == 0 {
+                        format!("{} ({driver})", LABELS[index])
+                    } else {
+                        LABELS[index].into()
+                    },
                     value: Some(value),
                     color: COLORS[index],
                 });
@@ -181,7 +195,9 @@ pub(crate) fn performance(rows: &[Value]) -> Result<Vec<Chart>> {
             });
         }
         charts.push(Chart { name: name.into(), title: title.into(), unit: unit.into(),
-            note: "Each panel uses a linear axis including zero. Native is encrypted; other baselines are plaintext.".into(),
+            note: format!("Measured TCP driver: {driver}. TCP p50 gate: {} ({}). Relative bars use C++ Cap'n Proto as the reference; each panel includes zero. Native QUIC is encrypted; other baselines are plaintext.",
+                if crate::benchmark::tcp_acceptance_for_driver(rows, driver).is_ok() { "passed" } else { "failed or incomplete" },
+                if driver == "portable" { "1.5x at 0/64/1024 bytes" } else { "1.15x at every payload" }),
             coverage: false, panels });
     }
     Ok(charts)
@@ -332,14 +348,36 @@ fn render(directory: &Path, spec: &Chart, source: &str) -> Result<()> {
     };
     let root = SVGBackend::new(&path, (1280, height)).into_drawing_area();
     root.fill(&WHITE)?;
-    let (header, rest) = root.split_vertically(80);
+    let note_font = ("sans-serif", 14).into_text_style(&root);
+    let mut lines = vec![String::new()];
+    for word in spec.note.split_whitespace() {
+        let line = lines.last_mut().unwrap();
+        let candidate = if line.is_empty() {
+            word.into()
+        } else {
+            format!("{line} {word}")
+        };
+        if !line.is_empty() && root.estimate_text_size(&candidate, &note_font)?.0 > 1232 {
+            lines.push(word.into());
+        } else {
+            *line = candidate;
+        }
+    }
+    let header_height = 60 + lines.len() as u32 * 20;
+    let (header, rest) = root.split_vertically(header_height);
     header.draw(&Text::new(
         spec.title.as_str(),
         (24, 30),
         ("sans-serif", 24).into_font().style(FontStyle::Bold),
     ))?;
-    header.draw(&Text::new(spec.note.as_str(), (24, 61), ("sans-serif", 14)))?;
-    let (plots, footer) = rest.split_vertically(height - 112);
+    for (index, line) in lines.iter().enumerate() {
+        header.draw(&Text::new(
+            line.as_str(),
+            (24, 61 + index as i32 * 20),
+            &note_font,
+        ))?;
+    }
+    let (plots, footer) = rest.split_vertically(height - header_height - 32);
     if spec.panels.len() == 1 {
         draw_panel(&plots, spec, &spec.panels[0])?;
     } else {
@@ -378,7 +416,7 @@ pub(crate) fn append(
         directory.join("data.json"),
         serde_json::to_vec_pretty(&serde_json::json!({"source_id":source,"charts":charts}))?,
     )?;
-    readme.push_str("Figures below use the validated report data above. [Exact plotted values](charts/data.json) and standalone SVGs are included in this artifact. Performance panels compare protocols at the same payload size; axes include zero and are scaled separately per panel. Percentage differences use `(comparison / Capntproto - 1) × 100`. The coverage figures compare the current run with its reviewed baseline; unmapped counters remain N/A.\n\n");
+    readme.push_str("Figures below use the validated report data above. [Exact plotted values](charts/data.json) and standalone SVGs are included in this artifact. Performance panels compare protocols at the same payload size; axes include zero and are scaled separately per panel. Percentage differences use `(comparison / C++ Cap’n Proto - 1) × 100`. The coverage figures compare the current run with its reviewed baseline; unmapped counters remain N/A.\n\n");
     for chart in charts {
         render(&directory, chart, source)?;
         writeln!(
@@ -401,8 +439,8 @@ mod tests {
         let mut rows = vec![];
         for bytes in benchmark::PAYLOADS {
             for (index, protocol) in benchmark::PROTOCOLS.iter().enumerate() {
-                let latency =
-                    [10_000.0, 20_000.0, 5_000.0, 15_000.0][index] * (1.0 + bytes as f64 / 1024.0);
+                let latency = [10_000.0, 20_000.0, 5_000.0, 15_000.0, 25_000.0][index]
+                    * (1.0 + bytes as f64 / 1024.0);
                 rows.push(json!({"protocol":protocol, "payload_bytes":bytes, "p50_ns":latency,
                     "p95_ns":latency * 1.5, "p99_ns":latency * 2.0, "sequential_requests_per_second":1e9 / latency}));
             }
@@ -462,22 +500,27 @@ mod tests {
     #[test]
     fn charts_preserve_units_directions_and_missing_counters() {
         let rows = rows();
-        let charts = performance(&rows).unwrap();
+        let charts = performance(&rows, "legacy").unwrap();
         assert_eq!(charts.len(), 6);
         assert_eq!(charts[0].panels[0].bars[0].value, Some(10.0)); // ns -> microseconds
         assert_eq!(charts[3].panels[0].bars[0].value, Some(100_000.0));
-        assert_eq!(charts[4].panels[0].bars[0].value, Some(0.0));
-        assert_eq!(charts[4].panels[0].bars[1].value, Some(100.0)); // twice the latency
-        assert_eq!(charts[4].panels[0].bars[2].value, Some(-50.0));
-        assert_eq!(charts[5].panels[0].bars[1].value, Some(-50.0)); // half the request rate
-        assert_eq!(charts[5].panels[0].bars[2].value, Some(100.0));
-        assert!(performance(&rows[..rows.len() - 1]).is_err());
+        assert_eq!(charts[4].panels[0].bars[0].value, Some(-50.0));
+        assert_eq!(charts[4].panels[0].bars[1].value, Some(0.0)); // C++ reference
+        assert_eq!(charts[4].panels[0].bars[2].value, Some(-75.0));
+        assert_eq!(charts[5].panels[0].bars[1].value, Some(0.0));
+        assert_eq!(charts[5].panels[0].bars[2].value, Some(300.0));
+        assert!(charts[0].panels[0].bars[0].label.contains("legacy"));
+        assert!(performance(&rows, "unknown").is_err());
+        assert!(performance(&rows, "portable").unwrap()[0].panels[0].bars[0]
+            .label
+            .contains("portable"));
+        assert!(performance(&rows[..rows.len() - 1], "legacy").is_err());
         let mut duplicates = rows.clone();
         duplicates.push(rows[0].clone());
-        assert!(performance(&duplicates).is_err());
+        assert!(performance(&duplicates, "legacy").is_err());
         let mut invalid = rows;
         invalid[0]["p50_ns"] = json!(0);
-        assert!(performance(&invalid).is_err());
+        assert!(performance(&invalid, "legacy").is_err());
         let summary = summary();
         let charts = coverage(&summary, &summary);
         assert_eq!(charts[2].panels[0].bars[0].value, Some(0.0));
@@ -486,7 +529,7 @@ mod tests {
     #[test]
     fn renders_suite_and_retains_na_instead_of_zero() {
         let temp = tempfile::tempdir().unwrap();
-        let mut charts = performance(&rows()).unwrap();
+        let mut charts = performance(&rows(), "legacy").unwrap();
         let mut baseline = summary();
         for group in [
             "cpp-reference",

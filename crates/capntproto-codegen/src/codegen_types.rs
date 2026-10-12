@@ -32,6 +32,8 @@ pub enum Leaf {
     Client,
     Server,
     ServerDispatch,
+    ContextServer,
+    ContextServerDispatch,
     Pipeline,
     GetType,
 }
@@ -45,6 +47,8 @@ impl ::std::fmt::Display for Leaf {
             Self::Client => "Client".to_string(),
             Self::Server => "Server".to_string(),
             Self::ServerDispatch => "ServerDispatch".to_string(),
+            Self::ContextServer => "ContextServer".to_string(),
+            Self::ContextServerDispatch => "ContextServerDispatch".to_string(),
             Self::Pipeline => "Pipeline".to_string(),
             Self::GetType => "get_type".to_string(),
         };
@@ -61,6 +65,8 @@ impl Leaf {
             Self::Client => "Client",
             Self::Server => "Server",
             Self::ServerDispatch => "ServerDispatch",
+            Self::ContextServer => "ContextServer",
+            Self::ContextServerDispatch => "ContextServerDispatch",
             Self::GetType => "get_type",
             Self::Pipeline => "Pipeline",
         }
@@ -73,6 +79,8 @@ impl Leaf {
             | &Self::Client
             | &Self::Server
             | &Self::ServerDispatch
+            | &Self::ContextServer
+            | &Self::ContextServerDispatch
             | &Self::GetType
             | &Self::Pipeline => false,
         }
@@ -196,6 +204,24 @@ impl RustTypeInfo for type_::Reader<'_> {
                 module,
                 &ctx.get_qualified_module(st.get_type_id()),
             ),
+            type_::Interface(interface) if ctx.bounded_rpc && !matches!(module, Leaf::Owned) => {
+                let owned = do_branding(
+                    ctx,
+                    interface.get_type_id(),
+                    interface.get_brand()?,
+                    Leaf::Owned,
+                    &ctx.get_qualified_module(interface.get_type_id()),
+                )?;
+                match module {
+                    Leaf::Builder(_) => Ok(fmt!(ctx, "{capnp}::any_pointer::{module}")),
+                    Leaf::Reader(lifetime) => Ok(fmt!(
+                        ctx,
+                        "{capnp}::wire_capability::Reader<{lifetime}, {owned}>"
+                    )),
+                    Leaf::Client => Ok(fmt!(ctx, "{capnp}::wire_capability::Reader<'a, {owned}>")),
+                    _ => Ok(fmt!(ctx, "{capnp}::any_pointer::Pipeline")),
+                }
+            }
             type_::Interface(interface) => do_branding(
                 ctx,
                 interface.get_type_id(),
@@ -233,6 +259,14 @@ impl RustTypeInfo for type_::Reader<'_> {
                     type_::Text(()) => Ok(fmt!(ctx, "{capnp}::text_list::{module}")),
                     type_::Data(()) => Ok(fmt!(ctx, "{capnp}::data_list::{module}")),
                     type_::Interface(_) => {
+                        if ctx.bounded_rpc {
+                            let inner = element_type.type_string(ctx, Leaf::Owned)?;
+                            return Ok(fmt!(
+                                ctx,
+                                "{capnp}::list_list::{}<{lifetime_comma}{inner}>",
+                                module.bare_name()
+                            ));
+                        }
                         let inner = element_type.type_string(ctx, Leaf::Client)?;
                         Ok(fmt!(
                             ctx,
@@ -405,6 +439,10 @@ pub fn do_branding(
         Leaf::Reader(lt) => accumulator.push(vec![lt.to_string()]),
         Leaf::Builder(lt) => accumulator.push(vec![lt.to_string()]),
         Leaf::ServerDispatch => accumulator.push(vec!["_T".to_string()]), // HACK
+        Leaf::ContextServer => accumulator.push(vec!["_Context".to_string()]),
+        Leaf::ContextServerDispatch => {
+            accumulator.push(vec!["_T".to_string(), "_Context".to_string()])
+        }
         _ => (),
     }
 
@@ -417,7 +455,10 @@ pub fn do_branding(
         "".to_string()
     };
 
-    let maybe_colons = if leaf == Leaf::ServerDispatch || leaf == Leaf::GetType {
+    let maybe_colons = if matches!(
+        leaf,
+        Leaf::ServerDispatch | Leaf::ContextServerDispatch | Leaf::GetType
+    ) {
         "::"
     } else {
         ""

@@ -325,6 +325,10 @@ fn renderer_has_labels_is_deterministic_and_removes_stale_charts() {
     .unwrap();
     render::render(template, &history, dir.path()).unwrap();
     let svg = std::fs::read_to_string(dir.path().join("docs/reports/latency-p50.svg")).unwrap();
+    assert_eq!(
+        svg,
+        std::fs::read_to_string(dir.path().join("docs/reports/benchmarks.svg")).unwrap()
+    );
     let document = roxmltree::Document::parse(&svg).unwrap();
     let visible = document
         .descendants()
@@ -348,6 +352,9 @@ fn renderer_has_labels_is_deterministic_and_removes_stale_charts() {
     assert_eq!(before, std::fs::read(path).unwrap());
     render::render(template, &render::empty_history(), dir.path()).unwrap();
     assert!(!dir.path().join("docs/reports/latency-p50.svg").exists());
+    let preview = std::fs::read_to_string(dir.path().join("docs/reports/benchmarks.svg")).unwrap();
+    assert!(preview.contains("No validated latency measurement"));
+    assert!(!preview.contains("gRPC"));
 }
 #[test]
 fn frozen_history_remains_readable() {

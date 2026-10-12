@@ -1,0 +1,73 @@
+//! Exercise identical network scenarios through the migration driver.
+#![allow(dead_code)]
+use super::*;
+pub enum System<V: 'static = u8> {
+    Hosted(capnp_rpc::RpcSystem<V>),
+    Portable(capnp_rpc::portable::RpcSystem<V>),
+}
+impl<V: 'static> System<V> {
+    pub fn new(
+        portable: bool,
+        network: Box<dyn VatNetwork<V>>,
+        bootstrap: Option<capnp::capability::Client>,
+    ) -> Self {
+        if portable {
+            Self::Portable(
+                capnp_rpc::portable::RpcSystem::new(
+                    network,
+                    bootstrap,
+                    capnp_rpc::portable::Options::bounded(
+                        16.try_into().unwrap(),
+                        256.try_into().unwrap(),
+                        (512 * 1024).try_into().unwrap(),
+                        (8 * 1024 * 1024).try_into().unwrap(),
+                    )
+                    .unwrap(),
+                )
+                .unwrap(),
+            )
+        } else {
+            Self::Hosted(capnp_rpc::RpcSystem::new(network, bootstrap))
+        }
+    }
+    pub fn with_factory(
+        portable: bool,
+        network: Box<dyn VatNetwork<V>>,
+        local_id: V,
+        factory: Rc<dyn capnp_rpc::BootstrapFactory<V>>,
+    ) -> Self {
+        if portable {
+            Self::Portable(
+                capnp_rpc::portable::RpcSystem::new_with_bootstrap_factory(
+                    network,
+                    local_id,
+                    factory,
+                    capnp_rpc::portable::Options::bounded(
+                        16.try_into().unwrap(),
+                        256.try_into().unwrap(),
+                        (512 * 1024).try_into().unwrap(),
+                        (8 * 1024 * 1024).try_into().unwrap(),
+                    )
+                    .unwrap(),
+                )
+                .unwrap(),
+            )
+        } else {
+            Self::Hosted(capnp_rpc::RpcSystem::new_with_bootstrap_factory(
+                network, local_id, factory,
+            ))
+        }
+    }
+    pub fn bootstrap<T: capnp::capability::FromClientHook>(&mut self, id: V) -> T {
+        match self {
+            Self::Hosted(s) => s.bootstrap(id),
+            Self::Portable(s) => s.bootstrap(id),
+        }
+    }
+    pub async fn run(self) -> capnp::Result<()> {
+        match self {
+            Self::Hosted(s) => s.await,
+            Self::Portable(s) => s.await,
+        }
+    }
+}

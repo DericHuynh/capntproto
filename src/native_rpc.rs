@@ -95,8 +95,8 @@ pub trait Connector {
 /// Explicit transport choice for an authorized directory route.
 #[derive(Clone, Copy, Debug, Default)]
 pub enum Backend {
-    Tcp,
     #[default]
+    Tcp,
     Quiche,
     /// Reserved wire selection. Upstream Quiche currently rejects QUIC v2.
     QuicheV2,
@@ -135,7 +135,7 @@ impl DirectoryConnector {
             peers: RefCell::new(HashMap::new()),
         }
     }
-    /// Configure or replace a permitted destination. Replacing a directory entry
+    /// Configure a TCP/mTLS destination. Replacing a directory entry
     /// affects subsequent dials, not existing authenticated sessions.
     pub fn insert(
         &mut self,
@@ -144,7 +144,7 @@ impl DirectoryConnector {
         psk: Option<[u8; 32]>,
         context: &[u8],
     ) -> capnp::Result<()> {
-        self.insert_with_backend(peer, address, psk, context, Backend::Quiche)
+        self.insert_with_backend(peer, address, psk, context, Backend::default())
     }
     /// Select TCP/TLS or quiche for subsequent dials of this route.
     pub fn insert_with_backend(
@@ -877,6 +877,9 @@ impl Connection<VatId> for Route {
     }
     fn new_outgoing_message(&mut self, n: u32) -> Box<dyn OutgoingMessage> {
         self.0.wire.borrow_mut().new_outgoing_message(n)
+    }
+    fn send_frame(&mut self, frame: capnp_rpc::OutgoingFrame) -> Promise<(), Error> {
+        self.0.wire.borrow_mut().send_frame(frame)
     }
     fn receive_incoming_message(&mut self) -> Promise<Option<Box<dyn IncomingMessage>>, Error> {
         self.0.wire.borrow_mut().receive_incoming_message()

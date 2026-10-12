@@ -281,6 +281,46 @@ fn adaptive_handles_first_ack_zero_intervals_and_extreme_message_sizes() {
 }
 
 #[test]
+fn clock_fault_fails_waiters_and_still_drains_outstanding_calls() {
+    let mut h = Harness::new(true, 8);
+    h.time.set(Duration::from_secs(10));
+    h.send(1);
+    h.send(1);
+    assert_eq!(h.outcomes, [1, 2]);
+    h.time.set(Duration::from_secs(9));
+    h.ack(0, false); // Inject a regressing application clock at completion.
+    assert_eq!(h.outcomes, [1, 3]);
+    h.wait();
+    h.drop_controller();
+    assert!(!h.drained);
+    h.time.set(Duration::from_secs(11));
+    h.ack(1, false);
+    assert!(h.drained);
+    assert!(h.done.get());
+}
+
+#[test]
+fn clock_fault_during_send_does_not_discard_its_acknowledgement() {
+    let mut h = Harness::new(true, 8);
+    h.time.set(Duration::from_secs(10));
+    h.send(1);
+    h.time.set(Duration::from_secs(9));
+    h.send(1);
+    assert_eq!(h.outcomes, [1, 3]);
+    h.wait();
+    h.drop_controller();
+    h.time.set(Duration::from_secs(11));
+    h.ack(0, false);
+    assert!(
+        !h.drained,
+        "the rejected send still owns a pending acknowledgement"
+    );
+    h.ack(1, false);
+    assert!(h.drained);
+    assert!(h.done.get());
+}
+
+#[test]
 fn two_party_policy_selection_survives_connection_handoff() {
     use capnp_rpc::{rpc_twoparty_capnp::Side, VatNetwork};
     let mut net = capnp_rpc::twoparty::VatNetwork::new(

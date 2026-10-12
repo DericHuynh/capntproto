@@ -33,12 +33,27 @@ pub(super) fn send_once(
     bytes: &[u8],
     fds: &[Rc<OwnedFd>],
 ) -> io::Result<usize> {
-    if fds.len() > 253 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "too many outgoing descriptors",
-        ));
+    send_resources(socket, bytes, fds.iter())
+}
+
+pub(super) fn send_resources<'a>(
+    socket: &UnixStream,
+    bytes: &[u8],
+    fds: impl IntoIterator<Item = &'a Rc<OwnedFd>>,
+) -> io::Result<usize> {
+    // Derive the length from observed elements, never from an iterator's size
+    // hint: that hint is not an unsafe-code contract. Keep descriptor owners
+    // borrowed through the synchronous syscall.
+    let mut raw = [0; 253];
+    let mut count = 0;
+    for fd in fds {
+        let slot = raw.get_mut(count).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "too many outgoing descriptors")
+        })?;
+        *slot = fd.as_raw_fd();
+        count += 1;
     }
+    let fds = &raw[..count];
     let mut control = control_buffer(fds.len());
     let mut iov = libc::iovec {
         iov_base: bytes.as_ptr().cast_mut().cast(),
@@ -52,16 +67,14 @@ pub(super) fn send_once(
         msg.msg_iovlen = 1;
         if !fds.is_empty() {
             msg.msg_control = control.as_mut_ptr().cast();
-            msg.msg_controllen =
-                libc::CMSG_SPACE((fds.len() * mem::size_of::<libc::c_int>()) as u32) as _;
+            msg.msg_controllen = libc::CMSG_SPACE(mem::size_of_val(fds) as u32) as _;
             let header = libc::CMSG_FIRSTHDR(&msg);
             (*header).cmsg_level = libc::SOL_SOCKET;
             (*header).cmsg_type = libc::SCM_RIGHTS;
-            (*header).cmsg_len =
-                libc::CMSG_LEN((fds.len() * mem::size_of::<libc::c_int>()) as u32) as _;
+            (*header).cmsg_len = libc::CMSG_LEN(mem::size_of_val(fds) as u32) as _;
             let data = libc::CMSG_DATA(header).cast::<libc::c_int>();
             for (i, fd) in fds.iter().enumerate() {
-                data.add(i).write(fd.as_raw_fd());
+                data.add(i).write(*fd);
             }
         }
         let count = libc::sendmsg(socket.as_raw_fd(), &msg, SEND_FLAGS);

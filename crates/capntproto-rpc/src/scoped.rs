@@ -1,0 +1,992 @@
+//! Owned `ClientHook` endpoints for a caller-polled, scoped capability graph.
+//!
+//! This is the hosted migration boundary, not a second network runtime. Hooks
+//! contain only owned inbox identities; branded graph clients never escape the
+//! scope. The caller admits each [`Call`] to its engine driver in receive order,
+//! publishes pipelines through its results hook, and completes or cancels it.
+//! Calls, parameter capabilities and result capabilities use the existing hook
+//! API. No executor, IO, clock or background task is created here.
+//!
+//! Pending graph promises retain their route until the caller observes graph
+//! progress with [`ClientHooks::collect`]. Network promise resolution, native tail
+//! transfer and Join still belong to the hosted runtime. Caller-supplied endpoint
+//! metadata preserves attached resources and hosted diagnostics;
+//! this bridge does not replace `RpcSystem` yet.
+#![forbid(unsafe_code)]
+
+use capnp::{
+    any_pointer,
+    capability::{self, CallHints, Promise},
+    private::capability::{ClientHook, DebugInfo, ParamsHook, ResultsHook},
+    Error,
+};
+use capntproto_rpc_engine::{
+    clients::{dispatch, Capabilities, Client},
+    completion::{self, shared},
+};
+use futures::{future::Shared, FutureExt};
+use std::{
+    cell::{Cell, RefCell},
+    collections::VecDeque,
+    future::Future,
+    pin::Pin,
+    rc::{Rc, Weak},
+    task::{Context, Poll, Waker},
+};
+
+mod admission;
+pub(crate) mod response;
+mod shutdown;
+pub mod wire;
+
+/// Owned metadata projected from a scoped endpoint by its hosting adapter.
+/// This carries no capability authority. Introduction contacts must come from
+/// this endpoint's admitted descriptor and are authenticated by its network
+/// before redirecting calls. Descriptor ownership remains shared with the import.
+#[derive(Clone, Default)]
+pub struct EndpointMetadata {
+    pub failure: Option<Error>,
+    pub introduction: Option<Rc<capnp::message::Builder<capnp::message::HeapAllocator>>>,
+    #[cfg(unix)]
+    pub fd: Option<Rc<std::os::fd::OwnedFd>>,
+}
+
+type Shutdown = shutdown::Receiver;
+struct Inbox {
+    call_template:
+        std::cell::OnceCell<capntproto_rpc_wire::owned::connection::PreparedCallTemplate>,
+    message_pool: Option<capnp::message::SegmentPool>,
+    admission: Option<Rc<crate::admission::Admission>>,
+    joins: Option<wire::coordinator::multiparty::Handle>,
+    queue: RefCell<VecDeque<Box<Call>>>,
+    wake: RefCell<Option<Waker>>,
+    shutdown: Shutdown,
+    closed: Cell<bool>,
+    live_calls: Cell<usize>,
+    maximum_calls: usize,
+}
+impl Inbox {
+    fn notify(&self) {
+        let wake = self.wake.borrow_mut().take();
+        if let Some(wake) = wake {
+            wake.wake();
+        }
+    }
+    fn close(&self, error: Error) {
+        if self.closed.replace(true) {
+            return;
+        }
+        // Detach every callback-bearing owner before waking or destroying it.
+        let queue = std::mem::take(&mut *self.queue.borrow_mut());
+        self.shutdown.close(error);
+        drop(queue);
+        self.notify();
+    }
+}
+struct Endpoint {
+    introduction: RefCell<Option<Rc<capnp::message::Builder<capnp::message::HeapAllocator>>>>,
+    introduced: RefCell<Option<Rc<dyn ClientHook>>>,
+    remote: Cell<bool>,
+    inbox: Weak<Inbox>,
+    index: usize,
+    settled: Cell<bool>,
+    failure: RefCell<Option<Error>>,
+    resolution: Shared<shared::Receiver<capnp::Result<()>>>,
+    #[cfg(unix)]
+    fd: RefCell<Option<Rc<std::os::fd::OwnedFd>>>,
+}
+impl Drop for Endpoint {
+    fn drop(&mut self) {
+        if let Some(inbox) = self.inbox.upgrade() {
+            inbox.notify();
+        }
+    }
+}
+struct Entry<'id> {
+    endpoint: Weak<Endpoint>,
+    client: Client<'id>,
+    resolution: Option<shared::Sender<capnp::Result<()>>>,
+}
+
+/// Scoped graph ownership paired with ordinary owned generated clients.
+/// Limits cover exported routes and all queued/running calls, respectively.
+/// Drop notifications require no queue space. Call [`Self::collect`] while
+/// driving and [`Self::close`] before normal teardown; dropping the bridge is
+/// terminal disconnection and leaves graph reclamation to the enclosing scope.
+#[must_use = "drive calls and collect released endpoints, or close the bridge"]
+pub struct ClientHooks<'id> {
+    inbox: Rc<Inbox>,
+    entries: Vec<Option<Entry<'id>>>,
+    maximum_clients: usize,
+}
+impl<'id> ClientHooks<'id> {
+    pub(crate) fn with_joins(mut self, joins: wire::coordinator::multiparty::Handle) -> Self {
+        Rc::get_mut(&mut self.inbox)
+            .expect("unpublished hooks")
+            .joins = Some(joins);
+        self
+    }
+    pub fn new(maximum_clients: usize, maximum_calls: usize) -> Self {
+        Self {
+            inbox: Rc::new(Inbox {
+                call_template: std::cell::OnceCell::new(),
+                message_pool: None,
+                admission: None,
+                joins: None,
+                queue: RefCell::new(VecDeque::new()),
+                wake: RefCell::new(None),
+                shutdown: shutdown::Receiver::new(),
+                closed: Cell::new(false),
+                live_calls: Cell::new(0),
+                maximum_calls,
+            }),
+            entries: Vec::new(),
+            maximum_clients,
+        }
+    }
+    pub(crate) fn with_admission(mut self, admission: Rc<crate::admission::Admission>) -> Self {
+        Rc::get_mut(&mut self.inbox)
+            .expect("unpublished hook inbox")
+            .admission = Some(admission);
+        self
+    }
+    /// Reuse released application request/result segments. The supplied pool
+    /// bounds cached storage independently of live messages; retained readers
+    /// and builders keep exclusive ownership until their last owner drops.
+    /// Configure this before exporting clients or attaching the coordinator.
+    /// Panics if the hook inbox has already been shared.
+    pub(crate) fn with_message_pool(mut self, pool: capnp::message::SegmentPool) -> Self {
+        Rc::get_mut(&mut self.inbox)
+            .expect("unpublished hook inbox")
+            .message_pool = Some(pool);
+        self
+    }
+
+    /// Freeze the current advertised route, retaining it in this graph. No raw
+    /// wire ID, pointer, lifetime cast or user-provided hook brand is authority.
+    /// Repeated exports of the same route share one identity and one graph ref.
+    pub fn export_snapshot(
+        &mut self,
+        graph: &mut impl Capabilities<'id>,
+        client: &Client<'id>,
+    ) -> capnp::Result<capability::Client> {
+        let (client, pending) = graph
+            .snapshot_for_export(client)
+            .map_err(|e| Error::failed(e.to_string()))?;
+        self.export_retained(graph, client, pending)
+    }
+
+    /// Export a live application client, following imported/pipelined promise
+    /// resolution in this graph. Use `export_snapshot` only for an advertised
+    /// route that must stay frozen even when its original promise redirects.
+    pub fn export_client(
+        &mut self,
+        graph: &mut impl Capabilities<'id>,
+        client: &Client<'id>,
+    ) -> capnp::Result<capability::Client> {
+        self.export_client_with_metadata(graph, client, |_| EndpointMetadata::default())
+    }
+
+    /// Export and publish hosted diagnostics before any resolution waiter can
+    /// observe the endpoint. Use the same projection on subsequent collections.
+    pub fn export_client_with_metadata<G: Capabilities<'id>>(
+        &mut self,
+        graph: &mut G,
+        client: &Client<'id>,
+        mut metadata: impl FnMut(&G::Owner) -> EndpointMetadata,
+    ) -> capnp::Result<capability::Client> {
+        self.collect_with_metadata(graph, &mut metadata);
+        let pending = !graph
+            .is_settled(client)
+            .map_err(|e| Error::failed(e.to_string()))?;
+        let client = graph
+            .retain_key(client.key())
+            .map_err(|e| Error::failed(e.to_string()))?;
+        let exported = self.export_retained(graph, client, pending)?;
+        self.collect_with_metadata(graph, metadata);
+        Ok(exported)
+    }
+
+    fn export_retained(
+        &mut self,
+        graph: &mut impl Capabilities<'id>,
+        client: Client<'id>,
+        pending: bool,
+    ) -> capnp::Result<capability::Client> {
+        if self.inbox.closed.get() {
+            graph.release(client);
+            return Err(Error::disconnected(
+                "scoped ClientHook driver closed".into(),
+            ));
+        }
+        self.collect(graph);
+        for entry in self.entries.iter().flatten() {
+            if entry.client.key() == client.key() {
+                if let Some(endpoint) = entry.endpoint.upgrade() {
+                    graph.release(client);
+                    return Ok(capability::Client::new(Box::new(Hook(endpoint, None))));
+                }
+            }
+        }
+        let index = self
+            .entries
+            .iter()
+            .position(Option::is_none)
+            .unwrap_or(self.entries.len());
+        if index == self.entries.len() {
+            if index == self.maximum_clients || self.entries.try_reserve(1).is_err() {
+                graph.release(client);
+                return Err(Error::overloaded("scoped client capacity exhausted".into()));
+            }
+            self.entries.push(None);
+        }
+        let (resolution, resolved) = shared::channel();
+        let endpoint = Rc::new(Endpoint {
+            introduction: RefCell::default(),
+            introduced: RefCell::default(),
+            remote: Cell::new(matches!(
+                graph.inspect(&client),
+                Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
+                    location: capntproto_rpc_engine::clients::Location::Remote(_),
+                    ..
+                })
+            )),
+            inbox: Rc::downgrade(&self.inbox),
+            index,
+            settled: Cell::new(!pending),
+            failure: RefCell::new(match graph.inspect(&client) {
+                Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
+                    location: capntproto_rpc_engine::clients::Location::Broken,
+                    ..
+                }) => Some(Error::failed(
+                    "capability resolved to a broken endpoint".into(),
+                )),
+                _ => None,
+            }),
+            resolution: resolved.shared(),
+            #[cfg(unix)]
+            fd: RefCell::new(None),
+        });
+        self.entries[index] = Some(Entry {
+            endpoint: Rc::downgrade(&endpoint),
+            client,
+            resolution: pending.then_some(resolution),
+        });
+        Ok(capability::Client::new(Box::new(Hook(endpoint, None))))
+    }
+
+    /// Reclaim graph refs after the final hook, request and running call drops.
+    /// Publish promise readiness only after graph ordering barriers have opened.
+    /// A retained response/pipeline may still own hooks and deliberately keeps
+    /// those entries alive. No fallible release command is enqueued by Drop.
+    pub fn collect(&mut self, graph: &mut impl Capabilities<'id>) {
+        self.collect_with_metadata(graph, |_| EndpointMetadata::default());
+    }
+
+    /// Refresh owned metadata before publishing promise readiness. Call on each
+    /// driver turn, including already-settled routes: a later alias may deliver
+    /// an import's first descriptor. Reflected ordering barriers remain enforced.
+    pub fn collect_with_metadata<G: Capabilities<'id>>(
+        &mut self,
+        graph: &mut G,
+        mut metadata: impl FnMut(&G::Owner) -> EndpointMetadata,
+    ) {
+        self.collect_with_optional_metadata(graph, |owner| Some(metadata(owner)));
+    }
+
+    fn collect_with_optional_metadata<G: Capabilities<'id>>(
+        &mut self,
+        graph: &mut G,
+        mut metadata: impl FnMut(&G::Owner) -> Option<EndpointMetadata>,
+    ) {
+        for slot in &mut self.entries {
+            if slot
+                .as_ref()
+                .is_some_and(|entry| entry.endpoint.strong_count() == 0)
+            {
+                graph.release(slot.take().unwrap().client);
+                continue;
+            }
+            if let Some(entry) = slot.as_ref() {
+                if let Some(endpoint) = entry.endpoint.upgrade() {
+                    let destination = graph.inspect(&entry.client);
+                    endpoint.remote.set(matches!(
+                        destination,
+                        Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
+                            location: capntproto_rpc_engine::clients::Location::Remote(_),
+                            ..
+                        })
+                    ));
+                    if let Some(metadata) =
+                        destination.ok().and_then(|destination| match destination {
+                            capntproto_rpc_engine::clients::Destination::Endpoint {
+                                owner, ..
+                            } => metadata(owner),
+                            _ => None,
+                        })
+                    {
+                        if metadata.introduction.is_some()
+                            && endpoint.introduction.borrow().is_none()
+                        {
+                            *endpoint.introduction.borrow_mut() = metadata.introduction;
+                        }
+                        if let Some(failure) = metadata.failure {
+                            *endpoint.failure.borrow_mut() = Some(failure);
+                        }
+                        #[cfg(unix)]
+                        if metadata.fd.is_some() && endpoint.fd.borrow().is_none() {
+                            *endpoint.fd.borrow_mut() = metadata.fd;
+                        }
+                    }
+                }
+            }
+            if let Some(entry) = slot.as_mut().filter(|entry| entry.resolution.is_some()) {
+                // Export inspection does not accept a call or mark the promise
+                // used. In particular, a reflected resolution remains pending
+                // until its original-route loopback has completed.
+                if let Ok(true) = graph.is_settled(&entry.client) {
+                    let result = match graph.inspect(&entry.client) {
+                        Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
+                            location: capntproto_rpc_engine::clients::Location::Broken,
+                            ..
+                        }) => Err(entry
+                            .endpoint
+                            .upgrade()
+                            .and_then(|endpoint| endpoint.failure.borrow().clone())
+                            .unwrap_or_else(|| {
+                                Error::failed("capability resolved to a broken endpoint".into())
+                            })),
+                        _ => Ok(()),
+                    };
+                    if let Some(endpoint) = entry.endpoint.upgrade() {
+                        *endpoint.failure.borrow_mut() = result.as_ref().err().cloned();
+                        endpoint.settled.set(true);
+                    }
+                    if let Some(sender) = entry.resolution.take() {
+                        let _ = sender.send(result);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Poll one owned call. Keep it on downstream capacity rejection before
+    /// polling another call, so admission preserves the original order.
+    /// The bridge has one consumer; the latest poll registers its wake.
+    pub(super) fn register_next(&self, waker: &Waker) {
+        if self
+            .inbox
+            .wake
+            .borrow()
+            .as_ref()
+            .is_some_and(|old| old.will_wake(waker))
+        {
+            return;
+        }
+        // Clone may call user code; do so before observing/registering state.
+        let wake = waker.clone();
+        let old = self.inbox.wake.replace(Some(wake));
+        drop(old);
+    }
+    pub fn poll_next(&mut self, cx: &mut Context<'_>) -> Poll<Option<Call>> {
+        self.poll_owned_next(cx).map(|call| call.map(|call| *call))
+    }
+    fn poll_owned_next(&mut self, cx: &mut Context<'_>) -> Poll<Option<Box<Call>>> {
+        self.register_next(cx.waker());
+        // Dropping canceled application owners can enqueue more work. Bound
+        // this poll to the observed queue, then schedule another turn if needed.
+        let budget = self.inbox.queue.borrow().len();
+        for _ in 0..budget {
+            let call = self.inbox.queue.borrow_mut().pop_front();
+            match call {
+                Some(call) if call.is_canceled() => drop(call),
+                Some(call) => return Poll::Ready(Some(call)),
+                None => break,
+            }
+        }
+        if self.inbox.closed.get() {
+            Poll::Ready(None)
+        } else {
+            let more = !self.inbox.queue.borrow().is_empty();
+            if more {
+                self.inbox.notify();
+            }
+            Poll::Pending
+        }
+    }
+
+    /// Recover the scoped authority for this call. The private Rc identity is
+    /// checked as well as the slot: another bridge or a recycled slot cannot
+    /// retarget a call. No branded capability is stored in the owned hook.
+    pub fn target(&self, call: &Call) -> capnp::Result<&Client<'id>> {
+        self.lookup(&call.endpoint)
+    }
+    fn lookup(&self, endpoint: &Rc<Endpoint>) -> capnp::Result<&Client<'id>> {
+        let same_inbox = endpoint.inbox.ptr_eq(&Rc::downgrade(&self.inbox));
+        self.entries
+            .get(endpoint.index)
+            .and_then(Option::as_ref)
+            .filter(|entry| same_inbox && entry.endpoint.ptr_eq(&Rc::downgrade(endpoint)))
+            .map(|entry| &entry.client)
+            .ok_or_else(|| Error::disconnected("call belongs to another or closed scope".into()))
+    }
+
+    /// Recognize one of this bridge's parameter/result hooks and retain its
+    /// graph authority. Foreign and opaque hooks return None, so the caller can
+    /// export them through its ordinary policy-preserving local-server path.
+    /// Never unwrap a membrane or trust its public pointer/brand values.
+    pub fn try_retain(
+        &self,
+        graph: &mut impl Capabilities<'id>,
+        hook: &dyn ClientHook,
+    ) -> capnp::Result<Option<Client<'id>>> {
+        let Some(hook) = hook.as_any().and_then(|value| value.downcast_ref::<Hook>()) else {
+            return Ok(None);
+        };
+        if !hook.0.inbox.ptr_eq(&Rc::downgrade(&self.inbox)) {
+            return Ok(None);
+        }
+        let client = self.lookup(&hook.0)?;
+        graph
+            .retain_key(client.key())
+            .map(Some)
+            .map_err(|e| Error::failed(e.to_string()))
+    }
+
+    /// Admit the oldest hosted call to the shared engine's ordered dispatcher.
+    /// On capacity rejection it stays at the front of the inbox, ahead of newer
+    /// calls. The runtime owns cancellation and target retention after success.
+    pub fn poll_dispatch<'nodes, T: 'nodes, P: Copy + Eq + 'nodes, G>(
+        &mut self,
+        runtime: &mut dispatch::Runtime<'id, 'nodes, '_, T, P, Call, G>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Option<dispatch::TaskKey<'id>>, dispatch::DispatchError>>
+    where
+        G: dispatch::GraphStorage<'id, 'nodes, T, P>,
+    {
+        let call = match self.poll_next(cx) {
+            Poll::Pending => return Poll::Pending,
+            Poll::Ready(None) => return Poll::Ready(Ok(None)),
+            Poll::Ready(Some(call)) => call,
+        };
+        let target = self
+            .lookup(&call.endpoint)
+            .expect("queued call has its retained route");
+        let mut call = Some(call);
+        let outcome = runtime
+            .prepare_call(target, &mut call)
+            .map(|pending| pending.accept());
+        match outcome {
+            Ok(key) => Poll::Ready(Ok(Some(key))),
+            Err(error) => {
+                self.inbox
+                    .queue
+                    .borrow_mut()
+                    .push_front(Box::new(call.expect("rejected admission retains owner")));
+                Poll::Ready(Err(error))
+            }
+        }
+    }
+
+    /// Disconnect queued and running replies, then release all retained graph
+    /// refs. Existing owned clients become broken without extending the scope.
+    pub(crate) fn disconnect(&self, error: Error) {
+        let mut reason = error;
+        reason.kind = capnp::ErrorKind::Disconnected;
+        // Retained endpoints outlive this registry. Record the complete reason
+        // before callbacks run, rather than synthesizing a generic Drop error.
+        for entry in self.entries.iter().flatten() {
+            if let Some(endpoint) = entry.endpoint.upgrade() {
+                endpoint
+                    .failure
+                    .borrow_mut()
+                    .get_or_insert_with(|| reason.clone());
+            }
+        }
+        self.inbox.close(reason);
+    }
+    pub fn close(mut self, graph: &mut impl Capabilities<'id>, error: Error) {
+        self.disconnect(error);
+        for entry in self.entries.drain(..).flatten() {
+            graph.release(entry.client);
+        }
+    }
+}
+impl Drop for ClientHooks<'_> {
+    fn drop(&mut self) {
+        self.inbox.close(Error::disconnected(
+            "scoped ClientHook driver dropped".into(),
+        ));
+    }
+}
+
+/// Owned hosted call awaiting engine admission/execution. The result hook can
+/// publish a pipeline before the eventual result, and retains capabilities in
+/// both directions. Dropping an unfinished call fails its completion.
+#[must_use = "complete the call, or drop it to report cancellation"]
+pub struct Call {
+    third_party: Option<Rc<capnp::message::Builder<capnp::message::HeapAllocator>>>,
+    credit: Option<Rc<admission::Credit>>,
+    endpoint: Rc<Endpoint>,
+    interface: u64,
+    method: u16,
+    hints: CallHints,
+    params: Box<dyn ParamsHook>,
+    results: response::Results,
+    completion: CallCompletion,
+    shutdown: Shutdown,
+    // Last: release admission after destroying callback-bearing call owners.
+    _permit: Permit,
+}
+enum CallCompletion {
+    Promise(completion::Delivery<'static, capnp::Result<()>>),
+    Response(response::Completion),
+}
+impl CallCompletion {
+    fn is_observed(&self) -> bool {
+        match self {
+            Self::Promise(delivery) => delivery.is_observed(),
+            Self::Response(completion) => completion.is_observed(),
+        }
+    }
+    fn poll_observed(&mut self, cx: &mut Context<'_>) -> Poll<()> {
+        match self {
+            Self::Promise(delivery) => delivery.poll_observed(cx),
+            Self::Response(completion) => completion.poll_observed(cx),
+        }
+    }
+    fn complete(&mut self, result: capnp::Result<()>) {
+        match self {
+            Self::Promise(delivery) => {
+                let _ = delivery.try_send(result);
+            }
+            Self::Response(completion) => completion.complete(result),
+        }
+    }
+}
+impl Call {
+    pub fn interface_id(&self) -> u64 {
+        self.interface
+    }
+    pub fn method_id(&self) -> u16 {
+        self.method
+    }
+    pub fn hints(&self) -> CallHints {
+        self.hints
+    }
+    pub fn params(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+        self.params.get()
+    }
+    pub fn results(&mut self) -> &mut dyn ResultsHook {
+        self.results.hook()
+    }
+    /// Loss of reply/pipeline interest; the service's cancellation policy still
+    /// determines whether an already running operation can be stopped.
+    pub fn is_canceled(&self) -> bool {
+        self.endpoint
+            .inbox
+            .upgrade()
+            .is_none_or(|inbox| inbox.closed.get())
+            || self.completion.is_observed()
+    }
+    pub fn poll_canceled(&mut self, cx: &mut Context<'_>) -> Poll<()> {
+        if Pin::new(&mut self.shutdown).poll(cx).is_ready() {
+            return Poll::Ready(());
+        }
+        self.completion.poll_observed(cx)
+    }
+    pub fn complete(mut self, result: capnp::Result<()>) {
+        self.completion.complete(result);
+    }
+
+    /// Execute an admitted call through an ordinary generated server hook.
+    /// Params/results (including early pipeline and cancellation policy hooks)
+    /// move intact; the adapter does not rebuild the application's context.
+    pub fn forward(self, target: &dyn ClientHook) -> Promise<(), Error> {
+        let Self {
+            credit,
+            third_party: _,
+            endpoint,
+            interface,
+            method,
+            hints,
+            params,
+            results,
+            mut completion,
+            shutdown: _,
+            _permit,
+        } = self;
+        let operation =
+            target.call_with_hints(interface, method, params, results.into_hook(), hints);
+        Promise::from_future(async move {
+            let result = operation.await;
+            completion.complete(result.clone());
+            drop((endpoint, _permit, credit));
+            result
+        })
+    }
+}
+struct Permit(Weak<Inbox>);
+impl Drop for Permit {
+    fn drop(&mut self) {
+        if let Some(inbox) = self.0.upgrade() {
+            inbox.live_calls.set(inbox.live_calls.get() - 1);
+            // Admission refuses an exhausted quota synchronously; it has no
+            // pending waiter to resume. The call's result/cancellation and the
+            // last endpoint reference each notify their own actual observers.
+        }
+    }
+}
+
+pub(crate) struct Hook(Rc<Endpoint>, Option<Rc<admission::Credit>>);
+impl Hook {
+    fn call_to(
+        &self,
+        interface: u64,
+        method: u16,
+        params: Box<dyn ParamsHook>,
+        results: Box<dyn ResultsHook>,
+        hints: CallHints,
+        third_party: Option<Rc<capnp::message::Builder<capnp::message::HeapAllocator>>>,
+    ) -> Promise<(), Error> {
+        if let Some(error) = self.0.failure.borrow().clone() {
+            return Promise::err(error);
+        }
+        if third_party.is_none() {
+            if let Some(client) = self.introduced() {
+                return client.call_with_hints(interface, method, params, results, hints);
+            }
+        }
+        let (sender, receiver) = shared::channel();
+        let sender: completion::Sender<'static, capnp::Result<()>> = sender.into();
+        match self.enqueue(
+            interface,
+            method,
+            params,
+            response::Results::Hook(results),
+            hints,
+            third_party,
+            CallCompletion::Promise(sender.track()),
+        ) {
+            Ok((shutdown, inbox)) => Promise::from_future(Reply {
+                receiver: Some(receiver),
+                shutdown,
+                inbox,
+            }),
+            Err(error) => Promise::err(error),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn enqueue(
+        &self,
+        interface: u64,
+        method: u16,
+        params: Box<dyn ParamsHook>,
+        mut results: response::Results,
+        hints: CallHints,
+        third_party: Option<Rc<capnp::message::Builder<capnp::message::HeapAllocator>>>,
+        completion: CallCompletion,
+    ) -> capnp::Result<(Shutdown, Weak<Inbox>)> {
+        if let Some(error) = self.0.failure.borrow().clone() {
+            return Err(error);
+        }
+        let Some(inbox) = self.0.inbox.upgrade().filter(|inbox| !inbox.closed.get()) else {
+            return Err(Error::disconnected(
+                "scoped ClientHook driver closed".into(),
+            ));
+        };
+        if inbox.live_calls.get() == inbox.maximum_calls {
+            return Err(Error::overloaded("scoped call capacity exhausted".into()));
+        }
+        let credit = self
+            .1
+            .clone()
+            .or_else(|| inbox.admission.clone().map(admission::Credit::new));
+        if self.0.remote.get() {
+            if let Some(credit) = &credit {
+                credit.acquire()?;
+            }
+        }
+        if inbox.queue.borrow_mut().try_reserve(1).is_err() {
+            return Err(Error::overloaded("scoped call queue exhausted".into()));
+        }
+        // Reserve before invoking a custom results hook, which may reenter or
+        // close this connection. The guard rolls back even during unwinding.
+        inbox.live_calls.set(inbox.live_calls.get() + 1);
+        let permit = Permit(Rc::downgrade(&inbox));
+        if let Some(credit) = &credit {
+            results.retain_context(credit.clone());
+        }
+        if inbox.closed.get() {
+            return Err(Error::disconnected(
+                "scoped ClientHook driver closed".into(),
+            ));
+        }
+        inbox.queue.borrow_mut().push_back(Box::new(Call {
+            credit,
+            third_party,
+            endpoint: self.0.clone(),
+            interface,
+            method,
+            hints,
+            params,
+            results,
+            completion,
+            shutdown: inbox.shutdown.clone(),
+            _permit: permit,
+        }));
+        inbox.notify();
+        Ok((inbox.shutdown.clone(), Rc::downgrade(&inbox)))
+    }
+
+    fn introduced(&self) -> Option<Box<dyn ClientHook>> {
+        if let Some(client) = self.0.introduced.borrow().as_ref() {
+            return Some(client.add_ref());
+        }
+        let contact = self.0.introduction.borrow().clone()?;
+        let result = (|| {
+            let inbox = self
+                .0
+                .inbox
+                .upgrade()
+                .ok_or_else(|| Error::disconnected("introduction driver closed".into()))?;
+            inbox
+                .joins
+                .as_ref()
+                .ok_or_else(|| Error::unimplemented("introduction network unavailable".into()))?
+                .introduced(self.add_ref(), contact.get_root_as_reader()?)
+        })();
+        let client: Rc<dyn ClientHook> = Rc::from(result.unwrap_or_else(crate::broken::new_cap));
+        let result = client.add_ref();
+        *self.0.introduced.borrow_mut() = Some(client);
+        Some(result)
+    }
+}
+impl ClientHook for Hook {
+    fn forward_join(
+        &self,
+        part: any_pointer::Reader<'_>,
+    ) -> Option<crate::multiparty::PartResponse> {
+        if let Some(client) = self.introduced() {
+            return client.forward_join(part);
+        }
+        let inbox = self.0.inbox.upgrade()?;
+        inbox
+            .joins
+            .as_ref()
+            .map(|joins| joins.join(self.add_ref(), part))
+    }
+    #[cfg(unix)]
+    fn get_fd(&self) -> Option<Rc<std::os::fd::OwnedFd>> {
+        self.0.fd.borrow().clone()
+    }
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+    fn debug_info(&self, info: &mut DebugInfo) {
+        info.push("scopedEndpoint");
+    }
+    fn add_ref(&self) -> Box<dyn ClientHook> {
+        Box::new(Self(self.0.clone(), self.1.clone()))
+    }
+    fn new_call(
+        &self,
+        interface: u64,
+        method: u16,
+        size: Option<capnp::MessageSize>,
+    ) -> capability::Request<any_pointer::Owned, any_pointer::Owned> {
+        if let Some(client) = self.introduced() {
+            return client.new_call(interface, method, size);
+        }
+        let inbox = self.0.inbox.upgrade();
+        let credit = inbox
+            .as_ref()
+            .and_then(|inbox| inbox.admission.clone())
+            .map(admission::Credit::new);
+        if self.0.remote.get() {
+            if let Some(credit) = &credit {
+                if let Err(error) = credit.acquire() {
+                    return capability::Request::new(Box::new(crate::broken::Request::new(
+                        error, size,
+                    )));
+                }
+            }
+        }
+        let context = credit.clone().map(|credit| credit as Rc<dyn std::any::Any>);
+        let allocator = crate::local::result_allocator(size);
+        let allocator = match inbox.as_ref().and_then(|inbox| inbox.message_pool.as_ref()) {
+            Some(pool) => allocator.segment_pool(pool.clone()),
+            None => allocator,
+        };
+        let template = self.0.remote.get().then(|| {
+            inbox.as_ref().map(|inbox| {
+                inbox.call_template.get_or_init(|| {
+                    capntproto_rpc_wire::owned::connection::PreparedCallTemplate::new(
+                        interface, method,
+                    )
+                })
+            })
+        });
+        capability::Request::new(crate::local::Request::scoped(
+            interface,
+            method,
+            allocator,
+            Self(self.0.clone(), credit),
+            context,
+            template,
+        ))
+    }
+    fn call(
+        &self,
+        interface: u64,
+        method: u16,
+        params: Box<dyn ParamsHook>,
+        results: Box<dyn ResultsHook>,
+    ) -> Promise<(), Error> {
+        self.call_with_hints(interface, method, params, results, CallHints::default())
+    }
+    fn call_with_hints(
+        &self,
+        interface: u64,
+        method: u16,
+        params: Box<dyn ParamsHook>,
+        results: Box<dyn ResultsHook>,
+        hints: CallHints,
+    ) -> Promise<(), Error> {
+        self.call_to(interface, method, params, results, hints, None)
+    }
+    // Opaque local brand: the legacy network must not treat this as one of its
+    // wire clients or infer Join/tail-call/FD authority from graph identity.
+    fn get_brand(&self) -> usize {
+        self.0
+            .inbox
+            .upgrade()
+            .filter(|inbox| inbox.joins.is_some())
+            .map_or(0, |inbox| Rc::as_ptr(&inbox) as usize)
+    }
+    fn get_ptr(&self) -> usize {
+        Rc::as_ptr(&self.0) as usize
+    }
+    fn get_resolved(&self) -> Option<Box<dyn ClientHook>> {
+        self.introduced()
+            .map(|client| client.get_resolved().unwrap_or(client))
+    }
+    fn when_more_resolved(&self) -> Option<Promise<Box<dyn ClientHook>, Error>> {
+        if let Some(client) = self.introduced() {
+            return Some(
+                client
+                    .when_more_resolved()
+                    .unwrap_or_else(|| Promise::ok(client)),
+            );
+        }
+        if let Some(error) = self.0.failure.borrow().clone() {
+            return Some(Promise::err(error));
+        }
+        if self.0.settled.get() {
+            None
+        } else {
+            let endpoint = self.0.clone();
+            let ready = self.when_resolved();
+            Some(Promise::from_future(async move {
+                ready.await?;
+                Ok(Box::new(Hook(endpoint, None)) as Box<dyn ClientHook>)
+            }))
+        }
+    }
+    fn when_resolved(&self) -> Promise<(), Error> {
+        if let Some(client) = self.introduced() {
+            return client.when_resolved();
+        }
+        if let Some(error) = self.0.failure.borrow().clone() {
+            return Promise::err(error);
+        }
+        if self.0.settled.get() {
+            return Promise::ok(());
+        }
+        let Some(inbox) = self.0.inbox.upgrade() else {
+            return Promise::err(Error::disconnected(
+                "scoped ClientHook driver dropped".into(),
+            ));
+        };
+        let endpoint = self.0.clone();
+        let shutdown = inbox.shutdown.clone();
+        Promise::from_future(async move {
+            match futures::future::select(shutdown, endpoint.resolution.clone()).await {
+                futures::future::Either::Right((result, _)) => result
+                    .map_err(crate::canceled_to_error)
+                    .and_then(core::convert::identity),
+                futures::future::Either::Left((reason, _)) => Err(reason.unwrap_or_else(|_| {
+                    Error::disconnected("scoped ClientHook driver dropped".into())
+                })),
+            }
+        })
+    }
+}
+
+struct Reply {
+    receiver: Option<shared::Receiver<capnp::Result<()>>>,
+    shutdown: Shutdown,
+    inbox: Weak<Inbox>,
+}
+impl Future for Reply {
+    type Output = capnp::Result<()>;
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if let Poll::Ready(reason) = Pin::new(&mut self.shutdown).poll(cx) {
+            drop(self.receiver.take());
+            return Poll::Ready(Err(reason.unwrap_or_else(|_| {
+                Error::disconnected("scoped ClientHook driver dropped".into())
+            })));
+        }
+        Pin::new(
+            self.receiver
+                .as_mut()
+                .expect("reply polled after completion"),
+        )
+        .poll(cx)
+        .map(|result| {
+            result
+                .map_err(crate::canceled_to_error)
+                .and_then(|result| result)
+        })
+    }
+}
+impl Drop for Reply {
+    fn drop(&mut self) {
+        // First close the receiver, then wake the dispatcher to prune queued
+        // cancellation even when no IO or application operation is ready.
+        drop(self.receiver.take());
+        if let Some(inbox) = self.inbox.upgrade() {
+            inbox.notify();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;
+
+// Exact private hook types carry authority; public brands and wrappers do not.
+pub(crate) fn tail_target(client: &dyn ClientHook) -> Option<Box<dyn std::any::Any>> {
+    let hook = client.as_any()?.downcast_ref::<Hook>()?;
+    // A settled remote endpoint cannot resolve into a different connection
+    // after its authenticated destination metadata has been committed.
+    if !hook.0.settled.get() || !hook.0.remote.get() || hook.0.introduction.borrow().is_some() {
+        return None;
+    }
+    let handle = hook.0.inbox.upgrade()?.joins.clone()?;
+    handle.tail_target()
+}
+pub(crate) fn call_third_party(
+    client: &dyn ClientHook,
+    interface: u64,
+    method: u16,
+    params: Box<dyn ParamsHook>,
+    results: Box<dyn ResultsHook>,
+    hints: CallHints,
+    contact: Rc<capnp::message::Builder<capnp::message::HeapAllocator>>,
+) -> Promise<(), Error> {
+    let Some(hook) = client.as_any().and_then(|any| any.downcast_ref::<Hook>()) else {
+        return Promise::err(Error::failed("foreign tail transfer hook".into()));
+    };
+    hook.call_to(interface, method, params, results, hints, Some(contact))
+}

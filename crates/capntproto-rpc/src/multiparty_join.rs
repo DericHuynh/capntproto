@@ -69,7 +69,7 @@ fn response_for<VatId>(
     )
 }
 
-fn part_at<VatId: 'static>(
+pub(crate) fn part_at<VatId: 'static>(
     network: Rc<dyn JoinNetwork<VatId>>,
     target: Box<dyn ClientHook>,
     part: any_pointer::Reader<'_>,
@@ -117,12 +117,12 @@ pub(super) fn start<VatId>(
                     let registry = registry
                         .upgrade()
                         .ok_or_else(|| Error::disconnected("RPC system ended".into()))?;
-                    if registry.borrow().closing {
+                    if registry.borrow().is_closing() {
                         return Err(Error::disconnected("RPC system is closing".into()));
                     }
                     let state = crate::RpcSystem::get_connection_state(
                         &registry, bootstrap, connection, tasks,
-                    );
+                    )?;
                     let mut message = state.new_outgoing_message(32)?;
                     let mut accept = message
                         .get_body()?
@@ -218,11 +218,13 @@ pub(super) fn unimplemented<VatId>(
         let question = questions
             .find(id)
             .ok_or_else(|| Error::failed("unknown Join question".into()))?;
-        if !question.multiparty_join || !question.is_awaiting_return {
+        if !question.multiparty_join || !question.lifecycle.is_awaiting_return() {
             return Err(Error::failed("unexpected Unimplemented Join".into()));
         }
-        question.is_awaiting_return = false;
-        question.skip_finish = true;
+        question
+            .lifecycle
+            .returned(true)
+            .map_err(|error| Error::failed(error.to_string()))?;
         let reference = question.self_ref.as_ref().and_then(Weak::upgrade);
         if reference.is_none() {
             questions.erase(id);

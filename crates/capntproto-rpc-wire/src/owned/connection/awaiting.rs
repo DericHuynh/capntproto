@@ -1,0 +1,325 @@
+//! Result handoff retains the original question through authentication and every
+//! preexisting pipeline observer. Foreign graph clients never cross brands: the
+//! caller's network supplies result data and local proxy authority explicitly.
+use super::*;
+
+#[must_use = "complete the authenticated handoff or release through the driver"]
+pub struct AwaitingResult<'pool, 'id> {
+    pub(super) frame: Frame<'pool>,
+    pub(super) key: questions::Key<'id>,
+}
+impl<'pool, 'id> AwaitingResult<'pool, 'id> {
+    pub fn key(&self) -> questions::Key<'id> {
+        self.key
+    }
+    pub fn with_metadata<R>(
+        &self,
+        messages: &messages::Messages<'pool, '_, '_>,
+        f: impl FnOnce(capnp::any_pointer::Reader<'_>) -> R,
+    ) -> Result<R, super::super::Error> {
+        self.frame.with(messages, |root| {
+            let rpc_capnp::message::Return(returned) = root
+                .which()
+                .map_err(|_| super::super::Error::WrongMessage)?
+            else {
+                return Err(super::super::Error::WrongMessage);
+            };
+            let rpc_capnp::return_::AwaitFromThirdParty(metadata) = returned?
+                .which()
+                .map_err(|_| super::super::Error::WrongMessage)?
+            else {
+                return Err(super::super::Error::WrongMessage);
+            };
+            Ok(f(metadata))
+        })?
+    }
+}
+#[derive(Debug)]
+pub enum HandoffError<E> {
+    Connection(Error),
+    Network(E),
+}
+#[must_use = "retry handoff or release both the job and result"]
+pub struct HandoffRejected<'pool, 'id, E, const CAPS: usize> {
+    pub error: HandoffError<E>,
+    pub awaiting: AwaitingResult<'pool, 'id>,
+    pub result: Result<LocalResult<'pool, 'id, CAPS>, capnp::ErrorKind>,
+}
+impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
+    Driver<'pool, 'id, 's, I, A, P, S, CAPS, PATH>
+{
+    /// Enable the protocol permission only when the hosting network can
+    /// authenticate and drive cross-connection answer rendezvous.
+    pub fn allow_answer_handoff(&mut self, enabled: bool) {
+        self.allow_answer_handoff = enabled;
+    }
+
+    pub fn set_descriptors(
+        &mut self,
+        policy: crate::publication::descriptors::Descriptors<binding::Route<'id, P, S, PATH>>,
+    ) {
+        self.descriptors = policy;
+    }
+
+    /// The original method and cancellation state of this affine handoff job.
+    /// Never infer either from metadata or an unscoped numeric question ID.
+    pub fn awaiting_method(&self, awaiting: &AwaitingResult<'pool, 'id>) -> Option<(u64, u16)> {
+        self.exchanges.iter().find_map(|slot| {
+            if slot.canceled || !slot.authorized {
+                return None;
+            }
+            match &slot.exchange {
+                Some(Exchange::Returned(response)) if response.key() == awaiting.key => {
+                    response.await_method()
+                }
+                _ => None,
+            }
+        })
+    }
+
+    /// Match this exact original call to the authenticated new peer's completion.
+    /// The callback must verify its rendezvous and bind it to the supplied result;
+    /// matching numeric question IDs is insufficient. Capability proxies in the
+    /// result already belong to this driver's graph. No callback runs for a
+    /// canceled, disconnected, stale, already completed or wrong-method request.
+    /// Authentication failure preserves both affine owners for retry.
+    #[allow(clippy::result_large_err)]
+    pub fn complete_await<E>(
+        &mut self,
+        awaiting: AwaitingResult<'pool, 'id>,
+        result: Result<LocalResult<'pool, 'id, CAPS>, capnp::ErrorKind>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        authenticate: impl FnOnce(capnp::any_pointer::Reader<'_>) -> Result<(), E>,
+    ) -> Result<(), HandoffRejected<'pool, 'id, E, CAPS>> {
+        self.complete_await_using(awaiting, result, messages, authenticate, false)
+    }
+    /// Adopt a result from another connection while retaining all previously
+    /// exposed promised-answer routes. New projections may use the authenticated
+    /// direct answer. Existing projections cannot bypass their relay ordering.
+    #[allow(clippy::result_large_err)]
+    pub fn complete_await_retaining_routes<E>(
+        &mut self,
+        awaiting: AwaitingResult<'pool, 'id>,
+        result: Result<LocalResult<'pool, 'id, CAPS>, capnp::ErrorKind>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        authenticate: impl FnOnce(capnp::any_pointer::Reader<'_>) -> Result<(), E>,
+    ) -> Result<(), HandoffRejected<'pool, 'id, E, CAPS>> {
+        self.complete_await_using(awaiting, result, messages, authenticate, true)
+    }
+    #[allow(clippy::result_large_err)]
+    fn complete_await_using<E>(
+        &mut self,
+        awaiting: AwaitingResult<'pool, 'id>,
+        result: Result<LocalResult<'pool, 'id, CAPS>, capnp::ErrorKind>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        authenticate: impl FnOnce(capnp::any_pointer::Reader<'_>) -> Result<(), E>,
+        retain_routes: bool,
+    ) -> Result<(), HandoffRejected<'pool, 'id, E, CAPS>> {
+        let checked = (|| {
+            self.check_live().map_err(HandoffError::Connection)?;
+            let slot = self.exchanges.iter_mut().find(|slot| {
+                !slot.canceled && slot.authorized && slot.handoff.is_none()
+                    && matches!(&slot.exchange, Some(Exchange::Returned(response)) if response.key() == awaiting.key && response.await_method().is_some())
+            }).ok_or(HandoffError::Connection(Error::UnknownQuestion))?;
+            let Some(Exchange::Returned(response)) = &slot.exchange else {
+                unreachable!()
+            };
+            if let Ok(result) = &result {
+                if response.await_method() != Some((result.interface, result.method)) {
+                    return Err(HandoffError::Connection(Error::Input(
+                        super::super::Error::WrongMessage,
+                    )));
+                }
+                // noFinishNeeded released the old answer's pipeline obligation.
+                // A later handoff cannot reintroduce capability results there.
+                if result.count != 0
+                    && response
+                        .no_finish_needed(messages)
+                        .map_err(|e| HandoffError::Connection(Error::Input(e)))?
+                {
+                    return Err(HandoffError::Connection(Error::Input(
+                        super::super::Error::WrongMessage,
+                    )));
+                }
+            }
+            awaiting
+                .with_metadata(messages, authenticate)
+                .map_err(|e| HandoffError::Connection(Error::Input(e)))?
+                .map_err(HandoffError::Network)?;
+            Ok(slot)
+        })();
+        match checked {
+            Ok(slot) => {
+                slot.retain_handoff_routes = retain_routes;
+                slot.handoff = Some(result);
+                awaiting.frame.release(messages);
+                Ok(())
+            }
+            Err(error) => Err(HandoffRejected {
+                error,
+                awaiting,
+                result,
+            }),
+        }
+    }
+
+    /// Take either an ordinary wire response or an authenticated cross-connection
+    /// result. Result publication waits for all existing observers; their retained
+    /// old routes continue to own Finish through any ordered loopback barrier.
+    /// This is the completion entry point used by typed invocation/session APIs.
+    pub fn take_output(
+        &mut self,
+        key: questions::Key<'id>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+    ) -> Result<CallResult<'pool, 'id, I, CAPS>, Error> {
+        self.check_live()?;
+        if self.outgoing.pending_for(key)
+            || self
+                .invocation_pipelines
+                .iter()
+                .any(|slot| slot.pending_for(key))
+        {
+            return Err(Error::PendingResponse);
+        }
+        let slot = self
+            .exchanges
+            .iter_mut()
+            .find(|slot| {
+                slot.exchange
+                    .as_ref()
+                    .is_some_and(|exchange| exchange.key() == key)
+            })
+            .ok_or(Error::UnknownQuestion)?;
+        if !slot.authorized {
+            return Err(Error::PendingAuthorization);
+        }
+        let Some(Exchange::Returned(response)) = &slot.exchange else {
+            return Err(Error::PendingResponse);
+        };
+        if let Some((adopted, method)) = response.adopted() {
+            let result = match &self.ledgers.answers.adopted(adopted).owner.value {
+                None => return Err(Error::PendingResponse),
+                Some(Err(kind)) => Err(*kind),
+                Some(Ok(published)) => Ok(published
+                    .retain_local(
+                        messages,
+                        &mut self.runtime,
+                        self.message_capabilities,
+                        method,
+                    )
+                    .map_err(Error::Pipeline)?),
+            };
+            let Some(Exchange::Returned(response)) = slot.exchange.take() else {
+                unreachable!()
+            };
+            self.release_response(response, messages);
+            Ok(result.map(CallOutput::Local))
+        } else if response.await_method().is_some() {
+            let result = slot.handoff.take().ok_or(Error::PendingResponse)?;
+            let Some(Exchange::Returned(response)) = slot.exchange.take() else {
+                unreachable!()
+            };
+            self.release_response(response, messages);
+            Ok(result.map(CallOutput::Local))
+        } else {
+            let Some(Exchange::Returned(response)) = slot.exchange.take() else {
+                unreachable!()
+            };
+            Ok(Ok(CallOutput::Remote(response)))
+        }
+    }
+}
+
+#[must_use = "retry completion or release the preserved result"]
+pub struct AnswerHandoffRejected<'pool, 'id, const CAPS: usize> {
+    pub error: Error,
+    pub result: Result<LocalResult<'pool, 'id, CAPS>, capnp::ErrorKind>,
+}
+impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
+    Driver<'pool, 'id, 's, I, A, P, S, CAPS, PATH>
+{
+    /// Complete the original answer's retained pipeline after its network Return
+    /// was published. The request fixes both method and answer generation. The
+    /// network supplies local authority proxies for the actual result. Existing
+    /// pipelines keep their frozen result even if Finish precedes completion.
+    /// Rejection preserves the supplied result and every existing route.
+    #[allow(clippy::result_large_err)]
+    pub fn complete_network_answer(
+        &mut self,
+        request: &Request<'pool, 'id, I, CAPS, PATH>,
+        result: Result<LocalResult<'pool, 'id, CAPS>, capnp::ErrorKind>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+    ) -> Result<(), AnswerHandoffRejected<'pool, 'id, CAPS>> {
+        let key = request.answer();
+        let checked = (|| {
+            self.check_live()?;
+            let state = self
+                .ledgers
+                .answers
+                .get(key)
+                .map_err(|e| Error::Pipeline(pipelines::Error::Answer(e)))?;
+            if !state.owner.is_pending() {
+                return Err(Error::Pipeline(pipelines::Error::AlreadyCompleted));
+            }
+            let third_party = self
+                .ledgers
+                .answers
+                .is_third_party(key)
+                .map_err(|e| Error::Pipeline(pipelines::Error::Answer(e)))?;
+            let eligible = state
+                .with_result(messages, |root| {
+                    let Ok(rpc_capnp::message::Return(Ok(returned))) = root.which() else {
+                        return false;
+                    };
+                    matches!(
+                        returned.which(),
+                        Ok(rpc_capnp::return_::AwaitFromThirdParty(_)
+                            | rpc_capnp::return_::Canceled(()))
+                    ) || (third_party
+                        && matches!(
+                            returned.which(),
+                            Ok(rpc_capnp::return_::ResultsSentElsewhere(()))
+                        ))
+                })
+                .map_err(Error::Input)?;
+            if eligible != Some(true) {
+                return Err(Error::InvalidNetworkTarget);
+            }
+            if let Ok(result) = &result {
+                let method = request
+                    .with(messages, |request| {
+                        (
+                            request.incoming().interface_id(),
+                            request.incoming().method_id(),
+                        )
+                    })
+                    .map_err(Error::Input)?;
+                if method != (result.interface, result.method) {
+                    return Err(Error::Input(super::super::Error::WrongMessage));
+                }
+            }
+            let published = match &result {
+                Ok(result) => Ok(pipelines::Published::from_local(
+                    result,
+                    key.id(),
+                    messages,
+                    &mut self.runtime,
+                )
+                .map_err(Error::Pipeline)?),
+                Err(kind) => Err(*kind),
+            };
+            pipelines::complete(&mut self.ledgers.answers, key, published)
+                .unwrap_or_else(|_| unreachable!("preflighted network answer"));
+            Ok(())
+        })();
+        match checked {
+            Ok(()) => {
+                if let Ok(result) = result {
+                    result.release(messages, &mut self.runtime);
+                }
+                Ok(())
+            }
+            Err(error) => Err(AnswerHandoffRejected { error, result }),
+        }
+    }
+}

@@ -11,7 +11,7 @@ const NIGHTLY: &str = "+nightly-2026-08-29";
 const MANIFEST: &str = "verification/miri/Cargo.toml";
 const TARGET: &str = "x86_64-unknown-linux-gnu";
 const SUITES: &[(&str, usize)] = &[
-    ("ownership", 10),
+    ("ownership", 25),
     ("wire", 6),
     ("orphan_types", 4),
     ("generated", 2),
@@ -38,6 +38,7 @@ fn source_inputs() -> BTreeMap<PathBuf, String> {
                 "verification/miri",
                 "crates/capntproto-core",
                 "crates/capntproto-rpc",
+                "crates/capntproto-rpc-engine",
                 "crates/capntproto-futures",
                 "crates/capntproto-codegen",
             ]
@@ -281,7 +282,7 @@ fn serialization_and_ownership_miri() {
         "target": TARGET, "suites": SUITES, "runs": evidence, "native_executions": tests * 2,
         "miri_executions": tests * 4 + extra_runs.len() * 6, "extended_wire_runs": extra_runs,
         "negative_control": "freed-pointer read rejected", "inputs": inputs, "artifacts": directory,
-        "scope": "23 selected tests, aligned/unaligned; checked readers, generated fields/groups/list upgrades, local capability ownership, orphan scalar/pointer/struct lists and blobs, schema ownership/atomic replacement/native registration, external immutable heap data, scratch reuse, malformed wire pointers",
+        "scope": format!("{tests} selected tests, aligned/unaligned; checked readers, generated fields/groups/list upgrades, local capability ownership, orphan scalar/pointer/struct lists and blobs, schema ownership/atomic replacement/native registration, external immutable heap data, scratch reuse, malformed wire pointers"),
         "exclusions": ["mmap and concurrent external mutation", "descriptor/OS/FFI paths", "network/RPC scheduling", "crypto", "platform behavior beyond the recorded interpreted targets", "exhaustive inputs or soundness proof"],
     });
     let bytes = serde_json::to_vec_pretty(&report).unwrap();

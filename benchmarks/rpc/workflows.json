@@ -1,0 +1,14 @@
+[
+  {"name":"unary-empty","payload_bytes":0,"width":1,"rpcs_per_iteration":1},
+  {"name":"unary-small","payload_bytes":64,"width":1,"rpcs_per_iteration":1},
+  {"name":"unary-1k","payload_bytes":1024,"width":1,"rpcs_per_iteration":1},
+  {"name":"fanout-32","payload_bytes":1024,"width":32,"rpcs_per_iteration":32},
+  {"name":"dependent-read","payload_bytes":1024,"width":1,"rpcs_per_iteration":2},
+  {"name":"pipelined-read","payload_bytes":1024,"width":1,"rpcs_per_iteration":2},
+  {"name":"write-read","payload_bytes":1024,"width":1,"rpcs_per_iteration":2},
+  {"name":"callback","payload_bytes":64,"width":1,"rpcs_per_iteration":2},
+  {"name":"bulk-64k","payload_bytes":65536,"width":1,"rpcs_per_iteration":1},
+  {"name":"bulk-256k","payload_bytes":262144,"width":1,"rpcs_per_iteration":1},
+  {"name":"bulk-1m","payload_bytes":1048576,"width":1,"rpcs_per_iteration":1},
+  {"name":"bulk-4m","payload_bytes":4194304,"width":1,"rpcs_per_iteration":1}
+]

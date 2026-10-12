@@ -9,6 +9,31 @@ use std::{cell::RefCell, rc::Rc, time::Duration};
 use support::{Endpoint, Hub};
 
 struct Echo(u32, Rc<RefCell<Vec<u32>>>);
+struct GatedEcho {
+    log: Rc<RefCell<Vec<u32>>>,
+    first: RefCell<Option<futures::channel::oneshot::Receiver<()>>>,
+}
+impl harness::Server for GatedEcho {
+    async fn echo(
+        self: Rc<Self>,
+        p: harness::EchoParams,
+        mut r: harness::EchoResults,
+    ) -> capnp::Result<()> {
+        let value = p.get()?.get_value();
+        self.log.borrow_mut().push(value);
+        let gate = if value == 1 {
+            self.first.borrow_mut().take()
+        } else {
+            None
+        };
+        if let Some(gate) = gate {
+            gate.await
+                .map_err(|_| capnp::Error::disconnected("gate dropped".into()))?;
+        }
+        r.get().set_value(value);
+        Ok(())
+    }
+}
 impl harness::Server for Echo {
     async fn echo(
         self: Rc<Self>,
@@ -95,6 +120,27 @@ fn accept(raw: &mut Endpoint, embargo: bool) {
         }
     });
 }
+fn start_system(
+    portable: bool,
+    network: impl capnp_rpc::VatNetwork<u8> + 'static,
+    service: harness::Client,
+) -> tokio::task::JoinHandle<capnp::Result<()>> {
+    if portable {
+        let options = capnp_rpc::portable::Options::bounded(
+            16.try_into().unwrap(),
+            256.try_into().unwrap(),
+            (512 * 1024).try_into().unwrap(),
+            (8 * 1024 * 1024).try_into().unwrap(),
+        )
+        .unwrap();
+        tokio::task::spawn_local(
+            capnp_rpc::portable::RpcSystem::new(Box::new(network), Some(service.client), options)
+                .unwrap(),
+        )
+    } else {
+        tokio::task::spawn_local(RpcSystem::new(Box::new(network), Some(service.client)))
+    }
+}
 fn call(raw: &mut Endpoint, question: u32, target: u32, promised: bool, value: u32) {
     raw.send(|m| {
         let mut c = m.init_call();
@@ -168,6 +214,13 @@ async fn multiple_connections_bootstrap_forward_caps_and_disconnect() {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn wire_provide_accept_embargo_orders_pipeline_and_finish_unregisters() {
+    provide_accept_ordering(false).await;
+}
+#[tokio::test(flavor = "current_thread")]
+async fn portable_provide_accept_embargo_orders_pipeline_and_finish_unregisters() {
+    provide_accept_ordering(true).await;
+}
+async fn provide_accept_ordering(portable: bool) {
     tokio::task::LocalSet::new()
         .run_until(async {
             tokio::time::timeout(Duration::from_secs(5), async {
@@ -175,10 +228,7 @@ async fn wire_provide_accept_embargo_orders_pipeline_and_finish_unregisters() {
                 let network = Hub::network(&hub, 1);
                 let log = Rc::new(RefCell::new(vec![]));
                 let service: harness::Client = capnp_rpc::new_client(Echo(0, log.clone()));
-                let task = tokio::task::spawn_local(RpcSystem::new(
-                    Box::new(network),
-                    Some(service.client),
-                ));
+                let task = start_system(portable, network, service);
                 let mut broker = hub.borrow_mut().connect(2, 1);
                 let mut recipient = hub.borrow_mut().connect(3, 1);
                 let export = bootstrap(&mut broker, 0).await;
@@ -281,6 +331,181 @@ async fn automatic_wire_handoff_shortens_proxy_and_preserves_identity() {
                 for t in [at, ct] {
                     t.abort();
                 }
+            })
+            .await
+            .unwrap();
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn portable_automatic_introduction_survives_broker_drop() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                for promised in [false, true] {
+                    let hub = Rc::new(RefCell::new(Hub::default()));
+                    hub.borrow_mut().introductions = true;
+                    let log = Rc::new(RefCell::new(vec![]));
+                    let (gate, blocked) = futures::channel::oneshot::channel();
+                    let owner: harness::Client = capnp_rpc::new_client(GatedEcho {
+                        log: log.clone(),
+                        first: RefCell::new(Some(blocked)),
+                    });
+                    let host = start_system(true, Hub::network(&hub, 3), owner);
+                    let (tx, rx) = futures::channel::oneshot::channel::<harness::Client>();
+                    let service: harness::Client = capnp_rpc::new_future_client(async {
+                        rx.await
+                            .map_err(|_| capnp::Error::disconnected("bootstrap canceled".into()))
+                    });
+                    let mut broker = support::driver::System::new(
+                        true,
+                        Box::new(Hub::network(&hub, 2)),
+                        Some(service.client),
+                    );
+                    let remote: harness::Client = broker.bootstrap(3);
+                    let broker = tokio::task::spawn_local(broker.run());
+                    let remote = capnp::capability::get_resolved_cap(remote).await;
+                    let mut caller =
+                        support::driver::System::new(true, Box::new(Hub::network(&hub, 1)), None);
+                    let proxy: harness::Client = caller.bootstrap(2);
+                    let caller = tokio::task::spawn_local(caller.run());
+                    let first = if promised {
+                        let mut request = proxy.echo_request();
+                        request.get().set_value(1);
+                        Some(request.send().promise)
+                    } else {
+                        None
+                    };
+                    for _ in 0..32 {
+                        tokio::task::yield_now().await;
+                    }
+                    assert!(tx.send(remote).is_ok());
+                    let direct = capnp::capability::get_resolved_cap(proxy).await;
+                    assert_eq!(echo(&direct, 2).await, 2);
+                    // The acceptance fence follows dispatch, not completion:
+                    // an older blocked method cannot prevent direct-route use.
+                    if let Some(first) = first {
+                        assert_eq!(*log.borrow(), vec![1, 2]);
+                        gate.send(()).unwrap();
+                        assert_eq!(first.await.unwrap().get().unwrap().get_value(), 1);
+                    }
+                    assert!(hub.borrow().introduction_count > 0);
+                    assert!(hub.borrow().accept_count > 0);
+                    broker.abort();
+                    for _ in 0..64 {
+                        tokio::task::yield_now().await;
+                    }
+                    assert_eq!(echo(&direct, 3).await, 3);
+                    assert_eq!(
+                        *log.borrow(),
+                        if promised { vec![1, 2, 3] } else { vec![2, 3] }
+                    );
+                    caller.abort();
+                    host.abort();
+                }
+            })
+            .await
+            .unwrap();
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn portable_call_parameter_introduction_releases_its_provision() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                let hub = Rc::new(RefCell::new(Hub::default()));
+                hub.borrow_mut().introductions = true;
+                let log = Rc::new(RefCell::new(vec![]));
+                let host = start_system(
+                    true,
+                    Hub::network(&hub, 3),
+                    capnp_rpc::new_client(Echo(300, log.clone())),
+                );
+                let recipient = start_system(
+                    true,
+                    Hub::network(&hub, 2),
+                    capnp_rpc::new_client(Echo(200, log.clone())),
+                );
+                let mut caller =
+                    support::driver::System::new(true, Box::new(Hub::network(&hub, 1)), None);
+                let remote: harness::Client = caller.bootstrap(3);
+                let broker: harness::Client = caller.bootstrap(2);
+                let caller = tokio::task::spawn_local(caller.run());
+                let remote = capnp::capability::get_resolved_cap(remote).await;
+                let mut request = broker.tail_request();
+                request.get().set_cap(remote);
+                request.get().set_value(7);
+                assert_eq!(
+                    request
+                        .send()
+                        .promise
+                        .await
+                        .unwrap()
+                        .get()
+                        .unwrap()
+                        .get_value(),
+                    307
+                );
+                for _ in 0..128 {
+                    tokio::task::yield_now().await;
+                }
+                assert_eq!(hub.borrow().introduction_count, 1);
+                assert_eq!(hub.borrow().accept_count, 1);
+                assert_eq!(hub.borrow().provision_count(), 0);
+                assert_eq!(hub.borrow().waiter_count(), 0);
+                assert_eq!(*log.borrow(), vec![7]);
+                assert_eq!(echo(&broker, 8).await, 208);
+                caller.abort();
+                recipient.abort();
+                host.abort();
+            })
+            .await
+            .unwrap();
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn portable_unsupported_callee_handoff_fails_instead_of_blocking_dispatch() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                let hub = Rc::new(RefCell::new(Hub::default()));
+                let network = Hub::network(&hub, 3);
+                let _caller = Hub::network(&hub, 2);
+                let mut raw = hub.borrow_mut().connect(2, 3);
+                let status = hub.borrow_mut().connect(3, 2).status();
+                let task = start_system(
+                    true,
+                    network,
+                    capnp_rpc::new_client(Echo(0, Rc::new(RefCell::new(vec![])))),
+                );
+                let export = bootstrap(&mut raw, 0).await;
+                raw.send(|m| {
+                    let mut call = m.init_call();
+                    call.set_question_id(1);
+                    call.set_interface_id(harness::Client::TYPE_ID);
+                    call.set_method_id(0);
+                    call.reborrow().init_target().set_imported_cap(export);
+                    call.init_send_results_to()
+                        .init_third_party()
+                        .set_as::<capnp::data::Owned>(&[1, 2][..])
+                        .unwrap();
+                });
+                // Fatal peer errors request transport shutdown and leave the
+                // persistent listener alive. This fixture retains channel
+                // endpoints in Hub, so observe shutdown instead of channel EOF.
+                while status.borrow().shutdowns.is_empty() {
+                    tokio::task::yield_now().await;
+                }
+                assert_eq!(status.borrow().shutdowns, vec![false]);
+                let mut healthy = hub.borrow_mut().connect(4, 3);
+                bootstrap(&mut healthy, 0).await;
+                assert!(!task.is_finished());
+                task.abort();
             })
             .await
             .unwrap();
@@ -393,6 +618,13 @@ async fn tail_calls_return_values_and_capability_params_survive_redirection() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn finish_rejects_pending_accept_and_forged_recipient_cannot_claim() {
+    provide_accept_authority(false).await;
+}
+#[tokio::test(flavor = "current_thread")]
+async fn portable_finish_rejects_pending_accept_and_forged_recipient_cannot_claim() {
+    provide_accept_authority(true).await;
+}
+async fn provide_accept_authority(portable: bool) {
     tokio::task::LocalSet::new()
         .run_until(async {
             tokio::time::timeout(Duration::from_secs(5), async {
@@ -400,10 +632,7 @@ async fn finish_rejects_pending_accept_and_forged_recipient_cannot_claim() {
                 let network = Hub::network(&hub, 1);
                 let log = Rc::new(RefCell::new(vec![]));
                 let service: harness::Client = capnp_rpc::new_client(Echo(0, log.clone()));
-                let task = tokio::task::spawn_local(RpcSystem::new(
-                    Box::new(network),
-                    Some(service.client),
-                ));
+                let task = start_system(portable, network, service);
                 let mut broker = hub.borrow_mut().connect(2, 1);
                 let mut recipient = hub.borrow_mut().connect(3, 1);
                 let mut attacker = hub.borrow_mut().connect(4, 1);
@@ -440,6 +669,46 @@ async fn finish_rejects_pending_accept_and_forged_recipient_cannot_claim() {
                 ));
                 assert!(log.borrow().is_empty());
                 assert_eq!(hub.borrow().provision_count(), 0);
+                task.abort();
+            })
+            .await
+            .unwrap();
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn portable_finish_cancels_unmatched_accept_without_leaking_network_waiter() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                let hub = Rc::new(RefCell::new(Hub::default()));
+                let network = Hub::network(&hub, 1);
+                let service: harness::Client =
+                    capnp_rpc::new_client(Echo(0, Rc::new(RefCell::new(vec![]))));
+                let task = start_system(true, network, service);
+                let mut recipient = hub.borrow_mut().connect(3, 1);
+                accept(&mut recipient, true);
+                bootstrap(&mut recipient, 0).await;
+                assert_eq!(hub.borrow().waiter_count(), 1);
+                recipient.send(|m| m.init_finish().set_question_id(20));
+                let canceled = recipient.recv().await;
+                let message::Return(result) = canceled
+                    .get_body()
+                    .unwrap()
+                    .get_as::<message::Reader>()
+                    .unwrap()
+                    .which()
+                    .unwrap()
+                else {
+                    panic!("expected canceled Accept Return");
+                };
+                assert!(matches!(
+                    result.unwrap().which().unwrap(),
+                    return_::Canceled(())
+                ));
+                bootstrap(&mut recipient, 1).await;
+                assert_eq!(hub.borrow().waiter_count(), 0);
                 task.abort();
             })
             .await

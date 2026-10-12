@@ -29,6 +29,8 @@ pub fn models(r: &mut Runner) -> Result<()> {
                 "run",
                 "--locked",
                 "--workspace",
+                "--features",
+                "capntproto/quic",
                 "--no-fail-fast",
                 "tlc",
             ])

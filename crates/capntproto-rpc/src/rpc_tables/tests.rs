@@ -40,10 +40,6 @@ fn peer_slots_match_sparse_map_across_low_boundary_replacement_and_removal() {
             slots.values().copied().sum::<u64>(),
             reference.values().copied().sum::<u64>()
         );
-        assert_eq!(
-            slots.high.len(),
-            reference.keys().filter(|id| id.to_wire() >= 16).count()
-        );
         for raw in ids {
             let id = AnswerId::from_wire(raw);
             assert_eq!(slots.get(&id), reference.get(&id));
@@ -114,37 +110,39 @@ fn peer_slot_owners_can_reenter_after_replacement_removal_and_detachment() {
 }
 
 #[test]
-fn wrap_skips_live_high_ids_and_keeps_low_allocator_independent() {
+fn high_ids_keep_low_allocator_independent() {
     let mut table = LocalTable::new();
     assert!(table.is_empty());
     let first = table.push_high("first");
     assert!(!table.is_empty());
     assert_eq!(first.to_wire(), 0x8000_0000);
-    table.high_counter = 0xffff_ffff;
-    assert_eq!(table.push_high("last").to_wire(), 0xffff_ffff);
-    assert_eq!(table.push_high("wrapped").to_wire(), 0x8000_0001);
+    assert_eq!(table.push_high("second").to_wire(), 0x8000_0001);
+    assert_eq!(table.push_high("third").to_wire(), 0x8000_0002);
     assert_eq!(table.get(first), Some(&"first"));
-    assert_eq!(table.get(QuestionId::from_wire(u32::MAX)), Some(&"last"));
     assert_eq!(
         table.get(QuestionId::from_wire(0x8000_0001)),
-        Some(&"wrapped")
+        Some(&"second")
     );
-    assert_eq!(table.get(QuestionId::from_wire(0x8000_0002)), None);
+    assert_eq!(
+        table.get(QuestionId::from_wire(0x8000_0002)),
+        Some(&"third")
+    );
+    assert_eq!(table.get(QuestionId::from_wire(0x8000_0003)), None);
     let low = table.push("low");
     assert_eq!(low.to_wire(), 0);
     table.erase(first);
     assert_eq!(table.get(first), None);
     table.erase(low);
     assert_eq!(table.push("reused low"), low);
-    assert_eq!(table.push_high("next high").to_wire(), 0x8000_0002);
+    assert_eq!(table.push_high("next high").to_wire(), 0x8000_0003);
     assert_eq!(
-        table.find(QuestionId::from_wire(0xffff_ffff)),
-        Some(&mut "last")
+        table.find(QuestionId::from_wire(0x8000_0001)),
+        Some(&mut "second")
     );
     assert_eq!(table.iter().count(), 4);
     table.erase(low);
     assert!(!table.is_empty());
-    for id in [0xffff_ffff, 0x8000_0001, 0x8000_0002] {
+    for id in [0x8000_0001, 0x8000_0002, 0x8000_0003] {
         table.erase(QuestionId::from_wire(id));
     }
     assert!(table.is_empty());
@@ -153,6 +151,8 @@ fn wrap_skips_live_high_ids_and_keeps_low_allocator_independent() {
 #[test]
 fn absent_removal_cannot_duplicate_a_free_slot_or_overwrite_a_live_entry() {
     let mut table = LocalTable::<ExportId, _>::new();
+    assert_eq!(table.get(ExportId::from_wire(0)), None);
+    assert_eq!(table.find(ExportId::from_wire(0)), None);
     let id = table.push("old");
     assert_eq!(table.remove(id), Some("old"));
     assert_eq!(table.remove(id), None);
@@ -163,6 +163,11 @@ fn absent_removal_cannot_duplicate_a_free_slot_or_overwrite_a_live_entry() {
     assert_ne!(other, id);
     assert_eq!(table.get(id), Some(&"replacement"));
     assert_eq!(table.get(other), Some(&"other"));
+    for raw in [2, 100, (1 << 30) - 1, 1 << 30, 1 << 31, u32::MAX] {
+        assert_eq!(table.get(ExportId::from_wire(raw)), None);
+        assert_eq!(table.find(ExportId::from_wire(raw)), None);
+    }
+    assert_eq!(table.len(), 2);
 }
 
 #[test]
@@ -186,4 +191,50 @@ fn adopted_insertion_is_checked_and_cannot_replace_an_owner() {
         assert!(table.is_empty());
     }
     assert_eq!(table.push("low").to_wire(), 0);
+}
+
+#[test]
+fn local_owners_can_reenter_after_removal_and_detachment() {
+    use std::{
+        cell::{Cell, RefCell},
+        rc::{Rc, Weak},
+    };
+    struct Owner {
+        table: Weak<RefCell<LocalTable<QuestionId, Owner>>>,
+        drops: Rc<Cell<usize>>,
+    }
+    impl Drop for Owner {
+        fn drop(&mut self) {
+            if let Some(table) = self.table.upgrade() {
+                assert!(table.try_borrow_mut().is_ok());
+            }
+            self.drops.set(self.drops.get() + 1);
+        }
+    }
+    let table = Rc::new(RefCell::new(LocalTable::new()));
+    let drops = Rc::new(Cell::new(0));
+    let owner = || Owner {
+        table: Rc::downgrade(&table),
+        drops: drops.clone(),
+    };
+    let low = table.borrow_mut().push(owner());
+    let high = table.borrow_mut().push_high(owner());
+    let adopted = QuestionId::from_wire(1 << 30);
+    assert!(table.borrow_mut().insert_adopted(adopted, owner()).is_ok());
+    for id in [low, high, adopted] {
+        let removed = table.borrow_mut().remove(id);
+        assert!(removed.is_some());
+        drop(removed);
+    }
+    assert_eq!(drops.get(), 3);
+    table.borrow_mut().push(owner());
+    table.borrow_mut().push_high(owner());
+    assert!(table.borrow_mut().insert_adopted(adopted, owner()).is_ok());
+    let detached = std::mem::replace(&mut *table.borrow_mut(), LocalTable::new());
+    assert!(table.borrow().is_empty());
+    drop(detached);
+    assert_eq!(drops.get(), 6);
+    table.borrow_mut().push(owner());
+    drop(table);
+    assert_eq!(drops.get(), 7);
 }

@@ -501,6 +501,17 @@ mod tests {
 
         assert_eq!(bytes, packed);
 
+        // Exercise the growing sink with the same known wire vectors, including
+        // all-zero words and 255-word run boundaries. Random message segments
+        // rarely reach those paths for this writer instantiation.
+        let mut growing = alloc::vec::Vec::new();
+        PackedWrite {
+            inner: &mut growing,
+        }
+        .write_all(unpacked)
+        .unwrap();
+        assert_eq!(growing, packed);
+
         // --------
         // read
         check_unpacks_to(packed, unpacked);

@@ -113,17 +113,19 @@ async fn blocked_mapping_expiry_and_replacement_preserve_shared_sessions() {
                 let mut h = Harness::new(psk).await;
                 let server = h.network.bind(STUN.parse().unwrap());
                 let listener = h.listener.as_ref().unwrap().clone();
-                let options = MappingOptions {
-                    timeout: Duration::from_millis(250),
-                    ..Default::default()
-                };
+                let options = MappingOptions::default();
                 let mapping = listener
                     .maintain_mapping(server.local_addr().unwrap(), options)
                     .unwrap();
                 h.settle(150).await;
                 let first = drain_requests(&server).pop().unwrap();
                 h.block().await;
-                h.settle(400).await;
+                assert_eq!(mapping.status(), MappingStatus::Discovering);
+                // Packet ticks also follow quiche's real clock, so a tick count
+                // is not a stable transaction timeout under CPU contention.
+                // Expire this blocked probe explicitly on the application clock.
+                tokio::time::advance(options.timeout).await;
+                h.settle(5).await;
                 assert_eq!(mapping.status(), MappingStatus::Unavailable);
                 assert!(h
                     .routes

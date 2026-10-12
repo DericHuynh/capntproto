@@ -12,6 +12,13 @@ use capntproto_test_support::verification::{command, cpp, root, run};
 use std::fs;
 #[test]
 fn codecs_match_pinned_cpp_wire_and_encodings() {
+    // Retain ownership across generation, linking and every execution. Locking
+    // each subprocess log alone permits another run to replace the executable
+    // or its input/output files between cases.
+    let _run = capntproto_test_support::verification::lock(
+        &root().join("target/verification/compat.lock"),
+    )
+    .unwrap();
     let build = cpp::build(&[
         "capnp-json",
         "capnpc",

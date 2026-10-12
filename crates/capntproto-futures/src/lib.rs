@@ -22,10 +22,13 @@
 pub use buffered_read::{BufferedRead, BufferedScratchSegments, BufferedSegments};
 pub use read_stream::ReadStream;
 pub use write_queue::{
-    write_queue, write_queue_with_clock, OutgoingQueue, OutputSnapshot, QueueSnapshot, Sender,
+    write_queue, write_queue_local, write_queue_local_with_clock, write_queue_with_clock,
+    LocalObservedSender, LocalSender, ObservedSender, OutgoingQueue, OutputSnapshot, QueueSnapshot,
+    Sender,
 };
 
 mod buffered_read;
+pub mod io;
 mod read_stream;
 pub mod serialize;
 pub mod serialize_packed;

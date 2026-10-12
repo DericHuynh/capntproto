@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+#![cfg_attr(not(feature = "std"), no_std)]
 // Copyright (c) 2013-2017 Sandstorm Development Group, Inc. and contributors
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -21,6 +22,12 @@
 
 //! An implementation of the [Cap'n Proto remote procedure call](https://capnproto.org/rpc.html)
 //! protocol. Includes all [Level 1](https://capnproto.org/rpc.html#protocol-features) features.
+//!
+//! With default features disabled, this crate is `no_std` and requires no allocator.
+//! Use [`bounded`] for caller-backed RPC dispatch and [`engine`] for its resource
+//! and polling contracts. `alloc` adds shared reply ownership; `std` (the default)
+//! enables the existing owned clients, server hooks and transport adapters.
+//! These profiles do not make a caller-provided service or IO implementation allocation-free.
 //!
 //! # Example
 //!
@@ -59,43 +66,64 @@
 //!
 //! For a more complete example, see <https://github.com/capnproto/capnproto-rust/tree/master/capnp-rpc/examples/calculator>
 
+/// Portable protocol transitions and caller-owned resources. The optional
+/// `alloc` profile also enables shared completion owners without requiring std.
+pub use capntproto_rpc_engine as engine;
+/// Allocation-free wire ownership, generated call bindings and caller-polled drivers.
+/// Available in every profile; all storage, IO and execution remain caller supplied.
+pub use capntproto_rpc_wire as bounded;
+
+#[cfg(feature = "std")]
 use capnp::capability::Promise;
+#[cfg(feature = "std")]
 use capnp::private::capability::ClientHook;
+#[cfg(feature = "std")]
 use capnp::Error;
-use futures::channel::oneshot;
+#[cfg(feature = "std")]
 use futures::{Future, FutureExt};
+#[cfg(feature = "std")]
 use std::cell::RefCell;
+#[cfg(feature = "std")]
 use std::pin::Pin;
+#[cfg(feature = "std")]
 use std::rc::{Rc, Weak};
+#[cfg(feature = "std")]
 use std::task::{Context, Poll};
 
+#[cfg(feature = "std")]
 pub use crate::rpc::join::Joiner;
-pub use crate::rpc::Disconnector;
+#[cfg(feature = "std")]
+pub use crate::system::Disconnector;
+/// Task-owned hosted runtime over the portable engine. This opt-in replacement
+/// integrates authenticated introductions, independent-path Join, answer handoff
+/// and third-party tail transfer. Live flow limits and diagnostics are supported.
+/// It remains opt-in pending performance qualification and remaining Join parity.
+#[cfg(feature = "std")]
+pub mod portable;
+#[cfg(feature = "std")]
 use crate::task_set::TaskSet;
 
+#[cfg(feature = "std")]
 pub use crate::reconnect::{auto_reconnect, lazy_auto_reconnect, SetTarget};
+#[cfg(feature = "std")]
 mod pipeline_builder;
+#[cfg(feature = "std")]
 pub use pipeline_builder::PipelineBuilder;
 
 /// Code generated from
 /// [rpc.capnp](https://github.com/capnproto/capnproto/blob/master/c%2B%2B/src/capnp/rpc.capnp).
-#[allow(clippy::extra_unused_type_parameters)] // Generated generic schema helpers.
-pub mod rpc_capnp {
-    include!(concat!(env!("OUT_DIR"), "/rpc_capnp.rs"));
-}
+pub use capntproto_rpc_wire::rpc_capnp;
 
 /// Code generated from
 /// [rpc-twoparty.capnp](https://github.com/capnproto/capnproto/blob/master/c%2B%2B/src/capnp/rpc-twoparty.capnp).
-#[allow(clippy::extra_unused_type_parameters)] // Generated generic schema helpers.
-pub mod rpc_twoparty_capnp {
-    include!(concat!(env!("OUT_DIR"), "/rpc_twoparty_capnp.rs"));
-}
+pub use capntproto_rpc_wire::rpc_twoparty_capnp;
 
 /// Like [`try!()`], but for functions that return a [`Promise<T, E>`] rather than a [`Result<T, E>`].
 ///
 /// Unwraps a `Result<T, E>`. In the case of an error `Err(e)`, immediately returns from the
 /// enclosing function with `Promise::err(e)`.
 #[macro_export]
+#[cfg(feature = "std")]
 macro_rules! pry {
     ($expr:expr) => {
         match $expr {
@@ -107,31 +135,62 @@ macro_rules! pry {
     };
 }
 
+#[cfg(feature = "std")]
 mod admission;
+#[cfg(feature = "std")]
 mod attach;
+#[cfg(feature = "std")]
 pub use admission::{ConnectionSnapshot, RpcDiagnostics};
+#[cfg(feature = "std")]
 mod bootstrap;
+#[cfg(feature = "std")]
 pub use bootstrap::Bootstrapper;
+#[cfg(feature = "std")]
 mod broken;
+#[cfg(feature = "std")]
 mod fd;
+#[cfg(feature = "std")]
 mod flow_control;
+#[cfg(feature = "std")]
 mod local;
+#[cfg(feature = "std")]
 pub mod membrane;
+#[cfg(feature = "std")]
 pub mod multiparty;
+#[cfg(feature = "std")]
 mod queued;
+#[cfg(feature = "std")]
 mod reconnect;
+#[cfg(feature = "std")]
 mod revocable;
+#[cfg(feature = "std")]
+pub mod scoped;
+#[cfg(feature = "std")]
 pub use revocable::RevocableServer;
+#[cfg(feature = "std")]
 mod rpc;
+#[cfg(feature = "std")]
 mod sender_queue;
+#[cfg(feature = "std")]
 mod split;
+#[cfg(feature = "std")]
+mod system;
+#[cfg(feature = "std")]
+mod transport_frame;
+#[cfg(feature = "std")]
+pub use transport_frame::OutgoingFrame;
+#[cfg(feature = "std")]
 mod task_set;
+#[cfg(feature = "std")]
 pub mod third_party;
+#[cfg(feature = "std")]
 pub mod twoparty;
 
+#[cfg(feature = "std")]
 use capnp::message;
 
 /// A message to be sent by a [`VatNetwork`].
+#[cfg(feature = "std")]
 pub trait OutgoingMessage {
     /// Attach owned descriptor references. Retain these until the queued write
     /// completes, even if the application drops its capability or send promise.
@@ -148,6 +207,44 @@ pub trait OutgoingMessage {
     /// Same as `get_body()`, but returns the corresponding reader type.
     fn get_body_as_reader(&self) -> ::capnp::Result<::capnp::any_pointer::Reader<'_>>;
 
+    /// Initialize a standard Call envelope. Transports may retain its selected
+    /// builder until unrestricted `get_body()` access invalidates that selection.
+    fn init_call(&mut self) -> capnp::Result<crate::rpc_capnp::call::Builder<'_>> {
+        Ok(self
+            .get_body()?
+            .get_as::<crate::rpc_capnp::message::Builder<'_>>()?
+            .init_call())
+    }
+
+    /// Borrow an existing standard Call, rejecting a different message kind.
+    fn get_call(&mut self) -> capnp::Result<crate::rpc_capnp::call::Builder<'_>> {
+        match self
+            .get_body()?
+            .get_as::<crate::rpc_capnp::message::Builder<'_>>()?
+            .which()?
+        {
+            crate::rpc_capnp::message::Call(call) => call,
+            _ => Err(Error::failed("request does not contain Call".into())),
+        }
+    }
+
+    /// Set Call metadata without exporting a temporary builder across the
+    /// transport boundary. Existing parameters and question ID are preserved.
+    fn set_call_header(
+        &mut self,
+        interface_id: u64,
+        method_id: u16,
+        no_promise_pipelining: bool,
+        allow_third_party_tail_call: bool,
+    ) -> capnp::Result<()> {
+        let mut call = self.get_call()?;
+        call.set_interface_id(interface_id);
+        call.set_method_id(method_id);
+        call.set_no_promise_pipelining(no_promise_pipelining);
+        call.set_allow_third_party_tail_call(allow_third_party_tail_call);
+        Ok(())
+    }
+
     /// Sends the message. Returns a promise that resolves once the send has completed.
     /// Dropping the returned promise does *not* cancel the send.
     fn send(
@@ -163,6 +260,14 @@ pub trait OutgoingMessage {
     /// default preserves compatibility with transports implementing `send()`.
     fn send_detached(self: Box<Self>) -> Rc<message::Builder<message::HeapAllocator>> {
         self.send().1
+    }
+
+    /// Publish after protocol state is committed and its table borrows are
+    /// released. The transport may immediately poll its existing output driver,
+    /// including application-provided IO. Accepted writes retain ordinary FIFO,
+    /// lifetime and error semantics; a blocked writer resumes through its waker.
+    fn send_detached_and_drive(self: Box<Self>) {
+        drop(self.send_detached());
     }
 
     /// Retains a local lifetime guard through write completion or failure.
@@ -191,16 +296,56 @@ pub trait OutgoingMessage {
 /// Whether the standard dispatcher releases this message before its next read.
 /// Calls and Returns may retain parameter/result storage, including capabilities.
 /// Unknown discriminants are short-lived and follow Unimplemented handling.
+#[cfg(feature = "std")]
 pub fn is_short_lived_rpc_message(body: capnp::any_pointer::Reader<'_>) -> capnp::Result<bool> {
-    use crate::rpc_capnp::message;
+    use capnp::traits::IntoInternalStructReader;
+    // rpc.capnp Message's union tag occupies the first u16. Its wire tags are
+    // Call=2 and Return=3. Classification does not need to follow the union's
+    // pointer: dispatch validates that payload using its own traversal budget.
+    let root = body.get_as::<crate::rpc_capnp::message::Reader>()?;
     Ok(!matches!(
-        body.get_as::<message::Reader>()?.which(),
-        Ok(message::Call(_) | message::Return(_))
+        root.into_internal_struct_reader().get_data_field::<u16>(0),
+        2 | 3
     ))
 }
 
 /// A message received from a [`VatNetwork`].
+#[cfg(feature = "std")]
 pub trait IncomingMessage {
+    /// Remember a validated Return payload from this message. The default
+    /// retains compatibility with transports that decode it again on access.
+    fn cache_results(&self, _payload: crate::rpc_capnp::payload::Reader<'_>) -> capnp::Result<()> {
+        Ok(())
+    }
+
+    /// Read the content of a successful Return, optionally using the cached
+    /// payload. Capability hooks are imbued by RPC after this call.
+    fn get_results(&self) -> capnp::Result<capnp::any_pointer::Reader<'_>> {
+        let root = self
+            .get_body()?
+            .get_as::<crate::rpc_capnp::message::Reader>()?;
+        let crate::rpc_capnp::message::Return(ret) = root.which()? else {
+            return Err(Error::failed("response does not contain Return".into()));
+        };
+        let crate::rpc_capnp::return_::Results(payload) = ret?.which()? else {
+            return Err(Error::failed("response does not contain Results".into()));
+        };
+        Ok(payload?.get_content())
+    }
+
+    /// The original complete stream frame, when stored contiguously. These
+    /// bytes must describe the same message as `get_segments`. The portable
+    /// adapter validates their framing and limits before protocol admission.
+    fn framed_bytes(&self) -> Option<&[u8]> {
+        None
+    }
+
+    /// Borrow all original serialized segments without traversing the root.
+    /// Required by the portable hosted driver adapter. Legacy custom transports
+    /// may leave this unavailable while continuing to use the existing driver.
+    fn get_segments(&self) -> Option<&dyn capnp::message::ReaderSegments> {
+        None
+    }
     /// Transfer ownership of received descriptors to RPC. Transports must bound
     /// ancillary-data reception and close truncated descriptors. RPC additionally
     /// accepts at most 253 entries and consumes each entry at most once.
@@ -221,10 +366,76 @@ pub trait IncomingMessage {
     fn get_body(&self) -> ::capnp::Result<::capnp::any_pointer::Reader<'_>>;
 }
 
-/// A two-way RPC connection.
-///
-/// A connection can be created by [`VatNetwork::connect()`].
+/// Exclusive, caller-polled reception for a message transport.
+#[cfg(feature = "std")]
+pub trait IncomingMessageStream {
+    /// Poll one message; Pending retains partial framing progress. The stream
+    /// owns input exclusively. The connection's factory specifies whether
+    /// dropping the stream ends reception or returns input to the connection.
+    fn poll_receive(
+        &mut self,
+        cx: &mut Context<'_>,
+    ) -> Poll<capnp::Result<Option<Box<dyn IncomingMessage>>>>;
+}
+
+/// Exclusive reception of complete standard frames without ancillary resources.
+/// A successful frame remains immutable and available until `finish_frame`;
+/// polling again before finishing returns that same frame, without reading IO.
+/// Dropping the stream ends reception. Partial progress survives Pending.
+#[cfg(feature = "std")]
+pub trait IncomingFrameStream {
+    fn poll_frame(&mut self, cx: &mut Context<'_>) -> Poll<capnp::Result<Option<&[u8]>>>;
+    fn frame(&self) -> Option<&[u8]>;
+    /// Release the current frame. An adapter abandoning incomplete input must
+    /// stop polling this stream and retain it until output drain has finished.
+    fn finish_frame(&mut self);
+}
+
+#[cfg(feature = "std")]
+/// Reusable frame publication into a connection's existing ordered output.
+/// Acceptance is synchronous; poll_flush observes physical completion of all
+/// previously accepted frames. Implementations retain frame resources through
+/// that completion and never cancel accepted writes when this handle is dropped.
+pub trait OutgoingMessageStream {
+    fn send(&mut self, frame: OutgoingFrame) -> Result<(), Error>;
+    fn poll_flush(
+        &mut self,
+        cx: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<Result<(), Error>>;
+}
+
+/// A two-way RPC connection, created by [`VatNetwork::connect()`].
+#[cfg(feature = "std")]
 pub trait Connection<VatId> {
+    /// Transfer exclusive byte-only input without allocating a message object
+    /// per frame. Return None for transports carrying descriptor attachments.
+    /// This and take_incoming_stream consume the same single input owner.
+    fn take_incoming_frames(&mut self) -> Option<Box<dyn IncomingFrameStream>> {
+        None
+    }
+    /// Optional single-consumer flush observer over the existing FIFO. Other
+    /// outgoing message APIs retain their ordering and completion semantics.
+    fn take_outgoing_stream(&mut self) -> Option<Box<dyn OutgoingMessageStream>> {
+        None
+    }
+    /// Optionally transfer exclusive input ownership to a reusable poller.
+    /// Polling it must not borrow this connection. Keep it alive through output
+    /// drain and close even when input is canceled. Custom transports may keep
+    /// using the per-message future interface by returning None.
+    fn take_incoming_stream(&mut self) -> Option<Box<dyn IncomingMessageStream>> {
+        None
+    }
+
+    /// Optionally lend exclusive input to a reusable poller with the same
+    /// message lifetime rules as `receive_incoming_message`: Calls and Returns
+    /// remain valid across subsequent reads. Dropping the poller must return
+    /// input to the connection, preserving partial progress and keeping the
+    /// transport alive through output drain. Custom transports may return None
+    /// to retain the per-message future interface.
+    fn take_owned_incoming_stream(&mut self) -> Option<Box<dyn IncomingMessageStream>> {
+        None
+    }
+
     /// Returns the peer identity established by the network. When used for
     /// bootstrap authorization, the network must authenticate this identity
     /// before delivering the connection to the RPC system.
@@ -243,9 +454,70 @@ pub trait Connection<VatId> {
     /// the connection should choose the size itself.
     fn new_outgoing_message(&mut self, first_segment_word_size: u32) -> Box<dyn OutgoingMessage>;
 
+    /// Allocate an initialized Call envelope. Implementations may copy a
+    /// validated template; each message must own independent mutable storage.
+    fn new_outgoing_call(
+        &mut self,
+        first_segment_word_size: u32,
+    ) -> Result<Box<dyn OutgoingMessage>, Error> {
+        let mut message = self.new_outgoing_message(first_segment_word_size);
+        message.init_call()?;
+        Ok(message)
+    }
+
+    /// Build a standard Finish. Its identity and release flag are supplied for
+    /// every message; transports may reuse an immutable envelope template.
+    fn new_outgoing_finish(
+        &mut self,
+        question_id: u32,
+        release_result_caps: bool,
+    ) -> Result<Box<dyn OutgoingMessage>, Error> {
+        let mut message = self.new_outgoing_message(5);
+        let mut finish = message
+            .get_body()?
+            .init_as::<crate::rpc_capnp::message::Builder>()
+            .init_finish();
+        finish.set_question_id(question_id);
+        finish.set_release_result_caps(release_result_caps);
+        finish.set_require_early_cancellation_workaround(false);
+        Ok(message)
+    }
+
+    /// Enqueue an immutable wire frame in the same FIFO as ordinary messages.
+    /// The portable driver uses this path to preserve capability indices without
+    /// decoding into a hook-imbued builder. Retain bytes and resources until the
+    /// write completes, even if the returned completion promise is dropped.
+    /// Completion means local write completion, never peer receipt.
+    fn send_frame(&mut self, _frame: OutgoingFrame) -> Promise<(), Error> {
+        Promise::err(Error::unimplemented(
+            "transport does not support portable RPC frames".into(),
+        ))
+    }
+
     /// Waits for a message to be received and returns it.  If the read stream cleanly terminates,
     /// returns None. If any other problem occurs, returns an Error.
     fn receive_incoming_message(&mut self) -> Promise<Option<Box<dyn IncomingMessage>>, Error>;
+
+    /// Receive a message which the caller will drop before starting its next
+    /// receive. Buffered transports may lend immutable receive storage even for
+    /// Calls and Returns. Keeping that storage alive must remain memory-safe;
+    /// a transport may reject the next receive until the message is dropped.
+    /// The portable adapter uses this while copying into its caller-owned pool.
+    /// The default keeps compatibility with transports returning owned messages.
+    fn receive_incoming_message_short_lived(
+        &mut self,
+    ) -> Promise<Option<Box<dyn IncomingMessage>>, Error> {
+        self.receive_incoming_message()
+    }
+
+    /// Optional cooperative polling of the existing output driver. This is a
+    /// second observer of the same FIFO, never a separate writer. It must not
+    /// keep the network alive or require a Connection borrow while polled.
+    /// The ordinary network driver remains responsible for progress and close.
+    /// Portable adapters may poll it after publishing to avoid a task round trip.
+    fn output_driver(&self) -> Option<Promise<(), Error>> {
+        None
+    }
 
     /// Observe termination of the outgoing write queue, independently of input
     /// EOF or closing the transport. Errors disconnect pending RPC calls even
@@ -406,6 +678,7 @@ pub trait Connection<VatId> {
 /// Poll the driver until it completes. A successful send grants flow credit;
 /// it does not acknowledge delivery. Dropping the controller releases blocked
 /// senders; the driver retains outstanding acknowledgements until they finish.
+#[cfg(feature = "std")]
 pub fn new_fixed_window_flow_controller(
     window_size: usize,
 ) -> (Box<dyn FlowController>, Promise<(), Error>) {
@@ -421,6 +694,7 @@ pub fn new_fixed_window_flow_controller(
 /// Changing the estimate alone does not wake blocked sends; the next successful
 /// acknowledgement rechecks them. At zero, credit remains available while
 /// in-flight bytes do not exceed the largest message observed.
+#[cfg(feature = "std")]
 pub fn new_variable_window_flow_controller(
     get_window: impl Fn() -> usize + 'static,
 ) -> (Box<dyn FlowController>, Promise<(), Error>) {
@@ -434,6 +708,7 @@ pub fn new_variable_window_flow_controller(
 /// then uses 5/4 growth and 7/8 decay collars. Estimated windows are bounded to
 /// 64 KiB..=1 GiB; the supplied initial window is used until an estimate exists.
 /// 256 KiB is a useful initial value. Poll the returned acknowledgement driver.
+#[cfg(feature = "std")]
 pub fn new_adaptive_flow_controller(
     initial_window: usize,
 ) -> (Box<dyn FlowController>, Promise<(), Error>) {
@@ -446,6 +721,7 @@ pub fn new_adaptive_flow_controller(
 /// or executors that supply their own time. Estimates have microsecond precision;
 /// zero-length intervals do not update the window. Clock sampling requires no
 /// timer task and does not depend on a particular async runtime.
+#[cfg(feature = "std")]
 pub fn new_adaptive_flow_controller_with_clock(
     initial_window: usize,
     clock: impl Fn() -> std::time::Duration + 'static,
@@ -456,6 +732,7 @@ pub fn new_adaptive_flow_controller_with_clock(
 }
 
 /// Tracks a particular RPC stream in order to implement a flow control algorithm.
+#[cfg(feature = "std")]
 pub trait FlowController {
     fn send(
         &mut self,
@@ -472,6 +749,7 @@ pub trait FlowController {
 ///
 /// Cap'n Proto RPC operates between vats, where a "vat" is some sort of host of
 /// objects.  Typically one Cap'n Proto process (in the Unix sense) is one vat.
+#[cfg(feature = "std")]
 pub trait VatNetwork<VatId> {
     fn join_network(&self) -> Option<Rc<dyn multiparty::JoinNetwork<VatId>>> {
         None
@@ -495,10 +773,12 @@ pub trait VatNetwork<VatId> {
 /// Bootstrap message content. The factory runs once per request, so it may
 /// apply current application policy. Previously issued capabilities retain
 /// their authority unless the application separately revokes them.
+#[cfg(feature = "std")]
 pub trait BootstrapFactory<VatId> {
     fn create_for(&self, client_id: &VatId) -> capnp::Result<capnp::capability::Client>;
 }
 
+#[cfg(feature = "std")]
 pub(crate) enum Bootstrap<VatId> {
     Static(Box<dyn ClientHook>),
     Factory {
@@ -506,6 +786,7 @@ pub(crate) enum Bootstrap<VatId> {
         local_id: Rc<VatId>,
     },
 }
+#[cfg(feature = "std")]
 impl<VatId> Clone for Bootstrap<VatId> {
     fn clone(&self) -> Self {
         match self {
@@ -517,6 +798,7 @@ impl<VatId> Clone for Bootstrap<VatId> {
         }
     }
 }
+#[cfg(feature = "std")]
 impl<VatId> Bootstrap<VatId> {
     fn for_peer(&self, peer: &VatId) -> capnp::Result<Box<dyn ClientHook>> {
         match self {
@@ -546,6 +828,7 @@ impl<VatId> Bootstrap<VatId> {
 /// executor. A common way accomplish that is to pass the `RpcSystem` to
 /// `tokio::task::spawn_local()`.
 #[must_use = "futures do nothing unless polled"]
+#[cfg(feature = "std")]
 pub struct RpcSystem<VatId>
 where
     VatId: 'static,
@@ -554,13 +837,14 @@ where
 
     bootstrap: Bootstrap<VatId>,
 
-    connections: Rc<RefCell<rpc::ConnectionRegistry<VatId>>>,
+    connections: Rc<RefCell<crate::system::ConnectionRegistry<VatId>>>,
     join_context: Rc<rpc::JoinContext<VatId>>,
 
     tasks: TaskSet<Error>,
     handle: crate::task_set::TaskSetHandle<Error>,
 }
 
+#[cfg(feature = "std")]
 impl<VatId> RpcSystem<VatId> {
     /// Constructs a new `RpcSystem` with the given network and bootstrap capability.
     pub fn new(
@@ -599,23 +883,7 @@ impl<VatId> RpcSystem<VatId> {
     ) -> Self {
         let (mut handle, tasks) = TaskSet::new(Box::new(SystemTaskReaper));
 
-        let mut handle1 = handle.clone();
-        handle.add(network.drive_until_shutdown().then(move |r| {
-            let r = match r {
-                Ok(()) => Ok(()),
-                Err(e) => {
-                    if e.kind != ::capnp::ErrorKind::Disconnected {
-                        // Don't report disconnects as an error.
-                        Err(e)
-                    } else {
-                        Ok(())
-                    }
-                }
-            };
-
-            handle1.terminate(r);
-            Promise::ok(())
-        }));
+        system::drive_network(&mut *network, &mut handle);
 
         let join_network = network.join_network();
         let join_context = Rc::new(rpc::JoinContext {
@@ -626,7 +894,7 @@ impl<VatId> RpcSystem<VatId> {
             join_context,
             network: Rc::new(RefCell::new(network)),
             bootstrap,
-            connections: Rc::new(RefCell::new(rpc::ConnectionRegistry::new())),
+            connections: Rc::new(RefCell::new(crate::system::ConnectionRegistry::new())),
 
             tasks,
             handle: handle.clone(),
@@ -675,7 +943,7 @@ impl<VatId> RpcSystem<VatId> {
                 // Do not hold a RefCell borrow while waiting on the network.
                 let accepting = network.borrow_mut().accept();
                 let connection = accepting.await?;
-                if connections.borrow().closing {
+                if connections.borrow().is_closing() {
                     return Ok(());
                 }
                 Self::get_connection_state(
@@ -683,56 +951,18 @@ impl<VatId> RpcSystem<VatId> {
                     bootstrap.clone(),
                     connection,
                     handle.clone(),
-                );
+                )?;
             }
         })
     }
 
     pub(crate) fn get_connection_state(
-        connections: &Rc<RefCell<rpc::ConnectionRegistry<VatId>>>,
+        connections: &Rc<RefCell<crate::system::ConnectionRegistry<VatId>>>,
         bootstrap: Bootstrap<VatId>,
         connection: Box<dyn crate::Connection<VatId>>,
-        mut handle: crate::task_set::TaskSetHandle<Error>,
-    ) -> Rc<rpc::ConnectionState<VatId>> {
-        let id = connection.connection_id();
-        let existing = connections.borrow().states.get(&id).cloned();
-        if let Some(state) = existing {
-            state.set_not_idle();
-            return state;
-        }
-        let (sender, receiver) = oneshot::channel::<Promise<(), Error>>();
-        let (tasks, state) = rpc::ConnectionState::new(
-            bootstrap,
-            connection,
-            sender,
-            Rc::downgrade(connections),
-            handle.clone(),
-            connections.borrow().flow_limit,
-            connections.borrow().outgoing_call_limit,
-        );
-        connections.borrow_mut().states.insert(id, state.clone());
-        let registry = connections.clone();
-        let shutdown_state = state.clone();
-        handle.add(async move {
-            let result = match receiver.await {
-                Ok(shutdown) => shutdown.await,
-                Err(e) => Err(Error::failed(e.to_string())),
-            };
-            let waker = {
-                let mut registry = registry.borrow_mut();
-                // Live entries are removed before shutdown. The disconnector
-                // still waits for all outstanding flushes.
-                registry.closing_connections -= 1;
-                registry.waker.take()
-            };
-            drop(shutdown_state);
-            if let Some(waker) = waker {
-                waker.wake();
-            }
-            result
-        });
-        handle.add(tasks);
-        state
+        handle: crate::task_set::TaskSetHandle<Error>,
+    ) -> capnp::Result<Rc<rpc::ConnectionState<VatId>>> {
+        system::connect(connections, bootstrap, connection, handle)
     }
 
     /// Encodes optional exception trace text sent to peers. Disabled by default.
@@ -760,7 +990,7 @@ impl<VatId> RpcSystem<VatId> {
         let states = {
             let mut registry = self.connections.borrow_mut();
             registry.flow_limit = words;
-            registry.states.values().cloned().collect::<Vec<_>>()
+            registry.states()
         };
         for state in states {
             state.set_flow_limit(words);
@@ -781,9 +1011,12 @@ impl<VatId> RpcSystem<VatId> {
     /// incoming work and purely local unresolved capabilities need separate
     /// budgets. Apply a limit to every RPC system used by the application.
     pub fn set_outgoing_call_limit(&mut self, calls: usize) {
-        let registry = &mut *self.connections.borrow_mut();
-        registry.outgoing_call_limit = calls;
-        for state in registry.states.values() {
+        let states = {
+            let mut registry = self.connections.borrow_mut();
+            registry.outgoing_call_limit = calls;
+            registry.states()
+        };
+        for state in states {
             state.set_outgoing_call_limit(calls);
         }
     }
@@ -794,10 +1027,9 @@ impl<VatId> RpcSystem<VatId> {
             let Some(registry) = registry.upgrade() else {
                 return Vec::new();
             };
-            let mut snapshots = registry
-                .borrow()
-                .states
-                .values()
+            let states = registry.borrow().states();
+            let mut snapshots = states
+                .into_iter()
                 .map(|state| state.snapshot())
                 .collect::<Vec<_>>();
             snapshots.sort_by_key(|snapshot| snapshot.connection_id);
@@ -807,24 +1039,22 @@ impl<VatId> RpcSystem<VatId> {
 
     /// Returns a `Disconnector` future that can be run to cleanly close the connection to this `RpcSystem`'s network.
     /// You should get the `Disconnector` before you spawn the `RpcSystem`.
-    pub fn get_disconnector(&self) -> rpc::Disconnector<VatId> {
-        rpc::Disconnector::new(self.connections.clone())
+    pub fn get_disconnector(&self) -> Disconnector<VatId> {
+        Disconnector::new(self.connections.clone())
     }
 }
 
+#[cfg(feature = "std")]
 impl<VatId: 'static> Drop for RpcSystem<VatId> {
     fn drop(&mut self) {
-        let states = {
-            let mut registry = self.connections.borrow_mut();
-            registry.closing = true;
-            registry.states.values().cloned().collect::<Vec<_>>()
-        };
+        let states = system::ConnectionRegistry::begin_close(&self.connections);
         for state in states {
             state.disconnect(Error::disconnected("RPC system was dropped".into()));
         }
     }
 }
 
+#[cfg(feature = "std")]
 impl<VatId> Future for RpcSystem<VatId>
 where
     VatId: 'static,
@@ -839,6 +1069,7 @@ where
 /// your local executor. Dropping it releases the executor's task ownership;
 /// calls with no remaining caller are then canceled.
 /// Incoming RPC calls use their RpcSystem's task owner automatically.
+#[cfg(feature = "std")]
 pub fn new_call_executor() -> (Rc<dyn capnp::capability::CallExecutor>, Promise<(), Error>) {
     struct Reaper;
     impl task_set::TaskReaper<Error> for Reaper {
@@ -851,7 +1082,9 @@ pub fn new_call_executor() -> (Rc<dyn capnp::capability::CallExecutor>, Promise<
     )
 }
 
+#[cfg(feature = "std")]
 pub(crate) struct CallTaskExecutor(task_set::TaskSetHandle<Error>);
+#[cfg(feature = "std")]
 impl capnp::capability::CallExecutor for CallTaskExecutor {
     fn spawn(&self, task: Promise<(), Error>) -> capnp::Result<()> {
         self.0
@@ -865,6 +1098,7 @@ impl capnp::capability::CallExecutor for CallTaskExecutor {
 
 /// Construct a local server whose non-cancellable calls can outlive their local
 /// callers. Keep the executor driver running until these calls have completed.
+#[cfg(feature = "std")]
 pub fn new_client_with_executor<C, S>(
     server: S,
     executor: Rc<dyn capnp::capability::CallExecutor>,
@@ -876,6 +1110,7 @@ where
 }
 
 /// Variant of [`new_client_with_executor`] for a shared server.
+#[cfg(feature = "std")]
 pub fn new_client_from_rc_with_executor<C, S>(
     server: Rc<S>,
     executor: Rc<dyn capnp::capability::CallExecutor>,
@@ -893,6 +1128,7 @@ where
 /// Incoming RPC calls obtain one from their `RpcSystem`. For calls made directly
 /// to this local client, use [`new_client_with_executor`] instead. Without an
 /// owner, protected calls fail before their application future is polled.
+#[cfg(feature = "std")]
 pub fn new_client<C, S>(s: S) -> C
 where
     C: capnp::capability::FromServer<S>,
@@ -902,6 +1138,7 @@ where
 
 /// Construct a server from an owned runtime schema. Protected direct calls
 /// require new_loaded_client_from_rc() with an executor.
+#[cfg(feature = "std")]
 pub fn new_loaded_client<S: capnp::schema_loader::dynamic::Server>(
     server: S,
     schema: capnp::schema_loader::dynamic::ServiceSchema,
@@ -909,6 +1146,7 @@ pub fn new_loaded_client<S: capnp::schema_loader::dynamic::Server>(
     new_loaded_client_from_rc(Rc::new(server), schema, None)
 }
 
+#[cfg(feature = "std")]
 pub fn new_loaded_client_from_rc<S: capnp::schema_loader::dynamic::Server>(
     server: Rc<S>,
     schema: capnp::schema_loader::dynamic::ServiceSchema,
@@ -926,6 +1164,7 @@ pub fn new_loaded_client_from_rc<S: capnp::schema_loader::dynamic::Server>(
 /// Construct a reflected server, preserving its compiled interface metadata.
 /// Dynamic servers protect calls by default; supply an executor for protected
 /// direct local calls, or override Server::allow_cancellation().
+#[cfg(feature = "std")]
 pub fn new_dynamic_client<S: capnp::dynamic_capability::Server>(
     server: S,
 ) -> capnp::dynamic_capability::Client {
@@ -933,6 +1172,7 @@ pub fn new_dynamic_client<S: capnp::dynamic_capability::Server>(
 }
 
 /// Shared-server variant with an optional owner for protected local calls.
+#[cfg(feature = "std")]
 pub fn new_dynamic_client_from_rc<S: capnp::dynamic_capability::Server>(
     server: Rc<S>,
     executor: Option<Rc<dyn capnp::capability::CallExecutor>>,
@@ -953,6 +1193,7 @@ pub fn new_dynamic_client_from_rc<S: capnp::dynamic_capability::Server>(
 /// over transports which discard descriptors. The descriptor is owned by the
 /// capability and retained by any outgoing messages still waiting to be written.
 #[cfg(unix)]
+#[cfg(feature = "std")]
 pub fn new_fd_client<C, S>(server: S, fd: std::os::fd::OwnedFd) -> C
 where
     C: capnp::capability::FromServer<S>,
@@ -966,6 +1207,7 @@ where
 
 /// Variant of [`new_fd_client`] that also owns protected direct local calls.
 #[cfg(unix)]
+#[cfg(feature = "std")]
 pub fn new_fd_client_with_executor<C, S>(
     server: S,
     fd: std::os::fd::OwnedFd,
@@ -984,6 +1226,7 @@ where
 /// identity, streaming state and the first client's executor/descriptor options.
 /// Construction fails with a broken capability if this server already has a live
 /// revocable client, including through another generated interface view.
+#[cfg(feature = "std")]
 pub fn new_client_from_rc<C, S>(s: Rc<S>) -> C
 where
     C: capnp::capability::FromServer<S>,
@@ -999,6 +1242,7 @@ where
 /// underlying Server objects associated with them. Holds only weak references to Server objects
 /// allowing Server objects to be dropped when dropped by the remote client. Call the `gc` method
 /// to reclaim memory used for Server objects that have been dropped.
+#[cfg(feature = "std")]
 pub struct CapabilityServerSet<S, C>
 where
     C: capnp::capability::FromServer<S>,
@@ -1007,6 +1251,7 @@ where
     marker: std::marker::PhantomData<C>,
 }
 
+#[cfg(feature = "std")]
 impl<S, C> Default for CapabilityServerSet<S, C>
 where
     C: capnp::capability::FromServer<S>,
@@ -1019,6 +1264,7 @@ where
     }
 }
 
+#[cfg(feature = "std")]
 impl<S, C> CapabilityServerSet<S, C>
 where
     C: capnp::capability::FromServer<S>,
@@ -1121,6 +1367,7 @@ where
 /// Creates a `Client` from a future that resolves to a `Client`.
 ///
 /// Any calls that arrive before the resolution are accumulated in a queue.
+#[cfg(feature = "std")]
 pub fn new_future_client<T>(
     client_future: impl ::futures::Future<Output = Result<T, Error>> + 'static,
 ) -> T
@@ -1140,13 +1387,16 @@ where
     T::new(Box::new(queued_client))
 }
 
+#[cfg(feature = "std")]
 struct SystemTaskReaper;
+#[cfg(feature = "std")]
 impl crate::task_set::TaskReaper<Error> for SystemTaskReaper {
     fn task_failed(&mut self, error: Error) {
         println!("ERROR: {error}");
     }
 }
 
+#[cfg(feature = "std")]
 pub struct ImbuedMessageBuilder<A>
 where
     A: ::capnp::message::Allocator,
@@ -1155,6 +1405,7 @@ where
     cap_table: Vec<Option<Box<dyn ::capnp::private::capability::ClientHook>>>,
 }
 
+#[cfg(feature = "std")]
 impl<A> ImbuedMessageBuilder<A>
 where
     A: ::capnp::message::Allocator,
@@ -1187,12 +1438,14 @@ where
     }
 }
 
-fn canceled_to_error(_e: futures::channel::oneshot::Canceled) -> Error {
+#[cfg(feature = "std")]
+fn canceled_to_error(_e: capntproto_rpc_engine::completion::Error) -> Error {
     Error::failed("oneshot was canceled".to_string())
 }
 
 /// Standard typed Persistent(SturdyRef, Owner) interface from the pinned C++ schema.
 #[allow(clippy::extra_unused_type_parameters)] // Generated generic schema helpers.
+#[cfg(feature = "std")]
 pub mod persistent_capnp {
     include!(concat!(env!("OUT_DIR"), "/persistent_capnp.rs"));
 }

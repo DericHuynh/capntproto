@@ -19,7 +19,10 @@ pub struct NoAllocSegmentTableInfo {
     pub total_segments_length_bytes: usize,
 }
 
-fn read_segment_table(slice: &[u8], options: ReaderOptions) -> Result<NoAllocSegmentTableInfo> {
+pub(super) fn read_segment_table(
+    slice: &[u8],
+    options: ReaderOptions,
+) -> Result<NoAllocSegmentTableInfo> {
     let mut remaining = slice;
 
     verify_alignment(remaining.as_ptr())?;
@@ -117,6 +120,10 @@ pub struct NoAllocBufferSegments<T> {
 }
 
 impl<T> NoAllocBufferSegments<T> {
+    /// Inspect the original immutable buffer, including any framing bytes.
+    pub fn buffer(&self) -> &T {
+        &self.buffer
+    }
     /// Constructs a NoAllocBufferSegments from a buffer and a [`NoAllocSegmentTableInfo`].
     /// This method is used internally by [`NoAllocBufferSegments::from_slice()`]
     /// and [`NoAllocBufferSegments::from_buffer()`]. It has been made public to allow for
@@ -159,6 +166,23 @@ impl<'b> NoAllocBufferSegments<&'b [u8]> {
 }
 
 impl<T: AsRef<[u8]>> NoAllocBufferSegments<T> {
+    // Keep the table walk out of the common single-segment lookup. Inlining
+    // that lookup into arena bounds checks avoids an extra call per pointer.
+    fn multiple_segment(&self, idx: usize) -> Option<&[u8]> {
+        let mut buf = self.buffer.as_ref();
+        let count = u32_to_segments_count(read_u32_le(&mut buf).unwrap()).unwrap();
+        if idx >= count {
+            return None;
+        }
+        let mut offset = calculate_data_offset(count).unwrap();
+        for _ in 0..idx {
+            offset = offset
+                .checked_add(u32_to_segment_length_bytes(read_u32_le(&mut buf).unwrap()).unwrap())
+                .unwrap();
+        }
+        let length = u32_to_segment_length_bytes(read_u32_le(&mut buf).unwrap()).unwrap();
+        Some(&self.buffer.as_ref()[offset..offset + length])
+    }
     /// Reads a serialized message (including a segment table) from a buffer and takes ownership, without copying.
     /// The buffer is allowed to extend beyond the end of the message.
     ///
@@ -168,9 +192,22 @@ impl<T: AsRef<[u8]>> NoAllocBufferSegments<T> {
         let segment_table_info = read_segment_table(buffer.as_ref(), options)?;
         Ok(Self::from_segment_table_info(buffer, segment_table_info))
     }
+
+    /// Read exactly one complete frame. Unlike `from_buffer`, reject trailing
+    /// bytes while retaining the same alignment, overflow and traversal checks.
+    pub fn from_buffer_exact(buffer: T, options: ReaderOptions) -> Result<Self> {
+        let info = read_segment_table(buffer.as_ref(), options)?;
+        if info.segment_table_length_bytes + info.total_segments_length_bytes
+            != buffer.as_ref().len()
+        {
+            return Err(Error::from_kind(ErrorKind::TypeMismatch));
+        }
+        Ok(Self::from_segment_table_info(buffer, info))
+    }
 }
 
 impl<T: AsRef<[u8]>> ReaderSegments for NoAllocBufferSegments<T> {
+    #[inline(always)]
     fn get_segment(&self, idx: u32) -> Option<&[u8]> {
         // panic safety: we are doing a lot of `unwrap` here. We assume that underlying message slice
         // holds valid capnp message - we already verified slice in read_segment_table(),
@@ -186,30 +223,7 @@ impl<T: AsRef<[u8]>> ReaderSegments for NoAllocBufferSegments<T> {
                     None
                 }
             }
-            NoAllocBufferSegmentType::MultipleSegments => {
-                let mut buf = self.buffer.as_ref();
-
-                let segments_count = u32_to_segments_count(read_u32_le(&mut buf).unwrap()).unwrap();
-
-                if idx >= segments_count {
-                    return None;
-                }
-
-                let mut segment_offset = calculate_data_offset(segments_count).unwrap();
-
-                for _ in 0..idx {
-                    segment_offset = segment_offset
-                        .checked_add(
-                            u32_to_segment_length_bytes(read_u32_le(&mut buf).unwrap()).unwrap(),
-                        )
-                        .unwrap();
-                }
-
-                let segment_length =
-                    u32_to_segment_length_bytes(read_u32_le(&mut buf).unwrap()).unwrap();
-
-                Some(&self.buffer.as_ref()[segment_offset..(segment_offset + segment_length)])
-            }
+            NoAllocBufferSegmentType::MultipleSegments => self.multiple_segment(idx),
         }
     }
 

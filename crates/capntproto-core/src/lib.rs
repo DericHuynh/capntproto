@@ -56,7 +56,6 @@ pub mod dynamic_orphan;
 pub mod dynamic_struct;
 pub mod dynamic_value;
 pub mod enum_list;
-#[cfg(feature = "alloc")]
 pub mod field_api;
 pub mod introspect;
 pub mod io;
@@ -75,6 +74,7 @@ pub mod struct_list;
 pub mod text;
 pub mod text_list;
 pub mod traits;
+pub mod wire_capability;
 
 /// The result of schema-independent structural message comparison.
 ///
@@ -255,6 +255,13 @@ pub enum ErrorKind {
     /// A mutable view or resize was requested for an immutable external segment.
     ReadOnlySegment,
     IncompleteFill,
+    /// An IO implementation reported more bytes than its supplied destination.
+    InvalidReadCount(usize, usize),
+    /// A bounded builder cannot reserve the requested number of words.
+    InsufficientCapacity {
+        requested_words: u32,
+        available_words: u32,
+    },
     TrailingData,
     /// Something went wrong
     Failed,
@@ -577,10 +584,10 @@ impl Error {
 }
 
 #[cfg(feature = "std")]
-impl core::convert::From<::std::io::Error> for Error {
-    fn from(err: ::std::io::Error) -> Self {
+impl core::convert::From<::std::io::ErrorKind> for ErrorKind {
+    fn from(kind: ::std::io::ErrorKind) -> Self {
         use std::io;
-        let kind = match err.kind() {
+        match kind {
             io::ErrorKind::TimedOut => ErrorKind::Overloaded,
             io::ErrorKind::BrokenPipe
             | io::ErrorKind::ConnectionRefused
@@ -589,7 +596,14 @@ impl core::convert::From<::std::io::Error> for Error {
             | io::ErrorKind::NotConnected => ErrorKind::Disconnected,
             io::ErrorKind::UnexpectedEof => ErrorKind::PrematureEndOfFile,
             _ => ErrorKind::Failed,
-        };
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl core::convert::From<::std::io::Error> for Error {
+    fn from(err: ::std::io::Error) -> Self {
+        let kind = err.kind().into();
         #[cfg(feature = "alloc")]
         return Self {
             kind,
@@ -654,6 +668,8 @@ impl core::fmt::Display for ErrorKind {
             Self::NeedsUpgrade => write!(fmt, "existing layout needs enlargement"),
             Self::LengthOverflow => write!(fmt, "length exceeds the wire encoding limit"),
             Self::IncompleteFill => write!(fmt, "staged fill is incomplete"),
+            Self::InvalidReadCount(actual, available) => write!(fmt, "read reported {actual} bytes for a {available}-byte buffer"),
+            Self::InsufficientCapacity { requested_words, available_words } => write!(fmt, "builder needs {requested_words} words but only {available_words} remain"),
             Self::WrongArena => write!(fmt, "orphan belongs to another arena or capability context"),
             Self::ReadOnlySegment => write!(fmt, "external segment is read-only"),
             Self::WouldTruncate => write!(fmt, "copy would truncate the source layout"),

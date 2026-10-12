@@ -85,6 +85,7 @@ fn owned_source(path: &Path) -> bool {
             "src",
             "crates/capntproto-core",
             "crates/capntproto-rpc",
+            "crates/capntproto-rpc-engine",
             "crates/capntproto-futures",
             "crates/capntproto-codegen",
             "crates/capntproto-compiler",
@@ -97,6 +98,7 @@ fn owned_source(path: &Path) -> bool {
             "fuzz",
             "benchmarks",
             "verification/miri",
+            "verification/portable",
         ]
         .iter()
         .any(|prefix| path.starts_with(prefix))
@@ -162,7 +164,9 @@ fn group(path: &str) -> &str {
         "optional-compatibility"
     } else if path.starts_with("crates/capntproto-core/") {
         "wire-runtime"
-    } else if path.starts_with("crates/capntproto-rpc/") {
+    } else if path.starts_with("crates/capntproto-rpc/")
+        || path.starts_with("crates/capntproto-rpc-engine/")
+    {
         "capability-rpc"
     } else if path.starts_with("crates/capntproto-futures/") {
         "async-framing"
@@ -410,6 +414,8 @@ pub fn collect(r: &mut Runner) -> Result<()> {
                 "--locked",
                 "--ignore-rust-version",
                 "--workspace",
+                "--features",
+                "capntproto/quic",
                 "--no-fail-fast",
                 "-E",
                 &filter,
@@ -432,6 +438,8 @@ pub fn collect(r: &mut Runner) -> Result<()> {
                 "--locked",
                 "--ignore-rust-version",
                 "--workspace",
+                "--features",
+                "capntproto/quic",
                 "--doc",
                 "--no-fail-fast",
                 "--",
@@ -566,6 +574,7 @@ pub fn collect(r: &mut Runner) -> Result<()> {
         "src/",
         "crates/capntproto-core/src/",
         "crates/capntproto-rpc/src/",
+        "crates/capntproto-rpc-engine/src/",
         "crates/capntproto-futures/src/",
         "crates/capntproto-codegen/src/",
         "crates/capntproto-compiler/src/",
@@ -623,6 +632,7 @@ mod tests {
             "crates/capntproto-compat/src/json.rs",
             "crates/capntproto-core/src/lib.rs",
             "crates/capntproto-rpc/src/lib.rs",
+            "crates/capntproto-rpc-engine/src/question.rs",
             "crates/capntproto-futures/src/lib.rs",
             "crates/capntproto-codegen/src/lib.rs",
             "quality/src/coverage.rs",
@@ -651,6 +661,10 @@ mod tests {
         assert_eq!(
             group("crates/capntproto-compat/src/json.rs"),
             "optional-compatibility"
+        );
+        assert_eq!(
+            group("crates/capntproto-rpc-engine/src/question.rs"),
+            "capability-rpc"
         );
     }
 

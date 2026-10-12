@@ -1,7 +1,7 @@
 use capnp::capability::Promise;
 use capnp::Error;
 
-use futures::channel::oneshot;
+use capntproto_rpc_engine::completion::shared as oneshot;
 use futures::TryFutureExt;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -9,8 +9,7 @@ use std::time::Duration;
 
 use crate::task_set::{TaskReaper, TaskSet, TaskSetHandle};
 
-mod adaptive;
-use adaptive::AdaptiveWindow;
+use capntproto_rpc_engine::flow_control::Window;
 
 pub(crate) const DEFAULT_WINDOW_SIZE: usize = 65536;
 
@@ -40,36 +39,26 @@ enum State {
 }
 
 struct WindowState {
-    window_size: usize,
-    // Widen before converting words to bytes and accounting multiple sends.
-    // Even synthetic messages reporting usize::MAX words cannot wrap the window.
-    in_flight: u128,
-    max_message_size: u128,
-    adaptive: Option<AdaptiveWindow>,
+    credit: Window,
     state: State,
 }
 
 impl WindowState {
     fn needs_window(&self) -> bool {
-        matches!(self.state, State::Running(_)) && self.in_flight > self.max_message_size
+        matches!(self.state, State::Running(_)) && self.credit.needs_window()
     }
 
     fn is_ready(&self) -> bool {
-        // One extra largest message avoids stop-and-wait for oversized messages.
-        // C++ adaptive readiness is strict even for a zero initial window;
-        // fixed/variable controllers additionally allow one message at zero.
-        (self.adaptive.is_none() && self.in_flight <= self.max_message_size)
-            || self.in_flight < self.max_message_size + self.window_size as u128
+        self.credit.is_ready()
     }
 
-    fn release_ready(&mut self) {
+    fn take_ready(&mut self) -> Vec<oneshot::Sender<Result<(), Error>>> {
         if self.is_ready() {
             if let State::Running(waiters) = &mut self.state {
-                for waiter in std::mem::take(waiters) {
-                    let _ = waiter.send(Ok(()));
-                }
+                return std::mem::take(waiters);
             }
         }
+        Vec::new()
     }
 }
 
@@ -86,12 +75,20 @@ struct Reaper {
 
 impl TaskReaper<Error> for Reaper {
     fn task_failed(&mut self, error: Error) {
-        let mut inner = self.inner.borrow_mut();
-        if let State::Running(ref mut waiters) = &mut inner.state {
-            for waiter in std::mem::take(waiters) {
-                let _ = waiter.send(Err(error.clone()));
+        let waiters = {
+            let mut inner = self.inner.borrow_mut();
+            if !matches!(inner.state, State::Running(_)) {
+                return;
             }
-            inner.state = State::Failed(error);
+            let State::Running(waiters) =
+                std::mem::replace(&mut inner.state, State::Failed(error.clone()))
+            else {
+                unreachable!()
+            };
+            waiters
+        };
+        for waiter in waiters {
+            let _ = waiter.send(Err(error.clone()));
         }
     }
 }
@@ -103,10 +100,11 @@ impl WindowFlowController {
         clock: Option<Rc<dyn Fn() -> Duration>>,
     ) -> (Self, Promise<(), Error>) {
         let inner = Rc::new(RefCell::new(WindowState {
-            window_size,
-            in_flight: 0,
-            max_message_size: 0,
-            adaptive: clock.as_ref().map(|_| AdaptiveWindow::new()),
+            credit: if clock.is_some() {
+                Window::adaptive(window_size)
+            } else {
+                Window::fixed(window_size)
+            },
             state: State::Running(vec![]),
         }));
         let (tasks, task_future) = TaskSet::new(Box::new(Reaper {
@@ -131,15 +129,29 @@ impl crate::FlowController for WindowFlowController {
         ack: Promise<(), Error>,
     ) -> Promise<(), Error> {
         let size = (message.size_in_words() as u128) * 8;
-        let now = self.clock.as_ref().map(|clock| clock());
         // Sending must be immediate, even if earlier calls failed or blocked.
         // Do not hold our state borrow while invoking an external message/getter.
         let _ = message.send_detached();
-        let needs_window = {
+        let now = self.clock.as_ref().map_or(Duration::ZERO, |clock| clock());
+        let (receipt, needs_window) = {
             let mut inner = self.inner.borrow_mut();
-            inner.max_message_size = inner.max_message_size.max(size);
-            inner.in_flight += size;
-            inner.needs_window()
+            let receipt = inner.credit.sent(size, now);
+            (receipt, inner.needs_window())
+        };
+        let receipt = match receipt {
+            Ok(receipt) => receipt,
+            Err(error) => {
+                let error = Error::failed(error.to_string());
+                Reaper {
+                    inner: self.inner.clone(),
+                }
+                .task_failed(error.clone());
+                // The message was already handed to the transport. A rejected
+                // clock/accounting input must not discard its acknowledgement
+                // or let wait_all_acked report completion before it settles.
+                self.tasks.add(ack);
+                return Promise::err(error);
+            }
         };
         // C++ short-circuits the query while one largest message fits, and
         // never queries a failed stream. Besides avoiding syscalls, this avoids
@@ -149,17 +161,12 @@ impl crate::FlowController for WindowFlowController {
             .as_ref()
             .filter(|_| needs_window)
             .map(|get| get());
-        let (snapshot, ready) = {
+        let ready = {
             let mut inner = self.inner.borrow_mut();
             if let Some(window) = window {
-                inner.window_size = window;
+                inner.credit.set_size(window);
             }
-            let ready = inner.is_ready();
-            let snapshot = inner
-                .adaptive
-                .as_ref()
-                .map(|adaptive| adaptive.sent(now.unwrap(), size, inner.window_size, !ready));
-            (snapshot, ready)
+            inner.is_ready()
         };
 
         let inner = self.inner.clone();
@@ -167,27 +174,17 @@ impl crate::FlowController for WindowFlowController {
         let clock = self.clock.clone();
         self.tasks.add(async move {
             ack.await?;
-            let now = clock.as_ref().map(|clock| clock());
+            let now = clock.as_ref().map_or(Duration::ZERO, |clock| clock());
             let needs_window = {
                 let mut inner = inner.borrow_mut();
-                inner.in_flight -= size;
+                inner
+                    .credit
+                    .ack(receipt, now)
+                    .map_err(|error| Error::failed(error.to_string()))?;
                 inner.needs_window()
             };
             let window = getter.as_ref().filter(|_| needs_window).map(|get| get());
-            let mut inner = inner.borrow_mut();
-            if let Some(window) = window {
-                inner.window_size = window;
-            }
-            let current = inner.window_size;
-            if let Some(snapshot) = snapshot {
-                inner.window_size =
-                    inner
-                        .adaptive
-                        .as_mut()
-                        .unwrap()
-                        .ack(snapshot, now.unwrap(), current);
-            }
-            inner.release_ready();
+            release_ready(&inner, window);
             Ok(())
         });
 
@@ -199,7 +196,10 @@ impl crate::FlowController for WindowFlowController {
                 } else {
                     let (snd, rcv) = oneshot::channel();
                     waiters.push(snd);
-                    Promise::from_future(async { rcv.await.map_err(crate::canceled_to_error)? })
+                    Promise::from_future(async {
+                        rcv.await
+                            .map_err(|_| Error::failed("oneshot was canceled".into()))?
+                    })
                 }
             }
             State::Failed(error) => Promise::err(error.clone()),
@@ -217,10 +217,93 @@ impl Drop for WindowFlowController {
     fn drop(&mut self) {
         // Credit promises are not delivery receipts. The driver still owns all
         // outstanding acknowledgements and completes once they settle.
-        if let State::Running(waiters) = &mut self.inner.borrow_mut().state {
-            for waiter in std::mem::take(waiters) {
-                let _ = waiter.send(Ok(()));
+        let waiters = match &mut self.inner.borrow_mut().state {
+            State::Running(waiters) => std::mem::take(waiters),
+            State::Failed(_) => Vec::new(),
+        };
+        for waiter in waiters {
+            let _ = waiter.send(Ok(()));
+        }
+    }
+}
+
+// A completion can synchronously wake caller code. Detach every waiter before
+// sending so a wake may inspect or use the controller without a RefCell panic.
+fn release_ready(inner: &RefCell<WindowState>, window: Option<usize>) {
+    let waiters = {
+        let mut inner = inner.borrow_mut();
+        if let Some(window) = window {
+            inner.credit.set_size(window);
+        }
+        inner.take_ready()
+    };
+    for waiter in waiters {
+        let _ = waiter.send(Ok(()));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        future::Future,
+        pin::Pin,
+        sync::Arc,
+        task::{Context, Poll, Wake, Waker},
+    };
+    thread_local! { static ON_WAKE: RefCell<Option<Box<dyn FnOnce()>>> = RefCell::new(None); }
+    struct Reenter;
+    impl Wake for Reenter {
+        fn wake(self: Arc<Self>) {
+            let callback = ON_WAKE.with(|slot| slot.borrow_mut().take());
+            if let Some(callback) = callback {
+                callback();
             }
+        }
+    }
+    #[test]
+    fn credit_ready_failure_and_drop_wake_outside_controller_borrows() {
+        for mode in 0..3 {
+            let (controller, _driver) = WindowFlowController::new(64, None, None);
+            let inner = controller.inner.clone();
+            let mut controller = Some(controller);
+            let (sender, mut receiver) = oneshot::channel();
+            {
+                let mut state = inner.borrow_mut();
+                let State::Running(waiters) = &mut state.state else {
+                    unreachable!()
+                };
+                waiters.push(sender);
+            }
+            // End the temporary borrow before installing the reentrant wake.
+            let seen = Rc::new(std::cell::Cell::new(false));
+            let inspect = inner.clone();
+            let flag = seen.clone();
+            ON_WAKE.with(|slot| {
+                *slot.borrow_mut() = Some(Box::new(move || {
+                    let state = inspect
+                        .try_borrow()
+                        .expect("flow callbacks run outside state borrows");
+                    assert_eq!(matches!(state.state, State::Failed(_)), mode == 1);
+                    flag.set(true);
+                }))
+            });
+            let waker = Waker::from(Arc::new(Reenter));
+            let mut cx = Context::from_waker(&waker);
+            assert!(Pin::new(&mut receiver).poll(&mut cx).is_pending());
+            match mode {
+                0 => release_ready(&inner, None),
+                1 => Reaper {
+                    inner: inner.clone(),
+                }
+                .task_failed(Error::failed("test failure".into())),
+                _ => drop(controller.take()),
+            }
+            assert!(seen.get());
+            let Poll::Ready(Ok(result)) = Pin::new(&mut receiver).poll(&mut cx) else {
+                panic!("credit completion")
+            };
+            assert_eq!(result.is_err(), mode == 1);
         }
     }
 }

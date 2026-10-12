@@ -1,0 +1,24 @@
+[package]
+name = "capntproto-rpc-engine"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.97"
+license = "MIT"
+description = "Allocation-free Capntproto RPC state transitions"
+publish = false
+
+[features]
+default = []
+# Optional owned replies and growing capability storage. Borrowed APIs never
+# allocate, including when these conveniences are enabled.
+alloc = []
+
+[dev-dependencies]
+allocation-counter = "=0.8.1"
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
+
+[lints.clippy]
+undocumented_unsafe_blocks = "deny"

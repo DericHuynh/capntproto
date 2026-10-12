@@ -26,7 +26,8 @@ builds do not require nightly, Java, TLC or Valgrind.
 | TCP RPC | `cargo build --locked -p capntproto --no-default-features` | C toolchain for ring |
 | TCP with TLS/mTLS | `cargo build --locked -p capntproto --no-default-features --features tls` | C toolchain for ring; no BoringSSL/quiche |
 | Storage and services | Add `--features storage,services` to a minimal build | Schemas compile with the workspace Rust compiler |
-| Default / QUIC | `cargo build --locked -p capntproto` | C/C++, CMake, libclang for quiche/BoringSSL |
+| Default / native TCP/mTLS | `cargo build --locked -p capntproto` | Native feature still builds quiche/BoringSSL: C/C++, CMake, libclang |
+| Explicit two-party QUIC | `cargo build --locked -p capntproto --features quic` | C/C++, CMake, libclang for quiche/BoringSSL |
 
 The Cap'n Proto C++ compiler and headers are needed for independent compatibility
 checks, not for the library's Rust schema build. The full test suite additionally
@@ -65,8 +66,8 @@ their Cargo.lock and must retain the coordinated versions. The separate sample
 uses in-memory duplex transport; `native_store` exercises the UDP/Native service.
 
 All combinations of `native`, `storage`, and `services`, including none, are
-supported by the build matrix. The default also enables `tls` and `quic` for
-TLS 1.3/TCP and standard QUIC, including mTLS. The `tls` feature can be selected alone; `quic` transitively enables
+supported by the build matrix. Defaults use TCP and include TLS/mTLS. The `quic`
+feature explicitly enables standard two-party QUIC. The `tls` feature can be selected alone; `quic` transitively enables
 `native` and `tls`. See [secure transports](TCP-TLS-and-QUIC.md). Optional nightly
 `capnp/rpc_try` and alternate upstream crypto configurations are outside the
 stable preview contract.

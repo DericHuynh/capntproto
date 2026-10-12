@@ -114,6 +114,7 @@ pub struct CompilerCommand {
     field_api_values: bool,
     field_api_projections: bool,
     structured_replies: bool,
+    bounded_rpc: bool,
     src_prefixes: Vec<PathBuf>,
     import_paths: Vec<PathBuf>,
     no_standard_import: bool,
@@ -143,7 +144,15 @@ impl CompilerCommand {
 
     /// Generate the opt-in API-design facade in the generated file's `api` module.
     pub fn field_api(&mut self, enabled: bool) -> &mut Self {
-        self.field_api = enabled || self.field_api_values || self.field_api_projections;
+        self.field_api =
+            enabled || self.field_api_values || self.field_api_projections || self.bounded_rpc;
+        self
+    }
+
+    /// Emit allocation-free wire interfaces and typed method descriptors.
+    pub fn bounded_rpc(&mut self, enabled: bool) -> &mut Self {
+        self.bounded_rpc = enabled;
+        self.field_api |= enabled;
         self
     }
 
@@ -420,6 +429,7 @@ impl CompilerCommand {
 
         let mut code_generation_command = crate::codegen::CodeGenerationCommand::new();
         code_generation_command
+            .bounded_rpc(self.bounded_rpc)
             .structured_replies(self.structured_replies)
             .field_api(self.field_api)
             .field_api_values(self.field_api_values)

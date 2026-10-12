@@ -1,0 +1,12 @@
+nextest-version = { required = "0.9.146" }
+
+[profile.default]
+retries = 0
+fail-fast = false
+
+[profile.ci]
+failure-output = "immediate-final"
+
+[profile.ci.junit]
+path = "junit.xml"
+store-failure-output = true

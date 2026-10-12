@@ -71,6 +71,7 @@
 //! ```
 
 use crate::any_pointer;
+mod fixed;
 use crate::private::arena::{BuilderArena, BuilderArenaImpl};
 use crate::private::arena::{ReaderArena, ReaderArenaImpl};
 use crate::private::layout;
@@ -79,6 +80,8 @@ use crate::traits::{FromPointerBuilder, SetterInput};
 use crate::traits::{FromPointerReader, Owned};
 use crate::OutputSegments;
 use crate::Result;
+use crate::{Error, ErrorKind};
+pub use fixed::FixedBuilder;
 
 /// Options controlling how data is read.
 #[derive(Clone, Copy, Debug)]
@@ -269,36 +272,104 @@ where
 /// Checking the root consumes its normal traversal allowance exactly once.
 /// Descendants remain lazily checked. Root views borrow this owner; consuming
 /// it recovers the original reader, including all budget already consumed.
-#[cfg(feature = "alloc")]
 pub struct CheckedStructReader<S: ReaderSegments> {
     root: layout::CachedStructRoot,
-    // Rc moves do not assert unique access to the pointee, unlike Box moves.
-    // Keep this handle private and never clone it: into_reader must recover S.
-    reader: alloc::rc::Rc<Reader<S>>,
+    reader: Reader<S>,
 }
 
-#[cfg(feature = "alloc")]
+/// An immutable message with one optional selected struct. Dispatchers can
+/// cache a view they already decoded without traversing its path a second time.
+/// Selection preserves the message's existing traversal and nesting budgets.
+pub struct StructReaderCache<S: ReaderSegments> {
+    reader: Reader<S>,
+    root: core::cell::Cell<Option<layout::CachedStructRoot>>,
+}
+impl<S: ReaderSegments> StructReaderCache<S> {
+    pub fn new(reader: Reader<S>) -> Self {
+        Self {
+            reader,
+            root: core::cell::Cell::new(None),
+        }
+    }
+    pub fn message(&self) -> &Reader<S> {
+        &self.reader
+    }
+
+    /// Keep an already checked view from this exact message. Foreign views are
+    /// rejected; capability tables are not retained. Existing borrowed views
+    /// remain valid because neither selection nor reselection changes bytes.
+    pub fn select(&self, root: layout::StructReader<'_>) -> Result<()> {
+        if !root.belongs_to(&self.reader.arena) {
+            return Err(Error::from_kind(ErrorKind::TypeMismatch));
+        }
+        self.root.set(Some(layout::CachedStructRoot::new(root)?));
+        Ok(())
+    }
+    pub fn get(&self) -> Option<layout::StructReader<'_>> {
+        self.root.get().map(|root| {
+            // SAFETY: select verified this view belongs to this immutable
+            // reader. The cache stores offsets, and borrow obtains fresh bases
+            // and checks the extent even for movable/custom segment providers.
+            unsafe { root.borrow(&self.reader.arena) }
+        })
+    }
+}
+
 impl<S: ReaderSegments> CheckedStructReader<S> {
+    /// Retain an already selected struct using a new owner of the same immutable
+    /// segments. Every segment must have the same address and length as in the
+    /// source reader; a copy or a partial segment set is rejected. Empty structs
+    /// have no segment dependency. Capability tables are not retained.
+    ///
+    /// This starts an independent traversal budget, charging the selected struct
+    /// and one root pointer. Descendants retain normal bounds, traversal and
+    /// nesting checks under `options`, without decoding the selector path again.
+    #[inline(always)]
+    pub fn retain(
+        root: layout::StructReader<'_>,
+        segments: S,
+        options: ReaderOptions,
+    ) -> Result<Self> {
+        let words = 1
+            + (root.get_data_section_size() as usize).div_ceil(64)
+            + usize::from(root.get_pointer_section_size());
+        let root = layout::CachedStructRoot::retain(root, &segments, options.nesting_limit)?;
+        let reader = Reader::new(segments, options);
+        reader.arena.amplified_read(words as u64)?;
+        Ok(Self { root, reader })
+    }
+
     pub fn new(reader: Reader<S>) -> Result<Self> {
-        let reader = alloc::rc::Rc::new(reader);
+        Self::select(reader, |root| Ok(root))
+    }
+
+    /// Cache a selected struct in this message, checking its path once.
+    /// The selector must return a view from the supplied reader. Views from
+    /// other messages are rejected; capability tables are never retained.
+    #[inline(always)]
+    pub fn select(
+        reader: Reader<S>,
+        select: impl for<'a> FnOnce(layout::StructReader<'a>) -> Result<layout::StructReader<'a>>,
+    ) -> Result<Self> {
         let root = reader.get_root_internal()?.reader.get_struct(None)?;
-        let root = layout::CachedStructRoot::new(root);
+        let root = select(root)?;
+        if !root.belongs_to(&reader.arena) {
+            return Err(crate::Error::from_kind(crate::ErrorKind::TypeMismatch));
+        }
+        let root = layout::CachedStructRoot::new(root)?;
         Ok(Self { root, reader })
     }
 
     pub fn root(&self) -> layout::StructReader<'_> {
-        // SAFETY: Rc stabilizes the original arena and inline segment provider;
-        // moving Rc does not invalidate pointers into its allocation. The
-        // ReaderSegments contract keeps other backing storage stable. Neither
-        // the arena nor segments are exposed mutably, and this view borrows self.
-        // The cache has no references protecting storage when into_reader moves
-        // it out, and never retains a caller's capability-table pointer.
+        // SAFETY: the cache contains only offsets into this exact reader's
+        // validated segments. Moving the reader (including inline segments)
+        // preserves their bytes and lengths; borrow derives fresh pointers from
+        // their current addresses. No mutable access or capability table escapes.
         unsafe { self.root.borrow(&self.reader.arena) }
     }
 
     pub fn into_reader(self) -> Reader<S> {
-        alloc::rc::Rc::try_unwrap(self.reader)
-            .unwrap_or_else(|_| unreachable!("checked reader owner is never cloned"))
+        self.reader
     }
 }
 
@@ -312,20 +383,14 @@ where
         }
     }
 
+    #[inline(always)]
     fn get_root_internal(&self) -> Result<any_pointer::Reader<'_>> {
-        let (segment_start, _seg_len) = self.arena.get_segment(0)?;
-        let pointer_reader = unsafe {
-            layout::PointerReader::get_root(
-                &self.arena,
-                0,
-                segment_start,
-                self.arena.nesting_limit(),
-            )
-        }?;
+        let pointer_reader = layout::PointerReader::get_root_from_arena(&self.arena)?;
         Ok(any_pointer::Reader::new(pointer_reader))
     }
 
     /// Gets the root of the message, interpreting it as the given type.
+    #[inline(always)]
     pub fn get_root<'a, T: FromPointerReader<'a>>(&'a self) -> Result<T> {
         self.get_root_internal()?.get_as()
     }
@@ -508,6 +573,211 @@ where
     arena: BuilderArenaImpl<A>,
 }
 
+/// An immutable, single-segment, capability-free builder that can be copied
+/// without traversing its object graph again. Only safe builders can create a
+/// template; serialized input must first be copied through the checked reader
+/// API. Instances own independent storage and may outlive the template.
+pub struct BuilderTemplate<A: Allocator> {
+    message: Builder<A>,
+    words: u32,
+}
+
+impl<A: Allocator> BuilderTemplate<A> {
+    /// Freeze a nonempty single-segment builder. Capability pointers and
+    /// additional segments cannot be relocated by this template.
+    pub fn new(message: Builder<A>) -> Result<Self> {
+        let words = match message.get_segments_for_output() {
+            OutputSegments::SingleSegment([segment]) if !segment.is_empty() => {
+                u32::try_from(segment.len() / 8)
+                    .map_err(|_| Error::from_kind(ErrorKind::TypeMismatch))?
+            }
+            _ => return Err(Error::from_kind(ErrorKind::TypeMismatch)),
+        };
+        message
+            .get_root_as_reader::<any_pointer::Reader>()?
+            .validate_capability_indices(0)?;
+        Ok(Self { message, words })
+    }
+
+    /// Copy the complete segment into a fresh allocator. Relative pointers keep
+    /// their offsets; later edits use the ordinary builder allocation rules.
+    pub fn instantiate<B: Allocator>(&self, allocator: B) -> Builder<B> {
+        let mut message = Builder::new(allocator);
+        message
+            .arena
+            .allocate_segment(self.words)
+            .expect("allocate template segment");
+        message
+            .arena
+            .allocate(0, self.words)
+            .expect("allocate template words");
+        let (destination, _) = message.arena.get_segment_mut(0);
+        let (source, _) = self.message.arena.get_segment(0).expect("template segment");
+        // SAFETY: the allocator supplies disjoint initialized storage covering
+        // all template words. The immutable source owns a valid builder graph
+        // wholly inside its first segment, with no capability table references.
+        // Copying its entire segment preserves pointer offsets and object
+        // separation, so mutable builder access to the copy remains sound.
+        unsafe {
+            core::ptr::copy_nonoverlapping(source, destination, self.words as usize * 8);
+        }
+        message
+    }
+}
+
+/// An owning builder restricted to one pointer within its message.
+///
+/// Selection can initialize an envelope and return its content pointer. Later
+/// access reaches that pointer directly, without traversing the envelope again.
+/// Its ancestors cannot be changed until `into_inner()` consumes this owner.
+pub struct SelectedBuilder<A: Allocator> {
+    message: Builder<A>,
+    segment: u32,
+    offset: usize,
+}
+
+/// An owning selection of a mutable struct. Only this struct's fields and
+/// descendants can be edited; replacing its ancestors requires consuming the
+/// selection. Repeated access does not traverse the selector path again.
+pub struct SelectedStructBuilder<A: Allocator> {
+    message: Builder<A>,
+    root: layout::CachedStructRoot,
+}
+impl<A: Allocator> SelectedStructBuilder<A> {
+    /// Borrow a generated layout directly. A larger layout is rejected because
+    /// growing this allocation would invalidate the owning selection.
+    #[inline]
+    pub fn get_as<T: crate::traits::OwnedStruct>(&mut self) -> Result<T::Builder<'_>> {
+        if !self
+            .root
+            .fits(<T::Builder<'_> as crate::traits::HasStructSize>::STRUCT_SIZE)
+        {
+            return Err(Error::from_kind(ErrorKind::TypeMismatch));
+        }
+        // SAFETY: the selection owns this writable allocation and permits only
+        // descendant edits, as in get(). The size check above additionally
+        // establishes every data/pointer field required by the generated layout.
+        Ok(unsafe { self.root.borrow_mut(&mut self.message.arena) }.into())
+    }
+
+    /// Freeze a capability-free, single-segment struct selection. Copies own
+    /// independent arenas and preserve this already validated location.
+    pub fn into_template(self) -> Result<SelectedStructBuilderTemplate<A>> {
+        Ok(SelectedStructBuilderTemplate {
+            message: BuilderTemplate::new(self.message)?,
+            root: self.root,
+        })
+    }
+
+    #[inline]
+    pub fn get(&mut self) -> crate::any_struct::Builder<'_> {
+        // SAFETY: selection verified this unimbued, writable struct belongs to
+        // this exact arena. No access permits replacement of its ancestors or
+        // resizing of the selected allocation. Segment allocations stay stable
+        // across moves and growth; this exclusive borrow prevents aliasing.
+        crate::any_struct::Builder::new(unsafe { self.root.borrow_mut(&mut self.message.arena) })
+    }
+
+    pub fn message(&self) -> &Builder<A> {
+        &self.message
+    }
+
+    pub fn into_inner(self) -> Builder<A> {
+        self.message
+    }
+}
+
+/// An immutable arena template preserving a selected struct's checked geometry.
+pub struct SelectedStructBuilderTemplate<A: Allocator> {
+    message: BuilderTemplate<A>,
+    root: layout::CachedStructRoot,
+}
+impl<A: Allocator> SelectedStructBuilderTemplate<A> {
+    pub fn instantiate<B: Allocator>(&self, allocator: B) -> SelectedStructBuilder<B> {
+        SelectedStructBuilder {
+            message: self.message.instantiate(allocator),
+            root: self.root,
+        }
+    }
+}
+
+/// A frozen single-segment builder and a checked pointer selection. Cloning
+/// the complete arena preserves this location as well as every relative pointer.
+pub struct SelectedBuilderTemplate<A: Allocator> {
+    message: BuilderTemplate<A>,
+    offset: usize,
+}
+impl<A: Allocator> SelectedBuilderTemplate<A> {
+    pub fn instantiate<B: Allocator>(&self, allocator: B) -> SelectedBuilder<B> {
+        SelectedBuilder {
+            message: self.message.instantiate(allocator),
+            segment: 0,
+            offset: self.offset,
+        }
+    }
+}
+
+impl<A: Allocator> SelectedBuilder<A> {
+    /// Freeze a capability-free, single-segment message without forgetting the
+    /// selected pointer. Every instance receives independent mutable storage.
+    pub fn into_template(self) -> Result<SelectedBuilderTemplate<A>> {
+        if self.segment != 0 {
+            return Err(Error::from_kind(ErrorKind::TypeMismatch));
+        }
+        Ok(SelectedBuilderTemplate {
+            message: BuilderTemplate::new(self.message)?,
+            offset: self.offset,
+        })
+    }
+    /// Inspect the owning message without permitting edits to the selected
+    /// pointer's ancestors. Readers borrow this selection and cannot outlive it.
+    pub fn message(&self) -> &Builder<A> {
+        &self.message
+    }
+
+    /// Validate the selected subtree's capability indices with an independent
+    /// reader budget. Charges the selected pointer word and its descendants;
+    /// ancestors are not traversed. All segment, pointer, nesting and amplified
+    /// list checks use the ordinary reader arena, including on owned builders.
+    pub fn validate_capability_indices(&self, count: u32, options: ReaderOptions) -> Result<()> {
+        let arena = ReaderArenaImpl::new(self.message.get_segments_for_output(), options);
+        let (start, _) = arena.get_segment(self.segment)?;
+        // SAFETY: select validated this word's location in the owning arena.
+        // The exclusive selection permits edits only below that word, so its
+        // allocation cannot be removed. The ordinary reader bounds check still
+        // validates and charges the word before reading it or its descendants.
+        let pointer = unsafe {
+            layout::PointerReader::get_root(
+                &arena,
+                self.segment,
+                start.wrapping_add(self.offset),
+                options.nesting_limit,
+            )?
+        };
+        pointer.validate_capability_indices(count)
+    }
+
+    /// Borrow the selected pointer. Changing its contents, including allocating
+    /// additional segments or replacing it with another type, is permitted.
+    pub fn get(&mut self) -> any_pointer::Builder<'_> {
+        let (start, _) = self.message.arena.get_segment_mut(self.segment);
+        // Selection checked this pointer word against this arena. Arena segments
+        // do not move; access is restricted to the selected subtree, so neither
+        // its containing allocation nor this word can be resized or removed.
+        let pointer = layout::PointerBuilder::get_root(
+            &mut self.message.arena,
+            self.segment,
+            start.wrapping_add(self.offset),
+        );
+        any_pointer::Builder::new(pointer)
+    }
+
+    /// Consume the selection before permitting changes to its ancestors.
+    pub fn into_inner(self) -> Builder<A> {
+        self.message
+    }
+}
+
 fn _assert_kinds() {
     fn _assert_send<T: Send>() {}
     fn _assert_sync<T: Sync>() {}
@@ -529,6 +799,46 @@ where
     pub fn new(allocator: A) -> Self {
         Self {
             arena: BuilderArenaImpl::new(allocator),
+        }
+    }
+
+    /// Restrict this owning builder to a pointer selected from its root.
+    ///
+    /// The selector must return an unimbued pointer from this message. A pointer
+    /// from another arena is rejected, even if it has a sufficiently long lifetime.
+    pub fn select(
+        mut self,
+        select: impl for<'a> FnOnce(any_pointer::Builder<'a>) -> Result<any_pointer::Builder<'a>>,
+    ) -> Result<SelectedBuilder<A>> {
+        let arena = core::ptr::from_ref(&self.arena).cast::<()>();
+        let (segment, offset) = select(self.get_root_internal())?
+            .builder
+            .owned_location(arena)?;
+        Ok(SelectedBuilder {
+            message: self,
+            segment,
+            offset,
+        })
+    }
+
+    /// Select an existing or newly initialized struct for repeated mutation.
+    /// The selector must return an unimbued struct from this message. On error
+    /// the message is returned, including any edits made by the selector.
+    // Returning the allocator's owner intact must also work without a heap.
+    #[allow(clippy::result_large_err)]
+    pub fn try_select_struct(
+        mut self,
+        select: impl for<'a> FnOnce(any_pointer::Builder<'a>) -> Result<crate::any_struct::Builder<'a>>,
+    ) -> core::result::Result<SelectedStructBuilder<A>, (Self, Error)> {
+        let arena = core::ptr::from_ref(&self.arena).cast::<()>();
+        let result = select(self.get_root_internal())
+            .and_then(|root| layout::CachedStructRoot::from_builder(root.builder, arena));
+        match result {
+            Ok(root) => Ok(SelectedStructBuilder {
+                message: self,
+                root,
+            }),
+            Err(error) => Err((self, error)),
         }
     }
 

@@ -5,10 +5,12 @@ pub mod cloud;
 pub mod fuzz;
 #[cfg(feature = "quic-interop")]
 pub mod interop;
+pub mod kani;
 pub mod models;
 pub mod probes;
 pub mod process;
 pub mod reports;
+pub mod rpc_instructions;
 pub mod wiki;
 use anyhow::{Context, Result};
 use serde_json::Value;

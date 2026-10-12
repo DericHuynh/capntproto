@@ -13,8 +13,11 @@ type supplies peer identity, ordered RPC IO and shutdown control to
 - `quic` or `quic-quiche`: also enables conventional two-party QUIC RPC using
   the same quiche engine and CA-based TLS/mTLS.
 
-Defaults enable `quic-quiche`, services and storage. Plain TCP is available
-without default features. Use `transport::tcp` for authenticated native TCP.
+Defaults enable `native`, services and storage. Directory routes select TCP/mTLS
+unless a backend is specified. Plain TCP is available without default features
+through `rpc::connect`; use `transport::tcp` for authenticated native TCP.
+The `native` feature still builds the optional-use quiche driver. Enable `quic`
+explicitly for the conventional two-party QUIC facade.
 
 ## Identity and admission
 
@@ -34,7 +37,8 @@ additional TLS traffic key. Existing `psk` arguments refer to this admission sec
 
 ## Routes and features
 
-`DirectoryConnector::insert_with_backend` selects `Backend::Tcp`,
+`DirectoryConnector::insert` selects `Backend::Tcp` by default.
+`DirectoryConnector::insert_with_backend` explicitly selects `Backend::Tcp`,
 `Backend::Quiche` (v1). `Backend::QuicheV2` is retained as an explicit
 unsupported selection and fails at configuration. The directory's allowlist controls
 permitted destinations, and its bind address selects the local interface.

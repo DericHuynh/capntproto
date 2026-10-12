@@ -5,12 +5,13 @@
 use capnp::capability::Promise;
 use capnp::private::capability::{ClientHook, PipelineHook, ResponseHook};
 use capnp::Error;
-use futures::channel::oneshot;
+use capntproto_rpc_engine::completion::shared as oneshot;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
 struct Embargo {
+    state: capntproto_rpc_engine::provision::EmbargoState,
     receiver: Option<oneshot::Receiver<()>>,
     sender: Option<oneshot::Sender<()>>,
 }
@@ -18,6 +19,7 @@ impl Embargo {
     fn new() -> Self {
         let (sender, receiver) = oneshot::channel();
         Self {
+            state: capntproto_rpc_engine::provision::EmbargoState::new(),
             sender: Some(sender),
             receiver: Some(receiver),
         }
@@ -96,13 +98,14 @@ impl ThirdPartyExchange {
         let Some(id) = embargo else {
             return Promise::ok(client.clone());
         };
-        let receiver = self
-            .embargoes
-            .borrow_mut()
-            .entry(id)
-            .or_insert_with(Embargo::new)
-            .receiver
-            .take();
+        let receiver = {
+            let mut embargoes = self.embargoes.borrow_mut();
+            let embargo = embargoes.entry(id).or_insert_with(Embargo::new);
+            if embargo.state.claim().is_err() {
+                return Promise::err(Error::failed("duplicate Accept embargo ID".into()));
+            }
+            embargo.receiver.take()
+        };
         let Some(receiver) = receiver else {
             return Promise::err(Error::failed("duplicate Accept embargo ID".into()));
         };
@@ -123,13 +126,15 @@ impl ThirdPartyExchange {
                 "answer rendezvous has no capability embargo".into(),
             ));
         }
-        let sender = self
-            .embargoes
-            .borrow_mut()
-            .entry(id.to_vec())
-            .or_insert_with(Embargo::new)
-            .sender
-            .take();
+        let sender = {
+            let mut embargoes = self.embargoes.borrow_mut();
+            let embargo = embargoes.entry(id.to_vec()).or_insert_with(Embargo::new);
+            embargo
+                .state
+                .release()
+                .map_err(|_| Error::failed("duplicate Accept disembargo ID".into()))?;
+            embargo.sender.take()
+        };
         let Some(sender) = sender else {
             return Err(Error::failed("duplicate Accept disembargo ID".into()));
         };

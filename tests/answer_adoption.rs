@@ -4,10 +4,7 @@ use capnp::{
     capability::Promise,
     traits::{HasTypeId, ImbueMut},
 };
-use capnp_rpc::{
-    rpc_capnp::{cap_descriptor, message, return_},
-    RpcSystem,
-};
+use capnp_rpc::rpc_capnp::{cap_descriptor, message, return_};
 use capntproto_test_support::runtime_test_capnp::harness;
 use futures::{channel::oneshot, FutureExt};
 use std::{
@@ -98,10 +95,87 @@ fn enable(hub: &Rc<RefCell<Hub>>) {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            for budget in [1, 7, 64] {
+                tokio::time::timeout(Duration::from_secs(5), async {
+                    let hub = Rc::new(RefCell::new(Hub::default()));
+                    hub.borrow_mut().introductions = true;
+                    enable(&hub);
+                    let mut options = capnp_rpc::portable::Options::bounded(
+                        16.try_into().unwrap(),
+                        256.try_into().unwrap(),
+                        (512 * 1024).try_into().unwrap(),
+                        (8 * 1024 * 1024).try_into().unwrap(),
+                    )
+                    .unwrap();
+                    options.poll_budget = std::num::NonZeroUsize::new(budget).unwrap();
+                    let (gate, blocked) = oneshot::channel();
+                    let calls = Rc::new(Cell::new(0));
+                    let service: harness::Client =
+                        capnp_rpc::new_client(Gated(RefCell::new(Some(blocked)), calls.clone()));
+                    let callee = tokio::task::spawn_local(
+                        capnp_rpc::portable::RpcSystem::new(
+                            Box::new(Hub::network(&hub, 3)),
+                            Some(service.client),
+                            options,
+                        )
+                        .unwrap(),
+                    );
+                    let factory = Rc::new(Factory(RefCell::new(None)));
+                    let mut relay = capnp_rpc::RpcSystem::new_with_bootstrap_factory(
+                        Box::new(Hub::network(&hub, 2)),
+                        2,
+                        factory.clone(),
+                    );
+                    let remote: harness::Client = relay.bootstrap(3);
+                    let ready = remote.client.hook.when_resolved();
+                    let tail: harness::Client = capnp_rpc::new_client(Tail(remote));
+                    *factory.0.borrow_mut() = Some(tail.client);
+                    let relay = tokio::task::spawn_local(relay);
+                    ready.await.unwrap();
+                    let mut caller = capnp_rpc::portable::RpcSystem::new(
+                        Box::new(Hub::network(&hub, 1)),
+                        None,
+                        options,
+                    )
+                    .unwrap();
+                    let remote: harness::Client = caller.bootstrap(2);
+                    let caller = tokio::task::spawn_local(caller);
+                    let request = remote.pending_request().send();
+                    let early = request.pipeline.get_cap().echo_request().send().promise;
+                    while calls.get() == 0 {
+                        tokio::task::yield_now().await;
+                    }
+                    // Let the worker certify idle while the pipelined target
+                    // is unresolved. Opening the gate must reactivate dispatch
+                    // without additional IO or manual polling of the driver.
+                    drain().await;
+                    gate.send(()).unwrap();
+                    let response = request.promise.await.unwrap();
+                    assert_eq!(early.await.unwrap().get().unwrap().get_value(), 73);
+                    assert_eq!(calls.get(), 1);
+                    drop(response);
+                    caller.abort();
+                    relay.abort();
+                    callee.abort();
+                })
+                .await
+                .unwrap_or_else(|_| panic!("transfer stalled with poll budget {budget}"));
+            }
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn automatic_third_party_tail_returns_capability_and_survives_relay_drop() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for allow in [false, true] {
+            for (portable, allow) in (0u8..8).flat_map(|mask| {
+                [false, true]
+                    .map(move |allow| ([mask & 1 != 0, mask & 2 != 0, mask & 4 != 0], allow))
+            }) {
                 let hub = Rc::new(RefCell::new(Hub::default()));
                 hub.borrow_mut().introductions = true;
                 let a = Hub::network(&hub, 1);
@@ -117,28 +191,45 @@ async fn automatic_third_party_tail_returns_capability_and_survives_relay_drop()
                 let calls = Rc::new(Cell::new(0));
                 let service: harness::Client =
                     capnp_rpc::new_client(Gated(RefCell::new(Some(rx)), calls.clone()));
-                let callee =
-                    tokio::task::spawn_local(RpcSystem::new(Box::new(c), Some(service.client)));
+                let callee = tokio::task::spawn_local(
+                    support::driver::System::new(portable[2], Box::new(c), Some(service.client))
+                        .run(),
+                );
                 let factory = Rc::new(Factory(RefCell::new(None)));
-                let mut relay =
-                    RpcSystem::new_with_bootstrap_factory(Box::new(b), 2, factory.clone());
+                let mut relay = support::driver::System::with_factory(
+                    portable[1],
+                    Box::new(b),
+                    2,
+                    factory.clone(),
+                );
                 let remote: harness::Client = relay.bootstrap(3);
+                let ready = remote.client.hook.when_resolved();
                 let service: harness::Client = capnp_rpc::new_client(Tail(remote));
                 *factory.0.borrow_mut() = Some(service.client);
-                let relay = tokio::task::spawn_local(relay);
-                let mut caller = RpcSystem::new(Box::new(a), None);
+                let relay = tokio::task::spawn_local(relay.run());
+                ready.await.unwrap();
+                let mut caller = support::driver::System::new(portable[0], Box::new(a), None);
                 let remote: harness::Client = caller.bootstrap(2);
-                let caller = tokio::task::spawn_local(caller);
+                let caller = tokio::task::spawn_local(caller.run());
                 let request = remote.pending_request().send();
                 let early = request.pipeline.get_cap().echo_request().send().promise;
                 drain().await;
-                assert_eq!(calls.get(), 1);
+                assert_eq!(calls.get(), 1, "portable={portable:?}, allow={allow}");
                 gate.send(()).unwrap();
                 let response = tokio::time::timeout(Duration::from_secs(2), request.promise)
                     .await
                     .unwrap()
-                    .unwrap();
-                assert_eq!(early.await.unwrap().get().unwrap().get_value(), 73);
+                    .unwrap_or_else(|e| panic!("root {portable:?}/{allow}: {e}"));
+                assert_eq!(
+                    tokio::time::timeout(Duration::from_secs(2), early)
+                        .await
+                        .unwrap_or_else(|_| panic!("early pipeline stalled {portable:?}/{allow}"))
+                        .unwrap_or_else(|e| panic!("response {portable:?}/{allow}: {e}"))
+                        .get()
+                        .unwrap()
+                        .get_value(),
+                    73
+                );
                 let cap = response.get().unwrap().get_cap().unwrap();
                 drop(response);
                 if allow {
@@ -146,11 +237,14 @@ async fn automatic_third_party_tail_returns_capability_and_survives_relay_drop()
                     drain().await;
                 }
                 assert_eq!(
-                    cap.echo_request()
-                        .send()
-                        .promise
+                    tokio::time::timeout(Duration::from_secs(2), cap.echo_request().send().promise)
                         .await
-                        .unwrap()
+                        .unwrap_or_else(|_| panic!(
+                            "result after relay drop stalled {portable:?}/{allow}"
+                        ))
+                        .unwrap_or_else(|e| panic!(
+                            "result after relay drop {portable:?}/{allow}: {e}"
+                        ))
                         .get()
                         .unwrap()
                         .get_value(),
@@ -162,7 +256,15 @@ async fn automatic_third_party_tail_returns_capability_and_survives_relay_drop()
                         .status()
                         .borrow()
                         .adoptions_sent,
-                    if allow { 2 } else { 0 }
+                    if allow {
+                        if portable[1] {
+                            1
+                        } else {
+                            2
+                        }
+                    } else {
+                        0
+                    }
                 );
                 caller.abort();
                 relay.abort();
@@ -222,13 +324,22 @@ impl Caller {
         Self::with_service(allow, keep_pipeline, capnp_rpc::new_client(Echo)).await
     }
     async fn with_service(allow: bool, keep_pipeline: bool, service: harness::Client) -> Self {
+        Self::with_driver(false, allow, keep_pipeline, service).await
+    }
+    async fn with_driver(
+        portable: bool,
+        allow: bool,
+        keep_pipeline: bool,
+        service: harness::Client,
+    ) -> Self {
         let hub = Rc::new(RefCell::new(Hub::default()));
         let network = Hub::network(&hub, 1);
         let networks = vec![Hub::network(&hub, 2), Hub::network(&hub, 3)];
         enable(&hub);
-        let mut system = RpcSystem::new(Box::new(network), Some(service.client));
+        let mut system =
+            support::driver::System::new(portable, Box::new(network), Some(service.client));
         let cap: harness::Client = system.bootstrap(2);
-        let task = tokio::task::spawn_local(system);
+        let task = tokio::task::spawn_local(system.run());
         let mut relay = hub.borrow_mut().connect(2, 1);
         let callee = hub.borrow_mut().connect(3, 1);
         let m = recv(&mut relay).await;
@@ -399,6 +510,19 @@ impl Caller {
                         });
                     }
                     message::Release(_) => (),
+                    message::Disembargo(barrier) => {
+                        let barrier = barrier.unwrap();
+                        let capnp_rpc::rpc_capnp::disembargo::context::SenderLoopback(id) =
+                            barrier.get_context().which().unwrap()
+                        else {
+                            panic!("unexpected embargo context");
+                        };
+                        peer.send(|m| {
+                            let mut reply = m.init_disembargo();
+                            reply.set_target(barrier.get_target().unwrap()).unwrap();
+                            reply.init_context().set_receiver_loopback(id);
+                        });
+                    }
                     _ => panic!("unexpected outgoing message"),
                 }
             }
@@ -1018,6 +1142,137 @@ async fn answer_adoption_waits_for_authorization_and_retains_result_until_drop()
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn portable_answer_handoff_authenticates_reordered_results_and_reclaims_cancellation() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            tokio::time::timeout(Duration::from_secs(10), async {
+                for order in [[0, 1, 2], [1, 0, 2], [1, 2, 0]] {
+                    for broken in [false, true] {
+                        let mut c =
+                            Caller::with_driver(true, true, false, capnp_rpc::new_client(Echo))
+                                .await;
+                        for (index, action) in order.into_iter().enumerate() {
+                            match action {
+                                0 => c.redirect(),
+                                1 => c.adopt(),
+                                _ => c.complete(broken),
+                            }
+                            c.observe().await;
+                            if index < 2 {
+                                assert_eq!(c.outcome, 0);
+                            }
+                        }
+                        assert_eq!(c.outcome, if broken { 2 } else { 1 });
+                        if !broken {
+                            assert_eq!(c.direct_finishes, 0);
+                        }
+                        c.response.take();
+                        c.observe().await;
+                        assert_eq!(c.direct_finishes, 1);
+                        assert_eq!(c.old_finishes, 1);
+                        assert_eq!(c.hub.borrow().waiter_count(), 0);
+                        assert_eq!(c.hub.borrow().provision_count(), 0);
+                    }
+                }
+                for cancel in [false, true] {
+                    let mut c =
+                        Caller::with_driver(true, true, false, capnp_rpc::new_client(Echo)).await;
+                    c.redirect();
+                    c.observe().await;
+                    if cancel {
+                        c.pending.take();
+                    } else {
+                        expire_setup(&c, 2);
+                    }
+                    c.observe().await;
+                    assert_eq!(c.hub.borrow().provision_count(), 0);
+                    assert_eq!(c.old_finishes, 1);
+                    c.adopt();
+                    c.observe().await;
+                    assert_eq!(c.direct_finishes, 1);
+                    assert_eq!(c.hub.borrow().waiter_count(), 0);
+                    assert_eq!(c.callee.status().borrow().aborts, 0);
+                }
+            })
+            .await
+            .unwrap();
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                for previously_used in [false, true] {
+                    let mut c =
+                        Caller::with_driver(true, true, true, capnp_rpc::new_client(Echo)).await;
+                    if previously_used {
+                        let call = c
+                            .pipeline
+                            .as_ref()
+                            .unwrap()
+                            .get_cap()
+                            .echo_request()
+                            .send()
+                            .promise;
+                        c.observe().await;
+                        assert_eq!(c.calls.len(), 1, "old pipeline call was not published");
+                        assert_eq!(call.await.unwrap().get().unwrap().get_value(), 73);
+                        assert_eq!(c.calls.last(), Some(&(false, c.question)));
+                    }
+                    c.adopt();
+                    c.redirect();
+                    c.observe().await;
+                    let call = c
+                        .pipeline
+                        .as_ref()
+                        .unwrap()
+                        .get_cap()
+                        .echo_request()
+                        .send()
+                        .promise;
+                    c.observe().await;
+                    assert_eq!(
+                        c.calls.len(),
+                        if previously_used { 2 } else { 1 },
+                        "post-adoption pipeline call was not published; used={previously_used}"
+                    );
+                    assert_eq!(call.await.unwrap().get().unwrap().get_value(), 73);
+                    assert_eq!(
+                        c.calls.last(),
+                        Some(&(
+                            !previously_used,
+                            if previously_used { c.question } else { ID }
+                        ))
+                    );
+                    assert_eq!(c.outcome, 0);
+                    for peer in [2, 3] {
+                        let status = c.hub.borrow_mut().connect(1, peer).status();
+                        assert!(status
+                            .borrow()
+                            .answer_deadlines
+                            .iter()
+                            .all(|timer| timer.is_canceled()));
+                    }
+                    c.complete(false);
+                    c.observe().await;
+                    assert_eq!(c.outcome, 1);
+                    c.pipeline.take();
+                    c.response.take();
+                    c.observe().await;
+                    assert_eq!(c.direct_finishes, 1);
+                    assert_eq!(c.old_finishes, 1);
+                }
+            })
+            .await
+            .unwrap();
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn canceled_and_disconnected_adoptions_settle_without_losing_authority_checks() {
     tokio::task::LocalSet::new()
         .run_until(async {
@@ -1097,102 +1352,115 @@ async fn third_party_tail_returns_over_authenticated_native() {
     }
     tokio::task::LocalSet::new()
         .run_until(async {
-            tokio::time::timeout(Duration::from_secs(10), async {
-                let ids = [
-                    Identity::generate(),
-                    Identity::generate(),
-                    Identity::generate(),
-                ];
-                let (an, ah) = Network::new(ids[0].public_key());
-                let (bn, bh) = Network::new(ids[1].public_key());
-                let (cn, ch) = Network::new(ids[2].public_key());
-                for (a, b) in [(0, 1), (1, 2), (0, 2)] {
-                    pair(&ids[a], &ids[b], [&ah, &bh, &ch][a], [&ah, &bh, &ch][b]).await;
-                }
-                let (gate, rx) = oneshot::channel();
-                let count = Rc::new(Cell::new(0));
-                let host: harness::Client =
-                    capnp_rpc::new_client(EarlyPipeline(RefCell::new(Some(rx)), count.clone()));
-                let c = RpcSystem::new(Box::new(cn), Some(host.client));
-                let factory = Rc::new(Factory(RefCell::new(None)));
-                let mut b = RpcSystem::new_with_bootstrap_factory(
-                    Box::new(bn),
-                    ids[1].public_key(),
-                    factory.clone(),
-                );
-                let host: harness::Client = b.bootstrap(ids[2].public_key());
-                let relay: harness::Client = capnp_rpc::new_client(Tail(host));
-                *factory.0.borrow_mut() = Some(relay.client);
-                let mut a = RpcSystem::new(Box::new(an), None);
-                let relay: harness::Client = a.bootstrap(ids[1].public_key());
-                let tasks = [a, b, c].map(tokio::task::spawn_local);
-                let mut request = relay.pending_request().send();
-                let early = request.pipeline.get_cap();
-                while count.get() == 0 {
-                    tokio::task::yield_now().await;
-                }
-                early
-                    .client
-                    .hook
-                    .when_more_resolved()
-                    .unwrap()
-                    .await
-                    .unwrap();
-                assert!((&mut request.promise).now_or_never().is_none());
-                assert_eq!(
+            for portable in [false, true] {
+                tokio::time::timeout(Duration::from_secs(10), async {
+                    let ids = [
+                        Identity::generate(),
+                        Identity::generate(),
+                        Identity::generate(),
+                    ];
+                    let (an, ah) = Network::new(ids[0].public_key());
+                    let (bn, bh) = Network::new(ids[1].public_key());
+                    let (cn, ch) = Network::new(ids[2].public_key());
+                    for (a, b) in [(0, 1), (1, 2), (0, 2)] {
+                        pair(&ids[a], &ids[b], [&ah, &bh, &ch][a], [&ah, &bh, &ch][b]).await;
+                    }
+                    let (gate, rx) = oneshot::channel();
+                    let count = Rc::new(Cell::new(0));
+                    let host: harness::Client =
+                        capnp_rpc::new_client(EarlyPipeline(RefCell::new(Some(rx)), count.clone()));
+                    let c = support::driver::System::new(portable, Box::new(cn), Some(host.client));
+                    let factory = Rc::new(Factory(RefCell::new(None)));
+                    let mut b = support::driver::System::with_factory(
+                        portable,
+                        Box::new(bn),
+                        ids[1].public_key(),
+                        factory.clone(),
+                    );
+                    let host: harness::Client = b.bootstrap(ids[2].public_key());
+                    let ready = host.client.hook.when_resolved();
+                    let relay: harness::Client = capnp_rpc::new_client(Tail(host));
+                    *factory.0.borrow_mut() = Some(relay.client);
+                    let mut a = support::driver::System::new(portable, Box::new(an), None);
+                    let relay: harness::Client = a.bootstrap(ids[1].public_key());
+                    let tasks = [a, b, c].map(|system| tokio::task::spawn_local(system.run()));
+                    ready.await.unwrap();
+                    let mut request = relay.pending_request().send();
+                    let early = request.pipeline.get_cap();
+                    while count.get() == 0 {
+                        tokio::task::yield_now().await;
+                    }
                     early
-                        .echo_request()
-                        .send()
+                        .client
+                        .hook
+                        .when_more_resolved()
+                        .unwrap()
+                        .await
+                        .unwrap();
+                    assert!((&mut request.promise).now_or_never().is_none());
+                    assert_eq!(
+                        early
+                            .echo_request()
+                            .send()
+                            .promise
+                            .await
+                            .unwrap()
+                            .get()
+                            .unwrap()
+                            .get_value(),
+                        73
+                    );
+                    // Previously used portable pipelines deliberately retain their
+                    // ordered relay route until a distributed Join fence is added.
+                    if !portable {
+                        bh.disconnect(ids[0].public_key());
+                        bh.disconnect(ids[2].public_key());
+                    }
+                    assert_eq!(
+                        early
+                            .echo_request()
+                            .send()
+                            .promise
+                            .await
+                            .unwrap()
+                            .get()
+                            .unwrap()
+                            .get_value(),
+                        73
+                    );
+                    assert!((&mut request.promise).now_or_never().is_none());
+                    gate.send(()).unwrap();
+                    let cap = request
                         .promise
                         .await
                         .unwrap()
                         .get()
                         .unwrap()
-                        .get_value(),
-                    73
-                );
-                bh.disconnect(ids[0].public_key());
-                bh.disconnect(ids[2].public_key());
-                assert_eq!(
-                    early
-                        .echo_request()
-                        .send()
-                        .promise
-                        .await
-                        .unwrap()
-                        .get()
-                        .unwrap()
-                        .get_value(),
-                    73
-                );
-                assert!((&mut request.promise).now_or_never().is_none());
-                gate.send(()).unwrap();
-                let cap = request
-                    .promise
-                    .await
-                    .unwrap()
-                    .get()
-                    .unwrap()
-                    .get_cap()
-                    .unwrap();
-                assert!(ah.stats().published > 0, "no answer rendezvous registered");
-                assert_eq!(
-                    cap.echo_request()
-                        .send()
-                        .promise
-                        .await
-                        .unwrap()
-                        .get()
-                        .unwrap()
-                        .get_value(),
-                    73
-                );
-                for task in tasks {
-                    task.abort();
-                }
-            })
-            .await
-            .unwrap();
+                        .get_cap()
+                        .unwrap();
+                    assert!(ah.stats().published > 0, "no answer rendezvous registered");
+                    if portable {
+                        bh.disconnect(ids[0].public_key());
+                        bh.disconnect(ids[2].public_key());
+                    }
+                    assert_eq!(
+                        cap.echo_request()
+                            .send()
+                            .promise
+                            .await
+                            .unwrap()
+                            .get()
+                            .unwrap()
+                            .get_value(),
+                        73
+                    );
+                    for task in tasks {
+                        task.abort();
+                    }
+                })
+                .await
+                .unwrap();
+            }
         })
         .await;
 }
@@ -1201,8 +1469,9 @@ async fn third_party_tail_returns_over_authenticated_native() {
 async fn self_introduced_answer_adopts_locally_without_allocating_a_wire_question() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for early in [false, true] {
-                let mut c = Caller::new().await;
+            for (portable, early) in [(false, false), (false, true), (true, false), (true, true)] {
+                let mut c =
+                    Caller::with_driver(portable, true, false, capnp_rpc::new_client(Echo)).await;
                 c.observe().await;
                 c.relay.send(|m| m.init_bootstrap().set_question_id(41));
                 let m = recv(&mut c.relay).await;
@@ -1397,6 +1666,9 @@ fn finish(peer: &mut Endpoint, id: u32) {
 }
 impl Callee {
     async fn new() -> Self {
+        Self::with_driver(false).await
+    }
+    async fn with_driver(portable: bool) -> Self {
         let hub = Rc::new(RefCell::new(Hub::default()));
         enable(&hub);
         let network = Hub::network(&hub, 3);
@@ -1407,7 +1679,9 @@ impl Callee {
             gate: RefCell::new(Some(rx)),
             life: life.clone(),
         });
-        let task = tokio::task::spawn_local(RpcSystem::new(Box::new(network), Some(server.client)));
+        let task = tokio::task::spawn_local(
+            support::driver::System::new(portable, Box::new(network), Some(server.client)).run(),
+        );
         let mut relay = hub.borrow_mut().connect(2, 3);
         relay.send(|m| m.init_bootstrap().set_question_id(0));
         let m = recv(&mut relay).await;
@@ -1534,7 +1808,7 @@ impl Callee {
                             assert_eq!(self.ack, 0);
                             assert!(matches!(
                                 r.which().unwrap(),
-                                return_::ResultsSentElsewhere(())
+                                return_::ResultsSentElsewhere(()) | return_::Canceled(())
                             ));
                             self.ack = 1;
                         }
@@ -1550,9 +1824,9 @@ impl Callee {
 async fn adopted_call_owns_execution_until_both_answers_finish() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for first in [false, true] {
+            for (portable, first) in [(false, false), (false, true), (true, false), (true, true)] {
                 for complete in [false, true] {
-                    let mut c = Callee::new().await;
+                    let mut c = Callee::with_driver(portable).await;
                     if first {
                         finish(&mut c.caller, ID);
                     } else {
@@ -1859,57 +2133,59 @@ async fn answer_tokens_are_bound_to_peer_and_cannot_be_consumed_by_accept() {
 async fn direct_pipeline_remains_live_after_both_parent_answers_are_finished() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            let mut c = Callee::new().await;
-            c.caller.send(|m| {
-                let mut request = m.init_call();
-                request.set_question_id(7);
-                request.set_interface_id(harness::Client::TYPE_ID);
-                request.set_method_id(0);
-                let mut target = request.init_target().init_promised_answer();
-                target.set_question_id(ID);
-                target.init_transform(1).get(0).set_get_pointer_field(0);
-            });
-            drain().await;
-            finish(&mut c.relay, 1);
-            finish(&mut c.caller, ID);
-            drain().await;
-            assert_eq!(c.life.ended.get(), 0, "child pipeline lost its producer");
-            c.gate.take().unwrap().send(()).unwrap();
-            let mut child = false;
-            let mut parent = false;
-            while !child || !parent {
-                let m = recv(&mut c.caller).await;
-                let message::Return(r) = m
-                    .get_body()
-                    .unwrap()
-                    .get_as::<message::Reader>()
-                    .unwrap()
-                    .which()
-                    .unwrap()
-                else {
-                    continue;
-                };
-                let r = r.unwrap();
-                if r.get_answer_id() == 7 {
-                    let return_::Results(p) = r.which().unwrap() else {
-                        panic!()
+            for portable in [false, true] {
+                let mut c = Callee::with_driver(portable).await;
+                c.caller.send(|m| {
+                    let mut request = m.init_call();
+                    request.set_question_id(7);
+                    request.set_interface_id(harness::Client::TYPE_ID);
+                    request.set_method_id(0);
+                    let mut target = request.init_target().init_promised_answer();
+                    target.set_question_id(ID);
+                    target.init_transform(1).get(0).set_get_pointer_field(0);
+                });
+                drain().await;
+                finish(&mut c.relay, 1);
+                finish(&mut c.caller, ID);
+                drain().await;
+                assert_eq!(c.life.ended.get(), 0, "child pipeline lost its producer");
+                c.gate.take().unwrap().send(()).unwrap();
+                let mut child = false;
+                let mut parent = false;
+                while !child || !parent {
+                    let m = recv(&mut c.caller).await;
+                    let message::Return(r) = m
+                        .get_body()
+                        .unwrap()
+                        .get_as::<message::Reader>()
+                        .unwrap()
+                        .which()
+                        .unwrap()
+                    else {
+                        continue;
                     };
-                    assert_eq!(
-                        p.unwrap()
-                            .get_content()
-                            .get_as::<harness::value::Reader>()
-                            .unwrap()
-                            .get_value(),
-                        73
-                    );
-                    child = true;
-                } else {
-                    assert_eq!(r.get_answer_id(), ID);
-                    assert!(matches!(r.which().unwrap(), return_::Canceled(())));
-                    parent = true;
+                    let r = r.unwrap();
+                    if r.get_answer_id() == 7 {
+                        let return_::Results(p) = r.which().unwrap() else {
+                            panic!()
+                        };
+                        assert_eq!(
+                            p.unwrap()
+                                .get_content()
+                                .get_as::<harness::value::Reader>()
+                                .unwrap()
+                                .get_value(),
+                            73
+                        );
+                        child = true;
+                    } else {
+                        assert_eq!(r.get_answer_id(), ID);
+                        assert!(matches!(r.which().unwrap(), return_::Canceled(())));
+                        parent = true;
+                    }
                 }
+                assert_eq!(c.life.completed.get(), 1);
             }
-            assert_eq!(c.life.completed.get(), 1);
         })
         .await;
 }
@@ -2020,6 +2296,296 @@ async fn replay_tlc_caller_pipeline_traces() {
                     );
                 }
             }
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn portable_callee_transfer_survives_relay_disconnect_before_completion() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let mut c = Callee::with_driver(true).await;
+            c.hub.borrow_mut().disconnect_pair(2, 3);
+            drain().await;
+            assert_eq!(
+                c.life.ended.get(),
+                0,
+                "relay disconnect canceled recipient work"
+            );
+            c.gate.take().unwrap().send(()).unwrap();
+            let message = recv(&mut c.caller).await;
+            let message::Return(returned) = message
+                .get_body()
+                .unwrap()
+                .get_as::<message::Reader>()
+                .unwrap()
+                .which()
+                .unwrap()
+            else {
+                panic!("direct Return")
+            };
+            let returned = returned.unwrap();
+            assert_eq!(returned.get_answer_id(), ID);
+            assert!(matches!(returned.which().unwrap(), return_::Results(_)));
+            assert_eq!(c.life.completed.get(), 1);
+            assert_eq!(c.life.ended.get(), 1);
+            finish(&mut c.caller, ID);
+            drain().await;
+            assert!(!c.task.is_finished(), "relay failure stopped other peers");
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn portable_tail_pipeline_can_be_projected_after_results_sent_elsewhere() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                let hub = Rc::new(RefCell::new(Hub::default()));
+                enable(&hub);
+                hub.borrow_mut().introductions = true;
+                let _caller_network = Hub::network(&hub, 1);
+                let relay_network = Hub::network(&hub, 2);
+                let callee_network = Hub::network(&hub, 3);
+                let service: harness::Client = capnp_rpc::new_client(Echo);
+                let callee = tokio::task::spawn_local(
+                    support::driver::System::new(
+                        true,
+                        Box::new(callee_network),
+                        Some(service.client),
+                    )
+                    .run(),
+                );
+                let factory = Rc::new(Factory(RefCell::new(None)));
+                let mut relay = support::driver::System::with_factory(
+                    true,
+                    Box::new(relay_network),
+                    2,
+                    factory.clone(),
+                );
+                let target: harness::Client = relay.bootstrap(3);
+                let ready = target.client.hook.when_resolved();
+                let service: harness::Client = capnp_rpc::new_client(Tail(target));
+                *factory.0.borrow_mut() = Some(service.client);
+                let relay = tokio::task::spawn_local(relay.run());
+                ready.await.unwrap();
+                let mut caller = hub.borrow_mut().connect(1, 2);
+                caller.send(|m| m.init_bootstrap().set_question_id(0));
+                let returned = recv(&mut caller).await;
+                let message::Return(r) = returned
+                    .get_body()
+                    .unwrap()
+                    .get_as::<message::Reader>()
+                    .unwrap()
+                    .which()
+                    .unwrap()
+                else {
+                    panic!("bootstrap Return")
+                };
+                let return_::Results(payload) = r.unwrap().which().unwrap() else {
+                    panic!("bootstrap result")
+                };
+                let cap_descriptor::SenderHosted(export) = payload
+                    .unwrap()
+                    .get_cap_table()
+                    .unwrap()
+                    .get(0)
+                    .which()
+                    .unwrap()
+                else {
+                    panic!("bootstrap capability")
+                };
+                caller.send(|m| {
+                    let mut call = m.init_call();
+                    call.set_question_id(1);
+                    call.set_interface_id(harness::Client::TYPE_ID);
+                    call.set_method_id(3);
+                    call.set_allow_third_party_tail_call(true);
+                    call.init_target().set_imported_cap(export);
+                });
+                let returned = recv(&mut caller).await;
+                let message::Return(r) = returned
+                    .get_body()
+                    .unwrap()
+                    .get_as::<message::Reader>()
+                    .unwrap()
+                    .which()
+                    .unwrap()
+                else {
+                    panic!("handoff Return")
+                };
+                assert!(matches!(
+                    r.unwrap().which().unwrap(),
+                    return_::AwaitFromThirdParty(_)
+                ));
+                let mut direct = hub.borrow_mut().connect(1, 3);
+                let adopted = recv(&mut direct).await;
+                let message::ThirdPartyAnswer(adopted) = adopted
+                    .get_body()
+                    .unwrap()
+                    .get_as::<message::Reader>()
+                    .unwrap()
+                    .which()
+                    .unwrap()
+                else {
+                    panic!("adopted answer")
+                };
+                let adopted_id = adopted.unwrap().get_answer_id();
+                let result = recv(&mut direct).await;
+                assert!(matches!(
+                    result
+                        .get_body()
+                        .unwrap()
+                        .get_as::<message::Reader>()
+                        .unwrap()
+                        .which()
+                        .unwrap(),
+                    message::Return(_)
+                ));
+                drain().await; // The callee's acknowledgement has reached the relay.
+                caller.send(|m| {
+                    let mut call = m.init_call();
+                    call.set_question_id(7);
+                    call.set_interface_id(harness::Client::TYPE_ID);
+                    call.set_method_id(0);
+                    let mut target = call.init_target().init_promised_answer();
+                    target.set_question_id(1);
+                    target.init_transform(1).get(0).set_get_pointer_field(0);
+                });
+                let returned = recv(&mut caller).await;
+                let message::Return(r) = returned
+                    .get_body()
+                    .unwrap()
+                    .get_as::<message::Reader>()
+                    .unwrap()
+                    .which()
+                    .unwrap()
+                else {
+                    panic!("late pipeline Return")
+                };
+                let r = r.unwrap();
+                assert_eq!(r.get_answer_id(), 7);
+                let return_::Results(payload) = r.which().unwrap() else {
+                    panic!("late pipeline result")
+                };
+                assert_eq!(
+                    payload
+                        .unwrap()
+                        .get_content()
+                        .get_as::<harness::value::Reader>()
+                        .unwrap()
+                        .get_value(),
+                    73
+                );
+                for id in [7, 1, 0] {
+                    finish(&mut caller, id);
+                }
+                finish(&mut direct, adopted_id);
+                drain().await;
+                assert!(hub
+                    .borrow_mut()
+                    .connect(2, 1)
+                    .status()
+                    .borrow()
+                    .shutdowns
+                    .is_empty());
+                relay.abort();
+                callee.abort();
+            })
+            .await
+            .unwrap();
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn portable_tail_finish_before_child_completion_reclaims_both_interests() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                let hub = Rc::new(RefCell::new(Hub::default()));
+                enable(&hub);
+                hub.borrow_mut().introductions = true;
+                let networks = [
+                    Hub::network(&hub, 1),
+                    Hub::network(&hub, 2),
+                    Hub::network(&hub, 3),
+                ];
+                let [caller_network, relay_network, callee_network] = networks;
+                let life = Rc::new(Lifetime::default());
+                let (_gate, receiver) = oneshot::channel();
+                let service: harness::Client = capnp_rpc::new_client(OwnedGate {
+                    gate: RefCell::new(Some(receiver)),
+                    life: life.clone(),
+                });
+                let callee = tokio::task::spawn_local(
+                    support::driver::System::new(
+                        true,
+                        Box::new(callee_network),
+                        Some(service.client),
+                    )
+                    .run(),
+                );
+                let factory = Rc::new(Factory(RefCell::new(None)));
+                let mut relay = support::driver::System::with_factory(
+                    true,
+                    Box::new(relay_network),
+                    2,
+                    factory.clone(),
+                );
+                let target: harness::Client = relay.bootstrap(3);
+                let ready = target.client.hook.when_resolved();
+                let service: harness::Client = capnp_rpc::new_client(Tail(target));
+                *factory.0.borrow_mut() = Some(service.client);
+                let relay = tokio::task::spawn_local(relay.run());
+                ready.await.unwrap();
+                let mut caller = support::driver::System::new(true, Box::new(caller_network), None);
+                let target: harness::Client = caller.bootstrap(2);
+                let caller = tokio::task::spawn_local(caller.run());
+                let request = target.pending_request().send();
+                drain().await;
+                assert_eq!(life.entered.get(), 1);
+                assert_eq!(
+                    hub.borrow_mut()
+                        .connect(3, 1)
+                        .status()
+                        .borrow()
+                        .adoptions_sent,
+                    1
+                );
+                drop(request);
+                drain().await;
+                assert_eq!(
+                    life.ended.get(),
+                    1,
+                    "both canceled answers retained application work"
+                );
+                assert_eq!(life.completed.get(), 0);
+                let error = target
+                    .echo_request()
+                    .send()
+                    .promise
+                    .await
+                    .err()
+                    .expect("unimplemented probe method");
+                assert_eq!(
+                    error.kind,
+                    capnp::ErrorKind::Unimplemented,
+                    "cancellation broke the relay connection"
+                );
+                for (a, b) in [(1, 2), (2, 1), (2, 3), (3, 2), (1, 3), (3, 1)] {
+                    let status = hub.borrow_mut().connect(a, b).status();
+                    assert!(
+                        status.borrow().shutdowns.is_empty(),
+                        "unexpected disconnect {a}->{b}"
+                    );
+                }
+                caller.abort();
+                relay.abort();
+                callee.abort();
+            })
+            .await
+            .unwrap();
         })
         .await;
 }

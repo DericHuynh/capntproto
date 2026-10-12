@@ -4,9 +4,14 @@ use std::{collections::BTreeMap, fs};
 #[test]
 fn ignored_controls_have_reviewed_reasons() {
     let output = v::run_stdout(
-        std::process::Command::new("cargo")
-            .current_dir(v::root())
-            .env_remove("NEXTEST_PROFILE")
+        v::command("cargo")
+            // Listing all targets builds a different feature/profile graph.
+            // Cargo may replace test executables still queued by the outer
+            // nextest process, so inventory compilation owns its output tree.
+            .env(
+                "CARGO_TARGET_DIR",
+                v::root().join("target/verification/ignored-inventory-build"),
+            )
             .args([
                 "nextest",
                 "list",

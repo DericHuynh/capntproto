@@ -86,6 +86,9 @@ fn kind(ctx: &GeneratorContext, t: type_::Reader<'_>) -> capnp::Result<String> {
             remap(ctx, t.type_string(ctx, Leaf::Owned)?)?
         ),
         type_::List(l) => format!("{f}::List<{}>", element(ctx, l.get_element_type()?)?),
+        type_::Interface(_) if ctx.bounded_rpc => {
+            format!("{f}::WireCapability<{}>", t.type_string(ctx, Leaf::Owned)?)
+        }
         type_::Interface(_) => format!(
             "{f}::Capability<{}>",
             remap(ctx, t.type_string(ctx, Leaf::Client)?)?
@@ -336,6 +339,12 @@ fn emit(ctx: &GeneratorContext, id: u64, out: &mut String) -> capnp::Result<()> 
             writeln!(out, "{name}::Unknown(n)=>n,}}}}}}").unwrap();
             writeln!(out,"impl {f}::Scalar for {name} {{type Mask=u16;const BITS:usize=16;fn read(r: {l}::StructReader<'_>,o:usize,m:u16)->Self{{r.get_data_field_mask::<u16>(o,m).into()}}fn write(r:&{l}::StructBuilder<'_>,o:usize,m:u16,v:Self){{r.set_data_field_mask(o,u16::from(v),m);}}}}").unwrap();
             writeln!(out,"impl {f}::Element for {name} {{type Ref<'a>=Self;type Mut<'a>={f}::EnumElement<'a,Self>;const SIZE: {l}::ElementSize={l}::ElementSize::TwoBytes;fn get<'a>(r: {l}::ListReader<'a>,i:u32)->Self{{<u16 as {l}::PrimitiveElement>::get(&r,i).into()}}fn get_mut<'a>(r: {l}::ListBuilder<'a>,i:u32)->Self::Mut<'a>{{{f}::EnumElement::new(r,i)}}}}").unwrap();
+            writeln!(out,"impl {f}::FixedElement for {name} {{type Fixed<'a>={f}::EnumElement<'a,Self>;fn get_fixed<'a>(r: {l}::ListBuilder<'a>,i:u32)->Self::Fixed<'a>{{{f}::EnumElement::new(r,i)}}}}").unwrap();
+            writeln!(
+                out,
+                "impl {f}::FixedEnum for {compiled} {{type Element={name};}}"
+            )
+            .unwrap();
         }
         node::Struct(s) => {
             let p = n.parameters_texts(ctx);
@@ -384,6 +393,10 @@ fn emit(ctx: &GeneratorContext, id: u64, out: &mut String) -> capnp::Result<()> 
             writeln!(out,"impl<{ps}> {cp}::traits::OwnedStruct for {marker} {wc} {{type Reader<'a>={read};type Builder<'a>={write};}}\nimpl<'a,{ps}> {cp}::traits::HasStructSize for {write} {wc} {{const STRUCT_SIZE: {l}::StructSize=<{marker} as {f}::Schema>::SIZE;}}").unwrap();
             writeln!(out,"impl<{ps}> {cp}::traits::Pipelined for {marker} {wc} {{type Pipeline=<{old} as {cp}::traits::Pipelined>::Pipeline;}}").unwrap();
             writeln!(out,"impl<{ps}> {f}::Element for {marker} {wc} {{type Ref<'a>={read};type Mut<'a>={write};const SIZE: {l}::ElementSize={l}::ElementSize::InlineComposite;const STRUCT:Option<{l}::StructSize>=Some(<Self as {f}::Schema>::SIZE);fn get<'a>(r: {l}::ListReader<'a>,i:u32)->Self::Ref<'a>{{r.get_struct_element(i).into()}}fn get_mut<'a>(r: {l}::ListBuilder<'a>,i:u32)->Self::Mut<'a>{{r.get_struct_element(i).into()}}}}").unwrap();
+            writeln!(out,"impl<{ps}> {f}::FixedElement for {marker} {wc} {{type Fixed<'a>={f}::FixedStruct<'a,Self>;fn get_fixed<'a>(r: {l}::ListBuilder<'a>,i:u32)->Self::Fixed<'a>{{{f}::FixedStruct::from_layout(r.get_struct_element(i))}}}}").unwrap();
+            for owner in [&old, &marker] {
+                writeln!(out,"impl<{ps}> {f}::FixedType for {owner} {wc} {{type Kind={f}::Struct<{marker}>;}}\nimpl<{ps}> {f}::FixedSchema for {owner} {wc} {{type Schema={marker};}}").unwrap();
+            }
             let mut readers = String::new();
             let mut writers = String::new();
             let mut descriptors = String::new();
@@ -470,6 +483,18 @@ fn emit(ctx: &GeneratorContext, id: u64, out: &mut String) -> capnp::Result<()> 
                                 "{doc}#[inline] pub fn {method}(&mut self)->{ht}{{{call}}}"
                             )
                             .unwrap();
+                            {
+                                let descriptor_selection = if union {
+                                    format!("Some({f}::Selection{{offset:{},tag:{disc},clear:<{mutname}<'static,{ps}>>::__clear_union}})", s.get_discriminant_offset())
+                                } else {
+                                    "None".into()
+                                };
+                                if void {
+                                    writeln!(descriptors, "{doc}pub const {}: {f}::VoidDescriptor<Self>={f}::VoidDescriptor::new({descriptor_selection});", snake.to_uppercase()).unwrap();
+                                } else {
+                                    writeln!(descriptors, "{doc}pub const {}: {f}::ScalarDescriptor<Self,{typ}>={f}::ScalarDescriptor::new({off},{mask},{descriptor_selection});", snake.to_uppercase()).unwrap();
+                                }
+                            }
                             if union {
                                 variants.push((
                                     disc,
@@ -551,6 +576,12 @@ fn emit(ctx: &GeneratorContext, id: u64, out: &mut String) -> capnp::Result<()> 
                         };
                         let rt = format!("<{gt} as {f}::Schema>::Ref<'a>");
                         let mt = format!("<{gt} as {f}::Schema>::Mut<'_>");
+                        let descriptor_selection = if union {
+                            format!("Some({f}::Selection{{offset:{},tag:{disc},clear:<{mutname}<'static,{ps}>>::__clear_union}})", s.get_discriminant_offset())
+                        } else {
+                            "None".into()
+                        };
+                        writeln!(descriptors, "{doc}pub const {}: {f}::GroupDescriptor<Self,{gt}>={f}::GroupDescriptor::new({descriptor_selection});", snake.to_uppercase()).unwrap();
                         let expr =
                             format!("<{rt} as From<{l}::StructReader<'a>>>::from(self.0.raw())");
                         if pure_union && !union {
@@ -611,7 +642,7 @@ fn emit(ctx: &GeneratorContext, id: u64, out: &mut String) -> capnp::Result<()> 
             out.push_str("}\n");
             writeln!(out,"impl<'a,{ps}> {write} {wc} {{{writers}\npub fn read(&self)->{}{{self.0.read().into()}}",args(&format!("{f}::mode::Read<'_>"))).unwrap();
             if !s.get_is_group() {
-                writeln!(out,"pub fn copy_from(&mut self, source: {refname}<'_,{ps}>)->{cp}::Result<()>{{self.0.raw().copy_content_from_strict(&{cp}::traits::IntoInternalStructReader::into_internal_struct_reader(source))}}").unwrap();
+                writeln!(out,"{f}::alloc_only! {{ pub fn copy_from(&mut self, source: {refname}<'_,{ps}>)->{cp}::Result<()>{{self.0.raw().copy_content_from_strict(&{cp}::traits::IntoInternalStructReader::into_internal_struct_reader(source))}} }}").unwrap();
             }
             if !variants.is_empty() {
                 writeln!(

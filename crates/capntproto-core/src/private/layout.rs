@@ -34,6 +34,7 @@ use crate::private::zero;
 use crate::text;
 use crate::{Error, ErrorKind, MessageSize, Result};
 
+mod bounded;
 #[cfg(feature = "alloc")]
 mod list_edit;
 
@@ -450,43 +451,61 @@ mod wire_helpers {
         amount: WordCount32,
         kind: WirePointerKind,
     ) -> (*mut u8, *mut WirePointer, u32) {
-        let is_null = (*reff).is_null();
-        if !is_null {
-            zero_object(arena, cap_table, segment_id, reff)
-        }
+        // SAFETY: forwards the same live pointer/arena contract to the shared
+        // reservation path. Legacy callers retain infallible allocation policy.
+        unsafe { try_allocate(arena, cap_table, reff, segment_id, amount, kind) }
+            .expect("allocate message object")
+    }
 
-        if amount == 0 && kind == WirePointerKind::Struct {
-            (*reff).set_kind_and_target_for_empty_struct();
-            return (reff as *mut _, reff, segment_id);
-        }
-
-        match arena.allocate_ptr(segment_id, amount) {
-            None => {
-                //# Need to allocate in a different segment. We'll need to
-                //# allocate an extra pointer worth of space to act as
-                //# the landing pad for a far pointer.
-
-                let amount_plus_ref = amount + u32::try_from(POINTER_SIZE_IN_WORDS).unwrap();
-                let (segment_id, word_idx) = arena.allocate_anywhere(amount_plus_ref);
-                let (seg_start, _seg_len) = arena.get_segment_mut(segment_id);
-                let ptr = seg_start.add(word_idx as usize * BYTES_PER_WORD);
-
-                //# Set up the original pointer to be a far pointer to
-                //# the new segment.
+    /// Reserve before clearing or publishing. Failure preserves the old object.
+    #[inline]
+    pub(crate) unsafe fn try_allocate(
+        arena: &mut dyn BuilderArena,
+        cap_table: CapTableBuilder,
+        reff: *mut WirePointer,
+        segment_id: u32,
+        amount: WordCount32,
+        kind: WirePointerKind,
+    ) -> Result<(*mut u8, *mut WirePointer, u32)> {
+        // SAFETY: callers provide a live, exclusive pointer slot and matching
+        // arena/cap table. Successful reservations are initialized, disjoint and
+        // stable by BuilderArena's contract. Old contents are cleared only after
+        // every fallible reservation has succeeded; new pointer targets stay in
+        // their reserved segment, with a landing pad for cross-segment objects.
+        unsafe {
+            if amount == 0 && kind == WirePointerKind::Struct {
+                if !(*reff).is_null() {
+                    zero_object(arena, cap_table, segment_id, reff);
+                }
+                (*reff).set_kind_and_target_for_empty_struct();
+                return Ok((reff.cast(), reff, segment_id));
+            }
+            let local = arena.allocate_ptr(segment_id, amount);
+            let elsewhere = if local.is_none() {
+                let required = amount
+                    .checked_add(1)
+                    .ok_or_else(|| Error::from_kind(ErrorKind::LengthOverflow))?;
+                Some(arena.try_allocate_anywhere(required)?)
+            } else {
+                None
+            };
+            if !(*reff).is_null() {
+                zero_object(arena, cap_table, segment_id, reff);
+            }
+            if let Some(ptr) = local {
+                (*reff).set_kind_and_target(kind, ptr);
+                Ok((ptr, reff, segment_id))
+            } else {
+                let (segment_id, word_idx) = elsewhere.unwrap();
+                let (base, _) = arena.get_segment_mut(segment_id);
+                let pad = base
+                    .add(word_idx as usize * BYTES_PER_WORD)
+                    .cast::<WirePointer>();
+                let ptr = pad.add(1).cast::<u8>();
                 (*reff).set_far(false, word_idx);
                 (*reff).set_far_segment_id(segment_id);
-
-                //# Initialize the landing pad to indicate that the
-                //# data immediately follows the pad.
-                let reff = ptr as *mut WirePointer;
-
-                let ptr1 = ptr.add(BYTES_PER_WORD);
-                (*reff).set_kind_and_target(kind, ptr1);
-                (ptr1, reff, segment_id)
-            }
-            Some(ptr) => {
-                (*reff).set_kind_and_target(kind, ptr);
-                (ptr, reff, segment_id)
+                (*pad).set_kind_and_target(kind, ptr);
+                Ok((ptr, pad, segment_id))
             }
         }
     }
@@ -654,7 +673,9 @@ mod wire_helpers {
             WirePointerKind::Other => {
                 assert!((*tag).is_capability(), "unknown pointer in builder");
                 #[cfg(feature = "alloc")]
-                {
+                if arena.allows_capabilities() {
+                    // Fixed arenas contain wire indices whose reference counts
+                    // belong to the RPC descriptor table, not boxed hooks.
                     let mut cap_table = cap_table;
                     cap_table.drop_cap((*tag).cap_index() as usize);
                 }
@@ -1190,28 +1211,46 @@ mod wire_helpers {
         cap_table: CapTableBuilder,
         size: StructSize,
     ) -> StructBuilder<'_> {
-        let (ptr, reff, segment_id) = allocate(
-            arena,
-            cap_table,
-            reff,
-            segment_id,
-            size.total(),
-            WirePointerKind::Struct,
-        );
-        (*reff).set_struct_size(size);
-
-        StructBuilder {
-            arena,
-            segment_id,
-            cap_table,
-            data: ptr as *mut _,
-            pointers: ptr.add(size.data as usize * BYTES_PER_WORD) as *mut _,
-            data_size: u32::from(size.data) * BitCount32::try_from(BITS_PER_WORD).unwrap(),
-            pointer_count: size.pointers,
-        }
+        // SAFETY: the shared encoder receives the same validated arena and pointer.
+        unsafe { try_init_struct_pointer(arena, reff, segment_id, cap_table, size) }
+            .expect("initialize message object")
     }
 
     #[inline]
+    pub(crate) unsafe fn try_init_struct_pointer(
+        arena: &mut dyn BuilderArena,
+        reff: *mut WirePointer,
+        segment_id: u32,
+        cap_table: CapTableBuilder,
+        size: StructSize,
+    ) -> Result<StructBuilder<'_>> {
+        // SAFETY: a live exclusive pointer and matching arena are supplied by
+        // PointerBuilder. Reservation validates capacity before any publication;
+        // size checks bound every initialized view to that reserved allocation.
+        unsafe {
+            let (ptr, reff, segment_id) = try_allocate(
+                arena,
+                cap_table,
+                reff,
+                segment_id,
+                size.total(),
+                WirePointerKind::Struct,
+            )?;
+            (*reff).set_struct_size(size);
+
+            Ok(StructBuilder {
+                arena,
+                segment_id,
+                cap_table,
+                data: ptr as *mut _,
+                pointers: ptr.add(size.data as usize * BYTES_PER_WORD) as *mut _,
+                data_size: u32::from(size.data) * BitCount32::try_from(BITS_PER_WORD).unwrap(),
+                pointer_count: size.pointers,
+            })
+        }
+    }
+
+    #[inline(always)]
     pub(crate) unsafe fn get_writable_struct_pointer<'a>(
         arena: &'a mut dyn BuilderArena,
         mut reff: *mut WirePointer,
@@ -1341,27 +1380,61 @@ mod wire_helpers {
         element_count: ElementCount32,
         element_size: ElementSize,
     ) -> ListBuilder<'_> {
+        // SAFETY: preserves the caller's live exclusive pointer/arena contract.
+        unsafe {
+            try_init_list_pointer(
+                arena,
+                reff,
+                segment_id,
+                cap_table,
+                element_count,
+                element_size,
+            )
+        }
+        .expect("initialize message list")
+    }
+
+    #[inline]
+    pub(crate) unsafe fn try_init_list_pointer(
+        arena: &mut dyn BuilderArena,
+        reff: *mut WirePointer,
+        segment_id: u32,
+        cap_table: CapTableBuilder,
+        element_count: ElementCount32,
+        element_size: ElementSize,
+    ) -> Result<ListBuilder<'_>> {
         assert!(
             element_size != InlineComposite,
             "Should have called initStructListPointer() instead"
         );
 
+        if element_count >= (1 << 29) {
+            return Err(Error::from_kind(ErrorKind::LengthOverflow));
+        }
         let data_size = data_bits_per_element(element_size);
         let pointer_count = pointers_per_element(element_size);
         let step = data_size + pointer_count * u32::try_from(BITS_PER_POINTER).unwrap();
         let word_count = round_bits_up_to_words(u64::from(element_count) * u64::from(step));
-        let (ptr, reff, segment_id) = allocate(
-            arena,
-            cap_table,
-            reff,
-            segment_id,
-            word_count,
-            WirePointerKind::List,
-        );
+        // SAFETY: the supplied slot and arena are exclusively borrowed. The
+        // wire count bounds the size calculation; reservation initializes the
+        // complete list before publication and preserves the slot on failure.
+        let (ptr, reff, segment_id) = unsafe {
+            try_allocate(
+                arena,
+                cap_table,
+                reff,
+                segment_id,
+                word_count,
+                WirePointerKind::List,
+            )
+        }?;
 
-        (*reff).set_list_size_and_count(element_size, element_count);
+        // SAFETY: reservation returned the live pointer slot for this list.
+        unsafe {
+            (*reff).set_list_size_and_count(element_size, element_count);
+        }
 
-        ListBuilder {
+        Ok(ListBuilder {
             arena,
             segment_id,
             cap_table,
@@ -1371,7 +1444,7 @@ mod wire_helpers {
             element_size,
             struct_data_size: data_size,
             struct_pointer_count: u16::try_from(pointer_count).unwrap(),
-        }
+        })
     }
 
     #[inline]
@@ -1383,36 +1456,66 @@ mod wire_helpers {
         element_count: ElementCount32,
         element_size: StructSize,
     ) -> ListBuilder<'_> {
+        // SAFETY: preserves the caller's live exclusive pointer/arena contract.
+        unsafe {
+            try_init_struct_list_pointer(
+                arena,
+                reff,
+                segment_id,
+                cap_table,
+                element_count,
+                element_size,
+            )
+        }
+        .expect("initialize message struct list")
+    }
+
+    #[inline]
+    pub(crate) unsafe fn try_init_struct_list_pointer(
+        arena: &mut dyn BuilderArena,
+        reff: *mut WirePointer,
+        segment_id: u32,
+        cap_table: CapTableBuilder,
+        element_count: ElementCount32,
+        element_size: StructSize,
+    ) -> Result<ListBuilder<'_>> {
         let words_per_element = element_size.total();
 
         //# Allocate the list, prefixed by a single WirePointer.
         let word_count_u64 = u64::from(element_count) * u64::from(words_per_element);
-        assert!(
-            word_count_u64 < (1 << 29),
-            "Inline composite lists are limited to 2**29 words"
-        );
+        // The inline tag encodes an unsigned 30-bit element count, even for
+        // empty structs whose total word count is always zero.
+        if element_count >= (1 << 30) || word_count_u64 >= (1 << 29) {
+            return Err(Error::from_kind(ErrorKind::LengthOverflow));
+        }
         let word_count: WordCount32 = WordCount32::try_from(word_count_u64).unwrap();
-        let (ptr, reff, segment_id) = allocate(
-            arena,
-            cap_table,
-            reff,
-            segment_id,
-            u32::try_from(POINTER_SIZE_IN_WORDS).unwrap() + word_count,
-            WirePointerKind::List,
-        );
+        // SAFETY: validated sizes include the tag word. Reservation initializes
+        // disjoint storage before replacing the live exclusive pointer slot.
+        let (ptr, reff, segment_id) = unsafe {
+            try_allocate(
+                arena,
+                cap_table,
+                reff,
+                segment_id,
+                u32::try_from(POINTER_SIZE_IN_WORDS).unwrap() + word_count,
+                WirePointerKind::List,
+            )
+        }?;
         let ptr = ptr as *mut WirePointer;
 
-        //# Initialize the pointer.
-        (*reff).set_list_inline_composite(word_count);
-        (*ptr).set_kind_and_inline_composite_list_element_count(
-            WirePointerKind::Struct,
-            element_count,
-        );
-        (*ptr).set_struct_size(element_size);
+        // SAFETY: the reserved tag and element range are initialized and live;
+        // all published sizes were checked before the old object was cleared.
+        let ptr1 = unsafe {
+            (*reff).set_list_inline_composite(word_count);
+            (*ptr).set_kind_and_inline_composite_list_element_count(
+                WirePointerKind::Struct,
+                element_count,
+            );
+            (*ptr).set_struct_size(element_size);
+            ptr.add(POINTER_SIZE_IN_WORDS)
+        };
 
-        let ptr1 = ptr.add(POINTER_SIZE_IN_WORDS);
-
-        ListBuilder {
+        Ok(ListBuilder {
             arena,
             segment_id,
             cap_table,
@@ -1423,7 +1526,7 @@ mod wire_helpers {
             struct_data_size: u32::from(element_size.data)
                 * (u32::try_from(BITS_PER_WORD).unwrap()),
             struct_pointer_count: element_size.pointers,
-        }
+        })
     }
 
     #[inline]
@@ -1833,27 +1936,53 @@ mod wire_helpers {
         segment_id: u32,
         size: ByteCount32,
     ) -> SegmentAnd<text::Builder<'_>> {
-        assert!(size < (1 << 29), "text size too large");
+        // SAFETY: the shared encoder receives the same validated arena and pointer.
+        unsafe { try_init_text_pointer(arena, cap_table, reff, segment_id, size) }.unwrap_or_else(
+            |error| {
+                if error.kind == ErrorKind::LengthOverflow {
+                    panic!("text size too large");
+                }
+                panic!("initialize message object: {error}");
+            },
+        )
+    }
 
-        //# The byte list must include a NUL terminator.
-        let byte_size = size + 1;
+    #[inline]
+    pub(crate) unsafe fn try_init_text_pointer(
+        arena: &mut dyn BuilderArena,
+        cap_table: CapTableBuilder,
+        reff: *mut WirePointer,
+        segment_id: u32,
+        size: ByteCount32,
+    ) -> Result<SegmentAnd<text::Builder<'_>>> {
+        // SAFETY: a live exclusive pointer and matching arena are supplied by
+        // PointerBuilder. Reservation validates capacity before any publication;
+        // size checks bound every initialized view to that reserved allocation.
+        unsafe {
+            if size >= (1 << 29) - 1 {
+                return Err(Error::from_kind(ErrorKind::LengthOverflow));
+            }
 
-        //# Allocate the space.
-        let (ptr, reff, segment_id) = allocate(
-            arena,
-            cap_table,
-            reff,
-            segment_id,
-            round_bytes_up_to_words(byte_size),
-            WirePointerKind::List,
-        );
+            //# The byte list must include a NUL terminator.
+            let byte_size = size + 1;
 
-        //# Initialize the pointer.
-        (*reff).set_list_size_and_count(Byte, byte_size);
+            //# Allocate the space.
+            let (ptr, reff, segment_id) = try_allocate(
+                arena,
+                cap_table,
+                reff,
+                segment_id,
+                round_bytes_up_to_words(byte_size),
+                WirePointerKind::List,
+            )?;
 
-        SegmentAnd {
-            segment_id,
-            value: text::Builder::new(slice::from_raw_parts_mut(ptr, size as usize)),
+            //# Initialize the pointer.
+            (*reff).set_list_size_and_count(Byte, byte_size);
+
+            Ok(SegmentAnd {
+                segment_id,
+                value: text::Builder::new(slice::from_raw_parts_mut(ptr, size as usize)),
+            })
         }
     }
 
@@ -1940,22 +2069,44 @@ mod wire_helpers {
         segment_id: u32,
         size: ByteCount32,
     ) -> SegmentAnd<data::Builder<'_>> {
-        //# Allocate the space.
-        let (ptr, reff, segment_id) = allocate(
-            arena,
-            cap_table,
-            reff,
-            segment_id,
-            round_bytes_up_to_words(size),
-            WirePointerKind::List,
-        );
+        // SAFETY: the shared encoder receives the same validated arena and pointer.
+        unsafe { try_init_data_pointer(arena, cap_table, reff, segment_id, size) }
+            .expect("initialize message object")
+    }
 
-        //# Initialize the pointer.
-        (*reff).set_list_size_and_count(Byte, size);
+    #[inline]
+    pub(crate) unsafe fn try_init_data_pointer(
+        arena: &mut dyn BuilderArena,
+        cap_table: CapTableBuilder,
+        reff: *mut WirePointer,
+        segment_id: u32,
+        size: ByteCount32,
+    ) -> Result<SegmentAnd<data::Builder<'_>>> {
+        // SAFETY: a live exclusive pointer and matching arena are supplied by
+        // PointerBuilder. Reservation validates capacity before any publication;
+        // size checks bound every initialized view to that reserved allocation.
+        unsafe {
+            if size >= (1 << 29) {
+                return Err(Error::from_kind(ErrorKind::LengthOverflow));
+            }
 
-        SegmentAnd {
-            segment_id,
-            value: data::builder_from_raw_parts(ptr, size),
+            //# Allocate the space.
+            let (ptr, reff, segment_id) = try_allocate(
+                arena,
+                cap_table,
+                reff,
+                segment_id,
+                round_bytes_up_to_words(size),
+                WirePointerKind::List,
+            )?;
+
+            //# Initialize the pointer.
+            (*reff).set_list_size_and_count(Byte, size);
+
+            Ok(SegmentAnd {
+                segment_id,
+                value: data::builder_from_raw_parts(ptr, size),
+            })
         }
     }
 
@@ -2029,6 +2180,7 @@ mod wire_helpers {
         reff: *mut WirePointer,
         value: StructReader,
         canonicalize: bool,
+        cap_map: Option<crate::wire_capability::IndexMap<'_>>,
     ) -> Result<SegmentAnd<*mut u8>> {
         let mut data_size: ByteCount32 = round_bits_up_to_bytes(u64::from(value.data_size));
         let mut ptr_count = value.pointer_count;
@@ -2075,14 +2227,14 @@ mod wire_helpers {
         let total_size: WordCount32 =
             data_words + u32::from(ptr_count) * u32::try_from(WORDS_PER_POINTER).unwrap();
 
-        let (ptr, reff, segment_id) = allocate(
+        let (ptr, reff, segment_id) = try_allocate(
             arena,
             cap_table,
             reff,
             segment_id,
             total_size,
             WirePointerKind::Struct,
-        );
+        )?;
         (*reff).set_struct_size_from_pieces(u16::try_from(data_words).unwrap(), ptr_count);
 
         if value.data_size == 1 {
@@ -2104,6 +2256,7 @@ mod wire_helpers {
                 pointer_section.add(i),
                 value.get_pointer_field(i),
                 canonicalize,
+                cap_map,
             )?;
         }
 
@@ -2132,20 +2285,21 @@ mod wire_helpers {
         reff: *mut WirePointer,
         value: ListReader,
         canonicalize: bool,
+        cap_map: Option<crate::wire_capability::IndexMap<'_>>,
     ) -> Result<SegmentAnd<*mut u8>> {
         let total_size =
             round_bits_up_to_words(u64::from(value.element_count) * u64::from(value.step));
 
         if value.element_size != ElementSize::InlineComposite {
             //# List of non-structs.
-            let (ptr, reff, segment_id) = allocate(
+            let (ptr, reff, segment_id) = try_allocate(
                 arena,
                 cap_table,
                 reff,
                 segment_id,
                 total_size,
                 WirePointerKind::List,
-            );
+            )?;
 
             if value.struct_pointer_count == 1 {
                 //# List of pointers.
@@ -2158,6 +2312,7 @@ mod wire_helpers {
                         (ptr as *mut WirePointer).add(i as usize),
                         value.get_pointer_element(i),
                         canonicalize,
+                        cap_map,
                     )?;
                 }
             } else {
@@ -2250,14 +2405,14 @@ mod wire_helpers {
                 ptr_count = decl_pointer_count;
             }
 
-            let (ptr, reff, segment_id) = allocate(
+            let (ptr, reff, segment_id) = try_allocate(
                 arena,
                 cap_table,
                 reff,
                 segment_id,
                 total_size + u32::try_from(POINTER_SIZE_IN_WORDS).unwrap(),
                 WirePointerKind::List,
-            );
+            )?;
             (*reff).set_list_inline_composite(total_size);
 
             let tag: *mut WirePointer = ptr as *mut _;
@@ -2289,6 +2444,7 @@ mod wire_helpers {
                         dst as *mut _,
                         src_pr,
                         canonicalize,
+                        cap_map,
                     )?;
                     dst = dst.add(BYTES_PER_WORD);
                     src = src.add(BYTES_PER_WORD);
@@ -2312,6 +2468,7 @@ mod wire_helpers {
         dst: *mut WirePointer,
         src: PointerReader,
         canonicalize: bool,
+        cap_map: Option<crate::wire_capability::IndexMap<'_>>,
     ) -> Result<SegmentAnd<*mut u8>> {
         if (*src.pointer).is_null() {
             zero_object(dst_arena, dst_cap_table, dst_segment_id, dst);
@@ -2359,6 +2516,7 @@ mod wire_helpers {
                         nesting_limit: src.nesting_limit - 1,
                     },
                     canonicalize,
+                    cap_map,
                 )
             }
             WirePointerKind::List => {
@@ -2429,6 +2587,7 @@ mod wire_helpers {
                             nesting_limit: src.nesting_limit - 1,
                         },
                         canonicalize,
+                        cap_map,
                     )
                 } else {
                     let data_size = data_bits_per_element(element_size);
@@ -2470,6 +2629,7 @@ mod wire_helpers {
                             nesting_limit: src.nesting_limit - 1,
                         },
                         canonicalize,
+                        cap_map,
                     )
                 }
             }
@@ -2477,6 +2637,32 @@ mod wire_helpers {
             WirePointerKind::Other => {
                 if !(*src_ptr).is_capability() {
                     return Err(Error::from_kind(ErrorKind::UnknownPointerType));
+                }
+                if let Some(mapping) = cap_map {
+                    let CapTableBuilder::Plain(table) = dst_cap_table;
+                    if dst_arena.allows_capabilities() || !table.is_null() {
+                        return Err(Error::from_kind(ErrorKind::TypeMismatch));
+                    }
+                    if canonicalize {
+                        return Err(Error::from_kind(
+                            ErrorKind::CannotCreateACanonicalMessageWithACapability,
+                        ));
+                    }
+                    let index = mapping.remap(src.get_capability_index()?)?;
+                    // SAFETY: the caller owns this initialized destination slot;
+                    // fixed arenas have no hooks, and the checked map supplies a
+                    // destination-table index. The source remains read-borrowed.
+                    unsafe {
+                        zero_object(dst_arena, dst_cap_table, dst_segment_id, dst);
+                        (*dst).set_cap(index);
+                    }
+                    return Ok(SegmentAnd {
+                        segment_id: dst_segment_id,
+                        value: ptr::null_mut(),
+                    });
+                }
+                if !dst_arena.allows_capabilities() {
+                    return Err(Error::from_kind(ErrorKind::Unimplemented));
                 }
                 if canonicalize {
                     return Err(Error::from_kind(
@@ -2502,7 +2688,9 @@ mod wire_helpers {
         }
     }
 
-    #[inline]
+    // As in C++ WireHelpers::readStructPointer, expose the common struct path
+    // to its caller so unused reader fields and known defaults disappear.
+    #[inline(always)]
     pub(crate) unsafe fn read_struct_pointer<'a>(
         mut arena: &'a dyn ReaderArena,
         mut segment_id: u32,
@@ -2606,7 +2794,7 @@ mod wire_helpers {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub(crate) unsafe fn read_list_pointer(
         mut arena: &dyn ReaderArena,
         mut segment_id: u32,
@@ -2628,7 +2816,19 @@ mod wire_helpers {
         if nesting_limit <= 0 {
             return Err(Error::from_kind(ErrorKind::NestingLimitExceeded));
         }
-        let (mut ptr, reff, segment_id) = follow_fars(arena, reff, segment_id)?;
+        // Near lists can validate their relative target and full extent in one
+        // arena operation, as near structs do. Far pointers still need their
+        // landing-pad checks before we know the target segment and extent.
+        // SAFETY: the caller supplied a live pointer word, or the null branch
+        // selected a trusted generated default. Reading its tag follows no target.
+        let near = unsafe { (*reff).kind() == WirePointerKind::List };
+        let (mut ptr, reff, segment_id) = if near {
+            (ptr::null(), reff, segment_id)
+        } else {
+            // SAFETY: reff is the validated pointer word described above;
+            // follow_fars checks every landing pad before reading its contents.
+            unsafe { follow_fars(arena, reff, segment_id)? }
+        };
 
         if (*reff).kind() != WirePointerKind::List {
             return Err(Error::from_kind(
@@ -2646,13 +2846,26 @@ mod wire_helpers {
                 // unchecked (possibly out-of-bounds) pointer; even for ordinary
                 // pointers the target may be one-past-the-end of the segment.
                 // Advancing with `.add()` first would be undefined behavior.
-                bounds_check(
-                    arena,
-                    segment_id,
-                    ptr,
-                    word_count as usize + 1,
-                    WirePointerKind::List,
-                )?;
+                if near {
+                    // SAFETY: reff is a live near-list pointer in this segment.
+                    // The arena checks the entire body plus its inline tag.
+                    ptr = unsafe {
+                        arena.check_offset_and_read(
+                            segment_id,
+                            reff.cast(),
+                            (*reff).offset_in_words(),
+                            word_count as usize + 1,
+                        )?
+                    };
+                } else {
+                    bounds_check(
+                        arena,
+                        segment_id,
+                        ptr,
+                        word_count as usize + 1,
+                        WirePointerKind::List,
+                    )?;
+                }
 
                 let tag: *const WirePointer = ptr as *const WirePointer;
 
@@ -2734,13 +2947,26 @@ mod wire_helpers {
                 let step = data_size + pointer_count * u32::try_from(BITS_PER_POINTER).unwrap();
 
                 let word_count = round_bits_up_to_words(u64::from(element_count) * u64::from(step));
-                bounds_check(
-                    arena,
-                    segment_id,
-                    ptr,
-                    word_count as usize,
-                    WirePointerKind::List,
-                )?;
+                if near {
+                    // SAFETY: reff is a live near-list pointer in this segment;
+                    // the arena checks the rounded full body before any read.
+                    ptr = unsafe {
+                        arena.check_offset_and_read(
+                            segment_id,
+                            reff.cast(),
+                            (*reff).offset_in_words(),
+                            word_count as usize,
+                        )?
+                    };
+                } else {
+                    bounds_check(
+                        arena,
+                        segment_id,
+                        ptr,
+                        word_count as usize,
+                        WirePointerKind::List,
+                    )?;
+                }
 
                 if element_size == Void {
                     // Watch out for lists of void, which can claim to be arbitrarily large
@@ -2790,7 +3016,7 @@ mod wire_helpers {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub(crate) unsafe fn read_text_pointer<'a>(
         mut arena: &'a dyn ReaderArena,
         mut segment_id: u32,
@@ -2808,7 +3034,29 @@ mod wire_helpers {
             }
         }
 
-        let (ptr, reff, segment_id) = follow_fars(arena, reff, segment_id)?;
+        // SAFETY: reff names the caller's validated word or a trusted generated
+        // default. Checking the tag does not follow the target.
+        let near = unsafe {
+            (*reff).kind() == WirePointerKind::List && (*reff).list_element_size() == Byte
+        };
+        // SAFETY: near targets are checked for their entire rounded extent;
+        // follow_fars validates landing pads. Neither branch reads the body yet.
+        let (ptr, reff, segment_id) = unsafe {
+            if near {
+                (
+                    arena.check_offset_and_read(
+                        segment_id,
+                        reff.cast(),
+                        (*reff).offset_in_words(),
+                        round_bytes_up_to_words((*reff).list_element_count()) as usize,
+                    )?,
+                    reff,
+                    segment_id,
+                )
+            } else {
+                follow_fars(arena, reff, segment_id)?
+            }
+        };
         let size = (*reff).list_element_count();
 
         if (*reff).kind() != WirePointerKind::List {
@@ -2823,13 +3071,15 @@ mod wire_helpers {
             ));
         }
 
-        bounds_check(
-            arena,
-            segment_id,
-            ptr,
-            round_bytes_up_to_words(size) as usize,
-            WirePointerKind::List,
-        )?;
+        if !near {
+            bounds_check(
+                arena,
+                segment_id,
+                ptr,
+                round_bytes_up_to_words(size) as usize,
+                WirePointerKind::List,
+            )?;
+        }
 
         if size == 0 {
             return Err(Error::from_kind(
@@ -2851,7 +3101,7 @@ mod wire_helpers {
         )))
     }
 
-    #[inline]
+    #[inline(always)]
     pub(crate) unsafe fn read_data_pointer<'a>(
         mut arena: &'a dyn ReaderArena,
         mut segment_id: u32,
@@ -2869,7 +3119,29 @@ mod wire_helpers {
             }
         }
 
-        let (ptr, reff, segment_id) = follow_fars(arena, reff, segment_id)?;
+        // SAFETY: reff names the caller's validated word or a trusted generated
+        // default. Checking the tag does not follow the target.
+        let near = unsafe {
+            (*reff).kind() == WirePointerKind::List && (*reff).list_element_size() == Byte
+        };
+        // SAFETY: near targets are checked for their entire rounded extent;
+        // follow_fars validates landing pads. Neither branch reads the body yet.
+        let (ptr, reff, segment_id) = unsafe {
+            if near {
+                (
+                    arena.check_offset_and_read(
+                        segment_id,
+                        reff.cast(),
+                        (*reff).offset_in_words(),
+                        round_bytes_up_to_words((*reff).list_element_count()) as usize,
+                    )?,
+                    reff,
+                    segment_id,
+                )
+            } else {
+                follow_fars(arena, reff, segment_id)?
+            }
+        };
 
         let size: u32 = (*reff).list_element_count();
 
@@ -2885,13 +3157,15 @@ mod wire_helpers {
             ));
         }
 
-        bounds_check(
-            arena,
-            segment_id,
-            ptr,
-            round_bytes_up_to_words(size) as usize,
-            WirePointerKind::List,
-        )?;
+        if !near {
+            bounds_check(
+                arena,
+                segment_id,
+                ptr,
+                round_bytes_up_to_words(size) as usize,
+                WirePointerKind::List,
+            )?;
+        }
 
         Ok(data::reader_from_raw_parts(ptr as *const _, size))
     }
@@ -3029,6 +3303,10 @@ pub struct PointerReader<'a> {
 }
 
 impl<'a> PointerReader<'a> {
+    pub(crate) fn arena_identity(&self) -> &'a dyn ReaderArena {
+        self.arena
+    }
+
     pub fn new_default<'b>() -> PointerReader<'b> {
         PointerReader {
             arena: &NULL_ARENA,
@@ -3079,16 +3357,19 @@ impl<'a> PointerReader<'a> {
         }
     }
 
+    #[inline(always)]
     pub fn get_root_from_arena(arena: &'a dyn ReaderArena) -> Result<Self> {
-        let (segment_start, _seg_len) = arena.get_segment(0)?;
-
-        wire_helpers::bounds_check(
-            arena,
-            0,
-            segment_start as *const _,
-            POINTER_SIZE_IN_WORDS,
-            WirePointerKind::Struct,
-        )?;
+        let (segment_start, seg_len) = arena.get_segment(0)?;
+        // This pointer is exactly the segment start supplied by the arena.
+        // Its length proves the root word is present, so there is no need to
+        // look the same segment up again through contains_interval. Charge the
+        // ordinary traversal budget before exposing the reader.
+        if seg_len == 0 {
+            return Err(Error::from_kind(
+                ErrorKind::MessageContainsOutOfBoundsPointer,
+            ));
+        }
+        arena.amplified_read(POINTER_SIZE_IN_WORDS as u64)?;
 
         Ok(PointerReader {
             arena,
@@ -3207,6 +3488,26 @@ impl<'a> PointerReader<'a> {
             self.pointer
         };
         unsafe { wire_helpers::read_data_pointer(self.arena, self.segment_id, reff, default) }
+    }
+
+    /// Read a wire-table index without extracting a hosted capability hook.
+    /// This is not authority: the message's descriptor table must resolve it.
+    pub fn get_capability_index(&self) -> Result<u32> {
+        if self.is_null() {
+            return Err(Error::from_kind(
+                ErrorKind::MessageContainsNullCapabilityPointer,
+            ));
+        }
+        // SAFETY: a non-null reader points to an arena-validated pointer word.
+        // Capability pointers are immediate; far pointers are not capabilities,
+        // matching the hosted hook reader's validation.
+        let pointer = unsafe { &*self.pointer };
+        if !pointer.is_capability() {
+            return Err(Error::from_kind(
+                ErrorKind::MessageContainsNonCapabilityPointerWhereCapabilityPointerWasExpected,
+            ));
+        }
+        Ok(pointer.cap_index())
     }
 
     #[cfg(feature = "alloc")]
@@ -3449,6 +3750,25 @@ pub struct PointerBuilder<'a> {
 }
 
 impl<'a> PointerBuilder<'a> {
+    pub(crate) fn owned_location(&self, arena: *const ()) -> Result<(u32, usize)> {
+        if core::ptr::from_ref(&*self.arena).cast::<()>() != arena
+            || !matches!(self.cap_table, CapTableBuilder::Plain(table) if table.is_null())
+        {
+            return Err(Error::from_kind(ErrorKind::TypeMismatch));
+        }
+        let (start, words) = self.arena.as_reader().get_segment(self.segment_id)?;
+        let offset = (self.pointer as usize)
+            .checked_sub(start as usize)
+            .filter(|offset| {
+                offset.is_multiple_of(BYTES_PER_WORD)
+                    && offset
+                        .checked_add(BYTES_PER_WORD)
+                        .is_some_and(|end| end <= words as usize * BYTES_PER_WORD)
+            })
+            .ok_or_else(|| Error::from_kind(ErrorKind::TypeMismatch))?;
+        Ok((self.segment_id, offset))
+    }
+
     #[inline]
     pub fn get_root(arena: &'a mut dyn BuilderArena, segment_id: u32, location: *mut u8) -> Self {
         PointerBuilder {
@@ -3583,6 +3903,154 @@ impl<'a> PointerBuilder<'a> {
         }
     }
 
+    pub(crate) fn try_init_struct(self, size: StructSize) -> Result<StructBuilder<'a>> {
+        // SAFETY: PointerBuilder owns exclusive access to its live slot and arena.
+        unsafe {
+            wire_helpers::try_init_struct_pointer(
+                self.arena,
+                self.pointer,
+                self.segment_id,
+                self.cap_table,
+                size,
+            )
+        }
+    }
+
+    pub(crate) fn get_struct_without_upgrade(self, size: StructSize) -> Result<StructBuilder<'a>> {
+        if self.is_null() {
+            return Err(Error::from_kind(ErrorKind::NotPresent));
+        }
+        let old = self.as_reader().get_struct(None)?;
+        if old.get_data_section_size() < u32::from(size.data) * 64
+            || old.get_pointer_section_size() < size.pointers
+        {
+            return Err(Error::from_kind(ErrorKind::NeedsUpgrade));
+        }
+        self.get_struct(size, None)
+    }
+
+    /// Enlarge a present struct without copying its descendants or discarding
+    /// unknown fields. All fallible reservations precede ownership transfers.
+    pub(crate) fn try_upgrade_struct(mut self, size: StructSize) -> Result<StructBuilder<'a>> {
+        if self.is_null() {
+            return Err(Error::from_kind(ErrorKind::NotPresent));
+        }
+        let old = self.as_reader().get_struct(None)?;
+        let data = u16::try_from(old.get_data_section_size() / 64).unwrap();
+        let pointers = old.get_pointer_section_size();
+        if data >= size.data && pointers >= size.pointers {
+            return self.get_struct_without_upgrade(size);
+        }
+        let size = StructSize {
+            data: data.max(size.data),
+            pointers: pointers.max(size.pointers),
+        };
+        let (old_data, old_pointers, old_segment) = {
+            let old = self.reborrow().get_struct(
+                StructSize {
+                    data: 0,
+                    pointers: 0,
+                },
+                None,
+            )?;
+            (old.data, old.pointers, old.segment_id)
+        };
+        self.stage(|p| {
+            let new = p.try_init_struct(size)?;
+            // SAFETY: the stage owns a disjoint initialized struct; the old
+            // live struct was validated above and remains exclusively borrowed.
+            // Copying these bounded scalar words and moving child pointers do
+            // not reserve in a single-segment fixed arena. After reservation no
+            // returned errors remain. Clearing source slots prevents stage
+            // publication from clearing the transferred child objects.
+            unsafe {
+                wire_helpers::copy_nonoverlapping_check_zero(
+                    old_data,
+                    new.data,
+                    usize::from(data) * 8,
+                );
+                for i in 0..usize::from(pointers) {
+                    wire_helpers::transfer_pointer(
+                        new.arena,
+                        new.segment_id,
+                        new.pointers.add(i),
+                        old_segment,
+                        old_pointers.add(i),
+                    );
+                    ptr::write_bytes(old_pointers.add(i), 0, 1);
+                }
+            }
+            Ok(())
+        })?;
+        self.get_struct_without_upgrade(size)
+    }
+
+    pub(crate) fn try_init_text(self, size: ByteCount32) -> Result<text::Builder<'a>> {
+        // SAFETY: the live slot is exclusively borrowed and the encoder checks
+        // length and capacity before writing a pointer or lending initialized bytes.
+        unsafe {
+            wire_helpers::try_init_text_pointer(
+                self.arena,
+                self.cap_table,
+                self.pointer,
+                self.segment_id,
+                size,
+            )
+            .map(|result| result.value)
+        }
+    }
+
+    pub(crate) fn try_init_data(self, size: ByteCount32) -> Result<data::Builder<'a>> {
+        // SAFETY: the live slot is exclusively borrowed; the shared encoder
+        // checks length/capacity and lends only the resulting initialized range.
+        unsafe {
+            wire_helpers::try_init_data_pointer(
+                self.arena,
+                self.cap_table,
+                self.pointer,
+                self.segment_id,
+                size,
+            )
+            .map(|result| result.value)
+        }
+    }
+
+    pub(crate) fn try_init_list(
+        self,
+        element_size: ElementSize,
+        element_count: ElementCount32,
+    ) -> Result<ListBuilder<'a>> {
+        // SAFETY: this builder exclusively owns a live slot in the given arena.
+        unsafe {
+            wire_helpers::try_init_list_pointer(
+                self.arena,
+                self.pointer,
+                self.segment_id,
+                self.cap_table,
+                element_count,
+                element_size,
+            )
+        }
+    }
+
+    pub(crate) fn try_init_struct_list(
+        self,
+        element_count: ElementCount32,
+        element_size: StructSize,
+    ) -> Result<ListBuilder<'a>> {
+        // SAFETY: this builder exclusively owns a live slot in the given arena.
+        unsafe {
+            wire_helpers::try_init_struct_list_pointer(
+                self.arena,
+                self.pointer,
+                self.segment_id,
+                self.cap_table,
+                element_count,
+                element_size,
+            )
+        }
+    }
+
     pub fn init_list(
         self,
         element_size: ElementSize,
@@ -3652,6 +4120,7 @@ impl<'a> PointerBuilder<'a> {
                 self.pointer,
                 *value,
                 canonicalize,
+                None,
             )?;
             Ok(())
         }
@@ -3666,6 +4135,7 @@ impl<'a> PointerBuilder<'a> {
                 self.pointer,
                 *value,
                 canonicalize,
+                None,
             )?;
             Ok(())
         }
@@ -3755,6 +4225,7 @@ impl<'a> PointerBuilder<'a> {
                     self.pointer,
                     other,
                     canonicalize,
+                    None,
                 )?;
             }
         }
@@ -4026,29 +4497,41 @@ impl<'a> PointerBuilder<'a> {
     }
 
     /// Builds a candidate in this arena, then transfers it on success. The
-    /// original logical value survives any returned error. Failed allocations
-    /// remain arena-owned; all bytes are zero initialized by Allocator.
-    #[cfg(feature = "alloc")]
+    /// original logical value survives any returned error. Fixed arenas reclaim
+    /// unpublished reservations on errors/unwind; hosted allocation history
+    /// remains arena-owned. Capability hooks are prohibited by fixed arenas.
     pub(crate) fn stage(
         &mut self,
         build: impl for<'b> FnOnce(PointerBuilder<'b>) -> Result<()>,
     ) -> Result<()> {
-        struct Staged<'a>(PointerBuilder<'a>);
+        struct Staged<'a>(PointerBuilder<'a>, Option<u32>);
         impl Drop for Staged<'_> {
             fn drop(&mut self) {
                 self.0.clear();
+                if let Some(checkpoint) = self.1 {
+                    // SAFETY: the exclusive stage owns all reservations since
+                    // its checkpoint. Its subtree was cleared above and was
+                    // never published; no editor/view can escape the callback.
+                    unsafe {
+                        self.0.arena.rewind_allocations(checkpoint);
+                    }
+                }
             }
         }
-        let (segment_id, word) = self.arena.allocate_anywhere(1);
+        let checkpoint = self.arena.allocation_checkpoint();
+        let (segment_id, word) = self.arena.try_allocate_anywhere(1)?;
         let (start, _) = self.arena.get_segment_mut(segment_id);
         // SAFETY: allocate_anywhere reserved one initialized word in this segment.
         let pointer = unsafe { (start as *mut WirePointer).add(word as usize) };
-        let mut staged = Staged(PointerBuilder {
-            arena: self.arena,
-            segment_id,
-            cap_table: self.cap_table,
-            pointer,
-        });
+        let mut staged = Staged(
+            PointerBuilder {
+                arena: self.arena,
+                segment_id,
+                cap_table: self.cap_table,
+                pointer,
+            },
+            checkpoint,
+        );
         build(staged.0.reborrow())?;
         PointerBuilder {
             arena: staged.0.arena,
@@ -4069,6 +4552,7 @@ impl<'a> PointerBuilder<'a> {
             );
             ptr::write_bytes(pointer, 0, 1);
         }
+        staged.1 = None;
         Ok(())
     }
 
@@ -4112,40 +4596,160 @@ pub struct StructReader<'a> {
     nesting_limit: i32,
 }
 
-/// Validated root metadata without a self-reference into its owning reader.
-/// Raw pointers alone do not assert a live borrow when the owner is consumed.
-#[cfg(feature = "alloc")]
+/// Validated struct locations relative to their segment, without pointers into
+/// the owning reader. Inline segment providers can move along with the owner.
+#[derive(Clone, Copy)]
 pub(crate) struct CachedStructRoot {
-    data: *const u8,
-    pointers: *const WirePointer,
+    data: usize,
+    pointers: usize,
+    extent: usize,
     segment_id: u32,
     data_size: BitCount32,
     pointer_count: WirePointerCount16,
     nesting_limit: i32,
 }
 
-#[cfg(feature = "alloc")]
 impl CachedStructRoot {
-    pub(crate) fn new(root: StructReader<'_>) -> Self {
-        Self {
-            data: root.data,
-            pointers: root.pointers,
+    pub(crate) fn fits(&self, size: StructSize) -> bool {
+        self.data_size >= u32::from(size.data) * 64 && self.pointer_count >= size.pointers
+    }
+
+    pub(crate) fn from_builder(root: StructBuilder<'_>, arena: *const ()) -> Result<Self> {
+        if core::ptr::from_ref(&*root.arena).cast::<()>() != arena
+            || !matches!(root.cap_table, CapTableBuilder::Plain(table) if table.is_null())
+        {
+            return Err(Error::from_kind(ErrorKind::TypeMismatch));
+        }
+        if !root.arena.is_writable(root.segment_id) {
+            return Err(Error::from_kind(ErrorKind::ReadOnlySegment));
+        }
+        Self::new(root.as_reader())
+    }
+
+    /// The arena must still own the selected, writable struct. Only descendants
+    /// may have been edited since selection, so its shape and location persist.
+    /// The exclusive arena borrow prevents overlapping mutable views.
+    #[inline(always)]
+    pub(crate) unsafe fn borrow_mut<'a>(
+        &self,
+        arena: &'a mut dyn BuilderArena,
+    ) -> StructBuilder<'a> {
+        let base = if self.extent == 0 {
+            ptr::null_mut()
+        } else {
+            let (base, words) = arena.get_segment_mut(self.segment_id);
+            assert!(self.extent <= words as usize * BYTES_PER_WORD);
+            base
+        };
+        StructBuilder {
+            arena,
+            cap_table: Default::default(),
+            data: base.wrapping_add(self.data),
+            pointers: base.wrapping_add(self.pointers).cast(),
+            segment_id: self.segment_id,
+            data_size: self.data_size,
+            pointer_count: self.pointer_count,
+        }
+    }
+
+    pub(crate) fn retain<S: crate::message::ReaderSegments>(
+        root: StructReader<'_>,
+        segments: &S,
+        nesting_limit: i32,
+    ) -> Result<Self> {
+        let mut cached = Self::new(root)?;
+        if root.data_size != 0 || root.pointer_count != 0 {
+            // Compare every segment, including those reached by far pointers.
+            // Equality of just the selected segment is insufficient. The new
+            // provider must retain the exact immutable storage being read.
+            for index in 0..segments.len() {
+                let index = u32::try_from(index)
+                    .map_err(|_| Error::from_kind(ErrorKind::MessageSizeOverflow))?;
+                let (base, words) = root.arena.get_segment(index)?;
+                let segment = segments
+                    .get_segment(index)
+                    .ok_or_else(|| Error::from_kind(ErrorKind::InvalidSegmentId(index)))?;
+                if segment.as_ptr() != base || segment.len() != words as usize * BYTES_PER_WORD {
+                    return Err(Error::from_kind(ErrorKind::TypeMismatch));
+                }
+            }
+            let count = u32::try_from(segments.len())
+                .map_err(|_| Error::from_kind(ErrorKind::MessageSizeOverflow))?;
+            if root.arena.get_segment(count).is_ok() {
+                return Err(Error::from_kind(ErrorKind::TypeMismatch));
+            }
+            if nesting_limit <= 0 {
+                return Err(Error::from_kind(
+                    ErrorKind::MessageIsTooDeeplyNestedOrContainsCycles,
+                ));
+            }
+            cached.nesting_limit = nesting_limit - 1;
+        }
+        Ok(cached)
+    }
+
+    pub(crate) fn new(root: StructReader<'_>) -> Result<Self> {
+        let (data, pointers) = if root.data_size == 0 && root.pointer_count == 0 {
+            (0, 0)
+        } else {
+            let (base, words) = root.arena.get_segment(root.segment_id)?;
+            let bytes = words as usize * BYTES_PER_WORD;
+            let offset = |pointer: *const u8, length: usize| -> Result<usize> {
+                if length == 0 && pointer.is_null() {
+                    return Ok(0);
+                }
+                let offset = (pointer as usize)
+                    .checked_sub(base as usize)
+                    .filter(|offset| *offset <= bytes && length <= bytes - *offset)
+                    .ok_or_else(|| {
+                        Error::from_kind(ErrorKind::MessageContainsOutOfBoundsPointer)
+                    })?;
+                Ok(offset)
+            };
+            (
+                offset(root.data, (root.data_size as usize).div_ceil(8))?,
+                offset(
+                    root.pointers.cast(),
+                    usize::from(root.pointer_count) * BYTES_PER_WORD,
+                )?,
+            )
+        };
+        Ok(Self {
+            data,
+            pointers,
+            extent: (data + (root.data_size as usize).div_ceil(8))
+                .max(pointers + usize::from(root.pointer_count) * BYTES_PER_WORD),
             segment_id: root.segment_id,
             data_size: root.data_size,
             pointer_count: root.pointer_count,
             nesting_limit: root.nesting_limit,
-        }
+        })
     }
 
-    /// The original arena and segment storage must remain at stable addresses,
-    /// without mutation, from construction through the returned view's lifetime.
-    /// The supplied arena must be that original arena; capabilities are not cached.
-    pub(crate) unsafe fn borrow<'a>(&'a self, arena: &'a dyn ReaderArena) -> StructReader<'a> {
+    /// The supplied arena must own the original segment contents and lengths,
+    /// without mutation. Addresses may have changed when the owner moved.
+    /// Segment storage must remain stable for the returned view's lifetime.
+    pub(crate) unsafe fn borrow<'a>(&self, arena: &'a dyn ReaderArena) -> StructReader<'a> {
+        let base = if self.extent != 0 {
+            let (base, words) = arena
+                .get_segment(self.segment_id)
+                .expect("validated immutable segment");
+            // A user-defined safe segment provider may choose a different
+            // backing slice on each call. Never form an out-of-range cached
+            // view even if it subsequently supplies a shorter segment.
+            assert!(
+                self.extent <= words as usize * BYTES_PER_WORD,
+                "selected segment became shorter"
+            );
+            base
+        } else {
+            ptr::null()
+        };
         StructReader {
             arena,
             cap_table: Default::default(),
-            data: self.data,
-            pointers: self.pointers,
+            data: base.wrapping_add(self.data),
+            pointers: base.wrapping_add(self.pointers).cast(),
             segment_id: self.segment_id,
             data_size: self.data_size,
             pointer_count: self.pointer_count,
@@ -4155,6 +4759,13 @@ impl CachedStructRoot {
 }
 
 impl<'a> StructReader<'a> {
+    pub(crate) fn belongs_to(&self, arena: &dyn ReaderArena) -> bool {
+        // A default/missing struct has no readable memory or descendants.
+        // Trait-object vtables may be duplicated across codegen units. Arena
+        // identity is its data address, not the address of a particular vtable.
+        (self.data_size == 0 && self.pointer_count == 0) || core::ptr::addr_eq(self.arena, arena)
+    }
+
     pub fn new_default<'b>() -> StructReader<'b> {
         StructReader {
             arena: &NULL_ARENA,
@@ -4866,6 +5477,7 @@ impl<'a> StructBuilder<'a> {
                     self.pointers.add(i),
                     other.get_pointer_field(i),
                     false,
+                    None,
                 )?;
             }
         }
@@ -4909,7 +5521,6 @@ impl<'a> ListReader<'a> {
     }
 
     #[inline]
-    #[cfg(feature = "alloc")]
     pub(crate) fn struct_layout_fits(&self, size: StructSize) -> bool {
         // The writable struct-list accessor upgrades every primitive encoding,
         // even when its virtual element sizes fit. Strict edit must reject that.

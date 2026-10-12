@@ -25,10 +25,8 @@
 #![forbid(unsafe_code)]
 
 use super::rpc_ids::{LocalId, PeerId, QuestionId, WireId};
-use std::{
-    cmp::Reverse,
-    collections::{hash_map::Entry, BinaryHeap, HashMap},
-};
+use capntproto_rpc_engine::local_table::{self, GrowingSlots};
+use std::collections::HashMap;
 
 /// The peer chooses these keys. Zero and the entire u32 range remain legal at
 /// this storage boundary; individual message handlers enforce reserved ranges.
@@ -44,106 +42,104 @@ impl<I: PeerId, T> PeerTable<I, T> {
     }
 }
 
-// As in C++ ImportTable, ordinary peer IDs avoid hashing. Only this fixed low
-// range is dense; even u32::MAX occupies one entry in the sparse fallback.
+// Keep the shared engine's direct-indexed fast path; only its sparse storage
+// provider depends on std. Heap exhaustion retains the hosted allocator's
+// existing policy, while bounded providers return the uninserted value.
+pub(super) struct HostedSparse<I: WireId, T>(HashMap<I, T>);
+impl<I: WireId, T> Default for HostedSparse<I, T> {
+    fn default() -> Self {
+        Self(HashMap::new())
+    }
+}
+
+impl<I: WireId, T> capntproto_rpc_engine::peer_table::SparseStorage<I, T> for HostedSparse<I, T> {
+    fn get(&self, id: &I) -> Option<&T> {
+        self.0.get(id)
+    }
+    fn get_mut(&mut self, id: &I) -> Option<&mut T> {
+        self.0.get_mut(id)
+    }
+    fn try_insert(&mut self, id: I, value: T) -> Result<Option<T>, T> {
+        Ok(self.0.insert(id, value))
+    }
+    fn remove(&mut self, id: &I) -> Option<T> {
+        self.0.remove(id)
+    }
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+    fn values<'s>(&'s self) -> impl Iterator<Item = &'s T>
+    where
+        T: 's,
+    {
+        self.0.values()
+    }
+    fn values_mut<'s>(&'s mut self) -> impl Iterator<Item = &'s mut T>
+    where
+        T: 's,
+    {
+        self.0.values_mut()
+    }
+}
+
 pub(super) struct PeerSlots<I: PeerId, T> {
-    low: [Option<T>; 16],
-    low_len: usize,
-    high: HashMap<I, T>,
+    table: capntproto_rpc_engine::peer_table::PeerTable<I, T, HostedSparse<I, T>>,
 }
 impl<I: PeerId, T> Default for PeerSlots<I, T> {
     fn default() -> Self {
         Self {
-            low: std::array::from_fn(|_| None),
-            low_len: 0,
-            high: HashMap::new(),
+            table: capntproto_rpc_engine::peer_table::PeerTable::try_new(HostedSparse(
+                HashMap::new(),
+            ))
+            .ok()
+            .expect("new map is empty"),
         }
     }
 }
+impl<I: PeerId, T> std::ops::Deref for PeerSlots<I, T> {
+    type Target = capntproto_rpc_engine::peer_table::PeerTable<I, T, HostedSparse<I, T>>;
+    fn deref(&self) -> &Self::Target {
+        &self.table
+    }
+}
+impl<I: PeerId, T> std::ops::DerefMut for PeerSlots<I, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.table
+    }
+}
 impl<I: PeerId, T> PeerSlots<I, T> {
-    pub(super) fn get(&self, id: &I) -> Option<&T> {
-        match self.low.get(id.to_wire() as usize) {
-            Some(slot) => slot.as_ref(),
-            None => self.high.get(id),
-        }
-    }
-    pub(super) fn get_mut(&mut self, id: &I) -> Option<&mut T> {
-        match self.low.get_mut(id.to_wire() as usize) {
-            Some(slot) => slot.as_mut(),
-            None => self.high.get_mut(id),
-        }
-    }
-    pub(super) fn contains_key(&self, id: &I) -> bool {
-        self.get(id).is_some()
-    }
     pub(super) fn insert(&mut self, id: I, value: T) -> Option<T> {
-        if let Some(slot) = self.low.get_mut(id.to_wire() as usize) {
-            let previous = slot.replace(value);
-            self.low_len += usize::from(previous.is_none());
-            previous
-        } else {
-            self.high.insert(id, value)
-        }
-    }
-    pub(super) fn remove(&mut self, id: &I) -> Option<T> {
-        if let Some(slot) = self.low.get_mut(id.to_wire() as usize) {
-            let previous = slot.take();
-            self.low_len -= usize::from(previous.is_some());
-            previous
-        } else {
-            self.high.remove(id)
-        }
-    }
-    pub(super) fn len(&self) -> usize {
-        self.low_len + self.high.len()
-    }
-    pub(super) fn is_empty(&self) -> bool {
-        self.low_len == 0 && self.high.is_empty()
-    }
-    pub(super) fn values(&self) -> impl Iterator<Item = &T> {
-        self.low
-            .iter()
-            .filter_map(Option::as_ref)
-            .chain(self.high.values())
-    }
-    pub(super) fn values_mut(&mut self) -> impl Iterator<Item = &mut T> {
-        self.low
-            .iter_mut()
-            .filter_map(Option::as_mut)
-            .chain(self.high.values_mut())
+        // The HashMap provider cannot return Err. Discarding that impossible
+        // error type avoids imposing Debug on capability owners.
+        self.table
+            .try_insert(id, value)
+            .ok()
+            .expect("hosted map insertion is infallible")
     }
 }
 
 pub(super) struct LocalTable<I: LocalId, T> {
-    slots: Vec<Option<T>>,
-    high: HashMap<I, T>,
-    adopted: HashMap<I, T>,
-    high_counter: u32,
-    free_ids: BinaryHeap<Reverse<I>>,
+    table: HostedLocalTable<I, T>,
 }
+
+type HostedLocalTable<I, T> =
+    local_table::LocalTable<I, T, GrowingSlots<T>, HostedSparse<I, T>, HostedSparse<I, T>>;
 
 impl<I: LocalId, T> LocalTable<I, T> {
     pub(super) fn new() -> Self {
         Self {
-            slots: Vec::new(),
-            high: HashMap::new(),
-            adopted: HashMap::new(),
-            high_counter: 0,
-            free_ids: BinaryHeap::new(),
+            table: local_table::LocalTable::try_new(
+                GrowingSlots::new(),
+                HostedSparse(HashMap::new()),
+                HostedSparse(HashMap::new()),
+            )
+            .ok()
+            .expect("new local storage is empty"),
         }
     }
 
     pub(super) fn remove(&mut self, id: I) -> Option<T> {
-        let raw = id.to_wire();
-        if raw & (1 << 31) != 0 {
-            return self.high.remove(&id);
-        }
-        if raw & (1 << 30) != 0 {
-            return self.adopted.remove(&id);
-        }
-        let value = self.slots.get_mut(raw as usize)?.take()?;
-        self.free_ids.push(Reverse(id));
-        Some(value)
+        self.table.remove(id)
     }
 
     pub(super) fn erase(&mut self, id: I) {
@@ -151,93 +147,50 @@ impl<I: LocalId, T> LocalTable<I, T> {
     }
 
     pub(super) fn push(&mut self, value: T) -> I {
-        if let Some(Reverse(id)) = self.free_ids.pop() {
-            self.slots[id.to_wire() as usize] = Some(value);
-            id
-        } else {
-            assert!(self.slots.len() < (1 << 30), "local RPC ID space exhausted");
-            let id = I::from_wire(self.slots.len() as u32);
-            self.slots.push(Some(value));
-            id
-        }
+        self.table
+            .try_push(value)
+            .ok()
+            .expect("local RPC ID space exhausted")
     }
 
     pub(super) fn get(&self, id: I) -> Option<&T> {
-        let raw = id.to_wire();
-        if raw & (1 << 31) != 0 {
-            return self.high.get(&id);
-        }
-        if raw & (1 << 30) != 0 {
-            return self.adopted.get(&id);
-        }
-        self.slots.get(raw as usize)?.as_ref()
+        self.table.get(id)
     }
 
     pub(super) fn find(&mut self, id: I) -> Option<&mut T> {
-        let raw = id.to_wire();
-        if raw & (1 << 31) != 0 {
-            return self.high.get_mut(&id);
-        }
-        if raw & (1 << 30) != 0 {
-            return self.adopted.get_mut(&id);
-        }
-        self.slots.get_mut(raw as usize)?.as_mut()
+        self.table.get_mut(id)
     }
 
     pub(super) fn is_empty(&self) -> bool {
-        self.slots.len() == self.free_ids.len() && self.high.is_empty() && self.adopted.is_empty()
+        self.table.is_empty()
     }
 
     pub(super) fn len(&self) -> usize {
-        self.slots.len() - self.free_ids.len() + self.high.len() + self.adopted.len()
+        self.table.len()
     }
 
     pub(super) fn iter(&self) -> impl Iterator<Item = &T> {
-        self.slots
-            .iter()
-            .filter_map(Option::as_ref)
-            .chain(self.high.values())
-            .chain(self.adopted.values())
-    }
-
-    pub(super) fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
-        self.slots
-            .iter_mut()
-            .filter_map(Option::as_mut)
-            .chain(self.high.values_mut())
-            .chain(self.adopted.values_mut())
+        self.table.values()
     }
 }
 
 // The sparse ID spaces belong only to questions, not exports or embargoes.
 impl<T> LocalTable<QuestionId, T> {
     pub(super) fn push_high(&mut self, value: T) -> QuestionId {
-        assert!(
-            self.high.len() < (1 << 31) - 1,
-            "high question ID space exhausted"
-        );
-        loop {
-            let id = QuestionId::from_wire(self.high_counter | (1 << 31));
-            self.high_counter = self.high_counter.wrapping_add(1);
-            if let Entry::Vacant(slot) = self.high.entry(id) {
-                slot.insert(value);
-                return id;
-            }
-        }
+        self.table
+            .try_push_high(value)
+            .ok()
+            .expect("high question ID space exhausted")
     }
 
     pub(super) fn adopted_len(&self) -> usize {
-        self.adopted.len()
+        self.table.adopted_len()
     }
 
     pub(super) fn insert_adopted(&mut self, id: QuestionId, value: T) -> Result<(), T> {
-        if id.is_adopted() {
-            if let Entry::Vacant(slot) = self.adopted.entry(id) {
-                slot.insert(value);
-                return Ok(());
-            }
-        }
-        Err(value)
+        self.table
+            .try_insert_adopted(id, value)
+            .map_err(|error| error.value)
     }
 }
 

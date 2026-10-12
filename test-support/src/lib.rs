@@ -1,4 +1,8 @@
 //! Generated fixtures for integration tests and interoperability tools.
+/// The standard interoperability schema using allocation-free dispatch bindings.
+pub mod bounded {
+    capnp::generated_code!(pub mod runtime_test_capnp, "bounded/runtime_test_capnp.rs");
+}
 /// The same wire schema with affine server reply signatures and field editors.
 pub mod structured {
     #[allow(clippy::extra_unused_type_parameters)]

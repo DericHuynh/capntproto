@@ -9,7 +9,7 @@ with a native schema compiler, compatibility adapters, encrypted transport and
 correctness tooling. Start with the **[project wiki](docs/wiki/Home.md)**.
 
 The CI badge covers the full PR/main pipeline: platform checks, Cargo/coverage,
-TLA+, fuzzing, extended verification and release benchmarks. Fork/Dependabot PRs
+Kani/TLA+, fuzzing, extended verification and release benchmarks. Fork/Dependabot PRs
 build benchmarks without cloud measurement. See the [workflow graph](docs/wiki/Quality-and-Benchmarks.md#workflow-dependencies)
 and [independent results and graphs](https://github.com/DericHuynh/capntproto/tree/reports).
 
@@ -29,9 +29,10 @@ qualification remain work in progress; see the [release criteria](docs/wiki/Rele
   TLS; JSON/text codecs, ByteStream, HTTP, WebSockets and JSON-RPC; encrypted
   multiparty sessions through quiche and durable storage. [TCP, TLS and QUIC guide](docs/wiki/TCP-TLS-and-QUIC.md).
   [Compatibility adapters](docs/wiki/Compatibility-Adapters.md) · [Architecture](docs/wiki/Architecture.md).
-- **Executable correctness checks:** Rust tests, C++ comparisons, bounded TLA+
+- **Executable correctness checks:** Rust tests, C++ comparisons, Kani proofs of
+  portable production Rust, bounded TLA+
   models, fuzzing, memory checks and LLVM coverage regression gates.
-  [Testing](docs/wiki/Testing.md) · [Qualification limits](docs/wiki/Model-Conformance.md).
+  [Testing](docs/wiki/Testing.md) · [Formal verification](docs/wiki/Formal-Verification.md) · [Qualification limits](docs/wiki/Model-Conformance.md).
 - **RPC application APIs:** owned connections and native vats, typed bootstraps
   after startup, peer-specific bootstrap factories, automatic three-party
   capability handoff and joins. [RPC guide](docs/wiki/RPC-Applications.md).
@@ -62,7 +63,9 @@ cargo build --locked -p capntproto --no-default-features --features tls
 ```
 
 This avoids quiche/BoringSSL, CMake, libclang, Java and the C++ reference compiler.
-Default builds include QUIC and need its native toolchain. The Rust schema compiler
+TCP is the default transport; native directory routes retain mTLS. Default builds
+still compile the native quiche driver and need its native toolchain. Enable
+`quic` explicitly for conventional two-party QUIC RPC. The Rust schema compiler
 builds project schemas; C++ tools and Java are for the full verification suite.
 [Build profiles and prerequisites](docs/wiki/Getting-Started.md#install-and-run).
 
@@ -129,5 +132,23 @@ commits and do not imply a combined release qualification.
 
 ![TLA+ replay history](https://raw.githubusercontent.com/DericHuynh/capntproto/reports/docs/reports/tla-history.svg)
 
-Fuzzing, coverage and benchmark graphs are available in the dashboard and each
-producer's workflow artifact.
+## Benchmark results
+
+[Latest measurements, commit and workflow status](https://github.com/DericHuynh/capntproto/blob/reports/README.md#linux-loopback-benchmark-comparisons)
+· [Exact plotted values](https://github.com/DericHuynh/capntproto/blob/reports/docs/reports/history.json)
+
+[![Latest validated RPC median latencies](https://raw.githubusercontent.com/DericHuynh/capntproto/reports/docs/reports/benchmarks.svg)](https://github.com/DericHuynh/capntproto/blob/reports/README.md#linux-loopback-benchmark-comparisons)
+
+Release builds, separate client/server processes, one outstanding request,
+10,000 warmups and 1,000 retained calls per trial, five repetitions per payload.
+TCP uses the same plaintext transport as C++ Cap’n Proto; QUIC is measured
+separately with encryption. The dashboard includes p95/p99, request rates and
+the measured source revision. Relative charts use C++ as their reference.
+
+Graphs identify the measured TCP driver: **legacy** or **portable**. Legacy
+results do not qualify the opt-in portable replacement. Its current small-call
+target is pooled p50 ≤1.5× C++ at 0, 64 and 1,024 bytes; 64 KiB and tail latencies
+remain visible as separate measurements. Missing results are shown as unavailable.
+The benchmark defaults to portable; `CAPNTPROTO_BENCH_PORTABLE=0` measures the
+legacy control. The library's default driver remains legacy until migration is complete.
+Fuzzing and coverage graphs remain in the dashboard and workflow artifacts.

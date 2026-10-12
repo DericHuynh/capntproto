@@ -343,8 +343,50 @@ fn run_with_outputs(
     if cancelled.load(Ordering::Relaxed) {
         return Err("verification cancelled".into());
     }
-    if let Some(parent) = log.parent() {
+    let start = Instant::now();
+    // Separate verification invocations can share report destinations. Lock
+    // both captures before truncating either, and retain ownership through the
+    // final read. Otherwise one invocation can parse another's partial JSON.
+    // Canonical parents and sorted acquisition also handle relative aliases
+    // and callers which swap the stdout/stderr paths.
+    let mut paths = BTreeSet::new();
+    for path in std::iter::once(log).chain(stdout) {
+        let parent = path.parent().filter(|p| !p.as_os_str().is_empty());
+        let parent = parent.unwrap_or_else(|| Path::new("."));
         fs::create_dir_all(parent)?;
+        let mut name = path
+            .file_name()
+            .ok_or("capture requires a filename")?
+            .to_owned();
+        name.push(".capture.lock");
+        paths.insert(parent.canonicalize()?.join(name));
+    }
+    let mut capture_locks = Vec::new();
+    for path in paths {
+        let lock = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path)?;
+        loop {
+            if cancelled.load(Ordering::Relaxed) {
+                return Err("verification cancelled while waiting for output capture".into());
+            }
+            if start.elapsed() > timeout {
+                return Err(
+                    format!("timed out waiting for output capture: {}", log.display()).into(),
+                );
+            }
+            match FileExt::try_lock_exclusive(&lock) {
+                Ok(()) => break,
+                Err(e) if e.kind() == fs2::lock_contended_error().kind() => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
+        capture_locks.push(lock);
     }
     let file = File::create(log)?;
     let output = if let Some(path) = stdout {
@@ -362,7 +404,6 @@ fn run_with_outputs(
         cmd.process_group(0);
     }
     let mut child = cmd.spawn().map_err(|e| format!("launch {cmd:?}: {e}"))?;
-    let start = Instant::now();
     let status = loop {
         if let Some(status) = child.try_wait()? {
             break status;
@@ -486,7 +527,10 @@ fn descendant_groups(pid: u32) -> Vec<u32> {
     groups.retain(|group| seen.insert(*group));
     groups
 }
-fn lock(path: &Path) -> Result<File> {
+/// Hold exclusive ownership of shared build/output paths across an entire
+/// verification invocation. Keep the returned file alive through all commands
+/// and report reads/writes; dropping it releases ownership to the next process.
+pub fn lock(path: &Path) -> Result<File> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -692,6 +736,73 @@ pub fn input(name: &str) -> std::result::Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    #[test]
+    fn concurrent_commands_keep_each_json_capture_intact() {
+        let directory = tempfile::tempdir().unwrap();
+        let log = directory.path().join("shared.log");
+        let barrier = std::sync::Barrier::new(4);
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..4)
+                .map(|id| {
+                    let log = &log;
+                    let barrier = &barrier;
+                    scope.spawn(move || {
+                        barrier.wait();
+                        // Concurrent child processes deliberately keep their
+                        // capture open across several writes and scheduling.
+                        let output = run_stdout(
+                            Command::new("sh").args([
+                                "-c",
+                                "printf '{\"id\":'; sleep 0.1; printf '%s' \"$1\"; sleep 0.1; printf '}'",
+                                "capture-test",
+                                &id.to_string(),
+                            ]),
+                            log,
+                            0,
+                        )
+                        .unwrap();
+                        assert_eq!(
+                            serde_json::from_str::<serde_json::Value>(&output).unwrap(),
+                            serde_json::json!({"id": id})
+                        );
+                    })
+                })
+                .collect();
+            for handle in handles {
+                handle.join().unwrap();
+            }
+        });
+    }
+
+    #[test]
+    fn capture_contention_times_out_before_truncating_or_launching() {
+        let directory = tempfile::tempdir().unwrap();
+        let log = directory.path().join("shared.log");
+        let stdout = directory.path().join("shared.json");
+        fs::write(&log, "prior diagnostics").unwrap();
+        fs::write(&stdout, "prior output").unwrap();
+        // Contention on stdout must protect stderr too, even when another
+        // invocation uses a different diagnostic filename.
+        let lock = File::create(directory.path().join("shared.json.capture.lock")).unwrap();
+        FileExt::lock_exclusive(&lock).unwrap();
+        let error = run_stdout_with_timeout(
+            &mut Command::new("must-not-launch-this-command"),
+            &stdout,
+            &log,
+            0,
+            Duration::from_millis(20),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.contains("timed out waiting for output capture"),
+            "{error}"
+        );
+        assert_eq!(fs::read_to_string(log).unwrap(), "prior diagnostics");
+        assert_eq!(fs::read_to_string(stdout).unwrap(), "prior output");
+    }
+
     #[cfg(unix)]
     #[test]
     fn structured_output_keeps_warnings_out_of_json_and_preserves_failure_diagnostics() {

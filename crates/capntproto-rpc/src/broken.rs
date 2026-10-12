@@ -114,6 +114,9 @@ pub(crate) struct Client {
 }
 
 impl Client {
+    pub(crate) fn error(&self) -> &Error {
+        &self.inner.error
+    }
     pub(crate) fn new(error: Error, resolved: bool, brand: usize) -> Self {
         Self {
             inner: Rc::new(ClientInner {
@@ -126,6 +129,9 @@ impl Client {
 }
 
 impl ClientHook for Client {
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
     fn debug_info(&self, chain: &mut capnp::private::capability::DebugInfo) {
         chain.push("broken");
         chain.push(self.inner.error.to_string());

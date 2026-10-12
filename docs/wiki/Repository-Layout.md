@@ -48,6 +48,8 @@ the root so GitHub discovers them.
 | `capntproto` | Root `Cargo.toml`, `src/` | Production runtime and public API |
 | `capntproto-core` | `crates/capntproto-core/` | Wire runtime, reflection and checked ownership |
 | `capntproto-rpc` | `crates/capntproto-rpc/` | Capability RPC engine |
+| `capntproto-rpc-engine` | `crates/capntproto-rpc-engine/` | Allocation-free streaming credit and question lifecycles used by the hosted runtime; wider RPC migration in progress |
+| `capntproto-rpc-wire` | `crates/capntproto-rpc-wire/` | Portable RPC schemas shared with hosted RPC, plus bounded validation/publication of outgoing capability grants |
 | `capntproto-futures` | `crates/capntproto-futures/` | Async framing and ordered writes |
 | `capntproto-codegen` | `crates/capntproto-codegen/` | Rust schema binding generator |
 | `capntproto-test-support` | `test-support/` | Verification tools and fixtures; a dev dependency of the runtime |
@@ -106,6 +108,11 @@ and optional transport/storage dependencies. Production code must not depend on
 `[dev-dependencies]`. CI tools may reuse test-support verification code.
 
 Runtime module ownership is described in [Architecture](Architecture.md).
+The [planned portability boundaries](Architecture.md#planned-portability-boundaries)
+describe the allocation-free RPC engine used by caller-supplied adapters and the
+existing hosted defaults. Streaming credit is extracted; the remaining migration
+is not yet implemented. `verification/portable` independently links an ARM fixture
+without a global allocator so hosted feature unification cannot mask dependencies.
 The textual schema compiler lives alongside the other owned crates. It depends on the core wire runtime, not the RPC/Native/storage runtime or
 verification helpers. `crates/capntproto-codegen` owns Rust generation from compiled requests;
 `crates/capntproto-compiler` owns textual parsing, semantic checks and schema emission.

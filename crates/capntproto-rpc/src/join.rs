@@ -59,7 +59,7 @@ impl<VatId> Joiner<VatId> {
             let active = registry
                 .upgrade()
                 .ok_or_else(|| Error::disconnected("RPC system was dropped".into()))?;
-            if active.borrow().closing {
+            if active.borrow().is_closing() {
                 return Err(Error::disconnected("RPC system is closing".into()));
             }
             drop(active);
@@ -67,7 +67,7 @@ impl<VatId> Joiner<VatId> {
             let active = registry
                 .upgrade()
                 .ok_or_else(|| Error::disconnected("RPC system was dropped".into()))?;
-            if active.borrow().closing {
+            if active.borrow().is_closing() {
                 return Err(Error::disconnected("RPC system is closing".into()));
             }
             drop(active);
@@ -124,19 +124,21 @@ fn unsupported() -> Error {
 fn identity(c: &dyn ClientHook) -> (usize, usize) {
     (c.get_brand(), c.get_ptr())
 }
-pub(super) async fn settle(mut cap: Box<dyn ClientHook>) -> capnp::Result<Box<dyn ClientHook>> {
+pub(crate) async fn settle(mut cap: Box<dyn ClientHook>) -> capnp::Result<Box<dyn ClientHook>> {
     // Keep visited owners alive so allocator address reuse cannot look cyclic.
     let mut seen = HashSet::new();
     let mut owners = Vec::new();
     loop {
+        // A stateful hook may settle in place and return the same identity.
+        // Only a further unresolved edge makes revisiting it a cycle.
+        let Some(next) = cap.when_more_resolved() else {
+            return Ok(cap);
+        };
         if !seen.insert(identity(&*cap)) || owners.len() >= 1024 {
             return Err(Error::failed(
                 "cyclic or excessively deep Join resolution".into(),
             ));
         }
-        let Some(next) = cap.when_more_resolved() else {
-            return Ok(cap);
-        };
         owners.push(cap);
         cap = next.await?;
     }
@@ -497,11 +499,12 @@ pub(super) fn unimplemented<VatId>(
         let q = questions
             .find(id)
             .ok_or_else(|| Error::failed("Unimplemented Join has unknown question ID".into()))?;
-        if q.join_id != Some(join_id) || !q.is_awaiting_return {
+        if q.join_id != Some(join_id) || !q.lifecycle.is_awaiting_return() {
             return Err(Error::failed("unexpected Unimplemented Join".into()));
         }
-        q.is_awaiting_return = false;
-        q.skip_finish = true;
+        q.lifecycle
+            .returned(true)
+            .map_err(|error| Error::failed(error.to_string()))?;
         let reference = q.self_ref.as_ref().and_then(Weak::upgrade);
         if reference.is_none() {
             questions.erase(id);

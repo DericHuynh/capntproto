@@ -100,6 +100,16 @@ relabeled as if the partitions had always existed.
 
 ## Labelled benchmark bar charts
 
+The source README embeds a stable `docs/reports/benchmarks.svg` preview from
+the reports branch. Each successful render replaces it with the latest validated
+median-latency chart or an explicit unavailable placeholder, so failed/missing
+measurements cannot leave a stale preview. The dashboard separates measurement
+collection from performance acceptance and identifies the TCP driver. Ratios use
+the matched C++ Cap’n Proto sample as their reference; legacy measurements never
+qualify the portable driver. The portable gate is 1.5× pooled p50 for 0, 64 and
+1024 bytes; 64 KiB and p95/p99 remain diagnostic. Legacy control runs retain the
+1.15× gate for all four payloads.
+
 The dashboard's final section includes horizontal bars for p50/p95/p99 round-trip
 latency, sequential request rate, and percentage differences from Capntproto.
 Every bar has an implementation label and numeric value; every panel identifies

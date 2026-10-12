@@ -20,7 +20,7 @@ on:
         required: true
         type: string
       size:
-        description: CPU-Optimized size, or auto for four dedicated vCPUs (ceiling $0.50/hour)
+        description: Plan per peer, or auto for four dedicated vCPUs (two peers, ceiling $1/hour total)
         default: auto
         required: true
         type: string
@@ -50,12 +50,16 @@ jobs:
       - name: Build prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y cmake ninja-build clang capnproto libcapnp-dev protobuf-compiler
+          sudo apt-get install --no-install-recommends -y cmake ninja-build clang capnproto libcapnp-dev protobuf-compiler time iproute2
           rustup toolchain install 1.97.0 --profile minimal
           cargo install gungraun-runner --version 0.20.0 --locked
           git submodule update --init --depth 1 -- vendor/capnproto
       - name: Compile individual release benchmarks without running them
         run: cargo run --locked -p capntproto-quality -- benchmark-build target/benchmark-build
+      - name: Test benchmark identity, validation, and CPU placement
+        run: cargo nextest run --locked --manifest-path benchmarks/rpc/Cargo.toml
+      - name: Exercise all five workflow implementations locally (not timing evidence)
+        run: cargo run --locked -p capntproto-dev -- digitalocean-bench smoke --bundle target/benchmark-build/bundle --output target/benchmark-build/workflow-smoke --state "$RUNNER_TEMP/workflow-smoke"
       - name: Archive executable bundle with permissions intact
         run: tar -czf "$RUNNER_TEMP/benchmark-bundle.tar.gz" -C target/benchmark-build bundle
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -74,12 +78,13 @@ jobs:
             target/benchmark-build/evidence.json
             target/benchmark-build/logs/
             target/benchmark-build/bundle/manifest.json
+            target/benchmark-build/workflow-smoke/
           if-no-files-found: error
           retention-days: 30
       - name: Explain benchmark scope
-        run: printf 'Release benchmark compilation completed. The next job measures trusted runs on dedicated hardware. Fork and Dependabot PRs stop at compilation; no latency result is claimed for them.\n' >> "$GITHUB_STEP_SUMMARY"
+        run: printf 'Release compilation and workflow smoke checks completed. Trusted runs next measure two dedicated VPC peers. Fork and Dependabot PRs stop after local validation; no remote latency result is claimed for them.\n' >> "$GITHUB_STEP_SUMMARY"
   benchmark:
-    name: Measure, validate, and clean up dedicated host
+    name: Measure two-peer workflows, validate, and clean up
     needs: build
     # 49699333 is Dependabot's immutable GitHub actor ID.
     if: >-
@@ -120,14 +125,14 @@ jobs:
         run: |
           test -n "$DIGITALOCEAN_ACCESS_TOKEN"
           cargo run --locked -p capntproto-dev -- digitalocean-bench check --output target/quality/benchmark --state "$RUNNER_TEMP/capntproto-do"
-      - name: Benchmark precompiled artifacts on a temporary dedicated droplet
+      - name: Run VPC workflows across two dedicated droplets, then loopback controls
         id: measure
         env:
           DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
           DO_REGION: ${{ inputs.region }}
           DO_SIZE: ${{ inputs.size }}
-        run: cargo run --locked -p capntproto-dev -- digitalocean-bench run --bundle target/benchmark-build/bundle --output target/quality/benchmark --state "$RUNNER_TEMP/capntproto-do"
-      - name: Always verify droplet cleanup
+        run: cargo run --locked -p capntproto-dev -- digitalocean-bench run-remote --bundle target/benchmark-build/bundle --output target/quality/benchmark --state "$RUNNER_TEMP/capntproto-do"
+      - name: Always verify cleanup of both droplets and SSH keys
         if: always()
         env:
           DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
@@ -166,4 +171,8 @@ jobs:
           if test -f target/quality/README.md; then
             sed '/^## Comparison bar charts/,$d' target/quality/README.md >> "$GITHUB_STEP_SUMMARY"
             printf '\n## Comparison bar charts\n\n[Download the README, SVG chart suite and plotted values](%s).\n' "$REPORT_URL" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if test -f target/quality/benchmark/remote/README.md; then
+            sed '/^!\[Remote workflow/d' target/quality/benchmark/remote/README.md >> "$GITHUB_STEP_SUMMARY"
+            printf '\n[Download remote raw samples, host evidence and workflow graph](%s).\n' "$REPORT_URL" >> "$GITHUB_STEP_SUMMARY"
           fi

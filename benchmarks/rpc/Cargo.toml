@@ -31,6 +31,10 @@ overflow-checks = true
 
 
 [[bench]]
+name = "tcp"
+harness = false
+
+[[bench]]
 name = "native"
 harness = false
 

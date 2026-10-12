@@ -62,6 +62,7 @@
 **Verification**
 
 - [Testing](Testing.md)
+- [Formal verification](Formal-Verification.md)
 - [Correctness](Correctness.md)
 - [Compiler Qualification](Compiler-Qualification.md)
 - [Model Conformance](Model-Conformance.md)

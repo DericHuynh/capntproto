@@ -1,5 +1,6 @@
 //! Deterministic message network for exercising the real RPC engine. Identities
 //! come from endpoint creation, never from a message's claimed recipient.
+pub mod driver;
 use capnp::{capability::Promise, message::Builder, Error};
 use capnp_rpc::{
     third_party::ThirdPartyExchange, Connection, IncomingMessage, OutgoingMessage, VatNetwork,
@@ -15,9 +16,13 @@ use std::{
 };
 
 struct Msg {
-    body: Rc<Builder<capnp::message::HeapAllocator>>,
+    body: Body,
     #[cfg(unix)]
     fds: Vec<std::os::fd::OwnedFd>,
+}
+enum Body {
+    Built(Rc<Builder<capnp::message::HeapAllocator>>),
+    Framed(capnp::message::Reader<capnp::serialize::OwnedSegments>),
 }
 type Key = (u8, u8, Vec<u8>);
 #[derive(Default)]
@@ -61,10 +66,22 @@ impl IncomingMessage for Input {
     }
 
     fn size_in_words(&self) -> usize {
-        self.0.body.size_in_words()
+        match &self.0.body {
+            Body::Built(body) => body.size_in_words(),
+            Body::Framed(body) => body.size_in_words(),
+        }
     }
     fn get_body(&self) -> capnp::Result<capnp::any_pointer::Reader<'_>> {
-        self.0.body.get_root_as_reader()
+        match &self.0.body {
+            Body::Built(body) => body.get_root_as_reader(),
+            Body::Framed(body) => body.get_root(),
+        }
+    }
+    fn get_segments(&self) -> Option<&dyn capnp::message::ReaderSegments> {
+        Some(match &self.0.body {
+            Body::Built(body) => &**body,
+            Body::Framed(body) => body.get_segments(),
+        })
     }
 }
 #[derive(Default)]
@@ -117,43 +134,16 @@ impl OutgoingMessage for Output {
         Promise<(), Error>,
         Rc<Builder<capnp::message::HeapAllocator>>,
     ) {
-        assert!(!self.status.borrow().idle, "RPC sent while idle");
-        self.status.borrow_mut().sent += 1;
-        match self
-            .message
-            .get_root_as_reader::<capnp_rpc::rpc_capnp::message::Reader>()
-            .unwrap()
-            .which()
-        {
-            Ok(capnp_rpc::rpc_capnp::message::Abort(_)) => self.status.borrow_mut().aborts += 1,
-            Ok(capnp_rpc::rpc_capnp::message::Call(c)) => {
-                self.status.borrow_mut().calls += 1;
-                if matches!(
-                    c.unwrap().get_send_results_to().which().unwrap(),
-                    capnp_rpc::rpc_capnp::call::send_results_to::ThirdParty(_)
-                ) {
-                    self.status.borrow_mut().third_party_calls += 1;
-                }
-            }
-            Ok(capnp_rpc::rpc_capnp::message::ThirdPartyAnswer(_)) => {
-                self.status.borrow_mut().adoptions_sent += 1
-            }
-            Ok(capnp_rpc::rpc_capnp::message::Return(r)) => {
-                if matches!(
-                    r.unwrap().which().unwrap(),
-                    capnp_rpc::rpc_capnp::return_::AwaitFromThirdParty(_)
-                ) {
-                    self.status.borrow_mut().redirected_returns += 1;
-                }
-            }
-            Ok(capnp_rpc::rpc_capnp::message::Finish(_)) => self.status.borrow_mut().finishes += 1,
-            _ => (),
-        }
+        self.status.borrow_mut().record(
+            self.message
+                .get_root_as_reader::<capnp_rpc::rpc_capnp::message::Reader>()
+                .unwrap(),
+        );
         let message = Rc::new(self.message);
         let result = self
             .sender
             .unbounded_send(Msg {
-                body: message.clone(),
+                body: Body::Built(message.clone()),
                 #[cfg(unix)]
                 fds: self.fds.iter().map(|fd| fd.try_clone().unwrap()).collect(),
             })
@@ -165,6 +155,35 @@ impl OutgoingMessage for Output {
     }
     fn size_in_words(&self) -> usize {
         self.message.size_in_words()
+    }
+}
+impl ConnectionStatus {
+    fn record(&mut self, message: capnp_rpc::rpc_capnp::message::Reader<'_>) {
+        assert!(!self.idle, "RPC sent while idle");
+        self.sent += 1;
+        match message.which() {
+            Ok(capnp_rpc::rpc_capnp::message::Abort(_)) => self.aborts += 1,
+            Ok(capnp_rpc::rpc_capnp::message::Call(c)) => {
+                self.calls += 1;
+                if matches!(
+                    c.unwrap().get_send_results_to().which().unwrap(),
+                    capnp_rpc::rpc_capnp::call::send_results_to::ThirdParty(_)
+                ) {
+                    self.third_party_calls += 1;
+                }
+            }
+            Ok(capnp_rpc::rpc_capnp::message::ThirdPartyAnswer(_)) => self.adoptions_sent += 1,
+            Ok(capnp_rpc::rpc_capnp::message::Return(r)) => {
+                if matches!(
+                    r.unwrap().which().unwrap(),
+                    capnp_rpc::rpc_capnp::return_::AwaitFromThirdParty(_)
+                ) {
+                    self.redirected_returns += 1;
+                }
+            }
+            Ok(capnp_rpc::rpc_capnp::message::Finish(_)) => self.finishes += 1,
+            _ => (),
+        }
     }
 }
 struct Inner {
@@ -189,6 +208,28 @@ impl Drop for ReadLease {
 #[derive(Clone)]
 pub struct Endpoint(Rc<Inner>);
 impl Connection<u8> for Endpoint {
+    fn send_frame(&mut self, frame: capnp_rpc::OutgoingFrame) -> Promise<(), Error> {
+        #[cfg(unix)]
+        let mut frame = frame;
+        let result = (|| {
+            let bytes = capnp::serialize::write_message_segments_to_words(&frame.segments());
+            let body = capnp::serialize::read_message(bytes.as_slice(), Default::default())?;
+            self.0.status.borrow_mut().record(body.get_root()?);
+            self.0
+                .sender
+                .unbounded_send(Msg {
+                    body: Body::Framed(body),
+                    #[cfg(unix)]
+                    fds: frame
+                        .take_fds()
+                        .iter()
+                        .map(|fd| fd.try_clone().unwrap())
+                        .collect(),
+                })
+                .map_err(|_| Error::disconnected("peer gone".into()))
+        })();
+        Promise::from_future(async { result })
+    }
     fn get_peer_vat_id(&self) -> u8 {
         self.0.peer
     }

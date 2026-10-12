@@ -1,0 +1,43 @@
+[package]
+name = "capntproto-portable-check"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+# Isolate target features from the hosted workspace and test dependencies.
+[workspace]
+resolver = "2"
+
+[features]
+alloc = ["capnp/alloc", "capntproto-rpc-wire/alloc", "capnp-rpc/alloc"]
+# Replay owning-driver conversations from zero-capacity growing ledgers, dispatch
+# bindings and stable message pools with the same fixed limits.
+# This is an allocating test profile.
+growing = ["alloc"]
+std = ["capnp/std", "capntproto-rpc-wire/std"]
+unaligned = ["capnp/unaligned", "capntproto-rpc-wire/unaligned"]
+sync_reader = ["capnp/sync_reader", "capntproto-rpc-wire/sync_reader"]
+
+[[bin]]
+name = "capntproto-portable-check"
+path = "src/main.rs"
+test = false
+bench = false
+
+[dependencies]
+capnp-rpc = { package = "capntproto-rpc", path = "../../crates/capntproto-rpc", default-features = false }
+capnp = { package = "capntproto-core", path = "../../crates/capntproto-core", default-features = false }
+capntproto-rpc-engine = { path = "../../crates/capntproto-rpc-engine" }
+capntproto-rpc-wire = { path = "../../crates/capntproto-rpc-wire" }
+
+[build-dependencies]
+capnp = { package = "capntproto-core", path = "../../crates/capntproto-core" }
+capnpc = { package = "capntproto-codegen", path = "../../crates/capntproto-codegen" }
+capntproto-compiler = { path = "../../crates/capntproto-compiler" }
+
+[dev-dependencies]
+allocation-counter = "=0.8.1"
+
+[profile.release]
+panic = "abort"

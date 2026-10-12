@@ -1,0 +1,26 @@
+[package]
+name = "capntproto-rpc-wire"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT"
+description = "Portable RPC schemas and bounded outgoing capability publication"
+
+[features]
+default = []
+alloc = ["capnp/alloc", "capntproto-rpc-engine/alloc"]
+std = ["alloc", "capnp/std"]
+unaligned = ["capnp/unaligned"]
+sync_reader = ["capnp/sync_reader"]
+
+[dependencies]
+capnp = { package = "capntproto-core", path = "../capntproto-core", default-features = false }
+capntproto-rpc-engine = { path = "../capntproto-rpc-engine" }
+
+[build-dependencies]
+capnp = { package = "capntproto-core", path = "../capntproto-core" }
+capnpc = { package = "capntproto-codegen", path = "../capntproto-codegen" }
+capntproto-compiler = { path = "../capntproto-compiler" }
+
+[dev-dependencies]
+allocation-counter = "=0.8.1"

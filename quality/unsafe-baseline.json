@@ -2,61 +2,61 @@
   "description": "Pre-existing owned core-runtime unsafe documentation debt, not a safety audit. Linux default workspace features, Rust 1.97.0. Changes to these source files require review; fix new unsafe lint violations rather than expanding exceptions. Full diagnostics: target/quality/unsafe/clippy.jsonl.",
   "files": {
     "crates/capntproto-core/src/data.rs": {
-      "sha256": "134359b11a600dec0905660e498f9f835af06d12dda373164119a22ff1a35119",
       "diagnostics": {
         "unsafe_op_in_unsafe_fn": 2
-      }
+      },
+      "sha256": "134359b11a600dec0905660e498f9f835af06d12dda373164119a22ff1a35119"
     },
     "crates/capntproto-core/src/lib.rs": {
-      "sha256": "019d92451c1bde63c7adbd9f77d07892529241721fea53d8cbc1486408788aad",
       "diagnostics": {
         "clippy::undocumented_unsafe_blocks": 2
-      }
+      },
+      "sha256": "ccd0094e7417f5f51e0346d6a993d124b16442861c4cf5247efccc1b094ab56f"
     },
     "crates/capntproto-core/src/message.rs": {
       "diagnostics": {
-        "clippy::undocumented_unsafe_blocks": 10,
+        "clippy::undocumented_unsafe_blocks": 9,
         "unsafe_op_in_unsafe_fn": 2
       },
-      "sha256": "a788a312f8eba53dcd8925a21e932819f2b57300dd640ad7b34f55fa8385cf10"
+      "sha256": "96f4981b13214dbd4ea560c8a5c021a449b9bd2154a4e7191f3d46950cd02b31"
     },
     "crates/capntproto-core/src/primitive_list.rs": {
-      "sha256": "d9471dc7916beac5fc4db3f4ceb877f8134bd3beb3fd090b1ca33fa918adab66",
       "diagnostics": {
         "clippy::undocumented_unsafe_blocks": 2
-      }
+      },
+      "sha256": "d9471dc7916beac5fc4db3f4ceb877f8134bd3beb3fd090b1ca33fa918adab66"
     },
     "crates/capntproto-core/src/private/arena.rs": {
-      "sha256": "b9e105e0984135ec631e9b60fa49ccf2f7f0d7ef0953134384d05ec8e3243dee",
       "diagnostics": {
         "clippy::undocumented_unsafe_blocks": 12
-      }
+      },
+      "sha256": "dcf8e4171d17190c22a746a1c3441f97bed4d0dee73b3768e304e67452aa3d4a"
     },
     "crates/capntproto-core/src/private/layout.rs": {
-      "sha256": "815e671909ce07c2cf0e77fb0647b048612b024eb15b1f321da53170e11f8187",
       "diagnostics": {
         "clippy::missing_safety_doc": 4,
         "clippy::undocumented_unsafe_blocks": 91,
-        "unsafe_op_in_unsafe_fn": 394
-      }
+        "unsafe_op_in_unsafe_fn": 366
+      },
+      "sha256": "e153f05d64830a4922a3f39a7ab1a047db07a34da30e7b5472a7176fdd1e8254"
     },
     "crates/capntproto-core/src/private/layout_test.rs": {
-      "sha256": "93129424451695e50b1f1498ded8434094dbc90f4923da979c9229cd15f5b2af",
       "diagnostics": {
         "clippy::undocumented_unsafe_blocks": 1
-      }
+      },
+      "sha256": "93129424451695e50b1f1498ded8434094dbc90f4923da979c9229cd15f5b2af"
     },
     "crates/capntproto-core/src/schema.rs": {
-      "sha256": "2ffcb2a9a2a184d54efa60c415ab4e5d2946daf5a1495f6759a4cc63549715a6",
       "diagnostics": {
         "clippy::undocumented_unsafe_blocks": 1
-      }
+      },
+      "sha256": "2ffcb2a9a2a184d54efa60c415ab4e5d2946daf5a1495f6759a4cc63549715a6"
     },
     "crates/capntproto-core/src/serialize_packed.rs": {
-      "sha256": "177dcbe74ea54b9b56b0389231eeee2b5e116a93fda831bac738fa43beedf0fb",
       "diagnostics": {
         "clippy::undocumented_unsafe_blocks": 2
-      }
+      },
+      "sha256": "92e3a68b1074ea8a024b6fc3b4075c38b27462011d8472fcdcc50e1aa67c0e0d"
     }
   }
 }

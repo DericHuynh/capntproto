@@ -1,0 +1,557 @@
+{
+  "format": 1,
+  "kani_version": "0.68.0",
+  "target": "x86_64-unknown-linux-gnu",
+  "harnesses": [
+    "flow_control::outgoing::proofs::outgoing_full_width_admission_never_wraps_or_revokes_accepted_credit",
+    "flow_control::incoming::proofs::incoming_charges_preserve_counts_and_hysteresis",
+    "io::output::proofs::buffered_completion_requires_flush_and_never_repeats_accepted_resources",
+    "storage::proofs::growing_capacity_preserves_full_width_bounds",
+    "clients::dispatch::terminated::checks::terminal_dispatch_detaches_each_owner_once",
+    "connection::terminated::checks::terminal_ledgers_detach_each_owner_once",
+    "messages::queue::proofs::terminal_queue_discards_without_releasing_reader",
+    "answers::adoption::proofs::redirected_answer_adoption_is_once_and_retains_producer",
+    "answers::pipelines::proofs::receiver_answer_batch_retains_every_dependency",
+    "answers::proofs::admitted_pipeline_retains_answer_across_finish_and_return",
+    "answers::proofs::input_admission_preserves_parent_on_rejection",
+    "answers::proofs::peer_reuse_cannot_redirect_an_older_pipeline_lease",
+    "answers::proofs::retained_pipeline_stays_on_original_generation",
+    "clients::dispatch::proofs::oldest_ready_call_survives_rejection_and_slot_reuse",
+    "clients::dispatch::proofs::borrowed_scopes_never_reuse_accepted_task_identity",
+    "clients::proofs::frozen_route_and_reflected_barrier_preserve_order",
+    "clients::proofs::callable_proxy_exports_preserve_local_resolution_obligations",
+    "clients::proofs::full_width_reference_overflow_preserves_resolution",
+    "clients::proofs::imported_promise_admission_preserves_owner_and_both_slots",
+    "embargoes::proofs::stale_echo_cannot_open_reused_storage",
+    "exports::leases::proofs::receiver_hosted_batch_retains_every_local_reference",
+    "exports::proofs::descriptor_count_admission_never_wraps",
+    "exports::proofs::descriptor_multiset_matches_reservations",
+    "exports::proofs::export_publication_and_lease_lifecycle",
+    "exports::proofs::export_reservations_preserve_published_counts",
+    "exports::proofs::exported_resolution_requires_output_acceptance",
+    "exports::release::proofs::implicit_releases_are_atomic_for_full_reference_counts",
+    "handoff::proofs::handoff_inductive_transition",
+    "handoff::proofs::handoff_initial_state",
+    "imports::batch::proofs::duplicate_batch_admission_is_atomic_for_all_reference_counts",
+    "imports::batch::proofs::resolution_is_once_and_preserves_promise_references",
+    "imports::proofs::import_generation_and_cleanup_lifecycle",
+    "imports::proofs::import_receive_is_atomic",
+    "local_table::proofs::local_adopted_range_and_owner_preservation",
+    "local_table::proofs::local_dense_reuse_and_domain_isolation",
+    "local_table::proofs::local_high_wrap_and_capacity_rollback",
+    "messages::proofs::borrowed_request_survives_independent_output_reuse",
+    "messages::proofs::borrowed_result_survives_independent_output_reuse",
+    "messages::proofs::message_ownership_and_send_lifecycle",
+    "messages::proofs::owned_writer_preserves_bytes_until_explicit_publication",
+    "messages::proofs::partial_send_completion_preserves_ownership",
+    "messages::queue::proofs::fifo_never_overtakes_partial_frame",
+    "private::arena::fixed::proofs::fixed_publication_preserves_initialized_prefix",
+    "private::arena::fixed::proofs::fixed_reservations_preserve_live_words",
+    "private::arena::fixed::proofs::fixed_rollback_preserves_published_prefix",
+    "proofs::adaptive_clock_rejection_preserves_credit",
+    "proofs::fixed_credit_conservation_and_overflow",
+    "proofs::peer_full_wire_range_and_rejected_ownership",
+    "proofs::question_finish_once_and_delayed_reuse",
+    "questions::proofs::pipeline_reflection_obeys_peer_answer_lifetime",
+    "questions::proofs::question_cleanup_requires_return_and_accepted_finish",
+    "references::proofs::export_reference_transition_preserves_ownership",
+    "references::proofs::import_references_wait_for_release_acceptance",
+    "completion::proofs::scoped_reply_transfers_once_and_preserves_rejected_owner",
+    "completion::proofs::tracked_reply_reclaims_only_unobserved_owner",
+    "completion::proofs::shared_reply_claim_preserves_accessible_endpoint_identity",
+    "provision::proofs::accept_embargo_replay_and_revoke_preserve_authority",
+    "provision::proofs::scoped_embargo_claims_survive_capacity_and_revoke",
+    "answers::provision::proofs::provision_finish_retires_without_results_or_pipeline_ownership",
+    "questions::provision::proofs::provision_question_needs_only_an_accepted_finish",
+    "questions::adoption::proofs::adopted_question_cancellation_retains_id_until_return",
+    "answers::third_party::proofs::callee_selected_answers_preserve_publication_and_retained_pipeline",
+    "answers::network::proofs::third_party_destination_and_handoff_permission_stay_distinct",
+    "questions::network::proofs::question_destination_cannot_change_on_return_or_reuse",
+    "messages::backing::proofs::stable_segments_cover_full_width_indices",
+    "wire_capability::map::proofs::identity_mapping_is_exact_and_bounded",
+    "imports::proofs::receipt_metadata_preserves_ownership",
+    "messages::queue::proofs::resources_are_offered_only_before_first_accepted_byte"
+  ],
+  "controls": [
+    {
+      "name": "admit-outgoing-at-equality",
+      "source": "src/flow_control/outgoing.rs",
+      "from": "used >= self.limit.get()",
+      "to": "used > self.limit.get()",
+      "harness": "flow_control::outgoing::proofs::outgoing_full_width_admission_never_wraps_or_revokes_accepted_credit",
+      "expected_check": "accepted admission stays within its limit"
+    },
+    {
+      "name": "resume-incoming-at-equality",
+      "source": "src/flow_control/incoming.rs",
+      "from": "self.words.get() >= self.limit.get()",
+      "to": "self.words.get() > self.limit.get()",
+      "harness": "flow_control::incoming::proofs::incoming_charges_preserve_counts_and_hysteresis",
+      "expected_check": "paused input resumes strictly below its limit"
+    },
+    {
+      "name": "grow-beyond-resource-maximum",
+      "source": "src/storage.rs",
+      "from": "current.saturating_mul(2).min(maximum)",
+      "to": "current.saturating_mul(2)",
+      "harness": "storage::proofs::growing_capacity_preserves_full_width_bounds",
+      "expected_check": "growth cannot exceed its configured maximum"
+    },
+    {
+      "name": "detach-terminal-endpoint-before-tasks",
+      "source": "src/clients/dispatch/terminated.rs",
+      "from": "if self.runtime.queued() != 0 {",
+      "to": "if false {",
+      "harness": "clients::dispatch::terminated::checks::terminal_dispatch_detaches_each_owner_once",
+      "expected_check": "terminal endpoints retain ownership until queued tasks drain"
+    },
+    {
+      "name": "omit-terminal-answer-owner",
+      "source": "src/connection/terminated.rs",
+      "from": "self.connection.answers.take_terminal_owner(index)",
+      "to": "None",
+      "harness": "connection::terminated::checks::terminal_ledgers_detach_each_owner_once",
+      "expected_check": "terminal answer transfers its retained producer"
+    },
+    {
+      "name": "discard-live-queue",
+      "source": "src/messages/queue.rs",
+      "from": "if !self.failed {",
+      "to": "if false {",
+      "harness": "messages::queue::proofs::terminal_queue_discards_without_releasing_reader",
+      "expected_check": "live output cannot discard an accepted send"
+    },
+    {
+      "name": "omit-retained-answer-dependency",
+      "source": "src/answers.rs",
+      "from": "record.pipelines = record\n            .pipelines\n            .checked_add(1)",
+      "to": "record.pipelines = record\n            .pipelines\n            .checked_add(0)",
+      "harness": "answers::proofs::retained_pipeline_stays_on_original_generation",
+      "expected_check": "retained pipeline increments the original generation dependency"
+    },
+    {
+      "name": "reset-borrowed-dispatch-identity",
+      "source": "src/clients/dispatch.rs",
+      "from": "return Err(Error::NonemptyStorage);\n    }\n    Ok(Runtime {\n        graph,\n        tasks: crate::storage::Storage::borrowed(tasks),",
+      "to": "return Err(Error::NonemptyStorage);\n    }\n    graph.dispatch_sequence = 0;\n    Ok(Runtime {\n        graph,\n        tasks: crate::storage::Storage::borrowed(tasks),",
+      "harness": "clients::dispatch::proofs::borrowed_scopes_never_reuse_accepted_task_identity",
+      "expected_check": "borrowed dispatcher never reuses prior task identity"
+    },
+    {
+      "name": "clear-owned-writer-before-publication",
+      "source": "src/messages.rs",
+      "from": "let Self { writer, view } = self;",
+      "to": "let Self { writer, mut view } = self; view.fill(0);",
+      "harness": "messages::proofs::owned_writer_preserves_bytes_until_explicit_publication",
+      "expected_check": "owned writer recovery preserves initialized bytes"
+    },
+    {
+      "name": "ignore-rejected-implicit-release",
+      "source": "src/exports/release.rs",
+      "from": "self.rejected |= result.is_err();",
+      "to": "self.rejected |= false;",
+      "harness": "exports::release::proofs::implicit_releases_are_atomic_for_full_reference_counts",
+      "expected_check": "implicit release requires the complete valid count"
+    },
+    {
+      "name": "omit-admitted-parent-dependency",
+      "source": "src/answers/admission.rs",
+      "from": ".pipelines += 1;",
+      "to": ".pipelines += 0;",
+      "harness": "answers::proofs::input_admission_preserves_parent_on_rejection",
+      "expected_check": "accepted call retains exactly one parent dependency"
+    },
+    {
+      "name": "cancel-queued-pipeline-after-finish",
+      "source": "src/answers.rs",
+      "from": "Ok(!r.finished || r.pipelines != 0)",
+      "to": "Ok(!r.finished)",
+      "harness": "answers::proofs::peer_reuse_cannot_redirect_an_older_pipeline_lease",
+      "expected_check": "queued pipeline still executes after Finish"
+    },
+    {
+      "name": "reserve-retired-answer-wire-id",
+      "source": "src/answers.rs",
+      "from": "r.id == id && !(r.finished && r.state == State::Returned)",
+      "to": "r.id == id",
+      "harness": "answers::proofs::peer_reuse_cannot_redirect_an_older_pipeline_lease",
+      "expected_check": "retired answer ID accepts reuse"
+    },
+    {
+      "name": "under-count-import-batch",
+      "source": "src/imports/batch.rs",
+      "from": "entry.local += 1;",
+      "to": "entry.local += 0;",
+      "harness": "imports::batch::proofs::duplicate_batch_admission_is_atomic_for_all_reference_counts",
+      "expected_check": "batch reference rejection is atomic"
+    },
+    {
+      "name": "overtake-partial-frame",
+      "source": "src/messages/queue.rs",
+      "from": "if complete {",
+      "to": "if true {",
+      "harness": "messages::queue::proofs::fifo_never_overtakes_partial_frame",
+      "expected_check": "FIFO preserves oldest unsent suffix"
+    },
+    {
+      "name": "cancel-pipelined-answer",
+      "source": "src/answers.rs",
+      "from": "let cancel = r.pipelines == 0",
+      "to": "let cancel = true",
+      "harness": "answers::proofs::admitted_pipeline_retains_answer_across_finish_and_return",
+      "expected_check": "admitted pipeline prevents execution cancellation"
+    },
+    {
+      "name": "reuse-before-finish-acceptance",
+      "source": "src/questions.rs",
+      "from": "r.references == 0 && r.finish.is_none() && !r.lifecycle.is_awaiting_return()",
+      "to": "r.references == 0 && !r.lifecycle.is_awaiting_return()",
+      "harness": "questions::proofs::question_cleanup_requires_return_and_accepted_finish",
+      "expected_check": "pending Finish retains question ID"
+    },
+    {
+      "name": "omit-reserved-descriptor",
+      "source": "src/exports/descriptors.rs",
+      "from": "if *count != reserved {",
+      "to": "if false {",
+      "harness": "exports::proofs::descriptor_multiset_matches_reservations",
+      "expected_check": "descriptor multiset equals reserved grants"
+    },
+    {
+      "name": "reuse-buffer-with-pending-send",
+      "source": "src/messages.rs",
+      "from": "if readers == 0 && sends == 0 {",
+      "to": "if readers == 0 {",
+      "harness": "messages::proofs::message_ownership_and_send_lifecycle",
+      "expected_check": "queued send retains message buffer"
+    },
+    {
+      "name": "complete-partial-message-send",
+      "source": "src/messages.rs",
+      "from": "if next == length {",
+      "to": "if true {",
+      "harness": "messages::proofs::partial_send_completion_preserves_ownership",
+      "expected_check": "partial write keeps send reserved"
+    },
+    {
+      "name": "ignore-export-call-leases",
+      "source": "src/exports.rs",
+      "from": "if entry.local != 0 || !matches!(entry.state, State::Retired) {",
+      "to": "if !matches!(entry.state, State::Retired) {",
+      "harness": "exports::proofs::export_publication_and_lease_lifecycle",
+      "expected_check": "export lease retains released owner"
+    },
+    {
+      "name": "publish-aborted-export",
+      "source": "src/exports.rs",
+      "from": "if matches!(entry.state, State::Staged) {\n                    entry.state = State::Retired;\n                }",
+      "to": "if matches!(entry.state, State::Staged) {\n                    entry.state = State::Live(ExportRefs::new());\n                }",
+      "harness": "exports::proofs::export_publication_and_lease_lifecycle",
+      "expected_check": "unaccepted export is not published"
+    },
+    {
+      "name": "revive-import-with-stale-generation",
+      "source": "src/imports.rs",
+      "from": "slot.generation = generation;",
+      "to": "let _ = generation;",
+      "harness": "imports::proofs::import_generation_and_cleanup_lifecycle",
+      "expected_check": "revived import rejects stale key"
+    },
+    {
+      "name": "skip-reference-release-commit",
+      "source": "src/references.rs",
+      "from": "self.refs.count = 0;",
+      "to": "let _ = self;",
+      "harness": "references::proofs::import_references_wait_for_release_acceptance",
+      "expected_check": "accepted release consumes pending references"
+    },
+    {
+      "name": "skip-fixed-rewind",
+      "package": "capntproto-core",
+      "source": "src/private/arena/fixed.rs",
+      "from": "self.used = checkpoint;",
+      "to": "let _ = checkpoint;",
+      "harness": "private::arena::fixed::proofs::fixed_rollback_preserves_published_prefix",
+      "expected_check": "fixed rollback restores the reservation cursor"
+    },
+    {
+      "name": "reject-exact-capacity",
+      "package": "capntproto-core",
+      "source": "src/private/arena/fixed.rs",
+      "from": "if id != 0 || amount > self.remaining() {",
+      "to": "if id != 0 || amount >= self.remaining() {",
+      "harness": "private::arena::fixed::proofs::fixed_reservations_preserve_live_words",
+      "expected_check": "fixed reservation accepts exactly available capacity"
+    },
+    {
+      "name": "unreserved-drain",
+      "source": "src/handoff.rs",
+      "from": ".filter(|pending| pending.checked_add(self.drained).is_some())",
+      "to": "",
+      "harness": "handoff::proofs::handoff_inductive_transition",
+      "expected_check": "handoff reserves every future drain"
+    },
+    {
+      "name": "replace-adopted-owner",
+      "source": "src/local_table.rs",
+      "from": "else if self.adopted.get(&id).is_some()",
+      "to": "else if false",
+      "harness": "local_table::proofs::local_adopted_range_and_owner_preservation",
+      "expected_check": "adopted duplicate preserves owner"
+    },
+    {
+      "name": "reuse-embargo-identity",
+      "source": "src/embargoes.rs",
+      "from": "self.next += 1;",
+      "to": "self.next += 0;",
+      "harness": "embargoes::proofs::stale_echo_cannot_open_reused_storage",
+      "expected_check": "stale echo cannot open a new embargo"
+    },
+    {
+      "name": "repeat-import-resolution",
+      "source": "src/imports/batch.rs",
+      "from": "entry.promise = entry.promise.resolution().expect(\"preflighted Resolve\");",
+      "to": "let _ = entry.promise;",
+      "harness": "imports::batch::proofs::resolution_is_once_and_preserves_promise_references",
+      "expected_check": "promise resolution is committed exactly once"
+    },
+    {
+      "name": "omit-export-resolution-acceptance",
+      "source": "src/exports.rs",
+      "from": "entry.promise = entry\n                .promise\n                .resolution()\n                .expect(\"reserved pending promise\");",
+      "to": "let _ = entry.promise;",
+      "harness": "exports::proofs::exported_resolution_requires_output_acceptance",
+      "expected_check": "exported promise resolves only on output acceptance"
+    },
+    {
+      "name": "omit-reflected-local-lease",
+      "source": "src/exports/leases.rs",
+      "from": ".local += 1;",
+      "to": ".local += 0;",
+      "harness": "exports::leases::proofs::receiver_hosted_batch_retains_every_local_reference",
+      "expected_check": "all receiver-hosted leases are retained atomically"
+    },
+    {
+      "name": "omit-reflected-answer-dependency",
+      "source": "src/answers/pipelines.rs",
+      "from": ".pipelines += 1;",
+      "to": ".pipelines += 0;",
+      "harness": "answers::pipelines::proofs::receiver_answer_batch_retains_every_dependency",
+      "expected_check": "all receiver-answer dependencies are retained atomically"
+    },
+    {
+      "name": "reflect-released-answer",
+      "source": "src/question.rs",
+      "from": "State::Awaiting | State::Returned { finish: true }",
+      "to": "State::Awaiting | State::Returned { .. }",
+      "harness": "questions::proofs::pipeline_reflection_obeys_peer_answer_lifetime",
+      "expected_check": "pipeline reflection requires the peer to retain the answer"
+    },
+    {
+      "name": "repeat-local-adoption",
+      "source": "src/answers/adoption.rs",
+      "from": "record.redirect = Redirect::Adopted;\n        record.pipelines += 1;",
+      "to": "record.redirect = Redirect::Available;\n        record.pipelines += 1;",
+      "harness": "answers::adoption::proofs::redirected_answer_adoption_is_once_and_retains_producer",
+      "expected_check": "redirected result may only be adopted once"
+    },
+    {
+      "name": "release-adopted-producer",
+      "source": "src/answers/adoption.rs",
+      "from": "record.pipelines += 1;",
+      "to": "record.pipelines += 0;",
+      "harness": "answers::adoption::proofs::redirected_answer_adoption_is_once_and_retains_producer",
+      "expected_check": "adoption retains the local result producer"
+    },
+    {
+      "name": "clear-published-fixed-segment",
+      "package": "capntproto-core",
+      "source": "src/private/arena/fixed.rs",
+      "from": "let this = core::mem::ManuallyDrop::new(self);",
+      "to": "let this = self;",
+      "harness": "private::arena::fixed::proofs::fixed_publication_preserves_initialized_prefix",
+      "expected_check": "fixed publication preserves initialized bytes"
+    },
+    {
+      "name": "skip-reflected-loopback",
+      "source": "src/clients.rs",
+      "from": "source == Source::Reflected || old_location != new_location",
+      "to": "old_location != new_location",
+      "harness": "clients::proofs::frozen_route_and_reflected_barrier_preserve_order",
+      "expected_check": "reflected resolution retains its loopback barrier"
+    },
+    {
+      "name": "dispatch-newest-first",
+      "source": "src/clients/dispatch.rs",
+      "from": "queued.sequence < sequence",
+      "to": "queued.sequence > sequence",
+      "harness": "clients::dispatch::proofs::oldest_ready_call_survives_rejection_and_slot_reuse",
+      "expected_check": "dispatch preserves the oldest ready call"
+    },
+    {
+      "name": "alias-imported-promise-route",
+      "source": "src/clients.rs",
+      "from": "Ok(self.insert(\n            promise,",
+      "to": "Ok(self.insert(\n            route.key.raw.index,",
+      "harness": "clients::proofs::imported_promise_admission_preserves_owner_and_both_slots",
+      "expected_check": "imported promise preserves a distinct stable endpoint"
+    },
+    {
+      "name": "accept-closed-reply",
+      "source": "src/completion.rs",
+      "from": "if !matches!(state.phase, Phase::Pending) {\n            return Err(value);\n        }",
+      "to": "if false { return Err(value); }",
+      "harness": "completion::proofs::scoped_reply_transfers_once_and_preserves_rejected_owner",
+      "expected_check": "closed receiver preserves rejected reply owner"
+    },
+    {
+      "name": "discard-canceled-reply",
+      "source": "src/completion.rs",
+      "from": "state.phase = Phase::Abandoned(value);",
+      "to": "drop(value);",
+      "harness": "completion::proofs::scoped_reply_transfers_once_and_preserves_rejected_owner",
+      "expected_check": "undelivered reply prevents premature slot reuse"
+    },
+    {
+      "name": "discard-tracked-reply-on-shutdown",
+      "source": "src/completion.rs",
+      "from": "Phase::Value(value) | Phase::Abandoned(value) => Some(value),",
+      "to": "Phase::Value(value) | Phase::Abandoned(value) => { drop(value); None },",
+      "harness": "completion::proofs::tracked_reply_reclaims_only_unobserved_owner",
+      "expected_check": "shutdown recovers unobserved reply owner"
+    },
+    {
+      "name": "reuse-shared-reply-with-live-endpoints",
+      "source": "src/completion.rs",
+      "from": "if self.endpoints.get() != 0 {",
+      "to": "if false {",
+      "harness": "completion::proofs::shared_reply_claim_preserves_accessible_endpoint_identity",
+      "expected_check": "shared reply refuses live endpoint reuse"
+    },
+    {
+      "name": "replay-provision-accept",
+      "source": "src/provision.rs",
+      "from": "if self.claimed {",
+      "to": "if false {",
+      "harness": "provision::proofs::accept_embargo_replay_and_revoke_preserve_authority",
+      "expected_check": "one Accept per embargo identifier"
+    },
+    {
+      "name": "ignore-provision-close",
+      "source": "src/provision.rs",
+      "from": "} else if self.closed {",
+      "to": "} else if false {",
+      "harness": "provision::proofs::scoped_embargo_claims_survive_capacity_and_revoke",
+      "expected_check": "unreleased claim cannot complete at registry close"
+    },
+    {
+      "name": "require-provide-return",
+      "source": "src/answers/finish.rs",
+      "from": "record.state == State::Returned && !record.provision",
+      "to": "record.state == State::Returned",
+      "harness": "answers::provision::proofs::provision_finish_retires_without_results_or_pipeline_ownership",
+      "expected_check": "Provide Finish needs no original Return"
+    },
+    {
+      "name": "await-provide-return",
+      "source": "src/questions/provision.rs",
+      "from": "record.lifecycle = Question::no_return();",
+      "to": "record.lifecycle = Question::new();",
+      "harness": "questions::provision::proofs::provision_question_needs_only_an_accepted_finish",
+      "expected_check": "Provide rejects a Return"
+    },
+    {
+      "name": "reclaim-adopted-question-before-return",
+      "source": "src/questions/adoption.rs",
+      "from": "lifecycle: Question::new(),",
+      "to": "lifecycle: Question::no_return(),",
+      "harness": "questions::adoption::proofs::adopted_question_cancellation_retains_id_until_return",
+      "expected_check": "canceled adopted question remains occupied until late Return"
+    },
+    {
+      "name": "reuse-live-callee-selected-answer",
+      "source": "src/answers/third_party.rs",
+      "from": ".find(|&id| self.wire_index(id).is_none())",
+      "to": ".find(|_| true)",
+      "harness": "answers::third_party::proofs::callee_selected_answers_preserve_publication_and_retained_pipeline",
+      "expected_check": "new callee answer skips every still-live ID"
+    },
+    {
+      "name": "locally-adopt-third-party-answer",
+      "source": "src/answers/admission.rs",
+      "from": "self.redirect = Redirect::ThirdParty;",
+      "to": "self.redirect = Redirect::Available;",
+      "harness": "answers::network::proofs::third_party_destination_and_handoff_permission_stay_distinct",
+      "expected_check": "third-party answer cannot be adopted locally"
+    },
+    {
+      "name": "locally-adopt-batched-third-party-answer",
+      "source": "src/answers/pipelines.rs",
+      "from": "self.redirect = Redirect::ThirdParty;",
+      "to": "self.redirect = Redirect::Available;",
+      "harness": "answers::network::proofs::third_party_destination_and_handoff_permission_stay_distinct",
+      "expected_check": "third-party answer cannot be adopted locally"
+    },
+    {
+      "name": "force-third-party-handoff-permission",
+      "source": "src/answers/admission.rs",
+      "from": "self.allow_handoff = allowed;",
+      "to": "self.allow_handoff = true;",
+      "harness": "answers::network::proofs::third_party_destination_and_handoff_permission_stay_distinct",
+      "expected_check": "network Return preserves caller handoff opt-in"
+    },
+    {
+      "name": "reserve-third-party-as-local-tail",
+      "source": "src/questions.rs",
+      "from": "self.reserve_kind(ResultsTo::ThirdParty)",
+      "to": "self.reserve_kind(ResultsTo::Yourself)",
+      "harness": "questions::network::proofs::question_destination_cannot_change_on_return_or_reuse",
+      "expected_check": "third-party question is not a local tail source"
+    },
+    {
+      "name": "authorize-released-vine-export",
+      "source": "src/exports.rs",
+      "from": "(slot.generation == key.generation && matches!(entry.state, State::Live(_)))",
+      "to": "(slot.generation == key.generation && (matches!(entry.state, State::Live(_)) || entry.local != 0))",
+      "harness": "exports::proofs::export_publication_and_lease_lifecycle",
+      "expected_check": "released export cannot authorize a vine callback"
+    },
+    {
+      "name": "alias-stable-buffer-offset",
+      "source": "src/messages/backing.rs",
+      "from": "Some((segment, index - ((1usize << segment) - 1)))",
+      "to": "Some((segment, 0))",
+      "harness": "messages::backing::proofs::stable_segments_cover_full_width_indices",
+      "expected_check": "segment position identifies original index"
+    },
+    {
+      "name": "accept-out-of-range-identity-index",
+      "package": "capntproto-core",
+      "source": "src/wire_capability/map.rs",
+      "from": "source < self.count",
+      "to": "source <= self.count",
+      "harness": "wire_capability::map::proofs::identity_mapping_is_exact_and_bounded",
+      "expected_check": "assertion failed: source < count"
+    },
+    {
+      "name": "resend-resources-after-partial-write",
+      "source": "src/messages/queue.rs",
+      "from": "self.send.is_start().then_some(&entry.resources)",
+      "to": "Some(&entry.resources)",
+      "harness": "messages::queue::proofs::resources_are_offered_only_before_first_accepted_byte",
+      "expected_check": "attachments stop exactly after first accepted byte"
+    }
+  ],
+  "replaced_models": [
+    {
+      "module": "RpcIdTables",
+      "reason": "Direct proofs exercise the actual free heap, sparse storage, full wire IDs, ownership rejection and high-ID wrap. The prior model used two occupancy bits and only one high allocation.",
+      "limits": "Dense-heap induction uses three slots; high/adopted storage uses at most two slots. This does not prove every capacity. Native differential traces, zero-allocation tests, Miri and compile-fail role/borrowing contracts remain."
+    },
+    {
+      "module": "HandoffCounterBoundary",
+      "reason": "Initial-state plus inductive-transition proofs cover every valid u64 counter state, including exact exhaustion, rejection, revocation and drain conservation in production code. The prior translated model explored five steps near MAX-2.",
+      "limits": "This is the application handoff guard, not transport authentication or distributed liveness. Authenticated handoff, network ordering and fair-progress TLA+ models remain."
+    }
+  ]
+}

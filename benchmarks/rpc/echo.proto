@@ -2,3 +2,33 @@ syntax = "proto3";
 package echo;
 message Frame { uint64 sequence = 1; bytes payload = 2; }
 service Echo { rpc Echo(Frame) returns (Frame); }
+
+// Application RPC for the comparison protocols. IDs model state references;
+// they do not provide Cap'n Proto capability security or promise pipelining.
+message Operation {
+  enum Kind {
+    ECHO = 0;
+    OPEN = 1;
+    READ = 2;
+    WRITE = 3;
+    RELEASE = 4;
+    CALLBACK = 5;
+    NOTIFY = 6;
+    ACK = 7;
+    DONE = 8;
+  }
+  Kind kind = 1;
+  uint64 sequence = 2;
+  bytes payload = 3;
+  uint64 cell = 4;
+  uint64 version = 5;
+  bool ephemeral = 6;
+}
+service Workflows {
+  rpc Echo(Operation) returns (Operation);
+  rpc Open(Operation) returns (Operation);
+  rpc Read(Operation) returns (Operation);
+  rpc Write(Operation) returns (Operation);
+  rpc Release(Operation) returns (Operation);
+  rpc Callback(stream Operation) returns (stream Operation);
+}

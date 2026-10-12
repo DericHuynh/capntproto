@@ -18,13 +18,14 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-use futures::channel::oneshot;
-use futures::stream::FuturesUnordered;
+use capntproto_rpc_engine::completion::shared as oneshot;
 use futures::{Future, Stream};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
 mod queue;
+mod ready_set;
+use ready_set::ReadySet;
 
 enum EnqueuedTask<E> {
     Task(Pin<Box<dyn Future<Output = Result<(), E>>>>),
@@ -61,7 +62,7 @@ impl<E> Future for TaskInProgress<E> {
 #[must_use = "a TaskSet does nothing unless polled"]
 pub(crate) struct TaskSet<E> {
     enqueued: Option<queue::Receiver<EnqueuedTask<E>>>,
-    in_progress: FuturesUnordered<TaskInProgress<E>>,
+    in_progress: ReadySet<TaskInProgress<E>>,
     on_empty_fulfillers: Vec<oneshot::Sender<()>>,
     reaper: Box<dyn TaskReaper<E>>,
 }
@@ -77,9 +78,9 @@ where
     {
         let (sender, receiver) = queue::channel();
 
-        let set = Self {
+        let mut set = Self {
             enqueued: Some(receiver),
-            in_progress: FuturesUnordered::new(),
+            in_progress: ReadySet::new(),
             on_empty_fulfillers: vec![],
             reaper,
         };
@@ -95,6 +96,9 @@ where
     }
 
     fn update_on_empty_fulfillers(&mut self) {
+        if self.on_empty_fulfillers.is_empty() {
+            return;
+        }
         // There is always the one pending() future that we added in `new()`.
         if self.in_progress.len() <= 1
             && self.enqueued.as_ref().is_none_or(|queue| queue.is_empty())

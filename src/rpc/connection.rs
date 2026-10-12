@@ -1,8 +1,8 @@
+use super::io::TokioIo;
 use super::{task::Task, Completion};
 use capnp::capability::{Client, FromClientHook, Promise};
 use capnp_rpc::{rpc_twoparty_capnp::Side, twoparty::TwoPartyClient};
 use std::time::Duration;
-use tokio_util::compat::TokioAsyncReadCompatExt;
 
 /// An owned, running bilateral RPC connection on a Tokio `LocalSet`.
 ///
@@ -27,7 +27,7 @@ impl Connection {
         bootstrap: Option<Client>,
         side: Side,
     ) -> Self {
-        Self::spawn(TwoPartyClient::with_bootstrap(io.compat(), bootstrap, side))
+        Self::spawn(TwoPartyClient::with_bootstrap(TokioIo(io), bootstrap, side))
     }
 
     /// Start a configured TCP, TLS, QUIC or other owned two-party driver.

@@ -309,6 +309,23 @@ fn installed_cpp_rpc_interoperability() {
             command(&executable)
         };
         run(&mut cmd, &log(&format!("cpp/{name}")), 0).unwrap();
+        if name == "rpc-peer" {
+            run(
+                command("cargo")
+                    .args([
+                        "run",
+                        "--locked",
+                        "--quiet",
+                        "--example",
+                        "bounded_cpp_interop",
+                        "--",
+                    ])
+                    .arg(&executable),
+                &log("cpp/bounded-rpc-peer"),
+                0,
+            )
+            .unwrap();
+        }
     }
 }
 

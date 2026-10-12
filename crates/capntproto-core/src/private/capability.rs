@@ -111,6 +111,15 @@ impl DebugInfo {
 }
 
 pub trait ClientHook {
+    /// Optional concrete runtime identity for safe in-process adapter lookup.
+    /// An adapter must downcast and validate its own private identity; pointer
+    /// and connection-brand integers alone are not capability authority.
+    /// Wrappers stay opaque by default. Forward only for an explicitly
+    /// transparent wrapper, since exposing an inner hook can bypass policy.
+    fn as_any(&self) -> Option<&dyn core::any::Any> {
+        None
+    }
+
     /// Append this hook's diagnostic description. Overrides must not make calls,
     /// drive promises, connect, or otherwise change capability state. Follow
     /// inner hooks through `chain.follow()` so recursion remains bounded.
@@ -239,6 +248,18 @@ impl Clone for alloc::boxed::Box<dyn ClientHook> {
 }
 
 pub trait ResultsHook {
+    /// Identify this exact result sink. Transforming/policy wrappers should use
+    /// the default rather than exposing an inner sink through this method.
+    fn as_any_mut(&mut self) -> Option<&mut dyn core::any::Any> {
+        None
+    }
+
+    /// Keep adapter-owned context alive with completed response readers and
+    /// pipelines. Results implementations that retain response data should
+    /// retain this owner alongside it; forwarding wrappers should delegate.
+    /// Stateless/custom result sinks may use the default no-op.
+    fn retain_response_context(&mut self, _context: alloc::rc::Rc<dyn core::any::Any>) {}
+
     /// The caller permits one immediate poll of a non-streaming implementation
     /// during dispatch. RPC sets this only after releasing its protocol-table
     /// borrows. Ordinary local calls and wrappers remain deferred by default.
@@ -267,6 +288,17 @@ pub trait ResultsHook {
         size_hint: Option<crate::MessageSize>,
     ) -> crate::Result<any_pointer::Builder<'_>>;
 
+    /// Replace the result payload with an immutable, independently owned reply.
+    /// The default copies through this hook's ordinary builder, preserving
+    /// capability transformations in wrappers. An owning sink may retain the
+    /// response instead, provided later edits copy it before mutation and all
+    /// response contexts and early pipelines retain their usual lifetimes.
+    fn set_response(&mut self, response: alloc::rc::Rc<dyn ResponseHook>) -> crate::Result<()> {
+        let reader = response.get()?;
+        self.get_with_size_hint(Some(reader.target_size()?))?
+            .set_as(reader)
+    }
+
     fn set_pipeline(&mut self) -> crate::Result<()>;
 
     /// Publish capability routing independently of the eventual results payload.
@@ -291,6 +323,11 @@ pub trait ResultsHook {
 
 pub trait ParamsHook {
     fn get(&self) -> crate::Result<crate::any_pointer::Reader<'_>>;
+    /// Optional private implementation identity. Wrappers retain their own
+    /// identity, so a transport cannot bypass their parameter transformations.
+    fn as_any(&self) -> Option<&dyn core::any::Any> {
+        None
+    }
 }
 
 // Where should this live?

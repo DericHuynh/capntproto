@@ -1,0 +1,318 @@
+//! Caller-polled resolution of opaque owned hooks imported into the wire graph.
+//! Only public hook resolution is observed. Calls keep their original hook even
+//! after settlement, so resolving a promise never bypasses policy or overtakes
+//! calls that were already admitted through its original proxy.
+use super::*;
+use capntproto_rpc_engine::clients::{self, Destination, Location};
+use capntproto_rpc_wire::clients::{Endpoint, Route};
+use std::num::NonZeroUsize;
+
+struct Entry<'id> {
+    // A weak, generational graph identity, not a retained capability. Abandoned
+    // registrations cannot keep their promise or its protocol exports alive.
+    key: clients::Key<'id>,
+    state: State,
+}
+enum State {
+    Waiting {
+        _hook: Rc<dyn ClientHook>,
+        future: Promise<Box<dyn ClientHook>, Error>,
+    },
+    Ready(capnp::Result<Rc<dyn ClientHook>>),
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Progress {
+    /// The bounded scan has more slots to visit; poll again.
+    Yield,
+    Idle,
+    Advanced,
+    Settled,
+    Abandoned,
+}
+
+/// Bounded hosted observers, independent of wire import/export/question IDs.
+/// Pass `import` to [`Calls::poll`] and [`server::Worker::poll`]. Poll these
+/// observers after graph reclamation and before driving calls/maintenance, with
+/// the same caller waker. A capacity error retains ready resolution for retry;
+/// the caller retries after releasing graph space. `terminate` drops observers
+/// before terminal driver teardown; it is not a live-connection cancellation.
+#[must_use = "poll imported promises and terminate before driver teardown"]
+pub struct ForeignPromises<'id> {
+    entries: Vec<Option<Entry<'id>>>,
+    maximum: usize,
+    cursor: usize,
+    remaining: usize,
+    wake: Option<Waker>,
+    introductions: Option<coordinator::multiparty::introduction::Policy>,
+}
+impl<'id> ForeignPromises<'id> {
+    pub fn new(maximum: usize) -> Self {
+        Self {
+            entries: Vec::new(),
+            maximum,
+            cursor: 0,
+            remaining: 0,
+            wake: None,
+            introductions: None,
+        }
+    }
+    pub fn is_empty(&self) -> bool {
+        self.entries.iter().all(Option::is_none)
+    }
+    pub(crate) fn with_introductions(
+        mut self,
+        policy: coordinator::multiparty::introduction::Policy,
+    ) -> Self {
+        self.introductions = Some(policy);
+        self
+    }
+    /// Import the hook as an opaque local authority. Its public brand/pointer
+    /// never grants access to another bridge or permission to unwrap a membrane.
+    /// Same-bridge recognition belongs to `ClientHooks::try_retain` first.
+    pub fn import<'p, P: Copy + Eq, const H: usize, G>(
+        &mut self,
+        graph: &mut G,
+        hook: &dyn ClientHook,
+    ) -> capnp::Result<Client<'id>>
+    where
+        G: Capabilities<'id, Peer = P, Owner = Route<'p, P, Rc<dyn ClientHook>, H>>,
+    {
+        let original: Rc<dyn ClientHook> = Rc::from(hook.add_ref());
+        let Some(future) = original.when_more_resolved() else {
+            let original = self
+                .introductions
+                .as_ref()
+                .and_then(|policy| policy(&*original))
+                .unwrap_or(original);
+            let route = if coordinator::multiparty::introduction::is_vine(&*original) {
+                Route::Vine(original)
+            } else {
+                Route::local(original)
+            };
+            return graph
+                .endpoint(route, Location::Local)
+                .map_err(|e| graph_error(e.error));
+        };
+        let index = self
+            .entries
+            .iter()
+            .position(Option::is_none)
+            .unwrap_or(self.entries.len());
+        if index == self.entries.len() {
+            if index == self.maximum {
+                return Err(Error::overloaded(
+                    "foreign promise capacity exhausted".into(),
+                ));
+            }
+            self.entries
+                .try_reserve(1)
+                .map_err(|_| Error::overloaded("foreign promise allocation failed".into()))?;
+        }
+        let mut route = Some(
+            graph
+                .endpoint(Route::local(original.clone()), Location::Local)
+                .map_err(|e| graph_error(e.error))?,
+        );
+        let client = match graph.promise(&mut route) {
+            Ok(client) => client,
+            Err(error) => {
+                graph.release(route.expect("rejected promise retains initial route"));
+                return Err(graph_error(error));
+            }
+        };
+        let entry = Some(Entry {
+            key: client.key(),
+            state: State::Waiting {
+                _hook: original,
+                future,
+            },
+        });
+        if index == self.entries.len() {
+            self.entries.push(entry);
+        } else {
+            self.entries[index] = entry;
+        }
+        self.remaining = 0;
+        if let Some(wake) = self.wake.take() {
+            wake.wake();
+        }
+        Ok(client)
+    }
+
+    pub(super) fn invalidate_scan(&mut self) {
+        self.remaining = 0;
+    }
+
+    pub fn poll<'p, P: Copy + Eq, const H: usize, G>(
+        &mut self,
+        hooks: &mut ClientHooks<'id>,
+        graph: &mut G,
+        cx: &mut Context<'_>,
+        budget: NonZeroUsize,
+    ) -> Poll<capnp::Result<Progress>>
+    where
+        G: Capabilities<'id, Peer = P, Owner = Route<'p, P, Rc<dyn ClientHook>, H>>,
+    {
+        if self
+            .wake
+            .as_ref()
+            .is_none_or(|wake| !wake.will_wake(cx.waker()))
+        {
+            self.wake = Some(cx.waker().clone());
+        }
+        if self.is_empty() {
+            return Poll::Ready(Ok(Progress::Idle));
+        }
+        if self.remaining == 0 {
+            self.remaining = self.entries.len();
+        }
+        for _ in 0..budget.get() {
+            let index = self.cursor % self.entries.len();
+            self.cursor = (index + 1) % self.entries.len();
+            self.remaining -= 1;
+            if let Some(entry) = self.entries[index].as_mut() {
+                let source = match graph.retain_key(entry.key) {
+                    Ok(source) => source,
+                    Err(clients::Error::Stale) => {
+                        self.entries[index] = None;
+                        self.remaining = 0;
+                        return Poll::Ready(Ok(Progress::Abandoned));
+                    }
+                    Err(error) => return Poll::Ready(Err(graph_error(error))),
+                };
+                let progress = advance(entry, &source, graph, cx, self.introductions.as_ref());
+                graph.release(source);
+                match progress {
+                    Ok(Some(Progress::Settled)) => {
+                        self.entries[index] = None;
+                        // Publish full failure details before ordinary collection
+                        // can signal an awaiting generated client.
+                        hooks.collect_with_metadata(graph, metadata);
+                        self.remaining = 0;
+                        return Poll::Ready(Ok(Progress::Settled));
+                    }
+                    Ok(Some(progress)) => {
+                        self.remaining = 0;
+                        return Poll::Ready(Ok(progress));
+                    }
+                    Err(error) => return Poll::Ready(Err(error)),
+                    Ok(None) => (),
+                }
+            }
+            if self.remaining == 0 {
+                return Poll::Pending;
+            }
+        }
+        Poll::Ready(Ok(Progress::Yield))
+    }
+    pub fn terminate(self) {}
+}
+
+fn advance<'p, 'id, P: Copy + Eq, const H: usize, G>(
+    entry: &mut Entry<'id>,
+    source: &Client<'id>,
+    graph: &mut G,
+    cx: &mut Context<'_>,
+    introductions: Option<&coordinator::multiparty::introduction::Policy>,
+) -> capnp::Result<Option<Progress>>
+where
+    G: Capabilities<'id, Peer = P, Owner = Route<'p, P, Rc<dyn ClientHook>, H>>,
+{
+    match &mut entry.state {
+        State::Waiting { future, .. } => {
+            let Poll::Ready(result) = Pin::new(future).poll(cx) else {
+                return Ok(None);
+            };
+            entry.state = match result {
+                Err(error) => State::Ready(Err(error)),
+                Ok(hook) => {
+                    let hook: Rc<dyn ClientHook> = Rc::from(hook);
+                    match hook.when_more_resolved() {
+                        Some(future) => State::Waiting {
+                            _hook: hook,
+                            future,
+                        },
+                        None => State::Ready(Ok(hook)),
+                    }
+                }
+            };
+            Ok(Some(Progress::Advanced))
+        }
+        State::Ready(result) => {
+            let replacement = match result {
+                Ok(hook) => {
+                    if let Some(vine) = introductions.and_then(|policy| policy(&**hook)) {
+                        graph
+                            .endpoint(Route::Vine(vine), Location::Local)
+                            .map_err(|e| graph_error(e.error))?
+                    } else {
+                        let Destination::Endpoint { key, .. } =
+                            graph.inspect(source).map_err(graph_error)?
+                        else {
+                            return Err(Error::failed(
+                                "foreign promise lost its original proxy".into(),
+                            ));
+                        };
+                        graph.retain_key(key).map_err(graph_error)?
+                    }
+                }
+                Err(error) => graph
+                    .endpoint_with(Location::Broken, || {
+                        Route::Capability(Endpoint::Failed {
+                            kind: error.kind,
+                            owner: Rc::from(crate::broken::new_cap(error.clone())),
+                        })
+                    })
+                    .map_err(graph_error)?,
+            };
+            let mut replacement = Some(replacement);
+            match graph.resolve(entry.key, &mut replacement, clients::Source::Direct) {
+                Ok(None) => Ok(Some(Progress::Settled)),
+                Ok(Some(_)) => unreachable!("local proxy resolution requires no remote barrier"),
+                Err(error) => {
+                    graph.release(replacement.expect("rejected resolution retains replacement"));
+                    Err(graph_error(error))
+                }
+            }
+        }
+    }
+}
+fn graph_error(error: clients::Error) -> Error {
+    match error {
+        clients::Error::Full
+        | clients::Error::ReferencesExhausted
+        | clients::Error::GenerationsExhausted => Error::overloaded(error.to_string()),
+        _ => wire_error(error),
+    }
+}
+/// Metadata from the original local hook, including imported failure details.
+/// Descriptor ownership is queried through the policy hook, never its inner cap.
+pub fn local_metadata(hook: &Rc<dyn ClientHook>) -> EndpointMetadata {
+    EndpointMetadata {
+        introduction: None,
+        failure: hook
+            .as_any()
+            .and_then(|any| any.downcast_ref::<crate::broken::Client>())
+            .map(|hook| hook.error().clone()),
+        #[cfg(unix)]
+        fd: hook.get_fd(),
+    }
+}
+/// Local endpoint metadata. For remote descriptor ownership use
+/// `ClientHooks::collect_wire` with the connection's import metadata provider.
+pub fn metadata<P, const H: usize>(
+    route: &Route<'_, P, Rc<dyn ClientHook>, H>,
+) -> EndpointMetadata {
+    match route {
+        Route::Capability(Endpoint::Local(hook) | Endpoint::Failed { owner: hook, .. })
+        | Route::Vine(hook) => local_metadata(hook),
+        Route::Capability(Endpoint::Broken(kind)) => EndpointMetadata {
+            failure: Some(Error::from_kind(*kind)),
+            ..Default::default()
+        },
+        _ => EndpointMetadata::default(),
+    }
+}
+
+#[cfg(test)]
+mod tests;

@@ -76,6 +76,24 @@ name = "negative_pointer_offset"
 path = "tests/negative_pointer_offset.rs"
 
 [[test]]
+name = "near_list_bounds"
+path = "tests/near_list_bounds.rs"
+
+[[test]]
+name = "root_budget"
+path = "tests/root_budget.rs"
+
+[[test]]
+name = "selected_struct"
+path = "tests/selected_struct.rs"
+required-features = ["alloc"]
+
+[[test]]
+name = "selected_builder"
+path = "tests/selected_builder.rs"
+required-features = ["alloc"]
+
+[[test]]
 name = "primitive_list_as_slice"
 path = "tests/primitive_list_as_slice.rs"
 
@@ -130,3 +148,4 @@ type_complexity = "allow"
 
 [lints.rust]
 unreachable_pub = "deny"
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }

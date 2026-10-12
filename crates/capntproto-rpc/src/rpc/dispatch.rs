@@ -128,7 +128,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                     content.set_as_capability(cap.clone());
                 }
                 let exports =
-                    Self::write_descriptors(connection_state, &cap_table, payload, &mut fds);
+                    Self::write_descriptors(connection_state, &cap_table, payload, &mut fds)?;
                 (cap, exports)
             }
             Err(error) => {
@@ -223,21 +223,26 @@ impl<VatId: 'static> ConnectionState<VatId> {
             }
         };
 
-        // If the import is in the table, fulfill it.
-        let slots = &mut connection_state.imports.borrow_mut().slots;
-        if let Some(import) = slots.get_mut(&ImportId::from_wire(resolve.get_promise_id())) {
-            match import.promise_client_to_resolve.take() {
-                Some(weak_promise_client) => {
-                    if let Some(promise_client) = weak_promise_client.upgrade() {
-                        promise_client.borrow_mut().resolve(replacement_or_error);
-                    }
+        // Detach the resolution obligation before invoking capability hooks,
+        // wakers or destructors: any of those may re-enter the import table.
+        let pending = {
+            let mut imports = connection_state.imports.borrow_mut();
+            match imports
+                .slots
+                .get_mut(&ImportId::from_wire(resolve.get_promise_id()))
+            {
+                Some(import) => {
+                    import.resolution = import
+                        .resolution
+                        .resolution()
+                        .map_err(|error| Error::failed(error.to_string()))?;
+                    import.promise_client_to_resolve.take()
                 }
-                None => {
-                    return Err(Error::failed(
-                        "Got 'Resolve' for a non-promise import.".to_string(),
-                    ));
-                }
+                None => None,
             }
+        };
+        if let Some(promise_client) = pending.and_then(|weak| weak.upgrade()) {
+            promise_client.borrow_mut().resolve(replacement_or_error);
         }
         Ok(())
     }
@@ -308,15 +313,16 @@ impl<VatId: 'static> ConnectionState<VatId> {
             }
             disembargo::context::ReceiverLoopback(embargo_id) => {
                 let embargo_id = EmbargoId::from_wire(embargo_id);
-                if let Some(embargo) = connection_state.embargoes.borrow_mut().find(embargo_id) {
-                    let fulfiller = embargo.fulfiller.take().unwrap();
-                    let _ = fulfiller.send(Ok(()));
-                } else {
-                    return Err(Error::failed(
-                        "Invalid embargo ID in `Disembargo.context.receiverLoopback".to_string(),
-                    ));
+                let owner = connection_state
+                    .embargoes
+                    .borrow_mut()
+                    .receive(embargo_id)
+                    .map_err(|error| Error::failed(error.to_string()))?;
+                if let Some(mut embargo) = owner {
+                    if let Some(fulfiller) = embargo.fulfiller.take() {
+                        let _ = fulfiller.send(Ok(()));
+                    }
                 }
-                connection_state.embargoes.borrow_mut().erase(embargo_id);
             }
             disembargo::context::Accept(id) => {
                 let target = disembargo.get_target()?;
@@ -636,12 +642,13 @@ impl<VatId: 'static> ConnectionState<VatId> {
                     connection_state.got_return_for_high_id.set(true);
                     return Ok(());
                 }
+                let returned = ret.which()?;
                 let (reference, is_tail, param_exports) = {
                     let mut questions = connection_state.questions.borrow_mut();
                     let question = questions.find(question_id).ok_or_else(|| {
                         Error::failed(format!("Invalid question ID in Return: {question_id}"))
                     })?;
-                    if !question.is_awaiting_return {
+                    if !question.lifecycle.is_awaiting_return() {
                         return Err(Error::failed(
                             "duplicate Return or Return for Provide".into(),
                         ));
@@ -655,13 +662,15 @@ impl<VatId: 'static> ConnectionState<VatId> {
                             "Join and adopted results require Finish".into(),
                         ));
                     }
-                    if matches!(ret.which()?, return_::AwaitFromThirdParty(_))
+                    if matches!(&returned, return_::AwaitFromThirdParty(_))
                         && (!question.allow_third_party || ret.get_no_finish_needed())
                     {
                         return Err(Error::failed("unauthorized third-party tail return".into()));
                     }
-                    question.is_awaiting_return = false;
-                    question.skip_finish = ret.get_no_finish_needed();
+                    question
+                        .lifecycle
+                        .returned(ret.get_no_finish_needed())
+                        .map_err(|error| Error::failed(error.to_string()))?;
                     (
                         question.self_ref.as_ref().and_then(Weak::upgrade),
                         question.is_tail_call,
@@ -674,16 +683,18 @@ impl<VatId: 'static> ConnectionState<VatId> {
                     connection_state.release_exports(&param_exports)?;
                 }
                 if let Some(reference) = reference {
-                    match ret.which()? {
+                    match returned {
                         return_::Results(results) => {
                             if is_tail {
                                 return Err(Error::failed(
                                     "tail call returned ordinary results".into(),
                                 ));
                             }
+                            let results = results?;
+                            message.cache_results(results)?;
                             let caps = Self::receive_caps(
                                 &connection_state,
-                                results?.get_cap_table()?,
+                                results.get_cap_table()?,
                                 &mut fds,
                             )?;
                             let response = Response::new(

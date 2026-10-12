@@ -24,8 +24,8 @@
 
 use capnp::capability::Promise;
 use capnp::message::ReaderOptions;
-use futures::channel::oneshot;
-use futures::{AsyncRead, AsyncWrite, FutureExt, TryFutureExt};
+use capntproto_rpc_engine::completion::shared as oneshot;
+use futures::{AsyncRead, AsyncWrite, Future, FutureExt, TryFutureExt};
 
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
@@ -33,6 +33,8 @@ use std::rc::{Rc, Weak};
 pub use capnp_futures::{OutgoingQueue, OutputSnapshot, QueueSnapshot};
 
 mod facade;
+#[cfg(test)]
+mod output_driver_tests;
 mod send_buffer;
 pub use facade::{QueueDiagnostics, ServerDriver, TwoPartyClient, TwoPartyNetwork, TwoPartyServer};
 pub use send_buffer::SendBufferWindow;
@@ -40,47 +42,235 @@ pub use send_buffer::SendBufferWindow;
 pub type VatId = crate::rpc_twoparty_capnp::Side;
 
 struct IncomingMessage {
-    message: ::capnp::message::Reader<capnp_futures::BufferedSegments>,
+    message: ::capnp::message::StructReaderCache<capnp_futures::BufferedSegments>,
+}
+
+struct IncomingStream<T> {
+    input: Box<capnp_futures::BufferedRead<T>>,
+}
+
+struct OwnedIncomingStream<T> {
+    input: Option<Box<capnp_futures::BufferedRead<T>>>,
+    return_to: Rc<RefCell<Option<Box<capnp_futures::BufferedRead<T>>>>>,
+}
+impl<T> Drop for OwnedIncomingStream<T> {
+    fn drop(&mut self) {
+        // Exclusive ownership leaves this slot empty until we return it.
+        *self.return_to.borrow_mut() = self.input.take();
+    }
+}
+impl<T: AsyncRead + Unpin> crate::IncomingMessageStream for OwnedIncomingStream<T> {
+    fn poll_receive(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<capnp::Result<Option<Box<dyn crate::IncomingMessage>>>> {
+        self.input
+            .as_mut()
+            .expect("live input owner")
+            .poll_read_message(cx, |message| {
+                crate::is_short_lived_rpc_message(message.get_root()?)
+            })
+            .map_ok(|message| {
+                message.map(|message| {
+                    Box::new(IncomingMessage::new(message)) as Box<dyn crate::IncomingMessage>
+                })
+            })
+    }
+}
+impl<T: AsyncRead + Unpin> crate::IncomingFrameStream for IncomingStream<T> {
+    fn poll_frame(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<capnp::Result<Option<&[u8]>>> {
+        self.input.poll_borrowed_frame(cx)
+    }
+    fn frame(&self) -> Option<&[u8]> {
+        self.input.borrowed_frame()
+    }
+    fn finish_frame(&mut self) {
+        self.input.finish_borrowed_frame();
+    }
+}
+impl<T: AsyncRead + Unpin> crate::IncomingMessageStream for IncomingStream<T> {
+    fn poll_receive(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<capnp::Result<Option<Box<dyn crate::IncomingMessage>>>> {
+        self.input
+            .poll_read_short_lived_message(cx)
+            .map_ok(|message| {
+                message.map(|message| {
+                    Box::new(IncomingMessage::new(message)) as Box<dyn crate::IncomingMessage>
+                })
+            })
+    }
 }
 
 impl IncomingMessage {
     fn new(message: ::capnp::message::Reader<capnp_futures::BufferedSegments>) -> Self {
-        Self { message }
+        Self {
+            message: capnp::message::StructReaderCache::new(message),
+        }
     }
 }
 
 impl crate::IncomingMessage for IncomingMessage {
+    fn cache_results(&self, payload: crate::rpc_capnp::payload::Reader<'_>) -> capnp::Result<()> {
+        use capnp::traits::IntoInternalStructReader;
+        self.message.select(payload.into_internal_struct_reader())
+    }
+    fn get_results(&self) -> capnp::Result<capnp::any_pointer::Reader<'_>> {
+        if let Some(root) = self.message.get() {
+            return Ok(crate::rpc_capnp::payload::Reader::from(root).get_content());
+        }
+        let root = self
+            .get_body()?
+            .get_as::<crate::rpc_capnp::message::Reader>()?;
+        let crate::rpc_capnp::message::Return(ret) = root.which()? else {
+            return Err(capnp::Error::failed(
+                "response does not contain Return".into(),
+            ));
+        };
+        let crate::rpc_capnp::return_::Results(payload) = ret?.which()? else {
+            return Err(capnp::Error::failed(
+                "response does not contain Results".into(),
+            ));
+        };
+        Ok(payload?.get_content())
+    }
+    fn framed_bytes(&self) -> Option<&[u8]> {
+        Some(self.message.message().get_segments().framed_bytes())
+    }
+    fn get_segments(&self) -> Option<&dyn capnp::message::ReaderSegments> {
+        Some(self.message.message().get_segments())
+    }
     fn size_in_words(&self) -> usize {
-        self.message.size_in_words()
+        self.message.message().size_in_words()
     }
     fn get_body(&self) -> ::capnp::Result<::capnp::any_pointer::Reader<'_>> {
-        self.message.get_root()
+        self.message.message().get_root()
     }
 }
 
-struct QueuedMessage {
+struct BuiltMessage {
     body: Rc<capnp::message::Builder<capnp::message::HeapAllocator>>,
     _guard: Option<Rc<dyn std::any::Any>>,
 }
+enum QueuedMessage {
+    Built(BuiltMessage),
+    Owned(Box<OutgoingMessage>),
+    Frame(crate::OutgoingFrame),
+}
 impl capnp_futures::serialize::AsOutputSegments for QueuedMessage {
+    fn framed_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::Frame(frame) => frame.framed_bytes(),
+            _ => None,
+        }
+    }
+    fn size_in_bytes(&self) -> usize {
+        match self {
+            Self::Built(message) => message.body.size_in_words() * 8,
+            Self::Owned(message) => message.message.message().size_in_words() * 8,
+            Self::Frame(frame) => frame.size_in_words() * 8,
+        }
+    }
     fn as_output_segments(&self) -> capnp::OutputSegments<'_> {
-        self.body.get_segments_for_output()
+        match self {
+            Self::Built(message) => message.body.get_segments_for_output(),
+            Self::Owned(message) => message.message.message().get_segments_for_output(),
+            Self::Frame(frame) => frame.segments(),
+        }
+    }
+}
+
+enum MessageBuilder {
+    Root(capnp::message::Builder<capnp::message::HeapAllocator>),
+    Call(capnp::message::SelectedStructBuilder<capnp::message::HeapAllocator>),
+}
+impl MessageBuilder {
+    #[inline]
+    fn message(&self) -> &capnp::message::Builder<capnp::message::HeapAllocator> {
+        match self {
+            Self::Root(message) => message,
+            Self::Call(call) => call.message(),
+        }
+    }
+    fn into_inner(self) -> capnp::message::Builder<capnp::message::HeapAllocator> {
+        match self {
+            Self::Root(message) => message,
+            Self::Call(call) => call.into_inner(),
+        }
+    }
+    fn take(&mut self) -> capnp::message::Builder<capnp::message::HeapAllocator> {
+        std::mem::replace(self, Self::Root(capnp::message::Builder::new_default())).into_inner()
+    }
+    fn root(&mut self) -> &mut capnp::message::Builder<capnp::message::HeapAllocator> {
+        if matches!(self, Self::Call(_)) {
+            *self = Self::Root(self.take());
+        }
+        let Self::Root(message) = self else {
+            unreachable!()
+        };
+        message
+    }
+    #[cold]
+    fn select_call(&mut self, initialize: bool) -> capnp::Result<()> {
+        let selected = self.take().try_select_struct(|root| {
+            let message = root.get_as::<crate::rpc_capnp::message::Builder<'_>>()?;
+            let call = if initialize {
+                message.init_call()
+            } else {
+                match message.which()? {
+                    crate::rpc_capnp::message::Call(call) => call?,
+                    _ => return Err(capnp::Error::failed("request does not contain Call".into())),
+                }
+            };
+            capnp::any_struct::Builder::from_builder(call)
+        });
+        match selected {
+            Ok(call) => *self = Self::Call(call),
+            Err((message, error)) => {
+                *self = Self::Root(message);
+                return Err(error);
+            }
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn call(&mut self, initialize: bool) -> capnp::Result<crate::rpc_capnp::call::Builder<'_>> {
+        if initialize || matches!(self, Self::Root(_)) {
+            self.select_call(initialize)?;
+        }
+        let Self::Call(call) = self else {
+            unreachable!()
+        };
+        call.get_as::<crate::rpc_capnp::call::Owned>()
     }
 }
 
 struct OutgoingMessage {
-    message: ::capnp::message::Builder<::capnp::message::HeapAllocator>,
-    sender: capnp_futures::Sender<QueuedMessage>,
+    message: MessageBuilder,
+    sender: Option<Rc<capnp_futures::LocalSender<QueuedMessage>>>,
     guard: Option<Rc<dyn std::any::Any>>,
+    driver: Weak<OutputDriver>,
 }
 
 impl crate::OutgoingMessage for OutgoingMessage {
     fn get_body(&mut self) -> ::capnp::Result<::capnp::any_pointer::Builder<'_>> {
-        self.message.get_root()
+        self.message.root().get_root()
     }
 
     fn get_body_as_reader(&self) -> ::capnp::Result<::capnp::any_pointer::Reader<'_>> {
-        self.message.get_root_as_reader()
+        self.message.message().get_root_as_reader()
+    }
+
+    fn init_call(&mut self) -> capnp::Result<crate::rpc_capnp::call::Builder<'_>> {
+        self.message.call(true)
+    }
+    fn get_call(&mut self) -> capnp::Result<crate::rpc_capnp::call::Builder<'_>> {
+        self.message.call(false)
     }
 
     fn send(
@@ -92,17 +282,19 @@ impl crate::OutgoingMessage for OutgoingMessage {
         let tmp = *self;
         let Self {
             message,
-            mut sender,
+            sender,
             guard,
+            ..
         } = tmp;
-        let m = Rc::new(message);
+        let m = Rc::new(message.into_inner());
         (
             Promise::from_future(
                 sender
-                    .send(QueuedMessage {
+                    .expect("unsent message has sender")
+                    .send(QueuedMessage::Built(BuiltMessage {
                         body: m.clone(),
                         _guard: guard,
-                    })
+                    }))
                     .map_ok(|_| ()),
             ),
             m,
@@ -114,15 +306,30 @@ impl crate::OutgoingMessage for OutgoingMessage {
     ) -> Rc<capnp::message::Builder<capnp::message::HeapAllocator>> {
         let Self {
             message,
-            mut sender,
+            sender,
             guard,
+            ..
         } = *self;
-        let body = Rc::new(message);
-        sender.send_detached(QueuedMessage {
-            body: body.clone(),
-            _guard: guard,
-        });
+        let body = Rc::new(message.into_inner());
+        sender
+            .expect("unsent message has sender")
+            .send_detached(QueuedMessage::Built(BuiltMessage {
+                body: body.clone(),
+                _guard: guard,
+            }));
         body
+    }
+
+    fn send_detached_and_drive(mut self: Box<Self>) {
+        // Transfer the original allocation to the writer. Remove its sender
+        // first so queued output cannot retain its own queue in a cycle.
+        let sender = self.sender.take().expect("unsent message has sender");
+        let driver = self.driver.clone();
+        let _ = sender.send_detached_and_drive(QueuedMessage::Owned(self), || {
+            if let Some(driver) = driver.upgrade() {
+                driver.drive_ready();
+            }
+        });
     }
 
     fn retain_until_sent(
@@ -137,11 +344,72 @@ impl crate::OutgoingMessage for OutgoingMessage {
     }
 
     fn take(self: Box<Self>) -> ::capnp::message::Builder<::capnp::message::HeapAllocator> {
-        self.message
+        self.message.into_inner()
     }
 
     fn size_in_words(&self) -> usize {
-        self.message.size_in_words()
+        self.message.message().size_in_words()
+    }
+}
+
+// Only the network task owns this future. Cooperative writers may poll it
+// through a weak handle, using the network task's registered IO waker. The
+// externally shared network completion remains independent of per-frame flush.
+struct OutputDriver {
+    task: RefCell<Option<Promise<(), capnp::Error>>>,
+    result: RefCell<Option<capnp::Result<()>>>,
+    network: RefCell<Option<std::task::Waker>>,
+}
+impl OutputDriver {
+    fn poll_network(&self, cx: &mut std::task::Context<'_>) -> std::task::Poll<capnp::Result<()>> {
+        if self
+            .network
+            .borrow()
+            .as_ref()
+            .is_none_or(|wake| !wake.will_wake(cx.waker()))
+        {
+            let wake = cx.waker().clone();
+            let old = self.network.replace(Some(wake));
+            drop(old);
+        }
+        self.poll_inner(cx)
+    }
+    fn poll_inner(&self, cx: &mut std::task::Context<'_>) -> std::task::Poll<capnp::Result<()>> {
+        if let Some(result) = self.result.borrow().as_ref() {
+            return std::task::Poll::Ready(result.clone());
+        }
+        let Ok(mut slot) = self.task.try_borrow_mut() else {
+            cx.waker().wake_by_ref();
+            return std::task::Poll::Pending;
+        };
+        let result = std::pin::Pin::new(slot.as_mut().expect("live output future")).poll(cx);
+        if let std::task::Poll::Ready(result) = &result {
+            let finished = slot.take();
+            *self.result.borrow_mut() = Some(result.clone());
+            drop(slot);
+            drop(finished);
+            let wake = self.network.borrow_mut().take();
+            if let Some(wake) = wake {
+                wake.wake();
+            }
+        }
+        result
+    }
+    fn poll_cooperative(
+        &self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<capnp::Result<()>> {
+        let wake = self.network.borrow().clone();
+        match wake {
+            Some(wake) => self.poll_inner(&mut std::task::Context::from_waker(&wake)),
+            None => self.poll_inner(cx),
+        }
+    }
+    fn drive_ready(&self) {
+        let wake = self.network.borrow().clone();
+        if let Some(wake) = wake {
+            let _ = self.poll_inner(&mut std::task::Context::from_waker(&wake));
+        }
     }
 }
 
@@ -153,12 +421,45 @@ where
     // partial message stay in place across calls. Canceling a receive still
     // drops the input and prevents another read from a partial frame.
     input_stream: Rc<RefCell<Option<Box<capnp_futures::BufferedRead<T>>>>>,
-    sender: capnp_futures::Sender<QueuedMessage>,
+    sender: Rc<capnp_futures::LocalSender<QueuedMessage>>,
     side: crate::rpc_twoparty_capnp::Side,
     on_disconnect_fulfiller: Option<oneshot::Sender<()>>,
     flow_control: crate::flow_control::Policy,
     write_finished: futures::future::Shared<Promise<(), capnp::Error>>,
+    output_closed: futures::future::Shared<Promise<(), capnp::Error>>,
+    output_driver: Weak<OutputDriver>,
     segments: capnp::message::SegmentPool,
+    call_template:
+        Option<capnp::message::SelectedStructBuilderTemplate<capnp::message::HeapAllocator>>,
+    finish_template:
+        Option<capnp::message::SelectedStructBuilderTemplate<capnp::message::HeapAllocator>>,
+}
+
+struct OutgoingStream {
+    sender: capnp_futures::LocalObservedSender<QueuedMessage>,
+    driver: Weak<OutputDriver>,
+}
+impl crate::OutgoingMessageStream for OutgoingStream {
+    fn send(&mut self, frame: crate::OutgoingFrame) -> capnp::Result<()> {
+        #[cfg(unix)]
+        let frame = {
+            let mut frame = frame;
+            drop(frame.take_fds());
+            frame
+        };
+        let driver = &self.driver;
+        self.sender.send_and_drive(QueuedMessage::Frame(frame), || {
+            if let Some(driver) = driver.upgrade() {
+                driver.drive_ready();
+            }
+        })
+    }
+    fn poll_flush(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<capnp::Result<()>> {
+        self.sender.poll_flush(cx)
+    }
 }
 
 struct Connection<T>
@@ -186,14 +487,17 @@ impl<T> Connection<T>
 where
     T: AsyncRead + Unpin,
 {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         input_stream: T,
-        sender: capnp_futures::Sender<QueuedMessage>,
+        sender: capnp_futures::LocalSender<QueuedMessage>,
         side: crate::rpc_twoparty_capnp::Side,
         receive_options: ReaderOptions,
         on_disconnect_fulfiller: oneshot::Sender<()>,
         flow_control: crate::flow_control::Policy,
         write_finished: futures::future::Shared<Promise<(), capnp::Error>>,
+        output_closed: futures::future::Shared<Promise<(), capnp::Error>>,
+        output_driver: Weak<OutputDriver>,
     ) -> Self {
         Self {
             inner: Rc::new(RefCell::new(ConnectionInner {
@@ -207,14 +511,18 @@ where
                     )
                     .expect("8 KiB holds every legal RPC segment table"),
                 )))),
-                sender,
+                sender: Rc::new(sender),
                 side,
                 on_disconnect_fulfiller: Some(on_disconnect_fulfiller),
                 flow_control,
                 write_finished,
+                output_closed,
+                output_driver,
                 // Includes a 64 KiB body plus framing/envelope growth, while
                 // bounding retained storage independently of live messages.
                 segments: capnp::message::SegmentPool::new(16 * 1024, 16),
+                call_template: None,
+                finish_template: None,
             })),
         }
     }
@@ -224,8 +532,20 @@ impl<T> crate::Connection<crate::rpc_twoparty_capnp::Side> for Connection<T>
 where
     T: AsyncRead + Unpin,
 {
+    fn take_outgoing_stream(&mut self) -> Option<Box<dyn crate::OutgoingMessageStream>> {
+        let inner = self.inner.borrow();
+        inner.sender.observe().map(|sender| {
+            Box::new(OutgoingStream {
+                sender,
+                driver: inner.output_driver.clone(),
+            }) as Box<dyn crate::OutgoingMessageStream>
+        })
+    }
     fn get_peer_vat_id(&self) -> crate::rpc_twoparty_capnp::Side {
-        self.inner.borrow().side
+        match self.inner.borrow().side {
+            VatId::Client => VatId::Server,
+            VatId::Server => VatId::Client,
+        }
     }
 
     fn connection_id(&self) -> usize {
@@ -253,35 +573,131 @@ where
             });
         let message = ::capnp::message::Builder::new(allocator);
         Box::new(OutgoingMessage {
-            message,
-            sender: inner.sender.clone(),
+            message: MessageBuilder::Root(message),
+            sender: Some(inner.sender.clone()),
             guard: None,
+            driver: inner.output_driver.clone(),
         })
+    }
+
+    fn send_frame(&mut self, frame: crate::OutgoingFrame) -> Promise<(), capnp::Error> {
+        // Ordinary byte streams do not transport ancillary resources.
+        #[cfg(unix)]
+        let frame = {
+            let mut frame = frame;
+            drop(frame.take_fds());
+            frame
+        };
+        let sender = self.inner.borrow().sender.clone();
+        Promise::from_future(sender.send(QueuedMessage::Frame(frame)).map_ok(|_| ()))
+    }
+
+    fn new_outgoing_call(
+        &mut self,
+        first_segment_word_size: u32,
+    ) -> capnp::Result<Box<dyn crate::OutgoingMessage>> {
+        let mut inner = self.inner.borrow_mut();
+        if inner.call_template.is_none() {
+            let message = capnp::message::Builder::new(
+                capnp::message::HeapAllocator::new().first_segment_words(64),
+            );
+            let selected = message
+                .try_select_struct(|root| {
+                    let mut call = root
+                        .init_as::<crate::rpc_capnp::message::Builder>()
+                        .init_call();
+                    let _ = call.reborrow().get_target()?;
+                    let _ = call.reborrow().get_params()?;
+                    capnp::any_struct::Builder::from_builder(call)
+                })
+                .map_err(|(_, error)| error)?;
+            inner.call_template = Some(selected.into_template()?);
+        }
+        let allocator = capnp::message::HeapAllocator::new()
+            .segment_pool(inner.segments.clone())
+            .first_segment_words(if first_segment_word_size == 0 {
+                256
+            } else {
+                first_segment_word_size
+            });
+        let message = inner.call_template.as_ref().unwrap().instantiate(allocator);
+        Ok(Box::new(OutgoingMessage {
+            message: MessageBuilder::Call(message),
+            sender: Some(inner.sender.clone()),
+            guard: None,
+            driver: inner.output_driver.clone(),
+        }))
+    }
+
+    fn new_outgoing_finish(
+        &mut self,
+        question_id: u32,
+        release_result_caps: bool,
+    ) -> capnp::Result<Box<dyn crate::OutgoingMessage>> {
+        let mut inner = self.inner.borrow_mut();
+        if inner.finish_template.is_none() {
+            let message = capnp::message::Builder::new(
+                capnp::message::HeapAllocator::new().first_segment_words(5),
+            );
+            let selected = message
+                .try_select_struct(|root| {
+                    let mut finish = root
+                        .init_as::<crate::rpc_capnp::message::Builder>()
+                        .init_finish();
+                    finish.set_require_early_cancellation_workaround(false);
+                    capnp::any_struct::Builder::from_builder(finish)
+                })
+                .map_err(|(_, error)| error)?;
+            inner.finish_template = Some(selected.into_template()?);
+        }
+        let allocator = capnp::message::HeapAllocator::new()
+            .segment_pool(inner.segments.clone())
+            .first_segment_words(5);
+        let mut message = inner
+            .finish_template
+            .as_ref()
+            .unwrap()
+            .instantiate(allocator);
+        let mut finish = message.get_as::<crate::rpc_capnp::finish::Owned>()?;
+        finish.set_question_id(question_id);
+        finish.set_release_result_caps(release_result_caps);
+        Ok(Box::new(OutgoingMessage {
+            message: MessageBuilder::Root(message.into_inner()),
+            sender: Some(inner.sender.clone()),
+            guard: None,
+            driver: inner.output_driver.clone(),
+        }))
     }
 
     fn receive_incoming_message(
         &mut self,
     ) -> Promise<Option<Box<dyn crate::IncomingMessage + 'static>>, ::capnp::Error> {
-        let inner = self.inner.borrow_mut();
+        self.receive(false)
+    }
 
-        let maybe_input_stream = inner.input_stream.borrow_mut().take();
-        let return_it_here = inner.input_stream.clone();
-        match maybe_input_stream {
-            Some(mut s) => Promise::from_future(async move {
-                let result = s
-                    .try_read_message(|message| {
-                        crate::is_short_lived_rpc_message(message.get_root()?)
-                    })
-                    .await;
-                *return_it_here.borrow_mut() = Some(s);
-                Ok(result?.map(|message| {
-                    Box::new(IncomingMessage::new(message)) as Box<dyn crate::IncomingMessage>
-                }))
-            }),
-            None => Promise::err(::capnp::Error::failed(
-                "incoming read already in progress or canceled".to_string(),
-            )),
-        }
+    fn receive_incoming_message_short_lived(
+        &mut self,
+    ) -> Promise<Option<Box<dyn crate::IncomingMessage>>, capnp::Error> {
+        self.receive(true)
+    }
+
+    fn take_incoming_stream(&mut self) -> Option<Box<dyn crate::IncomingMessageStream>> {
+        let input = self.inner.borrow().input_stream.borrow_mut().take()?;
+        Some(Box::new(IncomingStream { input }))
+    }
+
+    fn take_owned_incoming_stream(&mut self) -> Option<Box<dyn crate::IncomingMessageStream>> {
+        let return_to = self.inner.borrow().input_stream.clone();
+        let input = return_to.borrow_mut().take()?;
+        Some(Box::new(OwnedIncomingStream {
+            input: Some(input),
+            return_to,
+        }))
+    }
+
+    fn take_incoming_frames(&mut self) -> Option<Box<dyn crate::IncomingFrameStream>> {
+        let input = self.inner.borrow().input_stream.borrow_mut().take()?;
+        Some(Box::new(IncomingStream { input }))
     }
 
     fn new_stream(&mut self) -> (Box<dyn crate::FlowController>, Promise<(), capnp::Error>) {
@@ -295,8 +711,60 @@ where
         ))
     }
 
+    fn output_driver(&self) -> Option<Promise<(), capnp::Error>> {
+        let driver = self.inner.borrow().output_driver.clone();
+        Some(Promise::from_future(std::future::poll_fn(move |cx| {
+            let Some(driver) = driver.upgrade() else {
+                return std::task::Poll::Ready(Err(capnp::Error::disconnected(
+                    "network driver dropped".into(),
+                )));
+            };
+            driver.poll_cooperative(cx)
+        })))
+    }
+
     fn shutdown(&mut self, result: ::capnp::Result<()>) -> Promise<(), ::capnp::Error> {
-        Promise::from_future(self.inner.borrow_mut().sender.terminate(result))
+        let (sender, closed) = {
+            let inner = self.inner.borrow();
+            (inner.sender.clone(), inner.output_closed.clone())
+        };
+        let drained = sender.terminate(result);
+        Promise::from_future(async move {
+            drained.await?;
+            closed.await
+        })
+    }
+}
+
+impl<T: AsyncRead + Unpin> Connection<T> {
+    fn receive(
+        &mut self,
+        short_lived: bool,
+    ) -> Promise<Option<Box<dyn crate::IncomingMessage>>, capnp::Error> {
+        let inner = self.inner.borrow_mut();
+
+        let maybe_input_stream = inner.input_stream.borrow_mut().take();
+        let return_it_here = inner.input_stream.clone();
+        match maybe_input_stream {
+            Some(mut s) => Promise::from_future(async move {
+                let result = s
+                    .try_read_message(|message| {
+                        if short_lived {
+                            Ok(true)
+                        } else {
+                            crate::is_short_lived_rpc_message(message.get_root()?)
+                        }
+                    })
+                    .await;
+                *return_it_here.borrow_mut() = Some(s);
+                Ok(result?.map(|message| {
+                    Box::new(IncomingMessage::new(message)) as Box<dyn crate::IncomingMessage>
+                }))
+            }),
+            None => Promise::err(::capnp::Error::failed(
+                "incoming read already in progress or canceled".to_string(),
+            )),
+        }
     }
 }
 
@@ -312,6 +780,7 @@ where
     weak_connection_inner: Weak<RefCell<ConnectionInner<T>>>,
 
     execution_driver: futures::future::Shared<Promise<(), ::capnp::Error>>,
+    _output_driver: Rc<OutputDriver>,
     output_closed: futures::future::Shared<Promise<(), ::capnp::Error>>,
     write_finished: futures::future::Shared<Promise<(), ::capnp::Error>>,
     outgoing_queue: OutgoingQueue,
@@ -473,9 +942,9 @@ where
                 .map_err(|_| capnp::Error::disconnected("output driver canceled".into()))?
         })
         .shared();
-        let (sender, write_queue) = ::capnp_futures::write_queue_with_clock(output, clock);
+        let (sender, write_queue) = ::capnp_futures::write_queue_local_with_clock(output, clock);
         let outgoing_queue = sender.outgoing_queue();
-        let execution_driver = Promise::from_future(async move {
+        let execution = Promise::from_future(async move {
             // Report write failure promptly, while preserving the distinct
             // physical closure fence and connection lifetime below.
             let written = write_queue.await;
@@ -487,9 +956,17 @@ where
             let _ = closed_tx.send(result.clone());
             let _ = disconnect_promise.await;
             result
-        })
+        });
+        let output_driver = Rc::new(OutputDriver {
+            task: RefCell::new(Some(execution)),
+            result: RefCell::new(None),
+            network: RefCell::new(None),
+        });
+        let network_driver = output_driver.clone();
+        let execution_driver = Promise::from_future(std::future::poll_fn(move |cx| {
+            network_driver.poll_network(cx)
+        }))
         .shared();
-
         let connection = Connection::new(
             input_stream,
             sender,
@@ -498,12 +975,15 @@ where
             fulfiller,
             crate::flow_control::Policy::Variable(Rc::new(move || window.get())),
             write_finished.clone(),
+            output_closed.clone(),
+            Rc::downgrade(&output_driver),
         );
         let weak_inner = Rc::downgrade(&connection.inner);
         Self {
             connection: Some(connection),
             weak_connection_inner: weak_inner,
             execution_driver,
+            _output_driver: output_driver,
             output_closed,
             write_finished,
             outgoing_queue,
@@ -566,7 +1046,14 @@ where
     }
 
     fn drive_until_shutdown(&mut self) -> Promise<(), ::capnp::Error> {
-        Promise::from_future(self.execution_driver.clone())
+        let driver = self.execution_driver.clone();
+        let output = self._output_driver.clone();
+        Promise::from_future(async move {
+            // Callers may drop VatNetwork after extracting its task and
+            // connection. The task then owns cooperative write progress too.
+            let _output = output;
+            driver.await
+        })
     }
 }
 
@@ -605,5 +1092,262 @@ impl<W: AsyncWrite + Unpin> AsyncWrite for SharedOutput<W> {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
         std::pin::Pin::new(&mut *self.0.borrow_mut()).poll_close(cx)
+    }
+}
+
+#[cfg(test)]
+mod receive_lifetime_tests {
+    use super::*;
+    use crate::Connection as _;
+
+    #[test]
+    fn lifetime_classifier_matches_generated_union_tags() {
+        for tag in 0..=20u16 {
+            let mut message = capnp::message::Builder::new_default();
+            let mut root = message
+                .init_root::<capnp::any_pointer::Builder>()
+                .init_as_any_struct(1, 1);
+            root.get_data_section()[..2].copy_from_slice(&tag.to_le_bytes());
+            let body = message
+                .get_root_as_reader::<capnp::any_pointer::Reader>()
+                .unwrap();
+            let expected = !matches!(
+                body.get_as::<crate::rpc_capnp::message::Reader>()
+                    .unwrap()
+                    .which(),
+                Ok(crate::rpc_capnp::message::Call(_) | crate::rpc_capnp::message::Return(_))
+            );
+            assert_eq!(
+                crate::is_short_lived_rpc_message(body).unwrap(),
+                expected,
+                "tag {tag}"
+            );
+        }
+    }
+
+    #[test]
+    fn owned_stream_returns_partial_input_and_retained_calls_survive_later_reads() {
+        use std::{
+            cell::Cell,
+            pin::Pin,
+            task::{Context, Poll, Waker},
+        };
+        struct Input {
+            bytes: Vec<u8>,
+            position: usize,
+            available: Rc<Cell<usize>>,
+            dropped: Rc<Cell<bool>>,
+        }
+        impl Drop for Input {
+            fn drop(&mut self) {
+                self.dropped.set(true);
+            }
+        }
+        impl AsyncRead for Input {
+            fn poll_read(
+                mut self: Pin<&mut Self>,
+                _: &mut Context<'_>,
+                out: &mut [u8],
+            ) -> Poll<std::io::Result<usize>> {
+                let end = self.bytes.len().min(self.available.get());
+                if self.position == end && end < self.bytes.len() {
+                    return Poll::Pending;
+                }
+                let count = out.len().min(end - self.position);
+                out[..count].copy_from_slice(&self.bytes[self.position..self.position + count]);
+                self.position += count;
+                Poll::Ready(Ok(count))
+            }
+        }
+        let mut bytes = Vec::new();
+        for id in [17, 29, 41] {
+            let mut message = capnp::message::Builder::new_default();
+            message
+                .init_root::<crate::rpc_capnp::message::Builder<'_>>()
+                .init_call()
+                .set_question_id(id);
+            capnp::serialize::write_message(&mut bytes, &message).unwrap();
+        }
+        let available = Rc::new(Cell::new(5));
+        let dropped = Rc::new(Cell::new(false));
+        let mut network = VatNetwork::new(
+            Input {
+                bytes,
+                position: 0,
+                available: available.clone(),
+                dropped: dropped.clone(),
+            },
+            futures::io::sink(),
+            VatId::Server,
+            Default::default(),
+        );
+        let mut connection = network.connection.take().unwrap();
+        let mut stream = connection.take_owned_incoming_stream().unwrap();
+        assert!(connection.take_owned_incoming_stream().is_none());
+        assert!(connection.take_incoming_stream().is_none());
+        assert!(connection.take_incoming_frames().is_none());
+        assert!(futures::executor::block_on(connection.receive(false)).is_err());
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(stream.poll_receive(&mut cx).is_pending());
+        drop(stream);
+        assert!(
+            !dropped.get(),
+            "input must survive cancellation until output drain"
+        );
+        available.set(usize::MAX);
+        let first = futures::executor::block_on(connection.receive(false))
+            .unwrap()
+            .unwrap();
+        let mut stream = connection.take_owned_incoming_stream().unwrap();
+        let mut retained = vec![first];
+        for _ in 0..2 {
+            let Poll::Ready(Ok(Some(message))) = stream.poll_receive(&mut cx) else {
+                panic!()
+            };
+            retained.push(message);
+        }
+        assert!(matches!(
+            stream.poll_receive(&mut cx),
+            Poll::Ready(Ok(None))
+        ));
+        drop(stream);
+        assert!(futures::executor::block_on(connection.receive(false))
+            .unwrap()
+            .is_none());
+        drop((connection, network));
+        assert!(dropped.get());
+        for (message, id) in retained.iter().zip([17, 29, 41]) {
+            let root = message
+                .get_body()
+                .unwrap()
+                .get_as::<crate::rpc_capnp::message::Reader<'_>>()
+                .unwrap();
+            let crate::rpc_capnp::message::Call(call) = root.which().unwrap() else {
+                panic!()
+            };
+            assert_eq!(call.unwrap().get_question_id(), id);
+        }
+    }
+
+    #[test]
+    fn reusable_stream_exclusively_owns_input_and_messages_survive_its_drop() {
+        let mut builder = capnp::message::Builder::new_default();
+        builder.set_root("retained input").unwrap();
+        let bytes = capnp::serialize::write_message_to_words(&builder);
+        let mut network = VatNetwork::new(
+            futures::io::Cursor::new(bytes.clone()),
+            futures::io::sink(),
+            VatId::Server,
+            Default::default(),
+        );
+        let mut connection = network.connection.take().unwrap();
+        let mut stream = connection.take_incoming_stream().unwrap();
+        assert!(connection.take_incoming_stream().is_none());
+        assert!(futures::executor::block_on(connection.receive(true)).is_err());
+        let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+        let std::task::Poll::Ready(Ok(Some(message))) = stream.poll_receive(&mut cx) else {
+            panic!()
+        };
+        assert_eq!(message.framed_bytes().unwrap(), bytes);
+        assert!(matches!(
+            stream.poll_receive(&mut cx),
+            std::task::Poll::Ready(Err(_))
+        ));
+        drop((stream, connection, network));
+        assert_eq!(
+            message
+                .get_body()
+                .unwrap()
+                .get_as::<capnp::text::Reader>()
+                .unwrap(),
+            "retained input"
+        );
+    }
+
+    #[test]
+    fn transient_calls_lend_storage_and_reject_reuse_until_released() {
+        check(true);
+    }
+
+    #[test]
+    fn ordinary_calls_remain_independent_of_subsequent_receives() {
+        check(false);
+    }
+
+    fn check(short_lived: bool) {
+        futures::executor::block_on(async {
+            let mut bytes = Vec::new();
+            for id in [17, 29] {
+                let mut message = capnp::message::Builder::new_default();
+                message
+                    .init_root::<crate::rpc_capnp::message::Builder<'_>>()
+                    .init_call()
+                    .set_question_id(id);
+                capnp::serialize::write_message(&mut bytes, &message).unwrap();
+            }
+            let mut network = VatNetwork::new(
+                futures::io::Cursor::new(bytes),
+                futures::io::Cursor::new(Vec::<u8>::new()),
+                VatId::Server,
+                Default::default(),
+            );
+            let mut connection = network.connection.take().unwrap();
+            let first = connection.receive(short_lived).await.unwrap().unwrap();
+            assert_eq!(
+                connection
+                    .inner
+                    .borrow()
+                    .input_stream
+                    .borrow()
+                    .as_ref()
+                    .unwrap()
+                    .has_outstanding_short_lived_message(),
+                short_lived,
+            );
+            let question = |message: &dyn crate::IncomingMessage| {
+                let root = message
+                    .get_body()
+                    .unwrap()
+                    .get_as::<crate::rpc_capnp::message::Reader<'_>>()
+                    .unwrap();
+                let crate::rpc_capnp::message::Call(call) = root.which().unwrap() else {
+                    panic!("expected Call")
+                };
+                call.unwrap().get_question_id()
+            };
+            assert_eq!(question(&*first), 17);
+            if short_lived {
+                assert!(connection
+                    .receive_incoming_message_short_lived()
+                    .await
+                    .is_err());
+                assert_eq!(question(&*first), 17, "rejected reuse preserves storage");
+                drop(first);
+                let second = connection
+                    .receive_incoming_message_short_lived()
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(question(&*second), 29);
+                drop(second);
+            } else {
+                let second = connection
+                    .receive_incoming_message()
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(question(&*second), 29);
+                assert_eq!(
+                    question(&*first),
+                    17,
+                    "owned Call survives the next receive"
+                );
+            }
+            assert!(connection
+                .receive_incoming_message()
+                .await
+                .unwrap()
+                .is_none());
+        });
     }
 }

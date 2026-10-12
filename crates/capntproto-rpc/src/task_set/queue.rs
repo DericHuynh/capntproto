@@ -75,12 +75,18 @@ impl<T> Receiver<T> {
 
     pub(super) fn poll_next(&mut self, cx: &mut Context<'_>) -> Poll<Option<T>> {
         // Clone a replacement outside the borrow: custom wakers may reenter.
-        let same_waker = self
-            .0
-            .borrow()
-            .waker
-            .as_ref()
-            .is_some_and(|wake| wake.will_wake(cx.waker()));
+        let same_waker = {
+            let state = self.0.borrow();
+            let same = state
+                .waker
+                .as_ref()
+                .is_some_and(|wake| wake.will_wake(cx.waker()));
+            if same && state.senders != 0 && state.pending.as_ref().is_some_and(VecDeque::is_empty)
+            {
+                return Poll::Pending;
+            }
+            same
+        };
         let mut replacement = (!same_waker).then(|| cx.waker().clone());
         let (result, retired) = {
             let mut state = self.0.borrow_mut();

@@ -99,9 +99,32 @@ impl<'a> Reader<'a> {
         self.reader.equals(right.reader)
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn get_as<T: FromPointerReader<'a>>(&self) -> Result<T> {
         FromPointerReader::get_from_pointer(&self.reader, None)
+    }
+
+    /// Decode the message-local capability-table index without resolving it.
+    /// A valid index encoding alone does not authorize an RPC call.
+    pub fn capability_index(&self) -> Result<u32> {
+        self.reader.get_capability_index()
+    }
+
+    /// Follow an allocation-free promised-answer transform. The caller supplies
+    /// the pointer-field path; normal traversal and nesting limits still apply.
+    pub fn pointer_field(&self, index: u16) -> Result<Self> {
+        Ok(Self::new(
+            self.reader
+                .get_struct(None)?
+                .get_pointer_field(index as usize),
+        ))
+    }
+
+    /// Validate every reachable capability index against the originating
+    /// descriptor-table length. This does not resolve descriptors or grant
+    /// authority. Uses the reader's traversal/nesting limits, without a heap.
+    pub fn validate_capability_indices(&self, count: u32) -> Result<()> {
+        self.reader.validate_capability_indices(count)
     }
 
     #[cfg(feature = "alloc")]
@@ -257,6 +280,7 @@ impl<'a> Builder<'a> {
         self.as_reader().equals(right)
     }
 
+    #[inline(always)]
     pub fn get_as<T: FromPointerBuilder<'a>>(self) -> Result<T> {
         FromPointerBuilder::get_from_pointer(self.builder, None)
     }

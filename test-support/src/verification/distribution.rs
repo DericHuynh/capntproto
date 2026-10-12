@@ -43,6 +43,8 @@ const FILES: &[&str] = &[
     "crates/capntproto-core/LICENSE",
     "crates/capntproto-rpc/src/lib.rs",
     "crates/capntproto-rpc/LICENSE",
+    "crates/capntproto-rpc-engine/src/lib.rs",
+    "crates/capntproto-rpc-engine/LICENSE",
     "crates/capntproto-futures/src/lib.rs",
     "crates/capntproto-futures/LICENSE",
     "crates/capntproto-codegen/src/lib.rs",

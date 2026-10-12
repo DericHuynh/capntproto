@@ -7,6 +7,7 @@ mod config;
 mod driver;
 mod endpoint;
 mod retry;
+use super::io::TokioIo;
 use super::tls::{self, AcceptOptions};
 pub use super::QuicVersion as Version;
 use capnp::{capability::Client, message::ReaderOptions};
@@ -27,7 +28,7 @@ use std::{
     time::Duration,
 };
 use tokio::io::{AsyncRead, AsyncWrite, DuplexStream, ReadBuf};
-use tokio_util::compat::{Compat, TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
 
 /// Authenticated RPC IO. Drop cancels an open writer immediately. After successful
 /// write shutdown, drop cancels reading but lets Quiche finish queued transmission
@@ -155,7 +156,7 @@ pub async fn accept(incoming: Incoming, timeout: Duration) -> io::Result<Stream>
 pub type Network = twoparty::VatNetwork<Compat<tokio::io::ReadHalf<Stream>>>;
 pub fn network(stream: Stream, side: Side, options: ReaderOptions) -> Network {
     let (read, write) = tokio::io::split(stream);
-    twoparty::VatNetwork::new(read.compat(), write.compat_write(), side, options)
+    twoparty::VatNetwork::new(read.compat(), TokioIo(write), side, options)
 }
 pub fn client(
     stream: Stream,

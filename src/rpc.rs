@@ -1,5 +1,6 @@
 //! Tokio adapters for TCP, TLS, standard QUIC, and Native RPC streams.
 mod connection;
+mod io;
 #[cfg(feature = "native")]
 pub(crate) mod local_io;
 pub use connection::Connection;
@@ -22,9 +23,14 @@ pub type Completion = futures::future::Shared<capnp::capability::Promise<(), cap
 #[cfg(feature = "quic")]
 pub mod quic;
 pub mod tcp;
+/// Default transport: standard plaintext Cap'n Proto RPC over TCP.
+/// Use `tls::connect` for certificate-authenticated encryption.
+pub use tcp::connect;
+/// Accept standard TCP RPC connections into the common server.
+pub use tcp::listen;
 #[cfg(feature = "tls")]
 pub mod tls;
-use tokio_util::compat::TokioAsyncReadCompatExt;
+use io::TokioIo;
 /// Low-level task adapter. Dropping the returned join handle detaches the task;
 /// prefer [`Connection`] when a scope should own and cancel the driver.
 pub fn serve(
@@ -32,7 +38,7 @@ pub fn serve(
     bootstrap: capnp::capability::Client,
 ) -> tokio::task::JoinHandle<capnp::Result<()>> {
     tokio::task::spawn_local(capnp_rpc::twoparty::TwoPartyClient::with_bootstrap(
-        io.compat(),
+        TokioIo(io),
         Some(bootstrap),
         capnp_rpc::rpc_twoparty_capnp::Side::Server,
     ))
@@ -42,7 +48,7 @@ pub fn serve(
 pub fn client<T: capnp::capability::FromClientHook>(
     io: impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
 ) -> (T, tokio::task::JoinHandle<capnp::Result<()>>) {
-    let mut system = capnp_rpc::twoparty::TwoPartyClient::new(io.compat());
+    let mut system = capnp_rpc::twoparty::TwoPartyClient::new(TokioIo(io));
     let client = system.bootstrap();
     (client, tokio::task::spawn_local(system))
 }

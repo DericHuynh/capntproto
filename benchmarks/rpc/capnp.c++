@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+int runWorkflows(int argc, char** argv);
 class Service final: public Echo::Server {
   kj::Promise<void> echo(EchoContext context) override {
     auto params = context.getParams();
@@ -19,6 +20,7 @@ class Service final: public Echo::Server {
   }
 };
 int main(int argc, char** argv) {
+  if (argc > 1 && std::string(argv[1]).starts_with("workflow-")) return runWorkflows(argc, argv);
   auto io = kj::setupAsyncIo();
   if (argc == 2 && std::string(argv[1]) == "server") {
     auto address = io.provider->getNetwork().parseAddress("127.0.0.1", 0).wait(io.waitScope);

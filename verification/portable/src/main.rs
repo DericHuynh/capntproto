@@ -1,0 +1,70 @@
+//! Bare-metal link fixture, not board startup code. No global allocator exists.
+//! Extend this fixture as RPC transitions move into the portable engine.
+#![no_std]
+#![no_main]
+
+use capntproto_rpc_engine::flow_control::{Error, Window};
+use core::{hint::black_box, time::Duration};
+
+// SAFETY: This is the only exported entry symbol in this link-only executable.
+#[unsafe(no_mangle)]
+pub extern "C" fn _start() -> ! {
+    capntproto_portable_check::exercise_generated_api().unwrap();
+    let mut words = [capnp::word(0, 0, 0, 0, 0, 0, 0, 0); 32];
+    let storage =
+        capnp::message::SingleSegmentAllocator::new(capnp::Word::words_to_bytes_mut(&mut words));
+    let mut message = capnp::message::Builder::new(storage);
+    message.set_root(black_box("portable RPC credit")).unwrap();
+    let text: capnp::text::Reader<'_> = message.get_root_as_reader().unwrap();
+    black_box(text.as_bytes());
+
+    let frame = [
+        capnp::word(1, 0, 0, 0, 1, 0, 0, 0),
+        capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+        capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+    ];
+    let mut input = black_box(capnp::Word::words_to_bytes(&frame));
+    let mut index = [capnp::serialize::SegmentOffset::EMPTY; 2];
+    let segments = capnp::serialize::IndexedSliceSegments::from_slice(
+        &mut input,
+        &mut index,
+        capnp::message::ReaderOptions::new(),
+    )
+    .unwrap();
+    let reader = capnp::message::Reader::new(segments, capnp::message::ReaderOptions::new());
+    assert!(reader
+        .get_root::<capnp::any_pointer::Reader<'_>>()
+        .unwrap()
+        .is_null());
+
+    let mut window = Window::fixed(black_box(1024));
+    let receipt = window.sent(black_box(2048), Duration::ZERO).unwrap();
+    assert!(window.is_ready());
+    window.ack(receipt, Duration::ZERO).unwrap();
+    assert_eq!(window.in_flight(), 0);
+    let mut adaptive = Window::adaptive(65536);
+    let receipt = adaptive.sent(1, Duration::from_secs(2)).unwrap();
+    assert_eq!(
+        adaptive.ack(receipt, Duration::from_secs(1)),
+        Err(Error::ClockWentBackwards)
+    );
+    black_box(adaptive.in_flight());
+    let mut question = capntproto_rpc_engine::question::Question::new();
+    let finish = question.release();
+    assert!(!finish.reclaim);
+    assert_eq!(
+        question.returned(false),
+        Ok(capntproto_rpc_engine::question::Delivery::Discard)
+    );
+    assert!(question.release().reclaim);
+    loop {
+        core::hint::spin_loop();
+    }
+}
+
+#[panic_handler]
+fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
+    loop {
+        core::hint::spin_loop();
+    }
+}

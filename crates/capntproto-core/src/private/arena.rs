@@ -28,6 +28,8 @@ use crate::private::units::*;
 use crate::OutputSegments;
 use crate::{Error, ErrorKind, Result};
 
+pub(crate) mod fixed;
+
 pub type SegmentId = u32;
 
 /// Validated access to the segments backing a message.
@@ -146,6 +148,7 @@ unsafe impl<S> ReaderArena for ReaderArenaImpl<S>
 where
     S: ReaderSegments,
 {
+    #[inline(always)]
     fn get_segment(&self, id: u32) -> Result<(*const u8, u32)> {
         match self.segments.get_segment(id) {
             Some(seg) => {
@@ -189,21 +192,16 @@ where
         size_in_words: usize,
     ) -> Result<*const u8> {
         let (base, words) = self.get_segment(id)?;
-        let offset = i64::from(offset_in_words) * i64::try_from(BYTES_PER_WORD).unwrap();
         let invalid = || Error::from_kind(ErrorKind::MessageContainsOutOfBoundsPointer);
+        let offset = (offset_in_words as isize)
+            .checked_mul(isize::try_from(BYTES_PER_WORD).unwrap())
+            .ok_or_else(invalid)?;
         let relative = (start as usize)
             .checked_sub(base as usize)
             .ok_or_else(invalid)?;
-        let target = i64::try_from(relative)
-            .map_err(|_| invalid())?
-            .checked_add(offset)
-            .ok_or_else(invalid)?;
-        let target = usize::try_from(target).map_err(|_| invalid())?;
-        let bytes = size_in_words
-            .checked_mul(BYTES_PER_WORD)
-            .ok_or_else(invalid)?;
+        let target = relative.checked_add_signed(offset).ok_or_else(invalid)?;
         let segment_bytes = words as usize * BYTES_PER_WORD;
-        if target > segment_bytes || bytes > segment_bytes - target {
+        if target > segment_bytes || size_in_words > (segment_bytes - target) / BYTES_PER_WORD {
             return Err(invalid());
         }
         self.read_limiter.can_read(size_in_words)?;
@@ -243,6 +241,28 @@ where
 /// existing words, initialize added words and retain disjoint allocation ranges.
 /// Implementations must not permit shared readers to race with mutation.
 pub unsafe trait BuilderArena: ReaderArena {
+    /// Whether copying may invoke allocating capability hooks. Fixed arenas
+    /// reject capabilities before extracting a client hook, even with `alloc`.
+    fn allows_capabilities(&self) -> bool {
+        true
+    }
+
+    /// Optional monotonic allocation checkpoint for an unpublished subtree.
+    fn allocation_checkpoint(&self) -> Option<u32> {
+        None
+    }
+
+    /// Discard reservations after a checkpoint returned by this same arena.
+    /// Implementations must preserve earlier bytes and zero discarded storage.
+    ///
+    /// # Safety
+    /// No later reservation may be published or borrowed. Its owned resources
+    /// must already be released, and no other rewind may invalidate the token.
+    unsafe fn rewind_allocations(&mut self, _checkpoint: u32) {
+        unreachable!("arena does not support allocation checkpoints")
+    }
+
+    /// On failure, leave both allocated storage and its contents unchanged.
     fn allocate(&mut self, segment_id: u32, amount: WordCount32) -> Option<u32>;
     /// Allocate initialized words and return their address. The default retains
     /// compatibility with custom arenas; an arena can combine allocation and
@@ -253,6 +273,12 @@ pub unsafe trait BuilderArena: ReaderArena {
         Some(base.wrapping_add(index as usize * BYTES_PER_WORD))
     }
     fn allocate_anywhere(&mut self, amount: u32) -> (SegmentId, u32);
+    /// Fallible growth boundary. Fixed arenas override this without calling an
+    /// infallible allocator. Rejection must preserve existing allocations.
+    /// The default retains the allocation policy of legacy/heap-backed arenas.
+    fn try_allocate_anywhere(&mut self, amount: u32) -> Result<(SegmentId, u32)> {
+        Ok(self.allocate_anywhere(amount))
+    }
     fn get_segment_mut(&mut self, id: u32) -> (*mut u8, u32);
 
     fn as_reader(&self) -> &dyn ReaderArena;

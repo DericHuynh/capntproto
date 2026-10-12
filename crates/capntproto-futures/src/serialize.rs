@@ -27,6 +27,61 @@ use capnp::serialize::{BufferSegments, OwnedSegments, SegmentLengthsBuilder};
 use capnp::{message, Error, OutputSegments, Result};
 use futures_util::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
+mod leased;
+pub use leased::{poll_queued_message, write_queued_message, SendError};
+
+/// Read using a caller-owned resumable frame receiver, without allocating.
+///
+/// Dropping this future while pending preserves every completed read in
+/// `receiver`. Resume with the same receiver and stream. Transport failures are
+/// terminal; subsequent attempts return the first error kind. A completed
+/// receiver returns its current message until the caller invokes
+/// `FrameReceiver::next_message()` after dropping all message views.
+/// IO errors are mapped to compact error kinds without formatting or allocating
+/// diagnostic strings. Interrupted reads are retried.
+/// The IO implementation remains responsible for its own allocation behavior.
+pub async fn try_read_message_into<'a, R>(
+    reader: &mut R,
+    receiver: &'a mut capnp::serialize::FrameReceiver<'_>,
+) -> Result<Option<message::Reader<capnp::serialize::NoAllocSliceSegments<'a>>>>
+where
+    R: AsyncRead + Unpin,
+{
+    while let Some(mut input) = receiver.input()? {
+        match reader.read(input.bytes()).await {
+            Ok(count) => input.commit(count)?,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => {
+                let error = Error::from_kind(error.kind().into());
+                receiver.abort(error.kind);
+                return Err(error);
+            }
+        }
+    }
+    receiver.message()
+}
+
+#[cfg(test)]
+mod receiver_tests;
+
+/// Read one frame into fixed caller storage, including the segment table.
+/// No metadata allocation or heap fallback occurs. EOF before any input returns
+/// `None`; a partial header/body is an error. The returned message borrows the
+/// buffer. For cancellation-safe resumption use [`try_read_message_into`] with
+/// an externally owned `FrameReceiver`; this convenience future owns its state.
+pub async fn try_read_message_no_alloc<R>(
+    mut reader: R,
+    buffer: &mut [u8],
+    options: message::ReaderOptions,
+) -> Result<Option<message::Reader<capnp::serialize::NoAllocSliceSegments<'_>>>>
+where
+    R: AsyncRead + Unpin,
+{
+    let mut receiver = capnp::serialize::FrameReceiver::new(buffer, options)?;
+    let _ = try_read_message_into(&mut reader, &mut receiver).await?;
+    receiver.into_message()
+}
+
 /// Asynchronously reads a message from `reader`.
 pub async fn read_message<R>(
     reader: R,
@@ -258,20 +313,25 @@ where
 /// Returns the segment count and first segment length, or a state if the
 /// read would block.
 pub(crate) fn parse_segment_table_first(buf: &[u8]) -> Result<(usize, usize)> {
-    let segment_count = u32::from_le_bytes(buf[0..4].try_into().unwrap()).wrapping_add(1);
-    if segment_count >= 512 {
-        return Err(Error::failed(format!("Too many segments: {segment_count}")));
-    } else if segment_count == 0 {
-        return Err(Error::failed(format!("Too few segments: {segment_count}")));
-    }
-
-    let first_segment_len = u32::from_le_bytes(buf[4..8].try_into().unwrap());
-    Ok((segment_count as usize, first_segment_len as usize))
+    let header = capnp::serialize::SegmentTableHeader::parse(buf)?;
+    Ok((header.segment_count(), header.first_segment_words()))
 }
 
 /// Something that contains segments ready to be written out.
 pub trait AsOutputSegments {
     fn as_output_segments(&self) -> OutputSegments<'_>;
+    /// Optional complete standard framing for the same segments. Returning
+    /// this view lets writers transmit it without rebuilding a segment table.
+    fn framed_bytes(&self) -> Option<&[u8]> {
+        None
+    }
+    /// Payload bytes, excluding the segment table, for queue accounting.
+    fn size_in_bytes(&self) -> usize {
+        self.as_output_segments()
+            .iter()
+            .map(|segment| segment.len())
+            .sum()
+    }
 }
 
 impl<M> AsOutputSegments for &M
@@ -280,6 +340,12 @@ where
 {
     fn as_output_segments(&self) -> OutputSegments<'_> {
         (*self).as_output_segments()
+    }
+    fn framed_bytes(&self) -> Option<&[u8]> {
+        (*self).framed_bytes()
+    }
+    fn size_in_bytes(&self) -> usize {
+        (*self).size_in_bytes()
     }
 }
 
@@ -316,6 +382,10 @@ where
     W: AsyncWrite + Unpin,
     M: AsOutputSegments,
 {
+    if let Some(bytes) = message.framed_bytes() {
+        writer.write_all(bytes).await?;
+        return Ok(());
+    }
     let segments = message.as_output_segments();
     write_segment_table(&mut writer, &segments[..]).await?;
     write_segments(writer, &segments[..]).await?;
@@ -344,6 +414,25 @@ where
     W: AsyncWrite + Unpin,
     M: AsOutputSegments + 'a,
 {
+    if messages.len() == 1 {
+        let message = messages.clone().next().unwrap();
+        if let Some(bytes) = message.framed_bytes() {
+            writer.write_all(bytes).await?;
+            return Ok(());
+        }
+        let segments = message.as_output_segments();
+        if let [segment] = &*segments {
+            // The ordinary one-segment RPC frame needs only two slices. Keep
+            // multi-message batching metadata out of this frequent path.
+            let mut table = [0; 8];
+            table[4..].copy_from_slice(&((segment.len() / 8) as u32).to_le_bytes());
+            let mut buffers = [
+                std::io::IoSlice::new(&table),
+                std::io::IoSlice::new(segment),
+            ];
+            return write_buffers(&mut writer, &mut buffers).await;
+        }
+    }
     if messages.len() <= 2 {
         let mut small = messages.clone();
         let segments: [_; 2] =
@@ -904,6 +993,53 @@ pub mod test {
             }
         }
         quickcheck(round_trip as fn(usize, usize, Vec<Vec<capnp::Word>>) -> TestResult);
+    }
+
+    #[test]
+    fn retained_frames_match_reencoded_batches_through_partial_writes() {
+        struct Retained {
+            bytes: Vec<u8>,
+            body: Vec<Vec<capnp::Word>>,
+            retained: bool,
+        }
+        impl AsOutputSegments for Retained {
+            fn as_output_segments(&self) -> OutputSegments<'_> {
+                self.body.as_output_segments()
+            }
+            fn framed_bytes(&self) -> Option<&[u8]> {
+                self.retained.then_some(&self.bytes)
+            }
+        }
+        futures::executor::block_on(async {
+            for count in [1, 2, 5] {
+                let mut batch = Vec::new();
+                for index in 0..3 {
+                    let body: Vec<_> = (0..count)
+                        .map(|segment| vec![capnp::word(index, 1, 2, 3, 4, 5, 6, 7); segment + 1])
+                        .collect();
+                    let mut bytes = Vec::new();
+                    write_message(&mut bytes, &body).await.unwrap();
+                    batch.push(Retained {
+                        body,
+                        bytes,
+                        retained: index != 1,
+                    });
+                }
+                for length in 1..=3 {
+                    let expected: Vec<_> = batch[..length]
+                        .iter()
+                        .flat_map(|message| message.bytes.iter().copied())
+                        .collect();
+                    for fragment in [1, 7, 23] {
+                        let mut output = BlockingWrite::new(Vec::new(), fragment);
+                        super::write_messages(&mut output, &batch[..length])
+                            .await
+                            .unwrap();
+                        assert_eq!(output.into_writer(), expected);
+                    }
+                }
+            }
+        });
     }
 
     #[test]

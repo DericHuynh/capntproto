@@ -27,17 +27,19 @@ records their rationale.
 | [CI / Documentation](../../.github/workflows/ci-docs.yml) | Called once by CI; Tuesday 05:43 UTC; manual | Documentation/workflow/wiki-tool changes: wiki validation/export and local links. External checks are advisory and run only weekly/manually. `github-wiki`, `documentation-links` |
 | [Verification / Extended](../../.github/workflows/verification-extended.yml) | Called by CI; Wednesday 04:37 UTC; manual | Bounded Miri endian/seed sweep, native cargo-careful checks, LLVM IR size reports, and guard mutation/coverage controls in independent jobs |
 | [Verification / Cargo tests](../../.github/workflows/verification-tests.yml) | Called by CI; Monday 03:19 UTC; manual | One LLVM-instrumented Cargo partition, un-instrumented C++ reference suites, advisory checks, coverage regression report. `cargo-test-report` |
-| [Verification / TLA+ models](../../.github/workflows/verification-models.yml) | Called by CI; Monday 03:29 UTC; manual | Bounded model checks, expected counterexamples and Rust trace replays. Independent replay history, check outcomes and explored-state graphs. `models-report` |
+| [Verification / Formal checks](../../.github/workflows/verification-models.yml) | Called by CI; Monday 03:29 UTC; manual | Kani production proofs and required mutation detections (`kani-report`), then distributed TLC checks and Rust replays (`models-report`). Separate proof-duration and model-state graphs. |
 | [Verification / Fuzzing](../../.github/workflows/verification-fuzz.yml) | Called by CI; Monday 03:39 UTC; manual | Six libFuzzer/ASan targets and four AFL++ targets with RPC IJON guidance. Engine-specific execution, feedback and finding graphs. `fuzz-report` |
-| [Performance / Dedicated benchmarks](../../.github/workflows/performance.yml) | Called by CI; manual | Compile release artifacts on every PR, measure trusted runs on a temporary dedicated CPU Linux droplet, validate downloaded samples. `benchmark-bundle`, `benchmark-build-provenance`, `dedicated-benchmark-report` |
+| [Performance / Dedicated benchmarks](../../.github/workflows/performance.yml) | Called by CI; manual | Build and smoke-test release artifacts on every PR; trusted runs measure application workflows across two dedicated VPC peers, followed by separate loopback controls. `benchmark-bundle`, `benchmark-build-provenance`, `dedicated-benchmark-report` |
 | [Benchmark droplet cleanup](../../.github/workflows/maintenance-benchmarks.yml) | After CI benchmarks, even on failure; every hour at :17 UTC; manual | Destroy this repository's abandoned benchmark resources older than two hours; requires trusted credentials |
-| [Reports / Publish](../../.github/workflows/reports.yml) | CI or standalone Cargo, TLA+, fuzzing or benchmark completion; manual run ID | Validate trusted default-branch producer artifacts and publish to `reports`; it does not rerun their tests |
+| [Reports / Publish](../../.github/workflows/reports.yml) | CI or standalone Cargo, formal-check, fuzzing or benchmark completion; manual run ID | Validate trusted default-branch producer artifacts and publish to `reports`; it does not rerun their tests |
 
 ## Trigger and concurrency policy
 
 CI is the only automatic push/PR entry point. It calls workflow validation and
 documentation as reusable workflows, then starts platform builds after workflow
-validation succeeds. Cargo/coverage, models, fuzzing and extended verification
+validation succeeds. Allocation-free core/engine checks and a bare-metal link
+fixture run alongside platform builds; Cargo/coverage also waits for this lane.
+Cargo/coverage, models, fuzzing and extended verification
 then run in parallel after platform and documentation checks. Release benchmarks
 follow all four verification lanes. Branch work runs through `pull_request`; only `main` has an
 automatic `push` trigger. Feature branches without a PR can dispatch CI manually.
@@ -100,14 +102,17 @@ flowchart TD
   event[PR / main push / manual CI] --> checks[CI: workflow validation]
   event --> docs[CI: documentation]
   checks --> platforms[CI: Linux / macOS / Windows builds and tests]
+  checks --> portable[CI: allocation-free ARM checks and link fixture]
+  portable --> cargo
   platforms --> cargo[Cargo tests + LLVM coverage]
-  platforms --> models[TLA+ checks + Rust replays]
+  platforms --> kani[Kani proofs + production mutations]
+  kani --> models[TLA+ checks + Rust replays]
   platforms --> fuzz[libFuzzer + AFL++ IJON]
   platforms --> extended[Extended verification]
-  docs --> cargo & models & fuzz & extended
+  docs --> cargo & kani & fuzz & extended
   cargo & models & fuzz & extended --> benchmark[Release benchmark build; trusted cloud measurement]
   benchmark --> cleanup[Trusted cleanup, even after failure]
-  checks & docs & platforms & cargo & models & fuzz & extended & benchmark & cleanup --> result[Required CI result]
+  checks & docs & platforms & portable & cargo & models & fuzz & extended & benchmark & cleanup --> result[Required CI result]
   result --> publish[CI completion: validate evidence and publish on main]
   standalone[Weekly / manual lane runs] --> publish
   janitor[Independent hourly cleanup]
@@ -128,6 +133,10 @@ expensive campaigns explicit owners:
 - Cargo selects all ordinary tests/doctests, filtering `tlc`, `native_fuzz_smoke`,
   `serialization_and_ownership_miri`, and the two `authority_and_transition_*`
   controls. LLVM coverage combines the nextest run and the separate doctest run.
+- [Kani](Formal-Verification.md) checks the portable production engine before the
+  TLC job. Its eleven proof harnesses and four required production mutations have
+  a separate artifact and graph; proof duration is not coverage. Kani results
+  are not added to the published TLC replay/state history.
 - TLA+ selects tests containing `tlc`, including the bounded catalog, negative
   controls, and Rust trace replays. Helpers reject TLC calls from the Cargo
   partition, so an incorrectly named new test fails visibly. Each model job uses
@@ -197,7 +206,7 @@ Platform jobs also package and compile the extracted `capntproto-core` crate wit
 license and documentation, while upstream archive metadata remains outside it.
 Platform jobs extract dependency metadata from both application binaries and
 fail if it is missing; their JSON inventories include binary SHA-256 hashes.
-Benchmark bundling requires metadata in **all seven Rust executables**, including
+Benchmark bundling requires metadata in **all eight Rust executables**, including
 the instruction harness and Gungraun runner, before producing a valid manifest.
 Import extracts it again and checks it against the manifest. These inventories
 travel with the existing source/compiler/lockfile provenance.
@@ -375,6 +384,45 @@ the raw LLVM export. Its source fingerprint is
 the raw LLVM JSON SHA-256 is
 `88143aa8049c8d3b2dfe1661bbb0027fbb6c15904b3f55b7ed2524e03b1e0761`.
 
+The TCP/portability follow-up was reviewed on 2026-10-07 with the same scope,
+compiler and flags. All 1,381 instrumented Cargo-partition tests and 64 runnable
+workspace doctests passed. The complete replacement snapshot inventories 610
+owned source files: 563 mapped and 47 explicitly unmapped. Every source hash,
+mapped metric and group sum was checked against the source tree and raw export;
+no mappings were lost. Its source fingerprint is
+`ee551cefde15012b97ac7ce31ddf70b66469e4f14e5f14c92384f44a66c26f2c`, and the raw
+LLVM JSON SHA-256 is
+`ec5d221e492642bf181fda4ffc0eaf4f45a2f2469c098102d6867508dc39eed4`.
+
+Added tests cover malformed/missing benchmark trials, the exact 1.15× boundary,
+retention of slow samples, valid-but-slow reports and their diagnostic charts,
+engine source ownership, and concurrent verification captures. All four tool
+group ratios improved. Thirty-two of 36 group metrics meet or exceed the prior
+reference. The four decreases retain their actual measured counters:
+
+| Group / metric | Previous covered/total | Reviewed covered/total |
+| --- | ---: | ---: |
+| Capability RPC / functions | 883/986 | 909/1017 |
+| Tests and verification / branches | 2240/4050 | 2241/4056 |
+| Wire runtime / functions | 2020/2414 | 2028/2424 |
+| Wire runtime / branches | 1537/1976 | 1541/1982 |
+
+Eighteen per-file metric decreases were reviewed. The new framing overflow
+closures are unreachable on the measured 64-bit host; separate 32-bit Miri
+executions exercise rejection without claiming 64-bit coverage. Hosted Join and
+Return handlers validate question state before the portable transition, leaving
+its defensive error conversions unexecuted there. Removing two covered RPC lines
+leaves the same 216 uncovered lines, and changing generic IO adapters removes
+one covered region per transport without adding uncovered regions. Collector
+registration, capture cancellation/OS errors, and untaken test-assertion failures
+remain explicit gaps. None is removed from the denominator.
+
+The snapshot is the complete measured summary, with no counter adjustments.
+Original failed comparisons and the raw review remain in
+`target/tcp-portability/coverage-isolated/` and `coverage-review.json` under its
+parent directory. Updating the reference does not certify that failed run:
+a subsequent collection must pass the unchanged per-file and per-group gates.
+
 The Fuzzing job packages its reports, logs, queues, crashes and hangs in
 `fuzz-report.tar.gz` before artifact upload. This preserves AFL's colon-containing
 filenames, which GitHub's artifact uploader rejects as individual files. Extract
@@ -382,7 +430,86 @@ the archive to inspect `target/quality/fuzz/README.md` and `FAILED-TESTS.md`, gr
 `target/verification/native-fuzz/` logs, and `fuzz/artifacts/` reproducer inputs.
 Packaging runs even when a campaign fails, and retains the failing run's evidence.
 
-## Dedicated Linux loopback benchmarks
+## Dedicated remote workflows and loopback controls
+
+The CI runner provisions **two** dedicated droplets: one client and one server,
+on the same plan, region and VPC. Workload traffic is direct plaintext TCP over
+the server's private IPv4 address. SSH uploads binaries and retrieves artifacts;
+it does not tunnel measured traffic. The server binds only its private address
+and restricts the five benchmark ports to the client droplet. The provider's
+[`vpc_uuid` placement field](https://docs.digitalocean.com/products/droplets/reference/api/droplets/)
+pins the second peer to the first peer's VPC. A second-peer capacity failure
+cleans up both peers instead of changing region or hardware silently.
+
+The shared [workflow catalog](../../benchmarks/rpc/workflows.json) exercises
+legacy Rust RPC, portable Rust RPC, pinned upstream C++, gRPC and WebSockets.
+The Cap'n Proto implementations use the same schema. gRPC uses protobuf unary
+methods over HTTP/2; WebSockets use binary protobuf application messages:
+
+| Case | Work per measured iteration |
+|---|---|
+| `unary-empty`, `unary-small`, `unary-1k` | One validated echo at 0, 64 or 1,024 bytes |
+| `fanout-32` | Issue 32 independent 1 KiB calls concurrently and validate every response |
+| `dependent-read` | Open a state capability, await it, then read 1 KiB |
+| `pipelined-read` | Open the same capability and send its read before awaiting the open response |
+| `write-read` | Update a retained state capability with an expected version, then validate the new version and 1 KiB data |
+| `callback` | Pass a client capability, receive and validate its callback, then await the outer completion |
+| `bulk-64k`, `bulk-256k`, `bulk-1m`, `bulk-4m` | One validated request/response at 64 KiB, 256 KiB, 1 MiB or 4 MiB |
+
+There are **58 supported workflow/implementation cells**. Promise-pipelined
+reads are explicitly unsupported for gRPC and WebSockets and excluded from
+ratios, rather than replaced with sequential reads. Their state references use
+application IDs without capability security. A dependent read consumes its
+temporary cell; retained state is released outside timing, with bounded leases
+for abandoned clients. Callbacks use four duplex messages: request,
+notification, acknowledgement, completion. gRPC uses a bidirectional stream
+opened before timing; WebSockets use the existing connection. Fan-out sends
+32 outstanding messages or unary calls before awaiting completion. No protocol
+uses compression; all are plaintext, and WebSocket clients use standard masking.
+The 4 MiB payload is echoed in both directions. Workflow gRPC and WebSocket
+message limits are 8 MiB to include framing; portable RPC uses an 8 MiB frame
+limit and a 32 MiB buffer budget. These limits apply only to workflow benchmarks;
+the existing small-call microbenchmark configuration is unchanged. Workflow
+format version 3 requires the larger payloads, so older partial matrices fail
+validation.
+
+Five repetitions rotate implementation order. Every cell has 250 warmups and
+1,000 retained workflow samples, with setup excluded and validation, response
+cleanup and a ten-second workflow deadline included. One CPU is selected on each
+host and reused across implementations. The client alone measures elapsed time;
+no clock synchronization or one-way latency inference is needed. Fan-out latency
+is the latency of the whole 32-call batch. Workflow/s and RPC/s are reported
+separately; these closed-loop workloads do not measure open-loop saturation or
+an arrival-rate SLO. This initial remote suite compares plaintext TCP; native
+QUIC, TLS/mTLS, failure recovery and three-party routing remain separate tests.
+
+`target/quality/benchmark/remote/README.md` and `p50-ratios.svg` report each
+workflow's p50/p95/p99, throughput and p50 ratio to C++. Adjacent JSON, per-trial
+client CPU/RSS logs, both host environments and provisioning receipts preserve
+the evidence. Client resource logs include process startup and warmup. Server
+CPU counters cover the whole campaign, including idle and
+setup time. A missing cell, duplicate repetition, mismatched bundle, same-host
+run or local smoke record fails validation. Remote results are descriptive
+baselines; the existing loopback acceptance gate does not apply to them.
+
+```sh
+# Credential-free smoke test: all 58 supported cells, not timing evidence.
+cargo run --locked -p capntproto-dev -- digitalocean-bench smoke \
+  --bundle target/benchmark-build/bundle --output target/workflow-smoke \
+  --state target/workflow-smoke-state
+
+# Requires DIGITALOCEAN_ACCESS_TOKEN and GITHUB_REPOSITORY; use fresh paths.
+cargo run --locked -p capntproto-dev -- digitalocean-bench run-remote \
+  --bundle target/benchmark-build/bundle --output target/quality/benchmark \
+  --state target/remote-benchmark-state
+```
+
+Every PR builds and smoke-tests the workflows locally, including 48 cross-language
+checks against C++ in both directions. Trusted CI runs execute
+the remote campaign, stop its servers, and then run the existing loopback and
+instruction controls on the already-provisioned client. The workflow summary
+and downloadable artifact keep remote results separate from those controls.
+Local smoke success does not establish a remote performance ratio.
 
 Add **`DIGITALOCEAN_ACCESS_TOKEN`** as a secret in the GitHub environment
 **`Benchmarking`** (Settings → Environments → Benchmarking). Both the dedicated
@@ -393,17 +520,18 @@ from a trusted revision. The workflow generates temporary client and host keys,
 pins the host key, and exposes the token only to the infrastructure steps.
 
 Region and size default to `auto`, with `ubuntu-24-04-x64`. A read-only capacity
-check runs before compilation and again before provisioning. Auto selection uses
+check runs before provisioning. Auto selection uses
 an available four-vCPU CPU-Optimized `c-4` or `c-4-intel` plan, preferring `c-4`
 and `nyc3` when available. Explicit region/size inputs are honored; unavailable
 choices fail with available alternatives rather than silently changing the host.
-Only dedicated `c-N` / `c-N-intel` sizes are accepted, with a **$0.50/hour rate ceiling**.
+Only dedicated `c-N` / `c-N-intel` sizes are accepted, with a **$0.50/hour rate ceiling
+per host ($1.00/hour combined maximum)**.
 Catalog availability does not reserve capacity. A recognized HTTP 422 capacity
 rejection tries the next eligible pair (at most 24 attempts), changing only inputs
 set to `auto`. Each pair is tried once. Quota, billing, invalid configuration and
 ambiguous network failures stop without retrying creation. The provider's error
 code and message are retained with credentials and cloud-init data redacted;
-`provisioning.json` records every attempt and `droplet.json` identifies the host
+Each role's `provisioning.json` records every attempt and `droplet.json` identifies the host
 actually created. A failed create still follows the receipt/tag cleanup path.
 A failed measurement does not run sample-validation
 steps or publish stale measurements. Ubuntu 24.04 builds
@@ -413,6 +541,7 @@ uses Clang and its pinned upstream source. Nothing is compiled on the droplet.
 The build job invokes each target independently:
 
 ```sh
+cargo bench --locked --manifest-path benchmarks/rpc/Cargo.toml --bench tcp --no-run
 cargo bench --locked --manifest-path benchmarks/rpc/Cargo.toml --bench native --no-run
 cargo bench --locked --manifest-path benchmarks/rpc/Cargo.toml --bench capnp_cpp --no-run
 cargo bench --locked --manifest-path benchmarks/rpc/Cargo.toml --bench grpc --no-run
@@ -434,10 +563,24 @@ The selected CPUs, allowed set and topology are retained in `environment.json`;
 unavailable affinity or fewer than two allowed cores fails the comparison.
 Individual `cargo bench --bench NAME` runs retain the caller's CPU affinity.
 
-Actions streams the driver's protocol, payload size and repetition progress while
+The standalone TCP benchmark measures the opt-in portable RpcSystem by default;
+`CAPNTPROTO_BENCH_PORTABLE=0` selects the legacy control. This benchmark choice
+does not change the library's default RpcSystem. The CI loopback control explicitly
+selects legacy RPC; the remote suite measures both drivers. Comparisons record the selection as `tcp_driver` in
+`environment.json`. Build the driver and TCP bench in release mode, then run
+`CAPNTPROTO_BENCH_PORTABLE=1 driver compare-tcp TCP_EXECUTABLE CPP_EXECUTABLE NEW_OUTPUT_DIRECTORY`.
+Use the actual Cargo-reported TCP executable and the compiled C++ reference.
+The portable gate requires pooled p50 no greater than **1.5× C++ at each of 0,
+64 and 1024 bytes**. Its 65536-byte results and p95/p99 remain visible as
+diagnostics. The legacy control retains its 1.15× gate at all four sizes. Preserve source
+and binary identities and avoid compiler/test load during timing. Passing the
+legacy path does not qualify the replacement driver.
+
+Actions streams the driver's workflow/protocol, payload size and repetition progress while
 retaining it in `runner.log`. Setup stages identify cloud-init, runtime-tool
 installation and bundle upload separately. The driver has a 20-minute overall
-limit; a failed or timed-out run downloads available partial logs and samples
+limit for loopback controls; remote workflows have a separate 25-minute limit.
+A failed or timed-out run downloads available partial logs and samples
 before cleanup and still fails the job. Partial samples are diagnostic evidence,
 not published measurements. A low droplet-wide CPU reading alone cannot establish
 whether this sequential latency benchmark is making progress; check the live
@@ -451,10 +594,10 @@ Cargo remotely. The six summaries, runner/binary/lockfile hashes and Valgrind
 version are retained; missing, duplicate, stale-baseline or invalid counters fail
 import. Local verification uses the executable's `--test` mode without profiling.
 Instruction counts measure the maintained serializer, including validation and
-ownership cleanup, and do not compare the four RPC transports. No historical
+ownership cleanup, and do not compare the five RPC implementations. No historical
 instruction-count regression baseline is claimed.
 
-Measurements use IPv4 loopback, separate single-threaded server/client
+The separate loopback controls use IPv4 loopback, single-threaded server/client
 processes, one outstanding call, 0/64/1024/65536-byte payloads, 10,000 warmups and
 1,000 timed requests per repetition. Every response's sequence and payload are
 validated. The longer warmup gives the host time to settle before collecting
@@ -466,10 +609,22 @@ request rate, comparison ratios, raw samples, CPU/OS details, Linux clock source
 and droplet plan. Clock-read costs matter to user-space QUIC recovery and pacing;
 compare implementations on the same host rather than extrapolating from a
 development machine with a different clock source or power governor.
-Capntproto uses Native QUIC v1 with TLS 1.3 and pinned peer authentication;
-C++ Cap'n Proto uses plaintext
-TCP, gRPC plaintext HTTP/2, and WebSockets plaintext binary echo. These security
+The default Capntproto TCP adapter and C++ Cap'n Proto both use plaintext TCP.
+The separate native QUIC measurement uses QUIC v1 with TLS 1.3 and pinned peer
+authentication; gRPC uses plaintext HTTP/2, and WebSockets plaintext binary echo. These security
 and semantic differences are explicit; this is not peak concurrent throughput.
+
+Portable acceptance requires plaintext TCP pooled p50 latency at or below
+**1.5× C++ for every small-call payload (0, 64 and 1024 bytes)**; the legacy
+control retains **1.15× at every size**. Both retain 64 KiB, p95 and p99 measurements.
+The report preserves raw samples and graphs even when this gate fails. TLS/mTLS
+and QUIC keep their security semantics and have separate measurements; their
+ratios do not qualify the plaintext target. For a focused local comparison, build
+the release `driver` and `tcp` bench, then run
+`driver compare-tcp TCP_EXECUTABLE CPP_EXECUTABLE NEW_OUTPUT_DIRECTORY`.
+It alternates the two implementations over five repetitions on the same pair
+of physical cores and records executable hashes, topology, clock costs and all
+samples. Do not run compilers or other test campaigns during latency measurement.
 
 Measurement version 2 uses bulk payload comparison and includes response/promise
 cleanup and a ten-second per-call deadline in each timed round trip. The old C++
@@ -482,8 +637,10 @@ retained as historical evidence and must not qualify the current target. The
 driver and report validator reject legacy or mixed measurement versions. The
 version-2 dedicated result below does not meet the 1.2× target.
 
-The runner destroys the droplet in `finally`, including failure/cancellation,
-and an Actions `always()` step verifies cleanup. A separate hourly janitor
+The runner attempts deletion of both droplets and temporary SSH keys after
+success, failure or cancellation, including partial provisioning. Both intended
+names are recorded before any creation request; a lost response is not retried.
+An Actions `always()` step verifies cleanup. A separate hourly janitor
 recovers hosts/keys abandoned by runner loss, scoped by repository tag, unique
 name and age. Cleanup failures fail the job. Scheduled Actions may be delayed:
 this is not a guaranteed billing cutoff. DigitalOcean bills CPU Droplets by the
@@ -493,6 +650,250 @@ ends billing, whereas powering it off does not. See [DigitalOcean pricing](https
 Do not treat old `target/quality` output as evidence for changed sources; reports
 reject mismatched source fingerprints. Each workflow reports its own scope and
 explicitly omits unmeasured coverage/performance rather than inventing results.
+
+### Portable TCP qualification (October 11, 2026)
+
+The portable driver passed the 1.5× small-call gate in two independent local
+release/full-LTO comparisons on the Ryzen 7 5800H, using CPUs 0/2 and the matched
+workload above. The confirmation run measured:
+
+| Payload | Portable TCP p50 (µs) | C++ TCP p50 (µs) | p50 ratio | p95 ratio | p99 ratio |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 0 bytes | 56.781 | 38.133 | 1.489× | 1.462× | 1.448× |
+| 64 bytes | 56.711 | 38.273 | 1.482× | 1.465× | 1.432× |
+| 1 KiB | 57.480 | 39.460 | 1.457× | 1.444× | 1.406× |
+| 64 KiB | 102.667 | 76.267 | 1.346× | 1.364× | 1.397× |
+
+The initial run's small-call ratios were 1.494×, 1.484× and 1.492×. All samples
+were retained; no compiler, tests or profiler ran during timing. Local raw trials,
+summaries, executable hashes and CPU/clock metadata are in
+`target/portable-optimization/batch54-comparison/` and `batch54-confirmation/`.
+The reference is pinned C++ revision `0de72d8d8cec6b69edaa29de51d3bd490341f9c2`.
+These are sequential plaintext loopback results, separate from the CI dashboard's
+measured commit. They do not qualify encrypted transports or concurrent throughput.
+
+Comparison with the legacy driver exposed avoidable builder allocation,
+framing traversal and repeated scheduler work. The hosted adapter now reuses
+released request/result segments in a bounded per-connection cache, grants ready
+inbox calls a useful polling quantum, and keeps empty lanes out of output
+reservation. Queue growth stays outside the common capacity check. The explicit
+`cached_message_words` and `cached_message_segments` options bound released
+application segments independently of live messages and the wire-buffer budget;
+zero disables retention. Regression tests retain responses across reuse, check
+zeroed segments, and exercise output exhaustion before call admission.
+
+The allocation-free engine retains caller-owned storage and the same protocol
+transitions. The library's default remains legacy while bilateral Join and
+remaining tail/pipeline-only integration are completed. Performance qualification
+alone does not establish that functional parity.
+
+### Portable client instruction campaign (October 12, 2026)
+
+The **21 million client instruction** target is met with the opt-in build settings
+below: **20,981,715**, with repeat runs of **20,959,647** and **20,957,904**.
+The ordinary full-LTO build measures **28,365,674** and does not meet that ceiling.
+Local Callgrind measurements use the complete release/full-LTO plaintext
+TCP client process, an empty payload, 100 warmups and 1,000 retained calls,
+including process initialization, bootstrap and cleanup. The workload, timing
+checks and measurement boundaries stay fixed across candidates.
+
+| Candidate | Additional build settings | Client instructions |
+| --- | --- | ---: |
+| Portable campaign baseline | None | 66,401,123 |
+| Portable checkpoint `batch108` | None | 30,149,143 |
+| Legacy control `batch101` | None | 24,156,786 |
+| Portable checkpoint `batch118` | Static C++ runtime | 27,481,967 |
+| Portable checkpoint `batch120` | Static C++ runtime, LLVM PGO | 22,908,528 |
+| Portable final `batch129` | Static C++ runtime, LLVM PGO, native CPU | **20,981,715** |
+| Matched legacy control `batch130-legacy` | Static C++ runtime, independently trained LLVM PGO, native CPU | 16,723,238 |
+| Portable final `batch131-ordinary` | None | 28,365,674 |
+
+The final ordinary build reduces instructions by **57.3%** from the campaign
+baseline; the tuned build reduces them by **68.4%**. Against the independently
+trained legacy control with identical settings, the portable client uses
+**1.255×** as many instructions. These are instruction ratios, not latency ratios.
+
+Raw profiles, executable snapshots and measurement output are retained locally
+under `target/portable-optimization/`. These instruction diagnostics do not
+establish a latency ratio or qualify a release. The earlier latency qualification
+above is historical evidence for its stated candidate.
+
+Changes remove repeated envelope construction, retain validated serialized
+frames, reuse request owners, defer general result-hook allocation, and coalesce
+task notifications. Driver publication and maintenance now share one polling
+budget across flushes. Network-control work invalidated during that scan must
+still be polled or explicitly rescheduled; third-party transfer regressions
+exercise this requirement at different budgets. More aggressive reply processing
+and broad inlining trials regressed instruction counts and were reverted.
+
+The final publication fast path lets a freshly sent, lone direct call sleep until
+input or an application wake. Regression coverage checks cancellation and new
+admission without unrelated IO. Compact receipt storage preserves fixed inline
+arrays for allocation-free profiles, and data-only questions release their
+request buffer after publication while retaining their exact method identity.
+Selected-pointer validation retains traversal, nesting and capability checks;
+tests compare its errors and limits against full-envelope decoding.
+
+The shared benchmark harness now chooses the protocol before the timed loop.
+This avoids moving a gRPC-sized future for each TCP call and benefits both Rust
+drivers. Every call, timeout, clock read and response check remains present.
+Historical checkpoints before `batch126` used the earlier harness layout; the
+three final/control builds above all use the same updated harness.
+
+The compiler experiments are opt-in, separate from the ordinary release build.
+Static C++ runtime linkage reduces process initialization in this full-process
+measurement; it does not remove BoringSSL or any transport. PGO trains both TCP
+peers on payload sizes 0, 1, 7, 8, 31, 64, 256, 1,024, 4,096 and 65,536 bytes,
+each with 100 warmups and 1,000 measured calls. Build scripts and proc macros do
+not contribute training data. Bounds, overflow checks, validation, timeouts and
+payload verification remain enabled. Training does not qualify all RPC features.
+
+Reproduce with the pinned Rust toolchain, `llvm-tools-preview`, Valgrind and the
+normal native build prerequisites:
+
+```sh
+cargo run --locked -p capntproto-dev -- rpc-instructions \
+  --pgo --native-cpu --static-cpp --maximum 21000000 \
+  --output target/quality/rpc-instructions
+```
+
+The command discovers the GNU/Linux C++ static runtime rather than hardcoding a
+compiler version. It requires a new output directory, retains raw profiles and
+executable snapshots, and writes `report.json` with the compiler, flags, training
+outputs, workload, executable hash and instruction total. The maximum enforces
+the ceiling after saving evidence. `--native-cpu` is a separate opt-in
+for binaries restricted to a compatible CPU; neither PGO nor native CPU targeting
+changes the project's default build. Omit all three optimization flags to measure
+the ordinary full-LTO build (also omit the maximum for that comparison). Add
+`--legacy` and use a new output directory to independently train and measure the
+legacy control. Counts are host/toolchain-specific; this result does not change
+the library's default driver or build settings.
+
+Qualification for the final implementation: **2,174 workspace nextest tests
+passed**, with seven existing skips, including native fuzzing, mutation checks,
+Miri, C++ interoperability and optimized-runtime tests. The five portable feature
+profiles passed **436 tests**; both allocation-free and allocating bare-metal
+checks passed, and the allocation-free executable linked. Documentation tests
+passed **85** with 13 existing ignores. The unsafe-documentation, repository and
+workflow gates passed. Ten benchmark smoke cases checked 11,000 calls across
+plaintext TCP, authenticated TCP, QUIC, gRPC and WebSocket. Kani was not available
+locally. These checks cover the implementation before this prose-only report
+update; the source checksums and tracked patch are retained beside `batch129`'s
+binary and raw report.
+
+### Latency check of the tuned candidate
+
+Two separate, unprofiled comparisons of the same `batch129` executable against
+the existing pinned C++ reference produced the following pooled median latencies.
+Each comparison contains five alternating repetitions, 10,000 warmups and 1,000
+retained calls per peer/payload pair, on separate fixed physical cores. No
+compiler, test campaign or profiler ran during timing. All samples were retained.
+
+| Payload | Portable p50 (µs), first run | C++ p50 (µs), first run | First ratio | Confirmation ratio |
+| --- | ---: | ---: | ---: | ---: |
+| 0 bytes | 38.483 | 37.785 | 1.018× | 1.011× |
+| 64 bytes | 38.692 | 38.204 | 1.013× | 1.024× |
+| 1 KiB | 39.461 | 38.971 | 1.013× | 1.013× |
+| 64 KiB | 81.575 | 76.197 | 1.071× | 1.055× |
+
+Both local comparisons are below 1.15× at all four payloads. This uses the tuned
+Rust build above; the C++ reference was unchanged and was not retrained with PGO.
+It is sequential plaintext loopback evidence, not qualification of ordinary-build
+latency, encrypted transports, concurrent throughput or complete driver parity.
+Raw samples, tail percentiles, executable hashes, CPU placement and clock-read
+diagnostics are retained in `batch129-comparison/` and
+`batch129-latency-confirmation/` under the same local campaign directory.
+
+### Legacy driver instruction campaign (October 12, 2026)
+
+The legacy driver now passes the **18 million client instruction** ceiling with
+**17,788,526** instructions, down **23.9%** from the matched **23,366,812** baseline.
+Both measurements use ordinary release/full LTO, one codegen unit and enabled
+overflow checks, with a generic CPU target, dynamic C++ runtime and no PGO.
+Both peers explicitly select the legacy driver. The complete Callgrind client
+process includes startup, bootstrap, 100 warmups, 1,000 retained empty calls and
+cleanup. Timeouts, timer reads, sequence checks and payload validation remain
+unchanged. This is an instruction ceiling, not a latency or throughput ratio.
+
+The changes reuse validated Call envelopes and the owned receive poller, drive
+ready output during publication, cache the decoded result payload, simplify
+response futures and avoid repeated builder/segment access. Bounds, nesting and
+traversal budgets remain enforced. Question ownership is installed before calling
+transport code, and protocol table borrows end before polling I/O. Regression
+tests cover synchronous replies, reentrant writes, partial input, retained
+responses, cancellation, flush ownership and independent template copies.
+
+The raw report, binary hash, build log and Callgrind profiles are retained locally
+in `target/legacy-optimization/final-ordinary/`. Reproduce using a fresh directory:
+
+```sh
+cargo run --locked -p capntproto-dev -- rpc-instructions \
+  --legacy --maximum 18000000 \
+  --output target/quality/legacy-rpc-instructions
+```
+
+An unprofiled comparison of this ordinary-build executable against the same
+pinned C++ reference passed the 1.15× latency gate at every payload. Pooled p50
+ratios were **1.004×** (empty), **1.000×** (64 bytes), **1.005×** (1 KiB) and
+**0.914×** (64 KiB). Five alternating repetitions retained all 40,000 timed
+samples after 10,000 warmups per peer/payload/repetition, on separate fixed
+physical cores with compilers and tests stopped. Raw trials and environment
+details are in `target/legacy-optimization/final-latency/`. Ten additional smoke
+cases passed across plaintext TCP, authenticated TCP, QUIC, gRPC and WebSocket
+at empty and 64 KiB payloads. These local sequential loopback results do not
+qualify concurrent throughput or encrypted-transport latency.
+
+The portable migration was paused with a source snapshot retained under
+`target/portable-optimization/shelved-source.*`. Its later ordinary-build checkpoint
+measured **26,053,204** instructions, improving on `batch131` above but still
+missing the separate 25 million target. The opt-in tuned results above describe
+their historical binaries; they do not qualify the current ordinary build or
+establish complete portable-driver feature parity. Work has resumed alongside
+the remote workflow comparisons above. The hosted bridge now relies on the
+transport-owned frame to retain admission credit through physical flush,
+removing a duplicate credit list. A regression test also prevents an earlier
+empty-output result from marking newly published, unflushed output idle.
+
+### Follow-up after adding remote workflow comparisons
+
+Unobserved legacy replies now transfer exclusive ownership to the transport and
+drive ready output immediately. A response still uses shared ownership when a
+pipeline needs it. Completion is published before calling transport code, and
+returned capabilities stay alive through enqueue. Regression tests cover both
+paths and Return-before-Release ordering.
+
+Three alternating before/after Callgrind runs of ordinary full-LTO binaries
+(generic CPU, one codegen unit, overflow checks, no PGO) gave these median counts
+for the complete processes, including 100 warmups and 1,000 retained empty calls:
+
+| Driver / process | Before | After |
+|---|---:|---:|
+| Legacy client | 17,775,500 | 17,777,578 |
+| Legacy server | 19,536,650 | 18,045,569 |
+| Portable client | 26,082,490 | 26,020,661 |
+| Portable server | 35,988,720 | 35,910,480 |
+
+The server improvement is **7.6%** for legacy; its client cost is essentially
+unchanged. Portable client instructions improve **0.24%**, still above the
+separate 25 million target. With compilers, tests and profilers stopped, five
+alternating TCP/C++ repetitions per payload used the existing 10,000-warmup,
+1,000-sample budget and fixed physical CPU placement:
+
+| Payload | Legacy before / C++ | Legacy after / C++ | Portable before / C++ | Portable after / C++ |
+|---|---:|---:|---:|---:|
+| Empty | 1.007× | 0.996× | 1.159× | 1.159× |
+| 64 B | 1.004× | 0.989× | 1.168× | 1.161× |
+| 1 KiB | 1.003× | 0.993× | 1.159× | 1.157× |
+| 64 KiB | 0.889× | 0.843× | 1.166× | 1.135× |
+
+These are descriptive local plaintext loopback results, not two-droplet results.
+Small latency differences need further remote confirmation. The **0.90× small-call
+target remains unmet**. Raw samples, all instruction repetitions, binary hashes
+and validation logs are under `target/remote-workflows/`; the report is
+`qualification/README.md`. The final runtime passed all 2,209 workspace nextest
+tests (7 documented skips), including Miri, mutation, fuzz and release checks,
+and all 43 supported workflow cells plus 36 C++ interoperability checks. The
+allocation-free profile passed 86 tests and compiled for `thumbv7em-none-eabi`.
 
 ## Comparison bar charts
 
@@ -509,8 +910,8 @@ payload size:
 
 - Median (p50), p95 and p99 round-trip latency, in microseconds.
 - Sequential requests per second.
-- Median-latency and request-rate differences from Capntproto, calculated as
-  `(comparison / Capntproto - 1) × 100`.
+- Median-latency and request-rate ratios relative to C++ Cap'n Proto, with
+  the measured Capntproto TCP driver identified in the captions.
 
 A seventh figure shows Gungraun instruction counts by encode/decode operation
 and payload size. Its table also records data reads and writes. Charts are drawn
@@ -1504,6 +1905,11 @@ checks just to improve a measurement. Local HPET clock reads measured roughly
 1.4–1.6 microseconds in October 2026, so local timing can magnify clock-heavy
 transport paths relative to the dedicated host.
 
+The third QUIC follow-up run measured 26–31 ns per `Instant` read on both assigned
+droplet cores using `kvm-clock` (TSC was also listed as available). Its clock is
+already fast; raw TSC cannot account for the remaining several-microsecond gap
+to the small-payload target. No clocksource settings were changed.
+
 ### Congestion control and submillisecond pacing
 
 The pinned [quiche 0.30.0 congestion-control API](https://docs.rs/quiche/0.30.0/quiche/enum.CongestionControlAlgorithm.html)
@@ -1599,7 +2005,46 @@ The research points to the following evaluation order:
 Every controller must retain congestion response, authenticated transport,
 bounded buffering and [QUIC's pacing requirements](https://www.rfc-editor.org/rfc/rfc9002.html#section-7.7).
 The 1.2× QUIC/C++ target remains unmet.
-The third follow-up run measured 26–31 ns per `Instant` read on both assigned
-droplet cores using `kvm-clock` (TSC was also listed as available). Its clock is
-already fast; raw TSC cannot account for the remaining several-microsecond gap
-to the small-payload target. No clocksource settings were changed.
+
+## TCP default and vectored IO
+
+The legacy acceptance baseline was matched plaintext TCP at no more than 1.15×
+the pinned C++ implementation. The opt-in portable migration now uses a 1.5×
+small-call gate, described above. `rpc::connect` selects TCP, and native
+directory routes select authenticated TCP/TLS. QUIC remains an explicit option;
+the historical QUIC comparisons above do not qualify this plaintext baseline.
+
+The main TCP regression was at the Tokio-to-futures IO boundary. The write queue
+already batches framing headers and message segments, but `tokio_util::compat`
+does not forward vectored writes. Its scalar fallback split the batch into
+separate sends and introduced additional readiness wakeups. The shared adapter
+now forwards `poll_write_vectored`, including partial progress and `Pending`, to
+TCP, TLS and QUIC writers. It preserves flush, shutdown and error propagation.
+Fault-injection tests exercise short writes across segment boundaries,
+backpressure and shutdown failure without relying on real-socket timing.
+
+A local release/full-LTO comparison on the Ryzen 7 5800H used server/client
+CPUs 0/2 on different physical cores, five alternating repetitions, 10,000 warmups and 1,000
+retained calls per executable, repetition and payload. All 40,000 timed samples
+were retained, with matched payload validation, response cleanup and per-call
+deadlines. Compilers and test campaigns were stopped during measurement. This
+host uses HPET; `Instant` reads cost about 1.4 µs, making redundant runtime
+wakeups particularly expensive.
+
+| Payload | Legacy Capntproto TCP p50 (µs) | C++ TCP p50 (µs) | p50 ratio | p95 ratio | p99 ratio |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 0 bytes | 39.740 | 37.784 | 1.052× | 1.017× | 1.014× |
+| 64 bytes | 39.671 | 37.645 | 1.054× | 1.085× | 1.052× |
+| 1 KiB | 40.438 | 38.692 | 1.045× | 1.003× | 1.018× |
+| 64 KiB | 69.981 | 75.220 | 0.930× | 0.934× | 0.945× |
+
+Every pooled median and every individual repetition's median passed the 1.15×
+gate. Tails also passed in this run, though the gate uses pooled p50. Raw trials,
+the pass/fail summary, executable hashes and CPU/clock measurements are retained
+locally in `target/tcp-portability/acceptance-confirmation/`. The earlier
+`vectored-comparison/` run also passed every payload. The C++ peer was built
+in release mode from pinned revision
+`0de72d8d8cec6b69edaa29de51d3bd490341f9c2` with the same benchmark schema.
+These results qualify this local sequential loopback workload, not encrypted
+transport performance, concurrent throughput, other hosts or the incomplete
+allocation-free RPC profile.

@@ -12,7 +12,9 @@ TLS/TCP uses Cargo-managed rustls and tokio-rustls. All QUIC uses quiche with
 Cargo-managed BoringSSL, including standard two-party RPC and the authenticated
 [native multiparty profile](Native-Transports.md). The unmodified quiche 0.30.0 registry package and checksum are pinned in Cargo.lock.
 
-Defaults enable `quic-quiche`, services and storage. `quic` and `quic-quiche`
+Defaults enable `native`, services and storage, with TCP as the default route
+backend. `rpc::connect` and `rpc::listen` select standard plaintext TCP;
+authenticated native directory routes retain mutual TLS. `quic` and `quic-quiche`
 both enable the single QUIC engine and native sessions. For TLS/TCP alone use
 `default-features = false, features = ["tls"]`. Plain TCP needs no feature.
 QUIC builds require a C/C++ compiler, CMake and libclang.

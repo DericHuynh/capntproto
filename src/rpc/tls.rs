@@ -5,6 +5,7 @@
 //! Inspect the authenticated peer's certificates before choosing a bootstrap
 //! when different identities should receive different capabilities.
 
+use super::io::TokioIo;
 use capnp::{capability::Client, message::ReaderOptions};
 use capnp_rpc::{rpc_twoparty_capnp::Side, twoparty};
 use futures::{stream::FuturesUnordered, StreamExt};
@@ -13,7 +14,7 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName};
 use std::{io, net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 pub use tokio_rustls::TlsStream;
-use tokio_util::compat::{Compat, TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
 
 /// Private application protocol for ordinary Cap'n Proto two-party framing.
 /// This is not HTTP/3 or an upstream-assigned Cap'n Proto ALPN identifier.
@@ -162,7 +163,7 @@ pub fn network(stream: TlsStream<TcpStream>, side: Side, options: ReaderOptions)
     let (read, write) = tokio::io::split(stream);
     twoparty::VatNetwork::new_with_send_buffer(
         read.compat(),
-        write.compat_write(),
+        TokioIo(write),
         side,
         options,
         move |_| window,

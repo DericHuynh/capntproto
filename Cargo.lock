@@ -361,6 +361,7 @@ dependencies = [
  "capntproto-core",
  "capntproto-futures",
  "capntproto-rpc",
+ "capntproto-rpc-engine",
  "capntproto-test-support",
  "fs2",
  "futures",
@@ -467,7 +468,9 @@ dependencies = [
 name = "capntproto-futures"
 version = "0.25.2"
 dependencies = [
+ "allocation-counter",
  "capntproto-core",
+ "capntproto-rpc-engine",
  "futures",
  "futures-channel",
  "futures-util",
@@ -493,7 +496,27 @@ dependencies = [
  "capntproto-codegen",
  "capntproto-core",
  "capntproto-futures",
+ "capntproto-rpc-engine",
+ "capntproto-rpc-wire",
  "futures",
+]
+
+[[package]]
+name = "capntproto-rpc-engine"
+version = "0.1.0"
+dependencies = [
+ "allocation-counter",
+]
+
+[[package]]
+name = "capntproto-rpc-wire"
+version = "0.1.0"
+dependencies = [
+ "allocation-counter",
+ "capntproto-codegen",
+ "capntproto-compiler",
+ "capntproto-core",
+ "capntproto-rpc-engine",
 ]
 
 [[package]]

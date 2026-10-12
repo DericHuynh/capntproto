@@ -17,6 +17,9 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
+#[cfg(test)]
+mod resolution_tests;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Direction {
     Inbound,
@@ -615,6 +618,11 @@ impl ClientHook for Hook {
         }
         let cap = self.0.inner().get_resolved()?;
         let cap = self.0.membrane.wrap(cap, self.0.reverse);
+        if cap.get_brand() == self.get_brand() && cap.get_ptr() == self.get_ptr() {
+            // The inner hook settled in place. Caching our own wrapper would
+            // create a strong self-cycle and an endless resolution edge.
+            return None;
+        }
         *self.0.resolved.borrow_mut() = Some(cap.clone());
         Some(cap)
     }
@@ -641,6 +649,11 @@ impl ClientHook for Hook {
                 }
             };
             let cap = membrane.wrap(cap, reverse);
+            if cap.get_ptr() == Rc::as_ptr(&wrapper) as usize
+                && cap.get_brand() == Rc::as_ptr(&wrapper.membrane.0) as usize
+            {
+                return Ok(cap);
+            }
             let result = wrapper.resolved.borrow_mut().get_or_insert(cap).clone();
             Ok(result)
         }))
@@ -717,6 +730,11 @@ impl Drop for MembraneResults {
     }
 }
 impl ResultsHook for MembraneResults {
+    fn retain_response_context(&mut self, context: Rc<dyn std::any::Any>) {
+        if let Some(outer) = self.outer.as_mut() {
+            outer.retain_response_context(context);
+        }
+    }
     fn cancellation_guard(&self) -> Option<Box<dyn std::any::Any>> {
         self.outer.as_ref()?.cancellation_guard()
     }

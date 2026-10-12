@@ -147,7 +147,7 @@ impl crate::traits::SetterInput<crate::any_pointer::Owned> for Reader<'_> {
 }
 
 pub struct Builder<'a> {
-    builder: StructBuilder<'a>,
+    pub(crate) builder: StructBuilder<'a>,
 }
 
 impl<'a> Builder<'a> {

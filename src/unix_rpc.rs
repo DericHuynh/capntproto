@@ -29,7 +29,9 @@ use std::{
 use tokio::{io::Interest, net::UnixStream};
 
 mod ancillary;
+mod portable;
 use ancillary::{recv_once, send_once};
+pub use portable::{ResourceReader, ResourceWriter};
 mod facade;
 mod queue;
 pub use facade::{client, client_borrowed, TwoPartyServer};
@@ -67,6 +69,9 @@ struct Input {
     fds: Vec<OwnedFd>,
 }
 impl IncomingMessage for Input {
+    fn get_segments(&self) -> Option<&dyn capnp::message::ReaderSegments> {
+        Some(self.body.get_segments())
+    }
     fn size_in_words(&self) -> usize {
         self.body.size_in_words()
     }
@@ -78,6 +83,12 @@ impl IncomingMessage for Input {
     }
 }
 enum Write {
+    Frame(
+        capnp_rpc::OutgoingFrame,
+        Vec<Rc<OwnedFd>>,
+        oneshot::Sender<capnp::Result<()>>,
+        queue::Pending,
+    ),
     Message(
         Body,
         Vec<Rc<OwnedFd>>,
@@ -212,6 +223,25 @@ impl Drop for ReadGuard {
 }
 struct Endpoint(Rc<Inner>);
 impl Connection<Side> for Endpoint {
+    fn send_frame(&mut self, mut frame: capnp_rpc::OutgoingFrame) -> Promise<(), Error> {
+        let pending = capnp_rpc::pry!(self.0.metrics.enqueue(frame.size_in_words() * 8));
+        let fds = if self.0.send_fds {
+            frame.take_fds().into_iter().take(253).collect()
+        } else {
+            drop(frame.take_fds());
+            Vec::new()
+        };
+        let (tx, rx) = oneshot::channel();
+        if self
+            .0
+            .sender
+            .unbounded_send(Write::Frame(frame, fds, tx, pending))
+            .is_err()
+        {
+            return Promise::err(stopped());
+        }
+        Promise::from_future(async move { rx.await.map_err(|_| stopped())? })
+    }
     fn new_stream(&mut self) -> (Box<dyn capnp_rpc::FlowController>, Promise<(), Error>) {
         self.0.window.new_stream()
     }
@@ -336,6 +366,28 @@ impl VatNetwork {
             let mut bytes = Vec::new();
             while let Some(command) = receiver.next().await {
                 match command {
+                    Write::Frame(frame, fds, done, pending) => {
+                        drop(pending);
+                        bytes.clear();
+                        let result = async {
+                            capnp::serialize::write_message_segments(
+                                &mut bytes,
+                                &frame.segments(),
+                            )?;
+                            write_message(&socket, &bytes, &fds).await.map_err(io_error)
+                        }
+                        .await;
+                        if bytes.capacity() > 64 * 1024 {
+                            bytes = Vec::new();
+                        }
+                        let _ = done.send(result.clone());
+                        if result.is_err() {
+                            if let Some(inner) = weak.upgrade() {
+                                inner.close();
+                            }
+                            return result;
+                        }
+                    }
                     Write::Message(body, fds, done, pending, _guard) => {
                         drop(pending); // active writes are excluded from queue metrics
                         bytes.clear();

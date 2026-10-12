@@ -178,7 +178,7 @@ async fn custom_segment_and_capability_owners_preserve_authority_and_independent
 }
 
 #[test]
-fn inline_segment_providers_are_pinned_before_root_acquisition() -> Result<()> {
+fn inline_segment_providers_rebase_after_owner_moves() -> Result<()> {
     struct Inline([Word; 4]);
     impl ReaderSegments for Inline {
         fn get_segment(&self, i: u32) -> Option<&[u8]> {
@@ -193,9 +193,9 @@ fn inline_segment_providers_are_pinned_before_root_acquisition() -> Result<()> {
     let mut inline = Inline([capnp::word(0, 0, 0, 0, 0, 0, 0, 0); 4]);
     Word::words_to_bytes_mut(&mut inline.0).copy_from_slice(bytes);
     let reader = MessageReader::<Address, _>::from_segments(inline, ReaderOptions::new())?;
-    let pointer = reader.read().city()?.as_ptr();
+    assert_eq!(reader.read().city()?, "small");
     let reader = Box::new(reader);
-    assert_eq!(reader.read().city()?.as_ptr(), pointer);
+    assert_eq!(reader.read().city()?, "small");
     let (raw, table) = reader.into_parts();
     let reader = MessageReader::<Address, _, _>::from_reader_with_capabilities(raw, table)?;
     assert_eq!(reader.read().city()?, "small");

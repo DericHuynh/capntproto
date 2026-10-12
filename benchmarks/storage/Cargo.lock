@@ -23,6 +23,7 @@ dependencies = [
  "capntproto-core",
  "capntproto-futures",
  "capntproto-rpc",
+ "capntproto-rpc-engine",
  "fs2",
  "futures",
  "libc",
@@ -67,6 +68,7 @@ name = "capntproto-futures"
 version = "0.25.2"
 dependencies = [
  "capntproto-core",
+ "capntproto-rpc-engine",
  "futures-channel",
  "futures-util",
 ]
@@ -78,7 +80,23 @@ dependencies = [
  "capntproto-codegen",
  "capntproto-core",
  "capntproto-futures",
+ "capntproto-rpc-engine",
+ "capntproto-rpc-wire",
  "futures",
+]
+
+[[package]]
+name = "capntproto-rpc-engine"
+version = "0.1.0"
+
+[[package]]
+name = "capntproto-rpc-wire"
+version = "0.1.0"
+dependencies = [
+ "capntproto-codegen",
+ "capntproto-compiler",
+ "capntproto-core",
+ "capntproto-rpc-engine",
 ]
 
 [[package]]

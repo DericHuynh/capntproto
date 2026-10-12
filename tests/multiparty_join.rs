@@ -1,10 +1,13 @@
 use capnp::{capability::Promise, Error};
-use capnp_rpc::{Connection, IncomingMessage, OutgoingMessage, RpcSystem, VatNetwork};
+use capnp_rpc::{Connection, IncomingMessage, OutgoingMessage, VatNetwork};
+#[path = "multiparty_join/driver.rs"]
+mod driver;
 use capntproto::{
     native_rpc::{DirectoryConnector, Handle, Network},
     transport::{self, Identity},
 };
 use capntproto_test_support::runtime_test_capnp::harness;
+use driver::System as RpcSystem;
 use futures::TryFutureExt;
 use std::{
     cell::{Cell, RefCell},
@@ -18,6 +21,12 @@ type Vat = [u8; 32];
 struct Proxies(Network, bool);
 struct Link(Box<dyn Connection<Vat>>, bool);
 impl Connection<Vat> for Link {
+    fn send_frame(&mut self, frame: capnp_rpc::OutgoingFrame) -> Promise<(), Error> {
+        self.0.send_frame(frame)
+    }
+    fn when_write_finished(&self) -> Option<Promise<(), Error>> {
+        self.0.when_write_finished()
+    }
     fn get_peer_vat_id(&self) -> Vat {
         self.0.get_peer_vat_id()
     }
@@ -165,6 +174,13 @@ async fn drain() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn independent_paths_join_over_native_and_keep_the_direct_capability() {
+    independent_paths(false).await;
+}
+#[tokio::test(flavor = "current_thread")]
+async fn portable_independent_paths_join_preserve_authority_cancellation_and_membranes() {
+    independent_paths(true).await;
+}
+async fn independent_paths(portable: bool) {
     tokio::task::LocalSet::new()
         .run_until(async {
             tokio::time::timeout(Duration::from_secs(30), async {
@@ -181,14 +197,15 @@ async fn independent_paths_join_over_native_and_keep_the_direct_capability() {
                 ] {
                     let ids: Vec<_> = (0..5).map(|_| Rc::new(Identity::generate())).collect();
                     let direct = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-                    let mut directory =
+                    let directory =
                         DirectoryConnector::new(ids[0].clone(), "127.0.0.1:0".parse().unwrap());
                     directory
-                        .insert(
+                        .insert_with_backend(
                             ids[3].public_key(),
                             direct.local_addr().unwrap(),
                             Some([27; 32]),
                             b"multiparty-join",
+                            capntproto::native_rpc::Backend::Quiche,
                         )
                         .unwrap();
                     let (a, ah) = Network::with_connector(ids[0].public_key(), Rc::new(directory));
@@ -226,6 +243,7 @@ async fn independent_paths_join_over_native_and_keep_the_direct_capability() {
                         first.clone()
                     };
                     let d = RpcSystem::new_with_bootstrap_factory(
+                        portable,
                         Box::new(Proxies(d, true)),
                         ids[3].public_key(),
                         Rc::new(Host {
@@ -235,26 +253,30 @@ async fn independent_paths_join_over_native_and_keep_the_direct_capability() {
                         }),
                     );
                     let other: harness::Client = capnp_rpc::new_client(Echo(91));
-                    let e = RpcSystem::new(Box::new(Proxies(e, true)), Some(other.client));
+                    let e =
+                        RpcSystem::new(portable, Box::new(Proxies(e, true)), Some(other.client));
                     let bf = Rc::new(Relay(RefCell::new(None)));
                     let cf = Rc::new(Relay(RefCell::new(None)));
                     let mut b = RpcSystem::new_with_bootstrap_factory(
+                        portable,
                         Box::new(Proxies(b, scenario != 4)),
                         ids[1].public_key(),
                         bf.clone(),
                     );
                     let mut c = RpcSystem::new_with_bootstrap_factory(
+                        portable,
                         Box::new(Proxies(c, true)),
                         ids[2].public_key(),
                         cf.clone(),
                     );
                     *bf.0.borrow_mut() = Some(b.bootstrap(ids[3].public_key()));
                     *cf.0.borrow_mut() = Some(c.bootstrap(ids[second_host].public_key()));
-                    let mut a = RpcSystem::new(Box::new(Proxies(a, true)), None);
+                    let mut a = RpcSystem::new(portable, Box::new(Proxies(a, true)), None);
                     let joiner = a.get_joiner();
                     let x: harness::Client = a.bootstrap(ids[1].public_key());
                     let y: harness::Client = a.bootstrap(ids[2].public_key());
-                    let tasks = [a, b, c, d, e].map(tokio::task::spawn_local);
+                    let tasks =
+                        [a, b, c, d, e].map(|system| tokio::task::spawn_local(system.run()));
                     let retained = x.clone();
                     let mut inputs = if parts == 3 {
                         vec![x.clone(), y, x]
@@ -301,7 +323,7 @@ async fn independent_paths_join_over_native_and_keep_the_direct_capability() {
                             );
                             None
                         } else {
-                            result.unwrap()
+                            result.unwrap_or_else(|error| panic!("portable={portable}, scenario={scenario}, parts={parts}: {error:?}"))
                         }
                     };
                     assert_eq!(joined.is_some(), matches!(scenario, 0 | 5 | 7));

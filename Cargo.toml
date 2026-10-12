@@ -23,10 +23,11 @@ exclude = [
     "examples/downstream",
     "fuzz",
     "verification/miri",
+    "verification/portable",
 ]
 
 [features]
-default = ["quic-quiche", "services", "storage"]
+default = ["native", "services", "storage"]
 native = ["tls", "dep:rcgen", "dep:x509-parser", "dep:boring", "dep:quiche", "dep:bytes", "dep:zeroize", "dep:capnpc", "dep:capntproto-compiler", "dep:nix", "dep:rustix"]
 services = ["dep:capnpc", "dep:capntproto-compiler"]
 storage = ["dep:memmap2", "dep:fs2", "dep:capnpc", "dep:capntproto-compiler"]
@@ -35,6 +36,7 @@ quic = ["native"]
 quic-quiche = ["quic"]
 
 [dependencies]
+capntproto-rpc-engine = { path = "crates/capntproto-rpc-engine" }
 bytes = { version = "1", optional = true }
 boring = { version = "5", optional = true }
 x509-parser = { version = "0.18", optional = true }

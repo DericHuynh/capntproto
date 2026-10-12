@@ -6,7 +6,7 @@ use super::{
 };
 use capnp_rpc::{rpc_twoparty_capnp::Side, VatNetwork};
 use capntproto_test_support::schedules::{self, block_on, spawn_local, yield_now, Trace};
-use futures::{Future, FutureExt};
+use futures::Future;
 use std::{
     pin::Pin,
     task::{Context, Poll, Waker},
@@ -154,7 +154,11 @@ impl<E: LocalExecutor> Harness<E> {
             .init_as::<capnp_rpc::rpc_capnp::message::Builder>()
             .init_bootstrap()
             .set_question_id(99);
-        let marker = connection.shutdown(Ok(())).shared();
+        // Observe queue completion separately from physical output close.
+        // Connection::shutdown now waits for both fences; using its promise as
+        // the queue marker would hide the very interval this harness exercises.
+        let marker = network.when_write_finished();
+        drop(connection.shutdown(Ok(())));
         let late = late.send().0;
         let closed = network.output_closed();
         let owner = Rc::new(OwnedSession::with_executor(generation(1), None, executor));

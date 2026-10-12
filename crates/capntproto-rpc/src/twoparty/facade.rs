@@ -4,7 +4,8 @@ mod borrowed;
 use super::{OutputSnapshot, QueueSnapshot, VatId, VatNetwork};
 use crate::{task_set, RpcSystem};
 use capnp::{capability::Client, capability::Promise, message::ReaderOptions, Error};
-use futures::{channel::oneshot, future::Shared, AsyncRead, AsyncReadExt, AsyncWrite, FutureExt};
+use capntproto_rpc_engine::completion::shared as oneshot;
+use futures::{future::Shared, AsyncRead, AsyncReadExt, AsyncWrite, FutureExt};
 use std::{cell::RefCell, future::Future, pin::Pin, rc::Rc, task::Context, task::Poll};
 
 /// Snapshot provider independent of the stream or network's lifetime. Providers
@@ -289,7 +290,18 @@ impl Future for TwoPartyClient<'_> {
                             _ => None,
                         },
                     };
-                    if let Some(error) = failure {
+                    // An explicit disconnect terminates the write queue with
+                    // Disconnected before its physical close completes. Keep
+                    // driving the system/pump so its registrations can finish;
+                    // dropping it here would report false task cancellation.
+                    let deliberate = failure.as_ref().is_some_and(|error| {
+                        error.kind == capnp::ErrorKind::Disconnected
+                            && this
+                                .system
+                                .as_ref()
+                                .is_some_and(|system| system.connections.borrow().is_closing())
+                    });
+                    if let Some(error) = failure.filter(|_| !deliberate) {
                         let result = if error.kind == capnp::ErrorKind::Disconnected {
                             Ok(())
                         } else {
@@ -333,7 +345,7 @@ type TraceEncoder = Rc<dyn Fn(&Error) -> String>;
 /// server.accept(io)?;
 /// let drained = server.drain();
 /// drop(server); // stop accepting; the driver retains the accepted connection
-/// futures::try_join!(driver, drained)?;
+/// futures::future::try_join(driver, drained).await?;
 /// # Ok(()) }
 /// ```
 pub struct TwoPartyServer {
@@ -535,7 +547,7 @@ impl TwoPartyServer {
             return Promise::ok(());
         }
         let (sender, receiver) = oneshot::channel();
-        drain.waiting.retain(|waiter| !waiter.is_canceled());
+        drain.waiting.retain(|waiter| !waiter.is_closed());
         drain.waiting.push(sender);
         Promise::from_future(async move {
             receiver

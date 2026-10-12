@@ -28,6 +28,10 @@ enum Command {
     CheckUnsafe,
     /// Verify workflow trigger and trust boundaries.
     CheckWorkflows,
+    /// Build and profile the complete portable TCP client; optionally train LLVM PGO.
+    RpcInstructions(dev::rpc_instructions::Args),
+    /// Prove the portable engine and fixed arena, with production mutation controls.
+    Kani(dev::kani::Args),
     #[command(subcommand)]
     Wiki(dev::wiki::Args),
     #[command(subcommand)]
@@ -57,6 +61,8 @@ fn main() -> Result<()> {
         }
         Command::CheckUnsafe => dev::checks::unsafe_code(),
         Command::CheckWorkflows => dev::checks::workflows(),
+        Command::RpcInstructions(args) => dev::rpc_instructions::run(args),
+        Command::Kani(args) => dev::kani::run(args),
         Command::Wiki(a) => dev::wiki::run(a),
         Command::Reports(a) => dev::reports::run(a),
         Command::DigitaloceanBench(a) => dev::cloud::run(a),

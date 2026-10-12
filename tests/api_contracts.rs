@@ -9,6 +9,547 @@ use std::{collections::BTreeSet, fs};
 mod rpc_reply;
 
 #[test]
+fn bounded_graph_domain_compile_contracts() {
+    let prelude = "use capntproto_rpc_engine::{connection, clients, imports, exports, questions, answers, ids::{ImportId, WireId}};";
+    let storage = "let mut is = [imports::Slot::<()>::EMPTY]; let mut es = [exports::Slot::EMPTY]; let mut qs = [questions::Slot::EMPTY]; let mut ans = [answers::Slot::<clients::Client<'_>>::EMPTY]; let mut nodes = [clients::Slot::<imports::Local<'_>, u8>::EMPTY];";
+    let bind = "domain.bind(connection::GraphStorage { imports: &mut is, exports: &mut es, questions: &mut qs, answers: &mut ans, clients: &mut nodes }).unwrap()";
+    let body = "let local = connection.ledgers.imports.admit(ImportId::from_wire(7), ()).unwrap(); let client = connection.clients.endpoint(local, clients::Location::Remote(1)).unwrap(); let mut batch = connection.ledgers.exports.batch(); let grant = batch.export(client).unwrap(); batch.commit(); let client = connection.ledgers.exports.release(grant.id(), 1).unwrap().unwrap(); connection.clients.release(client); let local = connection.clients.take_retired().unwrap(); connection.ledgers.imports.release(local);";
+    let mut cases = vec![("positive".into(), format!("{prelude} fn main() {{ connection::with_domain(|domain| {{ {storage} let mut connection = {bind}; {body} }}); }}"), None)];
+    cases.push(("bind-domain-only-once".into(), format!("{prelude} fn main() {{ connection::with_domain(|domain| {{ {storage} let connection = {bind}; drop(connection); let _again = {bind}; }}); }}"), Some("E0382")));
+    cases.push(("domain-not-copy".into(), format!("{prelude} fn require<T: Copy>() {{}} fn main() {{ require::<connection::Domain<'_>>(); }}"), Some("E0277")));
+    cases.push(("domain-not-forgeable".into(), format!("{prelude} fn main() {{ let _ = connection::Domain {{ brand: core::marker::PhantomData }}; }}"), Some("E0451")));
+    cases.push((
+        "domain-cannot-escape".into(),
+        format!("{prelude} fn main() {{ let _ = connection::with_domain(|domain| domain); }}"),
+        Some("lifetime may not live long enough"),
+    ));
+    check_contracts("bounded-graph-domain-contracts", &format!("capntproto-rpc-engine = {{ path = {:?} }}\n", root().join("crates/capntproto-rpc-engine")), cases,
+        "joint connection domains permit graph endpoints to own imports while exports and answers own graph clients; the generative domain cannot be forged, duplicated, reused or escaped",
+        "terminal scope teardown and explicit resource draining remain runtime responsibilities");
+}
+
+#[test]
+fn bounded_owned_rpc_compile_contracts() {
+    let prelude = "use capntproto_rpc_engine::{messages, imports, exports, answers}; use capntproto_rpc_wire::{calls, owned};";
+    let signature = "fn usage<'p, 'i, 'e, 'a>(request: owned::Call<'p, 'i, 'e, 'a, (), 1, 0>, messages: &mut messages::Messages<'p, '_, '_>, imports: &mut imports::Imports<'i, '_, ()>, exports: &mut exports::Exports<'e, '_, ()>, answers: &mut answers::Answers<'a, '_, ()>)";
+    let mut cases = vec![("positive".into(), format!("{prelude} {signature} {{ let future = request.with_async(messages, async |_| ()); let writer = messages.reserve(4).unwrap(); messages.discard(writer); drop(future); request.release(messages, imports, exports, answers); }} fn main() {{}}"), None)];
+    cases.push(("release-suspended-request".into(), format!("{prelude} {signature} {{ let future = request.with_async(messages, async |_| ()); request.release(messages, imports, exports, answers); drop(future); }} fn main() {{}}"), Some("E0505")));
+    cases.push(("immutable-receipt-origin".into(), format!("{prelude} fn wrong(request: owned::Request<'_, '_, '_, '_, '_, (), 1>) {{ let _ = request.incoming; }} fn main() {{}}"), Some("E0616")));
+    cases.push((
+        "frame-lease-private".into(),
+        format!(
+            "{prelude} fn wrong(frame: owned::Frame<'_>) {{ let _ = frame.lease; }} fn main() {{}}"
+        ),
+        Some("E0616"),
+    ));
+    cases.push(("frame-release-once".into(), format!("{prelude} fn wrong<'p>(frame: owned::Frame<'p>, messages: &mut messages::Messages<'p, '_, '_>) {{ frame.release(messages); frame.release(messages); }} fn main() {{}}"), Some("E0382")));
+    cases.push((
+        "no-copy-frame".into(),
+        format!(
+            "{prelude} fn require<T: Copy>() {{}} fn main() {{ require::<owned::Frame<'_>>(); }}"
+        ),
+        Some("E0277"),
+    ));
+    let setup = "let mut bytes = [0u8; 8]; let mut buffers = [messages::Buffer::new(&mut bytes)]; messages::with_messages(&mut buffers, &mut [], |messages| { let writer = messages.reserve(8).unwrap(); let mut writing = messages.write_owned(writer).unwrap();";
+    cases.push(("writer-moved-into-task".into(), format!("{prelude} fn main() {{ {setup} messages.discard(writer); drop(writing); }}).unwrap(); }}"), Some("E0382")));
+    cases.push(("recover-view-while-borrowed".into(), format!("{prelude} fn main() {{ {setup} let bytes = writing.bytes(); let writer = writing.into_writer(); bytes[0] = 1; messages.discard(writer); }}).unwrap(); }}"), Some("E0505")));
+    check_contracts("bounded-owned-rpc-contracts", &format!("capntproto-rpc-engine = {{ path = {:?} }}\ncapntproto-rpc-wire = {{ path = {:?} }}\n", root().join("crates/capntproto-rpc-engine"), root().join("crates/capntproto-rpc-wire")), cases,
+        "owning requests keep their immutable receipt origin and frame across suspension; affine frames and writable task reservations cannot be released or recovered twice; independent pool operations remain available",
+        "terminally forgotten tasks retain reservations until scope teardown; protocol admission, cancellation policy and wire cleanup require runtime checks");
+}
+
+#[test]
+fn bounded_result_publication_compile_contracts() {
+    let prelude = "use capnp::{message::FixedBuilder, word, Word};";
+    let setup = "let mut words = [word(0,0,0,0,0,0,0,0); 8]; let mut builder = FixedBuilder::new(&mut words).unwrap(); builder.try_set_root_text(\"live\").unwrap();";
+    let mut cases = vec![("positive".into(), format!("{prelude} fn main() {{ {setup} let segment = builder.into_segment(); let segments = [segment]; let reader = capnp::message::Reader::new(&segments[..], Default::default()); assert_eq!(reader.get_root::<capnp::text::Reader<'_>>().unwrap(), \"live\"); }}"), None)];
+    for (name, code, error) in [
+        ("publish-builder-once", "builder.into_segment(); builder.into_segment();", "E0382"),
+        ("publish-borrowed-builder", "let text = builder.get_root_as_reader::<capnp::text::Reader<'_>>().unwrap(); builder.into_segment(); assert!(!text.is_empty());", "E0505"),
+        ("reuse-published-buffer", "let segment = builder.into_segment(); let _ = Word::words_to_bytes_mut(&mut words); assert!(!segment.is_empty());", "E0499"),
+    ] { cases.push((name.into(), format!("{prelude} fn main() {{ {setup} {code} }}"), Some(error))); }
+    let prelude = "use capntproto_rpc_engine::messages::{self, Buffer, SendSlot};";
+    let setup = "let mut a = [0u8; 4]; let mut b = [0u8; 4]; let mut buffers = [Buffer::new(&mut a), Buffer::new(&mut b)]; let mut sends = [SendSlot::EMPTY]; messages::with_messages(&mut buffers, &mut sends, |messages| { let mut writer = messages.reserve(4).unwrap(); let mut view = messages.write_borrowed(&mut writer).unwrap();";
+    for (name, code, error) in [
+        (
+            "seal-borrowed-result",
+            "let _ = messages.seal(writer, 4); view[0] = 1;",
+            "E0505",
+        ),
+        (
+            "discard-borrowed-result",
+            "messages.discard(writer); view[0] = 1;",
+            "E0505",
+        ),
+        (
+            "second-mutable-result-view",
+            "let _second = messages.write_borrowed(&mut writer); view[0] = 1;",
+            "E0499",
+        ),
+    ] {
+        cases.push((
+            name.into(),
+            format!("{prelude} fn main() {{ {setup} {code} }}).unwrap(); }}"),
+            Some(error),
+        ));
+    }
+    check_contracts("bounded-result-publication-contracts", &format!("capnp = {{ package = \"capntproto-core\", path = {:?}, default-features = false }}\ncapntproto-rpc-engine = {{ path = {:?} }}\n", root().join("crates/capntproto-core"), root().join("crates/capntproto-rpc-engine")), cases,
+        "consuming fixed-segment publication and writer-bound mutable views prevent reuse, mutation and publication while borrowed",
+        "wire validity, framing, capability ownership and transport admission are separate checks");
+}
+
+#[test]
+fn bounded_connection_and_adoption_compile_contracts() {
+    let prelude = "use capntproto_rpc_engine::{connection::{with_connection, Storage}, imports, exports, questions, answers, ids::{ImportId, AnswerId, WireId}};";
+    let storage = "let mut is = [imports::Slot::<i32>::EMPTY]; let mut es = [exports::Slot::<i32>::EMPTY]; let mut qs = [questions::Slot::EMPTY]; let mut as_ = [answers::Slot::<i32>::EMPTY];";
+    let scope = "with_connection(Storage { imports:&mut is, exports:&mut es, questions:&mut qs, answers:&mut as_ }, |connection|";
+    let setup = "let id = AnswerId::from_wire(17); connection.answers.prepare_admission(id, None).unwrap().redirected().accept(41); let pending = connection.answers.prepare_adoption(id).unwrap();";
+    let mut cases = vec![("positive".into(), format!("{prelude} fn main() {{ {storage} {scope} {{ {setup} let adopted = pending.accept(); assert_eq!(connection.answers.adopted(&adopted), &41); connection.answers.release_adopted(adopted); }}).unwrap(); }}"), None)];
+    for (name, code, error) in [
+        ("adopt-once", "pending.accept(); pending.accept();", "E0382"),
+        (
+            "finish-during-adoption",
+            "connection.answers.finish(id, false); pending.accept();",
+            "E0499",
+        ),
+        (
+            "adopted-not-copy",
+            "drop(pending); fn require<T: Copy>() {} require::<answers::Adopted<'_>>();",
+            "E0277",
+        ),
+    ] {
+        cases.push((
+            name.into(),
+            format!("{prelude} fn main() {{ {storage} {scope} {{ {setup} {code} }}).unwrap(); }}"),
+            Some(error),
+        ));
+    }
+    cases.push(("cross-connection-import".into(), format!("{prelude} fn main() {{ {storage} {scope} {{ let local = connection.imports.admit(ImportId::from_wire(3), 41).unwrap(); {storage} {scope} {{ connection.imports.release(local); }}).unwrap(); }}).unwrap(); }}"), Some("E0521")));
+    cases.push(("connection-handle-escape".into(), format!("{prelude} fn main() {{ {storage} let _outside = {scope} {{ connection.questions.reserve().unwrap().accept() }}).unwrap(); }}"), Some("lifetime may not live long enough")));
+    check_contracts("bounded-connection-adoption-contracts", &format!("capntproto-rpc-engine = {{ path = {:?} }}\n", root().join("crates/capntproto-rpc-engine")), cases,
+        "one connection scope keeps role-specific handles local; adoption is affine and excludes concurrent Finish mutation",
+        "runtime transitions validate wire IDs, once-only adoption and producer retention; the scope alone is not a complete dispatcher");
+}
+
+#[test]
+fn bounded_reflected_publication_compile_contracts() {
+    let prelude = "use capntproto_rpc_engine::messages; use capntproto_rpc_wire::publication::reflected::{Publication, Reference}; type P<'a> = Publication<'a,'a,'a,'a,'a,'a,'a,'a,'a,'a,'a,(),()>;";
+    let mut cases = vec![("positive".into(), format!("{prelude} fn accept<'a>(p: P<'a>, slot: messages::QueueSlot<'a,'a,'a>) {{ let _ = p.accept_into(slot); }} fn main() {{}}"), None)];
+    for (name, code, error) in [
+        ("publication-once", "fn wrong<'a>(p: P<'a>, first: messages::QueueSlot<'a,'a,'a>, second: messages::QueueSlot<'a,'a,'a>) { p.accept_into(first); p.accept_into(second); }", "E0382"),
+        ("no-unordered-accept", "fn wrong(p: P<'_>) { p.accept(); }", "E0599"),
+        ("references-private", "fn wrong(p: P<'_>) { let _ = p.references; }", "E0616"),
+        ("reference-not-copy", "fn require<T: Copy>() {} fn wrong() { require::<Reference<'_, '_, '_>>(); }", "E0277"),
+        ("reference-move-once", "fn wrong<'a>(local: capntproto_rpc_engine::imports::Local<'a>) { let _first = Reference::Hosted(local); let _second = Reference::Hosted(local); }", "E0382"),
+    ] { cases.push((name.into(), format!("{prelude} {code} fn main() {{}}"), Some(error))); }
+    check_contracts("bounded-reflected-publication-contracts", &format!("capntproto-rpc-engine = {{ path = {:?} }}\ncapntproto-rpc-wire = {{ path = {:?} }}\n", root().join("crates/capntproto-rpc-engine"), root().join("crates/capntproto-rpc-wire")), cases,
+        "reflected outgoing references are affine and publication only permits one ordered acceptance",
+        "wire identity, transform matching and cleanup FIFO order require runtime validation and fault tests");
+}
+
+#[test]
+fn bounded_reflected_capability_compile_contracts() {
+    let prelude = "use capntproto_rpc_engine::exports::{with_exports, Slot, LeaseSlot};";
+    let setup = "let mut slots = [Slot::EMPTY]; with_exports(&mut slots, |exports| { let mut batch = exports.batch(); let grant = batch.export(41).unwrap(); batch.commit(); let mut receipts = [LeaseSlot::new(grant.id())]; let pending = exports.prepare_leases(&mut receipts).unwrap();";
+    let mut cases = vec![("positive".into(), format!("{prelude} fn main() {{ {setup} let receipts = pending.accept(); let lease = receipts[0].take().unwrap(); assert_eq!(exports.get(&lease), &41); exports.release_local(lease); }}).unwrap(); }}"), None)];
+    for (name, code, error) in [
+        ("double-reflected-admission", "pending.accept(); pending.accept();", "E0382"),
+        ("release-during-reflected-admission", "exports.release(grant.id(), 1); pending.accept();", "E0499"),
+        ("replace-reflected-receipt", "receipts[0] = LeaseSlot::none(); pending.accept();", "E0506"),
+        ("cross-reflected-domain", "let receipts = pending.accept(); let lease = receipts[0].take().unwrap(); let mut other = [Slot::<i32>::EMPTY]; with_exports(&mut other, |other| { other.release_local(lease); }).unwrap();", "E0521"),
+    ] { cases.push((name.into(), format!("{prelude} fn main() {{ {setup} {code} }}).unwrap(); }}"), Some(error))); }
+    check_contracts("bounded-reflected-capability-contracts", &format!("capntproto-rpc-engine = {{ path = {:?} }}\n", root().join("crates/capntproto-rpc-engine")), cases,
+        "reflected local descriptors have exclusive preflight, immutable receipt plans and scoped noncopy ownership",
+        "full wire admission separately matches every descriptor and target before accepting the batch");
+}
+
+#[test]
+fn bounded_promise_and_embargo_compile_contracts() {
+    let prelude = "use capntproto_rpc_engine::{imports::{with_imports, Slot, ReceiveSlot}, ids::{ImportId, WireId}};";
+    let setup = "let mut slots = [Slot::EMPTY]; with_imports(&mut slots, |imports| { let id = ImportId::from_wire(17); let mut first = [ReceiveSlot::new_promise(id, 41)]; imports.prepare_receive(&mut first).unwrap().commit(); let mut empty = []; let pending = imports.prepare_resolution(id, &mut empty).unwrap();";
+    let mut cases = vec![("positive".into(), format!("{prelude} fn main() {{ {setup} let (target, _) = pending.commit(); assert!(target.is_some()); }}).unwrap(); }}"), None)];
+    for (name, code, error) in [
+        ("resolve-twice", "pending.commit(); pending.commit();", "E0382"),
+        ("release-during-resolve", "imports.release(first[0].take_local().unwrap()); pending.commit();", "E0499"),
+        ("cross-resolution-domain", "let (target, _) = pending.commit(); let mut other = [Slot::<i32>::EMPTY]; with_imports(&mut other, |other| { let _ = other.resolve(target.unwrap()); }).unwrap();", "E0521"),
+    ] { cases.push((name.into(), format!("{prelude} fn main() {{ {setup} {code} }}).unwrap(); }}"), Some(error))); }
+    let prelude =
+        "use capntproto_rpc_engine::{embargoes::Embargoes, peer_table::{BorrowedSparse, Slot}};";
+    let setup = "let mut slots = [Slot::EMPTY]; let mut table = Embargoes::new(BorrowedSparse::new(&mut slots)).ok().unwrap(); let pending = table.reserve(41).unwrap();";
+    for (name, code, error) in [
+        (
+            "accept-embargo-twice",
+            "pending.accept(); pending.accept();",
+            "E0382",
+        ),
+        (
+            "echo-during-reservation",
+            "let id = pending.id(); let _ = table.receive(id); pending.accept();",
+            "E0499",
+        ),
+    ] {
+        cases.push((
+            name.into(),
+            format!("{prelude} fn main() {{ {setup} {code} }}"),
+            Some(error),
+        ));
+    }
+    check_contracts("bounded-promise-embargo-contracts", &format!("capntproto-rpc-engine = {{ path = {:?} }}\n", root().join("crates/capntproto-rpc-engine")), cases,
+        "single Resolve/embargo acceptance, exclusive reference preflight and connection-local resolution targets",
+        "wire admission binds output to the exact FIFO frame; dispatch and full connection composition remain separate");
+}
+
+#[test]
+fn bounded_input_admission_compile_contracts() {
+    let prelude =
+        "use capntproto_rpc_engine::{answers::{with_answers, Slot}, ids::{AnswerId, WireId}};";
+    let setup = "let mut slots = [const { Slot::EMPTY }; 2]; with_answers(&mut slots, |answers| { let parent = answers.admit(AnswerId::from_wire(1), 17).unwrap(); let pending = answers.prepare_admission(AnswerId::from_wire(2), Some(parent.id())).unwrap();";
+    let mut cases = vec![("positive".into(), format!("{prelude} fn main() {{ {setup} let (key, parent) = pending.accept(23); assert_eq!(answers.get(key), Ok(&23)); assert_eq!(answers.pipelined(&parent.unwrap()), &17); }}).unwrap(); }}"), None)];
+    for (name, code, error) in [
+        ("double-input-acceptance", "let _ = pending.accept(23); let _ = pending.accept(29);", "E0382"),
+        ("finish-during-input-preflight", "answers.finish(parent.id(), false); let _ = pending.accept(23);", "E0499"),
+        ("cross-input-pipeline", "let (_, parent) = pending.accept(23); let mut other = [Slot::<i32>::EMPTY]; with_answers(&mut other, |other| { let _ = other.release_pipeline(parent.unwrap()); }).unwrap();", "E0521"),
+    ] { cases.push((name.into(), format!("{prelude} fn main() {{ {setup} {code} }}).unwrap(); }}"), Some(error))); }
+    let prelude = "use capntproto_rpc_engine::exports::{with_exports, Slot};";
+    let setup = "let mut slots = [Slot::EMPTY]; with_exports(&mut slots, |exports| { let mut batch = exports.batch(); let grant = batch.export(17).unwrap(); batch.commit(); let mut scratch = [0]; let mut pending = exports.prepare_releases(&mut scratch).unwrap(); pending.record(grant.id(), 1).unwrap(); let ready = pending.finish().unwrap();";
+    for (name, code, error) in [
+        (
+            "double-release-batch-acceptance",
+            "ready.accept(); ready.accept();",
+            "E0382",
+        ),
+        (
+            "change-prepared-release-counts",
+            "scratch[0] = 2; ready.accept();",
+            "E0506",
+        ),
+        (
+            "release-during-preflight",
+            "let _ = exports.release(grant.id(), 1); ready.accept();",
+            "E0499",
+        ),
+    ] {
+        cases.push((
+            name.into(),
+            format!("{prelude} fn main() {{ {setup} {code} }}).unwrap(); }}"),
+            Some(error),
+        ));
+    }
+    check_contracts("bounded-input-admission-contracts", &format!("capntproto-rpc-engine = {{ path = {:?} }}\n", root().join("crates/capntproto-rpc-engine")), cases,
+        "exclusive input preflight, immutable release counts, single acceptance and connection-local pipeline ownership",
+        "the wire layer must bind these tickets to the exact received and retained sent frames");
+}
+
+#[test]
+fn bounded_async_scope_compile_contracts() {
+    let prelude = "use capntproto_rpc_engine::{messages::{with_messages_async, Buffer, SendSlot}, questions::{with_questions_async, Slot}};";
+    let setup = "let mut bytes = [0; 8]; let mut buffers = [Buffer::new(&mut bytes)]; let mut sends = [SendSlot::EMPTY]; with_messages_async(&mut buffers, &mut sends, async |messages| { let writer = messages.reserve(8).unwrap(); let lease = messages.seal(writer, 8).unwrap(); let view = messages.read(&lease); core::future::ready(()).await;";
+    let mut cases = vec![("positive".into(), format!("{prelude} async fn check() {{ {setup} let offer = messages.offer(&lease).unwrap(); let key = messages.accept(offer); messages.send_window(key).unwrap().advance(8).unwrap(); assert_eq!(view.len(), 8); drop(view); messages.release(lease); }}).await.unwrap(); }} fn main() {{ let _ = check(); }}"), None)];
+    for (name, code, error) in [
+        ("release-suspended-view", "messages.release(lease); assert_eq!(view.len(), 8);", "E0505"),
+        ("cross-async-message-domain", "drop(view); let mut other_bytes = [0; 8]; let mut other = [Buffer::new(&mut other_bytes)]; with_messages_async(&mut other, &mut [], async |other| { other.release(lease); }).await.unwrap();", "lifetime may not live long enough"),
+    ] {
+        cases.push((name.into(), format!("{prelude} async fn check() {{ {setup} {code} }}).await.unwrap(); }} fn main() {{ let _ = check(); }}"), Some(error)));
+    }
+    cases.push(("cross-async-question-domain".into(), format!("{prelude} async fn check() {{ let mut slots = [Slot::EMPTY]; with_questions_async(&mut slots, async |questions| {{ let call = questions.reserve().unwrap().accept(); let key = call.key(); let mut other = [Slot::EMPTY]; with_questions_async(&mut other, async |other| {{ let _ = other.is_live(key); }}).await.unwrap(); }}).await.unwrap(); }} fn main() {{ let _ = check(); }}"), Some("lifetime may not live long enough")));
+    check_contracts(
+        "bounded-async-scope-contracts",
+        &format!(
+            "capntproto-rpc-engine = {{ path = {:?} }}\n",
+            root().join("crates/capntproto-rpc-engine")
+        ),
+        cases,
+        "suspended views retain their lease and async message/question scopes remain distinct",
+        "the caller supplies pinning, polling and quiesces IO before terminal cancellation",
+    );
+}
+
+#[test]
+fn bounded_pipeline_and_streaming_compile_contracts() {
+    let prelude = "use capntproto_portable_check::portable_capnp::{echo, api::{Record, echo::{CapabilityResults, EchoResults, ListResults}}};";
+    let setup = "let mut storage = [0u16; 4];";
+    let path = "echo::Owned::CAPABILITY.pipeline(&mut storage).capability(CapabilityResults::VALUE).unwrap()";
+    let mut cases = vec![(
+        "positive".into(),
+        format!(
+            "{prelude} fn main() {{ {setup} let path = {path}; assert_eq!(path.fields(), &[0]); }}"
+        ),
+        None,
+    )];
+    for (name, code, diagnostic) in [
+        ("wrong-path-schema", "let _ = echo::Owned::CAPABILITY.pipeline(&mut storage).field(Record::NESTED);".into(), "E0308"),
+        ("scalar-is-not-capability", "let _ = echo::Owned::ECHO.pipeline(&mut storage).capability(EchoResults::VALUE);".into(), "E0308"),
+        ("list-is-not-capability", "let _ = echo::Owned::LIST.pipeline(&mut storage).capability(ListResults::VALUES);".into(), "E0308"),
+        ("stream-has-no-pipeline", "let _ = echo::Owned::WRITE.pipeline(&mut storage);".into(), "E0599"),
+        ("stream-has-no-results", "fn check(content: capnp::any_pointer::Reader<'_>) { let _ = echo::Owned::WRITE.read_results(content); }".into(), "E0599"),
+        ("path-keeps-result-schema", format!("let _: capnp::wire_capability::CapabilityPath<'_, EchoResults, echo::Owned> = {path};"), "E0308"),
+        ("path-keeps-storage-borrow", format!("let path = {path}; storage[0] = 7; assert_eq!(path.fields(), &[0]);"), "E0506"),
+    ] {
+        cases.push((name.into(), format!("{prelude} fn main() {{ {setup} {code} }}"), Some(diagnostic)));
+    }
+    check_contracts("bounded-pipeline-streaming-contracts", &format!("capnp = {{ package = \"capntproto-core\", path = {:?}, default-features = false }}\ncapntproto-portable-check = {{ path = {:?} }}\n", root().join("crates/capntproto-core"), root().join("verification/portable")), cases,
+        "schema-typed result paths, capability-only endpoints, caller-owned path storage and streaming method roles",
+        "wire union selections and capacity are checked at runtime; question ownership and dispatch belong to the connection");
+}
+
+#[test]
+fn bounded_import_batch_compile_contracts() {
+    let prelude = "use capntproto_rpc_engine::{imports::{with_imports, Slot, ReceiveSlot}, ids::{ImportId, WireId}};";
+    let setup = "let mut slots = [Slot::EMPTY]; with_imports(&mut slots, |imports| { let mut receipts = [ReceiveSlot::new(ImportId::from_wire(9), 17)]; let prepared = imports.prepare_receive(&mut receipts).unwrap();";
+    let mut cases = vec![("positive".into(), format!("{prelude} fn main() {{ {setup} prepared.commit(); let local = receipts[0].take_local().unwrap(); assert_eq!(imports.get(&local), &17); imports.release(local); }}).unwrap(); }}"), None)];
+    for (name, code, diagnostic) in [
+        ("double-receive-commit", "prepared.commit(); prepared.commit();", "E0382"),
+        ("mutate-receipt-during-preflight", "let _ = receipts[0].take_owner(); prepared.commit();", "E0499"),
+        ("receive-during-preflight", "let _ = imports.receive(ImportId::from_wire(9)); prepared.commit();", "E0499"),
+        ("cross-import-batch", "prepared.commit(); let local = receipts[0].take_local().unwrap(); let mut other = [Slot::<i32>::EMPTY]; with_imports(&mut other, |other| { other.release(local); }).unwrap();", "E0521"),
+    ] {
+        cases.push((name.into(), format!("{prelude} fn main() {{ {setup} {code} }}).unwrap(); }}"), Some(diagnostic)));
+    }
+    check_contracts(
+        "bounded-import-batch-contracts",
+        &format!(
+            "capntproto-rpc-engine = {{ path = {:?} }}\n",
+            root().join("crates/capntproto-rpc-engine")
+        ),
+        cases,
+        "exclusive import/receipt preflight, single acceptance and invariant connection ownership",
+        "the receiver must bind receipt IDs to validated wire descriptors before acceptance",
+    );
+}
+
+#[test]
+fn bounded_call_and_fifo_compile_contracts() {
+    let prelude = "use capntproto_rpc_engine::{questions::{with_questions, Slot}, messages::{with_messages, Buffer, SendSlot, Queue}};";
+    let setup = "let mut slots = [Slot::EMPTY]; with_questions(&mut slots, |questions| { let local = questions.reserve().unwrap().accept(); let key = local.key();";
+    let mut cases = vec![("positive".into(), format!("{prelude} fn main() {{ {setup} questions.returned(key.id(), false).unwrap(); questions.release(local); questions.pending_finish().unwrap().accept(); assert!(questions.is_empty()); }}).unwrap(); }}"), None)];
+    for (name, code, error) in [
+        ("double-local-release", "questions.release(local); questions.release(local);", "E0382"),
+        ("unchecked-local-clone", "let _ = local.clone();", "E0599"),
+        ("cross-question-domain", "let mut other = [Slot::EMPTY]; with_questions(&mut other, |other| { let _ = other.is_live(key); }).unwrap();", "E0521"),
+        ("double-finish-accept", "questions.release(local); let finish = questions.pending_finish().unwrap(); finish.accept(); finish.accept();", "E0382"),
+    ] {
+        cases.push((name.into(), format!("{prelude} fn main() {{ {setup} {code} }}).unwrap(); }}"), Some(error)));
+    }
+    let queue_setup = "let mut bytes = [0; 8]; let mut buffers = [Buffer::new(&mut bytes)]; let mut sends = [SendSlot::EMPTY]; with_messages(&mut buffers, &mut sends, |messages| { let writer = messages.reserve(8).unwrap(); let lease = messages.seal(writer, 8).unwrap(); let offer = messages.offer(&lease).unwrap(); let mut slots = [None]; let mut queue = Queue::new(&mut slots).unwrap();";
+    for (name, code, error) in [
+        ("copied-send-key-is-not-queue-admission", "let key = messages.accept(offer); queue.reserve().unwrap().accept(messages, key);", "E0308"),
+        ("duplicate-offer", "queue.reserve().unwrap().accept(messages, offer); queue.reserve().unwrap().accept(messages, offer);", "E0382"),
+        ("duplicate-queue-reservation", "let slot = queue.reserve().unwrap(); slot.accept(messages, offer); drop(slot);", "E0382"),
+    ] {
+        cases.push((name.into(), format!("{prelude} fn main() {{ {queue_setup} {code} }}).unwrap(); }}"), Some(error)));
+    }
+    check_contracts("bounded-call-fifo-contracts", &format!("capntproto-rpc-engine = {{ path = {:?} }}\n", root().join("crates/capntproto-rpc-engine")), cases,
+        "connection-scoped question identity, affine local/cleanup ownership and single-use FIFO admission",
+        "protocol decoding, descriptor authority and shutdown remain connection responsibilities");
+}
+
+#[test]
+fn bounded_rpc_publication_compile_contracts() {
+    let prelude = "use capntproto_rpc_engine::{exports::Batch, messages::{Messages, Lease, SendKey}}; use capntproto_rpc_wire::publication::prepare;";
+    let setup = "fn publish<'a, 'e, 't, 'p, 's, 'b>(batch: Batch<'a, 'e, 't, u32>, messages: &'a mut Messages<'p, 's, 'b>, lease: Lease<'p>) { let prepared = prepare(batch, messages, lease, &mut [0; 4], Default::default()).unwrap();";
+    let mut cases = vec![("positive".into(), format!("{prelude} {setup} let size = prepared.bytes().len(); let key = prepared.accept(); assert_eq!(messages.send_window(key).unwrap().advance(size), Ok(true)); }} fn main() {{}}"), None)];
+    for (name, body, diagnostic) in [
+        (
+            "double-accept",
+            "let _ = prepared.accept(); let _ = prepared.accept();",
+            "E0382",
+        ),
+        ("double-commit", "batch.commit(); drop(prepared);", "E0382"),
+        (
+            "lease-reuse",
+            "drop(prepared); messages.release(lease);",
+            "E0382",
+        ),
+        (
+            "mutate-validated-frame",
+            "prepared.bytes()[0] = 0;",
+            "E0594",
+        ),
+        (
+            "touch-pool-before-accept",
+            "let _ = messages.reserve(0); drop(prepared);",
+            "E0499",
+        ),
+        (
+            "read-while-accepting",
+            "let bytes = prepared.bytes(); let _ = prepared.accept(); assert_eq!(bytes.len(), 0);",
+            "E0505",
+        ),
+        ("private-offer", "let _ = prepared.offer;", "E0616"),
+        ("private-batch", "let _ = prepared.batch;", "E0616"),
+        (
+            "prepared-is-not-send",
+            "let _: SendKey<'_> = prepared;",
+            "E0308",
+        ),
+    ] {
+        cases.push((
+            name.into(),
+            format!("{prelude} {setup} {body} }} fn main() {{}}"),
+            Some(diagnostic),
+        ));
+    }
+    check_contracts("bounded-publication-contracts", &format!("capntproto-rpc-engine = {{ path = {:?} }}\ncapntproto-rpc-wire = {{ path = {:?} }}\n", root().join("crates/capntproto-rpc-engine"), root().join("crates/capntproto-rpc-wire")), cases,
+        "validated frame immutability, exclusive table/pool ownership, no send identity before acceptance and single-use publication",
+        "connection identity, queue reservation/order, content-capability indices and transport delivery remain driver responsibilities");
+}
+
+#[test]
+fn bounded_message_lease_compile_contracts() {
+    let prelude =
+        "use capntproto_rpc_engine::messages::{with_messages, Buffer, SendSlot, Lease, SendKey};\n";
+    let setup = "let mut bytes = [0; 8]; let mut buffers = [Buffer::new(&mut bytes)]; let mut sends = [SendSlot::EMPTY]; with_messages(&mut buffers, &mut sends, |messages| { let writer = messages.reserve(8).unwrap(); messages.write(&writer).copy_from_slice(b\"retained\"); let lease = messages.seal(writer, 8).unwrap(); let offer = messages.offer(&lease).unwrap(); let key = messages.accept(offer);";
+    let end = "}).unwrap();";
+    let mut cases = vec![("positive".into(), format!("{prelude} fn main() {{ {setup} let copy = messages.retain(&lease).unwrap(); messages.release(lease); assert_eq!(messages.send_window(key).unwrap().advance(8), Ok(true)); assert_eq!(&*messages.read(&copy), b\"retained\"); messages.release(copy); let writer = messages.reserve(8).unwrap(); messages.discard(writer); {end} }}"), None)];
+    for (name, code, diagnostic) in [
+        ("double-release", "messages.release(lease); messages.release(lease);", "E0382"),
+        ("unchecked-clone", "let _ = lease.clone();", "E0599"),
+        ("sealed-write", "let _ = messages.write(&lease);", "E0308"),
+        ("private-buffer-key", "let _ = lease.key;", "E0616"),
+        ("live-view-release", "let bytes = messages.read(&lease); messages.release(lease); assert_eq!(bytes.len(), 8);", "E0505"),
+        ("writer-after-seal", "messages.discard(writer);", "E0382"),
+        ("live-write-seal", "let writer = messages.reserve(0).unwrap(); let mut bytes = messages.write(&writer); let _ = messages.seal(writer, 0); bytes[0] = 1;", "E0499"),
+        ("double-accept", "let _ = messages.accept(offer);", "E0382"),
+        ("reader-is-not-send-key", "let _: SendKey<'_> = lease;", "E0308"),
+        ("double-window-completion", "let window = messages.send_window(key).unwrap(); window.advance(1).unwrap(); window.advance(1).unwrap();", "E0382"),
+        ("live-send-bytes", "let window = messages.send_window(key).unwrap(); let bytes = window.bytes(); window.advance(8).unwrap(); assert_eq!(bytes.len(), 8);", "E0505"),
+        ("failure-during-window", "let window = messages.send_window(key).unwrap(); messages.fail_send(key).unwrap(); window.advance(8).unwrap();", "E0499"),
+        ("unchecked-capacity", "messages.reserve(8);", "unused_must_use"),
+        ("cross-pool-reader", "let mut bytes = [0; 8]; let mut other = [Buffer::new(&mut bytes)]; with_messages(&mut other, &mut [], |other| { other.release(lease); }).unwrap();", "E0521"),
+        ("cross-pool-send", "let mut bytes = [0; 8]; let mut other = [Buffer::new(&mut bytes)]; with_messages(&mut other, &mut [], |other| { let _ = other.fail_send(key); }).unwrap();", "E0521"),
+    ] {
+        cases.push((name.into(), format!("#![deny(unused_must_use)]\n{prelude} fn main() {{ {setup} {code} {end} }}"), Some(diagnostic)));
+    }
+    for (name, token) in [
+        ("escape-reader", "lease"),
+        ("escape-send", "key"),
+        ("escape-writer", "messages.reserve(0).unwrap()"),
+    ] {
+        cases.push((name.into(), format!("{prelude} fn main() {{ let mut escaped = None; {setup} escaped = Some({token}); {end} drop(escaped); }}"), Some("E0521")));
+    }
+    check_contracts("bounded-message-contracts", &format!("capntproto-rpc-engine = {{ path = {:?} }}\n", root().join("crates/capntproto-rpc-engine")), cases,
+        "invariant pool scopes, exclusive writers, immutable retained views, distinct reader/send roles and consumed completion windows",
+        "drivers still validate framing and IO results, bind keys to the correct stream and quiesce IO before terminal teardown");
+}
+
+#[test]
+fn bounded_export_ownership_compile_contracts() {
+    let prelude = "use capntproto_rpc_engine::{exports::{with_exports, Slot, Lease, Key}, ids::{ExportId, WireId}};\n";
+    let setup = "let mut slots = [const { Slot::EMPTY }; 1]; with_exports(&mut slots, |exports| { let mut batch = exports.batch(); let grant = batch.export(17).unwrap(); let key = grant.key(); let id = grant.id(); batch.commit(); let lease = exports.lease(id).unwrap();";
+    let end = "}).unwrap();";
+    let mut cases = vec![("positive".into(), format!("{prelude} fn main() {{ {setup} assert_eq!(exports.release(id, 1), Ok(None)); assert!(exports.resolve(key).is_none()); assert_eq!(exports.get(&lease), &17); assert_eq!(exports.release_local(lease), Some(17)); {end} }}"), None)];
+    for (name, code, diagnostic) in [
+        ("double-release", "exports.release_local(lease); exports.release_local(lease);", "E0382"),
+        ("unchecked-clone", "let _ = lease.clone();", "E0599"),
+        ("forge-lease", "let _ = Lease { key };", "E0451"),
+        ("forge-key", "let _ = Key { index: 0, generation: 1, brand: core::marker::PhantomData };", "E0451"),
+        ("live-owner-view", "let view = exports.get(&lease); exports.release_local(lease); assert_eq!(*view, 17);", "E0502"),
+        ("duplicate-batch", "let batch = exports.batch(); let other = exports.batch(); batch.commit(); other.commit();", "E0499"),
+        ("double-commit", "let batch = exports.batch(); batch.commit(); batch.commit();", "E0382"),
+        ("peer-release-during-batch", "let batch = exports.batch(); exports.release(id, 1).unwrap(); batch.commit();", "E0499"),
+        ("local-release-during-batch", "let batch = exports.batch(); exports.release_local(lease); batch.commit();", "E0499"),
+        ("ignored-capacity", "exports.batch().export(19);", "unused_must_use"),
+        ("cross-domain-lease", "let mut other = [const { Slot::EMPTY }; 1]; with_exports(&mut other, |other| { let _: Option<i32> = other.release_local(lease); }).unwrap();", "E0521"),
+        ("cross-domain-key", "let mut other = [const { Slot::EMPTY }; 1]; with_exports(&mut other, |other| { let _: Option<&i32> = other.resolve(key); }).unwrap();", "E0521"),
+        ("import-key-role", "fn import_key<'a>(key: capntproto_rpc_engine::imports::Key<'a>) { let _: Key<'a> = key; }", "E0308"),
+    ] {
+        cases.push((name.into(), format!("#![deny(unused_must_use)]\n{prelude} fn main() {{ {setup} {code} {end} }}"), Some(diagnostic)));
+    }
+    for (name, token) in [("escape-key", "key"), ("escape-lease", "lease")] {
+        cases.push((name.into(), format!("{prelude} fn main() {{ let mut escaped = None; {setup} escaped = Some({token}); {end} drop(escaped); }}"), Some("E0521")));
+    }
+    check_contracts("bounded-export-contracts", &format!("capntproto-rpc-engine = {{ path = {:?} }}\n", root().join("crates/capntproto-rpc-engine")), cases,
+        "invariant export domains, distinct import keys, linear call leases and exclusive publication batches",
+        "the adapter must serialize every grant and bind commit to acceptance of that message; wire delivery and complete RPC dispatch are outside this contract");
+}
+
+#[test]
+fn bounded_import_ownership_compile_contracts() {
+    let prelude = "use capntproto_rpc_engine::{imports::{with_imports, Slot, Local, Key}, ids::{ImportId, WireId}};\n";
+    let setup = "let mut slots = [const { Slot::EMPTY }; 1]; with_imports(&mut slots, |imports| { let local = imports.admit(ImportId::from_wire(0), 17).unwrap();";
+    let end = "}).unwrap();";
+    let mut cases = vec![("positive".into(), format!("{prelude} fn main() {{ {setup} let key = local.key(); let alias = imports.retain(&local).unwrap(); imports.release(local); assert_eq!(imports.resolve(key), Some(&17)); imports.release(alias); assert_eq!(imports.resolve(key), None); let release = imports.pending_release(0).unwrap(); assert_eq!(release.commit(), 17); {end} }}"), None)];
+    for (name, code, diagnostic) in [
+        ("double-release", "imports.release(local); imports.release(local);", "E0382"),
+        ("unchecked-clone", "let _ = local.clone();", "E0599"),
+        ("forged-local", "let _ = Local { key: local.key() };", "E0451"),
+        ("forged-key", "let _ = Key { index: 0, generation: 1, brand: core::marker::PhantomData };", "E0451"),
+        ("view-during-release", "let view = imports.get(&local); imports.release(local); assert_eq!(*view, 17);", "E0502"),
+        ("duplicate-cleanup", "imports.release(local); let release = imports.pending_release(0).unwrap(); let other = imports.pending_release(0); release.commit(); drop(other);", "E0499"),
+        ("double-cleanup-commit", "imports.release(local); let release = imports.pending_release(0).unwrap(); release.commit(); release.commit();", "E0382"),
+        ("receive-during-cleanup", "imports.release(local); let release = imports.pending_release(0).unwrap(); let _ = imports.receive(ImportId::from_wire(0)); release.commit();", "E0499"),
+        ("unchecked-retain", "imports.retain(&local);", "unused_must_use"),
+        ("cross-domain-local", "let mut other = [const { Slot::EMPTY }; 1]; with_imports(&mut other, |other| { let _ = other.admit(ImportId::from_wire(0), 17).unwrap(); other.release(local); }).unwrap();", "E0521"),
+        ("cross-domain-key", "let key = local.key(); let mut other = [const { Slot::EMPTY }; 1]; with_imports(&mut other, |other| { let _ = other.admit(ImportId::from_wire(0), 17).unwrap(); let _ = other.resolve(key); }).unwrap();", "E0521"),
+    ] {
+        cases.push((name.into(), format!("#![deny(unused_must_use)]\n{prelude} fn main() {{ {setup} {code} {end} }}"), Some(diagnostic)));
+    }
+    // Returning either kind of token would let a callback outlive its connection.
+    for (name, token) in [("escape-local", "local"), ("escape-key", "local.key()")] {
+        cases.push((name.into(), format!("{prelude} fn main() {{ let mut slots = [const {{ Slot::EMPTY }}; 1]; let mut escaped = None; with_imports(&mut slots, |imports| {{ let local = imports.admit(ImportId::from_wire(0), 17).unwrap(); escaped = Some({token}); }}).unwrap(); drop(escaped); }}"), Some("E0521")));
+    }
+    check_contracts("bounded-import-contracts", &format!("capntproto-rpc-engine = {{ path = {:?} }}\n", root().join("crates/capntproto-rpc-engine")), cases,
+        "invariant connection scopes, unforgeable noncopy local tokens, exclusive views and single-use cleanup acceptance",
+        "explicitly forgotten handles retain ownership until terminal teardown; does not prove remote delivery or complete bounded RPC dispatch");
+}
+
+#[test]
+fn bounded_reference_release_compile_contracts() {
+    let prelude =
+        "use capntproto_rpc_engine::references::{ExportRefs, ImportRefs, ReleaseTicket};\n";
+    let setup = "let mut refs = ImportRefs::new(); refs.receive(3).unwrap();";
+    let mut cases = vec![("positive".into(), format!("{prelude} fn main() {{ {setup} {{ let ticket = refs.pending_release().unwrap(); assert_eq!(ticket.count(), 3); }} assert_eq!(refs.count(), 3); refs.pending_release().unwrap().commit(); assert_eq!(refs.count(), 0); }}"), None)];
+    for (name, code, diagnostic) in [
+        ("duplicate-commit", "let ticket = refs.pending_release().unwrap(); ticket.commit(); ticket.commit();", "E0382"),
+        ("receive-while-releasing", "let ticket = refs.pending_release().unwrap(); refs.receive(1).unwrap(); ticket.commit();", "E0499"),
+        ("duplicate-ticket", "let first = refs.pending_release().unwrap(); let second = refs.pending_release().unwrap(); first.commit(); second.commit();", "E0499"),
+        ("private-count", "refs.count = 0;", "E0616"),
+        ("forge-ticket", "let _ticket = ReleaseTicket { refs: &mut refs };", "E0451"),
+        ("reference-domain", "let _: ExportRefs = refs;", "E0308"),
+        ("ignored-overflow", "refs.receive(u32::MAX);", "unused_must_use"),
+    ] {
+        cases.push((name.into(), format!("#![deny(unused_must_use)]\n{prelude} fn main() {{ {setup} {code} }}"), Some(diagnostic)));
+    }
+    check_contracts("bounded-reference-contracts", &format!("capntproto-rpc-engine = {{ path = {:?} }}\n", root().join("crates/capntproto-rpc-engine")), cases,
+        "private wire counts, distinct import/export roles, checked overflow and exclusive single-use cleanup acceptance",
+        "does not prove local capability ownership, wire IDs/generations, output queue admission or delivery");
+}
+
+#[test]
+fn fixed_buffer_builder_compile_contracts() {
+    let prelude = r#"
+use capnp::{message::FixedBuilder, word};
+use capntproto_portable_check::portable_capnp::api::{BoundedRecord, Child, Collections, Entry};
+"#;
+    let setup = "let mut words = [word(0,0,0,0,0,0,0,0); 32]; let mut message = FixedBuilder::new(&mut words).unwrap();";
+    let mut cases = vec![("positive".into(), format!("{prelude} fn main() {{ {setup} let mut root = message.try_init_root::<BoundedRecord>().unwrap(); root.scalar(BoundedRecord::ID).set(8); root.field(BoundedRecord::TITLE).copy_from(\"bounded\").unwrap(); root.field(BoundedRecord::CHILD).init().unwrap().scalar(Child::ID).set(3); assert_eq!(root.read().id(), 8); }}"), None)];
+    for (name, code, diagnostic) in [
+        ("generic-legacy-editor", "type B = capntproto_portable_check::portable_capnp::api::Box<Entry>; let mut root = message.try_init_root::<B>().unwrap(); let _ = root.field(B::VALUE).typed().init().unwrap().into_raw();", "E0599"),
+        ("generic-wrong-kind", "type B = capntproto_portable_check::portable_capnp::api::Box<capnp::text::Owned>; let mut root = message.try_init_root::<B>().unwrap(); let _ = root.field(B::VALUE).typed().cast::<capnp::field_api::Data>();", "E0599"),
+        ("any-live-view", "type B = capntproto_portable_check::portable_capnp::api::Box<capnp::any_pointer::Owned>; let mut root = message.try_init_root::<B>().unwrap(); let value = root.field(B::VALUE).typed().read().unwrap(); root.field(B::VALUE).clear(); assert!(value.is_null());", "E0499"),
+        ("group-schema", "let mut root = message.try_init_root::<BoundedRecord>().unwrap(); let _ = root.group(Collections::DETAILS);", "E0308"),
+        ("void-schema", "let mut root = message.try_init_root::<Child>().unwrap(); let _ = root.void(Collections::IDLE);", "E0308"),
+        ("list-legacy-editor", "let mut list = message.try_init_root_list::<Entry>(1).unwrap(); let _ = list.get_mut(0).unwrap().into_raw();", "E0599"),
+        ("nested-list-legacy-editor", "let mut list = message.try_init_root_list::<capnp::field_api::List<u32>>(1).unwrap(); let _ = list.get_mut(0).unwrap().ensure();", "E0599"),
+        ("list-live-element", "let mut list = message.try_init_root_list::<Entry>(1).unwrap(); let mut item = list.get_mut(0).unwrap(); let _ = list.get_mut(0); item.scalar(Entry::ID).set(4);", "E0499"),
+        ("scalar-schema", "let mut root = message.try_init_root::<BoundedRecord>().unwrap(); root.scalar(Child::ID).set(1);", "E0308"),
+        ("pointer-schema", "let mut root = message.try_init_root::<Child>().unwrap(); root.field(BoundedRecord::TITLE);", "E0308"),
+        ("legacy-editor", "let root = message.try_init_root::<BoundedRecord>().unwrap(); let _ = root.into_raw();", "E0599"),
+        ("private-editor", "let root = message.try_init_root::<BoundedRecord>().unwrap(); let _ = root.raw;", "E0616"),
+        ("implicit-upgrade", "let mut root = message.try_init_root::<BoundedRecord>().unwrap(); let _ = root.field(BoundedRecord::CHILD).ensure();", "E0599"),
+        ("live-view-reset", "message.try_set_root_text(\"live\").unwrap(); let view = message.get_root_as_reader::<capnp::text::Reader<'_>>().unwrap(); message.reset(); assert_eq!(view, \"live\");", "E0502"),
+        ("live-payload-edit", "let mut root = message.try_init_root::<BoundedRecord>().unwrap(); let bytes = root.field(BoundedRecord::PAYLOAD).init(8).unwrap(); root.scalar(BoundedRecord::ID).set(1); bytes[0] = 7;", "E0499"),
+        ("ignored-exhaustion", "message.try_set_root_text(\"check capacity\");", "unused_must_use"),
+    ] {
+        cases.push((name.into(), format!("#![deny(unused_must_use)]\n{prelude} fn main() {{ {setup} {code} }}"), Some(diagnostic)));
+    }
+    check_contracts("fixed-builder-contracts", &format!(
+        "capnp = {{ package = \"capntproto-core\", path = {:?}, default-features = false }}\ncapntproto-portable-check = {{ path = {:?} }}\n",
+        root().join("crates/capntproto-core"), root().join("verification/portable")
+    ), cases, "typed scalar/pointer descriptors, no legacy growing editor escape, exclusive views and checked growth results", "not a proof of arbitrary user Schema/Scalar implementations or complete bounded RPC");
+}
+
+#[test]
 fn authority_bindings_and_route_generation_compile_contracts() {
     let mut cases = vec![(
         "positive".to_owned(),
@@ -69,12 +610,10 @@ fn main() {
 
 #[test]
 fn rpc_identifier_and_table_compile_contracts() {
-    // Compile the actual private modules in a consumer whose parent has the
-    // same visibility as rpc.rs. This tests internal callers' contracts without
-    // promoting RPC implementation types into the public API.
+    // Compile hosted tables with the shared engine's identifiers. The parent
+    // has the same visibility as rpc.rs; no test-only runtime API is needed.
     let prelude = format!(
-        "#![allow(dead_code)]\n#[path = {:?}] mod rpc_ids;\n#[path = {:?}] mod rpc_tables;\nuse rpc_ids::*;\nuse rpc_tables::*;\n",
-        root().join("crates/capntproto-rpc/src/rpc_ids.rs"),
+        "#![allow(dead_code)]\nuse capntproto_rpc_engine::ids as rpc_ids;\nuse capntproto_rpc_engine::peer_table as bounded;\n#[path = {:?}] mod rpc_tables;\nuse rpc_ids::*;\nuse rpc_tables::*;\n",
         root().join("crates/capntproto-rpc/src/rpc_tables.rs")
     );
     let mut cases = vec![(
@@ -100,6 +639,11 @@ fn main() {
     a.slots.insert(AnswerId::from_wire(0), ());
     let mut i = PeerTable::<ImportId, ()>::new();
     i.slots.insert(ImportId::from_wire(u32::MAX), ());
+    let mut slots = [const { bounded::Slot::EMPTY }; 2];
+    let mut bounded = bounded::PeerTable::<AnswerId, (), _, 0>::try_new(
+        bounded::BorrowedSparse::new(&mut slots)
+    ).expect("fresh storage");
+    bounded.try_insert_unique(AnswerId::from_wire(u32::MAX), ()).unwrap();
 }
 "#
         ),
@@ -166,7 +710,7 @@ fn main() {
         ),
         (
             "private-storage",
-            "let table = LocalTable::<QuestionId, ()>::new(); let _ = table.slots;",
+            "let table = LocalTable::<QuestionId, ()>::new(); let _ = table.table;",
             "E0616",
         ),
         ("private-constructor", "let _ = QuestionId(0);", "E0423"),
@@ -185,6 +729,26 @@ fn main() {
             "let _ = QuestionId::from_wire(0) + 1;",
             "E0369",
         ),
+        (
+            "bounded-slot-private",
+            "let mut slot = bounded::Slot::<AnswerId, ()>::EMPTY; slot.entry = None;",
+            "E0616",
+        ),
+        (
+            "borrowed-storage-exclusive",
+            "let mut slots = [bounded::Slot::<AnswerId, ()>::EMPTY]; let first = bounded::BorrowedSparse::new(&mut slots); let second = bounded::BorrowedSparse::new(&mut slots); drop((first, second));",
+            "E0499",
+        ),
+        (
+            "local-slot-private",
+            "let mut slot = capntproto_rpc_engine::local_table::Slot::<()>::EMPTY; slot.free_id = 1;",
+            "E0616",
+        ),
+        (
+            "local-storage-exclusive",
+            "use capntproto_rpc_engine::local_table::{Slot, BorrowedSlots}; let mut slots = [Slot::<()>::EMPTY]; let first = BorrowedSlots::new(&mut slots); let second = BorrowedSlots::new(&mut slots); drop((first, second));",
+            "E0499",
+        ),
     ] {
         cases.push((
             name.to_owned(),
@@ -192,8 +756,20 @@ fn main() {
             Some(diagnostic),
         ));
     }
-    check_contracts("rpc-id-contracts", "", cases,
-        "exact private RPC identifier/table source: domain and allocation-role separation, explicit wire conversion, private allocator storage",
+    let local_setup = "use capntproto_rpc_engine::local_table::{LocalTable as BoundedLocal, BorrowedSlots, Slot}; let mut slots = [Slot::<()>::EMPTY]; let mut h = []; let mut a = [];";
+    for domain in ["ExportId", "EmbargoId"] {
+        for method in [
+            "try_push_high(())",
+            "try_insert_adopted(QuestionId::from_wire(1 << 30), ())",
+        ] {
+            cases.push((format!("bounded-{domain}-{}", method.split('(').next().unwrap()), format!("{prelude}fn main() {{ {local_setup} let mut table = BoundedLocal::<{domain}, _, _, _, _>::try_new(BorrowedSlots::new(&mut slots), bounded::BorrowedSparse::new(&mut h), bounded::BorrowedSparse::new(&mut a)).unwrap(); table.{method}; }}"), Some("E0599")));
+        }
+    }
+    for domain in ["AnswerId", "ImportId"] {
+        cases.push((format!("bounded-local-{domain}-role"), format!("{prelude}fn wrong<D: capntproto_rpc_engine::local_table::Storage<()>, S: bounded::SparseStorage<{domain}, ()>>(_: capntproto_rpc_engine::local_table::LocalTable<{domain}, (), D, S, S>) {{}} fn main() {{}}"), Some("E0277")));
+    }
+    check_contracts("rpc-id-contracts", &format!("capntproto-rpc-engine = {{ path = {:?}, features = [\"alloc\"] }}\n", root().join("crates/capntproto-rpc-engine")), cases,
+        "shared RPC identifiers and exact hosted table source: domain and allocation-role separation, explicit wire conversion, private slots and exclusive borrowed storage",
         "does not establish connection branding, stale-ID prevention, or correctness of a handler's choice of wire domain");
 }
 
@@ -975,6 +1551,10 @@ fn check_contracts(
             .map(|message| {
                 message["message"]["code"]["code"]
                     .as_str()
+                    .or_else(|| {
+                        (message["message"]["message"] == "lifetime may not live long enough")
+                            .then_some("lifetime may not live long enough")
+                    })
                     .expect("unclassified compiler failure")
                     .to_owned()
             })
@@ -1004,4 +1584,60 @@ fn check_contracts(
         cases.len(),
         reports.display()
     );
+}
+#[test]
+fn bounded_client_dispatch_compile_contracts() {
+    let prelude = "use capntproto_rpc_engine::clients::{self, Client, Location, dispatch::{with_runtime, Storage, TaskSlot}};";
+    let storage = "let mut clients = [const { clients::Slot::<u32,u8>::EMPTY }; 3]; let mut tasks = [TaskSlot::<u32>::EMPTY];";
+    let scope = "with_runtime(Storage { clients: &mut clients, tasks: &mut tasks }, |runtime|";
+    let setup = "let client = runtime.endpoint(7, Location::Local).unwrap(); let mut owner = Some(42); let offered = runtime.prepare_call(&client, &mut owner).unwrap();";
+    let mut cases = vec![("positive".into(), format!("{prelude} fn main() {{ {storage} {scope} {{ {setup} offered.accept(); let running = runtime.next_ready().unwrap().unwrap().accept(); assert_eq!(runtime.complete(running), 42); runtime.release(client); assert_eq!(runtime.take_retired(), Some(7)); assert!(runtime.is_empty()); }}).unwrap(); }}"), None)];
+    for (name, code, error) in [
+        ("enqueue-once", "offered.accept(); offered.accept();", "E0382"),
+        ("exclusive-output-admission", "runtime.release(client); offered.accept();", "E0499"),
+        ("borrowed-call-owner", "owner.take(); offered.accept();", "E0499"),
+        ("complete-once", "offered.accept(); let running = runtime.next_ready().unwrap().unwrap().accept(); runtime.complete(running); runtime.complete(running);", "E0382"),
+        ("retained-route-not-copy", "drop(offered); fn require<T: Copy>() {} require::<Client<'_>>();", "E0277"),
+    ] { cases.push((name.into(), format!("{prelude} fn main() {{ {storage} {scope} {{ {setup} {code} }}).unwrap(); }}"), Some(error))); }
+    cases.push(("cross-runtime-client".into(), format!("{prelude} fn main() {{ {storage} {scope} {{ let client = runtime.endpoint(1, Location::Local).unwrap(); {storage} {scope} {{ runtime.release(client); }}).unwrap(); }}).unwrap(); }}"), Some("E0521")));
+    cases.push(("runtime-client-escape".into(), format!("{prelude} fn main() {{ {storage} let _escaped = {scope} {{ runtime.endpoint(1, Location::Local).unwrap() }}).unwrap(); }}"), Some("lifetime may not live long enough")));
+    check_contracts("bounded-client-dispatch-contracts", &format!("capntproto-rpc-engine = {{ path = {:?} }}\n", root().join("crates/capntproto-rpc-engine")), cases,
+        "scoped clients, exclusive queue admission and affine running tasks prevent cross-runtime ownership, double admission and duplicate completion",
+        "protocol publication, descriptor provenance, IO ordering and service execution require the wire/runtime adapters");
+}
+#[test]
+fn bounded_generated_server_compile_contracts() {
+    let prelude = "use capnp::{message::{self, FixedBuilder}, field_api::FixedStruct}; use capntproto_portable_check::portable_capnp::{echo, api::echo::{EchoParamsRef,EchoResults}}; use capntproto_rpc_wire::{calls, rpc_capnp}; use capntproto_rpc_engine::ids::{QuestionId,ImportId,WireId}; struct Service; impl echo::Server for Service { async fn echo<'call>(&'call mut self, params: EchoParamsRef<'call>, mut results: FixedStruct<'call,EchoResults>) -> capnp::Result<()> { results.scalar(EchoResults::VALUE).set(params.value()); Ok(()) } }";
+    let setup = "let mut input = [capnp::word(0,0,0,0,0,0,0,0); 40]; let mut output = [capnp::word(0,0,0,0,0,0,0,0); 40]; let mut request = FixedBuilder::new(&mut input).unwrap(); let mut response = FixedBuilder::new(&mut output).unwrap(); calls::call(&mut request, QuestionId::from_wire(0), ImportId::from_wire(1), echo::Owned::ECHO, |_| Ok(())).unwrap(); let reader = message::Reader::new(request.get_segments_for_output(), Default::default()); let rpc_capnp::message::Call(call) = reader.get_root::<rpc_capnp::message::Reader<'_>>().unwrap().which().unwrap() else { unreachable!() }; let incoming = calls::Incoming::new(call.unwrap()); let mut service = echo::ServerDispatch::new(Service); let future = incoming.serve(&mut service, &mut response);";
+    let mut cases = vec![(
+        "positive".into(),
+        format!("{prelude} fn main() {{ {setup} drop(future); response.reset(); }}"),
+        None,
+    )];
+    for (name, code, error) in [
+        (
+            "output-borrowed-during-service",
+            "response.reset(); drop(future);",
+            "E0499",
+        ),
+        (
+            "request-borrowed-during-service",
+            "request.reset(); drop(future);",
+            "E0502",
+        ),
+        (
+            "service-owned-by-future",
+            "drop(service); drop(future);",
+            "E0505",
+        ),
+    ] {
+        cases.push((
+            name.into(),
+            format!("{prelude} fn main() {{ {setup} {code} }}"),
+            Some(error),
+        ));
+    }
+    check_contracts("bounded-generated-server-contracts", &format!("capnp = {{ package = \"capntproto-core\", path = {:?}, default-features = false }}\ncapntproto-rpc-engine = {{ path = {:?} }}\ncapntproto-rpc-wire = {{ path = {:?} }}\ncapntproto-portable-check = {{ path = {:?} }}\n", root().join("crates/capntproto-core"), root().join("crates/capntproto-rpc-engine"), root().join("crates/capntproto-rpc-wire"), root().join("verification/portable")), cases,
+        "generated async server futures retain their service, borrowed parameters and fixed result buffer until completion or cancellation",
+        "the connection separately owns capability receipts, publication, tail adoption and scheduling");
 }

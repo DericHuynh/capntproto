@@ -3,12 +3,13 @@ use capntproto_test_support::verification::{self as v, root};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{fs, path::Path};
-pub const PROTOCOLS: [&str; 4] = ["native", "capnp-cpp", "grpc", "websocket"];
+pub const PROTOCOLS: [&str; 5] = ["tcp", "capnp-cpp", "grpc", "websocket", "native"];
 pub const PAYLOADS: [usize; 4] = [0, 64, 1024, 65536];
 const REPETITIONS: usize = 5;
 pub const MEASUREMENT_VERSION: u32 = 2;
 // capnp-reference is C++; its pinned sources/compiler are recorded separately.
-const RUST_BINARIES: [&str; 7] = [
+const RUST_BINARIES: [&str; 8] = [
+    "tcp",
     "native",
     "grpc",
     "websocket",
@@ -84,6 +85,16 @@ pub fn percentile(samples: &mut [u64], percentile: usize) -> u64 {
 pub fn matrix(trials: &[Trial]) -> Result<Vec<Value>> {
     let mut rows = vec![];
     let first = trials.first().ok_or("no benchmark trials")?;
+    if trials.len() != PROTOCOLS.len() * PAYLOADS.len() * REPETITIONS
+        || trials.iter().any(|t| {
+            !PROTOCOLS.contains(&t.protocol.as_str()) || !PAYLOADS.contains(&t.payload_bytes)
+        })
+    {
+        return Err(
+            "benchmark must contain exactly the declared protocols, payloads and repetitions"
+                .into(),
+        );
+    }
     if trials
         .iter()
         .any(|t| t.warmup != first.warmup || t.iterations != first.iterations)
@@ -122,10 +133,48 @@ pub fn matrix(trials: &[Trial]) -> Result<Vec<Value>> {
             rows.push(json!({"protocol":protocol,"payload_bytes":bytes,"repetitions":cell.len(),"iterations_per_repetition":first.iterations,"p50_ns":p50,"p95_ns":p95,"p99_ns":p99,"median_range_ns":[medians[0],medians[REPETITIONS-1]],"sequential_requests_per_second":samples.len() as f64 * 1e9 / elapsed as f64}));
         }
     }
-    if trials.len() != REPETITIONS * PROTOCOLS.len() * PAYLOADS.len() {
-        return Err("unexpected benchmark workload rows".into());
-    }
     Ok(rows)
+}
+
+/// Acceptance compares matched plaintext capability RPC, at every payload size.
+/// Keep raw distributions and tails in the report; the gate uses pooled p50.
+pub fn tcp_acceptance(rows: &[Value]) -> Result<()> {
+    tcp_acceptance_for_driver(rows, "legacy")
+}
+
+pub fn tcp_acceptance_for_driver(rows: &[Value], driver: &str) -> Result<()> {
+    let limit = match driver {
+        "legacy" => 115,
+        "portable" => 150,
+        _ => return Err("missing or unknown measured TCP driver".into()),
+    };
+    for bytes in PAYLOADS {
+        let latency = |protocol: &str| -> Result<u128> {
+            let mut cells = rows
+                .iter()
+                .filter(|row| row["protocol"] == protocol && row["payload_bytes"] == bytes);
+            let value = cells
+                .next()
+                .and_then(|row| row["p50_ns"].as_u64())
+                .filter(|&n| n > 0)
+                .ok_or("missing TCP acceptance measurement")?;
+            if cells.next().is_some() {
+                return Err("duplicate TCP acceptance measurement".into());
+            }
+            Ok(u128::from(value))
+        };
+        let tcp = latency("tcp")?;
+        let cpp = latency("capnp-cpp")?;
+        if (driver == "legacy" || bytes <= 1024) && tcp * 100 > cpp * limit {
+            return Err(format!(
+                "{driver} TCP/C++ p50 exceeds {:.2}x at {bytes} bytes: {:.4}x",
+                limit as f64 / 100.0,
+                tcp as f64 / cpp as f64
+            )
+            .into());
+        }
+    }
+    Ok(())
 }
 /// Compile each Cargo bench target without executing any workload.
 pub fn bundle(r: &mut Runner) -> Result<()> {
@@ -174,7 +223,7 @@ pub fn bundle(r: &mut Runner) -> Result<()> {
     if version.trim() != "gungraun-runner 0.20.0" {
         return Err("instruction harness requires gungraun-runner 0.20.0".into());
     }
-    for name in ["native", "grpc", "websocket", "capnp_cpp"] {
+    for name in ["tcp", "native", "grpc", "websocket", "capnp_cpp"] {
         let output = r.cargo(
             &format!("compile-{name}").replace('_', "-"),
             &[
@@ -249,6 +298,7 @@ pub fn bundle(r: &mut Runner) -> Result<()> {
             ])
             .arg(format!("-I{}", cpp_dir.display()))
             .arg("benchmarks/rpc/capnp.c++")
+            .arg("benchmarks/rpc/workflows.c++")
             .arg(cpp_dir.join("echo.capnp.c++"))
             .arg(reference_bin.join("libcapnp-rpc.a"))
             .arg(reference_bin.join("libcapnp.a"))
@@ -260,6 +310,7 @@ pub fn bundle(r: &mut Runner) -> Result<()> {
     fs::copy(cpp, bundle.join("capnp-reference"))?;
     let mut hashes = std::collections::BTreeMap::new();
     for name in [
+        "tcp",
         "native",
         "grpc",
         "websocket",
@@ -333,6 +384,39 @@ pub fn import(r: &mut Runner, bundle: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn tcp_target_requires_every_payload_and_accepts_exact_boundary() {
+        let mut rows = Vec::new();
+        for bytes in PAYLOADS {
+            rows.push(json!({"protocol":"tcp","payload_bytes":bytes,"p50_ns":115}));
+            rows.push(json!({"protocol":"capnp-cpp","payload_bytes":bytes,"p50_ns":100}));
+        }
+        assert!(tcp_acceptance(&rows).is_ok());
+        rows[0]["p50_ns"] = json!(116);
+        assert!(tcp_acceptance(&rows).is_err());
+        rows[0]["p50_ns"] = json!(115);
+        rows.push(rows[0].clone());
+        assert!(tcp_acceptance(&rows).is_err());
+        rows.pop();
+        rows.pop();
+        assert!(tcp_acceptance(&rows).is_err());
+    }
+    #[test]
+    fn portable_target_limits_small_calls_and_retains_large_diagnostics() {
+        let mut rows = Vec::new();
+        for bytes in PAYLOADS {
+            rows.push(json!({"protocol":"tcp","payload_bytes":bytes,"p50_ns":if bytes <= 1024 { 150 } else { 900 }}));
+            rows.push(json!({"protocol":"capnp-cpp","payload_bytes":bytes,"p50_ns":100}));
+        }
+        assert!(tcp_acceptance_for_driver(&rows, "portable").is_ok());
+        assert!(tcp_acceptance_for_driver(&rows, "legacy").is_err());
+        assert!(tcp_acceptance_for_driver(&rows, "unknown").is_err());
+        rows[0]["p50_ns"] = json!(151);
+        assert!(tcp_acceptance_for_driver(&rows, "portable").is_err());
+        rows[0]["p50_ns"] = json!(150);
+        rows.pop();
+        assert!(tcp_acceptance_for_driver(&rows, "portable").is_err());
+    }
     #[test]
     fn legacy_or_mixed_measurement_contracts_cannot_qualify() {
         let mut trials = Vec::new();

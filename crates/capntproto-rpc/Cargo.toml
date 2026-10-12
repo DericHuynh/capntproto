@@ -17,6 +17,11 @@ categories = ["network-programming"]
 license = "MIT"
 repository = "https://github.com/DericHuynh/capntproto"
 
+[features]
+default = ["std"]
+alloc = ["capnp/alloc", "capntproto-rpc-wire/alloc", "capntproto-rpc-engine/alloc"]
+std = ["alloc", "capnp/std", "capntproto-rpc-wire/std", "dep:capnp-futures", "dep:futures"]
+
 [lib]
 name = "capnp_rpc"
 path = "src/lib.rs"
@@ -25,13 +30,24 @@ path = "src/lib.rs"
 package = "capntproto-core"
 version = "0.25.0"
 path = "../capntproto-core"
+default-features = false
+
+[dependencies.capntproto-rpc-engine]
+path = "../capntproto-rpc-engine"
+default-features = false
+
+[dependencies.capntproto-rpc-wire]
+path = "../capntproto-rpc-wire"
+default-features = false
 
 [dependencies.capnp-futures]
 package = "capntproto-futures"
 version = "0.25.0"
 path = "../capntproto-futures"
+optional = true
 
 [dependencies.futures]
+optional = true
 version = "0.3.0"
 features = ["std"]
 default-features = false
@@ -45,3 +61,6 @@ unreachable_pub = "deny"
 
 [build-dependencies]
 capnpc = { package = "capntproto-codegen", version = "0.25", path = "../capntproto-codegen" }
+
+[dev-dependencies]
+futures = { version = "0.3.0", features = ["executor"] }

@@ -1354,7 +1354,7 @@ async fn directory_connector_pins_and_authorizes_endpoints() {
             tokio::time::timeout(Duration::from_secs(5), async {
                 let a = Rc::new(Identity::generate());
                 let b = Identity::generate();
-                let listener = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
                 let address = listener.local_addr().unwrap();
                 let mut directory =
                     DirectoryConnector::new(a.clone(), "127.0.0.1:0".parse().unwrap());
@@ -1373,16 +1373,17 @@ async fn directory_connector_pins_and_authorizes_endpoints() {
                     .insert(b.public_key(), address, Some([17; 32]), b"directory")
                     .unwrap();
                 assert!(directory.connect([0; 32]).await.is_err());
-                let (client, server) = tokio::join!(
-                    directory.connect(b.public_key()),
-                    transport::accept_authenticated(
-                        listener,
+                let (client, server) = tokio::join!(directory.connect(b.public_key()), async {
+                    transport::tcp::accept(
+                        listener.accept().await.unwrap().0,
                         &b,
                         a.public_key(),
                         Some([17; 32]),
-                        b"directory"
+                        b"directory",
+                        Duration::from_secs(5),
                     )
-                );
+                    .await
+                });
                 let (mut local, lh) = Network::new(a.public_key());
                 let (mut remote, rh) = Network::new(b.public_key());
                 lh.attach(client.unwrap()).unwrap();

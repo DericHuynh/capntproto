@@ -22,6 +22,17 @@
 //! Capability descriptors, import/export resolution and third-party introductions.
 use super::*;
 
+pub(super) fn reference_error(error: capntproto_rpc_engine::references::Error) -> Error {
+    use capntproto_rpc_engine::references::Error as RefError;
+    match error {
+        RefError::Overflow => Error::overloaded(error.to_string()),
+        RefError::OverRelease => {
+            Error::failed("Tried to drop export's refcount below zero.".into())
+        }
+        RefError::Released => Error::failed(error.to_string()),
+    }
+}
+
 impl<VatId: 'static> ConnectionState<VatId> {
     pub(super) fn get_message_target(
         &self,
@@ -239,12 +250,9 @@ impl<VatId: 'static> ConnectionState<VatId> {
         let Some(registry) = state.registry.upgrade() else {
             return Ok(None);
         };
-        let host = registry
-            .borrow()
-            .states
-            .values()
-            .find(|c| c.get_brand() == inner.get_brand())
-            .cloned();
+        let states = registry.borrow().states();
+        let brand = inner.get_brand();
+        let host = states.into_iter().find(|c| c.get_brand() == brand);
         let Some(host) = host else {
             return Ok(None);
         };
@@ -300,7 +308,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                 .set_as(recipient.get_root_as_reader::<any_pointer::Reader>()?)?;
         }
         let mut question = Question::new();
-        question.is_awaiting_return = false; // Provide never returns.
+        question.lifecycle = capntproto_rpc_engine::question::Question::no_return();
         let id = host.questions.borrow_mut().push(question);
         let (sender, _receiver) = oneshot::channel();
         let reference = Rc::new(RefCell::new(QuestionRef::new(host.clone(), id, sender)));
@@ -335,12 +343,13 @@ impl<VatId: 'static> ConnectionState<VatId> {
             let _ = message.send_detached();
             Ok(())
         }));
-        let export_id = state.exports.borrow_mut().push(export);
         let mut third = descriptor.reborrow().init_third_party_hosted();
-        third.set_vine_id(export_id.to_wire());
         third
+            .reborrow()
             .get_id()
             .set_as(contact.get_root_as_reader::<any_pointer::Reader>()?)?;
+        let export_id = state.exports.borrow_mut().push(export);
+        third.set_vine_id(export_id.to_wire());
         Ok(Some(export_id))
     }
 
@@ -349,7 +358,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
         third: crate::rpc_capnp::third_party_cap_descriptor::Reader<'_>,
         fd: Option<AttachedFd>,
     ) -> capnp::Result<Box<dyn ClientHook>> {
-        let vine = Self::import(state, ImportId::from_wire(third.get_vine_id()), false, fd);
+        let vine = Self::import(state, ImportId::from_wire(third.get_vine_id()), false, fd)?;
         let mut contact = capnp::message::Builder::new_default();
         contact.set_root(third.get_id())?;
         Ok(ThirdPartyClient::deferred(state, Rc::new(contact), vine))
@@ -410,7 +419,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
             .registry
             .upgrade()
             .ok_or_else(|| Error::disconnected("RPC system ended".into()))?;
-        if registry.borrow().closing {
+        if registry.borrow().is_closing() {
             return Err(Error::disconnected("RPC system is closing".into()));
         }
         let host = crate::RpcSystem::get_connection_state(
@@ -418,7 +427,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
             state.bootstrap.clone(),
             connection,
             state.system_tasks.clone(),
-        );
+        )?;
         let question_id = host.questions.borrow_mut().push(Question::new());
         let (sender, receiver) = oneshot::channel();
         let reference = Rc::new(RefCell::new(QuestionRef::new(
@@ -465,7 +474,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
             let Some(c) = Client::from_ptr(inner.get_ptr(), state) else {
                 unreachable!()
             };
-            Ok(c.write_descriptor(descriptor, fds))
+            c.write_descriptor(descriptor, fds)
         } else {
             match Self::try_introduce(state, &*inner, descriptor.reborrow()) {
                 Ok(Some(export)) => return Ok(Some(export)),
@@ -480,9 +489,16 @@ impl<VatId: 'static> ConnectionState<VatId> {
             if contains_key {
                 // We've already seen and exported this capability before.  Just up the refcount.
                 let export_id = state.exports_by_cap.borrow()[&ptr];
-                descriptor.set_sender_hosted(export_id.to_wire());
                 // Should never fail because exports_by_cap should match exports.
-                state.exports.borrow_mut().find(export_id).unwrap().refcount += 1;
+                state
+                    .exports
+                    .borrow_mut()
+                    .find(export_id)
+                    .unwrap()
+                    .references
+                    .retain(1)
+                    .map_err(reference_error)?;
+                descriptor.set_sender_hosted(export_id.to_wire());
                 Ok(Some(export_id))
             } else {
                 // This is the first time we've seen this capability.
@@ -514,27 +530,38 @@ impl<VatId: 'static> ConnectionState<VatId> {
         cap_table: &[Option<Box<dyn ClientHook>>],
         payload: payload::Builder,
         fds: &mut OutgoingFds,
-    ) -> Vec<ExportId> {
+    ) -> capnp::Result<Vec<ExportId>> {
         // A null table already denotes zero capabilities. Like the C++ RPC
         // implementation, avoid allocating a composite-list tag for every
         // data-only request and reply.
         if cap_table.is_empty() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
-        let mut cap_table_builder = payload.init_cap_table(cap_table.len() as u32);
+        let count = u32::try_from(cap_table.len())
+            .map_err(|_| Error::from_kind(capnp::ErrorKind::LengthOverflow))?;
+        let mut cap_table_builder = payload.init_cap_table(count);
         let mut exports = Vec::new();
         for (idx, value) in cap_table.iter().enumerate() {
             match value {
                 Some(cap) => {
-                    if let Some(export_id) = Self::write_descriptor(
+                    match Self::write_descriptor(
                         state,
                         cap.clone(),
                         cap_table_builder.reborrow().get(idx as u32),
                         fds,
-                    )
-                    .unwrap()
-                    {
-                        exports.push(export_id);
+                    ) {
+                        Ok(Some(export_id)) => exports.push(export_id),
+                        Ok(None) => (),
+                        Err(error) => {
+                            // No descriptor table has been sent. Roll back all
+                            // grants, including repeated IDs, before returning.
+                            // A destructor may disconnect/reenter after a slot
+                            // is detached; continue cleanup of the whole batch.
+                            for id in exports {
+                                let _ = state.release_export(id, 1);
+                            }
+                            return Err(error);
+                        }
                     }
                 }
                 None => {
@@ -542,7 +569,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                 }
             }
         }
-        exports
+        Ok(exports)
     }
 
     pub(super) fn import(
@@ -550,10 +577,16 @@ impl<VatId: 'static> ConnectionState<VatId> {
         import_id: ImportId,
         is_promise: bool,
         fd: Option<AttachedFd>,
-    ) -> Box<dyn ClientHook> {
+    ) -> capnp::Result<Box<dyn ClientHook>> {
         let import_client = {
             let mut imports = state.imports.borrow_mut();
             if let Some(import) = imports.slots.get(&import_id) {
+                // Check before accepting another remote reference. A resolved
+                // promise ID cannot denote a new promise until Release.
+                import
+                    .resolution
+                    .descriptor(is_promise)
+                    .map_err(|error| Error::failed(error.to_string()))?;
                 import
                     .import_client
                     .upgrade()
@@ -565,53 +598,62 @@ impl<VatId: 'static> ConnectionState<VatId> {
             }
         };
 
+        // We just received a copy of this import ID, so the remote refcount has gone up.
+        import_client.borrow_mut().add_remote_ref()?;
         if import_client.borrow().fd.is_none() {
             import_client.borrow_mut().fd = fd;
         }
-
-        // We just received a copy of this import ID, so the remote refcount has gone up.
-        import_client.borrow_mut().add_remote_ref();
 
         let mut tmp = state.imports.borrow_mut();
         let Some(import) = tmp.slots.get_mut(&import_id) else {
             unreachable!()
         };
+        import.resolution = import
+            .resolution
+            .descriptor(is_promise)
+            .expect("descriptor checked before remote reference acceptance");
 
-        if is_promise {
-            // We need to construct a PromiseClient around this import, if we haven't already.
-            match &import.app_client {
-                Some(c) => {
-                    // Use the existing one.
-                    Box::new(c.upgrade().expect("dangling client ref?"))
+        Ok(
+            if import.resolution == capntproto_rpc_engine::promise::ImportState::Pending {
+                // We need to construct a PromiseClient around this import, if we haven't already.
+                match import
+                    .promise_client_to_resolve
+                    .as_ref()
+                    .and_then(Weak::upgrade)
+                {
+                    Some(c) => {
+                        // Use the existing one.
+                        Box::new(Client::from(c))
+                    }
+                    None => {
+                        // Create a promise for this import's resolution.
+
+                        let client: Box<Client<VatId>> = Box::new(import_client.into());
+                        let client: Box<dyn ClientHook> = client;
+
+                        // Here the C++ implementation does something like:
+                        // ```
+                        //   // Make sure the import is not destroyed while this promise exists.
+                        //   let promise = promise.attach(client.add_ref());
+                        // ```
+                        // However, as far as I can tell that is unnecessary, because the
+                        // PromiseClient holds `client` until it resolves, after which point
+                        // there is no reason to keep the import alive.
+
+                        let client = PromiseClient::new(state, client, Some(import_id));
+
+                        import.promise_client_to_resolve = Some(Rc::downgrade(&client));
+                        let client: Box<Client<VatId>> = Box::new(client.into());
+                        import.app_client = Some(client.downgrade());
+                        client
+                    }
                 }
-                None => {
-                    // Create a promise for this import's resolution.
-
-                    let client: Box<Client<VatId>> = Box::new(import_client.into());
-                    let client: Box<dyn ClientHook> = client;
-
-                    // Here the C++ implementation does something like:
-                    // ```
-                    //   // Make sure the import is not destroyed while this promise exists.
-                    //   let promise = promise.attach(client.add_ref());
-                    // ```
-                    // However, as far as I can tell that is unnecessary, because the
-                    // PromiseClient holds `client` until it resolves, after which point
-                    // there is no reason to keep the import alive.
-
-                    let client = PromiseClient::new(state, client, Some(import_id));
-
-                    import.promise_client_to_resolve = Some(Rc::downgrade(&client));
-                    let client: Box<Client<VatId>> = Box::new(client.into());
-                    import.app_client = Some(client.downgrade());
-                    client
-                }
-            }
-        } else {
-            let client: Box<Client<VatId>> = Box::new(import_client.into());
-            import.app_client = Some(client.downgrade());
-            client
-        }
+            } else {
+                let client: Box<Client<VatId>> = Box::new(import_client.into());
+                import.app_client = Some(client.downgrade());
+                client
+            },
+        )
     }
 
     pub(super) fn receive_cap(
@@ -627,13 +669,13 @@ impl<VatId: 'static> ConnectionState<VatId> {
                 ImportId::from_wire(sender_hosted),
                 false,
                 fd,
-            ))),
+            )?)),
             cap_descriptor::SenderPromise(sender_promise) => Ok(Some(Self::import(
                 state,
                 ImportId::from_wire(sender_promise),
                 true,
                 fd,
-            ))),
+            )?)),
             cap_descriptor::ReceiverHosted(receiver_hosted) => {
                 if let Some(exp) = state
                     .exports

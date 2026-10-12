@@ -83,12 +83,21 @@ fn native_engine_preserves_bidirectional_bytes_preface_and_fin_under_backpressur
         engine.tx.read_buffer().unwrap()[..input.len()].copy_from_slice(input);
         engine.tx.read(input.len()).unwrap();
     }
-    let now = Instant::now();
+    // Lose the first handshake packet to require recovery as well as stream
+    // backpressure. Quiche owns a real clock, so the in-memory adapter must
+    // service its timers just like the socket driver does.
+    a.conn.send(&mut [0; 1350]).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut recovered = false;
     let mut partial = false;
-    for _ in 0..1000 {
+    while Instant::now() < deadline {
         for (i, engine) in [&mut a, &mut b].into_iter().enumerate() {
+            if engine.conn.timeout() == Some(Duration::ZERO) {
+                engine.conn.on_timeout();
+                recovered = true;
+            }
             let before = engine.tx.written();
-            assert!(engine.step(|| now).unwrap());
+            assert!(engine.step(Instant::now).unwrap());
             partial |= engine.tx.written() > before
                 && engine
                     .tx
@@ -113,9 +122,10 @@ fn native_engine_preserves_bidirectional_bytes_preface_and_fin_under_backpressur
         if ended == [true, true] {
             break;
         }
+        std::thread::sleep(Duration::from_millis(1));
     }
     assert_eq!(ended, [true, true]);
-    assert!(a.ready() && b.ready() && partial);
+    assert!(a.ready() && b.ready() && partial && recovered);
     assert_eq!(output[0], inputs[1]);
     assert_eq!(output[1], inputs[0]);
     assert_eq!(a.tx.written(), inputs[0].len() as u64);

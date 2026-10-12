@@ -12,10 +12,15 @@ use std::{
 const REGIONS: [&str; 11] = [
     "nyc3", "nyc1", "nyc2", "tor1", "sfo3", "ams3", "lon1", "fra1", "sgp1", "blr1", "syd1",
 ];
+mod remote;
 #[derive(Clone, ValueEnum)]
 pub enum Action {
     Check,
     Run,
+    /// Run application workflows between two dedicated VPC peers, then controls.
+    RunRemote,
+    /// Exercise every workflow locally without credentials or performance claims.
+    Smoke,
     Cleanup,
     Janitor,
 }
@@ -760,7 +765,7 @@ fn benchmark(
         ]);
         commands.command("scp", &args, 300, cancel)?;
         println!("Starting measurements; live trial progress follows (20-minute overall limit)");
-        let remote="bash -o pipefail -c 'tar -xzf /root/bundle.tar.gz -C /root/bench && chmod +x /root/bench/native /root/bench/grpc /root/bench/websocket /root/bench/capnp_cpp /root/bench/capnp-reference /root/bench/driver /root/bench/hot_paths /root/bench/gungraun-runner && timeout --kill-after=10s 20m /root/bench/driver compare /root/bench /root/results 2>&1 | tee /root/results/runner.log'";
+        let remote="bash -o pipefail -c 'tar -xzf /root/bundle.tar.gz -C /root/bench && chmod +x /root/bench/tcp /root/bench/native /root/bench/grpc /root/bench/websocket /root/bench/capnp_cpp /root/bench/capnp-reference /root/bench/driver /root/bench/hot_paths /root/bench/gungraun-runner && timeout --kill-after=10s 20m /root/bench/driver compare /root/bench /root/results 2>&1 | tee /root/results/runner.log'";
         if let Err(error) = commands.ssh(&options, &address, remote, 1250, cancel) {
             let salvage = Cancellation::default();
             for file in [
@@ -801,10 +806,20 @@ fn benchmark(
     }
 }
 pub fn run(args: Args) -> Result<()> {
+    if matches!(&args.action, Action::Smoke) {
+        return remote::smoke(
+            &args
+                .bundle
+                .context("smoke requires --bundle")?
+                .canonicalize()?,
+            &std::path::absolute(args.output.context("smoke requires --output")?)?,
+        );
+    }
     let api = Http::new()?;
     let owner = tag(&std::env::var("GITHUB_REPOSITORY")?);
     let cancel = Cancellation::install()?;
     match args.action {
+        Action::Smoke => unreachable!(),
         Action::Check => {
             preflight(&api, args.output.as_deref())?;
             Ok(())
@@ -812,15 +827,23 @@ pub fn run(args: Args) -> Result<()> {
         Action::Cleanup => {
             let path = args.state.join("receipt.json");
             if path.exists() {
-                cleanup(
-                    &api,
-                    crate::string(&crate::read_json(&path)?, "name")?,
-                    &owner,
-                )?;
+                remote::cleanup_receipt(&api, &crate::read_json(&path)?, &owner)?;
             }
             Ok(())
         }
         Action::Janitor => janitor(&api, &owner),
+        Action::RunRemote => remote::run(
+            &api,
+            &args
+                .bundle
+                .context("run-remote requires --bundle")?
+                .canonicalize()?,
+            &std::path::absolute(args.output.context("run-remote requires --output")?)?,
+            &std::path::absolute(args.state)?,
+            &owner,
+            &cancel,
+            &SystemCommands,
+        ),
         Action::Run => benchmark(
             &api,
             &args

@@ -1,9 +1,10 @@
 //! TCP adapters with automatic socket-informed streaming flow control. Generic
 //! byte IO has no socket metadata; use these entry points to sample SO_SNDBUF.
+use super::io::TokioIo;
 use capnp::{capability::Client, message::ReaderOptions};
 use capnp_rpc::{rpc_twoparty_capnp::Side, twoparty};
 use tokio::net::{tcp::OwnedReadHalf, TcpListener, TcpStream, ToSocketAddrs};
-use tokio_util::compat::{Compat, TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
 
 /// Dial a plaintext TCP peer with Nagle's algorithm disabled for RPC latency.
 /// Wrap this future in `tokio::time::timeout` to bound DNS and connection setup.
@@ -30,7 +31,7 @@ pub fn network(
     let (read, write) = socket.into_split();
     twoparty::VatNetwork::new_with_send_buffer(
         read.compat(),
-        write.compat_write(),
+        TokioIo(write),
         side,
         options,
         |write| {

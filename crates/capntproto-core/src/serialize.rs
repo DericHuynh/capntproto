@@ -24,7 +24,11 @@
 //!
 //! Each message is preceded by a segment table indicating the size of its segments.
 
+mod indexed_segments;
+mod receiver;
+pub use receiver::{FrameReceiver, ReadWindow, SegmentTableHeader};
 pub(crate) mod no_alloc_buffer_segments;
+pub use indexed_segments::{IndexedSliceSegments, SegmentOffset};
 pub use no_alloc_buffer_segments::{
     NoAllocBufferSegments, NoAllocSegmentTableInfo, NoAllocSliceSegments,
 };
@@ -127,7 +131,13 @@ impl<T: core::ops::Deref<Target = [u8]>> BufferSegments<T> {
         };
         let segment_table_bytes_len = buffer.len() - segment_bytes.len();
 
-        assert!(segment_table.total_words() * 8 <= buffer.len());
+        let available_words = (buffer.len() - segment_table_bytes_len) / BYTES_PER_WORD;
+        if segment_table.total_words() > available_words {
+            return Err(Error::from_kind(ErrorKind::MessageEndsPrematurely(
+                segment_table.total_words(),
+                available_words,
+            )));
+        }
         let segment_indices = segment_table.to_segment_indices();
         Ok(Self {
             buffer,
@@ -334,76 +344,12 @@ pub fn try_read_message_no_alloc<R>(
 where
     R: Read,
 {
-    if !cfg!(feature = "unaligned") && !(buffer.as_ptr() as usize).is_multiple_of(BYTES_PER_WORD) {
-        return Err(Error::from_kind(ErrorKind::UnalignedSegment));
+    let mut receiver = FrameReceiver::new(buffer, options)?;
+    while let Some(mut input) = receiver.input()? {
+        let count = read.read(input.bytes())?;
+        input.commit(count)?;
     }
-
-    if buffer.len() < 8 {
-        return Err(Error::from_kind(ErrorKind::BufferNotLargeEnough));
-    }
-
-    // read the first Word, which contains segment_count and the 1st segment length
-    {
-        let n = read.read(&mut buffer[0..8])?;
-        if n == 0 {
-            // Clean EOF on message boundary
-            return Ok(None);
-        } else if n < 8 {
-            read.read_exact(&mut buffer[n..8])?;
-        }
-    }
-
-    let segment_count =
-        u32::from_le_bytes(buffer[0..4].try_into().unwrap()).wrapping_add(1) as usize;
-
-    if segment_count >= SEGMENTS_COUNT_LIMIT || segment_count == 0 {
-        return Err(Error::from_kind(ErrorKind::InvalidNumberOfSegments(
-            segment_count,
-        )));
-    }
-
-    let table_bytes = (segment_count + 2) / 2 * BYTES_PER_WORD;
-    if buffer.len() < table_bytes {
-        return Err(Error::from_kind(ErrorKind::BufferNotLargeEnough));
-    }
-    // PackedRead requires each read to span complete packed runs. Match the
-    // allocating reader's remaining-table block, rather than splitting it into
-    // pairs of lengths: a zero or raw run can span several such pairs. read_exact
-    // also handles ordinary streams that fragment a table word across reads.
-    read.read_exact(&mut buffer[8..table_bytes])?;
-    let total_body_words = buffer[4..4 + segment_count * 4]
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .try_fold(0usize, |total, length| {
-            total
-                .checked_add(u32::from_le_bytes(*length) as usize)
-                .ok_or_else(|| Error::from_kind(ErrorKind::MessageSizeOverflow))
-        })?;
-
-    if let Some(limit) = options.traversal_limit_in_words {
-        if total_body_words > limit {
-            return Err(Error::from_kind(ErrorKind::MessageTooLarge(
-                total_body_words,
-            )));
-        }
-    }
-
-    let start = table_bytes;
-    let end = start + (total_body_words * 8);
-    if buffer.len() < end {
-        return Err(Error::from_kind(ErrorKind::BufferNotLargeEnough));
-    }
-    read.read_exact(&mut buffer[start..end])?;
-
-    let info = no_alloc_buffer_segments::NoAllocSegmentTableInfo {
-        segments_count: segment_count,
-        segment_table_length_bytes: table_bytes,
-        total_segments_length_bytes: total_body_words * 8,
-    };
-
-    let segments = NoAllocSliceSegments::from_segment_table_info(buffer, info);
-    Ok(Some(crate::message::Reader::new(segments, options)))
+    receiver.into_message()
 }
 
 /// Like `read_message()`, but does not allocate.
@@ -451,17 +397,11 @@ where
         }
     }
 
-    let segment_count = u32::from_le_bytes(buf[0..4].try_into().unwrap()).wrapping_add(1) as usize;
-
-    if segment_count >= SEGMENTS_COUNT_LIMIT || segment_count == 0 {
-        return Err(Error::from_kind(ErrorKind::InvalidNumberOfSegments(
-            segment_count,
-        )));
-    }
+    let header = SegmentTableHeader::parse(&buf)?;
+    let segment_count = header.segment_count();
 
     let mut segment_lengths_builder = SegmentLengthsBuilder::with_capacity(segment_count);
-    segment_lengths_builder
-        .try_push_segment(u32::from_le_bytes(buf[4..8].try_into().unwrap()) as usize)?;
+    segment_lengths_builder.try_push_segment(header.first_segment_words())?;
     if segment_count > 1 {
         if segment_count < 4 {
             read.read_exact(&mut buf)?;

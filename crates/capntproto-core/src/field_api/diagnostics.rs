@@ -18,28 +18,25 @@ pub enum Location {
 }
 impl Location {
     /// Attach this location to an existing failure without replacing it.
+    /// Without `alloc`, errors retain their kind but cannot own this context.
+    /// Format `Location` separately into caller-supplied storage when needed.
+    #[cfg(feature = "alloc")]
     pub fn error(self, mut error: Error) -> Error {
         use alloc::format;
-        let prefix = match self {
-            Self::Unknown => return error,
-            Self::Field {
-                schema,
-                name,
-                ordinal: Some(n),
-            } => format!("{schema}.{name} (@{n})"),
-            Self::Field {
-                schema,
-                name,
-                ordinal: None,
-            } => format!("{schema}.{name}"),
-            Self::Index(n) => format!("[{n}]"),
-            Self::Union(schema) => format!("{schema} union"),
-        };
+        if matches!(self, Self::Unknown) {
+            return error;
+        }
         error.extra = if error.extra.is_empty() {
-            prefix
+            format!("{self}")
         } else {
-            format!("{prefix}: {}", error.extra)
+            format!("{self}: {}", error.extra)
         };
+        error
+    }
+
+    /// Preserve the structured error kind without allocating context.
+    #[cfg(not(feature = "alloc"))]
+    pub fn error(self, error: Error) -> Error {
         error
     }
 
@@ -49,8 +46,74 @@ impl Location {
     }
 }
 
+impl core::fmt::Display for Location {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Unknown => Ok(()),
+            Self::Field {
+                schema,
+                name,
+                ordinal: Some(n),
+            } => write!(f, "{schema}.{name} (@{n})"),
+            Self::Field {
+                schema,
+                name,
+                ordinal: None,
+            } => write!(f, "{schema}.{name}"),
+            Self::Index(n) => write!(f, "[{n}]"),
+            Self::Union(schema) => write!(f, "{schema} union"),
+        }
+    }
+}
+
 #[doc(hidden)]
+#[cfg(feature = "alloc")]
 pub fn conversion(mut error: Error, schema: &str, direction: &str) -> Error {
     error.extra = alloc::format!("native {direction} {schema}: {}", error.extra);
     error
+}
+
+#[cfg(all(test, feature = "alloc"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn locations_format_consistently_and_preserve_the_underlying_error() {
+        for (location, expected) in [
+            (Location::Unknown, ""),
+            (
+                Location::Field {
+                    schema: "Record",
+                    name: "label",
+                    ordinal: Some(1),
+                },
+                "Record.label (@1)",
+            ),
+            (
+                Location::Field {
+                    schema: "Record",
+                    name: "details",
+                    ordinal: None,
+                },
+                "Record.details",
+            ),
+            (Location::Index(3), "[3]"),
+            (Location::Union("Record"), "Record union"),
+        ] {
+            assert_eq!(alloc::format!("{location}"), expected);
+            let plain = location.error(Error::from_kind(crate::ErrorKind::NotPresent));
+            assert_eq!(plain.kind, crate::ErrorKind::NotPresent);
+            assert_eq!(plain.extra, expected);
+            let detailed = location.error(Error::failed("original cause".into()));
+            assert_eq!(detailed.kind, crate::ErrorKind::Failed);
+            assert_eq!(
+                detailed.extra,
+                if expected.is_empty() {
+                    alloc::string::String::from("original cause")
+                } else {
+                    alloc::format!("{expected}: original cause")
+                }
+            );
+        }
+    }
 }

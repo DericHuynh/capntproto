@@ -1,13 +1,17 @@
 // Copyright (c) 2026 ReProto contributors. Licensed under the MIT License.
 
 //! Buffered stream framing with explicit short-lived message ownership.
+use core::{
+    pin::Pin,
+    task::{ready, Context, Poll},
+};
 use std::sync::Arc;
 
 use capnp::{
     message::{Reader, ReaderOptions, ReaderSegments},
     Error, ErrorKind, Result, Word,
 };
-use futures_util::{AsyncRead, AsyncReadExt};
+use futures_util::AsyncRead;
 
 const DEFAULT_BUFFER_WORDS: usize = 8192;
 // Every legal segment table fits, even when a frame's body needs direct I/O.
@@ -145,6 +149,12 @@ impl core::ops::Deref for Storage {
     }
 }
 impl BufferedSegments {
+    /// The complete immutable stream frame, including its original segment
+    /// table. It remains valid for exactly the same lifetime as these segments.
+    pub fn framed_bytes(&self) -> &[u8] {
+        &Word::words_to_bytes(&self.storage)[self.start..self.start + self.frame.bytes]
+    }
+
     /// True when this message holds the stream's reusable receive buffer.
     pub fn is_shared_buffer(&self) -> bool {
         matches!(self.storage, Storage::Shared(_))
@@ -163,9 +173,16 @@ impl BufferedSegments {
     }
 }
 impl ReaderSegments for BufferedSegments {
+    #[inline(always)]
     fn get_segment(&self, id: u32) -> Option<&[u8]> {
-        self.frame.range(id).map(|(start, end)| {
-            &Word::words_to_bytes(&self.storage)[self.start + start..self.start + end]
+        let (start, end) = self.frame.range(id)?;
+        Some(match &self.storage {
+            // Owned frames always start at zero (detach, spill or scratch
+            // conversion). Only shared receive views need an additional offset.
+            Storage::Owned(words) => &Word::words_to_bytes(words)[start..end],
+            Storage::Shared(words) => {
+                &Word::words_to_bytes(words)[self.start + start..self.start + end]
+            }
         })
     }
     fn len(&self) -> usize {
@@ -263,6 +280,7 @@ pub struct BufferedRead<R> {
     spill: Option<Spill>,
     terminal: Option<Result<()>>,
     consumed: u64,
+    borrowed: bool,
     read_ahead: fn(&R) -> bool,
 }
 impl<R: AsyncRead + Unpin> BufferedRead<R> {
@@ -290,6 +308,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
             spill: None,
             terminal: None,
             consumed: 0,
+            borrowed: false,
             read_ahead: |_| true,
         })
     }
@@ -316,7 +335,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
     /// Whether a returned message still owns a view into the receive buffer.
     /// Such a view must be dropped before another read can begin.
     pub fn has_outstanding_short_lived_message(&self) -> bool {
-        Arc::strong_count(&self.buffer) != 1
+        self.borrowed || Arc::strong_count(&self.buffer) != 1
     }
 
     fn advance(&mut self, bytes: usize) -> Result<()> {
@@ -368,18 +387,51 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
 
     async fn try_read<'a>(
         &mut self,
-        scratch: Option<&'a mut [Word]>,
+        mut scratch: Option<&'a mut [Word]>,
         is_short_lived: impl FnOnce(&Reader<BufferedSegments>) -> Result<bool>,
     ) -> Result<Option<Reader<BufferedScratchSegments<'a>>>> {
+        let mut classify = Some(is_short_lived);
+        core::future::poll_fn(|cx| self.poll_try_read(cx, &mut scratch, &mut classify)).await
+    }
+
+    /// Poll the same framing state machine without allocating a receive future.
+    /// The returned message may borrow shared receive storage and must be dropped
+    /// before the next read. Pending retains partial progress in this reader.
+    pub fn poll_read_short_lived_message(
+        &mut self,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Option<Reader<BufferedSegments>>>> {
+        self.poll_read_message(cx, |_| Ok(true))
+    }
+
+    /// Poll a frame without allocating a receive future. The classifier runs
+    /// only after the complete frame is available. Return false for messages
+    /// that must remain valid independently of subsequent reads.
+    pub fn poll_read_message(
+        &mut self,
+        cx: &mut Context<'_>,
+        is_short_lived: impl FnOnce(&Reader<BufferedSegments>) -> Result<bool>,
+    ) -> Poll<Result<Option<Reader<BufferedSegments>>>> {
+        let options = self.options;
+        self.poll_try_read(cx, &mut None, &mut Some(is_short_lived))
+            .map_ok(|message| message.map(|m| Reader::new(m.into_segments().into_owned(), options)))
+    }
+
+    fn poll_try_read<'a>(
+        &mut self,
+        cx: &mut Context<'_>,
+        scratch: &mut Option<&'a mut [Word]>,
+        classify: &mut Option<impl FnOnce(&Reader<BufferedSegments>) -> Result<bool>>,
+    ) -> Poll<Result<Option<Reader<BufferedScratchSegments<'a>>>>> {
         if self.has_outstanding_short_lived_message() {
-            return Err(Error::failed(
+            return Poll::Ready(Err(Error::failed(
                 "previous short-lived message is still alive".into(),
-            ));
+            )));
         }
         if let Some(terminal) = &self.terminal {
-            return terminal.clone().map(|()| None);
+            return Poll::Ready(terminal.clone().map(|()| None));
         }
-        let result = self.read(scratch, is_short_lived).await;
+        let result = ready!(self.poll_read(cx, scratch, classify));
         match &result {
             Err(error) => {
                 self.spill = None;
@@ -389,37 +441,141 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
             Ok(None) => self.terminal = Some(Ok(())),
             Ok(Some(_)) => {}
         }
-        result
+        Poll::Ready(result)
     }
 
-    async fn read<'a>(
+    fn poll_read<'a>(
         &mut self,
-        scratch: Option<&'a mut [Word]>,
-        is_short_lived: impl FnOnce(&Reader<BufferedSegments>) -> Result<bool>,
-    ) -> Result<Option<Reader<BufferedScratchSegments<'a>>>> {
+        cx: &mut Context<'_>,
+        scratch: &mut Option<&'a mut [Word]>,
+        classify: &mut Option<impl FnOnce(&Reader<BufferedSegments>) -> Result<bool>>,
+    ) -> Poll<Result<Option<Reader<BufferedScratchSegments<'a>>>>> {
+        if !ready!(self.poll_prepare_frame(cx))? {
+            return Poll::Ready(Ok(None));
+        }
+        if let Some(spill) = self.spill.take() {
+            self.advance(spill.frame.bytes)?;
+            return Poll::Ready(Ok(Some(Reader::new(
+                BufferedScratchSegments(ScratchStorage::Buffered(BufferedSegments {
+                    storage: Storage::Owned(spill.storage.into_boxed_slice()),
+                    start: 0,
+                    frame: spill.frame,
+                })),
+                self.options,
+            ))));
+        }
+        let frame = self.frame.take().expect("prepared buffered frame");
+        let bytes = frame.bytes;
+        let view = Reader::new(
+            BufferedSegments {
+                storage: Storage::Shared(self.buffer.clone()),
+                start: self.begin,
+                frame,
+            },
+            self.options,
+        );
+        let short_lived = classify.take().expect("classify one complete frame")(&view)?;
+        self.advance(bytes)?;
+        let segments = view.into_segments();
+        let segments = if short_lived {
+            BufferedScratchSegments(ScratchStorage::Buffered(segments))
+        } else {
+            segments.retain(scratch.take())
+        };
+        self.consume_buffered(bytes);
+        // Classification uses its own traversal budget.
+        Poll::Ready(Ok(Some(Reader::new(segments, self.options))))
+    }
+
+    fn consume_buffered(&mut self, bytes: usize) {
+        self.begin += bytes;
+        if self.begin == self.end {
+            self.begin = 0;
+            self.end = 0;
+        }
+    }
+
+    /// Receive an immutable frame retained inside this stream until
+    /// `finish_borrowed_frame`. Repeated polls return the same bytes without IO.
+    /// Pending preserves partial input; errors and EOF remain sticky. Other
+    /// receive APIs reject an outstanding borrowed frame without consuming it.
+    pub fn poll_borrowed_frame(&mut self, cx: &mut Context<'_>) -> Poll<Result<Option<&[u8]>>> {
+        if !self.borrowed {
+            if self.has_outstanding_short_lived_message() {
+                return Poll::Ready(Err(Error::failed(
+                    "previous short-lived message is still alive".into(),
+                )));
+            }
+            if let Some(terminal) = &self.terminal {
+                return Poll::Ready(terminal.clone().map(|()| None));
+            }
+            let result = ready!(self.poll_prepare_frame(cx)).and_then(|ready| {
+                if ready {
+                    let bytes = self.spill.as_ref().map_or_else(
+                        || self.frame.as_ref().expect("prepared frame").bytes,
+                        |spill| spill.frame.bytes,
+                    );
+                    self.advance(bytes)?;
+                }
+                Ok(ready)
+            });
+            match result {
+                Ok(true) => self.borrowed = true,
+                Ok(false) => {
+                    self.terminal = Some(Ok(()));
+                    return Poll::Ready(Ok(None));
+                }
+                Err(error) => {
+                    self.spill = None;
+                    self.frame = None;
+                    self.terminal = Some(Err(error.clone()));
+                    return Poll::Ready(Err(error));
+                }
+            }
+        }
+        Poll::Ready(Ok(self.borrowed_frame()))
+    }
+
+    /// View the last successfully borrowed frame without consuming input.
+    pub fn borrowed_frame(&self) -> Option<&[u8]> {
+        if !self.borrowed {
+            return None;
+        }
+        Some(match &self.spill {
+            Some(spill) => &Word::words_to_bytes(&spill.storage)[..spill.frame.bytes],
+            None => {
+                let bytes = self.frame.as_ref().expect("borrowed frame").bytes;
+                &Word::words_to_bytes(&self.buffer)[self.begin..self.begin + bytes]
+            }
+        })
+    }
+
+    /// Release a borrowed frame. Calling this without a frame leaves partial
+    /// input untouched, so canceled polls can resume normally.
+    pub fn finish_borrowed_frame(&mut self) {
+        if core::mem::take(&mut self.borrowed) && self.spill.take().is_none() {
+            let bytes = self.frame.take().expect("borrowed frame").bytes;
+            self.consume_buffered(bytes);
+        }
+    }
+
+    // Both owning and borrowing APIs use exactly the same framing, buffering,
+    // read-ahead policy and error checks. Leave completed storage in place.
+    fn poll_prepare_frame(&mut self, cx: &mut Context<'_>) -> Poll<Result<bool>> {
         loop {
             if let Some(spill) = &mut self.spill {
                 if spill.filled < spill.frame.bytes {
-                    let count = self
-                        .input
-                        .read(&mut Word::words_to_bytes_mut(&mut spill.storage)[spill.filled..])
-                        .await?;
+                    let count = ready!(Pin::new(&mut self.input).poll_read(
+                        cx,
+                        &mut Word::words_to_bytes_mut(&mut spill.storage)[spill.filled..],
+                    ))?;
                     if count == 0 {
-                        return Err(Error::from_kind(ErrorKind::PrematureEndOfFile));
+                        return Poll::Ready(Err(Error::from_kind(ErrorKind::PrematureEndOfFile)));
                     }
                     spill.filled += count;
                     continue;
                 }
-                let spill = self.spill.take().unwrap();
-                self.advance(spill.frame.bytes)?;
-                return Ok(Some(Reader::new(
-                    BufferedScratchSegments(ScratchStorage::Buffered(BufferedSegments {
-                        storage: Storage::Owned(spill.storage.into_boxed_slice()),
-                        start: 0,
-                        frame: spill.frame,
-                    })),
-                    self.options,
-                )));
+                return Poll::Ready(Ok(true));
             }
             if self.frame.is_none() {
                 self.frame = Frame::parse(
@@ -429,31 +585,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
             }
             if let Some(frame) = &self.frame {
                 if self.end - self.begin >= frame.bytes {
-                    let frame = self.frame.take().unwrap();
-                    let bytes = frame.bytes;
-                    let view = Reader::new(
-                        BufferedSegments {
-                            storage: Storage::Shared(self.buffer.clone()),
-                            start: self.begin,
-                            frame,
-                        },
-                        self.options,
-                    );
-                    let short_lived = is_short_lived(&view)?;
-                    self.advance(bytes)?;
-                    let segments = view.into_segments();
-                    let segments = if short_lived {
-                        BufferedScratchSegments(ScratchStorage::Buffered(segments))
-                    } else {
-                        segments.retain(scratch)
-                    };
-                    self.begin += bytes;
-                    if self.begin == self.end {
-                        self.begin = 0;
-                        self.end = 0;
-                    }
-                    // Classification uses its own traversal budget.
-                    return Ok(Some(Reader::new(segments, self.options)));
+                    return Poll::Ready(Ok(true));
                 }
                 if frame.bytes > self.buffer.len() * 4 || !(self.read_ahead)(&self.input) {
                     let mut storage = Word::allocate_zeroed_vec(frame.bytes / 8);
@@ -490,13 +622,14 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
                 };
                 read_end = read_end.min(self.begin + header);
             }
-            let count = self.input.read(&mut buffer[self.end..read_end]).await?;
+            let count =
+                ready!(Pin::new(&mut self.input).poll_read(cx, &mut buffer[self.end..read_end]))?;
             if count == 0 {
-                return if self.begin == self.end {
-                    Ok(None)
+                return Poll::Ready(if self.begin == self.end {
+                    Ok(false)
                 } else {
                     Err(Error::from_kind(ErrorKind::PrematureEndOfFile))
-                };
+                });
             }
             self.end += count;
         }

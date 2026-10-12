@@ -1,5 +1,35 @@
 # Rust reader and field-operation generator
 
+For an allocation-free RPC target, opt into `bounded_rpc(true)` alongside the
+field API. Interface `Owned` markers retain reflection and expose typed method
+constants. Their fields read borrowed `wire_capability::Reader` indices with
+message-reader identity; fixed editors explicitly set message-local indices.
+`rpc-wire::calls` uses these constants for in-envelope parameter construction and
+checked interface/ordinal dispatch. Allocating native-value generation and hosted
+structured replies cannot be combined with this mode. Default hosted bindings
+remain unchanged and also expose method metadata when the field API is enabled.
+
+Streaming constants use a distinct `StreamingMethod` type without result or
+pipeline methods. Ordinary method constants create schema-typed paths in a
+caller-supplied `u16` buffer. Struct/group traversal preserves the result schema;
+only capability fields can terminate a path. Capacity and unsupported union
+selections return errors without corrupting the preceding path.
+
+Forwarding a capability-bearing tree requires an explicit `wire_capability::IndexMap`
+from source indices to the destination descriptor table. Use
+`FixedBuilder::try_copy_root_with_capabilities` or the fixed AnyPointer editor's
+`copy_with_capabilities`; they preserve unknown fields and remap pointers in
+structs, pointer lists and inline-composite lists. Missing mappings, invalid
+destination indices and exhausted storage leave the old destination intact.
+This copies wire indices only: the RPC driver must separately acquire and publish
+the corresponding descriptor ownership. Ordinary fixed-buffer copies still reject
+capabilities, including when another dependency enables `alloc`.
+
+This is an in-progress RPC migration: bounded call/streaming dispatch, wire views,
+target leases and typed paths are implemented. Complete generated server adapters,
+promise resolution/embargoes and default-runtime integration remain open. See the
+[bounded call architecture](Architecture.md#ordered-implementation-and-acceptance).
+
 The opt-in generator implements the reader/editor facade and core ownership contracts of
 [the API design](../archive/Rust-API-Design.md) on the vendored `capnpc` and
 `capnp` runtime. It emits an `api` module alongside the established bindings;
@@ -29,8 +59,10 @@ capnpc::CompilerCommand::new()
 request. The `capnpc-rust` plugin accepts `--field-api` when called directly
 with a binary `CodeGeneratorRequest` on stdin. `--help` describes its arguments.
 Generate all referenced schema files with the same option: imported struct and
-enum references target their corresponding `api` modules. The shared facade
-runtime requires the `capnp` `alloc` feature (included in its defaults).
+enum references target their corresponding `api` modules. Data-only schemas
+support borrowed views without `std` or `alloc`. Owned messages, staged copies,
+native conversions and capability RPC hooks require `alloc` (included in the
+runtime's defaults).
 
 Enums nested in generic scopes remain ordinary enum types in both generated
 APIs. Their native reflection and identity erase enclosing parameters, matching
@@ -66,6 +98,97 @@ The executable version, including imports and assertions, is in
 have consuming `into_api()` conversions, including RPC method parameter and
 result structs. Existing clients, servers, request dispatch, and capability
 hooks are reused.
+
+## Allocation-free data views
+
+Use `default-features = false` on the target `capntproto-core` dependency and
+Cargo resolver 2 or later. Keep the schema compiler and generator in
+`build-dependencies`; their host-side `std` and `alloc` features do not become
+target requirements. Generate with `.field_api(true)` and leave native values
+and projections disabled. No separate schema or generator profile is needed.
+The target runtime decides whether generated allocating `copy_from` methods
+exist; this does not depend on similarly named features in the consumer crate.
+
+| API | Without `alloc` |
+|---|---|
+| Borrowed fields, defaults, lists, generic data fields and union inspection | Supported |
+| Scalar writes, strict editing of existing storage, clearing and group selection | Supported |
+| `ensure` and the established fixed-buffer builder | Supported; buffer exhaustion can still panic |
+| `message::FixedBuilder` with schema descriptors | Fallible structs, lists, scalar fields, text/data, generic/AnyPointer data writes, recursive copies and explicit struct/list upgrades; no heap fallback |
+| Owned `Message` / `MessageView`, staged `init` / replacement / copying, orphans | Require `alloc` |
+| Native values, projections, interface clients and RPC request hooks | Require `alloc` |
+
+Diagnostics retain `ErrorKind` without `alloc`; they cannot attach owned field
+paths. `diagnostics::Location` implements `core::fmt::Display` for formatting
+into caller-supplied storage. With `alloc` enabled, errors retain the existing
+owned context. Thus enabling `alloc` does not promise allocation-free errors.
+
+The [portable fixture](../../verification/portable/src/lib.rs) generates data
+bindings on the host, exercises them with isolated feature profiles, and links
+the same functions into a Cortex-M executable without a global allocator.
+It checks fixed-buffer reuse, defaults, lists, generic fields, union rejection,
+malformed pointers and invalid UTF-8. This qualifies borrowed data operations;
+it also exercises bounded construction, group resets, recursive copy rollback
+and explicit struct/list upgrades with bounded generic writes. Bounded capability
+slots and allocation-free capability dispatch remain in the
+[portability migration](Architecture.md#planned-portability-boundaries).
+
+For fallible construction, use the restricted fixed editor and generated field
+descriptors (with the example schema's `Person` and `Address` markers):
+
+```rust
+let mut storage = [capnp::word(0, 0, 0, 0, 0, 0, 0, 0); 64];
+let mut message = capnp::message::FixedBuilder::new(&mut storage)?;
+let mut person = message.try_init_root::<Person>()?;
+person.scalar(Person::ID).set(73);
+person.field(Person::NAME).copy_from("bounded")?;
+person.field(Person::ADDRESS).init()?.field(Address::CITY).copy_from("Edmonton")?;
+assert_eq!(person.read().id(), 73);
+```
+
+Capacity and length rejection preserve the prior field, union selection and
+allocation cursor. Successful replacement consumes fresh words until `reset()`;
+there is no individual-object reclamation yet. The fixed editor does not expose
+legacy `ensure`, automatic upgrades or a raw growing builder.
+Its errors stay compact with `alloc` enabled; `FixedField::location()` can be
+formatted separately into caller storage. Conventional generated `Mut` editors
+and generated reader diagnostics keep their existing allocating error context
+when `alloc` is enabled. The bounded construction/error contract does not change
+that reader policy.
+
+Use `field(Person::PHONES).init(n)?` for a bounded list and `get_mut(i)` for a
+checked element editor; nested struct and pointer lists keep the bounded API.
+Generated enums preserve unknown ordinals. `group(Choice::DETAILS).select()` and
+`void(Choice::EMPTY).set()` explicitly select union arms. Group `reset()` clears
+only its schema-known storage; subsequent child edits commit independently.
+
+`try_copy_root(any_reader)` and struct/list field `copy_from` stage the complete
+tree before replacing its old value. Capacity, traversal, malformed-input and
+unsupported-capability errors restore the old value and allocation cursor.
+Capabilities are rejected before hook extraction, with or without `alloc`.
+`try_upgrade_root::<NewSchema>()`, `try_upgrade_root_list::<NewSchema>()` and
+struct/list field `upgrade()` enlarge present objects without truncation, moving
+descendant pointers. Primitive and pointer lists can be promoted to inline struct
+lists; bit lists cannot. Missing fields are not
+silently default-copied. Successful copy/upgrade operations retain a staging word
+until reset/drop; failed operations reclaim it.
+
+For a generated `Box(T) { value @0 :T; }`, select bounded operations with `typed()`:
+
+```rust
+type TextBox = api::Box<capnp::text::Owned>;
+let mut root = message.try_init_root::<TextBox>()?;
+root.field(TextBox::VALUE).typed().copy_from("generic data")?;
+```
+
+The generator maps both legacy struct owners and field-API schema markers through
+`FixedType`/`FixedSchema`. Built-in text, data and list owners are supported; enum
+list parameters retain unknown ordinals using the generated open enum. A generic
+AnyPointer field also supports `typed().cast::<field_api::List<Entry>>()` for
+explicit checked interpretation and `typed().copy_from(any_reader)` for staged
+recursive copying. Merely obtaining/retyping the handle never allocates or selects
+a union arm. `edit()` checks the current wire layout; `init()`/`replace()` explicitly
+construct the requested layout. Capability owners have no bounded mapping yet.
 
 The independent `.structured_replies(true)` option changes generated server
 result aliases to consuming reply stages. It can be combined with the field API;

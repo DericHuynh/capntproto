@@ -611,6 +611,7 @@ pub fn owned() -> BTreeSet<String> {
                 "docs/reports/tla-history.svg",
                 "docs/reports/failed-models.md",
                 "docs/reports/benchmarks-pending.svg",
+                "docs/reports/benchmarks.svg",
                 "docs/reports/failed-tests.md",
             ]
             .map(str::to_owned),
@@ -680,10 +681,15 @@ pub fn render(template: &str, history: &Value, output: &Path) -> Result<Vec<Path
     section.push_str("### Linux loopback benchmark comparisons\n\n");
     if let Some(r) = latest(history, "benchmark") {
         section.push_str(&format!("Latest benchmark run: {}\n\n", run_text(r)?));
+        section.push_str(&format!(
+            "Measurement evidence: **{}**. {}\n\n",
+            crate::string(&r["data"], "status")?,
+            markdown_text(crate::string(&r["data"], "note")?)
+        ));
     } else {
         section.push_str("Awaiting the first dedicated DigitalOcean benchmark run.\n\n");
     }
-    section.push_str("Separate client/server processes, one outstanding request, several payload sizes and five repetitions. Capntproto uses encrypted Native/UDP; C++ Cap'n Proto, gRPC and WebSocket baselines use plaintext TCP. Bars compare this workload, not universal protocol performance.\n\n");
+    section.push_str("Separate client/server processes, one outstanding request, several payload sizes and five repetitions. Capntproto TCP and C++ Cap’n Proto use matched plaintext TCP; native QUIC remains a separate encrypted comparison. gRPC and WebSocket baselines use plaintext TCP. Bars compare this workload, not universal protocol performance.\n\n");
     if let Some(r) =
         latest(history, "benchmark").filter(|r| !r["data"]["charts"].as_array().unwrap().is_empty())
     {
@@ -711,7 +717,7 @@ pub fn render(template: &str, history: &Value, output: &Path) -> Result<Vec<Path
             35.0,
             190.0,
             15,
-            "Capntproto / Native · C++ Cap'n Proto · gRPC (tonic) · WebSockets",
+            "Capntproto TCP / QUIC · C++ Cap'n Proto · gRPC (tonic) · WebSockets",
             "#334155",
         );
         finish(svg, &assets.join("benchmarks-pending.svg"))?;
@@ -719,6 +725,32 @@ pub fn render(template: &str, history: &Value, output: &Path) -> Result<Vec<Path
             .push_str("![Benchmark measurements pending](docs/reports/benchmarks-pending.svg)\n\n");
     }
     section.push_str("[Machine-readable history and exact plotted values](docs/reports/history.json). Full logs, raw samples and LLVM exports are retained in the linked workflow artifacts.\n");
+    // A stable main-README image must exist even when the latest run lacks
+    // latency data. Never leave the previous run's successful graph in place.
+    let latency = assets.join("latency-p50.svg");
+    let preview = assets.join("benchmarks.svg");
+    if latency.exists() {
+        std::fs::copy(latency, preview)?;
+    } else {
+        let mut svg = start("Capntproto — benchmark measurements unavailable", 200);
+        text(
+            &mut svg,
+            35.0,
+            65.0,
+            25,
+            "No validated latency measurement in the latest run",
+            "#1e293b",
+        );
+        text(
+            &mut svg,
+            35.0,
+            120.0,
+            16,
+            "See the reports dashboard for the measured commit, status and workflow logs.",
+            "#64748b",
+        );
+        finish(svg, &preview)?;
+    }
     crate::write(
         output.join("README.md"),
         template.replace("{{REPORTS}}", &section),

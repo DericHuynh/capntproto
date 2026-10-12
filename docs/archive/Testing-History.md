@@ -230,8 +230,8 @@ new public testing API. Source/compiler/lockfile hashes and case logs are retain
 under `target/verification/rpc-id-contracts`. The separate grant/generation gate
 still checks its original 16 contracts.
 
-[RpcIdTables.tla](../../verification/RpcIdTables.tla) explores **1,041 states / 11,304
-edge prefixes**. [Cargo replay](../../tests/rpc_tables.rs) calls the actual production
+The retired `RpcIdTables.tla` explored **1,041 states / 11,304
+edge prefixes**. Its Cargo replay called the actual production
 table implementation for every prefix and compares operation results, occupied
 IDs, retained values, domain isolation, adopted count and idleness. Bounds are
 two low slots in each of the question/export domains, one adopted question, and
@@ -241,7 +241,10 @@ This is a bounded safety check, without a liveness claim. Separate native tests
 exercise high-counter wrap/collision skipping, both adopted-range endpoints,
 invalid insertion, duplicate/missing removal and full-width peer IDs. Runtime
 trace suites and C++ interoperability cover the surrounding wire interpretation;
-the table model itself does not model RPC handlers or prove stale-ID safety.
+the table model itself did not model RPC handlers or prove stale-ID safety.
+This model and replay have been replaced by direct production-code
+[Kani proofs](../wiki/Formal-Verification.md#replacement-decisions); these counts describe
+the historical campaign, not the current test inventory.
 
 ### Bulk reservation ownership
 
@@ -762,7 +765,7 @@ checks and embargo fault control. Model phase numbers are confined to verificati
 adapters. The existing authenticated-handoff and stream-opening replay drivers
 also use the typed production APIs.
 
-[HandoffCounterBoundary.tla](../../verification/HandoffCounterBoundary.tla) checks
+The retired `HandoffCounterBoundary.tla` checked
 two scenarios with five operations per history. Proxy mode starts with two
 cumulative drain slots remaining; direct mode starts with two invocation-counter
 slots remaining. The Rust unit replay seeds private, valid states with the
@@ -779,7 +782,9 @@ The offset fixtures stand for long, reachable histories; the tests do not execut
 `u64::MAX` calls or prove all counter bounds. These checks concern pure transition
 policy and preserve the existing transport-authentication boundary. They do not
 establish per-method RPC accounting, cryptographic security or complete runtime
-refinement. Broader numeric/state audits remain on the roadmap.
+refinement. Full-width counter induction in production Rust now replaces this
+model and replay; see [Kani scope](../wiki/Formal-Verification.md#replacement-decisions).
+Broader numeric/state audits remain on the roadmap.
 
 ### Guard mutation and coverage evidence
 
@@ -791,8 +796,9 @@ cargo test --locked --test guard_quality -- --nocapture
 cargo test --locked --no-default-features --test authority -- --nocapture
 ```
 
-[guard_quality.rs](../../tests/guard_quality.rs) measures `src/authority.rs`,
-`src/semantics/handoff.rs` and `src/semantics/stream.rs` using seven native tests
+[guard_quality.rs](../../tests/guard_quality.rs) measured `src/authority.rs`,
+`src/semantics/handoff.rs` (now `crates/capntproto-rpc-engine/src/handoff.rs`)
+and `src/semantics/stream.rs` using seven native tests
 with default features disabled. TLC replay and Unix RPC tests are excluded from
 this selection. [authority.rs](../../tests/authority.rs) exhausts 256 rights bytes
 and all 1,024 valid parent/child rights combinations using a set-based subset
@@ -819,7 +825,8 @@ No mutant exclusions or equivalent-mutant allowances are used.
 The coverage gate records JSON and HTML using production configuration
 (`--no-cfg-coverage`), checks the native test inventory and extracts the three
 production files. Handoff unit tests live separately in
-[handoff_tests.rs](../../src/semantics/handoff_tests.rs). Results on Rust 1.97.0:
+[handoff/tests.rs](../../crates/capntproto-rpc-engine/src/handoff/tests.rs).
+The following figures are historical results on Rust 1.97.0:
 
 | Production file | Executed lines | Executed regions |
 |---|---:|---:|

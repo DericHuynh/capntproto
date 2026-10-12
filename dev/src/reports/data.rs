@@ -678,6 +678,15 @@ pub fn collect(directory: &Path, kind: &str) -> Result<Value> {
         )?);
     } else if kind == "fuzz" {
         result["charts"] = json!(super::verification::fuzz(&evidence["data"])?);
+    } else if kind == "benchmark" {
+        let driver = evidence["data"]["environment"]["tcp_driver"]
+            .as_str()
+            .filter(|driver| ["legacy", "portable"].contains(driver))
+            .unwrap_or("unrecorded");
+        result["note"] = json!(format!(
+            "Measured TCP driver: {driver}. Measurement collection {}; performance acceptance is separate. Check the workflow conclusion and benchmark artifact; legacy or unrecorded results do not qualify the portable driver.",
+            if passed { "completed" } else { "failed or did not complete" }
+        ));
     }
     validate_publication(&result)?;
     Ok(result)

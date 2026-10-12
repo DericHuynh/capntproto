@@ -14,6 +14,44 @@ fn counter_detects_an_allocation() {
 }
 
 #[test]
+fn caller_indexed_readers_and_capacity_errors_do_not_allocate() {
+    use capnp::{
+        message::{Builder, HeapAllocator},
+        serialize::{IndexedSliceSegments, SegmentOffset},
+    };
+    let mut message = Builder::new(HeapAllocator::new().first_segment_words(1));
+    message
+        .set_root("far pointer into a second segment")
+        .unwrap();
+    assert!(message.get_segments_for_output().len() > 1);
+    let bytes = capnp::serialize::write_message_to_words(&message);
+    let counts = allocation_counter::measure(|| {
+        for _ in 0..128 {
+            let mut input = bytes.as_slice();
+            let mut index = [SegmentOffset::EMPTY; 8];
+            let segments =
+                IndexedSliceSegments::from_slice(&mut input, &mut index, ReaderOptions::new())
+                    .unwrap();
+            let reader = capnp::message::Reader::new(segments, ReaderOptions::new());
+            assert_eq!(
+                reader
+                    .get_root::<capnp::text::Reader<'_>>()
+                    .unwrap()
+                    .as_bytes(),
+                b"far pointer into a second segment"
+            );
+            let mut input = bytes.as_slice();
+            assert!(
+                IndexedSliceSegments::from_slice(&mut input, &mut [], ReaderOptions::new())
+                    .is_err()
+            );
+            assert_eq!(input, bytes.as_slice());
+        }
+    });
+    assert_eq!(counts.count_total, 0, "{counts:?}");
+}
+
+#[test]
 fn single_segment_builders_allocate_only_the_word_buffer() {
     use capnp::message::{Builder, HeapAllocator, ScratchSpaceHeapAllocator};
     let counts = allocation_counter::measure(|| {
@@ -119,7 +157,7 @@ fn steady_write_batches_allocate_only_completion_receipts() {
     use futures::{Future, FutureExt};
     use std::{task::Context, time::Duration};
 
-    let (mut sender, driver) =
+    let (sender, driver) =
         capnp_futures::write_queue_with_clock(futures::io::sink(), || Duration::ZERO);
     let mut driver = Box::pin(driver);
     let mut cx = Context::from_waker(futures::task::noop_waker_ref());
@@ -149,7 +187,7 @@ fn detached_write_batches_do_not_allocate_after_warmup() {
     use futures::Future;
     use std::{rc::Rc, task::Context, time::Duration};
 
-    let (mut sender, driver) =
+    let (sender, driver) =
         capnp_futures::write_queue_with_clock(futures::io::sink(), || Duration::ZERO);
     let mut driver = Box::pin(driver);
     let mut cx = Context::from_waker(futures::task::noop_waker_ref());
@@ -216,6 +254,383 @@ fn framing_and_decoding_reuse_caller_storage() {
                 "allocation budget"
             );
         }
+    });
+    assert_eq!(counts.count_total, 0, "{counts:?}");
+    assert_eq!(counts.bytes_total, 0);
+}
+
+#[test]
+fn bounded_builders_do_not_allocate_on_success_exhaustion_or_schema_mismatch() {
+    use capnp::{field_api::Schema, message::FixedBuilder, ErrorKind};
+    use capntproto_test_support::field_api_capnp::api::{Address, Choice, NewRecord, OldRecord};
+    let mut words = [capnp::word(0, 0, 0, 0, 0, 0, 0, 0); 64];
+    let oversized = [b'x'; 1024];
+    let oversized = core::str::from_utf8(&oversized).unwrap();
+    let counts = allocation_counter::measure(|| {
+        for _ in 0..64 {
+            let mut message = FixedBuilder::new(&mut words).unwrap();
+            let mut person = message.try_init_root::<Person>().unwrap();
+            person.scalar(Person::ID).set(73);
+            person.scalar(Person::ENABLED).set(false);
+            person.scalar(Person::RATIO).set(3.5);
+            person.field(Person::NAME).copy_from("bounded").unwrap();
+            person
+                .field(Person::ADDRESS)
+                .init()
+                .unwrap()
+                .field(Address::CITY)
+                .copy_from("Edmonton")
+                .unwrap();
+            assert_eq!(person.read().id(), 73);
+            assert!(!person.read().enabled());
+            assert_eq!(person.read().ratio(), 3.5);
+            assert_eq!(person.read().address().unwrap().city().unwrap(), "Edmonton");
+            let before = message.size_in_words();
+            assert!(matches!(
+                message
+                    .try_get_root::<Person>()
+                    .unwrap()
+                    .field(Person::NAME)
+                    .copy_from(oversized)
+                    .err()
+                    .unwrap()
+                    .kind,
+                ErrorKind::InsufficientCapacity { .. }
+            ));
+            assert_eq!(message.size_in_words(), before);
+            message.reset();
+            message
+                .try_init_root::<OldRecord>()
+                .unwrap()
+                .scalar(OldRecord::VALUE)
+                .set(19);
+            let before = message.size_in_words();
+            assert_eq!(
+                message.try_get_root::<NewRecord>().err().unwrap().kind,
+                ErrorKind::NeedsUpgrade
+            );
+            assert_eq!(message.size_in_words(), before);
+            assert_eq!(
+                message.try_get_root::<OldRecord>().unwrap().read().value(),
+                19
+            );
+        }
+        // A union tag and its prior payload survive failed publication at capacity.
+        let cap = 1 + Choice::SIZE.total() as usize + 1;
+        let mut message = FixedBuilder::new(&mut words[..cap]).unwrap();
+        message
+            .try_init_root::<Choice>()
+            .unwrap()
+            .field(Choice::TEXT)
+            .copy_from("old")
+            .unwrap();
+        assert_eq!(message.remaining_words(), 0);
+        assert!(message
+            .try_get_root::<Choice>()
+            .unwrap()
+            .field(Choice::TEXT)
+            .copy_from("too long for available storage")
+            .is_err());
+        assert_eq!(
+            message
+                .try_get_root::<Choice>()
+                .unwrap()
+                .read()
+                .text()
+                .unwrap(),
+            "old"
+        );
+    });
+    assert_eq!(counts.count_total, 0, "{counts:?}");
+    assert_eq!(counts.bytes_total, 0);
+}
+
+#[test]
+fn bounded_recursive_copy_lists_groups_and_upgrade_never_allocate() {
+    use capnp::{
+        field_api::{List, Text},
+        message::{FixedBuilder, HeapAllocator},
+    };
+    use capntproto_test_support::field_api_capnp::{
+        self as schema,
+        api::{choice, Choice, NewRecord, OldRecord, PhoneNumber},
+    };
+    // Deliberately force far pointers in the source. Reader construction and
+    // hosted source allocation are excluded from the bounded destination count.
+    let mut source = capnp::message::Builder::new(HeapAllocator::new().first_segment_words(1));
+    let mut person = source.init_root::<schema::person::Builder<'_>>();
+    person.set_id(19);
+    person.set_name("source");
+    person.reborrow().init_address().set_city("city");
+    let mut phones = person.reborrow().init_phones(2);
+    phones.reborrow().get(0).set_number("first");
+    phones.get(1).set_number("second");
+    person.init_names(2).set(0, "nested");
+    assert!(source.get_segments_for_output().len() > 1);
+    let root = source
+        .get_root_as_reader::<capnp::any_pointer::Reader<'_>>()
+        .unwrap();
+    let view = source
+        .get_root_as_reader::<schema::person::Reader<'_>>()
+        .unwrap()
+        .into_api();
+    let mut words = [capnp::word(0, 0, 0, 0, 0, 0, 0, 0); 128];
+    let mut successes = 0;
+    let mut failures = 0;
+    let counts = allocation_counter::measure(|| {
+        for capacity in 2..=64 {
+            let mut dest = FixedBuilder::new(&mut words[..capacity]).unwrap();
+            dest.try_set_root_text("old").unwrap();
+            match dest.try_copy_root(root) {
+                Ok(()) => {
+                    successes += 1;
+                    assert_eq!(
+                        dest.try_get_root::<Person>()
+                            .unwrap()
+                            .read()
+                            .phones()
+                            .unwrap()
+                            .get(1)
+                            .unwrap()
+                            .number()
+                            .unwrap(),
+                        "second"
+                    );
+                }
+                Err(e) => {
+                    failures += 1;
+                    assert!(matches!(
+                        e.kind,
+                        capnp::ErrorKind::InsufficientCapacity { .. }
+                    ));
+                    assert_eq!(dest.size_in_words(), 2);
+                    assert_eq!(
+                        dest.get_root_as_reader::<capnp::text::Reader<'_>>()
+                            .unwrap(),
+                        "old"
+                    );
+                }
+            }
+        }
+        let mut dest = FixedBuilder::new(&mut words).unwrap();
+        let mut person = dest.try_init_root::<Person>().unwrap();
+        person
+            .field(Person::PHONES)
+            .copy_from(view.phones().unwrap())
+            .unwrap();
+        person
+            .field(Person::ADDRESS)
+            .copy_from(view.address().unwrap())
+            .unwrap();
+        person
+            .field(Person::PHONES)
+            .edit()
+            .unwrap()
+            .get_mut(0)
+            .unwrap()
+            .field(PhoneNumber::NUMBER)
+            .copy_from("changed")
+            .unwrap();
+        assert_eq!(
+            person
+                .read()
+                .phones()
+                .unwrap()
+                .get(0)
+                .unwrap()
+                .number()
+                .unwrap(),
+            "changed"
+        );
+        dest.reset();
+        dest.try_init_root_list::<List<Text>>(1)
+            .unwrap()
+            .get_mut(0)
+            .unwrap()
+            .init(1)
+            .unwrap()
+            .get_mut(0)
+            .unwrap()
+            .copy_from("bounded")
+            .unwrap();
+        dest.reset();
+        let mut choice = dest.try_init_root::<Choice>().unwrap();
+        choice.scalar(Choice::UNTOUCHED).set(77);
+        let mut details = choice.group(Choice::DETAILS).select();
+        details.scalar(choice::Details::COUNT).set(3);
+        details
+            .field(choice::Details::LABEL)
+            .copy_from("group")
+            .unwrap();
+        choice.group(Choice::DETAILS).reset();
+        assert_eq!(choice.read().untouched(), 77);
+        choice.void(Choice::EMPTY).set();
+        dest.reset();
+        dest.try_init_root::<OldRecord>()
+            .unwrap()
+            .scalar(OldRecord::VALUE)
+            .set(91);
+        let mut newer = dest.try_upgrade_root::<NewRecord>().unwrap();
+        newer.field(NewRecord::EXTRA).copy_from("upgraded").unwrap();
+        assert_eq!(newer.read().value(), 91);
+        dest.reset();
+        type Generic = schema::api::Box<capnp::struct_list::Owned<schema::old_record::Owned>>;
+        let mut root = dest.try_init_root::<Generic>().unwrap();
+        root.field(Generic::VALUE)
+            .typed()
+            .init(2)
+            .unwrap()
+            .get_mut(0)
+            .unwrap()
+            .scalar(OldRecord::VALUE)
+            .set(21);
+        type Upgraded = schema::api::Box<capnp::struct_list::Owned<schema::new_record::Owned>>;
+        let mut root = dest.try_get_root::<Upgraded>().unwrap();
+        let mut list = root.field(Upgraded::VALUE).typed().upgrade().unwrap();
+        assert_eq!(list.read().get(0).unwrap().value(), 21);
+        list.get_mut(0)
+            .unwrap()
+            .field(NewRecord::EXTRA)
+            .copy_from("payload")
+            .unwrap();
+        // Fail promotion after filling a pointer-list arena. The old payload,
+        // union-independent pointer and cursor remain valid with alloc enabled.
+        for capacity in 3..=6 {
+            let mut small = [capnp::word(0, 0, 0, 0, 0, 0, 0, 0); 6];
+            let mut bounded = FixedBuilder::new(&mut small[..capacity]).unwrap();
+            bounded
+                .try_init_root_list::<Text>(1)
+                .unwrap()
+                .get_mut(0)
+                .unwrap()
+                .copy_from("live")
+                .unwrap();
+            assert!(bounded.try_upgrade_root_list::<NewRecord>().is_err());
+            assert_eq!(bounded.size_in_words(), 3);
+            assert_eq!(
+                bounded
+                    .try_get_root_list::<Text>()
+                    .unwrap()
+                    .read()
+                    .get(0)
+                    .unwrap()
+                    .unwrap(),
+                "live"
+            );
+        }
+        // Exhaustion during a nested list copy leaves its old value and cursor.
+        dest.reset();
+        dest.try_init_root::<Person>()
+            .unwrap()
+            .field(Person::NAMES)
+            .init(1)
+            .unwrap()
+            .get_mut(0)
+            .unwrap()
+            .copy_from("old")
+            .unwrap();
+        let remaining = dest.remaining_words();
+        dest.try_get_root::<Person>()
+            .unwrap()
+            .field(Person::PAYLOAD)
+            .init((remaining as usize - 2) * 8)
+            .unwrap();
+        let used = dest.size_in_words();
+        assert!(dest
+            .try_get_root::<Person>()
+            .unwrap()
+            .field(Person::NAMES)
+            .copy_from(view.names().unwrap())
+            .is_err());
+        assert_eq!(dest.size_in_words(), used);
+        assert_eq!(
+            dest.try_get_root::<Person>()
+                .unwrap()
+                .read()
+                .names()
+                .unwrap()
+                .get(0)
+                .unwrap()
+                .unwrap(),
+            "old"
+        );
+    });
+    assert!(successes > 0 && failures > 0);
+    assert_eq!(counts.count_total, 0, "{counts:?}");
+    assert_eq!(counts.bytes_total, 0);
+}
+
+#[test]
+fn resumable_async_framing_and_errors_do_not_allocate() {
+    use capnp::{serialize::FrameReceiver, ErrorKind, Word};
+    use futures::FutureExt;
+
+    let mut builder =
+        capnp::message::Builder::new(capnp::message::HeapAllocator::new().first_segment_words(1));
+    builder
+        .set_root::<capnp::text::Owned>("fixed async receiver")
+        .unwrap();
+    assert_eq!(builder.get_segments_for_output().len(), 2);
+    let bytes = capnp::serialize::write_message_to_words(&builder);
+    let mut words = [capnp::word(0, 0, 0, 0, 0, 0, 0, 0); 64];
+    struct Broken;
+    impl futures::io::AsyncRead for Broken {
+        fn poll_read(
+            self: std::pin::Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+            _: &mut [u8],
+        ) -> std::task::Poll<std::io::Result<usize>> {
+            std::task::Poll::Ready(Err(std::io::ErrorKind::ConnectionReset.into()))
+        }
+    }
+    let counts = allocation_counter::measure(|| {
+        let mut receiver =
+            FrameReceiver::new(Word::words_to_bytes_mut(&mut words), ReaderOptions::new()).unwrap();
+        for _ in 0..128 {
+            let mut input = futures::io::Cursor::new(bytes.as_slice());
+            let message =
+                capnp_futures::serialize::try_read_message_into(&mut input, &mut receiver)
+                    .now_or_never()
+                    .unwrap()
+                    .unwrap()
+                    .unwrap();
+            assert_eq!(
+                message.get_root::<capnp::text::Reader<'_>>().unwrap(),
+                "fixed async receiver"
+            );
+            receiver.next_message().unwrap();
+        }
+        let error = capnp_futures::serialize::try_read_message_into(&mut Broken, &mut receiver)
+            .now_or_never()
+            .unwrap()
+            .err()
+            .unwrap();
+        assert_eq!(error.kind, ErrorKind::Disconnected);
+        assert_eq!(
+            receiver.input().err().unwrap().kind,
+            ErrorKind::Disconnected
+        );
+        let error = capnp_futures::serialize::try_read_message_no_alloc(
+            futures::io::Cursor::new(bytes.as_slice()),
+            Word::words_to_bytes_mut(&mut words[..2]),
+            ReaderOptions::new(),
+        )
+        .now_or_never()
+        .unwrap()
+        .err()
+        .unwrap();
+        assert_eq!(error.kind, ErrorKind::BufferNotLargeEnough);
+        // A partial frame fails without formatting an allocated diagnostic.
+        let error = capnp_futures::serialize::try_read_message_no_alloc(
+            futures::io::Cursor::new(&bytes[..bytes.len() - 1]),
+            Word::words_to_bytes_mut(&mut words),
+            ReaderOptions::new(),
+        )
+        .now_or_never()
+        .unwrap()
+        .err()
+        .unwrap();
+        assert_eq!(error.kind, ErrorKind::PrematureEndOfFile);
     });
     assert_eq!(counts.count_total, 0, "{counts:?}");
     assert_eq!(counts.bytes_total, 0);

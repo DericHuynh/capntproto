@@ -18,6 +18,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "capntproto-compiler"
+version = "0.1.0"
+dependencies = [
+ "capntproto-core",
+ "getrandom",
+ "md5",
+]
+
+[[package]]
 name = "capntproto-core"
 version = "0.25.6"
 dependencies = [
@@ -29,6 +38,7 @@ name = "capntproto-futures"
 version = "0.25.2"
 dependencies = [
  "capntproto-core",
+ "capntproto-rpc-engine",
  "futures-channel",
  "futures-util",
 ]
@@ -49,8 +59,30 @@ dependencies = [
  "capntproto-codegen",
  "capntproto-core",
  "capntproto-futures",
+ "capntproto-rpc-engine",
+ "capntproto-rpc-wire",
  "futures",
 ]
+
+[[package]]
+name = "capntproto-rpc-engine"
+version = "0.1.0"
+
+[[package]]
+name = "capntproto-rpc-wire"
+version = "0.1.0"
+dependencies = [
+ "capntproto-codegen",
+ "capntproto-compiler",
+ "capntproto-core",
+ "capntproto-rpc-engine",
+]
+
+[[package]]
+name = "cfg-if"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
 name = "embedded-io"
@@ -123,6 +155,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "getrandom"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "r-efi",
+]
+
+[[package]]
+name = "libc"
+version = "0.2.190"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce5d3ddc6d3fa000eb1536d85e147bfe31aacaba692ed6a876f95cb7c855be78"
+
+[[package]]
+name = "md5"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ebb8d8732c6a6df3d8f032a82911cfc747e00efb95cc46e8d0acd5b5b88570c"
+
+[[package]]
 name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -153,6 +208,12 @@ checksum = "ab1ad36992cead65f02aa399a373a42730922f1525d988172634fdefdecb8a60"
 dependencies = [
  "pulldown-cmark",
 ]
+
+[[package]]
+name = "r-efi"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "slab"

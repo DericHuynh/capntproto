@@ -27,17 +27,20 @@ use capnp::traits::{Imbue, ImbueMut};
 use capnp::Error;
 use capnp::{any_pointer, message};
 
-use futures::channel::oneshot;
+use capntproto_rpc_engine::completion::shared as oneshot;
 use futures::FutureExt;
 use futures::TryFutureExt;
 
 use std::any::{Any, TypeId};
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
 use std::rc::{Rc, Weak};
 use std::task::{Context, Poll};
+
+#[cfg(test)]
+mod owned_results_tests;
 
 pub trait ResultsDoneHook {
     fn add_ref(&self) -> Box<dyn ResultsDoneHook>;
@@ -55,7 +58,7 @@ pub(crate) struct Response {
 }
 
 impl Response {
-    fn new(results: Box<dyn ResultsDoneHook>) -> Self {
+    pub(crate) fn new(results: Box<dyn ResultsDoneHook>) -> Self {
         Self { results }
     }
 }
@@ -66,36 +69,63 @@ impl ResponseHook for Response {
     }
 }
 
-struct Params {
-    request: message::Builder<message::HeapAllocator>,
+pub(crate) struct Params {
+    request: RequestMessage,
     cap_table: Vec<Option<Box<dyn ClientHook>>>,
+    envelope: bool,
 }
 
 impl Params {
-    fn new(
-        request: message::Builder<message::HeapAllocator>,
-        cap_table: Vec<Option<Box<dyn ClientHook>>>,
-    ) -> Self {
-        Self { request, cap_table }
+    pub(crate) fn prepared_call(
+        &self,
+    ) -> Option<&capntproto_rpc_wire::owned::connection::PreparedCall<message::HeapAllocator>> {
+        if !self.cap_table.is_empty() {
+            return None;
+        }
+        match &self.request {
+            RequestMessage::Envelope(message) => Some(message),
+            RequestMessage::Root(_) => None,
+        }
     }
 }
 
 impl ParamsHook for Params {
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
     fn get(&self) -> ::capnp::Result<any_pointer::Reader<'_>> {
-        let mut result: any_pointer::Reader = self.request.get_root_as_reader()?;
+        let request = match &self.request {
+            RequestMessage::Root(message) => message,
+            RequestMessage::Envelope(message) => message.message(),
+        };
+        let mut result: any_pointer::Reader = if self.envelope {
+            let root = request.get_root_as_reader::<crate::rpc_capnp::message::Reader>()?;
+            let crate::rpc_capnp::message::Call(call) = root.which()? else {
+                return Err(Error::failed("request envelope changed".into()));
+            };
+            call?.get_params()?.get_content()
+        } else {
+            request.get_root_as_reader()?
+        };
         result.imbue(&self.cap_table);
         Ok(result)
     }
 }
 
-struct Results {
-    retained_results: Rc<RefCell<Option<Box<dyn ResultsDoneHook>>>>,
+pub(crate) struct Results {
+    context: Option<Rc<dyn std::any::Any>>,
+    retained_results: OnceCell<Rc<RefCell<Option<Box<dyn ResultsDoneHook>>>>>,
     only_pipeline: bool,
     is_streaming: bool,
     message: Option<message::Builder<message::HeapAllocator>>,
+    response: Option<Rc<dyn ResponseHook>>,
     cap_table: Vec<Option<Box<dyn ClientHook>>>,
-    results_done_fulfiller: Option<oneshot::Sender<Box<dyn ResultsDoneHook>>>,
+    results_done_fulfiller: Option<ResultsFulfiller>,
     pipeline_sender: Option<crate::queued::PipelineInnerSender>,
+}
+enum ResultsFulfiller {
+    Joined(oneshot::Sender<Box<dyn ResultsDoneHook>>),
+    Direct(crate::scoped::response::ResultsSender),
 }
 
 impl Results {
@@ -104,48 +134,174 @@ impl Results {
         pipeline_sender: crate::queued::PipelineInnerSender,
     ) -> Self {
         Self {
-            retained_results: Rc::new(RefCell::new(None)),
+            retained_results: OnceCell::new(),
+            context: None,
             only_pipeline: false,
             is_streaming: false,
             message: None,
+            response: None,
             cap_table: Vec::new(),
-            results_done_fulfiller: Some(fulfiller),
+            results_done_fulfiller: Some(ResultsFulfiller::Joined(fulfiller)),
             pipeline_sender: Some(pipeline_sender),
         }
+    }
+    pub(crate) fn direct(
+        fulfiller: crate::scoped::response::ResultsSender,
+        context: Option<Rc<dyn Any>>,
+    ) -> Self {
+        Self {
+            context,
+            retained_results: OnceCell::new(),
+            only_pipeline: false,
+            is_streaming: false,
+            message: None,
+            response: None,
+            cap_table: Vec::new(),
+            results_done_fulfiller: Some(ResultsFulfiller::Direct(fulfiller)),
+            pipeline_sender: Some(crate::queued::PipelineInnerSender::disabled()),
+        }
+    }
+    /// The portable payload is constructed only by validated admission or a
+    /// successful owning copy. Preserve that proof instead of traversing the
+    /// same graph again at the exact local sink. Arbitrary hooks still use the
+    /// validating ResultsHook::set_response entry point below.
+    pub(crate) fn set_admitted_response(&mut self, response: Rc<crate::scoped::wire::Payload>) {
+        self.response = Some(response);
+        self.message = None;
+        self.cap_table.clear();
+    }
+
+    /// A final private completion can transfer its owner directly to the
+    /// response future. Retained cancellation contexts and pipeline observers
+    /// require the ordinary shareable ResultsDone path instead.
+    // Rejection preserves the existing owner without another heap allocation.
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn finish_admitted_response(
+        &mut self,
+        payload: crate::scoped::wire::Payload,
+    ) -> Result<(), crate::scoped::wire::Payload> {
+        if !matches!(
+            self.results_done_fulfiller,
+            Some(ResultsFulfiller::Direct(_))
+        ) || self
+            .retained_results
+            .get()
+            .is_some_and(|retained| Rc::strong_count(retained) > 1)
+        {
+            return Err(payload);
+        }
+        let Some(ResultsFulfiller::Direct(sender)) = self.results_done_fulfiller.take() else {
+            unreachable!()
+        };
+        sender.send_payload(payload, self.context.take());
+        Ok(())
+    }
+}
+
+struct OwnedResponse {
+    payload: crate::scoped::wire::Payload,
+    _context: Option<Rc<dyn Any>>,
+}
+impl crate::scoped::response::ResultsSender {
+    pub(crate) fn send_payload(
+        self,
+        payload: crate::scoped::wire::Payload,
+        context: Option<Rc<dyn Any>>,
+    ) {
+        if context.is_none() {
+            self.send_response(payload.into_response());
+            return;
+        }
+        self.send_response(Box::new(OwnedResponse {
+            payload,
+            _context: context,
+        }));
+    }
+}
+impl ResponseHook for OwnedResponse {
+    fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+        ResponseHook::get(&self.payload)
     }
 }
 
 impl Drop for Results {
     fn drop(&mut self) {
-        let message = self.message.take().unwrap_or_default();
-        let fulfiller = self
-            .results_done_fulfiller
-            .take()
-            .expect("results completed once");
+        let Some(fulfiller) = self.results_done_fulfiller.take() else {
+            return;
+        };
         let cap_table = ::std::mem::take(&mut self.cap_table);
-        let result = Box::new(ResultsDone::new(message, cap_table));
-        if Rc::strong_count(&self.retained_results) > 1 {
-            *self.retained_results.borrow_mut() = Some(result.add_ref());
+        let result: Box<dyn ResultsDoneHook> = match self.response.take() {
+            Some(response) => Box::new(SharedResponse {
+                response,
+                context: self.context.take(),
+            }),
+            None => Box::new(
+                ResultsDone::new(self.message.take().unwrap_or_default(), cap_table)
+                    .with_context(self.context.take()),
+            ),
+        };
+        if let Some(retained) = self
+            .retained_results
+            .get()
+            .filter(|r| Rc::strong_count(r) > 1)
+        {
+            *retained.borrow_mut() = Some(result.add_ref());
         }
-        let _ = fulfiller.send(result);
+        match fulfiller {
+            ResultsFulfiller::Joined(fulfiller) => {
+                let _ = fulfiller.send(result);
+            }
+            ResultsFulfiller::Direct(fulfiller) => fulfiller.send(result),
+        }
     }
 }
 
 impl ResultsHook for Results {
+    fn as_any_mut(&mut self) -> Option<&mut dyn Any> {
+        Some(self)
+    }
+    fn retain_response_context(&mut self, context: Rc<dyn Any>) {
+        crate::admission::retain_context(&mut self.context, context);
+    }
     fn cancellation_guard(&self) -> Option<Box<dyn std::any::Any>> {
-        Some(Box::new(self.retained_results.clone()))
+        Some(Box::new(
+            self.retained_results
+                .get_or_init(|| Rc::new(RefCell::new(None)))
+                .clone(),
+        ))
     }
 
     fn get_with_size_hint(
         &mut self,
         size_hint: Option<capnp::MessageSize>,
     ) -> ::capnp::Result<any_pointer::Builder<'_>> {
+        if let Some(response) = &self.response {
+            let reader = response.get()?;
+            let mut message = message::Builder::new(result_allocator(Some(reader.target_size()?)));
+            let mut caps = Vec::new();
+            let mut root: any_pointer::Builder = message.init_root();
+            root.imbue_mut(&mut caps);
+            root.set_as(reader)?;
+            self.message = Some(message);
+            self.cap_table = caps;
+            self.response = None;
+        }
         let message = self
             .message
             .get_or_insert_with(|| message::Builder::new(result_allocator(size_hint)));
         let mut result: any_pointer::Builder = message.get_root()?;
         result.imbue_mut(&mut self.cap_table);
         Ok(result)
+    }
+
+    fn set_response(&mut self, response: Rc<dyn ResponseHook>) -> capnp::Result<()> {
+        // Validate before replacing the previous payload. The immutable owner
+        // remains independent of any subsequent mutable results builder.
+        response.get()?.target_size()?;
+        self.response = Some(response);
+        self.message = None;
+        self.cap_table.clear();
+        Ok(())
     }
 
     fn set_pipeline(&mut self) -> capnp::Result<()> {
@@ -159,7 +315,9 @@ impl ResultsHook for Results {
         let mut cap_table2 = vec![];
         root2.imbue_mut(&mut cap_table2);
         root2.set_as(root.into_reader())?;
-        let hook = Box::new(ResultsDone::new(message2, cap_table2)) as Box<dyn ResultsDoneHook>;
+        let hook =
+            Box::new(ResultsDone::new(message2, cap_table2).with_context(self.context.clone()))
+                as Box<dyn ResultsDoneHook>;
         self.set_pipeline_from(Box::new(Pipeline::new(hook)))
     }
 
@@ -232,14 +390,36 @@ impl ResultsHook for Results {
 pub(crate) fn result_allocator(size_hint: Option<capnp::MessageSize>) -> message::HeapAllocator {
     let allocator = message::HeapAllocator::new();
     match size_hint {
-        Some(size) => allocator.first_segment_words(size.word_count.min(1 << 20) as u32),
-        None => allocator,
+        // Hints describe the payload, excluding its root pointer. Without the
+        // extra word an exact-size copy spills its largest object into a second
+        // segment and retains two nearly payload-sized allocations.
+        Some(size) => {
+            allocator.first_segment_words(size.word_count.saturating_add(1).min(1 << 20) as u32)
+        }
+        None => allocator.first_segment_words(256),
     }
 }
 
 struct ResultsDoneInner {
+    _context: Option<Rc<dyn std::any::Any>>,
     message: ::capnp::message::Builder<::capnp::message::HeapAllocator>,
     cap_table: Vec<Option<Box<dyn ClientHook>>>,
+}
+
+struct SharedResponse {
+    response: Rc<dyn ResponseHook>,
+    context: Option<Rc<dyn Any>>,
+}
+impl ResultsDoneHook for SharedResponse {
+    fn add_ref(&self) -> Box<dyn ResultsDoneHook> {
+        Box::new(Self {
+            response: self.response.clone(),
+            context: self.context.clone(),
+        })
+    }
+    fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+        self.response.get()
+    }
 }
 
 pub(crate) struct ResultsDone {
@@ -252,8 +432,18 @@ impl ResultsDone {
         cap_table: Vec<Option<Box<dyn ClientHook>>>,
     ) -> Self {
         Self {
-            inner: Rc::new(ResultsDoneInner { message, cap_table }),
+            inner: Rc::new(ResultsDoneInner {
+                message,
+                cap_table,
+                _context: None,
+            }),
         }
+    }
+    pub(crate) fn with_context(mut self, context: Option<Rc<dyn std::any::Any>>) -> Self {
+        Rc::get_mut(&mut self.inner)
+            .expect("unpublished results")
+            ._context = context;
+        self
     }
 }
 
@@ -269,42 +459,154 @@ impl ResultsDoneHook for ResultsDone {
         Ok(result)
     }
 }
-
-pub(crate) struct Request {
-    message: message::Builder<::capnp::message::HeapAllocator>,
-    cap_table: Vec<Option<Box<dyn ClientHook>>>,
-    interface_id: u64,
-    method_id: u16,
-    client: Box<dyn ClientHook>,
-    hints: CallHints,
-    is_streaming: bool,
-    pipeline: crate::queued::Pipeline,
-    pipeline_sender: crate::queued::PipelineInnerSender,
+impl ResponseHook for ResultsDone {
+    fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+        ResultsDoneHook::get(self)
+    }
 }
 
-impl Request {
-    pub(crate) fn new(
-        interface_id: u64,
-        method_id: u16,
-        _size_hint: Option<::capnp::MessageSize>,
-        client: Box<dyn ClientHook>,
-    ) -> Self {
-        let (pipeline_sender, pipeline) = crate::queued::Pipeline::new();
-        Self {
-            message: message::Builder::new_default(),
-            cap_table: Vec::new(),
-            interface_id,
-            method_id,
-            client,
-            hints: CallHints::default(),
-            is_streaming: false,
-            pipeline,
-            pipeline_sender,
+enum RequestMessage {
+    Root(message::Builder<message::HeapAllocator>),
+    Envelope(capntproto_rpc_wire::owned::connection::PreparedCall<message::HeapAllocator>),
+}
+
+// Keep the private hosted endpoint inline until an opaque API needs a box.
+// Ordinary remote requests already own a box for their parameter storage.
+enum RequestClient {
+    Hook(Box<dyn ClientHook>),
+    Scoped(crate::scoped::Hook),
+}
+impl std::ops::Deref for RequestClient {
+    type Target = dyn ClientHook;
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Hook(hook) => &**hook,
+            Self::Scoped(hook) => hook,
         }
     }
 }
 
+pub(crate) struct Request {
+    third_party: Option<Rc<message::Builder<message::HeapAllocator>>>,
+    context: Option<Rc<dyn std::any::Any>>,
+    message: RequestMessage,
+    cap_table: Vec<Option<Box<dyn ClientHook>>>,
+    interface_id: u64,
+    method_id: u16,
+    client: Option<RequestClient>,
+    hints: CallHints,
+    is_streaming: bool,
+}
+
+impl ParamsHook for Request {
+    fn as_any(&self) -> Option<&dyn Any> {
+        Some(self)
+    }
+    fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+        let mut content = match &self.message {
+            RequestMessage::Root(message) => message.get_root_as_reader()?,
+            RequestMessage::Envelope(message) => {
+                let root = message
+                    .message()
+                    .get_root_as_reader::<crate::rpc_capnp::message::Reader>()?;
+                let crate::rpc_capnp::message::Call(call) = root.which()? else {
+                    unreachable!("private Call envelope")
+                };
+                call?.get_params()?.get_content()
+            }
+        };
+        content.imbue(&self.cap_table);
+        Ok(content)
+    }
+}
+
+impl Request {
+    pub(crate) fn prepared_call(
+        &self,
+    ) -> Option<&capntproto_rpc_wire::owned::connection::PreparedCall<message::HeapAllocator>> {
+        if !self.cap_table.is_empty() {
+            return None;
+        }
+        match &self.message {
+            RequestMessage::Envelope(message) => Some(message),
+            _ => None,
+        }
+    }
+    pub(crate) fn new(
+        interface_id: u64,
+        method_id: u16,
+        size_hint: Option<::capnp::MessageSize>,
+        client: Box<dyn ClientHook>,
+    ) -> Self {
+        Self {
+            message: RequestMessage::Root(message::Builder::new(result_allocator(size_hint))),
+            third_party: None,
+            context: None,
+            cap_table: Vec::new(),
+            interface_id,
+            method_id,
+            client: Some(RequestClient::Hook(client)),
+            hints: CallHints::default(),
+            is_streaming: false,
+        }
+    }
+    pub(crate) fn scoped(
+        interface_id: u64,
+        method_id: u16,
+        allocator: message::HeapAllocator,
+        client: crate::scoped::Hook,
+        context: Option<Rc<dyn Any>>,
+        // None is a local request. Some(None) needs a fresh remote envelope.
+        envelope: Option<Option<&capntproto_rpc_wire::owned::connection::PreparedCallTemplate>>,
+    ) -> Box<Self> {
+        use capntproto_rpc_wire::owned::connection::PreparedCall;
+        let message = match envelope {
+            None => RequestMessage::Root(message::Builder::new(allocator)),
+            Some(template) => RequestMessage::Envelope(
+                match template {
+                    Some(template) => {
+                        PreparedCall::from_template(template, allocator, interface_id, method_id)
+                    }
+                    None => {
+                        PreparedCall::new(message::Builder::new(allocator), interface_id, method_id)
+                    }
+                }
+                .expect("private request envelope"),
+            ),
+        };
+        // Build the final owner once, rather than moving a full request through
+        // context/envelope decorators and allocating another endpoint wrapper.
+        Box::new(Self {
+            message,
+            third_party: None,
+            context,
+            cap_table: Vec::new(),
+            interface_id,
+            method_id,
+            client: Some(RequestClient::Scoped(client)),
+            hints: CallHints::default(),
+            is_streaming: false,
+        })
+    }
+}
+
 impl RequestHook for Request {
+    fn third_party_tail_target(&self) -> Option<Box<dyn std::any::Any>> {
+        crate::scoped::tail_target(self.client.as_deref().expect("unsent request"))
+    }
+    fn set_third_party_tail_target(
+        &mut self,
+        contact: any_pointer::Reader<'_>,
+    ) -> capnp::Result<()> {
+        if self.third_party.is_some() || self.third_party_tail_target().is_none() {
+            return Err(Error::failed("ineligible tail transfer".into()));
+        }
+        contact.validate_capability_indices(0)?;
+        let mut body = message::Builder::new_default();
+        body.set_root(contact)?;
+        self.third_party = Some(Rc::new(body));
+        Ok(())
+    }
     fn set_hints(&mut self, hints: CallHints) {
         self.hints = hints;
     }
@@ -315,42 +617,123 @@ impl RequestHook for Request {
     }
 
     fn get(&mut self) -> any_pointer::Builder<'_> {
-        let mut result: any_pointer::Builder = self.message.get_root().unwrap();
+        let mut result: any_pointer::Builder = match &mut self.message {
+            RequestMessage::Root(message) => message.get_root().unwrap(),
+            RequestMessage::Envelope(message) => message.params(),
+        };
         result.imbue_mut(&mut self.cap_table);
         result
     }
     fn get_brand(&self) -> usize {
         0
     }
-    fn send(self: Box<Self>) -> capability::RemotePromise<any_pointer::Owned> {
+    fn send(mut self: Box<Self>) -> capability::RemotePromise<any_pointer::Owned> {
+        if self.hints.no_promise_pipelining
+            && !self.hints.only_promise_pipeline
+            && !self.is_streaming
+            && self.third_party.is_none()
+            && crate::scoped::response::available(self.client.as_deref().expect("unsent request"))
+        {
+            // The request already owns exactly the parameter storage required
+            // by this call. Transfer its box instead of allocating another
+            // ParamsHook and moving the builder and capability table into it.
+            let client = self.client.take().unwrap();
+            let context = self.context.take();
+            return crate::scoped::response::request(
+                &*client,
+                self.interface_id,
+                self.method_id,
+                self.hints,
+                self,
+                context,
+            );
+        }
         let tmp = *self;
         let Self {
+            third_party,
             message,
+            context,
             cap_table,
             interface_id,
             method_id,
             client,
             hints,
             is_streaming,
-            mut pipeline,
-            pipeline_sender,
         } = tmp;
-        let params = Params::new(message, cap_table);
+        let client = client.expect("unsent request");
+        let (request, envelope) = match message {
+            RequestMessage::Root(message) => (RequestMessage::Root(message), false),
+            RequestMessage::Envelope(message)
+                if hints.no_promise_pipelining && !hints.only_promise_pipeline =>
+            {
+                (RequestMessage::Envelope(message), true)
+            }
+            RequestMessage::Envelope(message) => {
+                let mut message = message.into_inner();
+                let root = message
+                    .get_root::<crate::rpc_capnp::message::Builder>()
+                    .unwrap();
+                let crate::rpc_capnp::message::Call(call) = root.which().unwrap() else {
+                    unreachable!("private request envelope")
+                };
+                let mut call = call.unwrap();
+                call.set_no_promise_pipelining(hints.no_promise_pipelining);
+                call.set_only_promise_pipeline(hints.only_promise_pipeline);
+                (RequestMessage::Root(message), true)
+            }
+        };
+        let params = Params {
+            request,
+            cap_table,
+            envelope,
+        };
+        // Hints are final at send (send_for_pipeline may change them). Allocate
+        // pipeline state only for callers that can observe a pipeline.
+        let (pipeline_sender, pipeline) = if hints.no_promise_pipelining {
+            (crate::queued::PipelineInnerSender::disabled(), None)
+        } else {
+            let (sender, pipeline) = crate::queued::Pipeline::new();
+            (sender, Some(pipeline))
+        };
 
         let (results_done_fulfiller, results_done_promise) =
             oneshot::channel::<Box<dyn ResultsDoneHook>>();
         let results_done_promise = results_done_promise.map_err(crate::canceled_to_error);
         let mut results = Results::new(results_done_fulfiller, pipeline_sender.weak_clone());
+        results.context = context;
         results.only_pipeline = hints.only_promise_pipeline;
         results.is_streaming = is_streaming;
-        let promise = client.call_with_hints(
-            interface_id,
-            method_id,
-            Box::new(params),
-            Box::new(results),
-            hints,
-        );
+        let promise = if let Some(contact) = third_party {
+            crate::scoped::call_third_party(
+                &*client,
+                interface_id,
+                method_id,
+                Box::new(params),
+                Box::new(results),
+                hints,
+                contact,
+            )
+        } else {
+            client.call_with_hints(
+                interface_id,
+                method_id,
+                Box::new(params),
+                Box::new(results),
+                hints,
+            )
+        };
 
+        if hints.no_promise_pipelining {
+            return capability::RemotePromise {
+                promise: Promise::from_future(async move {
+                    let ((), results) =
+                        futures::future::try_join(promise, results_done_promise).await?;
+                    Ok(capability::Response::new(Box::new(Response::new(results))))
+                }),
+                pipeline: any_pointer::Pipeline::new(Box::new(crate::broken::DisabledPipeline)),
+            };
+        }
+        let mut pipeline = pipeline.expect("enabled pipeline");
         let p = futures::future::try_join(promise, results_done_promise).and_then(
             move |((), results_done_hook)| {
                 pipeline_sender
@@ -366,11 +749,7 @@ impl RequestHook for Request {
         let (left, right) = crate::split::split(p);
 
         pipeline.drive(right);
-        let pipeline = if hints.no_promise_pipelining {
-            any_pointer::Pipeline::new(Box::new(crate::broken::DisabledPipeline))
-        } else {
-            any_pointer::Pipeline::new(Box::new(pipeline))
-        };
+        let pipeline = any_pointer::Pipeline::new(Box::new(pipeline));
 
         capability::RemotePromise {
             promise: Promise::from_future(left),
@@ -381,13 +760,26 @@ impl RequestHook for Request {
         // Local servers complete normally. If this capability resolves remotely,
         // direct_tail_call must preserve streaming credit-based readiness.
         self.is_streaming = true;
-        Promise::from_future(async {
-            let _ = self.send().promise.await?;
+        // Admit at send(), just like ordinary requests. Delaying self.send()
+        // until first poll lets a subsequent ordinary call overtake the stream.
+        let promise = self.send().promise;
+        Promise::from_future(async move {
+            let _ = promise.await?;
             Ok(())
         })
     }
     fn tail_send(self: Box<Self>) -> Option<(u32, Promise<(), Error>, Box<dyn PipelineHook>)> {
-        None // A local request has no wire question ID to transfer.
+        self.third_party.as_ref()?;
+        let capability::RemotePromise { promise, pipeline } = self.send();
+        // Portable transfer never uses numeric IDs to identify another driver.
+        Some((
+            0,
+            Promise::from_future(async move {
+                promise.await?;
+                Ok(())
+            }),
+            pipeline.hook,
+        ))
     }
 }
 
@@ -787,7 +1179,7 @@ where
                 }
                 continue;
             };
-            if fulfiller.is_canceled() {
+            if fulfiller.is_closed() {
                 continue;
             }
             let promise =

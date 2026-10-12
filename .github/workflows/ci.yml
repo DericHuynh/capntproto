@@ -23,6 +23,71 @@ jobs:
   documentation:
     name: Validate documentation
     uses: ./.github/workflows/ci-docs.yml # zizmor: ignore[self-repository]
+  portability:
+    name: Check portable views and RPC transitions
+    needs: workflows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/auditable-setup # zizmor: ignore[self-repository]
+        with:
+          cache-key: portable-engine
+          workspaces: |
+            . -> target
+            verification/portable -> target
+      - name: Install bare-metal target
+        run: rustup target add thumbv7em-none-eabi --toolchain 1.97.0
+      - name: Check isolated core and RPC profiles
+        # cargo-auditable detects a direct linker only when it is explicit;
+        # otherwise it gives ARM's rust-lld a C-driver-only -Wl argument.
+        env:
+          CARGO_TARGET_THUMBV7EM_NONE_EABI_LINKER: rust-lld
+        run: |
+          cargo check --locked -p capntproto-core --no-default-features --target thumbv7em-none-eabi --lib
+          cargo check --locked -p capntproto-core --no-default-features --features alloc --target thumbv7em-none-eabi --lib
+          cargo check --locked -p capntproto-rpc-engine --target thumbv7em-none-eabi --lib
+          cargo check --locked -p capntproto-rpc-wire --no-default-features --target thumbv7em-none-eabi --lib
+          cargo check --locked -p capntproto-rpc --no-default-features --target thumbv7em-none-eabi --lib
+          cargo check --locked -p capntproto-rpc --no-default-features --features alloc --target thumbv7em-none-eabi --lib
+          cargo build --locked --release --manifest-path verification/portable/Cargo.toml --target thumbv7em-none-eabi
+          rust-audit-info verification/portable/target/thumbv7em-none-eabi/release/capntproto-portable-check
+      - name: Exercise portable state transitions and rejected inputs
+        run: |
+          mkdir -p target/quality/portability
+          rm -f target/nextest/ci/junit.xml target/quality/portability/engine.xml
+          status=0
+          cargo nextest run --locked -p capntproto-rpc-engine -p capntproto-rpc-wire --profile ci || status=$?
+          if [ -f target/nextest/ci/junit.xml ]; then
+            cp target/nextest/ci/junit.xml target/quality/portability/engine.xml
+          else
+            status=1
+          fi
+          exit "$status"
+      - name: Test generated views and bounded RPC tables with isolated target features
+        run: |
+          status=0
+          mkdir -p target/quality/portability
+          for features in "" "alloc" "growing" "std" "unaligned,sync_reader"; do
+            rm -f verification/portable/target/nextest/ci/junit.xml "target/quality/portability/${features:-core}.xml"
+            if ! cargo nextest run --locked --manifest-path verification/portable/Cargo.toml --lib --features "$features" --profile ci; then
+              status=1
+            fi
+            if [ -f verification/portable/target/nextest/ci/junit.xml ]; then
+              cp verification/portable/target/nextest/ci/junit.xml "target/quality/portability/${features:-core}.xml"
+            else
+              status=1
+            fi
+          done
+          exit "$status"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: portable-generated-views
+          path: target/quality/portability/*.xml
+          if-no-files-found: error
   platforms:
     name: Build and test (${{ matrix.os }})
     needs: workflows
@@ -117,7 +182,7 @@ jobs:
           cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test tcp_rpc --test secure_rpc
           cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test rpc_ownership --test native_vat
           cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --lib transport::backend_tests
-          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --lib rpc::quic::retry
+          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --features quic --lib rpc::quic::retry
           cargo test --locked -p capntproto-compiler --doc
           cargo check --locked -p capntproto --no-default-features --lib
           cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --no-default-features --test rpc_ownership
@@ -185,7 +250,7 @@ jobs:
           if-no-files-found: warn
   report:
     name: Required CI result
-    needs: [workflows, documentation, platforms, cargo, models, fuzz, extended, performance, cleanup]
+    needs: [workflows, documentation, portability, platforms, cargo, models, fuzz, extended, performance, cleanup]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -203,14 +268,14 @@ jobs:
         run: |
           # Markdown backticks in the format string are literal.
           # shellcheck disable=SC2016
-          printf '# Platform checks\n\nCommit: `%s`\n\nDefault features: Native, services, storage, TLS and standard QUIC. Smoke checks exercise TCP, TLS/mTLS, QUIC/mTLS, the Rust schema compiler, generated capability RPC and pipelining; Linux/macOS also check storage reopen and descriptor-aware Unix RPC (ownership, limits, cancellation and scratch slots). Linux also enforces allocation budgets. All platforms require embedded cargo-auditable inventories in the application and schema-compiler binaries. Windows also runs component storage and retained-snapshot checks; power-loss durability is not qualified by CI.\n\n| Platform | Compile | Smoke | Allocation budgets (Linux) | Embedded dependency metadata |\n| --- | --- | --- | --- | --- |\n' "$GITHUB_SHA" > README.md
+          printf '# Platform checks\n\nCommit: `%s`\n\nDefault features: Native, services, storage and TLS. Standard RPC and native directory routes default to TCP; native routes retain mandatory peer authentication. Standard QUIC is enabled explicitly. Smoke checks exercise TCP, TLS/mTLS, QUIC/mTLS, the Rust schema compiler, generated capability RPC and pipelining; Linux/macOS also check storage reopen and descriptor-aware Unix RPC (ownership, limits, cancellation and scratch slots). Linux also enforces allocation budgets. All platforms require embedded cargo-auditable inventories in the application and schema-compiler binaries. Windows also runs component storage and retained-snapshot checks; power-loss durability is not qualified by CI.\n\n| Platform | Compile | Smoke | Allocation budgets (Linux) | Embedded dependency metadata |\n| --- | --- | --- | --- | --- |\n' "$GITHUB_SHA" > README.md
           for platform in ubuntu-24.04 macos-15 windows-2025; do
             if test -f "platforms/$platform.md"; then cat "platforms/$platform.md" >> README.md; else printf '| %s | missing | missing | missing | missing |\n' "$platform" >> README.md; fi
           done
           {
             printf '\n## Pipeline results\n\n'
             jq -r 'to_entries[] | "- \(.key): \(.value.result)"' <<< "$RESULTS"
-            printf '\nCargo/coverage, TLA+, fuzzing and extended checks run after platform checks. Release benchmarks follow verification. Fork and Dependabot PRs build benchmarks without cloud credentials; their cloud measurement and cleanup are skipped. CodeQL runs independently through GitHub default setup.\n'
+            printf '\nCargo/coverage, formal checks (Kani then TLA+), fuzzing and extended checks run after platform checks. Release benchmarks follow verification. Fork and Dependabot PRs build benchmarks without cloud credentials; their cloud measurement and cleanup are skipped. CodeQL runs independently through GitHub default setup.\n'
           } >> README.md
           cat README.md >> "$GITHUB_STEP_SUMMARY"
           jq -e --arg cloud "$CLOUD" 'to_entries | all(.[]; if .key == "cleanup" and $cloud == "false" then .value.result == "skipped" else .value.result == "success" end)' <<< "$RESULTS"
@@ -225,10 +290,10 @@ jobs:
           if-no-files-found: error
   cargo:
     name: Verify Cargo tests and coverage
-    needs: [platforms, documentation]
+    needs: [platforms, documentation, portability]
     uses: ./.github/workflows/verification-tests.yml # zizmor: ignore[self-repository]
   models:
-    name: Verify TLA+ models
+    name: Verify Kani proofs and distributed models
     needs: [platforms, documentation]
     uses: ./.github/workflows/verification-models.yml # zizmor: ignore[self-repository]
   fuzz:

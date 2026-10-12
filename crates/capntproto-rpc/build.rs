@@ -1,20 +1,22 @@
 fn main() {
+    // The persistent hosted API is absent in core-only/alloc-only profiles.
+    if std::env::var_os("CARGO_FEATURE_STD").is_none() {
+        return;
+    }
     // A fresh coverage run needs fresh build-script and code-generation counters.
     println!("cargo:rerun-if-env-changed=LLVM_PROFILE_FILE");
     println!("cargo:rerun-if-env-changed=CAPNP_INCLUDE_DIR");
-    for schema in ["rpc", "rpc-twoparty", "persistent"] {
-        println!("cargo:rerun-if-changed=schema/{schema}.capnp");
-        let mut command = capnpc::CompilerCommand::new();
-        if let Some(directory) = std::env::var_os("CAPNP_INCLUDE_DIR") {
-            command.import_path(directory);
-        }
-        command
-            .src_prefix("schema")
-            .import_path("schema")
-            .file(format!("schema/{schema}.capnp"))
-            .run()
-            .expect("compile pinned Cap'n Proto RPC schemas");
+    println!("cargo:rerun-if-changed=schema/persistent.capnp");
+    let mut command = capnpc::CompilerCommand::new();
+    if let Some(directory) = std::env::var_os("CAPNP_INCLUDE_DIR") {
+        command.import_path(directory);
     }
+    command
+        .src_prefix("schema")
+        .import_path("schema")
+        .file("schema/persistent.capnp")
+        .run()
+        .expect("compile pinned persistent capability schema");
     // capnpc maps both Persistent and the persistent annotation to the same
     // Rust module. Rename only the generated annotation module, preserving
     // the authoritative schema and both wire IDs.

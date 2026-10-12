@@ -253,9 +253,10 @@ security boundary intact while extending these checks.
   questions. Private allocator storage prevents unchecked free-list mutation;
   absent removal cannot recycle a slot twice, and adoption cannot overwrite an
   existing owner. **50 compiler contracts** exercise the exact private production
-  modules. `RpcIdTables.tla` checks **1,041 states / 11,304 production edge-prefix
+  modules. The retired `RpcIdTables.tla` checked **1,041 states / 11,304 production edge-prefix
   replays**, with four required model fault detections. Native tests also cover
-  high-ID wrap and reserved-range boundaries. See [testing scope](Testing-History.md#rpc-identifiers-and-table-ownership).
+  high-ID wrap and reserved-range boundaries. Direct [Kani proofs](../wiki/Formal-Verification.md)
+  now replace that model. See [historical testing scope](Testing-History.md#rpc-identifiers-and-table-ownership).
 - [x] **Immutable, typed persistent descriptors (2026-09-25).** Distinct nonzero
   `ObjectKind`, `ObjectId` and `ObjectGeneration` replace interchangeable numbers
   in `Descriptor`, the factory registry, ORM factory generation and state cache.
@@ -419,10 +420,12 @@ security boundary intact while extending these checks.
 - [x] **Reserve handoff drain capacity (2026-09-24).** Enqueue now checks pending
   plus previously drained calls before admitting work, preventing a pending call
   that could never complete after cumulative counter exhaustion. Transition
-  results are `must_use`. `HandoffCounterBoundary` checks the last two counter
+  results are `must_use`. The retired `HandoffCounterBoundary` checked the last two counter
   slots: **597 states / 2,620 Rust edge-prefix replays**, five model fault controls,
   and unchanged-state assertions on rejection. This is bounded counter-policy
   evidence, not runtime-wide invocation accounting or an arbitrary-bound proof.
+  Direct [Kani induction](../wiki/Formal-Verification.md) now covers full-width
+  counters in the shared portable implementation.
 - [x] **Realtime record states and immutable snapshots (2026-09-25).** Queued
   records own their required payload and receipt waiters; finished records retain
   metadata plus an outcome, and cancellation-before-offer uses distinct canceled

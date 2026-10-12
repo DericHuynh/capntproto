@@ -15,6 +15,7 @@ fn input_hashes() -> BTreeMap<String, String> {
                 || path.starts_with("src")
                 || path.starts_with("crates/capntproto-core/src")
                 || path.starts_with("crates/capntproto-rpc")
+                || path.starts_with("crates/capntproto-rpc-engine")
                 || path.starts_with("crates/capntproto-futures")
                 || path.starts_with("crates/capntproto-codegen")
                 || [

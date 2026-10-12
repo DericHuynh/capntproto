@@ -72,6 +72,8 @@ and CI lanes. Platform smoke jobs do not qualify storage durability on every OS.
 | Rust compiler and reference comparisons | `cargo nextest run --locked -p capntproto-compiler` and `cargo nextest run --locked --test schema_compiler` |
 | Optional codecs and adapters | `cargo nextest run --locked -p capntproto-compat` |
 | Generated field API contracts | `cargo nextest run --locked --test tooling generated_api_compile_contracts -- --exact` |
+| Allocation-free generated data views and bounded RPC tables | `cargo nextest run --locked --manifest-path verification/portable/Cargo.toml --lib` |
+| RPC table capacity/ownership faults and allocation counts | `cargo nextest run --locked -p capntproto-rpc-engine` |
 | Source archive and downstream use | `cargo nextest run --locked --test release source_bundle_roundtrip -- --exact` and `cargo nextest run --locked --test tooling external_consumer_default_features -- --exact` |
 
 The structured reply compiler gate includes positive controls and exact expected
@@ -90,6 +92,200 @@ cargo nextest run --locked --no-default-features --features storage --test stora
 
 Root integration tests are not all feature-gated. Use these selected targets;
 `--no-default-features --all-targets` is not a supported substitute.
+
+The isolated portable fixture also tests `--features alloc`, `--features std`
+and `--features unaligned,sync_reader`, preserving host/target feature separation.
+CI interprets the twenty-one portable fixture tests under Miri and links its generated
+views, resumable framing, bounded peer/local-ID tables and RPC transitions for `thumbv7em-none-eabi`
+without a global allocator; this is a link check, not execution on a physical
+board. See [portable API scope](Rust-Generator.md#allocation-free-data-views).
+
+Framing tests cancel the async adapter at every byte boundary of a multi-segment
+frame, then resume and read adjacent frames without prefetching. Fault injection
+covers EOF, interrupted reads, connection failures and overreported completions
+at every byte. Capacity/traversal rejection, even/odd and maximum segment tables,
+empty segments and terminal error retention are checked separately. The portable
+fixture exercises generated views after one-byte reads, storage reuse and all
+three frame-size overflow cases on 32-bit Miri. Host allocation counters cover
+successful async framing and errors with `alloc` enabled; compile-fail docs keep
+live message views from overlapping buffer reuse. These are executable tests and
+Miri checks, not Kani proofs of framing.
+
+Fixed-builder tests sweep every capacity from one to eighteen words with blob
+lengths 0–128, checking exact-fit reservations and unchanged messages/cursors on
+failure. Generated-schema tests cover defaults, typed scalar descriptors, nested
+structs, successful union transitions and rejected publication at exhaustion.
+They compare encoded bytes with the conventional generated builder and exercise
+reset/teardown over initially dirty storage. Allocation counters include failure
+and schema-upgrade rejection with `alloc` enabled. External compiler contracts
+reject mismatched schema descriptors, access to the legacy editor, ignored growth
+results and reuse while a reader or payload borrow is live. Miri runs the bounded
+construction fixture on both 64- and 32-bit targets.
+
+List tests sweep capacities 1–12 and lengths 0–65 for each wire element size.
+Generated tests compare nested-list/group bytes against the hosted encoder and
+preserve unknown enum ordinals. Recursive copying is retried at every capacity
+boundary, including malformed later children, cycles and unsupported capabilities.
+Failures restore both the published object and reservation cursor; an injected
+unwind exercises rollback too. Struct upgrades preserve unknown fields and child
+addresses. These portable scenarios run on 32/64-bit Miri. Allocation
+counters additionally copy multi-segment sources through far pointers with
+`alloc` enabled. Compiler contracts prevent legacy editors escaping through
+list elements or groups.
+
+List upgrades sweep capacity boundaries for inline and pointer-list encodings;
+they preserve unknown fields and original child addresses, reject bit-list
+promotion and oversized lengths, and handle empty/void lists. Generic tests cover
+structs, open enums, text/data, nested lists, pointer elements and AnyPointer,
+including exhausted copies into an inactive union arm. Compiler contracts prevent
+known generic types from arbitrary casts, legacy-editor escape and mutation while
+an AnyPointer reader is live. Allocation counters exercise these operations with
+`alloc` enabled; CI includes the new scenarios in its 32-bit Miri filter.
+
+The engine's table tests compare deterministic operation traces against a map
+at seven inline/sparse capacity combinations, including zero capacity and
+`u32::MAX` peer IDs. Separate checks retain owners across failed admission,
+replacement and removal, verify teardown/reuse, and count allocations during
+success, errors and cleanup. Hosted table tests retain destructor reentry checks.
+
+Wire-reference tests cover full-count overflow, over-release, terminal exports,
+and cleanup tickets surviving output rejection. The isolated fixture runs these
+transitions under 32/64-bit Miri and includes them in the allocator-free ARM link;
+allocation counters and compiler contracts separately enforce zero allocations
+and exclusive, single-use cleanup acceptance. Six hosted fault tests inject count
+exhaustion into ordinary, streaming, pipeline-only and tail sends, bootstrap,
+promise-wrapped capabilities and result serialization. They check rollback of
+new/repeated exports, unchanged import aliases and actual framed Release/exception
+messages. Kani checks the production count transitions and a release-commit
+mutation; it does not prove the hosted serializer or network delivery.
+
+Bounded import ownership tests distinguish local clones from received wire grants,
+inject both count limits and generation exhaustion, and retain pending cleanup
+under output backpressure. Re-admission/reuse cannot revive old work keys; other
+live slots retain their owners. Capacity/duplicate failures return the rejected
+owner unchanged; teardown and injected driver unwind release retained owners.
+A zero-allocation loop repeatedly reuses storage. The portable fixture exercises
+the same ownership transitions under native feature profiles, 32/64-bit Miri and
+the allocator-free ARM link. One positive and thirteen negative compiler cases
+check scope isolation, token forgery/escape, duplicate release/commit and borrowed
+views. Kani covers one-slot lifecycle and full-width count admission, with a
+mutation that deliberately omits the revival generation change.
+
+Bounded export tests inject failed publication at every position of a batch with
+new and repeated grants. They check local leases across final peer release,
+checked reference/generation limits, stale keys on reuse, forgotten batches,
+rejected storage and driver/serialization unwind. Destructors run only after an
+owner is detached or on terminal scope teardown. Native allocation counters cover
+repeated multi-slot publication/reuse. The portable fixture exchanges descriptor
+and Release metadata between bounded import/export tables, retaining an active
+server lease after the client's final release; it runs in all feature profiles,
+32/64-bit Miri and the ARM link. One positive and fifteen negative compiler cases
+check lease/key scope, import/export key separation and exclusive single-use
+publication. Kani checks a one-slot lifecycle and arbitrary full-width valid
+staged/published counts. Mutations prematurely reclaim a leased owner and publish
+an aborted export. Serialization of the exact reserved descriptors and actual IO
+acceptance/delivery are outside these ownership tests.
+
+Message-pool tests retain immutable bytes independently for readers and sends,
+exercise every partial-write boundary, reject stale completion keys, and check
+capacity/count/generation exhaustion, zero-length messages and terminal unwind.
+Repeated publication/reuse is allocation-counted. Futures adapter tests cancel
+at every byte, resume the exact suffix and inject interruptions, reset, zero
+writes and invalid counts. They check explicit polling budgets, self-wakes,
+retained readers, zero allocations and that byte completion does not flush or
+close the stream. These tests do not simulate remote receipt or RPC completion.
+
+The optional growing message provider is checked with live buffer views across
+segment boundaries, independent count/size/retained-byte limits, free-buffer
+growth, canceled async tasks, forgotten views and zero-allocation warm reuse.
+FIFO tests grow a wrapped queue while its oldest frame is partially written;
+an isolated missing-rotation fault must violate the expected bytes and order.
+The growing portable profile replays driver conversations with the same limits
+using growing buffers, sends and queues. Miri runs these ownership paths on
+32-bit targets; fixed profiles retain their zero-allocation assertion.
+
+Adopted-question replay also starts with zero sparse entries. The same limits
+reject duplicate, invalid and excess IDs, preserve canceled questions until
+their late Return, and keep ordinary questions independent. Owned completion
+replay covers typed calls, streaming acknowledgments, queued pipelines, returned
+capabilities, shutdown and abandonment after delivery. Conversion from shared
+endpoints allocates nothing and preserves registered wakes and non-static owners;
+native tests check once-only destruction and release of the slot allocation.
+The Kani completion proofs cover the common state transitions in fixed storage;
+shared allocation ownership is checked separately by native tests and Miri.
+
+The hosted `scoped::ClientHooks` bridge has native and 32-bit Miri regressions
+for generated calls through the engine dispatcher, queue limits and FIFO retry,
+capability parameters/results, early pipelines followed by parent failure,
+unpolled cancellation, connection shutdown, reentrant wakes and final-reference
+reclamation. Tests reject foreign/opaque hook identity, retain pending promise
+waiters, distinguish imported routability from settlement, and wait for reflected
+barriers. Wire bridge regressions exercise dynamic payloads and null capability
+slots, early/late pipelines, remote exceptions, rejected admission, tracked
+cancellation and synchronous pipeline-drop wakes. The existing Kani frozen-route
+proof also asserts readiness before and after the reflected barrier.
+Server-adapter tests retain parameters after their original frame is released,
+recover from hook-capacity exhaustion, and preserve the caller's result context.
+Additional regressions cover invalid late projections and required completion
+for redirected calls. Zero-inline-capacity growing-driver tests exercise large
+capability tables, outgoing transforms, received Returns, result drafts, frozen
+results, Join/Provide/loopback paths and recovery after capacity rejection. The
+owned hook bridge also copies larger capability tables in both directions.
+Allocator counters verify fixed capacities remain allocation-free with feature
+unification. Oversized allocation requests preserve the original buffer; an
+identity-map Kani harness checks the full integer domain's bound condition. A deliberate readiness fault (treating a routable import
+as settled) is detected by the pending-promise regression.
+A streaming regression first reproduced ordinary calls overtaking an
+unpolled streaming send; hosted requests now admit both at `send()` time. These
+checks cover scoped clients and wire admission; default `RpcSystem` migration
+requires separate qualification.
+
+The portable fixture's message roundtrip writes a real fixed-buffer generated
+record, streams the frame
+one byte at a time through `FrameReceiver` and reads the retained original after
+send completion. This roundtrip also runs under 32/64-bit Miri and links into the
+allocator-free ARM executable; the futures adapter is tested natively. One
+positive and eighteen negative compiler cases enforce pool scope, exclusive
+writers/windows, view lifetimes and consuming release/accept/completion APIs.
+Two Kani proofs cover bounded buffer/send lifecycles and full-width write-count
+validation. Mutations reclaim a buffer with a pending send and finish a send on
+a partial write. The exact proof bounds are in [Formal verification](Formal-Verification.md).
+
+RPC publication tests decode real framed Call/Return capability tables and check
+exact new/repeated grant counts, missing/extra/unknown IDs, none tombstones,
+unsupported descriptor kinds, attached FDs and invalid no-Finish returns. They
+reject every truncated frame, trailing bytes, invalid roots, exhausted traversal,
+insufficient scratch and full send storage. Rejection/unwind preserves existing
+counts and unrelated readers; forgotten prepared values remain unpublished, and
+failure after acceptance does not roll back a possibly observed grant. Repeated
+acceptance and rejection is allocation-counted even when core `alloc` is enabled.
+
+One positive and nine negative compiler cases enforce immutable validated bytes,
+single-use acceptance, exclusive pool/table access and private send/batch state.
+The twenty-first portable test sends a generated Return table one byte at a time
+and imports its decoded grants; matching release counts preserve a live server
+lease. It runs in the feature matrix, 32/64-bit Miri and the ARM link check. Kani
+proves the engine's descriptor counter at documented bounds, with a mutation
+that ignores a missing descriptor. Wire decoding and publication composition are
+tested natively and under Miri; they are outside those Kani proofs. The hosted
+runtime uses the same schema types; its existing protocol tests remain required.
+
+Local tables replay 8,192 operations at each of seven capacity combinations,
+compare lowest-free-ID allocation with a reference map, and inject growth failure.
+Separate cases exercise arbitrary free-heap orders, duplicate removals, high-ID
+wraparound with live entries, adopted-range rejection and cursor rollback on
+exhaustion. Compile contracts keep peer IDs out of local allocators and restrict
+high/adopted operations to question tables.
+
+Application handoff admission, drain reservation, embargo and revocation guards
+also live in the allocation-free engine; the hosted API reexports that exact
+implementation. The portable fixture executes it under Miri and links it on ARM.
+
+Run the pinned [Kani proofs](Formal-Verification.md) with
+`cargo run --locked -p capntproto-dev -- kani`. The command checks the proof
+inventory and uses deliberate production-code mutations as negative controls.
+It writes source-bound JSON, counterexamples, failure links and a per-harness
+time graph. Kani is a required CI predecessor of the retained TLA+ model job.
 
 ## Models, simulation and evidence
 

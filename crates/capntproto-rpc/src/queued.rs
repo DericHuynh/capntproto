@@ -77,7 +77,8 @@ impl PipelineInner {
 
         this.borrow_mut().redirect = Some(pipeline.add_ref());
 
-        for ((weak_client, ops), waiter) in this.borrow_mut().clients_to_resolve.drain() {
+        let pending = this.borrow_mut().clients_to_resolve.drain();
+        for ((weak_client, ops), waiter) in pending {
             if let Some(client) = weak_client.upgrade() {
                 let clienthook = pipeline.get_pipelined_cap_move(ops);
                 ClientInner::resolve(&client, Ok(clienthook));
@@ -85,7 +86,14 @@ impl PipelineInner {
             let _ = waiter.send(());
         }
 
-        this.borrow_mut().promise_to_drive = Promise::ok(()).shared();
+        // Dropping the last driver fork can destroy its PipelineInnerSender,
+        // which resolves this pipeline again. Publish the redirect and detach
+        // the old driver before running that destructor.
+        let old_driver = std::mem::replace(
+            &mut this.borrow_mut().promise_to_drive,
+            Promise::ok(()).shared(),
+        );
+        drop(old_driver);
     }
 }
 
@@ -173,7 +181,8 @@ impl Pipeline {
                 .map_ok(|_| ()),
         )
         .shared();
-        self.inner.borrow_mut().promise_to_drive = new;
+        let old_driver = std::mem::replace(&mut self.inner.borrow_mut().promise_to_drive, new);
+        drop(old_driver);
     }
 }
 
@@ -201,10 +210,16 @@ impl PipelineHook for Pipeline {
         let mut queued_client = Client::new(Some(self.inner.clone()));
         queued_client.drive(self.inner.borrow().promise_to_drive.clone());
         let weak_queued = Rc::downgrade(&queued_client.inner);
-        self.inner
+        let admitted = self
+            .inner
             .borrow_mut()
             .clients_to_resolve
             .push_detach((weak_queued, ops));
+        if admitted.is_err() {
+            return broken::new_cap(Error::overloaded(
+                "pipeline queue identities exhausted".into(),
+            ));
+        }
 
         Box::new(queued_client)
     }
@@ -251,18 +266,23 @@ impl ClientInner {
             Err(e) => broken::new_cap(e),
         };
         state.borrow_mut().redirect = Some(client.add_ref());
-        for (args, waiter) in state.borrow_mut().call_forwarding_queue.drain() {
+        let pending = state.borrow_mut().call_forwarding_queue.drain();
+        for (args, waiter) in pending {
             let (interface_id, method_id, params, results, hints) = args;
             let result_promise =
                 client.call_with_hints(interface_id, method_id, params, results, hints);
             let _ = waiter.send(result_promise);
         }
 
-        for ((), waiter) in state.borrow_mut().client_resolution_queue.drain() {
+        let pending = state.borrow_mut().client_resolution_queue.drain();
+        for ((), waiter) in pending {
             let _ = waiter.send(client.add_ref());
         }
-        state.borrow_mut().promise_to_drive.take();
-        state.borrow_mut().pipeline_inner.take();
+        let (driver, pipeline) = {
+            let mut state = state.borrow_mut();
+            (state.promise_to_drive.take(), state.pipeline_inner.take())
+        };
+        drop((driver, pipeline));
     }
 }
 
@@ -318,6 +338,12 @@ impl ClientHook for Client {
         method_id: u16,
         size_hint: Option<::capnp::MessageSize>,
     ) -> ::capnp::capability::Request<any_pointer::Owned, any_pointer::Owned> {
+        // Preserve the resolved destination's request-time admission. Invoke
+        // hooks outside the cell borrow, since custom hooks may reenter.
+        let redirect = self.inner.borrow().redirect.clone();
+        if let Some(client) = redirect {
+            return client.new_call(interface_id, method_id, size_hint);
+        }
         ::capnp::capability::Request::new(Box::new(local::Request::new(
             interface_id,
             method_id,
@@ -415,5 +441,53 @@ impl ClientHook for Client {
 
     fn when_resolved(&self) -> Promise<(), Error> {
         crate::rpc::default_when_resolved_impl(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        future::Future,
+        pin::Pin,
+        sync::Arc,
+        task::{Context, Poll, Wake, Waker},
+    };
+    thread_local! { static ON_WAKE: RefCell<Option<Box<dyn FnOnce()>>> = RefCell::new(None); }
+    struct Reenter;
+    impl Wake for Reenter {
+        fn wake(self: Arc<Self>) {
+            let callback = ON_WAKE.with(|slot| slot.borrow_mut().take());
+            if let Some(callback) = callback {
+                callback()
+            }
+        }
+    }
+    #[test]
+    fn resolution_wakes_after_releasing_the_queued_client() {
+        let client = Client::new(None);
+        let inner = client.inner.clone();
+        let mut pending = client.when_more_resolved().unwrap();
+        let observed = Rc::new(std::cell::Cell::new(false));
+        ON_WAKE.with(|slot| {
+            let inner = inner.clone();
+            let observed = observed.clone();
+            *slot.borrow_mut() = Some(Box::new(move || {
+                let state = inner
+                    .try_borrow_mut()
+                    .expect("resolution wakes outside queued client borrow");
+                assert!(state.redirect.is_some());
+                observed.set(true);
+            }));
+        });
+        let waker = Waker::from(Arc::new(Reenter));
+        let mut cx = Context::from_waker(&waker);
+        assert!(Pin::new(&mut pending).poll(&mut cx).is_pending());
+        ClientInner::resolve(&inner, Err(Error::failed("test rejection".into())));
+        assert!(observed.get());
+        assert!(matches!(
+            Pin::new(&mut pending).poll(&mut cx),
+            Poll::Ready(Ok(_))
+        ));
     }
 }

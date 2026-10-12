@@ -9,7 +9,7 @@ use std::{cell::RefCell, rc::Weak};
 /// returned capability; connection/authentication errors arrive through RPC.
 pub struct Bootstrapper<VatId: 'static> {
     pub(crate) network: Weak<RefCell<Box<dyn VatNetwork<VatId>>>>,
-    pub(crate) connections: Weak<RefCell<rpc::ConnectionRegistry<VatId>>>,
+    pub(crate) connections: Weak<RefCell<crate::system::ConnectionRegistry<VatId>>>,
     pub(crate) context: Weak<rpc::JoinContext<VatId>>,
 }
 
@@ -36,7 +36,7 @@ impl<VatId> Bootstrapper<VatId> {
                 "RPC system was dropped".into(),
             )));
         };
-        if connections.borrow().closing {
+        if connections.borrow().is_closing() {
             return T::new(broken::new_cap(Error::disconnected(
                 "RPC system is closing".into(),
             )));
@@ -51,6 +51,9 @@ impl<VatId> Bootstrapper<VatId> {
             connection,
             context.tasks.clone(),
         );
-        T::new(rpc::ConnectionState::bootstrap(&state))
+        match state {
+            Ok(state) => T::new(rpc::ConnectionState::bootstrap(&state)),
+            Err(error) => T::new(broken::new_cap(error)),
+        }
     }
 }

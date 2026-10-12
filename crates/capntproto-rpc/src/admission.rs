@@ -1,40 +1,49 @@
 //! Local outgoing call admission. This does not limit message allocation or
 //! application calls queued on a purely local unresolved capability.
 
-use std::{cell::Cell, rc::Rc};
+use capntproto_rpc_engine::flow_control::outgoing::Outgoing;
+pub(crate) use capntproto_rpc_engine::flow_control::outgoing::OwnedPermit as Permit;
+use std::rc::Rc;
+
+pub(crate) fn retain_context(
+    slot: &mut Option<Rc<dyn std::any::Any>>,
+    context: Rc<dyn std::any::Any>,
+) {
+    if slot.as_ref().is_some_and(|old| Rc::ptr_eq(old, &context)) {
+        return;
+    }
+    *slot = Some(match slot.take() {
+        None => context,
+        Some(old) => Rc::new((old, context)),
+    });
+}
 
 pub(crate) struct Admission {
-    pub(crate) limit: Cell<usize>,
-    pub(crate) used: Cell<usize>,
+    counter: Rc<Outgoing>,
+    pub(crate) held_responses: std::cell::Cell<usize>,
 }
 
 impl Admission {
     pub(crate) fn new(limit: usize) -> Rc<Self> {
         Rc::new(Self {
-            limit: Cell::new(limit),
-            used: Cell::new(0),
+            counter: Rc::new(Outgoing::new(limit)),
+            held_responses: std::cell::Cell::new(0),
         })
     }
 
     pub(crate) fn reserve(self: &Rc<Self>) -> capnp::Result<Rc<Permit>> {
-        let used = self.used.get();
-        if used >= self.limit.get() {
-            return Err(capnp::Error::overloaded(
-                "outgoing RPC call limit reached; call was not sent".into(),
-            ));
-        }
-        self.used.set(used + 1);
-        Ok(Rc::new(Permit(self.clone())))
+        self.counter.reserve_owned().map(Rc::new).map_err(|_| {
+            capnp::Error::overloaded("outgoing RPC call limit reached; call was not sent".into())
+        })
     }
-}
-
-/// Shared by the request, question table and local write completion. Retaining
-/// any one of them keeps the reservation, including a canceled call whose
-/// Return has not arrived, or a pipeline-only call blocked in the writer.
-pub(crate) struct Permit(Rc<Admission>);
-impl Drop for Permit {
-    fn drop(&mut self) {
-        self.0.used.set(self.0.used.get() - 1);
+    pub(crate) fn limit(&self) -> usize {
+        self.counter.limit()
+    }
+    pub(crate) fn used(&self) -> usize {
+        self.counter.used()
+    }
+    pub(crate) fn set_limit(&self, limit: usize) {
+        self.counter.set_limit(limit);
     }
 }
 

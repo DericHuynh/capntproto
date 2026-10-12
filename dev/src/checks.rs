@@ -337,6 +337,7 @@ fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
             == json!([
                 "workflows",
                 "documentation",
+                "portability",
                 "platforms",
                 "cargo",
                 "models",
@@ -359,11 +360,41 @@ fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
         "untracked CI gate"
     );
     for job in ["cargo", "models", "fuzz", "extended"] {
+        let expected = if job == "cargo" {
+            json!(["platforms", "documentation", "portability"])
+        } else {
+            json!(["platforms", "documentation"])
+        };
         ensure!(
-            jobs[job]["needs"] == json!(["platforms", "documentation"]),
+            jobs[job]["needs"] == expected,
             "verification must follow platform and documentation checks"
         );
     }
+    ensure!(
+        jobs["portability"]["needs"] == "workflows",
+        "portability must follow workflow validation"
+    );
+    let formal = &all["verification-models"]["jobs"];
+    ensure!(
+        formal["models"]["needs"] == "kani",
+        "distributed models must follow Kani proofs"
+    );
+    let proof_steps = formal["kani"]["steps"]
+        .as_array()
+        .context("missing Kani job")?;
+    ensure!(
+        proof_steps.iter().any(|step| {
+            step["run"].as_str().is_some_and(|run|
+        run == "cargo run --locked -p capntproto-dev -- kani --output target/verification/kani")
+        }),
+        "Kani gate must include inventory and mutation controls"
+    );
+    ensure!(
+        proof_steps
+            .iter()
+            .any(|step| step["with"]["name"] == "kani-report" && step["if"] == "always()"),
+        "Kani failures must retain diagnostics"
+    );
     ensure!(
         jobs["performance"]["needs"] == json!(["cargo", "models", "fuzz", "extended"]),
         "benchmark must follow every verification partition"

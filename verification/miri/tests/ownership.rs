@@ -10,6 +10,13 @@ use capntproto_memory_checks::field_api_capnp::{
 };
 use std::{cell::Cell, rc::Rc, sync::Arc};
 
+#[path = "../../../crates/capntproto-core/tests/root_budget.rs"]
+mod root_budget;
+#[path = "../../../crates/capntproto-core/tests/selected_builder.rs"]
+mod selected_builder;
+#[path = "../../../crates/capntproto-core/tests/selected_struct.rs"]
+mod selected_struct;
+
 #[test]
 fn pooled_segments_keep_live_messages_disjoint_and_clear_reused_storage() -> Result<()> {
     use capnp::message::{Builder, SegmentPool};
@@ -86,11 +93,13 @@ fn checked_inline_segments_survive_owner_moves_and_extraction() -> Result<()> {
         drops: drops.clone(),
     };
     let owner = MessageReader::<Address, _>::from_segments(segments, ReaderOptions::new())?;
-    let address = owner.read().city()?.as_ptr();
+    assert_eq!(owner.read().city()?, "abc");
     let mut moved = vec![owner];
     let owner = Box::new(moved.pop().unwrap());
     assert_eq!(owner.read().city()?, "abc");
-    assert_eq!(owner.read().city()?.as_ptr(), address);
+    // Inline segments relocate with the owner. The cached selection must
+    // rebase into its current storage, rather than promise address stability.
+    let address = owner.read().city()?.as_ptr();
     let copy = owner.compact_copy()?;
     assert_ne!(copy.read().city()?.as_ptr(), address);
     let (reader, caps) = owner.into_parts();

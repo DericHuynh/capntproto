@@ -20,6 +20,7 @@ mod echo_capnp {
 mod grpc {
     tonic::include_proto!("echo");
 }
+mod workflows;
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 const CONTEXT: &[u8] = b"reproto isolated loopback benchmark v1";
 // Version 2 matches bulk payload validation, response cleanup and per-call
@@ -89,6 +90,27 @@ async fn serve(protocol: &str) -> Result<()> {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         ready(listener.local_addr()?, None)?;
         match protocol {
+            "tcp" => {
+                let (socket, _) = listener.accept().await?;
+                socket.set_nodelay(true)?;
+                let bootstrap: echo_capnp::echo::Client = capnp_rpc::new_client(Echo);
+                if tcp_driver()? == "portable" {
+                    portable_tcp(
+                        socket,
+                        Some(bootstrap.client),
+                        capnp_rpc::rpc_twoparty_capnp::Side::Server,
+                    )?
+                    .await?;
+                } else {
+                    capntproto::rpc::tcp::client(
+                        socket,
+                        Some(bootstrap.client),
+                        capnp_rpc::rpc_twoparty_capnp::Side::Server,
+                        Default::default(),
+                    )
+                    .await?;
+                }
+            }
             "grpc" => {
                 // serve_with_incoming bypasses tonic's TCP listener settings.
                 let incoming =
@@ -129,6 +151,22 @@ enum Client {
 impl Client {
     async fn connect(protocol: &str, address: &str, public: &str) -> Result<Self> {
         match protocol {
+            "tcp" => {
+                if tcp_driver()? == "portable" {
+                    let socket = TcpStream::connect(address).await?;
+                    socket.set_nodelay(true)?;
+                    let mut driver =
+                        portable_tcp(socket, None, capnp_rpc::rpc_twoparty_capnp::Side::Client)?;
+                    let client = driver.bootstrap(capnp_rpc::rpc_twoparty_capnp::Side::Server);
+                    tokio::task::spawn_local(driver);
+                    return Ok(Self::Native(client));
+                }
+                let mut driver =
+                    capntproto::rpc::connect(address, None, Default::default()).await?;
+                let client = driver.bootstrap();
+                tokio::task::spawn_local(driver);
+                Ok(Self::Native(client))
+            }
             "native" | "native-tcp" => {
                 let identity = Identity::from_private_key([1; 32])?;
                 let public: [u8; 32] = serde_json::from_str(public)?;
@@ -173,39 +211,50 @@ impl Client {
             _ => Err("unknown benchmark protocol".into()),
         }
     }
+}
+
+// Select the protocol once, outside the measured loop. Otherwise every TCP
+// timeout moves a future large enough to contain tonic's entire gRPC operation.
+// Each protocol keeps the same IO, response validation and timing policy.
+trait Roundtrip {
+    async fn roundtrip(&mut self, sequence: u64, payload: &[u8]) -> Result<()>;
+}
+impl Roundtrip for echo_capnp::echo::Client {
     async fn roundtrip(&mut self, sequence: u64, payload: &[u8]) -> Result<()> {
-        match self {
-            Self::Native(client) => {
-                let mut request = client.echo_request();
-                request.get().set_sequence(sequence);
-                request.get().set_payload(payload);
-                let response = request.send().promise.await?;
-                let response = response.get()?;
-                if response.get_sequence() != sequence || response.get_payload()? != payload {
-                    return Err("Native response mismatch".into());
-                }
-            }
-            Self::Grpc(client) => {
-                let response = client
-                    .echo(grpc::Frame {
-                        sequence,
-                        payload: payload.into(),
-                    })
-                    .await?
-                    .into_inner();
-                if response.sequence != sequence || response.payload != payload {
-                    return Err("gRPC response mismatch".into());
-                }
-            }
-            Self::WebSocket(client) => {
-                let mut frame = sequence.to_le_bytes().to_vec();
-                frame.extend_from_slice(payload);
-                client.send(Message::Binary(frame.clone().into())).await?;
-                let response = client.next().await.ok_or("WebSocket closed")??;
-                if response != Message::Binary(frame.into()) {
-                    return Err("WebSocket response mismatch".into());
-                }
-            }
+        let mut request = self.echo_request();
+        request.get().set_sequence(sequence);
+        request.get().set_payload(payload);
+        let response = request.send().promise.await?;
+        let response = response.get()?;
+        if response.get_sequence() != sequence || response.get_payload()? != payload {
+            return Err("Native response mismatch".into());
+        }
+        Ok(())
+    }
+}
+impl Roundtrip for grpc::echo_client::EchoClient<tonic::transport::Channel> {
+    async fn roundtrip(&mut self, sequence: u64, payload: &[u8]) -> Result<()> {
+        let response = self
+            .echo(grpc::Frame {
+                sequence,
+                payload: payload.into(),
+            })
+            .await?
+            .into_inner();
+        if response.sequence != sequence || response.payload != payload {
+            return Err("gRPC response mismatch".into());
+        }
+        Ok(())
+    }
+}
+impl Roundtrip for WebSocketStream<TcpStream> {
+    async fn roundtrip(&mut self, sequence: u64, payload: &[u8]) -> Result<()> {
+        let mut frame = sequence.to_le_bytes().to_vec();
+        frame.extend_from_slice(payload);
+        self.send(Message::Binary(frame.clone().into())).await?;
+        let response = self.next().await.ok_or("WebSocket closed")??;
+        if response != Message::Binary(frame.into()) {
+            return Err("WebSocket response mismatch".into());
         }
         Ok(())
     }
@@ -222,27 +271,38 @@ async fn measure(args: &[String]) -> Result<()> {
     }
     let payload: Vec<_> = (0..bytes).map(|n| (n % 251) as u8).collect();
     let mut client = Client::connect(&args[0], &args[1], &args[2]).await?;
+    match &mut client {
+        Client::Native(client) => {
+            measure_calls(client, &args[0], &payload, warmup, iterations).await
+        }
+        Client::Grpc(client) => measure_calls(client, &args[0], &payload, warmup, iterations).await,
+        Client::WebSocket(client) => {
+            measure_calls(&mut **client, &args[0], &payload, warmup, iterations).await
+        }
+    }
+}
+async fn measure_calls(
+    client: &mut impl Roundtrip,
+    protocol: &str,
+    payload: &[u8],
+    warmup: u64,
+    iterations: u64,
+) -> Result<()> {
     for sequence in 0..warmup {
-        tokio::time::timeout(
-            Duration::from_secs(10),
-            client.roundtrip(sequence, &payload),
-        )
-        .await??;
+        tokio::time::timeout(Duration::from_secs(10), client.roundtrip(sequence, payload))
+            .await??;
     }
     let mut samples = Vec::with_capacity(iterations as usize);
     let start = Instant::now();
     for sequence in warmup..warmup + iterations {
         let roundtrip = Instant::now();
-        tokio::time::timeout(
-            Duration::from_secs(10),
-            client.roundtrip(sequence, &payload),
-        )
-        .await??;
+        tokio::time::timeout(Duration::from_secs(10), client.roundtrip(sequence, payload))
+            .await??;
         samples.push(u64::try_from(roundtrip.elapsed().as_nanos())?);
     }
     println!(
         "{}",
-        json!({"measurement_version":MEASUREMENT_VERSION,"protocol":args[0],"payload_bytes":bytes,"warmup":warmup,"iterations":iterations,"elapsed_ns":u64::try_from(start.elapsed().as_nanos())?,"latency_ns":samples})
+        json!({"measurement_version":MEASUREMENT_VERSION,"protocol":protocol,"payload_bytes":payload.len(),"warmup":warmup,"iterations":iterations,"elapsed_ns":u64::try_from(start.elapsed().as_nanos())?,"latency_ns":samples})
     );
     Ok(())
 }
@@ -267,12 +327,44 @@ pub fn run(protocol: Option<&str>) -> Result<()> {
             std::path::Path::new(&args[2]),
         );
     }
+    if matches!(
+        args.first().map(String::as_str),
+        Some("workflow-host" | "workflow-client")
+    ) && (args.len() == 4 || (args.len() == 5 && args[4] == "--smoke"))
+    {
+        let run = if args[0] == "workflow-host" {
+            driver::workflows::host
+        } else {
+            driver::workflows::client
+        };
+        return run(
+            std::path::Path::new(&args[1]),
+            &args[2],
+            std::path::Path::new(&args[3]),
+            args.len() == 5,
+        );
+    }
+    if args.first().map(String::as_str) == Some("compare-tcp") && args.len() == 4 {
+        return driver::compare_tcp(
+            std::path::Path::new(&args[1]),
+            std::path::Path::new(&args[2]),
+            std::path::Path::new(&args[3]),
+        );
+    }
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
     runtime.block_on(tokio::task::LocalSet::new().run_until(async move {
         tokio::task::spawn_local(async move {
             match args.first().map(String::as_str) {
+                Some("workflow-server") if args.len() == 2 => workflows::serve(&args[1]).await,
+                Some("workflow-measure") => workflows::measure(&args[1..]).await,
+                Some("comparison-server") if args.len() == 3 => {
+                    workflows::comparison::serve(&args[1], &args[2]).await
+                }
+                Some("comparison-measure") if args.len() == 6 => {
+                    workflows::comparison::measure(&args[1], &args[2..]).await
+                }
                 Some("server") if args.len() == 2 => serve(&args[1]).await,
                 Some("measure") => measure(&args[1..]).await,
                 _ => Err("expected server or measure".into()),
@@ -283,3 +375,41 @@ pub fn run(protocol: Option<&str>) -> Result<()> {
 }
 
 pub mod driver;
+
+pub(crate) fn tcp_driver() -> Result<&'static str> {
+    match std::env::var("CAPNTPROTO_BENCH_PORTABLE").as_deref() {
+        Ok("1") | Err(std::env::VarError::NotPresent) => Ok("portable"),
+        Ok("0") => Ok("legacy"),
+        _ => Err("CAPNTPROTO_BENCH_PORTABLE must be 0 or 1".into()),
+    }
+}
+fn portable_tcp(
+    socket: TcpStream,
+    bootstrap: Option<capnp::capability::Client>,
+    side: capnp_rpc::rpc_twoparty_capnp::Side,
+) -> Result<capnp_rpc::portable::RpcSystem<capnp_rpc::rpc_twoparty_capnp::Side>> {
+    portable_tcp_bounded(socket, bootstrap, side, 512 * 1024, 8 * 1024 * 1024)
+}
+fn portable_tcp_bounded(
+    socket: TcpStream,
+    bootstrap: Option<capnp::capability::Client>,
+    side: capnp_rpc::rpc_twoparty_capnp::Side,
+    frame_bytes: usize,
+    buffer_bytes: usize,
+) -> Result<capnp_rpc::portable::RpcSystem<capnp_rpc::rpc_twoparty_capnp::Side>> {
+    let options = capnp_rpc::portable::Options::bounded(
+        1.try_into()?,
+        256.try_into()?,
+        frame_bytes.try_into()?,
+        buffer_bytes.try_into()?,
+    )?;
+    Ok(capnp_rpc::portable::RpcSystem::new(
+        Box::new(capntproto::rpc::tcp::network(
+            socket,
+            side,
+            Default::default(),
+        )),
+        bootstrap,
+        options,
+    )?)
+}
