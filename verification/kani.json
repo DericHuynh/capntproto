@@ -236,8 +236,8 @@
     {
       "name": "ignore-export-call-leases",
       "source": "src/exports.rs",
-      "from": "if entry.local != 0 || !matches!(entry.state, State::Retired) {",
-      "to": "if !matches!(entry.state, State::Retired) {",
+      "from": "self.local == 0 && matches!(self.state, State::Retired)",
+      "to": "matches!(self.state, State::Retired)",
       "harness": "exports::proofs::export_publication_and_lease_lifecycle",
       "expected_check": "export lease retains released owner"
     },

@@ -34,6 +34,7 @@ fn nextest_evidence_belongs_to_each_invocation_including_failures() {
         "release",
         "runtime_simulation",
         "schedules",
+        "ignored_inventory",
     ] {
         fs::write(
             fixture.join(format!("tests/{binary}.rs")),

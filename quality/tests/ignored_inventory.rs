@@ -1,9 +1,13 @@
 //! Listing ignored controls does not execute them or repeat the workspace suite.
 use capntproto_test_support::verification as v;
-use std::{collections::BTreeMap, fs};
+use std::{collections::BTreeMap, fs, time::Duration};
 #[test]
 fn ignored_controls_have_reviewed_reasons() {
-    let output = v::run_stdout(
+    // A cold isolated workspace build (including quiche) can exceed the usual
+    // ten-minute subprocess deadline with two Cargo build jobs. Keep a
+    // bounded build budget without skipping inventory or sharing executables.
+    let log = v::root().join("target/verification/ignored-inventory.log");
+    let output = v::run_stdout_with_timeout(
         v::command("cargo")
             // Listing all targets builds a different feature/profile graph.
             // Cargo may replace test executables still queued by the outer
@@ -21,8 +25,10 @@ fn ignored_controls_have_reviewed_reasons() {
                 "--all-targets",
                 "--message-format=json",
             ]),
-        &v::root().join("target/verification/ignored-inventory.log"),
+        &log.with_extension("stdout"),
+        &log,
         0,
+        Duration::from_secs(30 * 60),
     )
     .unwrap();
     let actual = v::nextest::inventory(&output, true);

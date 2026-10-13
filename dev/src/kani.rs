@@ -260,7 +260,7 @@ fn preflight_controls(root: &Path, plan: &Value, expected: &BTreeSet<String>) ->
         let from = crate::string(control, "from")?;
         ensure!(
             !from.is_empty() && before.matches(from).count() == 1,
-            "mutation must match exactly one production site"
+            "mutation must match exactly one production site: {name} in {package}/{source}"
         );
         crate::string(control, "to")?;
         ensure!(
@@ -477,7 +477,7 @@ mod tests {
             (
                 "from",
                 "REMOVED_GUARD",
-                "mutation must match exactly one production site",
+                "mutation must match exactly one production site: broken-guard in capntproto-rpc-engine/src/lib.rs",
             ),
             ("harness", "missing", "control has no positive proof"),
             ("expected_check", "", "missing expected mutation assertion"),
