@@ -1,8 +1,8 @@
 # Failed workspace tests
 
-[Workflow run and full logs](https://github.com/DericHuynh/capntproto/actions/runs/38239101685) · commit `d2b163dbf50c377dedf8c38519fa08374eb65451` · attempt 1
+[Workflow run and full logs](https://github.com/DericHuynh/capntproto/actions/runs/38342939316) · commit `e9ff1cc5ee6e74d1606bc2a129a0ebff27213945` · attempt 1
 
-Recorded: **0 failed**, **0 without a terminal result**, 1425 passed and 20 skipped.
+Recorded: **0 failed**, **0 without a terminal result**, 2080 passed and 20 skipped.
 
 No completed test reported a failure.
 
