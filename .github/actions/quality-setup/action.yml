@@ -50,6 +50,7 @@ runs:
         workspaces: |
           . -> target
           fuzz -> target
+          verification/upstream-rpc -> target
     - name: Install pinned quality tools
       shell: bash
       env:

@@ -597,6 +597,15 @@ pub trait Connection<VatId> {
         false
     }
 
+    /// Whether the peer can consume `sendResultsTo.yourself` followed by
+    /// `takeFromOtherQuestion`. Standard two-party streams conservatively use
+    /// ordinary forwarding: capnp-rpc 0.27.0 can stall on this optimization.
+    /// Custom networks retain standard tail transfer unless they override this.
+    /// This is local knowledge of the peer, not a wire-level negotiation.
+    fn supports_tail_call_transfer(&self) -> bool {
+        true
+    }
+
     /// Supports authenticated, single-use ThirdPartyAnswer rendezvous through
     /// the third-party exchange hooks. Independent from capability introductions.
     fn supports_third_party_answers(&self) -> bool {

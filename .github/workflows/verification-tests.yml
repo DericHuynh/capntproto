@@ -36,6 +36,17 @@ jobs:
       - name: Advisory checks
         if: success() || failure()
         run: cargo run --locked -p capntproto-quality -- security target/quality/security
+      - name: Upload independent C++ and Rust interoperability matrix
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: upstream-rpc-interoperability
+          path: |
+            target/verification/upstream-interop/README.md
+            target/verification/upstream-interop/matrix.json
+            target/verification/upstream-interop/**/*.log
+          if-no-files-found: warn
+          retention-days: 30
       - name: Validate counters and generate README with comparison bar charts
         if: success() || failure()
         run: cargo run --locked -p capntproto-quality -- report target/quality coverage,security

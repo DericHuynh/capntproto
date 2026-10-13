@@ -63,6 +63,7 @@ and CI lanes. Platform smoke jobs do not qualify storage durability on every OS.
 | Compile-time reply rejection contracts | `cargo nextest run --locked --test api_contracts rpc_reply::structured_rpc_reply_compile_contracts -- --exact` |
 | Driver ownership and native vats | `cargo nextest run --locked --test rpc_ownership --test native_vat` |
 | Admission, pipelining and forwarding | `cargo nextest run --locked --test rpc_admission --test result_pipeline --test tail_transfer --test answer_adoption` |
+| Independent C++ and published Rust peers, both drivers and directions | `cargo nextest run --locked --test upstream_interop` ([scope and upstream limits](Interoperability.md)) |
 | TCP, TLS/mTLS and QUIC v1 | `cargo nextest run --locked --test tcp_rpc --test secure_rpc` |
 | Native transport backends | `cargo nextest run --locked --lib transport::backend_tests` |
 | Upstream QUIC adapter and registry pin | `cargo nextest run --locked --lib transport:: -- --skip tlc` and `cargo nextest run --locked --test tooling pinned_native_profile -- --exact` |

@@ -9,6 +9,11 @@ The upstream starting point and source hashes are recorded in
 The Cargo package is `capntproto-rpc`. Its Rust library name remains `capnp_rpc`
 to preserve compatibility with generated bindings. Use a package alias when
 selecting it directly; the root `capntproto` crate already selects this coordinated set.
+Standard two-party streams default to ordinary tail reply forwarding for
+compatibility with upstream Rust. Known C++/capntproto peers can opt into
+`VatNetwork::set_tail_call_optimization(true)`. The independent
+[interoperability matrix](../../docs/wiki/Interoperability.md) records the
+tested versions, scenarios and upstream limitations.
 All maintained crates share the root lockfile and are tested with
 `cargo nextest run --workspace`. See the [workspace policy](../../docs/wiki/Fork-Policy.md).
 

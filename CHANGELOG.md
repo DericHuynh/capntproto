@@ -1,5 +1,14 @@
 # 0.1.0 developer preview (unpublished)
 
+- Qualify legacy and portable RPC against pinned C++ and published capnproto-rust
+  in both roles, including payloads through 4 MiB, promise/answer pipelines,
+  callback tail calls, cancellation, release, streaming and exception recovery.
+  Standard two-party networks now forward tail replies normally by default to
+  avoid capnp-rpc 0.27.0's incomplete redirected-answer progress handling;
+  `set_tail_call_optimization(true)` retains optimized transfers to known peers.
+  CI publishes per-peer evidence and separately reports two reproduced failures
+  between the upstream implementations rather than counting them as passes.
+
 - Follow upstream Rust RPC's execution-before-results ordering in the portable
   hosted worker, avoiding completion waiter allocation and redundant wakes for
   ready methods. Preserve early-pipeline notifications, pending execution and

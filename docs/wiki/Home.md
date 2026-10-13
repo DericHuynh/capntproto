@@ -26,6 +26,7 @@ Start with the [runtime status](Runtime-Status.md) for supported boundaries and
 ## RPC and transport
 
 - [Architecture](Architecture.md) and [C++ parity boundaries](Cpp-Parity.md).
+- [Independent C++ and upstream Rust interoperability](Interoperability.md).
 - [Capability Join](Capability-Join.md), [multiparty Join](Multiparty-Join.md) and
   [third-party answers](Third-Party-Answers.md).
 - [Capability equality and ordering audit](Capability-Equality.md).

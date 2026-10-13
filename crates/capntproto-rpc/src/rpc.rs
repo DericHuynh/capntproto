@@ -2289,6 +2289,12 @@ impl<VatId> ResultsHook for Results<VatId> {
         if !inner.redirect_results
             && !inner.only_promise_pipeline
             && request.get_brand() == inner.connection_state.get_brand()
+            && inner
+                .connection_state
+                .connection
+                .borrow()
+                .as_ref()
+                .is_ok_and(|connection| connection.supports_tail_call_transfer())
         {
             let Some((question, completion, pipeline)) = request.tail_send() else {
                 let error =

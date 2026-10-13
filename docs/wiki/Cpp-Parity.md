@@ -7,6 +7,12 @@ RPC engine, async serializer and generator are coordinated forks, alongside
 first-party compiler, adapters, transports and storage. This is a feature
 comparison, not a line-by-line port or a proof of equivalent execution.
 
+The [independent interoperability matrix](Interoperability.md) exercises both
+drivers against this C++ revision and published capnproto-rust crates in both
+roles. Standard two-party streams use compatible tail forwarding by default;
+optimized transfer is an explicit opt-in for known supporting peers because
+capnp-rpc 0.27.0 has incomplete redirected-answer progress handling.
+
 ## RPC protocol and capabilities
 
 The runtime handles Bootstrap, Call, Return, Finish, Resolve, Release,

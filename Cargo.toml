@@ -25,6 +25,7 @@ exclude = [
     "fuzz",
     "verification/miri",
     "verification/portable",
+    "verification/upstream-rpc",
 ]
 
 [features]

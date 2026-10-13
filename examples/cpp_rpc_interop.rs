@@ -66,7 +66,8 @@ async fn main() {
         tokio::time::timeout(Duration::from_secs(10),async {
             let stream = tokio::net::TcpStream::connect(("127.0.0.1",port)).await.unwrap();
             let (read,write) = stream.compat().split();
-            let network = capnp_rpc::twoparty::VatNetwork::new(read,write,capnp_rpc::rpc_twoparty_capnp::Side::Client,Default::default());
+            let mut network = capnp_rpc::twoparty::VatNetwork::new(read,write,capnp_rpc::rpc_twoparty_capnp::Side::Client,Default::default());
+            network.set_tail_call_optimization(true);
             let mut system = capnp_rpc::RpcSystem::new(Box::new(network),None);
             system.set_trace_encoder(|error| format!("rust-trace:{}", error.extra));
             let remote: harness::Client = system.bootstrap(capnp_rpc::rpc_twoparty_capnp::Side::Server);

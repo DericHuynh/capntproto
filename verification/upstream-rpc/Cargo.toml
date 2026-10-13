@@ -1,0 +1,18 @@
+[package]
+name = "capntproto-upstream-interop"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# An independent resolver and lockfile: no path dependency or patch to our fork.
+[workspace]
+
+[dependencies]
+capnp = "=0.27.2"
+capnp-rpc = "=0.27.0"
+futures = "0.3"
+tokio = { version = "1", features = ["rt", "net", "time", "io-util"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+
+[build-dependencies]
+capnpc = "=0.27.0"

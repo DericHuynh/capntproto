@@ -278,7 +278,7 @@ as `echo (...) -> Value` and `forward (...) -> Value`. Two independently declare
 anonymous structs with the same fields remain different Rust result types. This
 prevents accidental structural reinterpretation. The
 [test schema](../../schemas/rpc-api.capnp) demonstrates named scalar and capability
-results. Typed forwarding preserves optimized tail transfers and authenticated
+results. Typed forwarding preserves configured tail transfers and authenticated
 three-party answer adoption. Legacy `Results<T>` also has a typed `tail_call()`
 helper, but its mutable API still checks initialization order at runtime.
 

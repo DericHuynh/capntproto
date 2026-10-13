@@ -53,6 +53,30 @@ fn frame(text: &str) -> (crate::OutgoingFrame, Vec<u8>) {
 }
 
 #[test]
+fn tail_transfer_requires_explicit_peer_support_on_standard_streams() {
+    let mut network = VatNetwork::new(
+        futures::io::Cursor::new(Vec::<u8>::new()),
+        futures::io::Cursor::new(Vec::<u8>::new()),
+        VatId::Client,
+        Default::default(),
+    );
+    let connection = network.connection.as_ref().unwrap();
+    assert!(!connection.supports_tail_call_transfer());
+    network.set_tail_call_optimization(true);
+    assert!(network
+        .connection
+        .as_ref()
+        .unwrap()
+        .supports_tail_call_transfer());
+    network.set_tail_call_optimization(false);
+    assert!(!network
+        .connection
+        .as_ref()
+        .unwrap()
+        .supports_tail_call_transfer());
+}
+
+#[test]
 fn cached_incoming_payload_preserves_kind_storage_and_rejects_foreign_views() {
     use crate::IncomingMessage as _;
     futures::executor::block_on(async {

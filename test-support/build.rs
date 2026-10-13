@@ -39,6 +39,7 @@ fn main() {
     compile(
         &[
             "runtime-test",
+            "interop",
             "rpc-api",
             "cancellation-policy",
             "dynamic-test",

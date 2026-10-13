@@ -1,4 +1,7 @@
 //! Generated fixtures for integration tests and interoperability tools.
+pub mod interop_capnp {
+    include!(concat!(env!("OUT_DIR"), "/interop_capnp.rs"));
+}
 /// The standard interoperability schema using allocation-free dispatch bindings.
 pub mod bounded {
     capnp::generated_code!(pub mod runtime_test_capnp, "bounded/runtime_test_capnp.rs");

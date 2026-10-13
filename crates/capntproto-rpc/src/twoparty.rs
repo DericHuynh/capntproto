@@ -486,6 +486,7 @@ where
     side: crate::rpc_twoparty_capnp::Side,
     on_disconnect_fulfiller: Option<oneshot::Sender<()>>,
     flow_control: crate::flow_control::Policy,
+    tail_call_optimization: bool,
     write_finished: futures::future::Shared<Promise<(), capnp::Error>>,
     output_closed: futures::future::Shared<Promise<(), capnp::Error>>,
     output_driver: Weak<OutputDriver>,
@@ -578,6 +579,7 @@ where
                 side,
                 on_disconnect_fulfiller: Some(on_disconnect_fulfiller),
                 flow_control,
+                tail_call_optimization: false,
                 write_finished,
                 output_closed,
                 output_driver,
@@ -618,6 +620,10 @@ where
 
     fn supports_two_party_join(&self) -> bool {
         true
+    }
+
+    fn supports_tail_call_transfer(&self) -> bool {
+        self.inner.borrow().tail_call_optimization
     }
 
     fn new_outgoing_message(
@@ -896,6 +902,18 @@ impl<T> VatNetwork<T>
 where
     T: AsyncRead + Unpin,
 {
+    /// Enable optimized tail-result transfer for a peer known to support it
+    /// (for example C++ or capntproto). Disabled by default for interoperability
+    /// with capnp-rpc 0.27.0, whose redirected answers can remain unpolled.
+    /// Tail calls still work when disabled, using ordinary call/reply forwarding.
+    /// Incoming transfers remain supported in either mode. This is not negotiated
+    /// on the wire and must reflect the actual peer's implementation.
+    pub fn set_tail_call_optimization(&mut self, enabled: bool) {
+        if let Some(inner) = self.weak_connection_inner.upgrade() {
+            inner.borrow_mut().tail_call_optimization = enabled;
+        }
+    }
+
     /// Resolves when the output queue terminates and the write half is closed.
     /// Poll the network driver concurrently. Unlike drive_until_shutdown(), this
     /// fence does not wait for the read half or connection handles to disappear.

@@ -47,6 +47,7 @@
 
 - [Architecture](Architecture.md)
 - [C++ Parity](Cpp-Parity.md)
+- [Interoperability](Interoperability.md)
 - [Roadmap](Roadmap.md)
 - [RPC Research](RPC-Research.md)
 - [Storage Research](Storage-Research.md)

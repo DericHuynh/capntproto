@@ -200,6 +200,7 @@ fn main() {
     let executable = std::env::args().nth(1).expect("C++ peer executable");
     let mut process = PeerProcess(
         Command::new(executable)
+            .args(std::env::args().skip(2))
             .stdout(Stdio::piped())
             .spawn()
             .unwrap(),
