@@ -1,6 +1,7 @@
 //! Runs precompiled clients and servers; never invokes a compiler on the benchmark host.
 use crate::Result;
 mod placement;
+pub mod tail;
 pub mod workflows;
 use placement::Placement;
 use serde_json::{json, Value};
@@ -64,6 +65,16 @@ impl Drop for Server {
     }
 }
 fn trial(exe: &Path, protocol: &str, bytes: usize, placement: Option<&Placement>) -> Result<Value> {
+    trial_with_iterations(exe, protocol, bytes, placement, 1000)
+}
+
+fn trial_with_iterations(
+    exe: &Path,
+    protocol: &str,
+    bytes: usize,
+    placement: Option<&Placement>,
+    iterations: usize,
+) -> Result<Value> {
     let mut server = Server(
         Placement::command(exe, placement.map(|p| p.server_cpu))
             .arg("server")
@@ -91,7 +102,7 @@ fn trial(exe: &Path, protocol: &str, bytes: usize, placement: Option<&Placement>
     }
     // Every implementation has a ten-second per-call deadline.
     let output = client
-        .args([bytes.to_string(), "10000".into(), "1000".into()])
+        .args([bytes.to_string(), "10000".into(), iterations.to_string()])
         .output()?;
     if !output.status.success() {
         return Err(format!(
@@ -101,16 +112,26 @@ fn trial(exe: &Path, protocol: &str, bytes: usize, placement: Option<&Placement>
         .into());
     }
     let value: Value = serde_json::from_slice(&output.stdout)?;
-    validate_trial(&value, protocol, bytes)?;
+    validate_trial_with_iterations(&value, protocol, bytes, iterations)?;
     Ok(value)
 }
 
 fn validate_trial(value: &Value, protocol: &str, bytes: usize) -> Result<()> {
-    if value["measurement_version"] != crate::MEASUREMENT_VERSION
+    validate_trial_with_iterations(value, protocol, bytes, 1000)
+}
+
+fn validate_trial_with_iterations(
+    value: &Value,
+    protocol: &str,
+    bytes: usize,
+    iterations: usize,
+) -> Result<()> {
+    if !(1..=1_000_000).contains(&iterations)
+        || value["measurement_version"] != crate::MEASUREMENT_VERSION
         || value["protocol"] != protocol
         || value["payload_bytes"] != bytes
         || value["warmup"] != 10000
-        || value["iterations"] != 1000
+        || value["iterations"] != iterations
     {
         return Err("unexpected trial identity".into());
     }
@@ -126,7 +147,7 @@ fn validate_trial(value: &Value, protocol: &str, bytes: usize) -> Result<()> {
                 .ok_or("invalid latency sample")?,
         );
     }
-    if samples.len() != 1000
+    if samples.len() != iterations
         || total > u128::from(value["elapsed_ns"].as_u64().ok_or("missing elapsed time")?)
     {
         return Err("invalid trial timing bounds".into());

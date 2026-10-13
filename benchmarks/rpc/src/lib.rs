@@ -302,6 +302,12 @@ pub fn run(protocol: Option<&str>) -> Result<()> {
             args.len() == 5,
         );
     }
+    if args.first().map(String::as_str) == Some("compare-tail") && args.len() == 6 {
+        return driver::tail::compare(
+            [1, 2, 3, 4].map(|i| std::path::Path::new(&args[i])),
+            std::path::Path::new(&args[5]),
+        );
+    }
     if args.first().map(String::as_str) == Some("compare-tcp") && args.len() == 4 {
         return driver::compare_tcp(
             std::path::Path::new(&args[1]),

@@ -879,69 +879,77 @@ impl<VatId> ConnectionState<VatId> {
             .ok()
             .and_then(|connection| connection.take_owned_incoming_stream());
         drop(state);
-        let read = async move {
-            let mut budget = 0;
-            loop {
-                let Some(state) = weak_state.upgrade() else {
-                    return Ok(());
-                };
-                if state.connection.borrow().is_ok()
-                    && state.call_words.get() > state.flow_limit.get()
-                {
-                    let (sender, receiver) = oneshot::channel();
-                    *state.flow_waiter.borrow_mut() = Some(sender);
-                    drop(state);
-                    let _ = receiver.await;
-                    continue;
-                }
-                let message = if let Some(input) = input.as_mut() {
-                    if state.connection.borrow().is_err() {
-                        return Ok(());
-                    }
-                    drop(state);
-                    future::poll_fn(|cx| input.poll_receive(cx)).await?
-                } else {
-                    let promise = match *state.connection.borrow_mut() {
-                        Err(_) => return Ok(()),
-                        Ok(ref mut connection) => connection.receive_incoming_message(),
-                    };
-                    // Waiting for input must not retain the connection owner.
-                    drop(state);
-                    promise.await?
-                };
-                match message {
-                    Some(message) => Self::handle_message(&weak_state, message)?,
-                    None => {
-                        if let Some(state) = weak_state.upgrade() {
-                            if state.idle.get() && state.connection.borrow().is_ok() {
-                                state.idle_eof();
-                            } else {
-                                state.disconnect(Error::disconnected("Peer disconnected.".into()));
-                            }
-                        }
-                        return Ok(());
-                    }
-                }
-                budget += 1;
-                if budget == 32 {
-                    budget = 0;
-                    // A continuously readable peer cannot monopolize the RPC
-                    // task set. Resume through its normal ready queue.
-                    let mut yielded = false;
-                    future::poll_fn(move |cx| {
-                        if yielded {
-                            Poll::Ready(())
-                        } else {
-                            yielded = true;
-                            cx.waker().wake_by_ref();
-                            Poll::Pending
-                        }
-                    })
-                    .await;
-                }
-            }
-        };
         Promise::from_future(async move {
+            let budget = Cell::new(0);
+            let read = async {
+                loop {
+                    let Some(state) = weak_state.upgrade() else {
+                        return Ok(());
+                    };
+                    if state.connection.borrow().is_ok()
+                        && state.call_words.get() > state.flow_limit.get()
+                    {
+                        let (sender, receiver) = oneshot::channel();
+                        *state.flow_waiter.borrow_mut() = Some(sender);
+                        drop(state);
+                        let _ = receiver.await;
+                        continue;
+                    }
+                    let message = if let Some(input) = input.as_mut() {
+                        if state.connection.borrow().is_err() {
+                            return Ok(());
+                        }
+                        drop(state);
+                        future::poll_fn(|cx| input.poll_receive(cx)).await?
+                    } else {
+                        let promise = match *state.connection.borrow_mut() {
+                            Err(_) => return Ok(()),
+                            Ok(ref mut connection) => connection.receive_incoming_message(),
+                        };
+                        // Waiting for input must not retain the connection owner.
+                        drop(state);
+                        promise.await?
+                    };
+                    match message {
+                        Some(message) => Self::handle_message(&weak_state, message)?,
+                        None => {
+                            if let Some(state) = weak_state.upgrade() {
+                                if state.idle.get() && state.connection.borrow().is_ok() {
+                                    state.idle_eof();
+                                } else {
+                                    state.disconnect(Error::disconnected(
+                                        "Peer disconnected.".into(),
+                                    ));
+                                }
+                            }
+                            return Ok(());
+                        }
+                    }
+                    budget.set(budget.get() + 1);
+                    if budget.get() == 32 {
+                        // A continuously readable peer cannot monopolize the RPC
+                        // task set. Resume through its normal ready queue.
+                        let mut yielded = false;
+                        future::poll_fn(move |cx| {
+                            if yielded {
+                                Poll::Ready(())
+                            } else {
+                                yielded = true;
+                                cx.waker().wake_by_ref();
+                                Poll::Pending
+                            }
+                        })
+                        .await;
+                    }
+                }
+            };
+            let mut read = std::pin::pin!(read);
+            let read = future::poll_fn(|cx| {
+                // Bound uninterrupted work, not messages across IO waits.
+                // Returning Pending already gives other tasks a chance to run.
+                budget.set(0);
+                read.as_mut().poll(cx)
+            });
             match future::Abortable::new(read, registration).await {
                 Ok(result) => result,
                 Err(_) => Ok(()),

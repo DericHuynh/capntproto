@@ -116,6 +116,130 @@ fn local_cap() -> Box<dyn ClientHook> {
 }
 
 #[test]
+fn receive_budget_counts_uninterrupted_work_in_both_transport_interfaces() {
+    #[derive(Default)]
+    struct Input {
+        ready: usize,
+        delivered: usize,
+        waits: usize,
+    }
+    struct Stream(Rc<RefCell<Input>>);
+    struct Message(capnp::message::Builder<capnp::message::HeapAllocator>);
+    impl crate::IncomingMessage for Message {
+        fn size_in_words(&self) -> usize {
+            self.0.size_in_words()
+        }
+        fn get_body(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+            self.0.get_root_as_reader()
+        }
+    }
+    impl crate::IncomingMessageStream for Stream {
+        fn poll_receive(
+            &mut self,
+            _: &mut Context<'_>,
+        ) -> Poll<capnp::Result<Option<Box<dyn crate::IncomingMessage>>>> {
+            let mut input = self.0.borrow_mut();
+            if input.ready == 0 {
+                input.waits += 1;
+                return Poll::Pending;
+            }
+            input.ready -= 1;
+            input.delivered += 1;
+            let mut message = capnp::message::Builder::new_default();
+            // Finishing an already absent answer is harmless and has no output.
+            message.init_root::<message::Builder>().init_finish();
+            Poll::Ready(Ok(Some(Box::new(Message(message)))))
+        }
+    }
+    struct Connection {
+        inner: Box<dyn crate::Connection<Side>>,
+        input: Rc<RefCell<Input>>,
+        owned: bool,
+    }
+    impl crate::Connection<Side> for Connection {
+        fn get_peer_vat_id(&self) -> Side {
+            self.inner.get_peer_vat_id()
+        }
+        fn connection_id(&self) -> usize {
+            self.inner.connection_id()
+        }
+        fn new_outgoing_message(&mut self, words: u32) -> Box<dyn crate::OutgoingMessage> {
+            self.inner.new_outgoing_message(words)
+        }
+        fn take_owned_incoming_stream(&mut self) -> Option<Box<dyn crate::IncomingMessageStream>> {
+            self.owned.then(|| {
+                Box::new(Stream(self.input.clone())) as Box<dyn crate::IncomingMessageStream>
+            })
+        }
+        fn receive_incoming_message(
+            &mut self,
+        ) -> Promise<Option<Box<dyn crate::IncomingMessage>>, Error> {
+            use crate::IncomingMessageStream;
+            let mut stream = Stream(self.input.clone());
+            Promise::from_future(future::poll_fn(move |cx| stream.poll_receive(cx)))
+        }
+        fn shutdown(&mut self, result: capnp::Result<()>) -> Promise<(), Error> {
+            self.inner.shutdown(result)
+        }
+    }
+    #[derive(Default)]
+    struct Wakes(std::sync::atomic::AtomicUsize);
+    impl futures::task::ArcWake for Wakes {
+        fn wake_by_ref(wakes: &std::sync::Arc<Self>) {
+            wakes.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+    for owned in [false, true] {
+        let mut fixture = Fixture::new();
+        fixture.drain();
+        // Replace the input interface after its original reader is canceled.
+        fixture
+            .state
+            .read_canceler
+            .borrow_mut()
+            .take()
+            .unwrap()
+            .abort();
+        fixture.drain();
+        let input = Rc::new(RefCell::new(Input::default()));
+        let inner = fixture
+            .state
+            .connection
+            .replace(Err(Error::disconnected("replacing test transport".into())))
+            .unwrap();
+        *fixture.state.connection.borrow_mut() = Ok(Box::new(Connection {
+            inner,
+            input: input.clone(),
+            owned,
+        }));
+        let wakes = std::sync::Arc::new(Wakes::default());
+        let waker = futures::task::waker(wakes.clone());
+        let mut cx = Context::from_waker(&waker);
+        let mut reader = ConnectionState::message_loop(Rc::downgrade(&fixture.state));
+        // A hot peer must still yield after each bounded slice of work.
+        input.borrow_mut().ready = 96;
+        for batch in 1..=3 {
+            wakes.0.store(0, std::sync::atomic::Ordering::Relaxed);
+            assert!(Pin::new(&mut reader).poll(&mut cx).is_pending());
+            assert_eq!(input.borrow().delivered, batch * 32);
+            assert_eq!(wakes.0.load(std::sync::atomic::Ordering::Relaxed), 1);
+        }
+        assert!(Pin::new(&mut reader).poll(&mut cx).is_pending());
+        // Separate network arrivals have already yielded. They must not incur
+        // an extra queue round trip at a cumulative message-count boundary.
+        for delivered in 97..=224 {
+            input.borrow_mut().ready = 1;
+            let waits = input.borrow().waits;
+            wakes.0.store(0, std::sync::atomic::Ordering::Relaxed);
+            assert!(Pin::new(&mut reader).poll(&mut cx).is_pending());
+            assert_eq!(input.borrow().delivered, delivered);
+            assert_eq!(input.borrow().waits, waits + 1);
+            assert_eq!(wakes.0.load(std::sync::atomic::Ordering::Relaxed), 0);
+        }
+    }
+}
+
+#[test]
 fn completion_drops_the_method_future_before_waiting_for_its_results() {
     #[derive(Clone)]
     struct Service {

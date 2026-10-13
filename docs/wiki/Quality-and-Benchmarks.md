@@ -1211,6 +1211,74 @@ including all 70 supported workflow cells and 72 cross-language checks. Raw
 trials, profiles, logs, source patch and executable identities are retained under
 `target/legacy-optimization/dispatch-20261012/`.
 
+### Tail-latency optimization
+
+Use the longer comparison when evaluating p99. A 1,000-call trial contributes
+only about ten observations to its slowest 1%; the existing short CI comparison
+is primarily a p50 gate. The tail command keeps 50,000 measured calls after
+10,000 warmups in each of five repetitions, rotating and alternating before,
+after, upstream Rust and C++ on the same two physical cores:
+
+```sh
+CAPNTPROTO_BENCH_PORTABLE=0 cargo run --locked --release \
+  --manifest-path benchmarks/rpc/Cargo.toml --bin capntproto-rpc-bench -- \
+  compare-tail /path/to/before-tcp /path/to/after-tcp \
+  /path/to/capnp-rust /path/to/capnp-reference target/tail-comparison
+```
+
+Build all peers with the same ordinary full-LTO release configuration first;
+the comparison itself only launches prebuilt peers. The output directory must
+be new. Set `CAPNTPROTO_BENCH_PORTABLE=1` to compare portable revisions instead.
+Retained evidence includes executable hashes, CPU placement, raw samples,
+pooled p50/p95/p99, p99/p50, each trial's p99 and its range, and request rate.
+Before/after ratios report both median and tail latency as well as throughput.
+No slow samples are trimmed and no p99 acceptance threshold is inferred from a
+single run. An unchanged-binary comparison helps expose host variation before
+attributing a tail improvement to code.
+These are sequential round trips; they do not establish a p99 service-level
+objective under concurrent load or a fixed incoming request rate.
+
+The legacy receive loop now resets its work budget on each poll, so waiting for
+network input or flow control does not accumulate an unnecessary periodic
+yield. Continuously ready input still yields every 32 messages. The regression
+checks both transport input interfaces with continuous traffic and intermittent
+arrivals. This retains bounded uninterrupted work, consistent with the
+[executor's fairness requirements](https://docs.rs/tokio/latest/tokio/runtime/index.html#detailed-runtime-behavior).
+
+Against `e9ff1cc5e`, three full-process Callgrind trials (ordinary full LTO,
+100 warmups and 1,000 empty calls) reduced median client instructions from
+17,770,777 to 17,744,050 (−0.15%) and server instructions from 16,389,436 to
+16,351,858 (−0.23%). The receive-budget regression fails against the original
+driver and passes with the fix. Validation passed 551 selected RPC, transport,
+flow-control and benchmark tests, plus all 70 release workflow cells and 72
+cross-language smoke checks. The six model-trace checks initially lacked their
+TLC path; all passed with the pinned Java 17 and TLC configuration. Clippy,
+formatting and wiki validation passed.
+
+The unchanged-binary control measured empty-call p99 of 68.7–83.5 µs across its
+two labels while p50 stayed at 38.2–38.3 µs. A subsequent full comparison
+overlapped another project's multi-core tests and produced millisecond-scale
+tails in multiple peers; that run is retained but does not qualify an
+improvement or regression. After that competing test process finished, a fresh
+five-repetition comparison retained 250,000 calls per payload and peer:
+
+| Payload | Before p50 | After p50 | Before p99 | After p99 | After p99 / p50 |
+|---|---:|---:|---:|---:|---:|
+| Empty | 38.20 µs | 38.20 µs | 66.28 µs | 73.61 µs | 1.927× |
+| 64 B | 38.13 µs | 38.13 µs | 55.73 µs | 62.72 µs | 1.645× |
+| 1 KiB | 38.83 µs | 38.69 µs | 57.27 µs | 62.30 µs | 1.610× |
+| 64 KiB | 69.70 µs | 69.63 µs | 157.63 µs | 105.32 µs | 1.513× |
+
+Pooled small-call p99 was 8.8–12.5% worse, while 64 KiB p99 was 33.2% better.
+Request-rate changes ranged from −2.8% to +1.5%. Per-trial tails still varied
+widely: empty-call p99 ranged from 53.9–100.1 µs before and 54.0–177.5 µs after.
+The deterministic scheduling correction and instruction reduction are verified;
+**a repeatable end-to-end p99 improvement is not established**, and p99 is not
+yet close to p50 across the matrix. Dedicated-host measurements are still needed
+to distinguish smaller runtime effects from host variation. Evidence is under
+`target/legacy-optimization/tail-20261013/`, including the control, untrimmed
+comparison and confirmation trials, profiles and validation logs.
+
 ## Comparison bar charts
 
 The final **Comparison bar charts** section of each generated report README
