@@ -988,6 +988,72 @@ includes Miri, fuzzing and the 98-case mutation campaign. Release validation
 passed 58 workflow cells and 48 C++ interoperability checks; all 15 large-payload
 cells also passed with 250 warmups and 1,000 retained calls each.
 
+### Upstream Rust RPC comparison
+
+The portable-driver review uses upstream `capnproto-rust` revision
+[`81bc1b815d0f450c9114f9cc2e2274182d210df2`](https://github.com/capnproto/capnproto-rust/tree/81bc1b815d0f450c9114f9cc2e2274182d210df2)
+as an implementation reference, without changing the imported dependency revision.
+
+| Area | Upstream Rust implementation | Portable driver and optimization consequence |
+|---|---|---|
+| Service completion | [`rpc.rs`](https://github.com/capnproto/capnproto-rust/blob/81bc1b815d0f450c9114f9cc2e2274182d210df2/capnp-rpc/src/rpc.rs) polls the call promise before awaiting returned result ownership. | Poll execution before subscribing to completion. Ready methods avoid allocating a waiter and waking their own worker. |
+| Message ownership | [`twoparty.rs`](https://github.com/capnproto/capnproto-rust/blob/81bc1b815d0f450c9114f9cc2e2274182d210df2/capnp-rpc/src/twoparty.rs) retains incoming segment storage and shares outgoing builders through the write queue. | Retained frames and reusable Return envelopes already follow this ownership principle. Preserve that storage through adapters instead of introducing another serialization pass. |
+| Scheduling | [`task_set.rs`](https://github.com/capnproto/capnproto-rust/blob/81bc1b815d0f450c9114f9cc2e2274182d210df2/capnp-rpc/src/task_set.rs) uses `FuturesUnordered` and an unbounded task channel. | The portable hosted worker scans bounded slots and charges each stage against a polling budget. Reducing idle scans remains useful; replacing it wholesale would require preserving fairness, capacity failure and caller-supplied storage. |
+
+The completion change applies to ordinary execution and transferred answers.
+Pending work still registers a completion observer. If a method publishes an
+early pipeline during its poll and returns `Pending` without waking, the worker
+explicitly preserves that notification. An already-published pipeline does not
+cause repeated self-wakes. Ready execution with a retained result builder still
+waits for the builder to be returned before collection. Regression tests exercise
+these cases alongside the existing cancellation, fairness and handoff tests.
+Transferred pipelines also stop polling their shared execution future once it
+completes: polling that handle again while waiting for result ownership could
+panic. Their unresolved observer retains a waiter for the eventual builder
+return. A regression consumes outstanding notifications before testing that
+the later return wakes and resolves the client.
+
+This optimization is in the hosted adapter. The allocation-free engine, its
+bounded storage and the `no_std` feature boundary remain intact. Upstream's
+serialization portability does not make its `std`/heap-based RPC scheduler a
+drop-in replacement for the portable engine.
+
+Three alternating complete-process Callgrind trials, with ordinary full LTO,
+100 warmups and 1,000 empty calls, compare batch190 (`e50088794`) with batch194:
+
+| Driver / process | Before | After | Change |
+|---|---:|---:|---:|
+| Legacy client | 17,772,563 | 17,770,509 | −0.01% |
+| Legacy server | 16,726,818 | 16,724,750 | −0.01% |
+| Portable client | 26,048,852 | 26,046,647 | <0.01% |
+| Portable server | 31,839,178 | 29,543,349 | −7.21% |
+
+Five alternating Rust/C++ trials per payload, with 10,000 warmups and 1,000
+retained samples on separate physical cores, give these pooled p50 ratios:
+
+| Payload | Legacy before / C++ | Legacy after / C++ | Portable before / C++ | Portable after / C++ |
+|---|---:|---:|---:|---:|
+| Empty | 0.998× | 0.989× | 1.145× | 1.146× |
+| 64 B | 0.993× | 0.975× | 1.142× | 1.149× |
+| 1 KiB | 0.986× | 0.975× | 1.139× | 1.132× |
+| 64 KiB | 0.908× | 0.920× | 1.171× | 1.151× |
+
+Our compilers, tests and profilers were stopped during latency measurement;
+this remains a shared workstation. The instruction reduction does not establish
+a consistent latency improvement. Portable small-call medians remain about
+**1.15–1.16× legacy**, so the **1.00× target remains unmet**. These measurements
+compare our drivers, with C++ as a control; they do not benchmark upstream Rust
+itself or qualify remote performance.
+
+The final source passes 294 selected RPC unit/integration tests, including
+pipeline, cancellation, multiparty, TLS/mTLS and TLC replay checks; 3 RPC
+doctests pass (4 ignored). Clippy, formatting and ARM RPC checks with and without
+`alloc` pass. Release validation passes 58 workflow cells, 48 C++ interoperability
+cases and all 15 large-payload cells at 250 warmups and 1,000 measured calls.
+The full workspace and GitHub CI were not rerun for this change. Raw profiles,
+latency trials, source patch and binary identities are retained under
+`target/remote-workflows/upstream-qualified/`.
+
 ## Comparison bar charts
 
 The final **Comparison bar charts** section of each generated report README

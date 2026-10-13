@@ -462,15 +462,13 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             Stage::Execute(execution) => {
                 // An independently executed protected method may publish an
                 // early pipeline before its completion future wakes this task.
-                let _ = entry.results.poll_completed(cx);
-                if Pin::new(execution).poll(cx).is_pending() {
+                if entry.results.poll_work(execution, cx).is_pending() {
                     return Poll::Pending;
                 }
                 entry.stage = Stage::Collect;
             }
             Stage::Transfer(work) => {
-                let _ = entry.results.poll_completed(cx);
-                if Pin::new(work).poll(cx).is_pending() {
+                if entry.results.poll_work(work, cx).is_pending() {
                     return Poll::Pending;
                 }
                 entry.stage = Stage::Collect;

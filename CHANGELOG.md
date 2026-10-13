@@ -1,5 +1,16 @@
 # 0.1.0 developer preview (unpublished)
 
+- Follow upstream Rust RPC's execution-before-results ordering in the portable
+  hosted worker, avoiding completion waiter allocation and redundant wakes for
+  ready methods. Preserve early-pipeline notifications, pending execution and
+  delayed result ownership. Fix transferred pipelines polling a completed
+  shared future while the application retains its result builder; keep the
+  observer registered until that builder returns. Add scheduling and retained
+  transfer regressions and document the pinned upstream comparison. Three
+  ordinary full-LTO profiles reduce portable server instructions 7.21%, from
+  31.84M to 29.54M; client instructions remain essentially unchanged. Latency
+  shows no consistent gain, and portable/legacy parity remains outstanding.
+
 - Reuse checked incoming Call parameter views in legacy TCP, including answer
   adoption, and reduce ordinary reply-channel copies by boxing the local-only
   redirected builder. Avoid copying portable maintenance capacities until they

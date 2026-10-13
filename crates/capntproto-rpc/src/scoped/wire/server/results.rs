@@ -143,6 +143,26 @@ impl Results {
             _ => Poll::Pending,
         }
     }
+    /// Poll execution before subscribing to completion, avoiding a waiter
+    /// allocation and a self-wake for a ready method. A method can publish an
+    /// early pipeline during this poll and still return Pending without waking
+    /// us. Preserve that notification explicitly; later publications use the
+    /// registered waiter. No Results borrow spans application code.
+    pub(super) fn poll_work<F: Future + Unpin>(
+        &self,
+        work: &mut F,
+        cx: &mut Context<'_>,
+    ) -> Poll<F::Output> {
+        let had_pipeline = self.0.pipeline.borrow().is_some();
+        let outcome = Pin::new(work).poll(cx);
+        if outcome.is_pending() {
+            let _ = self.poll_completed(cx);
+            if !had_pipeline && self.0.pipeline.borrow().is_some() {
+                cx.waker().wake_by_ref();
+            }
+        }
+        outcome
+    }
     pub fn failure(&self) -> Option<Error> {
         self.0
             .completion
@@ -561,14 +581,21 @@ impl PipelineHook for TransferPipeline {
             })
             .collect();
         let results = self.results.clone();
-        let mut work = self.work.clone();
+        // Result ownership may arrive after execution. A Shared handle cannot
+        // be polled again once it has returned Ready.
+        let mut work = self.work.clone().fuse();
         let client: capability::Client =
             crate::new_future_client(futures::future::poll_fn(move |cx| {
-                let _ = results.poll_completed(cx);
-                let _ = Pin::new(&mut work).poll(cx);
+                let _ = results.poll_work(&mut work, cx);
                 match results.pipeline(pipeline::Path::new(&fields)) {
                     Some(client) => Poll::Ready(Ok(capability::Client::new(client))),
-                    None => Poll::Pending,
+                    None => {
+                        // Execution can finish while the application still
+                        // owns the ResultsHook. Its eventual return, rather
+                        // than the already-ready work, must wake this observer.
+                        let _ = results.poll_completed(cx);
+                        Poll::Pending
+                    }
                 }
             }));
         client.hook

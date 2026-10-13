@@ -44,6 +44,164 @@ fn prepared() -> Prepared {
 }
 
 #[test]
+fn returned_results_skip_ready_waiters_but_pending_work_and_early_pipelines_still_wake() {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    #[derive(Default)]
+    struct Count(AtomicUsize);
+    impl std::task::Wake for Count {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let wake = Arc::new(Count::default());
+    let waker = Waker::from(wake.clone());
+    let mut cx = Context::from_waker(&waker);
+    for pending in [false, true] {
+        let results = Results::new();
+        let service = server(move |r| {
+            drop(r);
+            capability::DispatchCallResult::with_cancellation_policy(
+                if pending {
+                    Promise::from_future(core::future::pending())
+                } else {
+                    Promise::ok(())
+                },
+                false,
+                true,
+            )
+        });
+        let mut execution = prepared().execute(&*service.hook, &results, None).unwrap();
+        assert!(results.0.payload.borrow().is_none());
+        wake.0.store(0, Ordering::SeqCst);
+        assert_eq!(
+            results.poll_work(&mut execution, &mut cx).is_pending(),
+            pending
+        );
+        assert!(results.0.payload.borrow().is_some());
+        assert_eq!(wake.0.load(Ordering::SeqCst), 0);
+        if pending {
+            results.fail(Error::failed("external completion".into()));
+            assert_eq!(wake.0.load(Ordering::SeqCst), 1);
+        } else {
+            assert!(results.0.wake.borrow().is_empty());
+            assert_eq!(results.0.wake.borrow().capacity(), 0);
+        }
+    }
+
+    // The application still owns the builder and publishes during a poll which
+    // returns Pending. An observer must wake even without an execution wake.
+    let results = Results::new();
+    let mut hook = Hook {
+        results: results.clone(),
+        message: None,
+        caps: vec![],
+        executor: None,
+    };
+    wake.0.store(0, Ordering::SeqCst);
+    let mut published = false;
+    let mut work = core::future::poll_fn(|_| {
+        if !published {
+            hook.set_pipeline().unwrap();
+            published = true;
+        }
+        Poll::<()>::Pending
+    });
+    assert!(results.poll_work(&mut work, &mut cx).is_pending());
+    assert_eq!(wake.0.load(Ordering::SeqCst), 1);
+    assert!(results.early_pipeline().is_some());
+    wake.0.store(0, Ordering::SeqCst);
+    assert!(results.poll_work(&mut work, &mut cx).is_pending());
+    assert_eq!(wake.0.load(Ordering::SeqCst), 0);
+
+    // A completed service can retain its builder. Collection must still wait
+    // for the hook, and hook return must wake the collector.
+    let results = Results::new();
+    let hook = Hook {
+        results: results.clone(),
+        message: None,
+        caps: vec![],
+        executor: None,
+    };
+    let mut execution = Execution {
+        operation: Some(Promise::ok(())),
+        results: results.clone(),
+    };
+    assert!(matches!(
+        results.poll_work(&mut execution, &mut cx),
+        Poll::Ready(Ok(()))
+    ));
+    assert_eq!(wake.0.load(Ordering::SeqCst), 0);
+    assert!(results.poll_completed(&mut cx).is_pending());
+    drop(hook);
+    assert_eq!(wake.0.load(Ordering::SeqCst), 1);
+    assert!(matches!(
+        results.poll_completed(&mut cx),
+        Poll::Ready(Ok(()))
+    ));
+}
+
+#[test]
+fn transferred_pipeline_waits_for_results_retained_after_execution_completes() {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    #[derive(Default)]
+    struct Count(AtomicUsize);
+    impl std::task::Wake for Count {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let wake = Arc::new(Count::default());
+    let waker = Waker::from(wake.clone());
+    let mut cx = Context::from_waker(&waker);
+    let results = Results::new();
+    let mut hook = Hook {
+        results: results.clone(),
+        message: None,
+        caps: vec![],
+        executor: None,
+    };
+    hook.get()
+        .unwrap()
+        .set_as_capability(crate::broken::new_cap(Error::failed("returned cap".into())));
+    let pipeline = TransferPipeline {
+        results: results.clone(),
+        work: Execution {
+            operation: Some(Promise::ok(())),
+            results: results.clone(),
+        }
+        .boxed_local()
+        .shared(),
+    };
+    let client = pipeline.get_pipelined_cap(&[]);
+    let mut resolution = client.when_resolved();
+    // Shared completion can already have notified its parent. Consume that
+    // notification before checking for a distinct wake from returning the hook.
+    for _ in 0..8 {
+        wake.0.store(0, Ordering::SeqCst);
+        assert!(Pin::new(&mut resolution).poll(&mut cx).is_pending());
+        if wake.0.load(Ordering::SeqCst) == 0 {
+            break;
+        }
+    }
+    assert_eq!(wake.0.load(Ordering::SeqCst), 0);
+    assert!(results.0.completion.borrow().is_some());
+    assert!(results.0.payload.borrow().is_none());
+    wake.0.store(0, Ordering::SeqCst);
+    drop(hook);
+    assert!(wake.0.load(Ordering::SeqCst) > 0);
+    assert!(matches!(
+        Pin::new(&mut resolution).poll(&mut cx),
+        Poll::Ready(Err(error)) if error.extra == "returned cap"
+    ));
+}
+
+#[test]
 fn pooled_results_keep_retained_payloads_and_clear_reused_segments() {
     for cache_words in [0, 512] {
         let pool = capnp::message::SegmentPool::new(cache_words, 2);
