@@ -365,6 +365,9 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
     }
 
     #[allow(clippy::too_many_arguments)]
+    // Keep the stage transition inside its bounded scan. Otherwise the many
+    // adapter arguments are spilled and reloaded for every synchronous stage.
+    #[inline(always)]
     fn step<P: Copy + Eq>(
         entry: &mut Entry<'p, 'id, I, C, H>,
         executor: &Option<Rc<dyn capability::CallExecutor>>,

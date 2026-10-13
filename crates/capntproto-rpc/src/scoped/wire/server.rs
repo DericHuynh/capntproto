@@ -21,6 +21,25 @@ impl ParamsHook for Payload {
         self.reader()
     }
 }
+impl ParamsHook for SharedPayload {
+    fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+        capnp::private::capability::ResponseHook::get(self)
+    }
+}
+impl Payload {
+    pub(super) fn into_params(self) -> Box<dyn ParamsHook> {
+        match self.body {
+            PayloadBody::Shared { message } => {
+                // Admission proved this immutable frame has no capabilities.
+                // The existing allocation already owns its storage and reader;
+                // wrapping the Payload again would add a box to every call.
+                debug_assert!(self.caps.is_empty());
+                message
+            }
+            _ => Box::new(self),
+        }
+    }
+}
 impl Prepared {
     pub fn method(&self) -> DynamicCall {
         self.method
@@ -40,7 +59,7 @@ impl Prepared {
         destination.call_with_hints(
             self.method.interface,
             self.method.method,
-            Box::new(self.params),
+            self.params.into_params(),
             results,
             CallHints {
                 no_promise_pipelining: self.method.no_promise_pipelining,

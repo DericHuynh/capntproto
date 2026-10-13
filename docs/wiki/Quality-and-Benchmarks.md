@@ -1115,6 +1115,52 @@ workflow smoke run passed all 70 supported cells and 72 cross-language checks,
 including the 256 KiB, 1 MiB and 4 MiB payload workflows. The full workspace and
 GitHub CI were not rerun for this change.
 
+### Portable dispatch adapter overhead
+
+The hosted portable adapter reuses the validated shared-parameter allocation as
+its `ParamsHook`, avoiding a second wrapper for those data-only calls.
+Capability-bearing payloads retain their existing ownership path. The
+worker's stage transition is inlined into its bounded scan, and the coordinator
+registers the parent waker once before consuming application notifications.
+The allocation-free engine and wire driver's interfaces are unchanged.
+
+Against `3265164b2`, three complete-process Callgrind trials with ordinary full
+LTO, 100 warmups and 1,000 empty plaintext TCP calls produced these medians:
+
+| Portable process | Before | After | Change |
+|---|---:|---:|---:|
+| Client | 26,064,614 | 25,979,565 | −0.33% |
+| Server | 27,889,334 | 27,632,788 | −0.92% |
+
+Five rotated, alternating repetitions on two physical cores, each with 10,000
+warmups and 1,000 retained calls, gave these pooled p50 ratios:
+
+| Payload | Portable after / before | Portable after / C++ | Portable after / legacy | Portable after / upstream Rust |
+|---|---:|---:|---:|---:|
+| Empty | 0.998× | 1.127× | 1.154× | 1.123× |
+| 64 B | 1.005× | 1.131× | 1.151× | 1.127× |
+| 1 KiB | 1.005× | 1.134× | 1.159× | 1.115× |
+| 64 KiB | 1.014× | 1.149× | 1.281× | 1.078× |
+
+Small-call latency is effectively unchanged. The 64 KiB median difference
+ranged from 1.5% faster to 1.4% slower across four runs, including longer paired
+trials and intermediate-build comparisons with 10,000 retained calls. Tail
+latency also changed direction. These shared-workstation measurements establish
+neither a bulk latency improvement nor a consistent regression. Compilers, tests
+and profilers were stopped during latency runs. The **1.00× legacy target
+remains unmet**; no remote performance qualification is claimed.
+
+Validation passed 512 RPC engine/wire/runtime tests, 233 engine/wire tests with
+allocation disabled, 50 selected transport/multiparty integration tests, Clippy,
+formatting and ARM RPC checks with and without `alloc`. Regression checks verify
+the shared parameter allocation and its lifetime, notifications before initial
+parent-waker registration, and replacement of the parent waker during idle polls.
+The release smoke run passed all 70 supported workflow cells and 72
+cross-language checks, including the large payload workflows. The full workspace
+and GitHub CI were not rerun. Raw measurements, intermediate binaries, source
+patch and executable identities are retained under
+`target/portable-optimization/worker-20261012/`.
+
 ## Comparison bar charts
 
 The final **Comparison bar charts** section of each generated report README

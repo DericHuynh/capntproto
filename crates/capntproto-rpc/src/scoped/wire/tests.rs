@@ -97,15 +97,33 @@ fn data_payloads_share_validated_frames_and_outlive_the_driver_scope() {
                 .unwrap(),
             b"shared payload"
         );
-        let response: Rc<dyn capnp::private::capability::ResponseHook> = Rc::new(payload);
-        assert_eq!(
-            response
-                .get()
-                .unwrap()
-                .get_as::<capnp::data::Reader>()
-                .unwrap(),
-            b"shared payload"
-        );
+        let PayloadBody::Shared { message } = &payload.body else {
+            panic!("shared frame")
+        };
+        let allocation = core::ptr::from_ref(&**message).cast::<()>();
+        let content = match kind {
+            PayloadKind::Params => {
+                let params = payload.into_params();
+                assert_eq!(core::ptr::from_ref(&*params).cast::<()>(), allocation);
+                params
+                    .get()
+                    .unwrap()
+                    .get_as::<capnp::data::Reader>()
+                    .unwrap()
+                    .to_vec()
+            }
+            PayloadKind::Results => {
+                let response = payload.into_response();
+                assert_eq!(core::ptr::from_ref(&*response).cast::<()>(), allocation);
+                response
+                    .get()
+                    .unwrap()
+                    .get_as::<capnp::data::Reader>()
+                    .unwrap()
+                    .to_vec()
+            }
+        };
+        assert_eq!(content, b"shared payload");
     }
 }
 

@@ -1151,7 +1151,10 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     self.changed();
                 }
             }
-            self.wake.parent.register(cx.waker());
+            // poll_work_budget registers the parent before consuming changed,
+            // including on idle polls. A control callback can wake before that
+            // registration: its changed flag is consumed later in this same
+            // turn. Registering here as well only repeats the atomic operation.
             if self.wake.changed.load(Ordering::Acquire) {
                 self.control_idle = false;
             }

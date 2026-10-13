@@ -130,9 +130,14 @@ fn idle_controls_resume_on_notifications_progress_and_output_capacity() {
         .unwrap();
         let mut queue = messages::Queue::new_growing(0, 1).unwrap();
         let mut writer = Writer(Rc::default());
-        let mut control = Policy::default();
+        let mut control = Policy {
+            wake_during_poll: true,
+            ..Default::default()
+        };
         let mut scratch = [0; 8];
-        let mut cx = Context::from_waker(Waker::noop());
+        let first = Arc::new(WakeCount::default());
+        let first_waker = Waker::from(first.clone());
+        let mut cx = Context::from_waker(&first_waker);
         macro_rules! poll {
             () => {
                 coordinator
@@ -148,6 +153,11 @@ fn idle_controls_resume_on_notifications_progress_and_output_capacity() {
                     .unwrap();
             };
         }
+        poll!();
+        assert!(
+            !coordinator.control_idle,
+            "a wake before initial parent registration must survive"
+        );
         for _ in 0..256 {
             poll!();
         }
@@ -157,7 +167,16 @@ fn idle_controls_resume_on_notifications_progress_and_output_capacity() {
             poll!();
         }
         assert_eq!(control.polls, polls, "IO-only polls retain the certificate");
+        // Even a completely idle poll must register the latest outer task.
+        let latest = Arc::new(WakeCount::default());
+        let latest_waker = Waker::from(latest.clone());
+        cx = Context::from_waker(&latest_waker);
+        poll!();
+        first.0.store(0, Ordering::SeqCst);
+        latest.0.store(0, Ordering::SeqCst);
         control.wake.as_ref().unwrap().wake_by_ref();
+        assert_eq!(first.0.load(Ordering::SeqCst), 0);
+        assert_eq!(latest.0.load(Ordering::SeqCst), 1);
         poll!();
         assert!(control.polls > polls, "independent control notification");
         coordinator.changed();
