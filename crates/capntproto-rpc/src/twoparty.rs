@@ -43,6 +43,13 @@ pub type VatId = crate::rpc_twoparty_capnp::Side;
 
 struct IncomingMessage {
     message: ::capnp::message::StructReaderCache<capnp_futures::BufferedSegments>,
+    selection: core::cell::Cell<Option<IncomingPayload>>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum IncomingPayload {
+    Params,
+    Results,
 }
 
 struct IncomingStream<T> {
@@ -110,18 +117,43 @@ impl IncomingMessage {
     fn new(message: ::capnp::message::Reader<capnp_futures::BufferedSegments>) -> Self {
         Self {
             message: capnp::message::StructReaderCache::new(message),
+            selection: core::cell::Cell::new(None),
         }
     }
 }
 
 impl crate::IncomingMessage for IncomingMessage {
+    fn cache_params(&self, payload: crate::rpc_capnp::payload::Reader<'_>) -> capnp::Result<()> {
+        use capnp::traits::IntoInternalStructReader;
+        self.message.select(payload.into_internal_struct_reader())?;
+        self.selection.set(Some(IncomingPayload::Params));
+        Ok(())
+    }
+    fn get_params(&self) -> capnp::Result<capnp::any_pointer::Reader<'_>> {
+        if self.selection.get() == Some(IncomingPayload::Params) {
+            if let Some(root) = self.message.get() {
+                return Ok(crate::rpc_capnp::payload::Reader::from(root).get_content());
+            }
+        }
+        let root = self
+            .get_body()?
+            .get_as::<crate::rpc_capnp::message::Reader>()?;
+        let crate::rpc_capnp::message::Call(call) = root.which()? else {
+            return Err(capnp::Error::failed("request does not contain Call".into()));
+        };
+        Ok(call?.get_params()?.get_content())
+    }
     fn cache_results(&self, payload: crate::rpc_capnp::payload::Reader<'_>) -> capnp::Result<()> {
         use capnp::traits::IntoInternalStructReader;
-        self.message.select(payload.into_internal_struct_reader())
+        self.message.select(payload.into_internal_struct_reader())?;
+        self.selection.set(Some(IncomingPayload::Results));
+        Ok(())
     }
     fn get_results(&self) -> capnp::Result<capnp::any_pointer::Reader<'_>> {
-        if let Some(root) = self.message.get() {
-            return Ok(crate::rpc_capnp::payload::Reader::from(root).get_content());
+        if self.selection.get() == Some(IncomingPayload::Results) {
+            if let Some(root) = self.message.get() {
+                return Ok(crate::rpc_capnp::payload::Reader::from(root).get_content());
+            }
         }
         let root = self
             .get_body()?

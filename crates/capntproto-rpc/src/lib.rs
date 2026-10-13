@@ -325,6 +325,23 @@ pub fn is_short_lived_rpc_message(body: capnp::any_pointer::Reader<'_>) -> capnp
 /// A message received from a [`VatNetwork`].
 #[cfg(feature = "std")]
 pub trait IncomingMessage {
+    /// Remember the already decoded parameters of this Call. Cached views must
+    /// belong to this immutable message; capability hooks are imbued by RPC.
+    fn cache_params(&self, _payload: crate::rpc_capnp::payload::Reader<'_>) -> capnp::Result<()> {
+        Ok(())
+    }
+
+    /// Read Call content, optionally reusing the dispatcher's checked view.
+    fn get_params(&self) -> capnp::Result<capnp::any_pointer::Reader<'_>> {
+        let root = self
+            .get_body()?
+            .get_as::<crate::rpc_capnp::message::Reader>()?;
+        let crate::rpc_capnp::message::Call(call) = root.which()? else {
+            return Err(Error::failed("request does not contain Call".into()));
+        };
+        Ok(call?.get_params()?.get_content())
+    }
+
     /// Remember a validated Return payload from this message. The default
     /// retains compatibility with transports that decode it again on access.
     fn cache_results(&self, _payload: crate::rpc_capnp::payload::Reader<'_>) -> capnp::Result<()> {

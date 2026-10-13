@@ -310,7 +310,11 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         let mut advanced = false;
         for _ in 0..budget.get() {
             let index = self.cursor;
-            self.cursor = (index + 1) % self.entries.len();
+            self.cursor = if index + 1 == self.entries.len() {
+                0
+            } else {
+                index + 1
+            };
             let outcome = if let Some(entry) = &mut self.entries[index] {
                 Self::step(
                     entry,

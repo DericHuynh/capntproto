@@ -495,6 +495,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                         }
                     };
                     let payload = call.get_params()?;
+                    message.cache_params(payload)?;
 
                     (
                         call.get_interface_id(),

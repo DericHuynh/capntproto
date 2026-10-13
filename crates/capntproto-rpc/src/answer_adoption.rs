@@ -372,7 +372,9 @@ pub(super) fn receive_call<VatId>(
         no_promise_pipelining: call.get_no_promise_pipelining(),
         only_promise_pipeline: false,
     };
-    let caps = ConnectionState::receive_caps(origin, call.get_params()?.get_cap_table()?, fds)?;
+    let payload = call.get_params()?;
+    message.cache_params(payload)?;
+    let caps = ConnectionState::receive_caps(origin, payload.get_cap_table()?, fds)?;
     let words = message.size_in_words();
     let total = origin
         .call_words
@@ -465,7 +467,9 @@ fn receive_self_call<VatId>(
         no_promise_pipelining: call.get_no_promise_pipelining(),
         only_promise_pipeline: false,
     };
-    let caps = ConnectionState::receive_caps(origin, call.get_params()?.get_cap_table()?, fds)?;
+    let payload = call.get_params()?;
+    message.cache_params(payload)?;
+    let caps = ConnectionState::receive_caps(origin, payload.get_cap_table()?, fds)?;
     let words = message.size_in_words();
     let total = origin
         .call_words

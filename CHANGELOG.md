@@ -1,5 +1,16 @@
 # 0.1.0 developer preview (unpublished)
 
+- Reuse checked incoming Call parameter views in legacy TCP, including answer
+  adoption, and reduce ordinary reply-channel copies by boxing the local-only
+  redirected builder. Avoid copying portable maintenance capacities until they
+  change, and remove division from the hosted server's rotating worker cursor.
+  Three alternating ordinary full-LTO profiles reduce legacy server instructions
+  another 3.16% and portable server instructions 0.84%; client cost is essentially
+  unchanged. Small-call portable latency remains about 1.15–1.16× legacy, so the
+  1.00× target is still open. Add regressions for cached payload ownership and
+  cleanup created by a pending pipeline callback. Separate CI report generation
+  from the final mandatory-stage gate so upstream failures have a clear label.
+
 - Reuse Return envelopes in the legacy and portable drivers, preserving segmented
   payloads without rebuilding their pointer graphs. Keep reader limits,
   capability validation, cancellation and retry ownership intact; batch empty

@@ -1938,12 +1938,8 @@ impl Params {
 
 impl ParamsHook for Params {
     fn get(&self) -> ::capnp::Result<any_pointer::Reader<'_>> {
-        let root: message::Reader = self.request.get_body()?.get_as()?;
-        let message::Call(call) = root.which()? else {
-            unreachable!()
-        };
         use ::capnp::traits::Imbue;
-        let mut content = call?.get_params()?.get_content();
+        let mut content = self.request.get_params()?;
         content.imbue(&self.cap_table);
         Ok(content)
     }
@@ -1956,7 +1952,9 @@ enum ResultsVariant {
         Vec<Option<Box<dyn ClientHook>>>,
     ),
     LocallyRedirected(
-        ::capnp::message::Builder<::capnp::message::HeapAllocator>,
+        // Keep the ordinary RPC completion small when it moves through the
+        // reply channel. Only local redirection needs this owning arena.
+        Box<::capnp::message::Builder<::capnp::message::HeapAllocator>>,
         Vec<Option<Box<dyn ClientHook>>>,
     ),
 }
@@ -2071,7 +2069,9 @@ where
                 }
                 _ => {
                     self.variant = Some(ResultsVariant::LocallyRedirected(
-                        ::capnp::message::Builder::new(local::result_allocator(size_hint)),
+                        Box::new(::capnp::message::Builder::new(local::result_allocator(
+                            size_hint,
+                        ))),
                         Vec::new(),
                     ));
                 }
@@ -2548,7 +2548,7 @@ impl ResultsDone {
                             return Err(error);
                         }
                         let hook = Box::new(
-                            Self::redirected(results_done, cap_table).with_context(&status),
+                            Self::redirected(*results_done, cap_table).with_context(&status),
                         ) as Box<dyn ResultsDoneHook>;
                         pipeline_sender
                             .complete_with(|| Box::new(crate::local::Pipeline::new(hook.clone())));

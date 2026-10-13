@@ -53,6 +53,86 @@ fn frame(text: &str) -> (crate::OutgoingFrame, Vec<u8>) {
 }
 
 #[test]
+fn cached_incoming_payload_preserves_kind_storage_and_rejects_foreign_views() {
+    use crate::IncomingMessage as _;
+    futures::executor::block_on(async {
+        for returned in [false, true] {
+            for length in [0, 8, 8192] {
+                let data = vec![37; length];
+                let mut builder = capnp::message::Builder::new(
+                    capnp::message::HeapAllocator::new().first_segment_words(16),
+                );
+                let root = builder.init_root::<crate::rpc_capnp::message::Builder>();
+                let payload = if returned {
+                    root.init_return().init_results()
+                } else {
+                    root.init_call().init_params()
+                };
+                payload
+                    .get_content()
+                    .set_as::<capnp::data::Owned>(data.as_slice())
+                    .unwrap();
+                let frame = capnp::serialize::write_message_to_words(&builder);
+                let mut input = capnp_futures::BufferedRead::new(
+                    futures::io::Cursor::new(frame),
+                    Default::default(),
+                );
+                let incoming = IncomingMessage::new(
+                    input
+                        .try_read_message(|_| Ok(false))
+                        .await
+                        .unwrap()
+                        .unwrap(),
+                );
+                let root = incoming
+                    .get_body()
+                    .unwrap()
+                    .get_as::<crate::rpc_capnp::message::Reader>()
+                    .unwrap();
+                let payload = if returned {
+                    let crate::rpc_capnp::message::Return(ret) = root.which().unwrap() else {
+                        panic!()
+                    };
+                    let crate::rpc_capnp::return_::Results(payload) = ret.unwrap().which().unwrap()
+                    else {
+                        panic!()
+                    };
+                    payload.unwrap()
+                } else {
+                    let crate::rpc_capnp::message::Call(call) = root.which().unwrap() else {
+                        panic!()
+                    };
+                    call.unwrap().get_params().unwrap()
+                };
+                if returned {
+                    incoming.cache_results(payload).unwrap();
+                } else {
+                    incoming.cache_params(payload).unwrap();
+                }
+                let mut foreign = capnp::message::Builder::new_default();
+                let foreign = foreign
+                    .init_root::<crate::rpc_capnp::payload::Builder>()
+                    .into_reader();
+                assert!(incoming.cache_params(foreign).is_err());
+                assert!(incoming.cache_results(foreign).is_err());
+                drop(input);
+                drop(builder);
+                for _ in 0..3 {
+                    let content = if returned {
+                        assert!(incoming.get_params().is_err());
+                        incoming.get_results().unwrap()
+                    } else {
+                        assert!(incoming.get_results().is_err());
+                        incoming.get_params().unwrap()
+                    };
+                    assert_eq!(content.get_as::<capnp::data::Reader>().unwrap(), data);
+                }
+            }
+        }
+    });
+}
+
+#[test]
 fn finish_templates_keep_identity_and_release_flags_independent() {
     let mut network = VatNetwork::new(
         futures::io::Cursor::new(Vec::<u8>::new()),

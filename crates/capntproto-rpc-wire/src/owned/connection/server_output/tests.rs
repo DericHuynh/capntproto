@@ -812,6 +812,57 @@ fn early_pipeline_retry_is_transactional_and_survives_final_failure() {
 }
 
 #[test]
+fn pending_pipeline_callback_exposes_new_cleanup_in_the_same_maintenance_poll() {
+    with_driver(|mut driver, messages| {
+        let (call, target) = request(&mut driver, messages, false);
+        let parent = driver.ledgers.answers.pipeline(call.answer().id()).unwrap();
+        let observer = driver
+            .pipelines
+            .bind(
+                &mut driver.runtime,
+                &mut driver.ledgers.answers,
+                &parent,
+                pipeline::Path::new(&[]),
+            )
+            .unwrap();
+        driver.ledgers.answers.release_pipeline_deferred(parent);
+        let mut retiring = Some(
+            driver
+                .runtime
+                .endpoint(binding::Route::local(99), clients::Location::Local)
+                .unwrap(),
+        );
+        assert!(!driver.runtime.has_retired());
+        driver.maintenance_phase = 2;
+        driver.maintenance_index = 0;
+        let mut slots = [None];
+        let mut queue = messages::Queue::new(&mut slots).unwrap();
+        let outcome = driver
+            .poll_maintenance_with(
+                messages,
+                &mut queue,
+                512,
+                Default::default(),
+                &mut [0; 8],
+                NonZeroUsize::new(32).unwrap(),
+                &mut || (),
+                &mut |_, _, _| 255,
+                &mut |_, _, graph| {
+                    graph.release(retiring.take().unwrap());
+                    Ok(None)
+                },
+            )
+            .unwrap();
+        assert!(retiring.is_none());
+        assert!(matches!(outcome, Progress::Server(99)));
+        driver.runtime.release(observer);
+        driver.release_call(call, messages);
+        driver.runtime.release(target);
+        close(driver, messages, &mut queue);
+    });
+}
+
+#[test]
 fn maintenance_uses_early_pipeline_before_failed_result() {
     with_driver(|mut driver, messages| {
         let (call, target) = request(&mut driver, messages, false);

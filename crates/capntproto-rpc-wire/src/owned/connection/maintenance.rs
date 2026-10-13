@@ -113,22 +113,31 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         // Storage growth preserves existing indices. Keep the current cursor so
         // repeated admissions cannot starve later phases; invalidate only the
         // idle certificate, which must include the newly admitted slots.
-        let mut sizes = self.maintenance_sizes;
-        sizes[2] = self.pipelines.capacity().max(1);
-        sizes[3] = self.outgoing.capacity().max(1);
-        sizes[8] = self.exported.capacity().max(1);
-        sizes[15] = self.tails.len().max(1);
-        sizes[16] = self.invocation_pipelines.len().max(1);
-        sizes[4] = self.ledgers.exports.capacity().max(1);
-        sizes[6] = self.ledgers.answers.capacity().max(1);
-        sizes[10] = self.ledgers.imports.capacity().max(1);
-        if sizes != self.maintenance_sizes {
-            self.maintenance_total = sizes
+        let changed = [
+            (2, self.pipelines.capacity().max(1)),
+            (3, self.outgoing.capacity().max(1)),
+            (4, self.ledgers.exports.capacity().max(1)),
+            (6, self.ledgers.answers.capacity().max(1)),
+            (8, self.exported.capacity().max(1)),
+            (10, self.ledgers.imports.capacity().max(1)),
+            (15, self.tails.len().max(1)),
+            (16, self.invocation_pipelines.len().max(1)),
+        ];
+        if changed
+            .iter()
+            .any(|&(phase, size)| self.maintenance_sizes[phase] != size)
+        {
+            let mut sizes = self.maintenance_sizes;
+            for (phase, size) in changed {
+                sizes[phase] = size;
+            }
+            let total = sizes
                 .iter()
                 .try_fold(0usize, |sum, size| sum.checked_add(*size))
                 .ok_or(Error::Input(super::super::Error::Capacity))?;
-            self.scan_remaining = self.maintenance_total;
             self.maintenance_sizes = sizes;
+            self.maintenance_total = total;
+            self.scan_remaining = total;
         }
         let mut remaining = budget.get();
         while remaining != 0 {

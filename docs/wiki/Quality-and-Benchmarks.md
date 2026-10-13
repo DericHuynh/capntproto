@@ -943,6 +943,51 @@ passed all 58 supported cells and 48 C++ interoperability checks. Each of the
 calls on all five implementations. These local checks establish correctness,
 not remote latency qualification.
 
+### Server admission and maintenance costs
+
+Legacy TCP retains the Call payload view already checked during dispatch,
+including third-party answer adoption. Parameter access still imbues the owned
+capability table, and transports without a cache keep the decoding fallback.
+The completion enum boxes only its locally redirected builder, reducing moves
+through the ordinary reply channel at the cost of one allocation for local
+redirection. Portable maintenance copies its capacity table only when storage
+grows, preserving the cursor and checked total; its hosted worker wraps the
+cursor with a comparison instead of division.
+
+Three alternating full-LTO Callgrind repetitions use the same complete-process
+100-warmup/1,000-empty-call setup as above (batch186 to batch190):
+
+| Driver / process | Before | After | Change |
+|---|---:|---:|---:|
+| Legacy client | 17,763,885 | 17,772,656 | +0.05% |
+| Legacy server | 17,272,679 | 16,726,896 | −3.16% |
+| Portable client | 26,048,824 | 26,048,958 | <0.01% |
+| Portable server | 32,109,519 | 31,839,274 | −0.84% |
+
+Five alternating Rust/C++ trials per payload used separate physical cores,
+10,000 warmups and 1,000 retained samples. Ratios use pooled p50 and each paired
+C++ control; our compilers, profilers and tests were stopped for these trials.
+
+| Payload | Legacy before / C++ | Legacy after / C++ | Portable before / C++ | Portable after / C++ |
+|---|---:|---:|---:|---:|
+| Empty | 0.955× | 0.996× | 1.136× | 1.136× |
+| 64 B | 0.982× | 0.986× | 1.138× | 1.139× |
+| 1 KiB | 0.984× | 0.982× | 1.124× | 1.098× |
+| 64 KiB | 0.881× | 0.903× | 1.114× | 1.128× |
+
+The repeatable instruction reduction does **not** establish a consistent latency
+improvement. Portable small-call medians remain approximately **1.15–1.16×
+legacy**; the **1.00× target remains unmet**. These local sequential plaintext
+TCP measurements do not qualify remote performance. Raw trials, profiles,
+source patch and binary identities are in `target/remote-workflows/server-final/`.
+
+The measured runtime passed all 2,216 workspace nextest tests (7 documented
+skips), 85 doctests (13 ignored), 231 engine/wire tests without default features,
+Clippy, and bare-metal RPC checks with and without `alloc`. Workspace validation
+includes Miri, fuzzing and the 98-case mutation campaign. Release validation
+passed 58 workflow cells and 48 C++ interoperability checks; all 15 large-payload
+cells also passed with 250 warmups and 1,000 retained calls each.
+
 ## Comparison bar charts
 
 The final **Comparison bar charts** section of each generated report README
