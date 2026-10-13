@@ -129,6 +129,9 @@ impl Client {
 }
 
 impl ClientHook for Client {
+    fn get_failure(&self) -> Option<Error> {
+        Some(self.inner.error.clone())
+    }
     fn as_any(&self) -> Option<&dyn std::any::Any> {
         Some(self)
     }

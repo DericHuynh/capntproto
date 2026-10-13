@@ -764,6 +764,23 @@ impl Hook {
     }
 }
 impl ClientHook for Hook {
+    fn get_failure(&self) -> Option<Error> {
+        // Inspect an already accepted route without triggering an introduction.
+        let introduced = self.0.introduced.borrow().clone();
+        if let Some(client) = introduced {
+            return client.get_failure();
+        }
+        self.0
+            .failure
+            .borrow()
+            .clone()
+            .or_else(|| match self.0.inbox.upgrade() {
+                Some(inbox) => inbox.shutdown.reason(),
+                None => Some(Error::disconnected(
+                    "scoped ClientHook driver dropped".into(),
+                )),
+            })
+    }
     fn forward_join(
         &self,
         part: any_pointer::Reader<'_>,

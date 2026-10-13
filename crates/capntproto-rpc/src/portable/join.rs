@@ -34,6 +34,9 @@ impl<V> Joiner<V> {
             let result = this
                 .resolve(caps.into_iter().map(T::into_client_hook).collect(), 0)
                 .await?;
+            if let Some(cap) = &result.cap {
+                crate::rpc::join::check(&**cap)?;
+            }
             Ok(result.cap.as_ref().map(|cap| T::new(cap.add_ref())))
         })
     }
@@ -57,9 +60,7 @@ impl<V> Joiner<V> {
                 ));
             }
             this.active()?;
-            let caps =
-                futures::future::try_join_all(caps.into_iter().map(crate::rpc::join::settle))
-                    .await?;
+            let caps = crate::rpc::join::settle_all(caps).await?;
             this.active()?;
             let identity = |cap: &dyn ClientHook| (cap.get_brand(), cap.get_ptr());
             if caps

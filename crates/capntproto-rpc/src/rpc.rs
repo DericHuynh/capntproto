@@ -3322,6 +3322,21 @@ impl<VatId> Clone for Client<VatId> {
 }
 
 impl<VatId> ClientHook for Client<VatId> {
+    fn get_failure(&self) -> Option<Error> {
+        // Resolved promises and accepted introductions can survive the old
+        // connection. Their replacement is checked during Join resolution.
+        match &self.variant {
+            ClientVariant::ThirdParty(_) => None,
+            ClientVariant::Promise(promise) if promise.borrow().is_resolved => None,
+            _ => self
+                .connection_state
+                .connection
+                .borrow()
+                .as_ref()
+                .err()
+                .cloned(),
+        }
+    }
     fn debug_info(&self, chain: &mut capnp::private::capability::DebugInfo) {
         match &self.variant {
             ClientVariant::Import(_) => chain.push("rpcImport"),

@@ -2,6 +2,8 @@ use capnp::{capability::Promise, Error};
 use capnp_rpc::{Connection, IncomingMessage, OutgoingMessage, VatNetwork};
 #[path = "multiparty_join/driver.rs"]
 mod driver;
+#[path = "multiparty_join/equality.rs"]
+mod equality;
 use capntproto::{
     native_rpc::{DirectoryConnector, Handle, Network},
     transport::{self, Identity},

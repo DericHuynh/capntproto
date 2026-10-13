@@ -164,6 +164,7 @@ async fn diagnostic_inspection_never_accepts_a_deferred_handoff() {
                 let identity = cap.as_client_hook().get_ptr();
                 for _ in 0..4 {
                     assert!(cap.debug_info().contains("thirdPartyPending"));
+                    assert!(cap.as_client_hook().get_failure().is_none());
                     assert_eq!(cap.as_client_hook().get_ptr(), identity);
                 }
                 drain().await;

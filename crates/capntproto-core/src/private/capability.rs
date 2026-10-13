@@ -127,6 +127,17 @@ pub trait ClientHook {
         chain.push(core::any::type_name::<Self>());
     }
 
+    /// A terminal failure already known locally, independently of whether this
+    /// reference is settled. `None` is not a liveness guarantee. Do not send
+    /// calls or start resolution/connection work to answer this query.
+    ///
+    /// Join uses this before proving equality: a settled broken reference must
+    /// not be confused with usable authority. Transparent retention wrappers
+    /// forward this query; opaque policies report their own revocation too.
+    fn get_failure(&self) -> Option<crate::Error> {
+        None
+    }
+
     /// Opt in to joining a complete batch through an opaque policy boundary.
     /// None keeps the hook an opaque equality endpoint. Implementations must
     /// validate every input and protect the result; never forward individual

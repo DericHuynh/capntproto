@@ -116,6 +116,9 @@ impl Vine {
     }
 }
 impl ClientHook for Vine {
+    fn get_failure(&self) -> Option<Error> {
+        self.inner.get_failure()
+    }
     fn as_any(&self) -> Option<&dyn std::any::Any> {
         Some(self)
     }

@@ -1414,6 +1414,17 @@ impl<S> ClientHook for Client<S>
 where
     S: capability::Server + Clone + 'static,
 {
+    fn get_failure(&self) -> Option<Error> {
+        let state = self.state.borrow();
+        // shorten_path explicitly released replacement authority. As with an
+        // already-resolved RPC promise, revoking its former owner cannot recall
+        // that replacement; Join will check it on the next resolution step.
+        if state.resolved.is_some() {
+            None
+        } else {
+            state.broken_error.clone()
+        }
+    }
     fn debug_info(&self, chain: &mut capnp::private::capability::DebugInfo) {
         let Ok(state) = self.state.try_borrow() else {
             chain.push("local(busy)");

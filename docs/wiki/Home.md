@@ -28,6 +28,7 @@ Start with the [runtime status](Runtime-Status.md) for supported boundaries and
 - [Architecture](Architecture.md) and [C++ parity boundaries](Cpp-Parity.md).
 - [Capability Join](Capability-Join.md), [multiparty Join](Multiparty-Join.md) and
   [third-party answers](Third-Party-Answers.md).
+- [Capability equality and ordering audit](Capability-Equality.md).
 - [Shared listeners](Shared-Listeners.md), [provisioning](Provisioning.md),
   [session arbitration](Session-Arbitration.md), [connection recovery](Connection-Recovery.md).
 - [Discovery and mobility](Discovery-and-Mobility.md), [transport scheduling](Transport-Scheduling.md)

@@ -17,6 +17,12 @@ Equal settled identities return a retained capability. Distinct settled local
 objects return `None`. Broken promises, unsupported routes, malformed replies
 and disconnects return errors. They do not establish inequality.
 
+Settlement is distinct from liveness: known revoked/broken inputs are rejected
+before equality is considered, including inputs that fail while another input
+is resolving. Use the returned capability for subsequent operations. See the
+[equality and ordering audit](Capability-Equality.md) for the Grant Matcher
+threat model, regression coverage and differences from E reference semantics.
+
 Distinct remote inputs sharing one supported bilateral connection use the
 standard `Join`, `rpc-twoparty.JoinKeyPart` and `JoinResult` wire structures.
 The receiver collects all parts before performing a local join or forwarding a

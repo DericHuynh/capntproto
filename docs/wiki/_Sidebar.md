@@ -12,6 +12,7 @@
 - [Split Planes](Split-Plane.md)
 - [Third-Party Answers](Third-Party-Answers.md)
 - [Capability Join](Capability-Join.md)
+- [Capability Equality](Capability-Equality.md)
 - [Multiparty Join](Multiparty-Join.md)
 - [Shared Listeners](Shared-Listeners.md)
 - [Provisioning](Provisioning.md)

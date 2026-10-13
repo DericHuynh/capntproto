@@ -26,6 +26,9 @@ impl Clone for Receiver {
     }
 }
 impl Receiver {
+    pub(super) fn reason(&self) -> Option<Error> {
+        self.state.borrow().reason.clone()
+    }
     pub(super) fn new() -> Self {
         Self {
             state: Rc::default(),

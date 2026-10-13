@@ -36,6 +36,9 @@ impl<VatId> Joiner<VatId> {
             let result = this
                 .resolve(caps.into_iter().map(T::into_client_hook).collect(), None, 0)
                 .await?;
+            if let Some(cap) = &result.cap {
+                check(&**cap)?;
+            }
             Ok(result.cap.as_ref().map(|c| T::new(c.clone())))
         })
     }
@@ -63,7 +66,7 @@ impl<VatId> Joiner<VatId> {
                 return Err(Error::disconnected("RPC system is closing".into()));
             }
             drop(active);
-            let caps = future::try_join_all(caps.into_iter().map(settle)).await?;
+            let caps = settle_all(caps).await?;
             let active = registry
                 .upgrade()
                 .ok_or_else(|| Error::disconnected("RPC system was dropped".into()))?;
@@ -124,11 +127,26 @@ fn unsupported() -> Error {
 fn identity(c: &dyn ClientHook) -> (usize, usize) {
     (c.get_brand(), c.get_ptr())
 }
+pub(crate) fn check(cap: &dyn ClientHook) -> capnp::Result<()> {
+    cap.get_failure().map_or(Ok(()), Err)
+}
+pub(crate) async fn settle_all(
+    caps: Vec<Box<dyn ClientHook>>,
+) -> capnp::Result<Vec<Box<dyn ClientHook>>> {
+    let caps = future::try_join_all(caps.into_iter().map(settle)).await?;
+    // One input may have failed while another input was still resolving.
+    // Revalidate the whole batch before any equality decision or delegation.
+    for cap in &caps {
+        check(&**cap)?;
+    }
+    Ok(caps)
+}
 pub(crate) async fn settle(mut cap: Box<dyn ClientHook>) -> capnp::Result<Box<dyn ClientHook>> {
     // Keep visited owners alive so allocator address reuse cannot look cyclic.
     let mut seen = HashSet::new();
     let mut owners = Vec::new();
     loop {
+        check(&*cap)?;
         // A stateful hook may settle in place and return the same identity.
         // Only a further unresolved edge makes revisiting it a cycle.
         let Some(next) = cap.when_more_resolved() else {

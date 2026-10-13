@@ -393,6 +393,14 @@ impl Drop for Wrapper {
 }
 struct Hook(Rc<Wrapper>);
 impl ClientHook for Hook {
+    fn get_failure(&self) -> Option<Error> {
+        if !self.0.custom {
+            if let Err(error) = self.0.membrane.check() {
+                return Some(error);
+            }
+        }
+        self.0.inner().get_failure()
+    }
     fn debug_info(&self, chain: &mut capnp::private::capability::DebugInfo) {
         chain.push(self.0.membrane.0.debug_name);
         let inner = {

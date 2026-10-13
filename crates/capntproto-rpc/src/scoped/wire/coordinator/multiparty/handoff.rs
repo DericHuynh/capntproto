@@ -375,6 +375,9 @@ struct Retained {
     response: Rc<dyn ResponseHook>,
 }
 impl ClientHook for Retained {
+    fn get_failure(&self) -> Option<Error> {
+        self.inner.get_failure()
+    }
     fn add_ref(&self) -> Box<dyn ClientHook> {
         Box::new(Self {
             inner: self.inner.add_ref(),

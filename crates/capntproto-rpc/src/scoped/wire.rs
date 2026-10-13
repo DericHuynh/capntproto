@@ -1112,6 +1112,9 @@ struct Projected {
     pipeline: PipelineRef,
 }
 impl ClientHook for Projected {
+    fn get_failure(&self) -> Option<Error> {
+        self.inner.get_failure()
+    }
     #[cfg(unix)]
     fn get_fd(&self) -> Option<Rc<std::os::fd::OwnedFd>> {
         self.inner.get_fd()

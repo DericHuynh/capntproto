@@ -74,6 +74,7 @@ pub(crate) fn part_at<VatId: 'static>(
     target: Box<dyn ClientHook>,
     part: any_pointer::Reader<'_>,
 ) -> PartResponse {
+    crate::pry!(join::check(&*target));
     if let Some(response) = target.forward_join(part) {
         return response;
     }

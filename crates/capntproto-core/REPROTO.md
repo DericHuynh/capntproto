@@ -58,6 +58,12 @@ profile authenticates the joined object before direct acquisition.
 The guard retains downstream results until the joined authority is acquired or
 all upstream parts have been finished. See docs/wiki/Capability-Join.md for scope and checks.
 
+ClientHook's default `get_failure` separates a known terminal failure from
+settlement. Join checks it before comparing identities or releasing authority,
+including after asynchronous input resolution. Hosted implementations report
+revocation/disconnection without changing the existing resolution or wire format;
+custom terminal hooks should override it. See docs/wiki/Capability-Equality.md.
+
 ClientHook's default `delegate_join` keeps opaque hooks as equality endpoints.
 Explicit implementations can return a `JoinDelegation` for a complete batch,
 with a completion callback that preserves boundary policy and downstream guards.
