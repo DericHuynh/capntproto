@@ -535,7 +535,8 @@ impl<VatId: 'static> ConnectionState<VatId> {
                 connection_state.call_words.set(total);
 
                 let (results_inner_fulfiller, results_inner_promise) = oneshot::channel();
-                let results_inner_promise = results_inner_promise.map_err(crate::canceled_to_error);
+                let mut results_inner_promise =
+                    results_inner_promise.map_err(crate::canceled_to_error);
 
                 let (pipeline_sender, pipeline) =
                     if hints.no_promise_pipelining && !only_promise_pipeline && !redirect_results {
@@ -589,25 +590,34 @@ impl<VatId: 'static> ConnectionState<VatId> {
                     hints,
                 );
 
-                let mut promise = call_promise
-                    .then(move |call_result| {
-                        results_inner_promise.then(move |result| {
-                            future::ready(ResultsDone::from_results_inner(
-                                result,
-                                call_result,
-                                pipeline_sender,
-                            ))
-                        })
-                    })
-                    .then(move |v| {
-                        if let Some(f) = redirected_results_done_fulfiller {
-                            match v.and_then(ResultsCompletion::into_retained) {
-                                Ok(r) => drop(f.send(Ok(Response::redirected(r)))),
-                                Err(e) => drop(f.send(Err(e))),
-                            }
+                // Keep completion in one future. Chained Then adapters move the
+                // result owner between states even for immediately ready calls.
+                // Execution must still finish before awaiting released Results.
+                let mut call_promise = Some(call_promise);
+                let mut call_result = None;
+                let mut pipeline_sender = Some(pipeline_sender);
+                let mut redirected_results_done_fulfiller = redirected_results_done_fulfiller;
+                let mut promise = future::poll_fn(move |cx| {
+                    if let Some(promise) = &mut call_promise {
+                        call_result = Some(futures::ready!(Pin::new(promise).poll(cx)));
+                        // A completed custom future may release Results only
+                        // when dropped. Release it before polling their receiver.
+                        call_promise = None;
+                    }
+                    let result = futures::ready!(Pin::new(&mut results_inner_promise).poll(cx));
+                    let completion = ResultsDone::from_results_inner(
+                        result,
+                        call_result.take().unwrap(),
+                        pipeline_sender.take().unwrap(),
+                    );
+                    if let Some(f) = redirected_results_done_fulfiller.take() {
+                        match completion.and_then(ResultsCompletion::into_retained) {
+                            Ok(r) => drop(f.send(Ok(Response::redirected(r)))),
+                            Err(e) => drop(f.send(Err(e))),
                         }
-                        Promise::ok(())
-                    });
+                    }
+                    Poll::Ready(Ok(()))
+                });
 
                 // A non-pipelined call may complete on its first poll. Drive
                 // that bounded step before allocating a background task and

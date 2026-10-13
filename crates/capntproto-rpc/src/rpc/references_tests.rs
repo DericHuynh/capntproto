@@ -116,6 +116,144 @@ fn local_cap() -> Box<dyn ClientHook> {
 }
 
 #[test]
+fn completion_drops_the_method_future_before_waiting_for_its_results() {
+    #[derive(Clone)]
+    struct Service {
+        fail: bool,
+        initially_pending: bool,
+        polls: Rc<Cell<usize>>,
+        dropped: Rc<Cell<bool>>,
+    }
+    struct Execution {
+        service: Service,
+        // A Future is allowed to retain Results even after returning Ready.
+        _results: Box<dyn ResultsHook>,
+    }
+    impl Future for Execution {
+        type Output = capnp::Result<()>;
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            let previous = self.service.polls.replace(self.service.polls.get() + 1);
+            if previous == 0 && self.service.initially_pending {
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+            assert_eq!(previous, usize::from(self.service.initially_pending));
+            Poll::Ready(if self.service.fail {
+                Err(Error::failed("method failed".into()))
+            } else {
+                Ok(())
+            })
+        }
+    }
+    impl Drop for Execution {
+        fn drop(&mut self) {
+            assert!(!self.service.dropped.replace(true));
+        }
+    }
+    impl ClientHook for Service {
+        fn call(
+            &self,
+            _: u64,
+            _: u16,
+            _: Box<dyn ParamsHook>,
+            results: Box<dyn ResultsHook>,
+        ) -> Promise<(), Error> {
+            Promise::from_future(Execution {
+                service: self.clone(),
+                _results: results,
+            })
+        }
+        fn add_ref(&self) -> Box<dyn ClientHook> {
+            Box::new(self.clone())
+        }
+        fn new_call(
+            &self,
+            _: u64,
+            _: u16,
+            _: Option<capnp::MessageSize>,
+        ) -> capnp::capability::Request<any_pointer::Owned, any_pointer::Owned> {
+            unreachable!("fixture only accepts incoming calls")
+        }
+        fn get_ptr(&self) -> usize {
+            Rc::as_ptr(&self.polls) as usize
+        }
+        fn get_brand(&self) -> usize {
+            0
+        }
+        fn get_resolved(&self) -> Option<Box<dyn ClientHook>> {
+            None
+        }
+        fn when_more_resolved(&self) -> Option<Promise<Box<dyn ClientHook>, Error>> {
+            None
+        }
+        fn when_resolved(&self) -> Promise<(), Error> {
+            Promise::ok(())
+        }
+    }
+    struct Incoming(capnp::message::Builder<capnp::message::HeapAllocator>);
+    impl crate::IncomingMessage for Incoming {
+        fn size_in_words(&self) -> usize {
+            self.0.size_in_words()
+        }
+        fn get_body(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+            self.0.get_root_as_reader()
+        }
+    }
+    for no_pipeline in [false, true] {
+        for initially_pending in [false, true] {
+            for fail in [false, true] {
+                let mut fixture = Fixture::new();
+                fixture.drain();
+                fixture.bytes.borrow_mut().clear();
+                let service = Service {
+                    fail,
+                    initially_pending,
+                    polls: Rc::default(),
+                    dropped: Rc::default(),
+                };
+                let export = fixture.export(&service);
+                let mut message = capnp::message::Builder::new_default();
+                let mut call = message.init_root::<message::Builder>().init_call();
+                call.set_question_id(42);
+                call.set_no_promise_pipelining(no_pipeline);
+                call.reborrow()
+                    .init_target()
+                    .set_imported_cap(export.to_wire());
+                call.init_params();
+                ConnectionState::handle_message(
+                    &Rc::downgrade(&fixture.state),
+                    Box::new(Incoming(message)),
+                )
+                .unwrap();
+                let messages = fixture.drain();
+                assert!(service.dropped.get(), "completed execution must be dropped");
+                assert_eq!(service.polls.get(), 1 + usize::from(initially_pending));
+                let mut returns = 0;
+                for message in &messages {
+                    if let message::Return(reply) = message
+                        .get_root::<message::Reader>()
+                        .unwrap()
+                        .which()
+                        .unwrap()
+                    {
+                        let reply = reply.unwrap();
+                        assert_eq!(reply.get_answer_id(), 42);
+                        match reply.which().unwrap() {
+                            return_::Results(_) => assert!(!fail),
+                            return_::Exception(_) => assert!(fail),
+                            _ => panic!("unexpected Return"),
+                        }
+                        returns += 1;
+                    }
+                }
+                assert_eq!(returns, 1, "method completion must send exactly one Return");
+                assert_eq!(fixture.state.call_words.get(), 0);
+            }
+        }
+    }
+}
+
+#[test]
 fn response_completion_keeps_question_alive_across_forwarding_and_cancellation() {
     for stage in 0..3 {
         let mut fixture = Fixture::new();

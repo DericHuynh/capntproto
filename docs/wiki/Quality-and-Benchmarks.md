@@ -1161,6 +1161,56 @@ and GitHub CI were not rerun. Raw measurements, intermediate binaries, source
 patch and executable identities are retained under
 `target/portable-optimization/worker-20261012/`.
 
+### Legacy call completion overhead
+
+The legacy driver now polls method execution and result completion in one
+future, reducing the state moves performed by nested completion adapters. It
+still drops a completed method future before awaiting its released `Results`:
+custom futures can retain that owner even after returning `Ready`. A regression
+test covers immediate and pending completion, success and failure, and calls
+with and without promise pipelining. Wire behavior and public interfaces are
+unchanged.
+
+Against `2f013b9cb`, three complete-process Callgrind trials with ordinary full
+LTO, one codegen unit, overflow checks, 100 warmups and 1,000 empty plaintext TCP
+calls produced these median instruction counts, including startup and warmups:
+
+| Legacy process | Before | After | Change |
+|---|---:|---:|---:|
+| Client | 17,770,878 | 17,770,706 | Effectively unchanged |
+| Server | 16,724,954 | 16,389,388 | −2.01% |
+
+Five rotated, alternating repetitions on two physical cores, each with 10,000
+warmups and 1,000 retained calls, gave these pooled p50 ratios:
+
+| Payload | Legacy before / C++ | Legacy after / C++ | Portable / C++ | Upstream Rust / C++ |
+|---|---:|---:|---:|---:|
+| Empty | 0.970× | 0.984× | 1.113× | 0.993× |
+| 64 B | 0.975× | 0.972× | 1.110× | 1.002× |
+| 1 KiB | 0.979× | 0.977× | 1.126× | 1.014× |
+| 64 KiB | 0.913× | 0.852× | 1.163× | 1.002× |
+
+A separate five-repetition confirmation with 10,000 retained calls per trial
+measured legacy/C++ ratios of **0.984× for empty calls** and **0.896× for 64 KiB**.
+Against the previous legacy binary, those medians were 0.7% slower and 2.7%
+faster respectively; the shorter run measured 1.5% slower and 6.6% faster.
+Small-call latency is effectively unchanged, and the size of the bulk gain
+varies. Compilers, tests and profilers were stopped during latency runs. These
+are shared-workstation diagnostics, not dedicated-host or remote qualification;
+the **0.90× small-call target remains unmet**.
+
+The workspace nextest run exercised 2,238 tests: 2,234 passed initially, four
+failed, and seven were skipped. All four failures passed subsequent targeted
+rechecks after repairing a stale Kani mutation anchor and the report fixture,
+and using CI's Java 17 and auditable Cargo wrapper. The isolated ignored-test
+inventory also passed; its cold-build deadline is now 30 minutes and it shares
+the bounded tooling test group. No entirely clean full-workspace rerun is claimed.
+The updated export-lease Kani proof passed, and its negative control failed at
+the intended assertion. RPC rechecks, Clippy, and the release smoke run passed,
+including all 70 supported workflow cells and 72 cross-language checks. Raw
+trials, profiles, logs, source patch and executable identities are retained under
+`target/legacy-optimization/dispatch-20261012/`.
+
 ## Comparison bar charts
 
 The final **Comparison bar charts** section of each generated report README
