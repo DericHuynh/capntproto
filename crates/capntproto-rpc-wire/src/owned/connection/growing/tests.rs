@@ -119,6 +119,99 @@ fn idle_certificate_observes_new_retirement_without_invalidation() {
 }
 
 #[test]
+fn server_idle_certificate_observes_deferred_answer_and_export_cleanup() {
+    with_driver(|mut driver, messages| {
+        let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+        macro_rules! poll {
+            () => {
+                driver
+                    .poll_maintenance(
+                        messages,
+                        &mut queue,
+                        128,
+                        Default::default(),
+                        &mut [0; 8],
+                        NonZeroUsize::new(1).unwrap(),
+                    )
+                    .unwrap()
+            };
+        }
+        let target = driver
+            .runtime
+            .endpoint(binding::Route::local(8), clients::Location::Local)
+            .unwrap();
+        let export = {
+            let mut batch = driver.ledgers.exports.batch();
+            let grant = crate::clients::stage(&mut driver.runtime, &mut batch, &target).unwrap();
+            batch.commit();
+            grant.id()
+        };
+        let lease = driver.ledgers.exports.lease(export).unwrap();
+        let id = AnswerId::from_wire(3);
+        let answer = driver
+            .ledgers
+            .answers
+            .admit(id, Answer::new(pipelines::Results::new(())))
+            .unwrap_or_else(|_| panic!("answer"));
+        let pipeline = driver.ledgers.answers.pipeline(id).unwrap();
+        let observer = driver
+            .pipelines
+            .bind(
+                &mut driver.runtime,
+                &mut driver.ledgers.answers,
+                &pipeline,
+                pipeline::Path::new(&[]),
+            )
+            .unwrap();
+        assert!(!driver.pipelines.vacant_within(8));
+        assert!(!matches!(poll!(), Progress::Idle));
+        driver.runtime.release(observer);
+        let mut idle = false;
+        for _ in 0..128 {
+            if matches!(poll!(), Progress::Idle) {
+                idle = true;
+                break;
+            }
+        }
+        assert!(idle);
+        assert!(!driver.pipelines.vacant_within(0));
+        assert!(driver.pipelines.vacant_within(8));
+        assert!(driver
+            .ledgers
+            .answers
+            .prepare_return(answer)
+            .unwrap()
+            .accept()
+            .is_none());
+        assert!(matches!(poll!(), Progress::Idle));
+        assert!(driver.ledgers.answers.finish(id, false).retired.is_none());
+        assert!(driver.ledgers.exports.release(export, 1).unwrap().is_none());
+        assert!(matches!(poll!(), Progress::Idle));
+
+        // No invalidation call: the bounded check must observe these facts.
+        driver.ledgers.answers.release_pipeline_deferred(pipeline);
+        driver.ledgers.exports.release_local_deferred(lease);
+        let mut producer = false;
+        let mut idle = false;
+        for _ in 0..128 {
+            match poll!() {
+                Progress::Producer(()) => producer = true,
+                Progress::Idle => {
+                    idle = true;
+                    break;
+                }
+                _ => (),
+            }
+        }
+        assert!(producer && idle);
+        assert!(driver.ledgers.answers.is_empty());
+        assert!(driver.ledgers.exports.is_empty());
+        driver.runtime.release(target);
+        close(driver, messages, &mut queue);
+    });
+}
+
+#[test]
 fn maintenance_idle_scan_keeps_its_budget_after_empty_tables_grow() {
     for quantum in [1, 2, 7, 32] {
         with_driver(|mut driver, messages| {

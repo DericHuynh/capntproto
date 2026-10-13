@@ -68,6 +68,11 @@ pub struct Record<T> {
     provision: bool,
     value: T,
 }
+impl<T> Record<T> {
+    fn reclaimable(&self) -> bool {
+        self.finished && self.state == State::Returned && self.pipelines == 0
+    }
+}
 /// Caller storage holds both wire-live answers and retired answers retained by
 /// local pipeline leases. A retired record no longer reserves its peer ID.
 pub struct Slot<T> {
@@ -168,6 +173,18 @@ pub fn with_growing_answers<T, R>(
 impl<'id, 'storage, T> Answers<'id, 'storage, T> {
     pub fn capacity(&self) -> usize {
         self.slots.len()
+    }
+    /// Conservatively certify that no finished answer can be reclaimed,
+    /// examining at most `maximum` slots. Larger tables return false and must
+    /// use the budgeted scan. Returned answers still awaiting Finish or a local
+    /// pipeline lease retain their owner and do not require reclamation work.
+    pub fn reclamation_is_idle(&self, maximum: usize) -> bool {
+        self.slots.len() <= maximum
+            && self.slots.iter().all(|slot| {
+                slot.record
+                    .as_ref()
+                    .is_none_or(|record| !record.reclaimable())
+            })
     }
     /// Includes detached records retained by already-admitted pipeline calls.
     #[cfg(feature = "alloc")]
@@ -295,7 +312,7 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
         if self.slots[index]
             .record
             .as_ref()
-            .is_some_and(|r| r.finished && r.state == State::Returned && r.pipelines == 0)
+            .is_some_and(Record::reclaimable)
         {
             self.slots[index].record.take().map(|r| r.value)
         } else {

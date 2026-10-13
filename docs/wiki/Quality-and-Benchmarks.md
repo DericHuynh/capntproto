@@ -1066,6 +1066,55 @@ The full workspace and GitHub CI were not rerun for this change. Raw profiles,
 latency trials, source patch and binary identities are retained under
 `target/remote-workflows/upstream-qualified/`.
 
+### Bounded portable maintenance fast path
+
+The portable server now skips maintenance scans when small tables contain only
+live exports, answers awaiting Finish or retained pipeline leases, and vacant
+pipeline observers. A settled initial pipeline used to leave allocated observer
+storage that forced every subsequent ordinary call through all 18 maintenance
+stages. The fast path checks at most eight slots per relevant table. Larger
+tables and active observers keep the budgeted scanner. Reclamation checks use
+the same predicates as actual cleanup; forgotten export batches cannot qualify
+as idle. No cached ownership flags, heap allocations or `std` dependencies are
+added to the engine or wire driver.
+
+Against `7cb732065`, three complete-process Callgrind trials with ordinary full
+LTO, 100 warmups and 1,000 empty calls produced these median instruction counts:
+
+| Portable process | Before | After | Change |
+|---|---:|---:|---:|
+| Client | 26,046,762 | 26,064,458 | +0.07% |
+| Server | 29,543,081 | 27,888,953 | −5.60% |
+
+Five rotated, alternating repetitions measured all five peers on the same two
+physical cores, with 10,000 warmups and 1,000 retained calls per trial. The
+upstream peer uses the independent published-crate benchmark described above.
+These are pooled p50 ratios; lower is better:
+
+| Payload | Portable before / C++ | Portable after / C++ | Legacy / C++ | Upstream Rust / C++ | Portable after / legacy |
+|---|---:|---:|---:|---:|---:|
+| Empty | 1.124× | 1.113× | 0.979× | 0.995× | 1.137× |
+| 64 B | 1.129× | 1.127× | 0.980× | 0.998× | 1.150× |
+| 1 KiB | 1.134× | 1.127× | 0.977× | 1.012× | 1.154× |
+| 64 KiB | 1.120× | 1.142× | 0.874× | 1.052× | 1.306× |
+
+Small-call p50 improved by 0.2–1.0% locally. The initial 64 KiB run was 2.0%
+slower after the change; an independent repeat was 1.7% faster. Neither a bulk
+latency improvement nor a consistent regression is established on this shared
+workstation. Compilers, tests and profilers were stopped during latency runs.
+The **1.00× legacy target remains unmet**; these runs do not qualify remote
+performance. Raw trials, profiles, source patch and executable identities are
+retained under `target/portable-optimization/maintenance-20261012/`.
+
+Validation passed 512 RPC engine/wire/runtime tests, 233 engine/wire tests with
+allocation disabled, and 50 selected transport/multiparty integration tests.
+Regressions cover deferred final lease release, answer ID reuse, forgotten
+export batches and cleanup after an observer table becomes vacant. Clippy,
+formatting and ARM RPC checks with and without `alloc` passed. The release
+workflow smoke run passed all 70 supported cells and 72 cross-language checks,
+including the 256 KiB, 1 MiB and 4 MiB payload workflows. The full workspace and
+GitHub CI were not rerun for this change.
+
 ## Comparison bar charts
 
 The final **Comparison bar charts** section of each generated report README

@@ -99,6 +99,11 @@ struct Entry<T> {
     pending: u32,
     promise: promise::ImportState,
 }
+impl<T> Entry<T> {
+    fn reclaimable(&self) -> bool {
+        self.local == 0 && matches!(self.state, State::Retired)
+    }
+}
 
 /// A value, generation and in-place publication/cleanup bookkeeping. Exhausted
 /// vacant generations are retired permanently; storage must be empty on entry.
@@ -225,6 +230,18 @@ pub fn with_growing_exports<T, R>(
 impl<'id, 'storage, T> Exports<'id, 'storage, T> {
     pub fn capacity(&self) -> usize {
         self.slots.len()
+    }
+    /// Conservatively certify that retirement has no work, examining at most
+    /// `maximum` slots. False also covers larger tables and forgotten batches;
+    /// those must continue through the caller's budgeted retirement scan.
+    /// This check neither recovers a batch nor releases any owner.
+    pub fn retirement_is_idle(&self, maximum: usize) -> bool {
+        !self.open_batch
+            && self.slots.len() <= maximum
+            && self
+                .slots
+                .iter()
+                .all(|slot| slot.entry.as_ref().is_none_or(|entry| !entry.reclaimable()))
     }
     /// Includes unpublished/retired owners awaiting explicit draining.
     #[cfg(feature = "alloc")]
@@ -367,7 +384,7 @@ impl<'id, 'storage, T> Exports<'id, 'storage, T> {
         self.abort_pending();
         let slot = self.slots.get_mut(index)?;
         let entry = slot.entry.as_ref()?;
-        if entry.local != 0 || !matches!(entry.state, State::Retired) {
+        if !entry.reclaimable() {
             return None;
         }
         Some(slot.entry.take().expect("retired export").value)

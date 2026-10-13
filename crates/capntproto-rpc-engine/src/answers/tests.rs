@@ -2,6 +2,37 @@ use super::*;
 use crate::ids::WireId;
 
 #[test]
+fn bounded_idle_check_observes_deferred_pipeline_release_across_id_reuse() {
+    let mut slots = [Slot::EMPTY, Slot::EMPTY];
+    with_answers(&mut slots, |answers| {
+        assert!(!answers.reclamation_is_idle(1));
+        assert!(answers.reclamation_is_idle(2));
+        let id = AnswerId::from_wire(7);
+        let old = answers.admit(id, 41).unwrap();
+        assert!(answers.reclamation_is_idle(2));
+        assert!(answers.dispatch(old, false).unwrap());
+        assert!(answers.reclamation_is_idle(2));
+        let pipeline = answers.pipeline(id).unwrap();
+        assert!(answers.prepare_return(old).unwrap().accept().is_none());
+        assert!(answers.reclamation_is_idle(2));
+        assert!(answers.finish(id, false).retired.is_none());
+        assert!(answers.reclamation_is_idle(2));
+        let next = answers.admit(id, 43).unwrap();
+        assert!(answers.reclamation_is_idle(2));
+        answers.release_pipeline_deferred(pipeline);
+        assert!(!answers.reclamation_is_idle(2));
+        assert_eq!(answers.take_finished(0), Some(41));
+        assert!(answers.reclamation_is_idle(2));
+        assert_eq!(answers.get(next), Ok(&43));
+        assert!(answers.finish(id, false).retired.is_none());
+        assert!(answers.reclamation_is_idle(2));
+        assert_eq!(answers.prepare_return(next).unwrap().accept(), Some(43));
+        assert!(answers.reclamation_is_idle(2));
+    })
+    .unwrap();
+}
+
+#[test]
 fn no_finish_is_transactional_and_preserves_admitted_pipeline_owners() {
     let mut slots = [Slot::EMPTY, Slot::EMPTY];
     with_answers(&mut slots, |answers| {

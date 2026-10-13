@@ -90,14 +90,15 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         >,
     ) -> Result<Progress<I, A, S>, Error> {
         self.check_live()?;
-        // An ordinary settled client often has no protocol maintenance at all.
+        // Ordinary calls often have no protocol maintenance at all. A server's
+        // live exports and returned answers awaiting Finish need no polling.
         // These are ownership facts, not cached assumptions about the last
         // poll. No callbacks run and no unbounded storage scan is introduced.
-        // Larger/previously used tables retain the budgeted scan below.
+        // Larger tables and pending observers retain the budgeted scan below.
         if self.call.is_none() && self.resolution.is_none()
-            && self.pipelines.capacity() == 0 && self.outgoing.is_empty()
-            && self.ledgers.exports.capacity() == 0 && !self.runtime.has_retired()
-            && self.ledgers.answers.capacity() == 0
+            && self.pipelines.vacant_within(8) && self.outgoing.is_empty()
+            && self.ledgers.exports.retirement_is_idle(8) && !self.runtime.has_retired()
+            && self.ledgers.answers.reclamation_is_idle(8)
             // A retained bootstrap may coexist with an ordinary call. Keep
             // this shortcut bounded independently of configured concurrency.
             && self.exchanges.len() <= 8 && !self.exchanges.iter().any(|slot| slot.canceled)

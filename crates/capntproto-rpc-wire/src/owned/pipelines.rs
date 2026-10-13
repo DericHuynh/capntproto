@@ -450,6 +450,11 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
     pub fn capacity(&self) -> usize {
         self.slots.len()
     }
+    /// Check at most `maximum` slots for observers that need polling. Retained
+    /// vacant capacity alone must not force every later call through a scan.
+    pub(crate) fn vacant_within(&self, maximum: usize) -> bool {
+        self.slots.len() <= maximum && self.slots.iter().all(|slot| slot.waiter.is_none())
+    }
     /// Only used when a just-created, unexposed binding fails graph admission.
     pub(crate) fn discard_unexposed<T>(
         &mut self,
