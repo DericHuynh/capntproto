@@ -44,6 +44,10 @@ fn main() -> Result<()> {
                 ("fuzz", "fuzz/Cargo.lock"),
                 ("rpc-benchmark", "benchmarks/rpc/Cargo.lock"),
                 (
+                    "upstream-rpc-benchmark",
+                    "benchmarks/rpc-upstream/Cargo.lock",
+                ),
+                (
                     "instructions-benchmark",
                     "benchmarks/instructions/Cargo.lock",
                 ),

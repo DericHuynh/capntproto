@@ -15,19 +15,21 @@ use std::{collections::BTreeSet, fmt::Write as _, fs, path::Path};
 
 const BLUE: [u8; 3] = [0, 114, 178];
 const GRAY: [u8; 3] = [148, 163, 184];
-const COLORS: [[u8; 3]; 5] = [
+const COLORS: [[u8; 3]; 6] = [
     BLUE,
     [230, 159, 0],
     [0, 158, 115],
     [204, 121, 167],
     [213, 94, 0],
+    [86, 180, 233],
 ];
-const LABELS: [&str; 5] = [
+const LABELS: [&str; 6] = [
     "Capntproto TCP",
     "Cap'n Proto C++",
     "gRPC (tonic)",
     "WebSockets",
     "Capntproto QUIC/TLS",
+    "Rust RPC (upstream)",
 ];
 const FILES: [&str; 11] = [
     "latency-p50",
@@ -439,7 +441,7 @@ mod tests {
         let mut rows = vec![];
         for bytes in benchmark::PAYLOADS {
             for (index, protocol) in benchmark::PROTOCOLS.iter().enumerate() {
-                let latency = [10_000.0, 20_000.0, 5_000.0, 15_000.0, 25_000.0][index]
+                let latency = [10_000.0, 20_000.0, 5_000.0, 15_000.0, 25_000.0, 22_000.0][index]
                     * (1.0 + bytes as f64 / 1024.0);
                 rows.push(json!({"protocol":protocol, "payload_bytes":bytes, "p50_ns":latency,
                     "p95_ns":latency * 1.5, "p99_ns":latency * 2.0, "sequential_requests_per_second":1e9 / latency}));
@@ -509,6 +511,10 @@ mod tests {
         assert_eq!(charts[4].panels[0].bars[2].value, Some(-75.0));
         assert_eq!(charts[5].panels[0].bars[1].value, Some(0.0));
         assert_eq!(charts[5].panels[0].bars[2].value, Some(300.0));
+        assert_eq!(charts[0].panels[0].bars.len(), 6);
+        assert_eq!(charts[0].panels[0].bars[5].value, Some(22.0));
+        assert!(charts[0].panels[0].bars[5].label.contains("upstream"));
+        assert!((charts[4].panels[0].bars[5].value.unwrap() - 10.0).abs() < 1e-9);
         assert!(charts[0].panels[0].bars[0].label.contains("legacy"));
         assert!(performance(&rows, "unknown").is_err());
         assert!(performance(&rows, "portable").unwrap()[0].panels[0].bars[0]

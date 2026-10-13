@@ -228,7 +228,7 @@ pub(super) fn generate(output: &Path, bundle: &Path) -> Result<()> {
         );
         let ratio = row["p50_ratio_to_cpp"].as_f64().unwrap();
         let width = ratio / maximum * 640.0;
-        svg+=&format!("<rect x=\"260\" y=\"{y}\" width=\"{width:.2}\" height=\"15\" fill=\"{}\"/><text x=\"{:.2}\" y=\"{}\">{ratio:.3}×</text>",["#2878b5","#d07815","#6b7280","#168247","#8756b4"][index],265.0+width,y+12);
+        svg+=&format!("<rect x=\"260\" y=\"{y}\" width=\"{width:.2}\" height=\"15\" fill=\"{}\"/><text x=\"{:.2}\" y=\"{}\">{ratio:.3}×</text>",["#2878b5","#d07815","#6b7280","#168247","#8756b4","#0097a7"][index],265.0+width,y+12);
     }
     svg += "</g></svg>";
     crate::write(output.join("p50-ratios.svg"), svg)
@@ -257,7 +257,29 @@ mod tests {
     fn full_matrix_and_bad_evidence() {
         let valid = trials();
         let rows = matrix(&valid).unwrap();
-        assert_eq!(rows.len(), 58);
+        assert_eq!(rows.len(), 70);
+        let without_upstream: Vec<_> = valid
+            .iter()
+            .filter(|t| t["implementation"] != "capnp-rust")
+            .cloned()
+            .collect();
+        assert!(matrix(&without_upstream).is_err());
+        // Ratios use the C++ peer for the same workflow, including capability
+        // pipelining; the upstream peer must never silently reuse an owned row.
+        let mut slower_upstream = valid.clone();
+        for trial in &mut slower_upstream {
+            if trial["implementation"] == "capnp-rust" {
+                trial["latency_ns"] = json!(vec![15; 1000]);
+                trial["elapsed_ns"] = json!(15000);
+            }
+        }
+        let ratios = matrix(&slower_upstream).unwrap();
+        let upstream: Vec<_> = ratios
+            .iter()
+            .filter(|r| r["implementation"] == "capnp-rust")
+            .collect();
+        assert_eq!(upstream.len(), 12);
+        assert!(upstream.iter().all(|r| r["p50_ratio_to_cpp"] == 1.5));
         for (name, bytes) in [
             ("bulk-256k", 262144),
             ("bulk-1m", 1048576),
@@ -371,7 +393,7 @@ mod tests {
         crate::write_json(output.join("client/workflow-trials.json"), &trials()).unwrap();
         generate(&output, &bundle).unwrap();
         let summary = crate::read_json(output.join("summary.json")).unwrap();
-        assert_eq!(summary["rows"].as_array().unwrap().len(), 58);
+        assert_eq!(summary["rows"].as_array().unwrap().len(), 70);
         let svg = fs::read_to_string(output.join("p50-ratios.svg")).unwrap();
         let parsed = roxmltree::Document::parse(&svg).unwrap();
         assert_eq!(
@@ -379,7 +401,7 @@ mod tests {
                 .descendants()
                 .filter(|node| node.has_tag_name("rect"))
                 .count(),
-            59
+            71
         );
         let markdown = fs::read_to_string(output.join("README.md")).unwrap();
         for case in cases() {

@@ -765,7 +765,7 @@ fn benchmark(
         ]);
         commands.command("scp", &args, 300, cancel)?;
         println!("Starting measurements; live trial progress follows (20-minute overall limit)");
-        let remote="bash -o pipefail -c 'tar -xzf /root/bundle.tar.gz -C /root/bench && chmod +x /root/bench/tcp /root/bench/native /root/bench/grpc /root/bench/websocket /root/bench/capnp_cpp /root/bench/capnp-reference /root/bench/driver /root/bench/hot_paths /root/bench/gungraun-runner && timeout --kill-after=10s 20m /root/bench/driver compare /root/bench /root/results 2>&1 | tee /root/results/runner.log'";
+        let remote="bash -o pipefail -c 'tar -xzf /root/bundle.tar.gz -C /root/bench && chmod +x /root/bench/capnp-rust /root/bench/tcp /root/bench/native /root/bench/grpc /root/bench/websocket /root/bench/capnp_cpp /root/bench/capnp-reference /root/bench/driver /root/bench/hot_paths /root/bench/gungraun-runner && timeout --kill-after=10s 20m /root/bench/driver compare /root/bench /root/results 2>&1 | tee /root/results/runner.log'";
         if let Err(error) = commands.ssh(&options, &address, remote, 1250, cancel) {
             let salvage = Cancellation::default();
             for file in [

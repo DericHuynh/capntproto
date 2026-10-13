@@ -197,6 +197,7 @@ fn pair_lifecycle_cleans_up_after_second_creation_and_measurement_failures() {
         for name in [
             "driver",
             "capnp-reference",
+            "capnp-rust",
             "tcp",
             "native",
             "grpc",

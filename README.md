@@ -145,6 +145,11 @@ TCP uses the same plaintext transport as C++ Cap’n Proto; QUIC is measured
 separately with encryption. The dashboard includes p95/p99, request rates and
 the measured source revision. Relative charts use C++ as their reference.
 
+The suite includes an independent [upstream Rust RPC baseline](benchmarks/rpc-upstream/README.md)
+using published `capnp-rpc` crates. Fresh loopback and two-host workflow reports
+compare it against C++ alongside our drivers, gRPC and WebSockets. Historical
+graphs retain the implementations measured at their recorded revision.
+
 Graphs identify the measured TCP driver: **legacy** or **portable**. Legacy
 results do not qualify the opt-in portable replacement. Its current small-call
 target is pooled p50 ≤1.5× C++ at 0, 64 and 1,024 bytes; 64 KiB and tail latencies

@@ -689,7 +689,7 @@ pub fn render(template: &str, history: &Value, output: &Path) -> Result<Vec<Path
     } else {
         section.push_str("Awaiting the first dedicated DigitalOcean benchmark run.\n\n");
     }
-    section.push_str("Separate client/server processes, one outstanding request, several payload sizes and five repetitions. Capntproto TCP and C++ Cap’n Proto use matched plaintext TCP; native QUIC remains a separate encrypted comparison. gRPC and WebSocket baselines use plaintext TCP. Bars compare this workload, not universal protocol performance.\n\n");
+    section.push_str("Separate client/server processes, one outstanding request, several payload sizes and five repetitions. Capntproto TCP, upstream Rust Cap’n Proto (`capnp-rust`), and C++ Cap’n Proto use matched plaintext TCP; native QUIC remains a separate encrypted comparison. gRPC and WebSocket baselines use plaintext TCP. Bars compare this workload, not universal protocol performance.\n\n");
     if let Some(r) =
         latest(history, "benchmark").filter(|r| !r["data"]["charts"].as_array().unwrap().is_empty())
     {

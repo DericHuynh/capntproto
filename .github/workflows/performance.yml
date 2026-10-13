@@ -46,6 +46,7 @@ jobs:
           workspaces: |
             . -> target
             benchmarks/rpc -> target
+            benchmarks/rpc-upstream -> target
             benchmarks/instructions -> target
       - name: Build prerequisites
         run: |
@@ -58,7 +59,7 @@ jobs:
         run: cargo run --locked -p capntproto-quality -- benchmark-build target/benchmark-build
       - name: Test benchmark identity, validation, and CPU placement
         run: cargo nextest run --locked --manifest-path benchmarks/rpc/Cargo.toml
-      - name: Exercise all five workflow implementations locally (not timing evidence)
+      - name: Exercise all six workflow implementations locally (not timing evidence)
         run: cargo run --locked -p capntproto-dev -- digitalocean-bench smoke --bundle target/benchmark-build/bundle --output target/benchmark-build/workflow-smoke --state "$RUNNER_TEMP/workflow-smoke"
       - name: Archive executable bundle with permissions intact
         run: tar -czf "$RUNNER_TEMP/benchmark-bundle.tar.gz" -C target/benchmark-build bundle

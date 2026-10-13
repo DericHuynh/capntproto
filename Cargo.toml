@@ -17,6 +17,7 @@ members = ["test-support", "quality", "dev", "crates/*"]
 exclude = [
     "vendor/capnproto",
     "benchmarks/rpc",
+    "benchmarks/rpc-upstream",
     "benchmarks/storage",
     "benchmarks/instructions",
     "benchmarks/concurrency",

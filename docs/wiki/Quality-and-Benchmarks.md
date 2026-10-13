@@ -436,13 +436,14 @@ The CI runner provisions **two** dedicated droplets: one client and one server,
 on the same plan, region and VPC. Workload traffic is direct plaintext TCP over
 the server's private IPv4 address. SSH uploads binaries and retrieves artifacts;
 it does not tunnel measured traffic. The server binds only its private address
-and restricts the five benchmark ports to the client droplet. The provider's
+and restricts the six benchmark ports to the client droplet. The provider's
 [`vpc_uuid` placement field](https://docs.digitalocean.com/products/droplets/reference/api/droplets/)
 pins the second peer to the first peer's VPC. A second-peer capacity failure
 cleans up both peers instead of changing region or hardware silently.
 
 The shared [workflow catalog](../../benchmarks/rpc/workflows.json) exercises
-legacy Rust RPC, portable Rust RPC, pinned upstream C++, gRPC and WebSockets.
+legacy Rust RPC, portable Rust RPC, published upstream Rust RPC (`capnp-rust`),
+pinned upstream C++, gRPC and WebSockets.
 The Cap'n Proto implementations use the same schema. gRPC uses protobuf unary
 methods over HTTP/2; WebSockets use binary protobuf application messages:
 
@@ -456,7 +457,7 @@ methods over HTTP/2; WebSockets use binary protobuf application messages:
 | `callback` | Pass a client capability, receive and validate its callback, then await the outer completion |
 | `bulk-64k`, `bulk-256k`, `bulk-1m`, `bulk-4m` | One validated request/response at 64 KiB, 256 KiB, 1 MiB or 4 MiB |
 
-There are **58 supported workflow/implementation cells**. Promise-pipelined
+There are **70 supported workflow/implementation cells**. Promise-pipelined
 reads are explicitly unsupported for gRPC and WebSockets and excluded from
 ratios, rather than replaced with sequential reads. Their state references use
 application IDs without capability security. A dependent read consumes its
@@ -470,8 +471,19 @@ The 4 MiB payload is echoed in both directions. Workflow gRPC and WebSocket
 message limits are 8 MiB to include framing; portable RPC uses an 8 MiB frame
 limit and a 32 MiB buffer budget. These limits apply only to workflow benchmarks;
 the existing small-call microbenchmark configuration is unchanged. Workflow
-format version 3 requires the larger payloads, so older partial matrices fail
-validation.
+format version 3 retains the same workload semantics. The required matrix now
+includes upstream Rust at every payload and capability workflow; older partial
+matrices fail validation.
+
+The independent [upstream Rust benchmark](../../benchmarks/rpc-upstream/README.md)
+pins crates.io `capnp` 0.27.2, `capnp-rpc`/`capnpc` 0.27.0 and its own lockfile.
+It uses upstream’s buffered TCP adapter arrangement and the same application
+workload and timing source as our two drivers. It links no capntproto runtime
+crate. Bundle construction verifies this separation and records the upstream
+versions, lockfile hash, executable hash and embedded dependency inventory.
+Both loopback charts and remote workflow charts include it, with ratios
+against the matching C++ cell. It is a descriptive reference, not subject to
+the performance acceptance threshold for our own TCP driver.
 
 Five repetitions rotate implementation order. Every cell has 250 warmups and
 1,000 retained workflow samples, with setup excluded and validation, response
@@ -493,7 +505,7 @@ run or local smoke record fails validation. Remote results are descriptive
 baselines; the existing loopback acceptance gate does not apply to them.
 
 ```sh
-# Credential-free smoke test: all 58 supported cells, not timing evidence.
+# Credential-free smoke test: all 70 supported cells, not timing evidence.
 cargo run --locked -p capntproto-dev -- digitalocean-bench smoke \
   --bundle target/benchmark-build/bundle --output target/workflow-smoke \
   --state target/workflow-smoke-state
@@ -504,8 +516,8 @@ cargo run --locked -p capntproto-dev -- digitalocean-bench run-remote \
   --state target/remote-benchmark-state
 ```
 
-Every PR builds and smoke-tests the workflows locally, including 48 cross-language
-checks against C++ in both directions. Trusted CI runs execute
+Every PR builds and smoke-tests the workflows locally, including 72 cross-language
+checks against C++ in both directions across all three Rust implementations. Trusted CI runs execute
 the remote campaign, stop its servers, and then run the existing loopback and
 instruction controls on the already-provisioned client. The workflow summary
 and downloadable artifact keep remote results separate from those controls.

@@ -4,6 +4,14 @@ use super::*;
 use crate::workflows::support::{supported, IMPLEMENTATIONS};
 const PORT: u16 = 46001;
 
+fn binary(implementation: &str) -> &str {
+    match implementation {
+        "capnp-cpp" => "capnp-reference",
+        "capnp-rust" => "capnp-rust",
+        _ => "driver",
+    }
+}
+
 fn address(value: &str, smoke: bool) -> Result<std::net::Ipv4Addr> {
     let ip: std::net::Ipv4Addr = value.parse()?;
     if !ip.is_private() && !(smoke && ip.is_loopback()) {
@@ -13,7 +21,7 @@ fn address(value: &str, smoke: bool) -> Result<std::net::Ipv4Addr> {
 }
 fn manifest(bundle: &Path) -> Result<Value> {
     let manifest: Value = serde_json::from_slice(&fs::read(bundle.join("manifest.json"))?)?;
-    for name in ["driver", "capnp-reference"] {
+    for name in ["driver", "capnp-reference", "capnp-rust"] {
         let actual = output(
             "sha256sum",
             &[bundle.join(name).to_str().ok_or("invalid binary path")?],
@@ -41,11 +49,7 @@ fn cpu(placement: &Placement) -> usize {
 }
 fn worker(bundle: &Path, index: usize, placement: &Placement) -> Command {
     let mut command = Placement::command(
-        &bundle.join(if index == 2 {
-            "capnp-reference"
-        } else {
-            "driver"
-        }),
+        &bundle.join(binary(IMPLEMENTATIONS[index])),
         Some(cpu(placement)),
     );
     command.env(
@@ -73,7 +77,7 @@ pub fn host(bundle: &Path, ip: &str, out: &Path, smoke: bool) -> Result<()> {
     let mut servers = Vec::new();
     for (index, implementation) in IMPLEMENTATIONS.iter().enumerate() {
         let mut command = worker(bundle, index, &placement);
-        if index >= 3 {
+        if matches!(*implementation, "grpc" | "websocket") {
             command.args(["comparison-server", implementation]);
         } else {
             command.arg("workflow-server");
@@ -193,12 +197,8 @@ pub fn client(bundle: &Path, ip: &str, out: &Path, smoke: bool) -> Result<()> {
                 }
                 command
                     .args(["taskset", "--cpu-list", &cpu(&placement).to_string()])
-                    .arg(bundle.join(if index == 2 {
-                        "capnp-reference"
-                    } else {
-                        "driver"
-                    }));
-                if index >= 3 {
+                    .arg(bundle.join(binary(implementation)));
+                if matches!(implementation, "grpc" | "websocket") {
                     command.args(["comparison-measure", implementation]);
                 } else {
                     command.arg("workflow-measure");

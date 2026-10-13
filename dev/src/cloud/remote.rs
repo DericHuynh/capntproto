@@ -189,7 +189,7 @@ fn upload(
         format!("root@{}:/root/bundle.tar.gz", host.public),
     ]);
     commands.command("scp", &args, 300, cancel)?;
-    commands.ssh(&host.options,&host.public.to_string(),"tar -xzf /root/bundle.tar.gz -C /root/bench && chmod +x /root/bench/driver /root/bench/capnp-reference",120,cancel)
+    commands.ssh(&host.options,&host.public.to_string(),"tar -xzf /root/bundle.tar.gz -C /root/bench && chmod +x /root/bench/capnp-rust /root/bench/driver /root/bench/capnp-reference",120,cancel)
 }
 fn retrieve(
     commands: &impl Commands,
@@ -290,6 +290,7 @@ pub(super) fn run(
     for name in [
         "driver",
         "capnp-reference",
+        "capnp-rust",
         "tcp",
         "native",
         "grpc",
@@ -369,7 +370,7 @@ pub(super) fn run(
         }
         // Bind only the VPC address; admit benchmark TCP only from this run's
         // client. Management SSH stays on the independently pinned public path.
-        commands.ssh(&server.options,&server.public.to_string(),&format!("iptables -I INPUT -p tcp --dport 46001:46005 -j REJECT && iptables -I INPUT -s {}/32 -d {}/32 -p tcp --dport 46001:46005 -j ACCEPT",client.private,server.private),30,cancel)?;
+        commands.ssh(&server.options,&server.public.to_string(),&format!("iptables -I INPUT -p tcp --dport 46001:46006 -j REJECT && iptables -I INPUT -s {}/32 -d {}/32 -p tcp --dport 46001:46006 -j ACCEPT",client.private,server.private),30,cancel)?;
         commands.ssh(&server.options,&server.public.to_string(),&format!("nohup timeout --kill-after=10s 35m /root/bench/driver workflow-host /root/bench {} /root/results/remote > /root/results/remote/runner.log 2>&1 < /dev/null &",server.private),30,cancel)?;
         let deadline = Instant::now() + Duration::from_secs(120);
         loop {
@@ -501,7 +502,7 @@ pub(super) fn smoke(bundle: &Path, output: &Path) -> Result<()> {
         &Cancellation::default(),
     )?;
     // A self-to-self run could hide matching client/server mistakes. Exercise
-    // the wire protocol against C++ in both directions, for both Rust drivers.
+    // the wire protocol against C++ in both directions, for both owned Rust drivers and the independent upstream Rust peer.
     let cases: Vec<Value> =
         serde_json::from_str(include_str!("../../../benchmarks/rpc/workflows.json"))?;
     for case in cases {
@@ -509,8 +510,10 @@ pub(super) fn smoke(bundle: &Path, output: &Path) -> Result<()> {
         for (client, port, portable) in [
             ("driver", 46003, "0"),
             ("driver", 46003, "1"),
+            ("capnp-rust", 46003, "0"),
             ("capnp-reference", 46001, "0"),
             ("capnp-reference", 46002, "1"),
+            ("capnp-reference", 46006, "upstream"),
         ] {
             let log = output
                 .join("interop")
@@ -549,6 +552,6 @@ pub(super) fn smoke(bundle: &Path, output: &Path) -> Result<()> {
         );
         std::thread::sleep(Duration::from_millis(100));
     }
-    println!("All 58 supported workflow/implementation cells and 48 cross-language checks passed; these are not performance measurements.");
+    println!("All 70 supported workflow/implementation cells and 72 cross-language checks passed; these are not performance measurements.");
     Ok(())
 }

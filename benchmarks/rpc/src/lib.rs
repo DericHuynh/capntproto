@@ -6,11 +6,7 @@ use capntproto::{
 };
 use futures::{SinkExt, StreamExt};
 use serde_json::json;
-use std::{
-    io::Write,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{io::Write, rc::Rc, time::Duration};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
 
@@ -216,22 +212,9 @@ impl Client {
 // Select the protocol once, outside the measured loop. Otherwise every TCP
 // timeout moves a future large enough to contain tonic's entire gRPC operation.
 // Each protocol keeps the same IO, response validation and timing policy.
-trait Roundtrip {
-    async fn roundtrip(&mut self, sequence: u64, payload: &[u8]) -> Result<()>;
-}
-impl Roundtrip for echo_capnp::echo::Client {
-    async fn roundtrip(&mut self, sequence: u64, payload: &[u8]) -> Result<()> {
-        let mut request = self.echo_request();
-        request.get().set_sequence(sequence);
-        request.get().set_payload(payload);
-        let response = request.send().promise.await?;
-        let response = response.get()?;
-        if response.get_sequence() != sequence || response.get_payload()? != payload {
-            return Err("Native response mismatch".into());
-        }
-        Ok(())
-    }
-}
+#[path = "../measurement.rs"]
+mod measurement;
+use measurement::{measure_calls, Roundtrip};
 impl Roundtrip for grpc::echo_client::EchoClient<tonic::transport::Channel> {
     async fn roundtrip(&mut self, sequence: u64, payload: &[u8]) -> Result<()> {
         let response = self
@@ -280,31 +263,6 @@ async fn measure(args: &[String]) -> Result<()> {
             measure_calls(&mut **client, &args[0], &payload, warmup, iterations).await
         }
     }
-}
-async fn measure_calls(
-    client: &mut impl Roundtrip,
-    protocol: &str,
-    payload: &[u8],
-    warmup: u64,
-    iterations: u64,
-) -> Result<()> {
-    for sequence in 0..warmup {
-        tokio::time::timeout(Duration::from_secs(10), client.roundtrip(sequence, payload))
-            .await??;
-    }
-    let mut samples = Vec::with_capacity(iterations as usize);
-    let start = Instant::now();
-    for sequence in warmup..warmup + iterations {
-        let roundtrip = Instant::now();
-        tokio::time::timeout(Duration::from_secs(10), client.roundtrip(sequence, payload))
-            .await??;
-        samples.push(u64::try_from(roundtrip.elapsed().as_nanos())?);
-    }
-    println!(
-        "{}",
-        json!({"measurement_version":MEASUREMENT_VERSION,"protocol":protocol,"payload_bytes":payload.len(),"warmup":warmup,"iterations":iterations,"elapsed_ns":u64::try_from(start.elapsed().as_nanos())?,"latency_ns":samples})
-    );
-    Ok(())
 }
 pub fn run(protocol: Option<&str>) -> Result<()> {
     let mut args: Vec<_> = std::env::args()

@@ -3,12 +3,19 @@ use capntproto_test_support::verification::{self as v, root};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{fs, path::Path};
-pub const PROTOCOLS: [&str; 5] = ["tcp", "capnp-cpp", "grpc", "websocket", "native"];
+pub const PROTOCOLS: [&str; 6] = [
+    "tcp",
+    "capnp-cpp",
+    "grpc",
+    "websocket",
+    "native",
+    "capnp-rust",
+];
 pub const PAYLOADS: [usize; 4] = [0, 64, 1024, 65536];
 const REPETITIONS: usize = 5;
 pub const MEASUREMENT_VERSION: u32 = 2;
 // capnp-reference is C++; its pinned sources/compiler are recorded separately.
-const RUST_BINARIES: [&str; 8] = [
+const RUST_BINARIES: [&str; 9] = [
     "tcp",
     "native",
     "grpc",
@@ -17,7 +24,39 @@ const RUST_BINARIES: [&str; 8] = [
     "driver",
     "hot_paths",
     "gungraun-runner",
+    "capnp-rust",
 ];
+
+/// Keep the comparison independent from our imported/modified runtime crates.
+fn upstream_dependencies(metadata: &Value) -> Result<Value> {
+    let packages = metadata["packages"]
+        .as_array()
+        .ok_or("missing upstream packages")?;
+    let root = metadata["resolve"]["root"]
+        .as_str()
+        .ok_or("missing upstream root")?;
+    for package in packages {
+        if package["id"] == root && package["name"] == "capnp-rust-bench" {
+            continue;
+        }
+        if package["source"] != "registry+https://github.com/rust-lang/crates.io-index"
+            || package["name"]
+                .as_str()
+                .is_none_or(|name| name.starts_with("capntproto"))
+        {
+            return Err("upstream RPC baseline must use unmodified crates.io dependencies".into());
+        }
+    }
+    let mut versions = serde_json::Map::new();
+    for name in ["capnp", "capnp-rpc", "capnp-futures", "capnpc"] {
+        let matching: Vec<_> = packages.iter().filter(|p| p["name"] == name).collect();
+        if matching.len() != 1 || !matching[0]["version"].is_string() {
+            return Err(format!("missing or ambiguous upstream dependency: {name}").into());
+        }
+        versions.insert(name.into(), matching[0]["version"].clone());
+    }
+    Ok(json!({"registry":"crates.io", "versions":versions}))
+}
 
 fn audit_bundle(r: &mut Runner, bundle: &Path) -> Result<Value> {
     let inventory = r.directory.join("auditable.json");
@@ -267,6 +306,43 @@ pub fn bundle(r: &mut Runner) -> Result<()> {
         root().join("benchmarks/rpc/target/release/capntproto-rpc-bench"),
         bundle.join("driver"),
     )?;
+    let metadata = r.run_stdout(
+        "upstream-rpc-dependencies",
+        v::command("cargo").args([
+            "metadata",
+            "--locked",
+            "--format-version=1",
+            "--manifest-path",
+            "benchmarks/rpc-upstream/Cargo.toml",
+        ]),
+    )?;
+    let upstream = upstream_dependencies(&serde_json::from_str(&metadata)?)?;
+    let output = r.cargo(
+        "compile-upstream-rpc",
+        &[
+            "build",
+            "--locked",
+            "--release",
+            "--manifest-path",
+            "benchmarks/rpc-upstream/Cargo.toml",
+            "--bin",
+            "capnp-rust",
+            "--message-format=json",
+        ],
+    )?;
+    let executable = output
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .find(|v| {
+            v["reason"] == "compiler-artifact"
+                && v["target"]["name"] == "capnp-rust"
+                && v["executable"].is_string()
+        })
+        .ok_or("Cargo did not identify the upstream RPC benchmark")?;
+    fs::copy(
+        executable["executable"].as_str().unwrap(),
+        bundle.join("capnp-rust"),
+    )?;
     let cxx = std::env::var("CXX").unwrap_or_else(|_| "g++".into());
     let reference = v::cpp::build(&["capnp_tool", "capnpc_cpp", "capnp-rpc"])?;
     let reference_bin = reference.join("c++/src/capnp");
@@ -316,6 +392,7 @@ pub fn bundle(r: &mut Runner) -> Result<()> {
         "websocket",
         "capnp_cpp",
         "capnp-reference",
+        "capnp-rust",
         "driver",
         "hot_paths",
         "gungraun-runner",
@@ -327,6 +404,8 @@ pub fn bundle(r: &mut Runner) -> Result<()> {
         "auditable":auditable,
         "cpp_compiler":r.run("cpp-compiler", v::command(&cxx).arg("--version"))?,
         "lockfile_sha256":v::sha256(fs::read(root().join("benchmarks/rpc/Cargo.lock"))?),
+        "upstream_rpc":upstream,
+        "upstream_lockfile_sha256":v::sha256(fs::read(root().join("benchmarks/rpc-upstream/Cargo.lock"))?),
         "instructions_lockfile_sha256":v::sha256(fs::read(root().join("benchmarks/instructions/Cargo.lock"))?),
         "gungraun_version":"0.20.0",
         "cpp_revision":"0de72d8d8cec6b69edaa29de51d3bd490341f9c2", "binaries":hashes});
@@ -385,6 +464,36 @@ pub fn import(r: &mut Runner, bundle: &Path) -> Result<()> {
 mod tests {
     use super::*;
     #[test]
+    fn upstream_baseline_rejects_owned_path_and_git_dependencies() {
+        let mut metadata = json!({"resolve":{"root":"bench"},"packages":[
+            {"id":"bench","name":"capnp-rust-bench","source":null}
+        ]});
+        for name in ["capnp", "capnp-rpc", "capnp-futures", "capnpc"] {
+            metadata["packages"].as_array_mut().unwrap().push(json!({
+                "id":name, "name":name, "version":"0.27.0",
+                "source":"registry+https://github.com/rust-lang/crates.io-index"
+            }));
+        }
+        assert_eq!(
+            upstream_dependencies(&metadata).unwrap()["versions"]["capnp-rpc"],
+            "0.27.0"
+        );
+        for source in [Value::Null, json!("git+https://example.com/fork")] {
+            let mut modified = metadata.clone();
+            modified["packages"][2]["source"] = source;
+            assert!(upstream_dependencies(&modified).is_err());
+        }
+        let mut owned = metadata.clone();
+        owned["packages"][2]["name"] = json!("capntproto-rpc");
+        assert!(upstream_dependencies(&owned).is_err());
+        let mut missing = metadata.clone();
+        missing["packages"].as_array_mut().unwrap().pop();
+        assert!(upstream_dependencies(&missing).is_err());
+        let duplicate = metadata["packages"][2].clone();
+        metadata["packages"].as_array_mut().unwrap().push(duplicate);
+        assert!(upstream_dependencies(&metadata).is_err());
+    }
+    #[test]
     fn tcp_target_requires_every_payload_and_accepts_exact_boundary() {
         let mut rows = Vec::new();
         for bytes in PAYLOADS {
@@ -435,7 +544,13 @@ mod tests {
                 }
             }
         }
-        assert!(matrix(&trials).is_ok());
+        assert_eq!(matrix(&trials).unwrap().len(), 24);
+        let without_upstream: Vec<_> = trials
+            .iter()
+            .filter(|t| t.protocol != "capnp-rust")
+            .cloned()
+            .collect();
+        assert!(matrix(&without_upstream).is_err());
         let mut legacy = serde_json::to_value(&trials[0]).unwrap();
         legacy
             .as_object_mut()

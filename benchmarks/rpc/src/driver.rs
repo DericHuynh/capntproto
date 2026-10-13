@@ -12,7 +12,14 @@ use std::{
     sync::mpsc,
     time::{Duration, Instant},
 };
-const PROTOCOLS: [&str; 5] = ["tcp", "capnp-cpp", "grpc", "websocket", "native"];
+const PROTOCOLS: [&str; 6] = [
+    "tcp",
+    "capnp-cpp",
+    "grpc",
+    "websocket",
+    "native",
+    "capnp-rust",
+];
 const PAYLOADS: [usize; 4] = [0, 64, 1024, 65536];
 
 pub fn clock_reads() -> Value {
@@ -303,6 +310,7 @@ pub fn compare(directory: &Path, destination: &Path) -> Result<()> {
             "websocket",
             "capnp_cpp",
             "capnp-reference",
+            "capnp-rust",
             "driver",
             "hot_paths",
             "gungraun-runner",
