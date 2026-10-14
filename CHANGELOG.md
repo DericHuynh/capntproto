@@ -1,5 +1,12 @@
 # 0.1.0 developer preview (unpublished)
 
+- Avoid four temporary receipt allocations per capability-free portable Call,
+  retaining the target transaction in stack storage and enforcing the same
+  capacity limit. Remove admission-only capacity policies from retained receipt
+  owners. Repeated ordinary full-LTO profiles reduce server instructions 3.60%
+  and client instructions 0.13%; portable/legacy parity remains outstanding.
+  Report both peers' instruction counts in the development benchmark JSON.
+
 - Verify outgoing question lifecycle contracts and unbounded safety/progress with
   Verus and verus-tla, replacing the eight-operation Kani search while retaining
   constructor and ledger checks. Add five deliberate-fault controls.

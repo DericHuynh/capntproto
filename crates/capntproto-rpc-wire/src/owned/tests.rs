@@ -367,6 +367,116 @@ fn owned_request_retains_frame_receipts_and_target_while_other_io_progresses() {
     assert_eq!(measured.count_total, 0);
 }
 
+#[cfg(feature = "alloc")]
+#[test]
+fn growing_plain_call_keeps_target_alive_without_allocating_receipt_storage() {
+    let measured = allocation_counter::measure(|| {
+        for promised in [false, true] {
+            let mut words = [ZERO; 81];
+            let mut buffers = [messages::Buffer::new(Word::words_to_bytes_mut(&mut words))];
+            messages::with_messages(&mut buffers, &mut [], |messages| {
+                let mut ee = [exports::Slot::EMPTY];
+                let mut aa = [const { answers::Slot::EMPTY }; 2];
+                capntproto_rpc_engine::connection::with_connection(
+                    capntproto_rpc_engine::connection::Storage {
+                        imports: &mut [],
+                        exports: &mut ee,
+                        answers: &mut aa,
+                        questions: &mut [],
+                    },
+                    |connection: &mut capntproto_rpc_engine::connection::Connection<
+                        '_,
+                        '_,
+                        (),
+                        u32,
+                        u32,
+                    >| {
+                        let mut batch = connection.exports.batch();
+                        let grant = batch.export(41).unwrap();
+                        batch.commit();
+                        let parent = connection
+                            .answers
+                            .admit(AnswerId::from_wire(3), 43)
+                            .unwrap();
+                        let frame = encode(messages, grant.id(), false, promised);
+                        // A temporary target still consumes the public receipt
+                        // budget, despite no longer needing persistent storage.
+                        let rejected = Call::<_, 0, 2>::admit_with_capacity(
+                            frame,
+                            messages,
+                            &mut connection.imports,
+                            &mut connection.exports,
+                            &mut connection.answers,
+                            47,
+                            |_| panic!("no descriptors"),
+                            Capacity::Growing { maximum: 0 },
+                            Capacity::Inline,
+                        )
+                        .err()
+                        .expect("target exceeds zero budget");
+                        assert_eq!(rejected.error, Error::Capacity);
+                        assert_eq!(rejected.owner, 47);
+                        let call = Call::<_, 0, 2>::admit_with_capacity(
+                            rejected.frame,
+                            messages,
+                            &mut connection.imports,
+                            &mut connection.exports,
+                            &mut connection.answers,
+                            rejected.owner,
+                            |_| panic!("no descriptors"),
+                            Capacity::Growing { maximum: 1 },
+                            Capacity::Inline,
+                        )
+                        .unwrap_or_else(|e| panic!("{}", e.error));
+                        match call.target() {
+                            TargetRef::Hosted(_) => assert!(!promised),
+                            TargetRef::Promised { path, .. } => {
+                                assert!(promised);
+                                assert_eq!(path.fields(), &[1, 2]);
+                            }
+                        }
+                        assert_eq!(
+                            connection.exports.release(grant.id(), 1),
+                            Ok(promised.then_some(41))
+                        );
+                        connection.answers.finish(parent.id(), false);
+                        assert_eq!(connection.answers.dispatch(parent, true).unwrap(), promised);
+                        assert_eq!(
+                            connection.answers.prepare_return(parent).unwrap().accept(),
+                            (!promised).then_some(43)
+                        );
+                        let key = call.answer();
+                        call.release(
+                            messages,
+                            &mut connection.imports,
+                            &mut connection.exports,
+                            &mut connection.answers,
+                        );
+                        if promised {
+                            assert_eq!(connection.answers.take_finished(0), Some(43));
+                        } else {
+                            assert_eq!(connection.exports.take_retired(0), Some(41));
+                        }
+                        connection.answers.finish(key.id(), false);
+                        assert_eq!(
+                            connection.answers.prepare_return(key).unwrap().accept(),
+                            Some(47)
+                        );
+                        assert!(connection.imports.is_empty());
+                        assert!(connection.exports.is_empty());
+                        assert!(connection.answers.is_empty());
+                        let writer = messages.reserve(81 * 8).unwrap();
+                        messages.discard(writer);
+                    },
+                )
+                .unwrap();
+            })
+            .unwrap();
+        }
+    });
+    assert_eq!(measured.count_total, 0);
+}
+
 #[test]
 fn rejected_owned_admission_preserves_frame_answer_owner_and_all_tables() {
     for failure in 0..5 {

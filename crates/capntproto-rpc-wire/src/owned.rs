@@ -317,23 +317,17 @@ mod receipt_storage;
 use receipt_storage::ReceiptStorage;
 
 struct Receipts<'i, 'e, 'a, I, const N: usize> {
+    // Capacity policies are admission inputs, not receipt ownership. Keeping
+    // them here enlarges every queued Call/Return long after reservation ends.
     storage: ReceiptStorage<'i, 'e, 'a, I, N>,
     count: usize,
-    capacity: Capacity,
 }
 impl<'i, 'e, 'a, I, const N: usize> Receipts<'i, 'e, 'a, I, N> {
     fn new() -> Self {
-        Self::with_capacity(Capacity::Inline)
-    }
-    fn with_capacity(capacity: Capacity) -> Self {
         Self {
             storage: ReceiptStorage::new(),
             count: 0,
-            capacity,
         }
-    }
-    fn reserve(&mut self, count: usize) -> Result<(), Error> {
-        self.storage.reserve(self.capacity, count)
     }
     fn initialize(
         &mut self,
@@ -341,10 +335,12 @@ impl<'i, 'e, 'a, I, const N: usize> Receipts<'i, 'e, 'a, I, N> {
         imports: &imports::Imports<'i, '_, I>,
         spare: usize,
         receiver: &mut impl ImportReceiver<I>,
+        capacity: Capacity,
     ) -> Result<(), Error> {
         let descriptors = payload.get_cap_table()?;
         let count = usize::try_from(descriptors.len()).map_err(|_| Error::Capacity)?;
-        self.reserve(count.checked_add(spare).ok_or(Error::Capacity)?)?;
+        self.storage
+            .reserve(capacity, count.checked_add(spare).ok_or(Error::Capacity)?)?;
         // Owner factories may have side effects, so validate before calling
         // one. With no descriptors there are no factories: inbound admission
         // validates the content before committing any ledger state instead.
@@ -353,7 +349,7 @@ impl<'i, 'e, 'a, I, const N: usize> Receipts<'i, 'e, 'a, I, N> {
                 .get_content()
                 .validate_capability_indices(descriptors.len())?;
         }
-        self.initialize_descriptors(descriptors, count, imports, receiver)
+        self.initialize_descriptors(descriptors, count, imports, receiver, capacity)
     }
     fn initialize_descriptors<'m>(
         &mut self,
@@ -361,8 +357,9 @@ impl<'i, 'e, 'a, I, const N: usize> Receipts<'i, 'e, 'a, I, N> {
         count: usize,
         imports: &imports::Imports<'i, '_, I>,
         receiver: &mut impl ImportReceiver<I>,
+        capacity: Capacity,
     ) -> Result<(), Error> {
-        self.reserve(count)?;
+        self.storage.reserve(capacity, count)?;
         // Validate every descriptor before invoking any owner factory.
         for descriptor in descriptors.clone() {
             match descriptor.which().map_err(|_| Error::WrongMessage)? {
@@ -671,7 +668,7 @@ impl<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> Call<'pool, 'i, 'e, '
         capacity: Capacity,
         path_capacity: Capacity,
     ) -> Result<Self, Rejected<'pool, A>> {
-        let mut receipts = Receipts::with_capacity(capacity);
+        let mut receipts = Receipts::new();
         let mut path = Buffer::Inline([0; P]);
         let mut owner = Some(owner);
         let outcome = frame
@@ -686,9 +683,31 @@ impl<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> Call<'pool, 'i, 'e, '
                 let payload = call.get_params()?;
                 prepare_target_path(target, &mut path, path_capacity)?;
                 let descriptors = payload.get_cap_table()?;
-                receipts.initialize(payload, imports, 1, receiver)?;
+                // The target receipt is moved into Call::target at acceptance;
+                // it does not need persistent payload storage. In particular,
+                // a descriptor-free hosted call (N = 0) must not allocate three
+                // vectors and their container solely for that temporary slot.
+                // Still charge the target against the configured receipt bound.
+                let plain = descriptors.is_empty();
+                if plain {
+                    if capacity.maximum::<N>() == 0 {
+                        return Err(Error::Capacity);
+                    }
+                } else {
+                    receipts.initialize(payload, imports, 1, receiver, capacity)?;
+                }
                 let count = receipts.count;
-                let slots = receipts.storage.slots();
+                let mut target_export = [exports::LeaseSlot::none()];
+                let mut target_answer = [answers::PipelineSlot::none()];
+                let slots = if plain {
+                    reception::full::Slots {
+                        imports: &mut [],
+                        exports: &mut target_export,
+                        answers: &mut target_answer,
+                    }
+                } else {
+                    receipts.storage.slots()
+                };
                 match target.which().map_err(|_| Error::WrongMessage)? {
                     rpc_capnp::message_target::ImportedCap(id) => {
                         slots.exports[count] = exports::LeaseSlot::new(ExportId::from_wire(id))

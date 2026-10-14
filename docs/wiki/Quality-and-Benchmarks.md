@@ -1235,6 +1235,77 @@ is delegated to hosted CI for this batch. Raw profiles, both rejected and retain
 candidates, long latency trials and executable identities are retained under
 `target/portable-optimization/verus-20261013/`.
 
+### Portable receipt representation (October 14, 2026)
+
+Release compilation already uses fat LTO and one codegen unit. Inspection of the
+baseline binary found a 62,424-byte `Coordinator::poll_work_budget` with a
+3,384-byte stack frame. Its generic adapters are extensively inlined, but the
+state machines still move owned values, validate ledger identities and poll
+separate stages. Inlining alone cannot remove these operations or shrink a
+retained value's representation. Large machine code is a diagnostic observation,
+not evidence that further inlining would improve performance.
+
+One concrete cost was hidden in admission: the hosted driver has zero inline
+receipt slots, and even a Call with no descriptors reserved one slot for its
+target. That allocated three vectors and their boxed container. The target is
+already moved into its own affine owner at acceptance; it now uses temporary
+stack slots in the same transactional admission path. The target still consumes
+the configured capacity budget. Calls with descriptors retain their existing
+storage and validation. Capacity policies are also passed only while reserving
+receipts, rather than carried in every accepted Call, Return and Resolve owner.
+Neither change introduces an allocation or dependency into the no-alloc profile.
+
+Three alternating whole-process Callgrind trials against `651c7ec81`, with
+100 warmups and 1,000 retained empty plaintext TCP calls, produced these medians:
+
+| Process | Before | After | Change | Matched legacy |
+|---|---:|---:|---:|---:|
+| Client | 25,997,720 | 25,963,270 | −0.13% | 17,744,945 |
+| Server | 27,145,087 | 26,168,694 | −3.60% | 16,352,505 |
+
+Both portable binaries use ordinary release/full LTO with overflow checks,
+without PGO, CPU-specific flags or static C++ linkage. Legacy uses the candidate
+executable with only the driver selector changed. Counts include startup,
+bootstrap and cleanup; they are not latency ratios. Portable remains **1.46×**
+legacy client instructions and **1.60×** legacy server instructions. The
+development `rpc-instructions` report now includes `server_instructions` as well
+as `client_instructions`; its optional ceiling still applies to the client.
+
+A separate experiment boxed immediate promise errors to shrink successful and
+pending promises. It saved only about 0.4% client and 0.8% server instructions
+beyond the receipt changes while adding an allocation to immediate failures.
+That experiment was reverted; the existing promise representation is retained.
+
+Five rotated local latency repetitions used two physical cores, 10,000 warmups
+and 10,000 retained calls per payload and implementation:
+
+| Payload | After / before p50 | After / legacy p50 | After / upstream Rust p50 | After / C++ p50 |
+|---|---:|---:|---:|---:|
+| Empty | 0.992× | 1.156× | 1.116× | 1.112× |
+| 64 B | 0.995× | 1.154× | 1.114× | 1.114× |
+| 1 KiB | 1.013× | 1.151× | 1.123× | 1.149× |
+| 64 KiB | 0.990× | 1.205× | 1.109× | 1.094× |
+
+P50 changes are small and mixed. P99 changed from 212 to 277 µs for empty calls,
+262 to 500 µs for 64 B, 455 to 996 µs for 1 KiB, and 1,092 to 765 µs for 64 KiB.
+There was substantial variation between repetitions on this shared workstation;
+builds, tests and profilers were stopped during latency measurement. These data
+establish a repeatable instruction reduction, **not a latency or p99 improvement**.
+Dedicated-host latency qualification and the 1.00× legacy target remain open.
+Raw profiles, candidate binaries, rejected experiments and latency samples are
+retained under `target/portable-optimization/abstractions-20261014/`.
+
+Validation passed 517 engine/wire/hosted-runtime tests, 233 tests with allocation
+disabled, 61 transport/ownership/interoperability tests and the instruction
+parser test. The new allocation-counter regression covers imported and promised
+targets, zero-capacity rejection, retained target lifetime and full cleanup.
+The interoperability matrix passes all 132 required scenarios and the bounded
+upstream check, with the existing two upstream-only failure controls reported
+separately. The four distributed trace replays pass with the pinned Java/TLC
+tools. Bare-metal RPC checks pass both without allocation and with `alloc`;
+Clippy, formatting and validation of 102 documents pass. Full workspace and
+dedicated-host qualification remain with hosted CI.
+
 ### Legacy call completion overhead
 
 The legacy driver now polls method execution and result completion in one

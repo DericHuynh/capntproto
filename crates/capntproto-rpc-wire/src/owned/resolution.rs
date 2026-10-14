@@ -172,6 +172,7 @@ impl<'pool, 'i, 'e, 'a, I> Resolution<'pool, 'i, 'e, 'a, I> {
                         1,
                         imports,
                         receiver,
+                        Capacity::Inline,
                     )?;
                 }
                 let admitted =

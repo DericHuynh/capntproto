@@ -121,8 +121,12 @@ pub fn run(args: Args) -> Result<()> {
     let count = instruction_count(&fs::read_to_string(
         output.join("measured-client.callgrind"),
     )?)?;
+    let server_count = instruction_count(&fs::read_to_string(
+        output.join("measured-server.callgrind"),
+    )?)?;
     let report = json!({
         "client_instructions": count, "maximum": args.maximum,
+        "server_instructions": server_count,
         "passes": args.maximum.is_none_or(|limit| count <= limit),
         "driver": if args.legacy { "legacy" } else { "portable" }, "protocol": "plaintext TCP",
         "measurement": "complete Callgrind Ir process, including startup/bootstrap/cleanup",
@@ -139,7 +143,7 @@ pub fn run(args: Args) -> Result<()> {
     });
     crate::write_json(output.join("report.json"), &report)?;
     println!(
-        "Client instructions: {count}; report: {}",
+        "Client instructions: {count}; server instructions: {server_count}; report: {}",
         output.join("report.json").display()
     );
     ensure!(

@@ -253,7 +253,7 @@ impl<'pool, 'q> Question<'pool, 'q> {
         receiver: &mut impl ImportReceiver<I>,
         capacity: Capacity,
     ) -> Result<AdmittedReturn<'i, 'e, 'a, I, N>, Error> {
-        let receipts = Receipts::with_capacity(capacity);
+        let receipts = Receipts::new();
         // Verify the owning question before calling any descriptor factory.
         if result.get_answer_id() != self.key.id().to_wire() || !questions.contains(self.key) {
             return Err(Error::WrongMessage);
@@ -312,6 +312,7 @@ impl<'pool, 'q> Question<'pool, 'q> {
         }
         self.admit_complex_return(
             result, messages, questions, imports, exports, answers, scratch, receiver, receipts,
+            capacity,
         )
     }
 
@@ -330,6 +331,7 @@ impl<'pool, 'q> Question<'pool, 'q> {
         scratch: &mut [u32],
         receiver: &mut impl ImportReceiver<I>,
         mut receipts: Receipts<'i, 'e, 'a, I, N>,
+        capacity: Capacity,
     ) -> Result<AdmittedReturn<'i, 'e, 'a, I, N>, Error> {
         let mut descriptors = None;
         if let rpc_capnp::return_::Results(payload) =
@@ -338,7 +340,7 @@ impl<'pool, 'q> Question<'pool, 'q> {
             if questions.is_live(self.key) {
                 let payload = payload?;
                 descriptors = Some(payload.get_cap_table()?);
-                receipts.initialize(payload, imports, 0, receiver)?;
+                receipts.initialize(payload, imports, 0, receiver, capacity)?;
             }
         }
         let mut admit = |original: inbound::full::Original<'_>| -> Result<_, Error> {
