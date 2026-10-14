@@ -1,8 +1,8 @@
 {
   "benchmark": {
     "attempt": 1,
-    "commit": "6efd5d314e69e47a1e2407bfcb1197c835a60392",
-    "conclusion": "cancelled",
+    "commit": "e3cf27c23bb44228cc0913f636ddf4219b17d0f8",
+    "conclusion": "failure",
     "data": {
       "charts": [],
       "format": 1,
@@ -13,9 +13,9 @@
       "status": "unavailable",
       "tests": null
     },
-    "date": "2026-10-14T06:21:27Z",
-    "run_id": 38521728971,
-    "url": "https://github.com/DericHuynh/capntproto/actions/runs/38521728971"
+    "date": "2026-10-14T06:32:00Z",
+    "run_id": 38522765935,
+    "url": "https://github.com/DericHuynh/capntproto/actions/runs/38522765935"
   },
   "cargo": [
     {
@@ -595,6 +595,39 @@
       "date": "2026-10-14T06:21:27Z",
       "run_id": 38521728971,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/38521728971"
+    },
+    {
+      "attempt": 1,
+      "commit": "e3cf27c23bb44228cc0913f636ddf4219b17d0f8",
+      "conclusion": "failure",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "cargo",
+        "note": "Lane failed or did not complete; inspect the linked CI run.",
+        "origin": {
+          "attempt": 1,
+          "commit": "e3cf27c23bb44228cc0913f636ddf4219b17d0f8",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 38522765935
+        },
+        "source_id": "a90b780188a35f1880d13174649124c6186c8beb8bc29361b04536e08621e173",
+        "status": "failed",
+        "tests": {
+          "command_passed": true,
+          "complete": true,
+          "errors": 0,
+          "failed": 0,
+          "failures": [],
+          "passed": 2107,
+          "skipped": 20,
+          "suites": 204,
+          "total": 2127
+        }
+      },
+      "date": "2026-10-14T06:32:00Z",
+      "run_id": 38522765935,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/38522765935"
     }
   ],
   "format": 1,
@@ -1076,6 +1109,29 @@
       "date": "2026-10-14T06:21:27Z",
       "run_id": 38521728971,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/38521728971"
+    },
+    {
+      "attempt": 1,
+      "commit": "e3cf27c23bb44228cc0913f636ddf4219b17d0f8",
+      "conclusion": "failure",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "fuzz",
+        "note": "Workflow failed after measurement; see the CI run.",
+        "origin": {
+          "attempt": 1,
+          "commit": "e3cf27c23bb44228cc0913f636ddf4219b17d0f8",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 38522765935
+        },
+        "source_id": "a90b780188a35f1880d13174649124c6186c8beb8bc29361b04536e08621e173",
+        "status": "failed",
+        "tests": null
+      },
+      "date": "2026-10-14T06:32:00Z",
+      "run_id": 38522765935,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/38522765935"
     }
   ],
   "models": [
@@ -1406,6 +1462,39 @@
       "date": "2026-10-14T06:21:27Z",
       "run_id": 38521728971,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/38521728971"
+    },
+    {
+      "attempt": 1,
+      "commit": "e3cf27c23bb44228cc0913f636ddf4219b17d0f8",
+      "conclusion": "failure",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "models",
+        "note": "Workflow failed after measurement; see the CI run.",
+        "origin": {
+          "attempt": 1,
+          "commit": "e3cf27c23bb44228cc0913f636ddf4219b17d0f8",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 38522765935
+        },
+        "source_id": "a90b780188a35f1880d13174649124c6186c8beb8bc29361b04536e08621e173",
+        "status": "failed",
+        "tests": {
+          "command_passed": true,
+          "complete": true,
+          "errors": 0,
+          "failed": 0,
+          "failures": [],
+          "passed": 233,
+          "skipped": 7,
+          "suites": 88,
+          "total": 240
+        }
+      },
+      "date": "2026-10-14T06:32:00Z",
+      "run_id": 38522765935,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/38522765935"
     }
   ]
 }
