@@ -1435,54 +1435,6 @@
       "limits": "one owner, one original reference, one renewal and one replacement, two clock ticks, one restart and compaction; ideal fresh randomness and atomic Store commits; byte-truncation/obsolete-format rejection regressions run separately; no wall-clock scheduling, hostile-writer rollback protection, distributed realm or full RPC refinement"
     },
     {
-      "id": "generic_parameters_model",
-      "report": "generic-parameters",
-      "checks": [
-        {
-          "id": "encounterOrder",
-          "module": "verification/RpcGenericParameters.tla",
-          "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANT Fault = \"encounterOrder\"\nINVARIANTS TypeOK AliasOrder\n",
-          "exit": 12,
-          "message": "Invariant AliasOrder is violated"
-        },
-        {
-          "id": "model",
-          "module": "verification/RpcGenericParameters.tla",
-          "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANT Fault = \"none\"\nINVARIANTS TypeOK AliasOrder\n",
-          "exit": 0,
-          "message": "Model checking completed. No error has been found.",
-          "graph": {
-            "states": 1560,
-            "edges": 1940,
-            "sha256": "ecd28ecd080d511da5795991db1fe544c60a124dcc38ac1d3b0ac8b78ba0005f"
-          }
-        },
-        {
-          "id": "omitOuter",
-          "module": "verification/RpcGenericParameters.tla",
-          "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANT Fault = \"omitOuter\"\nINVARIANTS TypeOK AliasOrder\n",
-          "exit": 12,
-          "message": "Invariant AliasOrder is violated"
-        },
-        {
-          "id": "omitUnusedGroup",
-          "module": "verification/RpcGenericParameters.tla",
-          "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANT Fault = \"omitUnusedGroup\"\nINVARIANTS TypeOK AliasOrder\n",
-          "exit": 12,
-          "message": "Invariant AliasOrder is violated"
-        }
-      ],
-      "inputs": {
-        "CAPNTPROTO_GENERIC_PARAMETER_CASES": {
-          "file": "generic-parameters/cases.json.gz",
-          "sha256": "87dbad97da1f0ab2b708efe9dbb17a150f9d4a927b5d31b8c29662f8175d133f",
-          "cases": 128
-        }
-      },
-      "scope": "all 64 triples of constant/outer/inner brand arguments for both RPC aliases and union group aliases, all traversal orders, lexical alias declaration and use including inherited unused group parameters; compared with emitted Rust source",
-      "limits": "three generic parameters across two scopes; distinct capability/data/text regressions additionally compile group aliases and call the generated server; not complete compiler verification"
-    },
-    {
       "id": "dynamic_orphans_model",
       "report": "dynamic-orphans",
       "checks": [
@@ -3216,51 +3168,6 @@
       "report": "native-multiparty",
       "checks": [
         {
-          "id": "gate0-Early",
-          "module": "verification/RpcNativeStreamGate.tla",
-          "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n  Server = FALSE\n  Early = TRUE\n  BadPreface = FALSE\nINVARIANTS TypeOK AuthenticatedPublication\n",
-          "exit": 12,
-          "message": "Invariant AuthenticatedPublication is violated"
-        },
-        {
-          "id": "gate0",
-          "module": "verification/RpcNativeStreamGate.tla",
-          "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n  Server = FALSE\n  Early = FALSE\n  BadPreface = FALSE\nINVARIANTS TypeOK AuthenticatedPublication\n",
-          "exit": 0,
-          "message": "Model checking completed. No error has been found.",
-          "graph": {
-            "states": 4,
-            "edges": 3,
-            "sha256": "ece2c8950a95da7977d1095ef40af05d09b9dc301cef49501152510cb741896a"
-          }
-        },
-        {
-          "id": "gate1-BadPreface",
-          "module": "verification/RpcNativeStreamGate.tla",
-          "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n  Server = TRUE\n  Early = FALSE\n  BadPreface = TRUE\nINVARIANTS TypeOK AuthenticatedPublication\n",
-          "exit": 12,
-          "message": "Invariant AuthenticatedPublication is violated"
-        },
-        {
-          "id": "gate1-Early",
-          "module": "verification/RpcNativeStreamGate.tla",
-          "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n  Server = TRUE\n  Early = TRUE\n  BadPreface = FALSE\nINVARIANTS TypeOK AuthenticatedPublication\n",
-          "exit": 12,
-          "message": "Invariant AuthenticatedPublication is violated"
-        },
-        {
-          "id": "gate1",
-          "module": "verification/RpcNativeStreamGate.tla",
-          "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n  Server = TRUE\n  Early = FALSE\n  BadPreface = FALSE\nINVARIANTS TypeOK AuthenticatedPublication\n",
-          "exit": 0,
-          "message": "Model checking completed. No error has been found.",
-          "graph": {
-            "states": 5,
-            "edges": 4,
-            "sha256": "e4b04b813757093ccd7af62ac6d4432474d326964c5d710ba09f0ea23faef5fa"
-          }
-        },
-        {
           "id": "rendezvous0-Replay",
           "module": "verification/RpcNativeRendezvous.tla",
           "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n  Steal = FALSE\n  Replay = TRUE\nINVARIANTS TypeOK RecipientBinding NoRetiredAccept NoEarlyResult\n",
@@ -3294,7 +3201,7 @@
           "cases": 167
         }
       },
-      "scope": "rendezvous edge prefixes over authenticated UDP with both wrong-recipient and wrong-introducer tokens; stream publication gate replayed against production guards",
+      "scope": "rendezvous edge prefixes over authenticated UDP with both wrong-recipient and wrong-introducer tokens; retained stream-gate regressions plus source-level Verus contracts (not TLC gate evidence)",
       "limits": "preinstalled pinned routes; finite Provide/Accept/Finish orders; no proof of crypto, loss recovery, automatic discovery or arbitrary disconnect schedules"
     },
     {
@@ -5410,47 +5317,6 @@
       },
       "scope": "one protected local call; caller/executor ownership, early Results release, success/failure, executor shutdown and rejection of new calls",
       "limits": "edge prefixes on a drained executor; not wire traces, arbitrary schedules or multiple concurrent methods"
-    },
-    {
-      "id": "schema_hints_model",
-      "report": "schema-hints",
-      "checks": [
-        {
-          "id": "missed-capability",
-          "module": "verification/RpcSchemaHints.tla",
-          "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n  MissLeaf = TRUE\n  StopEarly = FALSE\nINVARIANTS TypeOK CorrectHint\n",
-          "exit": 12,
-          "message": "Invariant CorrectHint is violated"
-        },
-        {
-          "id": "model",
-          "module": "verification/RpcSchemaHints.tla",
-          "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n  MissLeaf = FALSE\n  StopEarly = FALSE\nINVARIANTS TypeOK CorrectHint\n",
-          "exit": 0,
-          "message": "Model checking completed. No error has been found.",
-          "graph": {
-            "states": 15360,
-            "edges": 11392,
-            "sha256": "f40e3bf99af1514a3815d534e68856795bf6dfb46422673e269b235cf725843a"
-          }
-        },
-        {
-          "id": "stopped-at-cycle",
-          "module": "verification/RpcSchemaHints.tla",
-          "config": "SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nCONSTANTS\n  MissLeaf = FALSE\n  StopEarly = TRUE\nINVARIANTS TypeOK CorrectHint\n",
-          "exit": 12,
-          "message": "Invariant CorrectHint is violated"
-        }
-      ],
-      "inputs": {
-        "CAPNTPROTO_SCHEMA_HINT_CASES": {
-          "file": "schema-hints/cases.json.gz",
-          "sha256": "0995e3fe400ccc6d0d48d59a710e3db2609156ddbcb15f101e5c6427d1375adf",
-          "cases": 4096
-        }
-      },
-      "scope": "all 4096 directed three-struct graphs and direct capability placements; terminal predictions replayed against capnpc schema traversal",
-      "limits": "bounded schema graphs; this is compiler-output agreement, not RPC wire trace replay"
     },
     {
       "id": "fd_model",

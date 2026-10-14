@@ -1399,7 +1399,7 @@ async fn directory_connector_pins_and_authorizes_endpoints() {
         .await;
 }
 
-#[tokio::test(flavor = "current_thread")]
+#[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn deferred_route_timeout_cancels_connector() {
     tokio::task::LocalSet::new()
         .run_until(async {
@@ -1407,6 +1407,14 @@ async fn deferred_route_timeout_cancels_connector() {
             let (mut network, handle) = Network::with_connector([1; 32], dialer.clone());
             let mut route = network.connect([2; 32]).unwrap();
             settled().await;
+            // This connector performs no socket IO and never completes. Test
+            // the production timer/cancellation path at its exact deadline
+            // without spending ten real seconds polling an unchanged status.
+            tokio::time::advance(Duration::from_secs(9)).await;
+            settled().await;
+            assert_ne!(handle.route_status([2; 32]), Some(RouteStatus::Failed));
+            assert!(!dialer.requests.borrow().front().unwrap().is_canceled());
+            tokio::time::advance(Duration::from_secs(1)).await;
             tokio::time::timeout(Duration::from_secs(12), async {
                 while handle.route_status([2; 32]) != Some(RouteStatus::Failed) {
                     tokio::time::sleep(Duration::from_millis(10)).await;

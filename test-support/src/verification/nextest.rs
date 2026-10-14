@@ -10,6 +10,74 @@ pub fn json_output(cmd: &mut Command) -> &mut Command {
         .arg("--message-format=libtest-json-plus")
 }
 
+/// Reuse the current CI invocation's freshly compiled binaries for subprocess
+/// replay. Never build into the output tree of an outer running nextest suite.
+/// A missing requested binary fails closed rather than silently reducing cases.
+pub fn replay_metadata(names: &[&str]) -> Result<Option<String>> {
+    let Some(path) = std::env::var_os("CAPNTPROTO_TEST_INVENTORY") else {
+        return Ok(None);
+    };
+    let bytes = fs::read(path)?;
+    if sha256(&bytes) != std::env::var("CAPNTPROTO_TEST_INVENTORY_SHA256")? {
+        return Err("nextest inventory changed during this invocation".into());
+    }
+    let inventory: serde_json::Value = serde_json::from_slice(&bytes)?;
+    Ok(Some(select_replay_metadata(&inventory, names)?))
+}
+
+fn select_replay_metadata(inventory: &serde_json::Value, names: &[&str]) -> Result<String> {
+    let suites = inventory["rust-suites"]
+        .as_object()
+        .ok_or("missing nextest suites")?;
+    let mut binaries = BTreeMap::new();
+    for name in names {
+        let mut matches = suites
+            .values()
+            .filter(|s| s["package-name"] == "capntproto" && s["binary-name"] == *name);
+        let suite = matches.next().ok_or("missing requested replay binary")?;
+        if matches.next().is_some() || suite["status"] != "listed" {
+            return Err("ambiguous or unlisted replay binary".into());
+        }
+        let mut binary = BTreeMap::new();
+        for field in [
+            "binary-id",
+            "binary-name",
+            "package-id",
+            "kind",
+            "binary-path",
+            "build-platform",
+        ] {
+            let value = suite[field]
+                .as_str()
+                .ok_or("incomplete replay binary metadata")?;
+            binary.insert(field, value);
+        }
+        if binaries.insert(binary["binary-id"], binary).is_some() {
+            return Err("duplicate replay binary".into());
+        }
+    }
+    if binaries.is_empty() || !inventory["rust-build-meta"].is_object() {
+        return Err("empty replay metadata".into());
+    }
+    Ok(serde_json::to_string(&serde_json::json!({
+        "rust-build-meta": inventory["rust-build-meta"], "rust-binaries": binaries,
+    }))?)
+}
+
+/// Replayed instrumented binaries contribute to the same coverage campaign;
+/// ordinary nested compiler commands still have instrumentation stripped.
+pub fn replay_profiles(cmd: &mut Command) -> &mut Command {
+    if std::env::var_os("CAPNTPROTO_TEST_INVENTORY").is_some() {
+        if let Some(profiles) = std::env::var_os("CAPNTPROTO_FULL_COVERAGE_PROFILES") {
+            cmd.env(
+                "LLVM_PROFILE_FILE",
+                PathBuf::from(profiles).join("%p-%m.profraw"),
+            );
+        }
+    }
+    cmd
+}
+
 pub fn outcomes(output: &str, event: &str) -> BTreeSet<String> {
     let mut names = BTreeSet::new();
     for row in output.lines().filter(|line| line.starts_with('{')) {
@@ -56,6 +124,33 @@ pub fn inventory(output: &str, ignored_only: bool) -> BTreeSet<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn replay_inventory_requires_each_exact_compiled_binary() {
+        let suite = serde_json::json!({"package-name":"capntproto", "binary-name":"capntproto",
+            "binary-id":"capntproto", "package-id":"owned", "kind":"lib", "status":"listed",
+            "binary-path":"/build/owned-test", "build-platform":"target"});
+        let mut inventory =
+            serde_json::json!({"rust-suites":{"owned":suite}, "rust-build-meta":{}});
+        let output: serde_json::Value =
+            serde_json::from_str(&select_replay_metadata(&inventory, &["capntproto"]).unwrap())
+                .unwrap();
+        assert_eq!(
+            output["rust-binaries"]["capntproto"]["binary-path"],
+            "/build/owned-test"
+        );
+        assert!(select_replay_metadata(&inventory, &[]).is_err());
+        assert!(select_replay_metadata(&inventory, &["authority_schedules"]).is_err());
+        assert!(select_replay_metadata(&inventory, &["capntproto", "capntproto"]).is_err());
+        inventory["rust-suites"]["duplicate"] = inventory["rust-suites"]["owned"].clone();
+        assert!(select_replay_metadata(&inventory, &["capntproto"]).is_err());
+        inventory["rust-suites"]
+            .as_object_mut()
+            .unwrap()
+            .remove("duplicate");
+        inventory["rust-suites"]["owned"]["status"] = "skipped".into();
+        assert!(select_replay_metadata(&inventory, &["capntproto"]).is_err());
+    }
 
     #[test]
     fn nested_commands_do_not_inherit_temporary_nextest_profiles() {

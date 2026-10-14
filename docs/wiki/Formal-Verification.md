@@ -26,7 +26,8 @@ exact [production proof inventory](../../verification/verus/plan.json). Verifica
 uses `--no-cheating`; no project `assume`, `admit` or `external_body` is accepted.
 Verus, its SMT solver and bundled `vstd` specifications remain trusted tooling.
 
-The entrypoint imports the **actual** `HandoffState` and `Question` implementations. Contracts
+The entrypoint imports the **actual** handoff, question, route-sequence, stream-gate
+and revision implementations. Contracts
 are ordinary `cfg_attr` annotations, with spec/proof definitions included only
 under `capntproto_verus`. These annotations add no Verus dependency, allocations,
 runtime checks or proof data to normal builds. Explicit option checks and enum pattern matches
@@ -59,8 +60,8 @@ expected initial behavior; these wrappers are outside the Verus attribute
 macro's supported subset. Executable bodies are imported unchanged, including
 the common initializer used by those wrappers.
 
-The runner checks all 34 functions, positive success, and the intended failed
-function for nine isolated mutations. Removing drain reservation, accept
+The runner checks all **64 functions and lemmas**, positive success, and the intended
+failed function for **22 isolated mutations**. Removing drain reservation, accept
 authorization, the pending-call lift guard, or drain fairness must fail a logical
 obligation. Early question reclamation, duplicate Finish, delivery after
 cancellation and either missing question fairness assumption must likewise fail.
@@ -70,7 +71,7 @@ timings have a separate graph. These counts are not Cargo tests or coverage.
 This replaces Kani's handoff transition induction, preserving its boundary
 mutation in the Verus lane. Kani retains the `Default` wrapper proof and native
 boundary tests remain. It also supplies an unbounded successor to the already
-retired `HandoffCounterBoundary` TLC model. No multi-vat model is removed here.
+retired `HandoffCounterBoundary` TLC model. The retained multi-vat models still exercise network composition.
 
 Next candidates are the graph/dispatch proofs that produce large solver formulas,
 and staged-list promotion that exceeded Kani's limit. Migrate their real source
@@ -78,6 +79,57 @@ with per-operation contracts and ownership invariants before removing bounded
 checks. A detached mathematical model alone is not a replacement for those
 implementation proofs. For TLC replacements, preserve scheduler assumptions,
 failure actions, refinement to Rust, and negative controls first.
+
+## Slow-check replacements (October 13, 2026)
+
+Replacement requires a concrete implementation guarantee, not merely a smaller
+model that proves its own assumptions. This pass retires five local TLA+ models
+and **26 TLC invocations** (positive, negative and liveness configurations).
+
+| Removed search | Replacement | Integration coverage retained |
+| --- | --- | --- |
+| `RouteGeneration`: three final IDs, two observers | Production sequence transition contract, full-width freshness and permanent exhaustion; verus-tla induction and eventual exhaustion under explicitly fair allocation | All 78 original histories, boundary/constructor checks, live-route reuse and no extra dial after exhaustion |
+| `RpcNativeStreamGate`: four Boolean flags | Contracts on the actual enum transitions for both roles and every preface byte; unbounded authenticated/publication invariant and terminal-failure proof | Original gate traces, explicit role/invalid-preface tests, real authenticated transports |
+| `RevisionBoundary`: offsets at MAX-2 and four operations | Exact production stage/publish/successor contracts for all u64 counters, with induction preserving bounds and monotonicity | All 7,980 original Store histories: batches, unchanged disk on rejection, compaction, reopen and snapshot bytes; separate crash/fault injection remains |
+| `RpcSchemaHints`: a second work-list traversal | Independent transitive-closure oracle over all 512 directed three-node graphs × eight capability placements, applied directly to the generator | Same 4,096 terminal inputs/results as the retired corpus, recursive-schema regressions and generated RPC tests |
+| `RpcGenericParameters`: simulated visitation order | Direct enumeration of all group/non-group × three uses of Data/A/B/C, compared with lexical declaration order in emitted Rust | Same 128 cases, compiled nested RPC/group aliases and repeated-generation determinism |
+
+The first three replacements add 30 verified functions/lemmas and 13 required
+production/fairness mutations. Constructor wrappers, Cell storage, crypto and
+disk IO are **not** claimed as Verus proofs. Frozen integration inputs are
+checksummed in [the regression catalog](../../test-support/regressions/catalog.json)
+and retain every original history and observation. They are explicitly reported
+as native regression tests, not fresh TLC exploration. The schema/generic tests
+are finite exhaustive tests, not unbounded proofs; their expected outputs were
+compared against every retired corpus entry before removing that corpus.
+
+The fresh CI nextest inventory now also supplies binaries to ignored-test audits,
+Shuttle schedule replay and packet-driver replay. Missing/duplicate binaries or
+changed inventory digests fail. Replays still launch separate processes, compare
+semantic outcomes, exercise all negative controls, and contribute instrumented
+execution to the same coverage run. Native-only compilation remains exercised by
+the platform feature matrix and by standalone replay runs. The ten-second route
+setup timeout test uses Tokio's paused clock, including the just-before-deadline
+assertion; real QUIC recovery and crypto tests retain their real clocks.
+
+### Costs that cannot be replaced by these local proofs
+
+The preceding instrumented Cargo run recorded 909s for independent fuzz/benchmark
+harness builds and tests, 589s for the external consumer's debug/release builds,
+506s for release runtime checks, 353s for complete C++ suites, 308s for the extra
+ignored-inventory build, and 241s/214s for schedule/packet replay qualification.
+These are shared-workstation measurements, including compiler/lock contention,
+not a prediction of hosted CI savings. The inventory/replay changes remove the
+three nested workspace builds; they do not skip the replay assertions.
+
+Independent harness target trees remain separate because quiche emits unhashed
+library artifacts that can be overwritten by a different workspace's build.
+Compile-fail API contracts, release-profile checks, external-consumer builds,
+C++/Rust interoperability, storage crashes, Miri and fuzz campaigns therefore
+remain required. A local transition theorem would not establish their compiler,
+ABI, optimizer, memory or IO guarantees. The slow graph/dispatch Kani proofs
+also remain until their actual ownership operations have deductive contracts;
+substituting a detached scalar model would weaken the checks.
 
 ## Portable engine proofs
 

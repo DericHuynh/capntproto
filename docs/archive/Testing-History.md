@@ -179,7 +179,7 @@ a returned grant under `deny(unused_must_use)`. Six compile-fail doctests provid
 adjacent API examples. Cargo records source and lockfile hashes, compiler identity,
 case sources and logs under `target/verification/api-contracts`.
 
-[RouteGeneration.tla](../../verification/RouteGeneration.tla) checks **39 states /
+The [retired RouteGeneration model](../wiki/Formal-Verification.md#slow-check-replacements-october-13-2026) checked **39 states /
 78 edge prefixes**, replayed against the production allocator seeded at
 `u64::MAX - 2`. Two observer slots retain/release the last three identifiers.
 Invariants require nonzero successes, allocation while capacity remains, permanent
@@ -712,7 +712,7 @@ are preserved. `INITIAL` denotes zero/no entry; `MAX` is a usable final revision
 encoding. Checked `Revisions` state keeps publication <= head behind private
 fields and exposes fallible stage/publish transitions; it cannot be deserialized.
 
-[RevisionBoundary.tla](../../verification/RevisionBoundary.tla) explores **965
+The [retired RevisionBoundary model](../wiki/Formal-Verification.md#slow-check-replacements-october-13-2026) explored **965
 states / 7,980 edge-prefix replays** against the actual Store and production
 revision guards. The primary object starts at `u64::MAX - 2`; a second object
 starts absent. Four operations include compare-and-set staging/publication,

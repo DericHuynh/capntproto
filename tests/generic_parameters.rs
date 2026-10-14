@@ -90,11 +90,24 @@ fn repeated_generator_runs_produce_identical_explicit_aliases() {
 }
 
 #[test]
-fn replay_tlc_generic_parameter_cases() {
-    let path = capntproto_test_support::verification::input("CAPNTPROTO_GENERIC_PARAMETER_CASES")
-        .expect("prepare verified trace corpus");
-    let all_cases: Vec<serde_json::Value> =
-        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+fn exhaustive_generic_parameter_usage_preserves_lexical_order() {
+    // Full product of group/non-group and three uses of Data/A/B/C. Lexical
+    // declaration order is the specification; encounter-order simulation adds
+    // no coverage of the generator that the 128 concrete cases do not supply.
+    let mut all_cases = Vec::new();
+    for group in [false, true] {
+        for a in 0..4 {
+            for b in 0..4 {
+                for c in 0..4 {
+                    let args = [a, b, c];
+                    let alias = (1..=3)
+                        .filter(|p| group || args.contains(p))
+                        .fold(0, |alias, p| alias * 10 + p);
+                    all_cases.push(serde_json::json!({"group":group,"args":args,"alias":alias}));
+                }
+            }
+        }
+    }
     let cases: Vec<_> = all_cases.iter().filter(|c| c["group"] == false).collect();
     let groups: Vec<_> = all_cases.iter().filter(|c| c["group"] == true).collect();
     let dir = tempfile::tempdir().unwrap();

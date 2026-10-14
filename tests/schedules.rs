@@ -60,6 +60,7 @@ fn child(metadata: &Path, test: &str, output: &Path) -> Command {
     cmd.args(["nextest", "run", "--binaries-metadata"])
         .arg(metadata);
     v::nextest::json_output(&mut cmd);
+    v::nextest::replay_profiles(&mut cmd);
     cmd.args(["-E", &format!("test(={test})")])
         .env("CAPNTPROTO_SCHEDULE_OUTPUT", output)
         .env_remove("CAPNTPROTO_SCHEDULE_REPLAY");
@@ -89,24 +90,27 @@ fn recorded_async_schedules_replay_across_processes() {
     )
     .unwrap();
     let metadata = directory.join("binaries.json");
-    let build = v::run_stdout(
-        command("cargo").args([
-            "nextest",
-            "list",
-            "--locked",
-            "--no-default-features",
-            "--features",
-            "native",
-            "--lib",
-            "--test",
-            "authority_schedules",
-            "--list-type=binaries-only",
-            "--message-format=json",
-        ]),
-        &directory.join("build.log"),
-        0,
-    )
-    .unwrap();
+    let build = match v::nextest::replay_metadata(&["capntproto", "authority_schedules"]).unwrap() {
+        Some(metadata) => metadata,
+        None => v::run_stdout(
+            command("cargo").args([
+                "nextest",
+                "list",
+                "--locked",
+                "--no-default-features",
+                "--features",
+                "native",
+                "--lib",
+                "--test",
+                "authority_schedules",
+                "--list-type=binaries-only",
+                "--message-format=json",
+            ]),
+            &directory.join("build.log"),
+            0,
+        )
+        .unwrap(),
+    };
     fs::write(&metadata, &build).unwrap();
     let inventory: Value = serde_json::from_str(&build).unwrap();
     let binaries: BTreeMap<String, PathBuf> = inventory["rust-binaries"]
@@ -237,8 +241,9 @@ fn recorded_async_schedules_replay_across_processes() {
         inputs
     );
     fs::write(base.join("checked.json"), serde_json::to_vec_pretty(&json!({
-        "format":1,"tool":"shuttle 0.9.4", "compiler":compiler,"inputs":inputs,"seed":SEED,
-        "iterations_per_case":ITERATIONS,"processes":2,"same_process_replays":true,"features":["native"],
+        "format":1,"tool":"shuttle 0.9.4", "runner_compiler":compiler,"inputs":inputs,"seed":SEED,
+        "ci_inventory_sha256":std::env::var("CAPNTPROTO_TEST_INVENTORY_SHA256").ok(),
+        "iterations_per_case":ITERATIONS,"processes":2,"same_process_replays":true,"required_features":["native"],
         "cases":evidence,"artifacts":directory,"controls":["lost-wakeup","replayed-lost-wakeup","terminal-lost-wakeup","replayed-terminal-lost-wakeup","truncated-decisions","changed-events"],
         "limits":"bounded single-thread polling of real watch/Notify futures, route workers, serializer/two-party output fences and shutdown completion with scheduled receipt/deadline signals; no instrumentation inside Tokio atomics, no weak-memory, actual clock/socket, authenticated route-installation, receipt-frame authentication or whole-runtime claim"
     })).unwrap()).unwrap();

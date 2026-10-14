@@ -114,6 +114,7 @@ rustix = { version = "1.1", features = ["process"] }
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(capntproto_verus)"] }
 
 [lints.clippy]
 undocumented_unsafe_blocks = "deny"

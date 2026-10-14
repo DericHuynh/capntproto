@@ -1,0 +1,32 @@
+{
+  "format": 1,
+  "cases": {
+    "revision-boundary": {
+      "sha256": "bf679e18cb20d97ac4efb7a36581eef3bdaafc015728c0e6f1d215d2b99912c1",
+      "traces": 7980,
+      "states": 965,
+      "steps": 29150,
+      "former_model": "RevisionBoundary",
+      "model_sha256": "4d53f6dac5742d3cf33ee57acd2f41657494a604d60b7f453cb0c0691e957b38",
+      "config_sha256": "4db6fbcdb9d2a9192c0a673c272a953cfac44eccc2d24c0a80be66a68018d623",
+      "proofs": [
+        "capntproto_proofs::revisions::safety",
+        "capntproto_proofs::revisions::Revisions::stage",
+        "capntproto_proofs::revisions::Revisions::publish"
+      ]
+    },
+    "route-generation": {
+      "sha256": "a103228fa2bdcbfbcb1a553f1550b3792e1d8055fdb84e653393dc2d0fbe3f7a",
+      "traces": 78,
+      "states": 39,
+      "steps": 414,
+      "former_model": "RouteGeneration",
+      "model_sha256": "9df0b1f29fd690902542834c242138a249027fbd95377e76dea0332824f3c529",
+      "config_sha256": "9c928c943d4ab01fba64bfc8a0dc0ea58a72957d56d2f81d76bcb287235b3ef4",
+      "proofs": [
+        "capntproto_proofs::sequence::safety",
+        "capntproto_proofs::sequence::progress"
+      ]
+    }
+  }
+}

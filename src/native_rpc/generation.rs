@@ -39,27 +39,23 @@ impl std::fmt::Display for RouteGeneration {
 }
 
 pub(super) struct Generations {
-    next: Cell<Option<RouteGeneration>>,
+    next: Cell<Option<u64>>,
 }
 impl Generations {
     pub(super) fn new() -> Self {
         Self {
-            next: Cell::new(Some(RouteGeneration(NonZeroU64::MIN))),
+            next: Cell::new(Some(1)),
         }
     }
     pub(super) fn allocate(&self) -> capnp::Result<RouteGeneration> {
-        let generation = self
-            .next
-            .get()
+        let mut next = self.next.get();
+        let value = crate::semantics::sequence::allocate(&mut next)
             .ok_or_else(|| capnp::Error::overloaded("Native route generation exhausted".into()))?;
-        self.next.set(
-            generation
-                .get()
-                .checked_add(1)
-                .and_then(NonZeroU64::new)
-                .map(RouteGeneration),
-        );
-        Ok(generation)
+        self.next.set(next);
+        // Only the verified nonzero sequence writes this private cell.
+        Ok(RouteGeneration(
+            NonZeroU64::new(value).expect("nonzero route sequence"),
+        ))
     }
 }
 

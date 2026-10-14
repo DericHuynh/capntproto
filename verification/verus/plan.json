@@ -34,7 +34,37 @@
     "capntproto_proofs::question::preserves",
     "capntproto_proofs::question::progress",
     "capntproto_proofs::question::safe_effect",
-    "capntproto_proofs::question::safety"
+    "capntproto_proofs::question::safety",
+    "capntproto_proofs::revisions::Revision::checked_next",
+    "capntproto_proofs::revisions::Revision::clone",
+    "capntproto_proofs::revisions::Revision::get",
+    "capntproto_proofs::revisions::Revisions::clone",
+    "capntproto_proofs::revisions::Revisions::head",
+    "capntproto_proofs::revisions::Revisions::publish",
+    "capntproto_proofs::revisions::Revisions::published",
+    "capntproto_proofs::revisions::Revisions::stage",
+    "capntproto_proofs::revisions::checked",
+    "capntproto_proofs::revisions::preserves",
+    "capntproto_proofs::revisions::safety",
+    "capntproto_proofs::sequence::allocate",
+    "capntproto_proofs::sequence::fresh",
+    "capntproto_proofs::sequence::preserves",
+    "capntproto_proofs::sequence::progress",
+    "capntproto_proofs::sequence::safety",
+    "capntproto_proofs::stream::NativeStreamGate::authenticate",
+    "capntproto_proofs::stream::NativeStreamGate::clone",
+    "capntproto_proofs::stream::NativeStreamGate::needs_receive",
+    "capntproto_proofs::stream::NativeStreamGate::needs_send",
+    "capntproto_proofs::stream::NativeStreamGate::ready",
+    "capntproto_proofs::stream::NativeStreamGate::receive",
+    "capntproto_proofs::stream::NativeStreamGate::sent",
+    "capntproto_proofs::stream::NativeStreamGate::state",
+    "capntproto_proofs::stream::NativeStreamState::clone",
+    "capntproto_proofs::stream::StreamRole::clone",
+    "capntproto_proofs::stream::initial_gate",
+    "capntproto_proofs::stream::preserves",
+    "capntproto_proofs::stream::safety",
+    "capntproto_proofs::stream::terminal"
   ],
   "library_verified": 139,
   "controls": [
@@ -100,6 +130,97 @@
       "from": "        spec.entails(weak_fairness(|s, t| return_trace(s, t))),\n",
       "to": "",
       "function": "capntproto_proofs::question::progress"
+    },
+    {
+      "name": "zero-route-id",
+      "source": "src/semantics/sequence.rs",
+      "from": "Some(value)",
+      "to": "Some(0)",
+      "function": "capntproto_proofs::sequence::allocate"
+    },
+    {
+      "name": "recycled-route-id",
+      "source": "src/semantics/sequence.rs",
+      "from": "*next = value.checked_add(1);",
+      "to": "*next = Some(value);",
+      "function": "capntproto_proofs::sequence::allocate"
+    },
+    {
+      "name": "wrapped-route-id",
+      "source": "src/semantics/sequence.rs",
+      "from": "*next = value.checked_add(1);",
+      "to": "*next = if value == u64::MAX { Some(1) } else { value.checked_add(1) };",
+      "function": "capntproto_proofs::sequence::allocate"
+    },
+    {
+      "name": "early-route-exhaustion",
+      "source": "src/semantics/sequence.rs",
+      "from": "let value = (*next)?;",
+      "to": "let value = (*next)?; if value == u64::MAX { return None; }",
+      "function": "capntproto_proofs::sequence::allocate"
+    },
+    {
+      "name": "missing-route-fairness",
+      "source": "src/semantics/verified/sequence.rs",
+      "from": "        spec.entails(weak_fairness(|s,t| take(s,t))),\n",
+      "to": "",
+      "function": "capntproto_proofs::sequence::progress"
+    },
+    {
+      "name": "early-stream-send",
+      "source": "src/semantics/stream.rs",
+      "from": "if !self.needs_send() {",
+      "to": "if false {",
+      "function": "capntproto_proofs::stream::NativeStreamGate::sent"
+    },
+    {
+      "name": "invalid-stream-preface",
+      "source": "src/semantics/stream.rs",
+      "from": "if byte == b'R' {",
+      "to": "if true {",
+      "function": "capntproto_proofs::stream::NativeStreamGate::receive"
+    },
+    {
+      "name": "revived-stream-gate",
+      "source": "src/semantics/stream.rs",
+      "from": "            state => state,",
+      "to": "            _ => NativeStreamState::Ready,",
+      "function": "capntproto_proofs::stream::NativeStreamGate::authenticate"
+    },
+    {
+      "name": "wrapped-revision",
+      "source": "src/semantics/revisions.rs",
+      "from": "Some(Self(self.0.checked_add(1)?))",
+      "to": "if self.0 == u64::MAX { Some(Self(0)) } else { Some(Self(self.0.checked_add(1)?)) }",
+      "function": "capntproto_proofs::revisions::Revision::checked_next"
+    },
+    {
+      "name": "stale-stage",
+      "source": "src/semantics/revisions.rs",
+      "from": "if self.head.0 != expected.0 {",
+      "to": "if false {",
+      "function": "capntproto_proofs::revisions::Revisions::stage"
+    },
+    {
+      "name": "stale-publication",
+      "source": "src/semantics/revisions.rs",
+      "from": "expected.0 != self.published.0 || ",
+      "to": "",
+      "function": "capntproto_proofs::revisions::Revisions::publish"
+    },
+    {
+      "name": "future-publication",
+      "source": "src/semantics/revisions.rs",
+      "from": " || revision.0 > self.head.0",
+      "to": "",
+      "function": "capntproto_proofs::revisions::Revisions::publish"
+    },
+    {
+      "name": "rewound-publication",
+      "source": "src/semantics/revisions.rs",
+      "from": "revision.0 <= expected.0",
+      "to": "revision.0 == expected.0",
+      "function": "capntproto_proofs::revisions::Revisions::publish"
     }
   ]
 }

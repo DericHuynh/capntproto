@@ -19,22 +19,25 @@ fn runtime_packet_scenarios_replay_across_processes() {
     )
     .unwrap();
     let metadata = directory.join("binaries.json");
-    let build = v::run_stdout(
-        command("cargo").args([
-            "nextest",
-            "list",
-            "--locked",
-            "--no-default-features",
-            "--features",
-            "native",
-            "--lib",
-            "--list-type=binaries-only",
-            "--message-format=json",
-        ]),
-        &directory.join("build.log"),
-        0,
-    )
-    .unwrap();
+    let build = match v::nextest::replay_metadata(&["capntproto"]).unwrap() {
+        Some(metadata) => metadata,
+        None => v::run_stdout(
+            command("cargo").args([
+                "nextest",
+                "list",
+                "--locked",
+                "--no-default-features",
+                "--features",
+                "native",
+                "--lib",
+                "--list-type=binaries-only",
+                "--message-format=json",
+            ]),
+            &directory.join("build.log"),
+            0,
+        )
+        .unwrap(),
+    };
     fs::write(&metadata, &build).unwrap();
     let inventory: Value = serde_json::from_str(&build).unwrap();
     let binaries: Vec<PathBuf> = inventory["rust-binaries"]
@@ -49,11 +52,11 @@ fn runtime_packet_scenarios_replay_across_processes() {
     for process in 0..2 {
         let output = directory.join(format!("process-{process}"));
         let result = run(
-            v::nextest::json_output(
+            v::nextest::replay_profiles(v::nextest::json_output(
                 command("cargo")
                     .args(["nextest", "run", "--binaries-metadata"])
                     .arg(&metadata),
-            )
+            ))
             .args(["--", "--exact", CASE])
             .env("CAPNTPROTO_RUNTIME_SIM_OUTPUT", &output)
             .env_remove("CAPNTPROTO_RUNTIME_SIM_REPLAY"),
@@ -75,11 +78,11 @@ fn runtime_packet_scenarios_replay_across_processes() {
     let replay = directory.join("process-0/runs.json");
     let output = directory.join("replay");
     let result = run(
-        v::nextest::json_output(
+        v::nextest::replay_profiles(v::nextest::json_output(
             command("cargo")
                 .args(["nextest", "run", "--binaries-metadata"])
                 .arg(&metadata),
-        )
+        ))
         .args(["--", "--exact", CASE])
         .env("CAPNTPROTO_RUNTIME_SIM_OUTPUT", &output)
         .env("CAPNTPROTO_RUNTIME_SIM_REPLAY", &replay),
@@ -93,11 +96,11 @@ fn runtime_packet_scenarios_replay_across_processes() {
     assert_eq!(replayed, cases[0]);
     // Replaying into the input directory must preserve the valid run.
     run(
-        v::nextest::json_output(
+        v::nextest::replay_profiles(v::nextest::json_output(
             command("cargo")
                 .args(["nextest", "run", "--binaries-metadata"])
                 .arg(&metadata),
-        )
+        ))
         .args(["--", "--exact", CASE])
         .env("CAPNTPROTO_RUNTIME_SIM_OUTPUT", directory.join("process-0"))
         .env("CAPNTPROTO_RUNTIME_SIM_REPLAY", &replay),
@@ -113,11 +116,11 @@ fn runtime_packet_scenarios_replay_across_processes() {
     let bad = directory.join("incorrect-receipt.json");
     fs::write(&bad, serde_json::to_vec_pretty(&corrupted).unwrap()).unwrap();
     let failure = run(
-        v::nextest::json_output(
+        v::nextest::replay_profiles(v::nextest::json_output(
             command("cargo")
                 .args(["nextest", "run", "--binaries-metadata"])
                 .arg(&metadata),
-        )
+        ))
         .args(["--", "--exact", CASE])
         .env("CAPNTPROTO_RUNTIME_SIM_OUTPUT", &output)
         .env("CAPNTPROTO_RUNTIME_SIM_REPLAY", bad),
@@ -135,7 +138,8 @@ fn runtime_packet_scenarios_replay_across_processes() {
         v::distribution::verification_hashes(&root()).unwrap()
     );
     let evidence = json!({
-        "format":1,"compiler":compiler,"inputs":inputs,"binary":binary,
+        "format":1,"runner_compiler":compiler,"inputs":inputs,"binary":binary,
+        "ci_inventory_sha256":std::env::var("CAPNTPROTO_TEST_INVENTORY_SHA256").ok(),
         "binary_sha256":v::sha256(fs::read(binary).unwrap()),
         "runs_sha256":v::sha256(fs::read(replay).unwrap()),"cases":32,"processes":2,
         "scope":"real Native mutual TLS with optional admission secrets driver; real upstream recovery clock and paused application deadlines; in-memory packet IO; generated delivery faults and semantic replay",

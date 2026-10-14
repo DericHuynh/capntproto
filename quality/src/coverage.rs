@@ -413,6 +413,29 @@ pub fn collect(r: &mut Runner) -> Result<()> {
         .collect::<Vec<_>>()
         .join(" | ");
     let filter = format!("not ({exclusions})");
+    // Compile the exact graph once. The ignored-control audit consumes this
+    // fresh inventory instead of building a third, uninstrumented workspace.
+    // --all-targets keeps examples/bench harnesses in the reviewed inventory.
+    let workspace_inventory = r.run_stdout(
+        "workspace-inventory",
+        &mut instrumented(
+            &[
+                "nextest",
+                "list",
+                "--locked",
+                "--ignore-rust-version",
+                "--workspace",
+                "--all-targets",
+                "--features",
+                "capntproto/quic",
+                "--message-format=json",
+            ],
+            &build,
+            &profiles,
+        ),
+    )?;
+    let inventory_path = r.directory.join("workspace-inventory.json");
+    fs::write(&inventory_path, &workspace_inventory)?;
     let tests = r.nextest(
         "workspace-tests",
         instrumented(
@@ -422,6 +445,7 @@ pub fn collect(r: &mut Runner) -> Result<()> {
                 "--locked",
                 "--ignore-rust-version",
                 "--workspace",
+                "--all-targets",
                 "--features",
                 "capntproto/quic",
                 "--no-fail-fast",
@@ -432,6 +456,11 @@ pub fn collect(r: &mut Runner) -> Result<()> {
             &profiles,
         )
         .env("CAPNTPROTO_CI_LANE", "cargo")
+        .env("CAPNTPROTO_TEST_INVENTORY", &inventory_path)
+        .env(
+            "CAPNTPROTO_TEST_INVENTORY_SHA256",
+            v::sha256(&workspace_inventory),
+        )
         .env("CAPNTPROTO_FULL_COVERAGE_BUILD", &build)
         .env("CAPNTPROTO_FULL_COVERAGE_PROFILES", &profiles)
         .env("CAPNTPROTO_FULL_COVERAGE_FLAGS", FLAGS),

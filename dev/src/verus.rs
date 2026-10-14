@@ -14,6 +14,12 @@ const COMMIT: &str = "426d8b01e7ffb910a36c15e1f870ff985bb61eef";
 const BUNDLE_SHA: &str = "624018662868563a7bec0dd07be5e4dd0c3d61124b4b55105765884bf2d4d1a0";
 const TLA_COMMIT: &str = "e7eda3f24b60fbbf4396e623a06da9ec32512c0e";
 const SOURCES: &[&str] = &[
+    "src/semantics/revisions.rs",
+    "src/semantics/verified/revisions.rs",
+    "src/semantics/sequence.rs",
+    "src/semantics/verified/sequence.rs",
+    "src/semantics/stream.rs",
+    "src/semantics/verified/stream.rs",
     "verification/verus/main.rs",
     "crates/capntproto-rpc-engine/src/question.rs",
     "crates/capntproto-rpc-engine/src/question/verified.rs",
@@ -443,7 +449,7 @@ fn verify(root: &Path, output: &Path, cancel: &Cancellation) -> Result<()> {
     } else {
         evidence["error"].as_str().unwrap().to_owned()
     };
-    crate::write(output.join("README.md"), format!("# Verus and verus-tla: {status}\n\n{details}\n\nSee [production proofs](proofs.json), [temporal library](temporal-library.json) and [source-bound evidence](evidence.json). Each JSON report includes per-function SMT timings. Control failures are expected and their logs identify the violated obligation.\n\n![SMT time per production contract and temporal lemma](proofs.svg)\n\nScope: local handoff and outgoing-question policies, full-width counters and unbounded traces. Progress assumes fair draining/lifting or Return processing/local release. Authentication, network delivery, output acceptance, table generations and constructor/Default wrappers are outside this Verus proof; Kani retains the wrapper and ledger checks.\n"))?;
+    crate::write(output.join("README.md"), format!("# Verus and verus-tla: {status}\n\n{details}\n\nSee [production proofs](proofs.json), [temporal library](temporal-library.json) and [source-bound evidence](evidence.json). Each JSON report includes per-function SMT timings. Control failures are expected and their logs identify the violated obligation.\n\n![SMT time per production contract and temporal lemma](proofs.svg)\n\nScope: local handoff, outgoing-question, non-recycling route sequence, stream publication and revision policies, full-width counters and unbounded traces. Progress assumes fair draining/lifting, Return processing/local release or route allocation. Authentication, network delivery, output acceptance, capability-table generations, storage IO and constructor/Default wrappers are outside these proofs; native tests, Kani and retained distributed models cover those boundaries.\n"))?;
     result
 }
 

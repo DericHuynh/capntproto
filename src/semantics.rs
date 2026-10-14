@@ -1,6 +1,8 @@
 //! Pure production transition guards, also exercised by the finite graph explorer.
 #![forbid(unsafe_code)]
 mod revisions;
+#[cfg(feature = "native")]
+pub(crate) mod sequence;
 mod stream;
 /// Portable production guards; authentication remains the hosted adapter's job.
 ///

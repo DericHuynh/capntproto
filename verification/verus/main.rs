@@ -6,3 +6,9 @@ fn main() {}
 
 #[path = "../../crates/capntproto-rpc-engine/src/question.rs"]
 mod question;
+#[path = "../../src/semantics/sequence.rs"]
+mod sequence;
+#[path = "../../src/semantics/stream.rs"]
+mod stream;
+#[path = "../../src/semantics/revisions.rs"]
+mod revisions;

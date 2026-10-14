@@ -14,13 +14,19 @@ const FILES: &[&str] = &[
     "crates/capntproto-rpc-engine/src/handoff.rs",
     "src/semantics/stream.rs",
 ];
+// Disk replay remains in the Cargo lane; repeating its 7,980 histories for
+// every unrelated authority/stream mutation would not strengthen this check.
+const FILTER: &str = "not (test(replay_tlc_) | test(unix_rpc::) | test(revision_exhaustion_and_atomic_compare_histories)) & (not package(capntproto-rpc-engine) | test(handoff::))";
 const SELECTION: &[&str] = &[
-    "-p", "capntproto", "-p", "capntproto-rpc-engine",
+    "-p",
+    "capntproto",
+    "-p",
+    "capntproto-rpc-engine",
     "--lib",
     "--test",
     "authority",
     "-E",
-    "not (test(replay_tlc_) | test(unix_rpc::)) & (not package(capntproto-rpc-engine) | test(handoff::))",
+    FILTER,
 ];
 
 fn selected_tests(output: &str) -> BTreeSet<String> {
@@ -116,10 +122,10 @@ fn authority_and_transition_mutations() {
             "--cargo-arg=--test=authority",
             "--cargo-arg=--message-format=libtest-json-plus",
             "--cargo-arg=-E",
-            "--cargo-arg=not (test(replay_tlc_) | test(unix_rpc::)) & (not package(capntproto-rpc-engine) | test(handoff::))",
             "--output",
         ])
-        .arg(directory.join("results"));
+        .arg(directory.join("results"))
+        .arg(format!("--cargo-arg={FILTER}"));
     for (key, _) in std::env::vars_os() {
         if key.to_string_lossy().starts_with("CARGO_MUTANTS_") {
             mutate.env_remove(key);
@@ -161,9 +167,9 @@ fn authority_and_transition_mutations() {
     for field in ["missed", "timeout"] {
         assert_eq!(report[field], 0, "{field}");
     }
-    assert_eq!(report["unviable"], 7);
+    assert_eq!(report["unviable"], 8);
     assert_eq!(
-        report["caught"].as_u64().unwrap() + 7,
+        report["caught"].as_u64().unwrap() + 8,
         report["total_mutants"]
     );
     let mut baseline = 0;
@@ -217,6 +223,7 @@ fn authority_and_transition_mutations() {
                 "Grant::rights" => ("Default::default()", "Rights"),
                 "Grant::delegate" => ("Some(Default::default())", "Grant"),
                 "NativeStreamGate::state" => ("Default::default()", "NativeStreamState"),
+                "initial_gate" => ("Default::default()", "NativeStreamGate"),
                 _ => panic!("unexpected unbuildable mutation: {mutant}"),
             };
             assert_eq!(mutant["replacement"], replacement);

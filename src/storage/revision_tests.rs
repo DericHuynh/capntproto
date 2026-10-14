@@ -3,7 +3,7 @@ use crate::semantics::Revisions;
 
 // A valid compacted generation at a high revision avoids billions of writes.
 // Record framing comes from production encoding; counter expectations are
-// supplied independently by the tests/TLC graph.
+// supplied independently by the reviewed regression corpus.
 fn checkpoint(path: &Path, revision: Revision) {
     let mut bytes = vec![0; HEADER];
     bytes.extend(
@@ -122,12 +122,10 @@ fn recovery_rejects_wrapped_single_and_batch_records_without_modifying_disk() {
 }
 
 #[test]
-fn replay_tlc_revision_exhaustion_and_atomic_compare() {
-    use capntproto_test_support::verification::exploration;
-    const MODEL: &str = "verification/RevisionBoundary.tla";
-    const CONFIG: &str = include_str!("../../verification/RevisionBoundary.cfg");
+fn revision_exhaustion_and_atomic_compare_histories() {
     const BASE: u64 = u64::MAX - 2;
-    let paths = exploration::traces(MODEL, "revision-boundary", CONFIG).unwrap();
+    let paths =
+        capntproto_test_support::verification::regressions::traces("revision-boundary").unwrap();
     for path in &paths {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("objects");
@@ -218,21 +216,6 @@ fn replay_tlc_revision_exhaustion_and_atomic_compare() {
             }
         }
     }
-    exploration::controls(
-        MODEL,
-        "revision-boundary",
-        CONFIG,
-        &[
-            ("wrap", "ExpectedOutcome"),
-            ("staleStage", "ExpectedOutcome"),
-            ("stalePublish", "ExpectedOutcome"),
-            ("future", "ExpectedOutcome"),
-            ("rewind", "ExpectedOutcome"),
-            ("partial", "ExactCounters"),
-            ("reuse", "ExactCounters"),
-        ],
-        None,
-    )
-    .unwrap();
+
     eprintln!("{} revision boundary edge-prefix replays", paths.len());
 }

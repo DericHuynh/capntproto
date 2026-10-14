@@ -146,18 +146,6 @@ fn tlc_persistence_expiry_model() {
 }
 
 #[test]
-fn tlc_generic_parameters_model() {
-    verify(
-        catalog()
-            .groups
-            .iter()
-            .find(|g| g.id == "generic_parameters_model")
-            .unwrap(),
-    )
-    .unwrap();
-}
-
-#[test]
 fn tlc_dynamic_orphans_model() {
     verify(
         catalog()
@@ -704,18 +692,6 @@ fn tlc_call_executor_model() {
             .groups
             .iter()
             .find(|g| g.id == "call_executor_model")
-            .unwrap(),
-    )
-    .unwrap();
-}
-
-#[test]
-fn tlc_schema_hints_model() {
-    verify(
-        catalog()
-            .groups
-            .iter()
-            .find(|g| g.id == "schema_hints_model")
             .unwrap(),
     )
     .unwrap();

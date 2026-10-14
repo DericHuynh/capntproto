@@ -674,10 +674,11 @@ generic parameters, including enclosing scopes, repeated arguments and subsets.
 Previously HashSet iteration could produce different orders for declaration and
 use, breaking `Persistent(SturdyRef, Owner)` when its two arguments were distinct.
 The regression compiles and calls nested data/text/capability methods and checks
-16 independent generator runs for identical output. `RpcGenericParameters.tla`
-checks 1,560 states and supplies 128 cases (64 brand combinations each for RPC
-and union group aliases) for comparison with emitted Rust aliases and server
-signatures. Three ordering/outer-scope/unused-parameter mutations fail.
+16 independent generator runs for identical output. A native exhaustive test
+enumerates all 128 cases (64 brand combinations each for RPC and union group
+aliases), comparing emitted Rust aliases and server signatures with lexical
+declaration order. This replaces the separate generic-parameter TLA+ model;
+all original terminal inputs and expected aliases are preserved.
 
 Union `WhichReader` / `WhichBuilder` aliases that name a group bind every enclosing
 parameter carried by the generated group type. Looking only at the group's

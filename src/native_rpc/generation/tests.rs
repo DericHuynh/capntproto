@@ -12,7 +12,7 @@ fn generation_is_nonzero_monotonic_and_network_local() {
     assert!(a.allocate().unwrap() > first);
     assert_eq!(b.allocate().unwrap().get(), 1);
     let boundary = Generations {
-        next: Cell::new(Some(fixture(u64::MAX))),
+        next: Cell::new(Some(u64::MAX)),
     };
     assert_eq!(boundary.allocate().unwrap().get(), u64::MAX);
     for _ in 0..2 {
@@ -25,15 +25,13 @@ fn generation_is_nonzero_monotonic_and_network_local() {
 }
 
 #[test]
-fn replay_tlc_route_generation_exhaustion() {
-    use capntproto_test_support::verification::exploration;
-    const MODEL: &str = "verification/RouteGeneration.tla";
-    const CONFIG: &str = include_str!("../../../verification/RouteGeneration.cfg");
-    let paths = exploration::traces(MODEL, "route-generation", CONFIG).unwrap();
+fn route_generation_exhaustion_histories() {
+    let paths =
+        capntproto_test_support::verification::regressions::traces("route-generation").unwrap();
     let project = |id: RouteGeneration| id.get() - (u64::MAX - 3);
     for path in &paths {
         let allocator = Generations {
-            next: Cell::new(Some(fixture(u64::MAX - 2))),
+            next: Cell::new(Some(u64::MAX - 2)),
         };
         let mut observers = [None, None];
         let mut issued = BTreeSet::new();
@@ -62,7 +60,10 @@ fn replay_tlc_route_generation_exhaustion() {
             }
             let used = issued.iter().map(|id| 1u64 << (project(*id) - 1)).sum();
             for (field, actual) in [
-                ("next", allocator.next.get().map_or(0, project)),
+                (
+                    "next",
+                    allocator.next.get().map_or(0, |id| id - (u64::MAX - 3)),
+                ),
                 ("a", observers[0].map_or(0, project)),
                 ("b", observers[1].map_or(0, project)),
                 ("used", used),
@@ -74,21 +75,7 @@ fn replay_tlc_route_generation_exhaustion() {
             }
         }
     }
-    let live =
-        CONFIG.replace("SPECIFICATION Spec", "SPECIFICATION LiveSpec") + "\nPROPERTY Progress\n";
-    exploration::controls(
-        MODEL,
-        "route-generation",
-        CONFIG,
-        &[
-            ("zero", "Nonzero"),
-            ("early", "AllocationContract"),
-            ("wrap", "Retired"),
-            ("recycle", "NoReuse"),
-        ],
-        Some(&live),
-    )
-    .unwrap();
+
     eprintln!("{} native generation edge-prefix replays", paths.len());
 }
 
@@ -115,7 +102,7 @@ async fn exhausted_network_reuses_live_routes_and_rejects_new_dials_without_side
                 } else {
                     Network::with_connector([1; 32], connector.clone())
                 };
-                network.state.generations.next.set(Some(fixture(u64::MAX)));
+                network.state.generations.next.set(Some(u64::MAX));
                 let route = network.state.route([2; 32]).unwrap();
                 let observer = route.session.observe();
                 assert_eq!(observer.generation().get(), u64::MAX);

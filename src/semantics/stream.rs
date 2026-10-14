@@ -1,3 +1,9 @@
+#[cfg(capntproto_verus)]
+use vstd::prelude::*;
+#[cfg(capntproto_verus)]
+include!("verified/stream.rs");
+
+#[cfg_attr(capntproto_verus, verus_verify)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StreamRole {
     Initiator,
@@ -6,6 +12,7 @@ pub enum StreamRole {
 
 /// Exactly one state of the authenticated stream-opening gate. Failed preface
 /// validation is terminal; another authentication notification cannot reset it.
+#[cfg_attr(capntproto_verus, verus_verify)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NativeStreamState {
     Handshaking(StreamRole),
@@ -25,17 +32,23 @@ pub enum NativeStreamState {
 /// ```compile_fail,E0308
 /// let gate = capntproto::semantics::NativeStreamGate::new(false);
 /// ```
+#[cfg_attr(capntproto_verus, verus_verify)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NativeStreamGate {
     state: NativeStreamState,
 }
+#[cfg_attr(capntproto_verus, verus_spec(r => ensures state_spec(r) == NativeStreamState::Handshaking(role)))]
+fn initial_gate(role: StreamRole) -> NativeStreamGate {
+    NativeStreamGate {
+        state: NativeStreamState::Handshaking(role),
+    }
+}
 impl NativeStreamGate {
     #[must_use]
     pub fn new(role: StreamRole) -> Self {
-        Self {
-            state: NativeStreamState::Handshaking(role),
-        }
+        initial_gate(role)
     }
+    #[cfg_attr(capntproto_verus, verus_spec(ensures auth_step(*old(self), *final(self))))]
     pub fn authenticate(&mut self) {
         self.state = match self.state {
             NativeStreamState::Handshaking(StreamRole::Initiator) => NativeStreamState::SendPreface,
@@ -46,14 +59,17 @@ impl NativeStreamGate {
         };
     }
     #[must_use]
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures r == (state_spec(*self) is SendPreface)))]
     pub fn needs_send(&self) -> bool {
-        self.state == NativeStreamState::SendPreface
+        matches!(self.state, NativeStreamState::SendPreface)
     }
     #[must_use]
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures r == (state_spec(*self) is ReceivePreface)))]
     pub fn needs_receive(&self) -> bool {
-        self.state == NativeStreamState::ReceivePreface
+        matches!(self.state, NativeStreamState::ReceivePreface)
     }
     #[must_use]
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures sent_step(*old(self), *final(self), r)))]
     pub fn sent(&mut self) -> bool {
         if !self.needs_send() {
             return false;
@@ -62,6 +78,7 @@ impl NativeStreamGate {
         true
     }
     #[must_use]
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures receive_step(*old(self), *final(self), byte, r)))]
     pub fn receive(&mut self, byte: u8) -> bool {
         if !self.needs_receive() {
             return false;
@@ -74,10 +91,12 @@ impl NativeStreamGate {
         self.ready()
     }
     #[must_use]
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures r == (state_spec(*self) is Ready)))]
     pub fn ready(&self) -> bool {
-        self.state == NativeStreamState::Ready
+        matches!(self.state, NativeStreamState::Ready)
     }
     #[must_use]
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures r == state_spec(*self)))]
     pub fn state(&self) -> NativeStreamState {
         self.state
     }
