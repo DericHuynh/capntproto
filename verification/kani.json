@@ -19,6 +19,9 @@
     "clients::dispatch::proofs::oldest_ready_call_survives_rejection_and_slot_reuse",
     "clients::dispatch::proofs::borrowed_scopes_never_reuse_accepted_task_identity",
     "clients::proofs::frozen_route_and_reflected_barrier_preserve_order",
+    "clients::proofs::frozen_route_direct_after_call",
+    "clients::proofs::frozen_route_reflected_before_call",
+    "clients::proofs::frozen_route_direct_before_call",
     "clients::proofs::callable_proxy_exports_preserve_local_resolution_obligations",
     "clients::proofs::full_width_reference_overflow_preserves_resolution",
     "clients::proofs::imported_promise_admission_preserves_owner_and_both_slots",
@@ -30,7 +33,6 @@
     "exports::proofs::export_reservations_preserve_published_counts",
     "exports::proofs::exported_resolution_requires_output_acceptance",
     "exports::release::proofs::implicit_releases_are_atomic_for_full_reference_counts",
-    "handoff::proofs::handoff_inductive_transition",
     "handoff::proofs::handoff_initial_state",
     "imports::batch::proofs::duplicate_batch_admission_is_atomic_for_all_reference_counts",
     "imports::batch::proofs::resolution_is_once_and_preserves_promise_references",
@@ -64,6 +66,7 @@
     "answers::provision::proofs::provision_finish_retires_without_results_or_pipeline_ownership",
     "questions::provision::proofs::provision_question_needs_only_an_accepted_finish",
     "questions::adoption::proofs::adopted_question_cancellation_retains_id_until_return",
+    "questions::adoption::proofs::adopted_question_return_before_cancel_retains_generation",
     "answers::third_party::proofs::callee_selected_answers_preserve_publication_and_retained_pipeline",
     "answers::network::proofs::third_party_destination_and_handoff_permission_stay_distinct",
     "questions::network::proofs::question_destination_cannot_change_on_return_or_reuse",
@@ -282,14 +285,6 @@
       "to": "if id != 0 || amount >= self.remaining() {",
       "harness": "private::arena::fixed::proofs::fixed_reservations_preserve_live_words",
       "expected_check": "fixed reservation accepts exactly available capacity"
-    },
-    {
-      "name": "unreserved-drain",
-      "source": "src/handoff.rs",
-      "from": ".filter(|pending| pending.checked_add(self.drained).is_some())",
-      "to": "",
-      "harness": "handoff::proofs::handoff_inductive_transition",
-      "expected_check": "handoff reserves every future drain"
     },
     {
       "name": "replace-adopted-owner",
@@ -550,8 +545,8 @@
     },
     {
       "module": "HandoffCounterBoundary",
-      "reason": "Initial-state plus inductive-transition proofs cover every valid u64 counter state, including exact exhaustion, rejection, revocation and drain conservation in production code. The prior translated model explored five steps near MAX-2.",
-      "limits": "This is the application handoff guard, not transport authentication or distributed liveness. Authenticated handoff, network ordering and fair-progress TLA+ models remain."
+      "reason": "Verus now checks the production transitions across all valid u64 states, with verus-tla safety induction and fair drain/lift progress. Kani retains the Default wrapper check.",
+      "limits": "Application handoff policy only. Authenticated handoff, multi-vat wire ordering and distributed fair-progress TLC models remain."
     }
   ]
 }

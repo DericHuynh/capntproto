@@ -326,3 +326,102 @@ async fn remote_streaming_credit_precedes_ack_and_late_error_reconnects() {
         })
         .await;
 }
+
+struct Identity(u32);
+impl harness::Server for Identity {
+    async fn echo(
+        self: Rc<Self>,
+        _: harness::EchoParams,
+        mut results: harness::EchoResults,
+    ) -> capnp::Result<()> {
+        if self.0 == 0 {
+            return Err(Error::disconnected("reconnect now".into()));
+        }
+        results.get().set_value(self.0);
+        Ok(())
+    }
+}
+
+#[test]
+fn reconnect_callback_can_replace_or_reset_its_target() {
+    futures::executor::block_on(async {
+        for eager in [false, true] {
+            for reset in [false, true] {
+                let slot = Rc::new(RefCell::new(None::<Box<dyn SetTarget<harness::Client>>>));
+                let weak = Rc::downgrade(&slot);
+                let calls = Rc::new(Cell::new(0));
+                let count = calls.clone();
+                let callback = move || {
+                    let n = count.get();
+                    count.set(n + 1);
+                    if eager && n == 0 {
+                        return Ok(capnp_rpc::new_client(Identity(0)));
+                    }
+                    // Exercise the public controller while the connect callback runs.
+                    let slot = weak.upgrade().unwrap();
+                    if n == usize::from(eager) {
+                        let controller = slot.borrow().as_ref().unwrap().clone();
+                        if reset {
+                            controller.reset();
+                        } else {
+                            controller.set_target(capnp_rpc::new_client(Identity(2)));
+                        }
+                    }
+                    Ok(capnp_rpc::new_client(Identity(1)))
+                };
+                let (client, controller) = if eager {
+                    capnp_rpc::auto_reconnect(callback).unwrap()
+                } else {
+                    capnp_rpc::lazy_auto_reconnect(callback)
+                };
+                *slot.borrow_mut() = Some(controller);
+                let first = client.echo_request().send().promise.await;
+                if eager {
+                    assert_eq!(first.err().unwrap().kind, ErrorKind::Disconnected);
+                } else if reset {
+                    assert_eq!(first.err().unwrap().kind, ErrorKind::Overloaded);
+                } else {
+                    assert_eq!(first.unwrap().get().unwrap().get_value(), 2);
+                }
+                let next = client.echo_request().send().promise.await.unwrap();
+                assert_eq!(next.get().unwrap().get_value(), if reset { 1 } else { 2 });
+                assert_eq!(calls.get(), 1 + usize::from(eager) + usize::from(reset));
+            }
+        }
+    });
+}
+
+#[test]
+fn recursive_reconnect_call_is_rejected_and_callback_panic_is_recoverable() {
+    use futures::FutureExt;
+    let slot = Rc::new(RefCell::new(None::<harness::Client>));
+    let weak = Rc::downgrade(&slot);
+    let attempts = Rc::new(Cell::new(0));
+    let count = attempts.clone();
+    let (client, _) = capnp_rpc::lazy_auto_reconnect(move || {
+        count.set(count.get() + 1);
+        let recursive = weak
+            .upgrade()
+            .unwrap()
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .echo_request()
+            .send()
+            .promise
+            .now_or_never()
+            .unwrap();
+        assert_eq!(recursive.err().unwrap().kind, ErrorKind::Overloaded);
+        if count.get() == 1 {
+            panic!("injected callback panic");
+        }
+        Ok(capnp_rpc::new_client::<harness::Client, _>(Identity(3)))
+    });
+    *slot.borrow_mut() = Some(client.clone());
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| client.echo_request())).is_err()
+    );
+    let response = futures::executor::block_on(client.echo_request().send().promise).unwrap();
+    assert_eq!(response.get().unwrap().get_value(), 3);
+    assert_eq!(attempts.get(), 2);
+}

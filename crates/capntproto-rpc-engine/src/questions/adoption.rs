@@ -265,6 +265,13 @@ mod proofs {
     #[kani::proof]
     #[kani::unwind(6)]
     fn adopted_question_cancellation_retains_id_until_return() {
-        super::check(kani::any(), kani::any());
+        super::check(kani::any(), true);
+    }
+    // Split the complete cancellation/return ordering into two proofs; IDs
+    // remain arbitrary and both cases use the same production-code assertions.
+    #[kani::proof]
+    #[kani::unwind(6)]
+    fn adopted_question_return_before_cancel_retains_generation() {
+        super::check(kani::any(), false);
     }
 }

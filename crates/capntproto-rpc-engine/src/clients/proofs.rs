@@ -2,9 +2,30 @@ use super::*;
 #[kani::proof]
 #[kani::unwind(4)]
 fn frozen_route_and_reflected_barrier_preserve_order() {
+    frozen_route_case(true, true);
+}
+#[kani::proof]
+#[kani::unwind(4)]
+#[kani::solver(kissat)]
+fn frozen_route_direct_after_call() {
+    frozen_route_case(true, false);
+}
+#[kani::proof]
+#[kani::unwind(4)]
+fn frozen_route_reflected_before_call() {
+    frozen_route_case(false, true);
+}
+#[kani::proof]
+#[kani::unwind(4)]
+fn frozen_route_direct_before_call() {
+    frozen_route_case(false, false);
+}
+
+// Prove the full boolean cross-product separately. A single symbolic history
+// builds all four large ownership graphs at once before propositional slicing,
+// exhausting hosted-runner memory. The peer remains arbitrary in every case.
+fn frozen_route_case(called: bool, reflected: bool) {
     let peer: u8 = kani::any();
-    let reflected: bool = kani::any();
-    let called: bool = kani::any();
     let mut slots = [const { Slot::EMPTY }; 3];
     with_graph(&mut slots, |graph| {
         let initial = graph.endpoint(11u8, Location::Remote(peer)).unwrap();

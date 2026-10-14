@@ -32,6 +32,9 @@ enum Command {
     RpcInstructions(dev::rpc_instructions::Args),
     /// Prove the portable engine and fixed arena, with production mutation controls.
     Kani(dev::kani::Args),
+    /// Verify source contracts and unbounded temporal proofs, with fault controls.
+    #[command(subcommand)]
+    Verus(dev::verus::Args),
     #[command(subcommand)]
     Wiki(dev::wiki::Args),
     #[command(subcommand)]
@@ -63,6 +66,7 @@ fn main() -> Result<()> {
         Command::CheckWorkflows => dev::checks::workflows(),
         Command::RpcInstructions(args) => dev::rpc_instructions::run(args),
         Command::Kani(args) => dev::kani::run(args),
+        Command::Verus(args) => dev::verus::run(args),
         Command::Wiki(a) => dev::wiki::run(a),
         Command::Reports(a) => dev::reports::run(a),
         Command::DigitaloceanBench(a) => dev::cloud::run(a),

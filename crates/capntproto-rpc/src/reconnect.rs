@@ -60,35 +60,17 @@ impl<C> Clone for Box<dyn SetTarget<C>> {
     }
 }
 
-struct ClientInner<F, C> {
-    connect: F,
+struct ClientInner<C> {
     current: Option<Box<dyn ClientHook>>,
     generation: Rc<()>,
     marker: PhantomData<C>,
 }
 
-impl<F, C> ClientInner<F, C>
-where
-    F: FnMut() -> capnp::Result<C>,
-    F: 'static,
-    C: FromClientHook,
-{
-    fn get_current(&mut self) -> Box<dyn ClientHook> {
-        if let Some(hook) = self.current.as_ref() {
-            hook.add_ref()
-        } else {
-            let hook = match (self.connect)() {
-                Ok(hook) => hook.into_client_hook(),
-                Err(err) => crate::broken::new_cap(err),
-            };
-            self.current = Some(hook.add_ref());
-            hook
-        }
-    }
-}
-
 struct Client<F, C> {
-    inner: Rc<RefCell<ClientInner<F, C>>>,
+    inner: Rc<RefCell<ClientInner<C>>>,
+    // User callbacks may replace/reset the target. Borrow only the callback
+    // during invocation, never the connection state.
+    connect: Rc<RefCell<F>>,
 }
 
 impl<F, C> Client<F, C>
@@ -100,8 +82,8 @@ where
 {
     pub(crate) fn new(connect: F) -> Client<F, C> {
         Client {
+            connect: Rc::new(RefCell::new(connect)),
             inner: Rc::new(RefCell::new(ClientInner {
-                connect,
                 generation: Rc::new(()),
                 current: None,
                 marker: PhantomData,
@@ -110,7 +92,38 @@ where
     }
 
     pub(crate) fn get_current(&self) -> Box<dyn ClientHook> {
-        self.inner.borrow_mut().get_current()
+        let generation = {
+            let inner = self.inner.borrow();
+            if let Some(current) = &inner.current {
+                return current.add_ref();
+            }
+            inner.generation.clone()
+        };
+        let Ok(mut connect) = self.connect.try_borrow_mut() else {
+            return crate::broken::new_cap(capnp::Error::overloaded(
+                "reentrant call while reconnecting".into(),
+            ));
+        };
+        let hook = match connect() {
+            Ok(client) => client.into_client_hook(),
+            Err(error) => crate::broken::new_cap(error),
+        };
+        drop(connect);
+        let mut inner = self.inner.borrow_mut();
+        if Rc::ptr_eq(&generation, &inner.generation) {
+            inner.current = Some(hook.add_ref());
+            hook
+        } else {
+            // A manual update during connect wins over its stale return value.
+            let current = inner.current.as_ref().map(|hook| hook.add_ref());
+            drop(inner);
+            drop(hook);
+            current.unwrap_or_else(|| {
+                crate::broken::new_cap(capnp::Error::overloaded(
+                    "target reset while reconnecting".into(),
+                ))
+            })
+        }
     }
 
     fn wrap<T: 'static>(
@@ -123,12 +136,14 @@ where
             if err.kind == capnp::ErrorKind::Disconnected
                 && Rc::ptr_eq(&generation, &c.inner.borrow().generation)
             {
-                let mut inner = c.inner.borrow_mut();
-                inner.generation = Rc::new(());
-                match (inner.connect)() {
-                    Ok(hook) => inner.current = Some(hook.into_client_hook()),
-                    Err(err) => inner.current = Some(crate::broken::new_cap(err)),
-                }
+                let old = {
+                    let mut inner = c.inner.borrow_mut();
+                    inner.generation = Rc::new(());
+                    inner.current.take()
+                };
+                // Destruction of the old capability can itself update the target.
+                drop(old);
+                drop(c.get_current());
             }
             err
         }))
@@ -168,6 +183,7 @@ impl<F, C> Clone for Client<F, C> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
+            connect: self.connect.clone(),
         }
     }
 }
@@ -181,6 +197,10 @@ where
 {
     fn debug_info(&self, chain: &mut capnp::private::capability::DebugInfo) {
         chain.push("reconnect");
+        if self.connect.try_borrow().is_err() {
+            chain.push("busy");
+            return;
+        }
         let Ok(state) = self.inner.try_borrow() else {
             chain.push("busy");
             return;

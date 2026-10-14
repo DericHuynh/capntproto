@@ -15,13 +15,51 @@ env:
   CARGO_INCREMENTAL: '0'
   RUST_BACKTRACE: '1'
 jobs:
+  verus:
+    name: Verus / Source contracts and temporal induction
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Initialize pinned temporal proof library
+        run: git submodule update --init vendor/verus-tla
+      - uses: ./.github/actions/dev-setup # zizmor: ignore[self-repository]
+        with:
+          cache-key: verus-0.2026.10.04.426d8b0
+      - name: Install checksum-pinned Verus and its proof toolchain
+        run: cargo run --locked -p capntproto-dev -- verus install
+      - name: Verify production code, temporal library and negative controls
+        timeout-minutes: 15
+        run: cargo run --locked -p capntproto-dev -- verus verify --output target/verification/verus
+      - id: verus-report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: verus-report
+          path: target/verification/verus/
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Link proof results and diagnostics
+        if: always()
+        env:
+          REPORT_URL: ${{ steps.verus-report.outputs.artifact-url }}
+        run: |
+          printf '[Verus proofs, temporal induction and mutation diagnostics](%s)\n' "$REPORT_URL" >> "$GITHUB_STEP_SUMMARY"
+          if test -f target/verification/verus/README.md; then
+            cat target/verification/verus/README.md >> "$GITHUB_STEP_SUMMARY"
+          fi
   kani:
-    name: Prove portable Rust with Kani and mutation controls
-    runs-on: ubuntu-26.04
-    # The campaign includes 68 proofs and 58 separately compiled fault controls.
-    # Leave room for the complete campaign and reports; each proof retains its
-    # own 180-second verifier deadline.
-    timeout-minutes: 90
+    name: Kani proofs and mutation controls (${{ matrix.shard }}/4)
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    # Every proof and its controls belong to exactly one shard. A single verifier
+    # avoids concurrent solver memory peaks; keep time for diagnostics/upload.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -37,12 +75,19 @@ jobs:
           cargo kani setup --use-local-bundle "$RUNNER_TEMP/kani.tar.gz"
           cargo fetch --locked
       - name: Prove production code and detect deliberate faults
-        run: cargo run --locked -p capntproto-dev -- kani --output target/verification/kani
+        timeout-minutes: 65
+        env:
+          KANI_SHARD: ${{ matrix.shard }}
+        run: |
+          # Reserve host memory for the runner. Limit each verifier descendant;
+          # an exhausted process fails the shard and cannot count as a proof.
+          ulimit -v 10485760
+          cargo run --locked -p capntproto-dev -- kani --jobs 1 --shard "$KANI_SHARD" --shards 4 --output target/verification/kani
       - id: kani-report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: kani-report
+          name: kani-report-${{ matrix.shard }}
           path: target/verification/kani/
           if-no-files-found: warn
           retention-days: 30
@@ -57,7 +102,7 @@ jobs:
           fi
   models:
     name: Check distributed TLA+ models after Rust proofs
-    needs: kani
+    needs: [verus, kani]
     runs-on: ubuntu-26.04
     timeout-minutes: 180
     steps:

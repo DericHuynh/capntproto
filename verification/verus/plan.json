@@ -1,0 +1,56 @@
+{
+  "format": 1,
+  "functions": [
+    "capntproto_proofs::handoff::HandoffPhase::clone",
+    "capntproto_proofs::handoff::HandoffState::accept",
+    "capntproto_proofs::handoff::HandoffState::accepted",
+    "capntproto_proofs::handoff::HandoffState::clone",
+    "capntproto_proofs::handoff::HandoffState::direct_calls",
+    "capntproto_proofs::handoff::HandoffState::direct_ready",
+    "capntproto_proofs::handoff::HandoffState::drain",
+    "capntproto_proofs::handoff::HandoffState::drained",
+    "capntproto_proofs::handoff::HandoffState::enqueue",
+    "capntproto_proofs::handoff::HandoffState::invoke_direct",
+    "capntproto_proofs::handoff::HandoffState::is_revoked",
+    "capntproto_proofs::handoff::HandoffState::lift",
+    "capntproto_proofs::handoff::HandoffState::pending",
+    "capntproto_proofs::handoff::HandoffState::phase",
+    "capntproto_proofs::handoff::HandoffState::provide",
+    "capntproto_proofs::handoff::HandoffState::revoke",
+    "capntproto_proofs::handoff::initial_state",
+    "capntproto_proofs::handoff::preserves",
+    "capntproto_proofs::handoff::progress",
+    "capntproto_proofs::handoff::safety"
+  ],
+  "library_verified": 139,
+  "controls": [
+    {
+      "name": "unreserved-drain",
+      "source": "crates/capntproto-rpc-engine/src/handoff.rs",
+      "from": "if pending.checked_add(self.drained).is_none() {",
+      "to": "if false {",
+      "function": "capntproto_proofs::handoff::HandoffState::enqueue"
+    },
+    {
+      "name": "unauthorized-accept",
+      "source": "crates/capntproto-rpc-engine/src/handoff.rs",
+      "from": "if !authorized || self.revoked || matches!(self.phase, HandoffPhase::Proxying) {",
+      "to": "if self.revoked || matches!(self.phase, HandoffPhase::Proxying) {",
+      "function": "capntproto_proofs::handoff::HandoffState::accept"
+    },
+    {
+      "name": "early-lift",
+      "source": "crates/capntproto-rpc-engine/src/handoff.rs",
+      "from": " || self.pending != 0",
+      "to": "",
+      "function": "capntproto_proofs::handoff::HandoffState::lift"
+    },
+    {
+      "name": "missing-drain-fairness",
+      "source": "crates/capntproto-rpc-engine/src/handoff/verified.rs",
+      "from": "        spec.entails(weak_fairness(|s, t| drain_step(s, t))),\n",
+      "to": "",
+      "function": "capntproto_proofs::handoff::progress"
+    }
+  ]
+}

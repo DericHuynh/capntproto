@@ -11,6 +11,7 @@ replace them.
 | Unmodified quiche 0.30.0 | BSD-2-Clause, obtained through Cargo | Registry source and checksum in Cargo.lock |
 | s2n-quic 1.88.0 | Apache-2.0, obtained through Cargo | Optional independent development test peer; registry source and checksums in Cargo.lock |
 | C++ reference submodule and normative schemas | `vendor/capnproto/LICENSE`, schema notices | `.gitmodules` and `vendor/provenance/revision.json` |
+| Unmodified verus-tla temporal proof library | `vendor/verus-tla/LICENSE` (MIT) | Development-only submodule; `.gitmodules` and `vendor/provenance/verus-tla-revision.json`. Verified before use; never linked into production. |
 | rustls and tokio-rustls | Apache-2.0 OR MIT, obtained through Cargo | TLS-over-TCP implementation; exact versions and checksums in Cargo.lock |
 | BoringSSL / boring and x509-parser | Respective crate license notices, obtained through Cargo | quiche TLS and pinned certificate verification; exact versions in Cargo.lock |
 | rcgen | Apache-2.0 OR MIT, obtained through Cargo | Native identity and test certificate generation; version and checksum in Cargo.lock |

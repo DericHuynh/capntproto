@@ -376,8 +376,21 @@ fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
     );
     let formal = &all["verification-models"]["jobs"];
     ensure!(
-        formal["models"]["needs"] == "kani",
-        "distributed models must follow Kani proofs"
+        formal["models"]["needs"] == json!(["verus", "kani"]),
+        "distributed models must follow Verus and Kani proofs"
+    );
+    let verus_steps = formal["verus"]["steps"]
+        .as_array()
+        .context("missing Verus job")?;
+    ensure!(verus_steps.iter().any(|s| s["run"] == "cargo run --locked -p capntproto-dev -- verus verify --output target/verification/verus"
+        && s.get("if").is_none() && s.get("continue-on-error").is_none())
+        && formal["verus"].get("if").is_none() && formal["verus"].get("continue-on-error").is_none(),
+        "Verus gate must verify the full inventory and controls unconditionally");
+    ensure!(
+        verus_steps
+            .iter()
+            .any(|s| s["with"]["name"] == "verus-report" && s["if"] == "always()"),
+        "Verus failures must retain diagnostics"
     );
     let proof_steps = formal["kani"]["steps"]
         .as_array()
@@ -385,15 +398,23 @@ fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
     ensure!(
         proof_steps.iter().any(|step| {
             step["run"].as_str().is_some_and(|run|
-        run == "cargo run --locked -p capntproto-dev -- kani --output target/verification/kani")
+        run.lines().any(|line| line == "cargo run --locked -p capntproto-dev -- kani --jobs 1 --shard \"$KANI_SHARD\" --shards 4 --output target/verification/kani"))
+                && step["env"]["KANI_SHARD"] == "${{ matrix.shard }}"
         }),
         "Kani gate must include inventory and mutation controls"
     );
     ensure!(
-        proof_steps
-            .iter()
-            .any(|step| step["with"]["name"] == "kani-report" && step["if"] == "always()"),
+        proof_steps.iter().any(
+            |step| step["with"]["name"] == "kani-report-${{ matrix.shard }}"
+                && step["if"] == "always()"
+        ),
         "Kani failures must retain diagnostics"
+    );
+    ensure!(
+        all["verification-models"]["jobs"]["kani"]["strategy"]["matrix"]["shard"]
+            == json!([1, 2, 3, 4])
+            && all["verification-models"]["jobs"]["kani"]["strategy"]["fail-fast"] == false,
+        "all four Kani shards must run, including after a failed sibling"
     );
     ensure!(
         jobs["performance"]["needs"] == json!(["cargo", "models", "fuzz", "extended"]),

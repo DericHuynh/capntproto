@@ -150,6 +150,27 @@ fn workflow_policy_rejects_missing_gates_duplicates_and_untrusted_cloud_jobs() {
     }
     workflow_policy(&all).unwrap();
     for (file, pointer, value) in [
+        ("verification-models", "/jobs/models/needs", json!(["kani"])),
+        (
+            "verification-models",
+            "/jobs/verus/steps/4/run",
+            json!("true"),
+        ),
+        (
+            "verification-models",
+            "/jobs/verus/steps/5/if",
+            json!("success()"),
+        ),
+        (
+            "verification-models",
+            "/jobs/kani/strategy/matrix/shard",
+            json!([1, 2, 3]),
+        ),
+        (
+            "verification-models",
+            "/jobs/kani/strategy/fail-fast",
+            json!(true),
+        ),
         ("ci", "/jobs/performance/needs", json!(["cargo"])),
         ("ci", "/jobs/report/needs", json!(["platforms"])),
         (

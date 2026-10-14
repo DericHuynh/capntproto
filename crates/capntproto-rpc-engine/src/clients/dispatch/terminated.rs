@@ -86,6 +86,7 @@ mod checks {
     #[cfg(kani)]
     #[kani::proof]
     #[kani::unwind(5)]
+    #[kani::solver(kissat)]
     fn terminal_dispatch_detaches_each_owner_once() {
         check(kani::any());
     }

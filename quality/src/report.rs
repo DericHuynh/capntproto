@@ -29,7 +29,15 @@ pub fn validate_evidence(e: &Evidence, id: &str, directory: &Path) -> Result<()>
         || e.steps.is_empty()
         || e.steps.iter().any(|s| !s.passed)
     {
-        return Err(format!("{}: incomplete, failed or stale evidence", e.lane).into());
+        return Err(format!(
+            "{}: incomplete, failed or stale evidence{}",
+            e.lane,
+            e.error
+                .as_ref()
+                .map(|error| format!(": {error}"))
+                .unwrap_or_default()
+        )
+        .into());
     }
     for step in &e.steps {
         if !step

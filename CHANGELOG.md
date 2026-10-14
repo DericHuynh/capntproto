@@ -1,5 +1,23 @@
 # 0.1.0 developer preview (unpublished)
 
+- Add pinned Verus and verus-tla verification of the actual no-alloc handoff
+  implementation. Replace its Kani transition proof with full-width contracts
+  and unbounded temporal induction; preserve the Default wrapper and distributed
+  TLC checks. CI requires complete positive proofs and four logical negative
+  controls, publishes separate diagnostics/timing graphs, and verifies the
+  temporal library itself before use. Normal Rust builds have no new dependency.
+- Run Kani as four required proof/control shards with bounded resources and
+  checkpointed evidence. Include the RPC wire crate in LLVM coverage; retain
+  measured counters and detailed errors when the coverage gate fails. Permit
+  at most 0.5 percentage points of scheduling variation while still rejecting
+  lost instrumentation and zero-hit regressions.
+- Derive the nested nextest reporting fixture's binary inventory from the real
+  resource-group configuration, including upstream interoperability tests.
+- Allow reconnect callbacks to replace or reset their target without borrowing
+  panics or overwriting the newer target. Reject recursive connection attempts
+  with `Overloaded` and recover after an unwinding callback. Requests which
+  trigger reconnection retain their original error and are never replayed.
+
 - Qualify legacy and portable RPC against pinned C++ and published capnproto-rust
   in both roles, including payloads through 4 MiB, promise/answer pipelines,
   callback tail calls, cancellation, release, streaming and exception recovery.

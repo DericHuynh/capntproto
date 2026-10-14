@@ -11,6 +11,7 @@ pub mod probes;
 pub mod process;
 pub mod reports;
 pub mod rpc_instructions;
+pub mod verus;
 pub mod wiki;
 use anyhow::{Context, Result};
 use serde_json::Value;

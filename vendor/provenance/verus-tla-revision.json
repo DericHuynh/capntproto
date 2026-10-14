@@ -1,0 +1,9 @@
+{
+  "name": "verus-tla",
+  "repository": "https://github.com/anvil-verifier/verus-tla",
+  "revision": "e7eda3f24b60fbbf4396e623a06da9ec32512c0e",
+  "path": "vendor/verus-tla",
+  "license": "MIT",
+  "modified": false,
+  "usage": "Development-only temporal proof library, verified in full with the pinned Verus release before import. Not linked into production or embedded targets."
+}

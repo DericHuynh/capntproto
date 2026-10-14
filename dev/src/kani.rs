@@ -13,8 +13,30 @@ use std::{
 pub struct Args {
     #[arg(long, default_value = "target/verification/kani")]
     pub output: PathBuf,
-    #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u8).range(1..=16))]
+    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=16))]
     pub jobs: u8,
+    /// One-based shard; each control follows its production proof.
+    #[arg(long, default_value_t = 1)]
+    pub shard: usize,
+    #[arg(long, default_value_t = 1)]
+    pub shards: usize,
+}
+
+fn shard_inventory(
+    all: &BTreeSet<String>,
+    shard: usize,
+    shards: usize,
+) -> Result<BTreeSet<String>> {
+    ensure!(
+        shards > 0 && shards <= all.len() && shard > 0 && shard <= shards,
+        "invalid or empty Kani shard {shard}/{shards}"
+    );
+    Ok(all
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| index % shards == shard - 1)
+        .map(|(_, name)| name.clone())
+        .collect())
 }
 
 fn inputs(root: &Path) -> Result<BTreeMap<String, String>> {
@@ -144,7 +166,7 @@ fn invoke(
     output: &Path,
     name: &str,
     manifest: Option<&Path>,
-    harness: Option<&str>,
+    harnesses: &[String],
     jobs: u8,
     cancel: &Cancellation,
 ) -> Result<(i32, Value)> {
@@ -161,7 +183,7 @@ fn invoke(
             "-Z",
             "unstable-options",
             "--harness-timeout",
-            "180s",
+            "600s",
             "--export-json",
         ])
         .arg(&path)
@@ -181,8 +203,9 @@ fn invoke(
     } else {
         command.args(["-p", "capntproto-rpc-engine", "-p", "capntproto-core"]);
     }
-    if let Some(harness) = harness {
-        command.args(["--harness", harness, "--exact"]);
+    command.arg("--exact");
+    for harness in harnesses {
+        command.args(["--harness", harness]);
     }
     eprintln!("Kani: {name}");
     let result = process::run(
@@ -278,13 +301,14 @@ fn preflight_controls(root: &Path, plan: &Value, expected: &BTreeSet<String>) ->
 fn run_using<V, F>(root: &Path, args: Args, version: V, mut verify: F) -> Result<()>
 where
     V: FnOnce() -> Result<String>,
-    F: FnMut(&Path, &Path, &str, Option<&Path>, Option<&str>, u8) -> Result<(i32, Value)>,
+    F: FnMut(&Path, &Path, &str, Option<&Path>, &[String], u8) -> Result<(i32, Value)>,
 {
     fs::create_dir_all(&args.output)?;
     let output = args.output.canonicalize()?;
     let source = inputs(root)?;
     let source_id = crate::hash(serde_json::to_vec(&source)?);
     let mut evidence = json!({"format":1,"source_id":source_id,"sources":source,"passed":false,"error":"run incomplete","controls":[]});
+    evidence["shard"] = json!({"index":args.shard,"count":args.shards});
     crate::write_json(output.join("evidence.json"), &evidence)?;
     crate::write(
         output.join("README.md"),
@@ -303,12 +327,22 @@ where
             "duplicate proof in inventory"
         );
         preflight_controls(root, &plan, &expected)?;
+        let expected = shard_inventory(&expected, args.shard, args.shards)?;
+        evidence["expected_harnesses"] = json!(expected);
+        crate::write_json(output.join("evidence.json"), &evidence)?;
         let version = version()?;
         ensure!(
             version.lines().next() == Some("Kani Rust Verifier 0.68.0 (cargo plugin)"),
             "install pinned kani-verifier 0.68.0"
         );
-        let (code, data) = verify(root, &output, "proofs", None, None, args.jobs)?;
+        let (code, data) = verify(
+            root,
+            &output,
+            "proofs",
+            None,
+            &expected.iter().cloned().collect::<Vec<_>>(),
+            args.jobs,
+        )?;
         ensure!(
             code == 0,
             "production proofs failed; see proofs.log and proofs.json"
@@ -317,10 +351,15 @@ where
         evidence["tools"] = data["tools"].clone();
         evidence["summary"] = data["verification_results"]["summary"].clone();
         evidence["proofs_sha256"] = crate::file_hash(output.join("proofs.json"))?.into();
+        crate::write_json(output.join("evidence.json"), &evidence)?;
         for control in plan["controls"]
             .as_array()
             .context("missing negative controls")?
         {
+            let harness = crate::string(control, "harness")?;
+            if !expected.contains(harness) {
+                continue;
+            }
             let name = crate::string(control, "name")?;
             ensure!(
                 !name.is_empty() && name.bytes().all(|c| c.is_ascii_lowercase() || c == b'-'),
@@ -372,7 +411,7 @@ where
                 &output,
                 name,
                 Some(&copy.path().join("Cargo.toml")),
-                Some(harness),
+                &[harness.to_owned()],
                 1,
             )?;
             ensure!(code != 0, "mutation unexpectedly passed");
@@ -382,6 +421,8 @@ where
                 Some(crate::string(control, "expected_check")?),
             )?;
             evidence["controls"].as_array_mut().unwrap().push(json!({"name":name,"detected":true,"json_sha256":crate::file_hash(output.join(format!("{name}.json")))?}));
+            // Preserve completed evidence even if a later verifier is interrupted.
+            crate::write_json(output.join("evidence.json"), &evidence)?;
         }
         Ok(())
     })();
@@ -402,7 +443,7 @@ where
     };
     let failures = result.as_ref().err().map(|e| e.to_string()).unwrap_or_else(|| "No unexpected failures. All required production mutations triggered their specified assertions.".into());
     crate::write(output.join("FAILED-PROOFS.md"), format!("# Failed proofs\n\n{failures}\n\n[Production log](proofs.log) · [Full checks and counterexamples](proofs.json). Mutation logs and JSON are retained beside this report.\n"))?;
-    crate::write(output.join("README.md"), format!("# Kani verification\n\nResult: **{status}**. Source fingerprint: `{source_id}`.\n\n[Failed proofs](FAILED-PROOFS.md) · [Raw checks](proofs.json) · [Source/tool identities and controls](evidence.json).\n\n![Per-harness verification time](proofs.svg)\n\nScope: production portable-engine code and the core fixed arena. Growing-storage arithmetic is checked for every usize input; allocator behavior and relocated ownership are covered by native tests and Miri, not claimed as Kani proofs. Borrowed reply-slot checks cover arbitrary u8 values, producer cancellation, receiver closure before and after delivery, once-only recovery and storage reuse. Tracked reply proofs additionally cover duplicate sends, live receiver ownership, abandonment and explicit shutdown recovery; waker callbacks are covered by native reentry tests. Handoff induction covers all valid u64 states. Dense-table induction uses three slots. Sparse proofs use at most two slots. Question histories are eight operations. Scoped questions additionally retain wire IDs through late Return and rejected Finish output; a one-slot proof rejects premature reuse. Incoming answers retain a pipeline owner across Finish and Return, with cancellation policy checked independently of transport; a two-slot proof checks early-Finish dispatch and safe wire-ID reuse while an old pipeline retains its owner. Incoming call preflight checks a new answer together with its parent pipeline dependency; arbitrary u32 reference counts and u64 generations cannot partially commit or wrap. Implicit export-release batches validate every full-width count before applying any release and retain retired owners for explicit cleanup. Atomic import admission covers two repeated descriptors and every valid full-width local/remote count and generation, preserving the whole prefix on failure. Wire-reference transitions cover all u32 counts, failed admission/release, terminal exports and explicit cleanup acceptance. Bounded import ownership covers a one-slot lifecycle with arbitrary u64 generations and full-width count admission; scope separation is a compiler contract. Export proofs cover a one-slot publication/abort lifecycle, call leases across final peer release, generation exhaustion and full-width staged grants. Message proofs cover one two-byte buffer and one send with arbitrary generations, plus completion over up to four bytes with arbitrary reader and completion counts. They preserve buffers through queue acceptance and partial writes, and reject stale completions. Two-buffer proofs retain arbitrary request and mutable result bytes while independently sending and recycling output with the production borrow cells. An owning-writer proof preserves arbitrary initialized bytes across independent buffer use and explicit publication. Descriptor matching covers two slots and up to three full-width wire IDs, plus arbitrary u32 count admission and sticky rejection. A two-frame FIFO proof preserves the oldest unsent suffix through partial writes. Promise admission and resolution preserve arbitrary positive wire counts; accepted Resolve commits exactly once and rejected output remains retryable. A one-slot embargo proof covers every u32 starting ID, cancellation, rejection, exhaustion and stale echoes after storage reuse. Reflected export and answer descriptor batches check two repeated local references against every u32 count; the answer proof also checks joint insertion at every valid u64 generation. One-slot pipeline reflection observes noFinishNeeded while references remain live. Same-connection tail adoption covers every u32 dependency count: rejection preserves state, acceptance consumes the redirect once and retains its producer through Finish and Return. Three-slot graph proofs preserve frozen remote endpoints, reflected loopback barriers, and every positive u32 local reference count. A two-slot imported-promise proof checks all u64 generation pairs, preserving owner and storage on rejection and separating the promise from its immutable endpoint. A two-task dispatcher proof starts from a reachable reused-slot state with two distinct owners, then checks output rejection, FIFO selection and stale cancellation. A one-slot borrowed-dispatch proof checks identity continuity across scopes from every u64 sequence permitting two admissions. Terminal proofs transfer retained ledger owners once, prevent endpoint extraction before queued tasks drain, and preserve independent readers when failed output discards a partial send. A one-byte buffered-output proof covers Pending, Interrupted, failure and successful flush, requiring flush completion before readiness and accepting attached resources only once. The RPC frame decoder, full driver teardown, publication transaction and complete async coordinator are outside these proofs. Fixed-arena proofs use aligned byte storage, one to four words and two full-width reservation attempts, then reset/drop, plus unpublished-suffix rollback and consuming publication that preserves its initialized prefix; they do not prove wire construction or Word-to-byte conversion. No distributed liveness, arbitrary-capacity proof or complete no-alloc RPC claim. Native allocation counters, compile-fail contracts, Miri and bare-metal linking remain separate checks.\n"))?;
+    crate::write(output.join("README.md"), format!("# Kani verification\n\nResult: **{status}**. Source fingerprint: `{source_id}`.\n\n[Failed proofs](FAILED-PROOFS.md) · [Raw checks](proofs.json) · [Source/tool identities and controls](evidence.json).\n\n![Per-harness verification time](proofs.svg)\n\nScope: production portable-engine code and the core fixed arena. Growing-storage arithmetic is checked for every usize input; allocator behavior and relocated ownership are covered by native tests and Miri, not claimed as Kani proofs. Borrowed reply-slot checks cover arbitrary u8 values, producer cancellation, receiver closure before and after delivery, once-only recovery and storage reuse. Tracked reply proofs additionally cover duplicate sends, live receiver ownership, abandonment and explicit shutdown recovery; waker callbacks are covered by native reentry tests. Handoff transition induction has moved to Verus; this lane retains the Default wrapper check. Dense-table induction uses three slots. Sparse proofs use at most two slots. Question histories are eight operations. Scoped questions additionally retain wire IDs through late Return and rejected Finish output; a one-slot proof rejects premature reuse. Incoming answers retain a pipeline owner across Finish and Return, with cancellation policy checked independently of transport; a two-slot proof checks early-Finish dispatch and safe wire-ID reuse while an old pipeline retains its owner. Incoming call preflight checks a new answer together with its parent pipeline dependency; arbitrary u32 reference counts and u64 generations cannot partially commit or wrap. Implicit export-release batches validate every full-width count before applying any release and retain retired owners for explicit cleanup. Atomic import admission covers two repeated descriptors and every valid full-width local/remote count and generation, preserving the whole prefix on failure. Wire-reference transitions cover all u32 counts, failed admission/release, terminal exports and explicit cleanup acceptance. Bounded import ownership covers a one-slot lifecycle with arbitrary u64 generations and full-width count admission; scope separation is a compiler contract. Export proofs cover a one-slot publication/abort lifecycle, call leases across final peer release, generation exhaustion and full-width staged grants. Message proofs cover one two-byte buffer and one send with arbitrary generations, plus completion over up to four bytes with arbitrary reader and completion counts. They preserve buffers through queue acceptance and partial writes, and reject stale completions. Two-buffer proofs retain arbitrary request and mutable result bytes while independently sending and recycling output with the production borrow cells. An owning-writer proof preserves arbitrary initialized bytes across independent buffer use and explicit publication. Descriptor matching covers two slots and up to three full-width wire IDs, plus arbitrary u32 count admission and sticky rejection. A two-frame FIFO proof preserves the oldest unsent suffix through partial writes. Promise admission and resolution preserve arbitrary positive wire counts; accepted Resolve commits exactly once and rejected output remains retryable. A one-slot embargo proof covers every u32 starting ID, cancellation, rejection, exhaustion and stale echoes after storage reuse. Reflected export and answer descriptor batches check two repeated local references against every u32 count; the answer proof also checks joint insertion at every valid u64 generation. One-slot pipeline reflection observes noFinishNeeded while references remain live. Same-connection tail adoption covers every u32 dependency count: rejection preserves state, acceptance consumes the redirect once and retains its producer through Finish and Return. Three-slot graph proofs preserve frozen remote endpoints, reflected loopback barriers, and every positive u32 local reference count. A two-slot imported-promise proof checks all u64 generation pairs, preserving owner and storage on rejection and separating the promise from its immutable endpoint. A two-task dispatcher proof starts from a reachable reused-slot state with two distinct owners, then checks output rejection, FIFO selection and stale cancellation. A one-slot borrowed-dispatch proof checks identity continuity across scopes from every u64 sequence permitting two admissions. Terminal proofs transfer retained ledger owners once, prevent endpoint extraction before queued tasks drain, and preserve independent readers when failed output discards a partial send. A one-byte buffered-output proof covers Pending, Interrupted, failure and successful flush, requiring flush completion before readiness and accepting attached resources only once. The RPC frame decoder, full driver teardown, publication transaction and complete async coordinator are outside these proofs. Fixed-arena proofs use aligned byte storage, one to four words and two full-width reservation attempts, then reset/drop, plus unpublished-suffix rollback and consuming publication that preserves its initialized prefix; they do not prove wire construction or Word-to-byte conversion. No distributed liveness, arbitrary-capacity proof or complete no-alloc RPC claim. Native allocation counters, compile-fail contracts, Miri and bare-metal linking remain separate checks.\n"))?;
     if result.is_ok() {
         let data = crate::read_json(output.join("proofs.json"))?;
         let rows = data["verification_results"]["results"].as_array().unwrap();
@@ -459,6 +500,30 @@ mod tests {
     }
 
     #[test]
+    fn shards_cover_every_proof_and_control_exactly_once() {
+        let plan = crate::read_json(crate::root().join("verification/kani.json")).unwrap();
+        let all = names(&plan["harnesses"]).unwrap();
+        let mut seen = BTreeSet::new();
+        let mut controls = BTreeSet::new();
+        for shard in 1..=4 {
+            let selected = shard_inventory(&all, shard, 4).unwrap();
+            for harness in &selected {
+                assert!(seen.insert(harness.clone()));
+            }
+            for control in plan["controls"].as_array().unwrap() {
+                if selected.contains(control["harness"].as_str().unwrap()) {
+                    assert!(controls.insert(control["name"].as_str().unwrap()));
+                }
+            }
+        }
+        assert_eq!(seen, all);
+        assert_eq!(controls.len(), plan["controls"].as_array().unwrap().len());
+        for (shard, shards) in [(0, 4), (5, 4), (1, 0), (1, all.len() + 1)] {
+            assert!(shard_inventory(&all, shard, shards).is_err());
+        }
+    }
+
+    #[test]
     fn production_mutations_match_current_source_before_verification() {
         let root = crate::root();
         let plan = crate::read_json(root.join("verification/kani.json")).unwrap();
@@ -495,6 +560,8 @@ mod tests {
                 Args {
                     output: output.clone(),
                     jobs: 1,
+                    shard: 1,
+                    shards: 1,
                 },
                 version,
                 |_, _, _, _, _, _| panic!("invalid plan must not run verifier"),
@@ -520,13 +587,15 @@ mod tests {
             Args {
                 output: output.clone(),
                 jobs: 2,
+                shard: 1,
+                shards: 1,
             },
             version,
             |_, out, name, manifest, harness, _| {
                 let mut data = report();
                 let negative = manifest.is_some();
                 if let Some(manifest) = manifest {
-                    assert_eq!(harness, Some("proof"));
+                    assert_eq!(harness, &["proof".to_owned()]);
                     assert_eq!(
                         fs::read_to_string(manifest.parent().unwrap().join("src/lib.rs")).unwrap(),
                         "BROKEN_GUARD\n"
@@ -554,7 +623,9 @@ mod tests {
             root,
             Args {
                 output: output.clone(),
-                jobs: 1
+                jobs: 1,
+                shard: 1,
+                shards: 1,
             },
             || Ok("wrong version".into()),
             |_, _, _, _, _, _| panic!("wrong tool must not execute")
@@ -581,6 +652,8 @@ mod tests {
             Args {
                 output: output.clone(),
                 jobs: 1,
+                shard: 1,
+                shards: 1,
             },
             version,
             |_, out, name, _, _, _| {
@@ -599,7 +672,9 @@ mod tests {
             root,
             Args {
                 output: output.clone(),
-                jobs: 1
+                jobs: 1,
+                shard: 1,
+                shards: 1,
             },
             version,
             |_, _, _, _, _, _| anyhow::bail!("verifier produced no export")

@@ -22,20 +22,19 @@ fn nextest_evidence_belongs_to_each_invocation_including_failures() {
     )
     .unwrap();
     // Runner intentionally uses this repository's resource-group profile.
-    // Supply its named binary inventory so nextest validates the real config.
+    // Derive literal binary names from the profile instead of duplicating an
+    // inventory that goes stale whenever a new integration test joins a group.
     fs::create_dir(fixture.join("tests")).unwrap();
-    for binary in [
-        "tooling",
-        "schema_compiler",
-        "api_contracts",
-        "guard_quality",
-        "memory_safety",
-        "native_fuzz",
-        "release",
-        "runtime_simulation",
-        "schedules",
-        "ignored_inventory",
-    ] {
+    let profile = fs::read_to_string(v::root().join(".config/nextest.toml")).unwrap();
+    for selector in profile.split("binary(").skip(1) {
+        let binary = selector.split_once(')').unwrap().0.trim_start_matches('=');
+        assert!(
+            !binary.is_empty()
+                && binary
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || c == b'_'),
+            "report fixture requires a literal binary selector: {binary}"
+        );
         fs::write(
             fixture.join(format!("tests/{binary}.rs")),
             "// Profile inventory fixture.\n",

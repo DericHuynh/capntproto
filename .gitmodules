@@ -1,3 +1,6 @@
 [submodule "vendor/capnproto"]
 	path = vendor/capnproto
 	url = https://github.com/capnproto/capnproto.git
+[submodule "vendor/verus-tla"]
+	path = vendor/verus-tla
+	url = https://github.com/anvil-verifier/verus-tla.git

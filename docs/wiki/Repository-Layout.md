@@ -236,6 +236,7 @@ schema tools are needed only by the commands that exercise those systems.
 | `nextest cargo -- --locked -p PACKAGE` | Run nextest with a separate JUnit report |
 | `wiki check` / `wiki build` | Validate documents and export an owned wiki directory |
 | `models generate all` | Regenerate bounded TLC configurations from the checked-in catalog |
+| `verus install` / `verus verify` | Install pinned proof tooling, then verify production contracts, temporal induction and fault controls; see [Formal verification](Formal-Verification.md) |
 | `reports collect` / `render` / `publish` | Validate evidence, generate SVGs, publish trusted reports |
 | `digitalocean-bench check` / `run` / `cleanup` / `janitor` | Manage bounded dedicated benchmark hosts |
 | `afl-fuzz` / `package-fuzz-report` | Run bounded AFL++ campaigns and archive their findings |

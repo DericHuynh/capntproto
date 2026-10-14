@@ -18,7 +18,7 @@ allocation-counter = "=0.8.1"
 
 [lints.rust]
 unsafe_code = "forbid"
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)", "cfg(capntproto_verus)"] }
 
 [lints.clippy]
 undocumented_unsafe_blocks = "deny"

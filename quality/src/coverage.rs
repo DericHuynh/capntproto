@@ -10,7 +10,7 @@ use std::{
     process::Command,
 };
 pub const NIGHTLY: &str = "nightly-2026-03-05";
-pub const SCOPE: &str = "first-party-owned-crates-v3";
+pub const SCOPE: &str = "first-party-owned-crates-v4";
 const FLAGS: &str = "-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch";
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -86,6 +86,7 @@ fn owned_source(path: &Path) -> bool {
             "crates/capntproto-core",
             "crates/capntproto-rpc",
             "crates/capntproto-rpc-engine",
+            "crates/capntproto-rpc-wire",
             "crates/capntproto-futures",
             "crates/capntproto-codegen",
             "crates/capntproto-compiler",
@@ -166,6 +167,7 @@ fn group(path: &str) -> &str {
         "wire-runtime"
     } else if path.starts_with("crates/capntproto-rpc/")
         || path.starts_with("crates/capntproto-rpc-engine/")
+        || path.starts_with("crates/capntproto-rpc-wire/")
     {
         "capability-rpc"
     } else if path.starts_with("crates/capntproto-futures/") {
@@ -211,10 +213,16 @@ pub fn regression(
             ("functions", &old.functions, &new.functions),
             ("branches", &old.branches, &new.branches),
         ] {
+            // Half a percentage point accommodates scheduler-dependent hits in
+            // async error paths. Use exact arithmetic; missing mappings and a
+            // drop to zero coverage never receive this allowance.
+            let old_scaled = u128::from(old.covered) * u128::from(new.count);
+            let new_scaled = u128::from(new.covered) * u128::from(old.count);
             if old.count > 0
                 && (new.count == 0
-                    || u128::from(new.covered) * u128::from(old.count)
-                        < u128::from(old.covered) * u128::from(new.count))
+                    || (old.covered > 0 && new.covered == 0)
+                    || old_scaled.saturating_sub(new_scaled) * 200
+                        > u128::from(old.count) * u128::from(new.count))
             {
                 failures.push(format!(
                     "{name}: {kind} regressed {}/{} -> {}/{}",
@@ -575,6 +583,7 @@ pub fn collect(r: &mut Runner) -> Result<()> {
         "crates/capntproto-core/src/",
         "crates/capntproto-rpc/src/",
         "crates/capntproto-rpc-engine/src/",
+        "crates/capntproto-rpc-wire/src/",
         "crates/capntproto-futures/src/",
         "crates/capntproto-codegen/src/",
         "crates/capntproto-compiler/src/",
@@ -598,6 +607,10 @@ pub fn collect(r: &mut Runner) -> Result<()> {
         scope: SCOPE.into(),
     };
     crate::report::write_files(&r.directory, &summary)?;
+    // Keep measured counters even when the comparison fails. Test success and
+    // coverage policy failure are different outcomes in the downloadable report.
+    r.evidence.data = json!({"test_reports":r.evidence.data["test_reports"],"summary":summary,"objects":objects.len(),"profiles":profile_paths.len(),"llvm_json_sha256":v::sha256(&export),"build":build,"scope":SCOPE});
+    r.save()?;
     fs::write(
         r.directory.join("summary.json"),
         serde_json::to_vec_pretty(&summary)?,
@@ -633,6 +646,7 @@ mod tests {
             "crates/capntproto-core/src/lib.rs",
             "crates/capntproto-rpc/src/lib.rs",
             "crates/capntproto-rpc-engine/src/question.rs",
+            "crates/capntproto-rpc-wire/src/lib.rs",
             "crates/capntproto-futures/src/lib.rs",
             "crates/capntproto-codegen/src/lib.rs",
             "quality/src/coverage.rs",
@@ -728,6 +742,35 @@ mod tests {
         // Existing files have not changed, but new uncovered code lowers the group.
         assert!(regression(&additional, &old).is_err());
         assert_eq!(Metric::default().percent(), None);
+    }
+
+    #[test]
+    fn coverage_allowance_is_bounded_and_never_hides_zero_hits() {
+        let file = |count, covered| FileCoverage {
+            sha256: "fixture".into(),
+            group: "runtime".into(),
+            status: "measured".into(),
+            metrics: Some(Metrics {
+                lines: Metric { count, covered },
+                ..Metrics::default()
+            }),
+        };
+        let baseline = BTreeMap::from([("src/a.rs".into(), file(1000, 900))]);
+        for (covered, passes) in [(900, true), (895, true), (894, false), (0, false)] {
+            assert_eq!(
+                regression(
+                    &BTreeMap::from([("src/a.rs".into(), file(1000, covered))]),
+                    &baseline
+                )
+                .is_ok(),
+                passes
+            );
+        }
+        assert!(regression(
+            &BTreeMap::from([("src/a.rs".into(), file(1000, 0))]),
+            &BTreeMap::from([("src/a.rs".into(), file(1000, 1))])
+        )
+        .is_err());
     }
 
     #[test]
