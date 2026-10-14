@@ -1,5 +1,9 @@
 # 0.1.0 developer preview (unpublished)
 
+- Guarantee eight-byte alignment in the caller-owned retained-parameters test
+  fixture, fixing its 32-bit Miri failure while preserving single/multi-segment
+  and shared/copied parameter lifetime checks.
+
 - Avoid four temporary receipt allocations per capability-free portable Call,
   retaining the target transaction in stack storage and enforcing the same
   capacity limit. Remove admission-only capacity policies from retained receipt

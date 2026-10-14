@@ -1378,8 +1378,12 @@ fn retained_plain_params_keep_segments_and_outlive_the_connection() {
             let payload = if shared {
                 with_pool(|messages| prepare(messages, segmented, true))
             } else {
-                let mut bytes = [0u8; 4096];
-                let mut buffers = [messages::Buffer::new(&mut bytes)];
+                // Caller-owned wire storage must guarantee eight-byte alignment,
+                // including on 32-bit targets and under Miri.
+                let mut words = [capnp::word(0, 0, 0, 0, 0, 0, 0, 0); 512];
+                let mut buffers = [messages::Buffer::new(capnp::Word::words_to_bytes_mut(
+                    &mut words,
+                ))];
                 messages::with_messages(&mut buffers, &mut [], |messages| {
                     prepare(messages, segmented, false)
                 })
