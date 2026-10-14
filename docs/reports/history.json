@@ -548,6 +548,38 @@
     },
     {
       "attempt": 1,
+      "commit": "651c7ec8139691483d2c2262a483c213fbdd7c27",
+      "conclusion": "failure",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "cargo",
+        "note": "Lane failed or did not complete; inspect the linked CI run.",
+        "origin": {
+          "attempt": 1,
+          "commit": "651c7ec8139691483d2c2262a483c213fbdd7c27",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 38517977947
+        },
+        "source_id": "b4e3ae45039d2ad9d38f00d22870ee870fa73d2343fd859f5a11560b2180ca78",
+        "status": "failed",
+        "tests": {
+          "command_passed": true,
+          "complete": true,
+          "errors": 0,
+          "failed": 0,
+          "passed": 2106,
+          "skipped": 20,
+          "suites": 204,
+          "total": 2126
+        }
+      },
+      "date": "2026-10-14T05:41:25Z",
+      "run_id": 38517977947,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/38517977947"
+    },
+    {
+      "attempt": 1,
       "commit": "6efd5d314e69e47a1e2407bfcb1197c835a60392",
       "conclusion": "cancelled",
       "data": {
@@ -1006,6 +1038,29 @@
     },
     {
       "attempt": 1,
+      "commit": "651c7ec8139691483d2c2262a483c213fbdd7c27",
+      "conclusion": "failure",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "fuzz",
+        "note": "Workflow failed after measurement; see the CI run.",
+        "origin": {
+          "attempt": 1,
+          "commit": "651c7ec8139691483d2c2262a483c213fbdd7c27",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 38517977947
+        },
+        "source_id": "b4e3ae45039d2ad9d38f00d22870ee870fa73d2343fd859f5a11560b2180ca78",
+        "status": "failed",
+        "tests": null
+      },
+      "date": "2026-10-14T05:41:25Z",
+      "run_id": 38517977947,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/38517977947"
+    },
+    {
+      "attempt": 1,
       "commit": "6efd5d314e69e47a1e2407bfcb1197c835a60392",
       "conclusion": "cancelled",
       "data": {
@@ -1301,6 +1356,38 @@
       "date": "2026-10-14T04:42:41Z",
       "run_id": 38512796587,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/38512796587"
+    },
+    {
+      "attempt": 1,
+      "commit": "651c7ec8139691483d2c2262a483c213fbdd7c27",
+      "conclusion": "failure",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "models",
+        "note": "Workflow failed after measurement; see the CI run.",
+        "origin": {
+          "attempt": 1,
+          "commit": "651c7ec8139691483d2c2262a483c213fbdd7c27",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 38517977947
+        },
+        "source_id": "b4e3ae45039d2ad9d38f00d22870ee870fa73d2343fd859f5a11560b2180ca78",
+        "status": "failed",
+        "tests": {
+          "command_passed": true,
+          "complete": true,
+          "errors": 0,
+          "failed": 0,
+          "passed": 233,
+          "skipped": 7,
+          "suites": 88,
+          "total": 240
+        }
+      },
+      "date": "2026-10-14T05:41:25Z",
+      "run_id": 38517977947,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/38517977947"
     },
     {
       "attempt": 1,
