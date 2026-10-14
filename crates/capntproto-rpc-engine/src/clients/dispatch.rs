@@ -215,6 +215,14 @@ pub struct Immediate<'a, 'id, 's, T, P> {
     call: Call<'a, 'id, 's, T, P>,
 }
 impl<'id, T, P: Copy + Eq> Immediate<'_, 'id, '_, T, P> {
+    /// Commit a directly dispatched operation with the same target ownership
+    /// as `Ready::accept`, without inserting and removing an intermediate task.
+    pub fn accept_owned<C>(self, owner: C) -> Running<'id, C> {
+        Running {
+            target: self.accept(),
+            owner,
+        }
+    }
     pub fn destination(&self) -> Destination<'id, '_, T, P> {
         self.call.destination()
     }
@@ -266,6 +274,14 @@ impl<'id, C> Running<'id, C> {
     }
     pub fn owner_mut(&mut self) -> &mut C {
         &mut self.owner
+    }
+    /// Change the application's owner without changing the frozen destination
+    /// or its retained graph reference. Complete the returned running token.
+    pub fn map_owner<U>(self, map: impl FnOnce(C) -> U) -> Running<'id, U> {
+        Running {
+            target: self.target,
+            owner: map(self.owner),
+        }
     }
 }
 impl<'id, T, P: Copy + Eq, C> Ready<'_, 'id, '_, T, P, C> {
@@ -439,7 +455,7 @@ impl<'id, 's, T: 's, P: Copy + Eq + 's, C, G: GraphStorage<'id, 's, T, P>>
             queued: &mut self.queued,
         }))
     }
-    pub fn complete(&mut self, task: Running<'id, C>) -> C {
+    pub fn complete<U>(&mut self, task: Running<'id, U>) -> U {
         self.graph.graph_mut().release(task.target);
         task.owner
     }

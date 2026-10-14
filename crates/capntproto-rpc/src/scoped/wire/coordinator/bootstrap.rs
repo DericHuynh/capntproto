@@ -35,6 +35,23 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize, F, O: Output<
 where
     F: FnMut() -> capnp::Result<capability::Client>,
 {
+    fn observes_hooks(&self, event: &connection::Received<'id, server::Results>) -> bool {
+        !matches!(
+            event,
+            connection::Received::Queued(_)
+                | connection::Received::DeferredCall(_)
+                | connection::Received::Returned(_)
+        )
+    }
+    fn accepts_direct_plain_return(&self) -> bool {
+        true
+    }
+    fn direct_publication_preserves_idle(&self) -> bool {
+        self.pending.is_empty()
+    }
+    fn plain_return_preserves_idle(&self) -> bool {
+        self.pending.is_empty()
+    }
     fn set_idle(&mut self, idle: bool) {
         if let Some(notify) = &mut self.idle {
             notify(idle);

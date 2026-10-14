@@ -37,7 +37,7 @@ impl Capacity {
             let mut values = alloc::vec::Vec::new();
             values.try_reserve_exact(length).ok()?;
             values.resize_with(length, fill);
-            Some(Buffer::Heap(values))
+            Some(Buffer::Heap(alloc::boxed::Box::new(values)))
         }
         #[cfg(not(feature = "alloc"))]
         None
@@ -56,7 +56,13 @@ impl Capacity {
 pub(crate) enum Buffer<T, const N: usize> {
     Inline([T; N]),
     #[cfg(feature = "alloc")]
-    Heap(alloc::vec::Vec<T>),
+    // Most per-message buffers are empty (N = 0 in the hosted driver). Keep
+    // the growing representation out of every queued owner in that case.
+    // The fixed provider still owns its array and never allocates.
+    // Box the metadata as well: zero-inline hosted owners stay one pointer
+    // wide while the backing vector grows, reducing every scheduler move.
+    #[allow(clippy::box_collection)]
+    Heap(alloc::boxed::Box<alloc::vec::Vec<T>>),
 }
 impl<T, const N: usize> Buffer<T, N> {
     pub(crate) fn ensure(
@@ -85,7 +91,7 @@ impl<T, const N: usize> Buffer<T, N> {
                     else {
                         return false;
                     };
-                    for (old, new) in values.iter_mut().zip(&mut next) {
+                    for (old, new) in values.iter_mut().zip(next.iter_mut()) {
                         core::mem::swap(old, new);
                     }
                     *self = Self::Heap(next);
@@ -141,7 +147,7 @@ impl<T, const N: usize> IntoIterator for Buffer<T, N> {
         match self {
             Self::Inline(values) => IntoIter::Inline(values.into_iter()),
             #[cfg(feature = "alloc")]
-            Self::Heap(values) => IntoIter::Heap(values.into_iter()),
+            Self::Heap(values) => IntoIter::Heap((*values).into_iter()),
         }
     }
 }

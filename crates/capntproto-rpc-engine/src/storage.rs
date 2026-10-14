@@ -2,6 +2,10 @@
 //! Relocation changes no slot indices or generations. Borrowed storage never
 //! allocates, including when the crate's alloc feature is enabled.
 use core::ops::{Deref, DerefMut};
+#[cfg(any(feature = "alloc", kani))]
+mod limits;
+#[cfg(any(feature = "alloc", kani))]
+pub(crate) use limits::growth_target;
 
 /// Slot backing shared by the engine and its protocol adapters. Growing backing
 /// preserves indices; views borrow the provider and prevent relocation.
@@ -107,12 +111,6 @@ impl<'s, T> Storage<'s, T> {
             }
         }
     }
-}
-
-#[cfg(any(feature = "alloc", kani))]
-pub(crate) fn growth_target(current: usize, additional: usize, maximum: usize) -> Option<usize> {
-    let required = current.checked_add(additional).filter(|n| *n <= maximum)?;
-    Some(required.max(current.saturating_mul(2).min(maximum)))
 }
 
 #[cfg(kani)]

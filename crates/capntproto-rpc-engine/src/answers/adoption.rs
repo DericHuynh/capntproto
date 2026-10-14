@@ -26,15 +26,7 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
     ) -> Result<Adoption<'_, 'id, 'storage, T>, Error> {
         let key = self.lookup(id).ok_or(Error::StaleKey)?;
         let record = self.record(key)?;
-        match record.redirect {
-            Redirect::None | Redirect::ThirdParty => return Err(Error::NotRedirected),
-            Redirect::Adopted => return Err(Error::AlreadyAdopted),
-            Redirect::Available => (),
-        }
-        record
-            .pipelines
-            .checked_add(1)
-            .ok_or(Error::ReferenceLimit)?;
+        record.prepare_adoption()?;
         Ok(Adoption { answers: self, key })
     }
     pub fn adopted(&self, adopted: &Adopted<'id>) -> &T {
@@ -55,8 +47,7 @@ impl<'id, T> Adoption<'_, 'id, '_, T> {
             .answers
             .record_mut(self.key)
             .expect("preflight adoption");
-        record.redirect = Redirect::Adopted;
-        record.pipelines += 1;
+        record.adopt(true);
         Adopted {
             pipeline: Pipeline { key: self.key },
         }
@@ -68,7 +59,7 @@ impl<'id, T> Adoption<'_, 'id, '_, T> {
             .answers
             .record_mut(self.key)
             .expect("preflight adoption");
-        record.redirect = Redirect::Adopted;
+        record.adopt(false);
     }
 }
 

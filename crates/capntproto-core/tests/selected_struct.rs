@@ -13,6 +13,60 @@ fn source() -> message::Reader<capnp::serialize::OwnedSegments> {
 }
 
 #[test]
+fn scoped_root_cache_borrows_inline_storage_and_shares_its_budget() {
+    struct Inline([capnp::Word; 2], std::cell::Cell<bool>);
+    impl message::ReaderSegments for Inline {
+        fn get_segment(&self, id: u32) -> Option<&[u8]> {
+            (id == 0).then(|| {
+                capnp::Word::words_to_bytes(&self.0[..if self.1.replace(true) { 1 } else { 2 }])
+            })
+        }
+    }
+    let reader = message::Reader::new(
+        Inline(
+            [
+                capnp::word(0, 0, 0, 0, 1, 0, 0, 0),
+                capnp::word(42, 0, 0, 0, 0, 0, 0, 0),
+            ],
+            std::cell::Cell::new(false),
+        ),
+        message::ReaderOptions {
+            traversal_limit_in_words: Some(2),
+            ..Default::default()
+        },
+    );
+    let address = reader.get_segments().0.as_ptr();
+    let reader = Box::new(reader);
+    assert_ne!(address, reader.get_segments().0.as_ptr());
+    let value = reader
+        .with_root(|root| {
+            let root = root.get_as::<capnp::any_struct::Reader>()?;
+            Ok::<_, capnp::Error>(root.into_internal_struct_reader().get_data_field::<u64>(0))
+        })
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        value, 42,
+        "one live borrow retains its first segment despite a changing provider"
+    );
+    assert_eq!(
+        reader.with_root(|_| ()).unwrap_err().kind,
+        ErrorKind::ReadLimitExceeded,
+        "the cache shares, rather than resets, the reader budget"
+    );
+    let reader = message::Reader::new((*reader).into_segments(), Default::default());
+    assert_eq!(
+        reader
+            .with_root(|root| root.get_as::<capnp::any_struct::Reader>().map(|_| ()))
+            .unwrap()
+            .unwrap_err()
+            .kind,
+        ErrorKind::MessageContainsOutOfBoundsPointer,
+        "a later borrow rechecks the newly supplied shorter segment"
+    );
+}
+
+#[test]
 fn on_demand_selection_retains_existing_views_and_rejects_foreign_arenas() {
     let cache = message::StructReaderCache::new(source());
     assert!(cache.get().is_none());
@@ -351,4 +405,258 @@ fn retained_selection_checks_every_segment_and_new_reader_limits() {
         panic!()
     };
     assert!(list.get_element_type().is_err());
+}
+
+#[test]
+fn retained_pointer_checks_identity_budget_and_shortened_storage() {
+    use capnp::{any_pointer, any_struct, message::ReaderSegments};
+    use std::{cell::Cell, rc::Rc};
+    #[derive(Clone)]
+    struct Shared {
+        words: Rc<Vec<capnp::Word>>,
+        short: Rc<Cell<bool>>,
+    }
+    impl ReaderSegments for Shared {
+        fn get_segment(&self, id: u32) -> Option<&[u8]> {
+            (id == 0).then(|| {
+                capnp::Word::words_to_bytes(if self.short.get() {
+                    &self.words[..2]
+                } else {
+                    &self.words
+                })
+            })
+        }
+    }
+    let storage = Shared {
+        words: Rc::new(vec![
+            capnp::word(0, 0, 0, 0, 1, 0, 1, 0),
+            capnp::word(42, 0, 0, 0, 0, 0, 0, 0),
+            capnp::word(1, 0, 0, 0, 26, 0, 0, 0),
+            capnp::word(b'a', b'b', b'c', 0, 0, 0, 0, 0),
+        ]),
+        short: Rc::default(),
+    };
+    let reader = message::Reader::new(storage.clone(), Default::default());
+    let root = reader
+        .get_root::<any_struct::Reader>()
+        .unwrap()
+        .into_internal_struct_reader();
+    let content = any_pointer::Reader::new(root.get_pointer_field(0));
+    let copy = Shared {
+        words: Rc::new((*storage.words).clone()),
+        short: Rc::default(),
+    };
+    assert!(
+        matches!(message::CheckedPointerReader::retain(content, copy, Default::default()), Err(error) if error.kind == ErrorKind::TypeMismatch)
+    );
+    let checked = message::CheckedPointerReader::retain(
+        content,
+        storage.clone(),
+        message::ReaderOptions {
+            traversal_limit_in_words: Some(2),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        checked.root().get_as::<capnp::data::Reader>().unwrap(),
+        b"abc"
+    );
+    assert!(
+        matches!(checked.root().get_as::<capnp::data::Reader>(), Err(error) if error.kind == ErrorKind::ReadLimitExceeded)
+    );
+    let checked =
+        message::CheckedPointerReader::retain(content, storage.clone(), Default::default())
+            .unwrap();
+    let checked = Box::new(checked);
+    drop(reader);
+    assert_eq!(
+        checked.root().get_as::<capnp::data::Reader>().unwrap(),
+        b"abc"
+    );
+    storage.short.set(true);
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| checked.root())).is_err());
+    let missing = any_pointer::Reader::new(capnp::private::layout::PointerReader::new_default());
+    let empty: [&[u8]; 0] = [];
+    let checked = message::CheckedPointerReader::retain(
+        missing,
+        &empty[..],
+        message::ReaderOptions {
+            traversal_limit_in_words: Some(0),
+            nesting_limit: 0,
+        },
+    )
+    .unwrap();
+    assert!(checked.root().is_null());
+}
+
+#[test]
+fn consuming_pointer_selection_preserves_budgets_and_rebases_inline_storage() {
+    struct Inline([capnp::Word; 4]);
+    impl message::ReaderSegments for Inline {
+        fn get_segment(&self, id: u32) -> Option<&[u8]> {
+            (id == 0).then(|| capnp::Word::words_to_bytes(&self.0))
+        }
+    }
+    for limit in [3, 4] {
+        let source = message::Reader::new(
+            Inline([
+                capnp::word(0, 0, 0, 0, 1, 0, 1, 0),
+                capnp::word(7, 0, 0, 0, 0, 0, 0, 0),
+                capnp::word(1, 0, 0, 0, 34, 0, 0, 0),
+                capnp::word(b'a', b'b', b'c', 0, 0, 0, 0, 0),
+            ]),
+            message::ReaderOptions {
+                traversal_limit_in_words: Some(limit),
+                ..Default::default()
+            },
+        );
+        let selected = source.try_select_pointer(
+            message::ReaderOptions {
+                traversal_limit_in_words: Some(2),
+                ..Default::default()
+            },
+            |root| -> capnp::Result<_> {
+                let root = root
+                    .get_as::<capnp::any_struct::Reader>()?
+                    .into_internal_struct_reader();
+                let content = capnp::any_pointer::Reader::new(root.get_pointer_field(0));
+                content.validate_capability_indices(0)?;
+                Ok(Some((content, root.get_data_field::<u64>(0))))
+            },
+        );
+        if limit == 3 {
+            assert_eq!(selected.err().unwrap().kind, ErrorKind::ReadLimitExceeded);
+            continue;
+        }
+        let (selected, value) = selected.unwrap().unwrap();
+        assert_eq!(value, 7);
+        let selected = Box::new(selected);
+        assert_eq!(
+            selected.root().get_as::<capnp::text::Reader>().unwrap(),
+            "abc"
+        );
+        assert_eq!(
+            selected
+                .root()
+                .get_as::<capnp::text::Reader>()
+                .unwrap_err()
+                .kind,
+            ErrorKind::ReadLimitExceeded
+        );
+    }
+}
+
+#[test]
+fn consuming_selection_can_decline_or_retain_a_missing_field_without_a_word_charge() {
+    assert!(source()
+        .try_select_pointer(Default::default(), |_| Ok::<_, capnp::Error>(
+            None::<(capnp::any_pointer::Reader<'_>, ())>
+        ))
+        .unwrap()
+        .is_none());
+    let (missing, ()) = source()
+        .try_select_pointer(
+            message::ReaderOptions {
+                traversal_limit_in_words: Some(0),
+                ..Default::default()
+            },
+            |root| -> capnp::Result<_> {
+                let root = root
+                    .get_as::<capnp::any_struct::Reader>()?
+                    .into_internal_struct_reader();
+                Ok(Some((
+                    capnp::any_pointer::Reader::new(root.get_pointer_field(usize::from(u16::MAX))),
+                    (),
+                )))
+            },
+        )
+        .unwrap()
+        .unwrap();
+    assert!(missing.root().is_null());
+}
+
+#[test]
+fn arena_interval_rejects_overflow_without_consuming_the_read_budget() {
+    use capnp::private::arena::{ReaderArena, ReaderArenaImpl};
+    let words = [capnp::word(0, 0, 0, 0, 0, 0, 0, 0); 2];
+    let bytes = capnp::Word::words_to_bytes(&words);
+    let segments = [bytes];
+    let arena = ReaderArenaImpl::new(
+        message::SegmentArray::new(&segments),
+        message::ReaderOptions {
+            traversal_limit_in_words: Some(2),
+            ..Default::default()
+        },
+    );
+    for start in [
+        bytes.as_ptr(),
+        bytes.as_ptr().wrapping_add(8),
+        bytes.as_ptr().wrapping_add(16),
+    ] {
+        for length in [usize::MAX, usize::MAX / 8 + 1, 3] {
+            assert_eq!(
+                arena.contains_interval(0, start, length).unwrap_err().kind,
+                ErrorKind::MessageContainsOutOfBoundsPointer
+            );
+        }
+    }
+    assert!(arena
+        .contains_interval(0, bytes.as_ptr().wrapping_add(16), 0)
+        .is_ok());
+    assert!(arena.contains_interval(0, bytes.as_ptr(), 2).is_ok());
+    assert_eq!(
+        arena
+            .contains_interval(0, bytes.as_ptr(), 1)
+            .unwrap_err()
+            .kind,
+        ErrorKind::ReadLimitExceeded
+    );
+}
+
+#[test]
+fn cached_arena_validates_far_segment_children_with_the_original_budget() {
+    for malformed in [false, true] {
+        let first = [capnp::word(2, 0, 0, 0, 1, 0, 0, 0)];
+        let second = [
+            capnp::word(0, 0, 0, 0, 0, 0, 1, 0),
+            if malformed {
+                capnp::word(0xfd, 0xff, 0xff, 0x7f, 10, 0, 0, 0)
+            } else {
+                capnp::word(1, 0, 0, 0, 10, 0, 0, 0)
+            },
+            capnp::word(42, 0, 0, 0, 0, 0, 0, 0),
+        ];
+        let segments = [
+            capnp::Word::words_to_bytes(&first),
+            capnp::Word::words_to_bytes(&second),
+        ];
+        for limit in [3, 4] {
+            let message = message::Reader::new(
+                message::SegmentArray::new(&segments),
+                message::ReaderOptions {
+                    traversal_limit_in_words: Some(limit),
+                    ..Default::default()
+                },
+            );
+            let result = message
+                .with_root(|root| -> capnp::Result<u8> {
+                    let root = root
+                        .get_as::<capnp::any_struct::Reader>()?
+                        .into_internal_struct_reader();
+                    Ok(root.get_pointer_field(0).get_data(None)?[0])
+                })
+                .unwrap();
+            if malformed {
+                assert_eq!(
+                    result.unwrap_err().kind,
+                    ErrorKind::MessageContainsOutOfBoundsPointer
+                );
+            } else if limit == 3 {
+                assert_eq!(result.unwrap_err().kind, ErrorKind::ReadLimitExceeded);
+            } else {
+                assert_eq!(result.unwrap(), 42);
+            }
+        }
+    }
 }

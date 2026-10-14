@@ -5,7 +5,12 @@
 //! Retire an export only after `release` returns `true`. Retain import cleanup
 //! state until its release ticket is accepted, or the connection is terminal.
 use core::fmt;
+#[cfg(capntproto_verus)]
+use vstd::prelude::*;
+#[cfg(capntproto_verus)]
+include!("references/verified.rs");
 
+#[cfg_attr(capntproto_verus, verus_verify)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     Overflow,
@@ -26,6 +31,7 @@ impl core::error::Error for Error {}
 /// References granted to the peer. Zero is terminal, preventing resurrection
 /// before the caller retires the slot. Failed operations preserve the count.
 #[derive(Debug)]
+#[cfg_attr(capntproto_verus, verus_verify)]
 pub struct ExportRefs {
     count: u32,
 }
@@ -34,15 +40,26 @@ impl Default for ExportRefs {
         Self::new()
     }
 }
+#[cfg_attr(capntproto_verus, verus_spec(r => ensures export_count(r) == 1))]
+const fn initial_export() -> ExportRefs {
+    ExportRefs { count: 1 }
+}
+#[inline]
+#[cfg_attr(capntproto_verus, verus_spec(r => ensures export_count(r) == count))]
+pub(crate) fn published_refs(count: u32) -> ExportRefs {
+    ExportRefs { count }
+}
 impl ExportRefs {
     /// The first descriptor grants one reference.
     pub const fn new() -> Self {
-        Self { count: 1 }
+        initial_export()
     }
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures r == export_count(*self)))]
     pub const fn count(&self) -> u32 {
         self.count
     }
 
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures export_retain(*old(self), *final(self), count, r)))]
     pub fn retain(&mut self, count: u32) -> Result<(), Error> {
         if self.count == 0 {
             return Err(Error::Released);
@@ -54,6 +71,7 @@ impl ExportRefs {
     /// Apply a validated peer Release or roll back an unpublished descriptor.
     /// Returns whether the caller must detach the capability owner and retire
     /// this export. Run destructors after releasing table/storage borrows.
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures export_release(*old(self), *final(self), count, r)))]
     pub fn release(&mut self, count: u32) -> Result<bool, Error> {
         if self.count == 0 {
             return Err(Error::Released);
@@ -66,17 +84,24 @@ impl ExportRefs {
 /// Descriptors received from the peer. Local retain/release policy is separate:
 /// request a ticket only once no local owner needs these remote references.
 #[derive(Debug, Default)]
+#[cfg_attr(capntproto_verus, verus_verify)]
 pub struct ImportRefs {
     count: u32,
 }
+#[cfg_attr(capntproto_verus, verus_spec(r => ensures import_count(r) == 0))]
+const fn initial_import() -> ImportRefs {
+    ImportRefs { count: 0 }
+}
 impl ImportRefs {
     pub const fn new() -> Self {
-        Self { count: 0 }
+        initial_import()
     }
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures r == import_count(*self)))]
     pub const fn count(&self) -> u32 {
         self.count
     }
 
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures import_receive(*old(self), *final(self), count, r)))]
     pub fn receive(&mut self, count: u32) -> Result<(), Error> {
         self.count = self.count.checked_add(count).ok_or(Error::Overflow)?;
         Ok(())
@@ -85,8 +110,20 @@ impl ImportRefs {
     /// Borrow a pending Release effect. Dropping an unaccepted ticket changes
     /// nothing; output backpressure cannot silently forget the release. The
     /// exclusive borrow prevents concurrent receives/duplicate acknowledgments.
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures
+        r.is_some() == (import_count(*old(self)) != 0),
+        match r {
+            Some(ticket) => ticket_count(ticket) == import_count(*old(self))
+                && import_count(*final(self)) == ticket_final_count(ticket),
+            None => *final(self) == *old(self),
+        }
+    ))]
     pub fn pending_release(&mut self) -> Option<ReleaseTicket<'_>> {
-        (self.count != 0).then_some(ReleaseTicket { refs: self })
+        if self.count == 0 {
+            None
+        } else {
+            Some(ReleaseTicket { refs: self })
+        }
     }
 }
 
@@ -95,13 +132,16 @@ impl ImportRefs {
 /// The caller must reserve control-message capacity or terminate the connection
 /// if cleanup cannot progress. This ticket itself never allocates or queues IO.
 #[must_use = "retain the ticket until output accepts it; dropping it preserves pending cleanup"]
+#[cfg_attr(capntproto_verus, verus_verify)]
 pub struct ReleaseTicket<'a> {
     refs: &'a mut ImportRefs,
 }
 impl ReleaseTicket<'_> {
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures r == ticket_count(*self)))]
     pub const fn count(&self) -> u32 {
         self.refs.count
     }
+    #[cfg_attr(capntproto_verus, verus_spec(ensures ticket_final_count(self) == 0))]
     pub fn commit(self) {
         self.refs.count = 0;
     }

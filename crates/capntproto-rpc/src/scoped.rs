@@ -53,6 +53,7 @@ pub struct EndpointMetadata {
 
 type Shutdown = shutdown::Receiver;
 struct Inbox {
+    completion_cache: response::Cache,
     call_template:
         std::cell::OnceCell<capntproto_rpc_wire::owned::connection::PreparedCallTemplate>,
     message_pool: Option<capnp::message::SegmentPool>,
@@ -60,12 +61,20 @@ struct Inbox {
     joins: Option<wire::coordinator::multiparty::Handle>,
     queue: RefCell<VecDeque<Box<Call>>>,
     wake: RefCell<Option<Waker>>,
+    enqueue_wake: RefCell<Option<Waker>>,
     shutdown: Shutdown,
     closed: Cell<bool>,
     live_calls: Cell<usize>,
     maximum_calls: usize,
 }
 impl Inbox {
+    fn notify_enqueue(&self) {
+        let wake = self.enqueue_wake.borrow_mut().take();
+        match wake {
+            Some(wake) => wake.wake(),
+            None => self.notify(),
+        }
+    }
     fn notify(&self) {
         let wake = self.wake.borrow_mut().take();
         if let Some(wake) = wake {
@@ -129,12 +138,14 @@ impl<'id> ClientHooks<'id> {
     pub fn new(maximum_clients: usize, maximum_calls: usize) -> Self {
         Self {
             inbox: Rc::new(Inbox {
+                completion_cache: response::Cache::default(),
                 call_template: std::cell::OnceCell::new(),
                 message_pool: None,
                 admission: None,
                 joins: None,
                 queue: RefCell::new(VecDeque::new()),
                 wake: RefCell::new(None),
+                enqueue_wake: RefCell::new(None),
                 shutdown: shutdown::Receiver::new(),
                 closed: Cell::new(false),
                 live_calls: Cell::new(0),
@@ -294,6 +305,7 @@ impl<'id> ClientHooks<'id> {
         self.collect_with_optional_metadata(graph, |owner| Some(metadata(owner)));
     }
 
+    #[inline(always)]
     fn collect_with_optional_metadata<G: Capabilities<'id>>(
         &mut self,
         graph: &mut G,
@@ -345,6 +357,19 @@ impl<'id> ClientHooks<'id> {
                 // used. In particular, a reflected resolution remains pending
                 // until its original-route loopback has completed.
                 if let Ok(true) = graph.is_settled(&entry.client) {
+                    // Once every promise and reflected-ordering barrier has
+                    // settled, its terminal endpoint is immutable. Retain that
+                    // endpoint directly, like a resolved upstream ClientHook,
+                    // instead of walking and retaining the completed promise
+                    // chain on every subsequent call. In particular a settled
+                    // bootstrap need not pin its question for the client's life.
+                    if let Ok((client, pending)) = graph.snapshot_for_export(&entry.client) {
+                        if pending {
+                            graph.release(client);
+                        } else {
+                            graph.release(core::mem::replace(&mut entry.client, client));
+                        }
+                    }
                     let result = match graph.inspect(&entry.client) {
                         Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
                             location: capntproto_rpc_engine::clients::Location::Broken,
@@ -422,11 +447,11 @@ impl<'id> ClientHooks<'id> {
         self.lookup(&call.endpoint)
     }
     fn lookup(&self, endpoint: &Rc<Endpoint>) -> capnp::Result<&Client<'id>> {
-        let same_inbox = endpoint.inbox.ptr_eq(&Rc::downgrade(&self.inbox));
+        let same_inbox = endpoint.inbox.as_ptr() == Rc::as_ptr(&self.inbox);
         self.entries
             .get(endpoint.index)
             .and_then(Option::as_ref)
-            .filter(|entry| same_inbox && entry.endpoint.ptr_eq(&Rc::downgrade(endpoint)))
+            .filter(|entry| same_inbox && entry.endpoint.as_ptr() == Rc::as_ptr(endpoint))
             .map(|entry| &entry.client)
             .ok_or_else(|| Error::disconnected("call belongs to another or closed scope".into()))
     }
@@ -583,11 +608,7 @@ impl Call {
     /// Loss of reply/pipeline interest; the service's cancellation policy still
     /// determines whether an already running operation can be stopped.
     pub fn is_canceled(&self) -> bool {
-        self.endpoint
-            .inbox
-            .upgrade()
-            .is_none_or(|inbox| inbox.closed.get())
-            || self.completion.is_observed()
+        self.shutdown.is_closed() || self.completion.is_observed()
     }
     pub fn poll_canceled(&mut self, cx: &mut Context<'_>) -> Poll<()> {
         if Pin::new(&mut self.shutdown).poll(cx).is_ready() {
@@ -596,6 +617,12 @@ impl Call {
         self.completion.poll_observed(cx)
     }
     pub fn complete(mut self, result: capnp::Result<()>) {
+        self.completion.complete(result);
+    }
+    /// Hosted queues already own a box. Complete and drop its fields in place,
+    /// preserving field destruction order without moving the full call to stack.
+    #[allow(clippy::boxed_local)] // Preserve the existing allocation through field destruction.
+    fn complete_boxed(mut self: Box<Self>, result: capnp::Result<()>) {
         self.completion.complete(result);
     }
 
@@ -673,11 +700,12 @@ impl Hook {
                 shutdown,
                 inbox,
             }),
-            Err(error) => Promise::err(error),
+            Err(error) => Promise::err(*error),
         }
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
     fn enqueue(
         &self,
         interface: u64,
@@ -687,17 +715,19 @@ impl Hook {
         hints: CallHints,
         third_party: Option<Rc<capnp::message::Builder<capnp::message::HeapAllocator>>>,
         completion: CallCompletion,
-    ) -> capnp::Result<(Shutdown, Weak<Inbox>)> {
+    ) -> Result<(Shutdown, Weak<Inbox>), Box<Error>> {
         if let Some(error) = self.0.failure.borrow().clone() {
-            return Err(error);
+            return Err(Box::new(error));
         }
         let Some(inbox) = self.0.inbox.upgrade().filter(|inbox| !inbox.closed.get()) else {
-            return Err(Error::disconnected(
+            return Err(Box::new(Error::disconnected(
                 "scoped ClientHook driver closed".into(),
-            ));
+            )));
         };
         if inbox.live_calls.get() == inbox.maximum_calls {
-            return Err(Error::overloaded("scoped call capacity exhausted".into()));
+            return Err(Box::new(Error::overloaded(
+                "scoped call capacity exhausted".into(),
+            )));
         }
         let credit = self
             .1
@@ -705,11 +735,13 @@ impl Hook {
             .or_else(|| inbox.admission.clone().map(admission::Credit::new));
         if self.0.remote.get() {
             if let Some(credit) = &credit {
-                credit.acquire()?;
+                credit.ensure()?;
             }
         }
         if inbox.queue.borrow_mut().try_reserve(1).is_err() {
-            return Err(Error::overloaded("scoped call queue exhausted".into()));
+            return Err(Box::new(Error::overloaded(
+                "scoped call queue exhausted".into(),
+            )));
         }
         // Reserve before invoking a custom results hook, which may reenter or
         // close this connection. The guard rolls back even during unwinding.
@@ -719,9 +751,9 @@ impl Hook {
             results.retain_context(credit.clone());
         }
         if inbox.closed.get() {
-            return Err(Error::disconnected(
+            return Err(Box::new(Error::disconnected(
                 "scoped ClientHook driver closed".into(),
-            ));
+            )));
         }
         inbox.queue.borrow_mut().push_back(Box::new(Call {
             credit,
@@ -736,10 +768,14 @@ impl Hook {
             shutdown: inbox.shutdown.clone(),
             _permit: permit,
         }));
-        inbox.notify();
+        inbox.notify_enqueue();
         Ok((inbox.shutdown.clone(), Rc::downgrade(&inbox)))
     }
 
+    pub(crate) fn direct_response_available(&self) -> bool {
+        self.introduced().is_none()
+    }
+    #[inline(always)]
     fn introduced(&self) -> Option<Box<dyn ClientHook>> {
         if let Some(client) = self.0.introduced.borrow().as_ref() {
             return Some(client.add_ref());
@@ -813,8 +849,17 @@ impl ClientHook for Hook {
         method: u16,
         size: Option<capnp::MessageSize>,
     ) -> capability::Request<any_pointer::Owned, any_pointer::Owned> {
+        self.new_call_with_hints(interface, method, size, CallHints::default())
+    }
+    fn new_call_with_hints(
+        &self,
+        interface: u64,
+        method: u16,
+        size: Option<capnp::MessageSize>,
+        hints: CallHints,
+    ) -> capability::Request<any_pointer::Owned, any_pointer::Owned> {
         if let Some(client) = self.introduced() {
-            return client.new_call(interface, method, size);
+            return client.new_call_with_hints(interface, method, size, hints);
         }
         let inbox = self.0.inbox.upgrade();
         let credit = inbox
@@ -823,7 +868,7 @@ impl ClientHook for Hook {
             .map(admission::Credit::new);
         if self.0.remote.get() {
             if let Some(credit) = &credit {
-                if let Err(error) = credit.acquire() {
+                if let Err(error) = credit.ensure() {
                     return capability::Request::new(Box::new(crate::broken::Request::new(
                         error, size,
                     )));
@@ -852,6 +897,7 @@ impl ClientHook for Hook {
             Self(self.0.clone(), credit),
             context,
             template,
+            hints,
         ))
     }
     fn call(

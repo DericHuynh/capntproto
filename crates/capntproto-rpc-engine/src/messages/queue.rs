@@ -154,7 +154,7 @@ impl<'pool, 'storage, R> Queue<'pool, 'storage, R> {
     }
     fn pop(&mut self) {
         let entry = self.slots[self.head].take();
-        self.head = (self.head + 1) % self.slots.len();
+        self.head = policy::ring_offset(self.head, 1, self.slots.len());
         self.len -= 1;
         drop(entry);
     }
@@ -184,7 +184,7 @@ impl<'pool, R> QueueSlot<'_, 'pool, '_, R> {
         offer: Offer<'pool>,
     ) -> SendKey<'pool> {
         let key = messages.accept(offer);
-        let index = (self.queue.head + self.queue.len) % self.queue.slots.len();
+        let index = policy::ring_offset(self.queue.head, self.queue.len, self.queue.slots.len());
         self.queue.slots[index] = Some(QueueEntry {
             key,
             resources: self.resources,

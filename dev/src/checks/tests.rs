@@ -163,13 +163,8 @@ fn workflow_policy_rejects_missing_gates_duplicates_and_untrusted_cloud_jobs() {
         ),
         (
             "verification-models",
-            "/jobs/kani/strategy/matrix/shard",
-            json!([1, 2, 3]),
-        ),
-        (
-            "verification-models",
-            "/jobs/kani/strategy/fail-fast",
-            json!(true),
+            "/jobs/kani",
+            json!({"runs-on":"ubuntu-24.04"}),
         ),
         ("ci", "/jobs/performance/needs", json!(["cargo"])),
         ("ci", "/jobs/report/needs", json!(["platforms"])),

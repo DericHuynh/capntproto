@@ -55,6 +55,7 @@ pub struct PreparedCall<A: capnp::message::Allocator> {
 }
 #[cfg(feature = "alloc")]
 impl<A: capnp::message::Allocator> PreparedCall<A> {
+    #[inline(always)]
     pub fn from_template(
         template: &PreparedCallTemplate,
         allocator: A,
@@ -144,6 +145,7 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
     /// Return a single-segment data-only certificate, or let the general codec
     /// handle multiple segments. Any capability pointer in the content fails
     /// validation; callers with a capability table must use the general codec.
+    #[inline(always)]
     pub fn encoded(
         &self,
         method: calls::DynamicCall,
@@ -256,6 +258,7 @@ impl<'a> EncodedCall<'a> {
     pub(super) fn segment(&self) -> &'a [u8] {
         self.segment
     }
+    #[inline(always)]
     pub(super) fn for_policy(
         &self,
         method: calls::DynamicCall,
@@ -332,39 +335,19 @@ impl PlainTemplate {
         allow_handoff: bool,
         options: capnp::message::ReaderOptions,
     ) -> Result<Frame<'pool>, super::super::super::Error> {
-        let length = segment
-            .len()
-            .checked_add(8)
-            .ok_or(super::super::super::Error::Capacity)?;
         let words =
             u32::try_from(segment.len() / 8).map_err(|_| super::super::super::Error::Capacity)?;
-        let mut writer = messages
-            .reserve_exact(length)
+        let mut header = [0; 8];
+        header[4..].copy_from_slice(&words.to_le_bytes());
+        let lease = messages
+            .copy_from_parts(&[&header, segment], |output| {
+                let body = &mut output[8..];
+                body[self.call..self.call + 4].copy_from_slice(&question.to_wire().to_le_bytes());
+                body[self.target..self.target + 4].copy_from_slice(&target.to_wire().to_le_bytes());
+                body[self.call + 16] = (body[self.call + 16] & !0b101) | u8::from(allow_handoff);
+            })
             .map_err(super::super::super::Error::Storage)?;
-        let result = (|| {
-            let mut output = messages
-                .write_borrowed(&mut writer)
-                .map_err(super::super::super::Error::Storage)?;
-            output[..4].copy_from_slice(&0u32.to_le_bytes());
-            output[4..8].copy_from_slice(&words.to_le_bytes());
-            output[8..].copy_from_slice(segment);
-            let body = &mut output[8..];
-            body[self.call..self.call + 4].copy_from_slice(&question.to_wire().to_le_bytes());
-            body[self.target..self.target + 4].copy_from_slice(&target.to_wire().to_le_bytes());
-            body[self.call + 16] = (body[self.call + 16] & !0b101) | u8::from(allow_handoff);
-            Ok(())
-        })();
-        if let Err(error) = result {
-            messages.discard(writer);
-            return Err(error);
-        }
-        match messages.seal(writer, length) {
-            Ok(lease) => Ok(Frame::new(lease, options)),
-            Err(rejected) => {
-                messages.discard(rejected.writer);
-                Err(super::super::super::Error::Storage(rejected.error))
-            }
-        }
+        Ok(Frame::new(lease, options))
     }
     pub(super) fn new(call: rpc_capnp::call::Reader<'_>, bytes: &[u8]) -> Option<Self> {
         if !matches!(

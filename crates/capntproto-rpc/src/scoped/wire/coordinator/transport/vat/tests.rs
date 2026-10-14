@@ -116,6 +116,37 @@ fn frame() -> Vec<u8> {
     capnp::serialize::write_message_segments_to_words(&vec![vec![0u8; 16]])
 }
 
+#[cfg(unix)]
+#[test]
+fn attachment_storage_is_lazy_and_preserves_limits_and_ownership() {
+    use std::os::{fd::OwnedFd, unix::net::UnixStream};
+    let (socket, _peer) = UnixStream::pair().unwrap();
+    let fd = Rc::new(OwnedFd::from(socket));
+    let disabled = Resources::new(0);
+    let mut bundle = disabled.bundle();
+    assert_eq!(disabled.attach_fd(&mut bundle, Some(fd.clone())), u8::MAX);
+    assert!(bundle.fds.is_none());
+    assert_eq!(Rc::strong_count(&fd), 1);
+
+    let resources = Resources::new(5);
+    assert_eq!(resources.attach_fd(&mut bundle, None), u8::MAX);
+    assert!(bundle.fds.is_none());
+    for index in 0..5 {
+        assert_eq!(resources.attach_fd(&mut bundle, Some(fd.clone())), index);
+    }
+    assert_eq!(resources.attach_fd(&mut bundle, Some(fd.clone())), u8::MAX);
+    assert_eq!(bundle.fds.as_ref().unwrap().len(), 5);
+    assert_eq!(Rc::strong_count(&fd), 6);
+    assert!(bundle
+        .fds
+        .as_ref()
+        .unwrap()
+        .iter()
+        .all(|retained| Rc::ptr_eq(retained, &fd)));
+    drop(bundle);
+    assert_eq!(Rc::strong_count(&fd), 1);
+}
+
 #[test]
 fn buffered_frame_transfer_validates_bytes_and_holds_the_message_through_admission() {
     struct Raw {

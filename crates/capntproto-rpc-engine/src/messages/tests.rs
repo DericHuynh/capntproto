@@ -1,4 +1,167 @@
+extern crate std;
+
 use super::*;
+
+#[test]
+fn owned_send_transfer_preserves_aliases_and_partial_write_ownership_without_allocating() {
+    for retain in [false, true] {
+        let mut bytes = [0; 16];
+        let mut buffers = [Buffer::new(&mut bytes)];
+        let usage = allocation_counter::measure(|| {
+            with_messages(&mut buffers, &mut [SendSlot::EMPTY], |messages| {
+                let lease = messages.copy_from(b"payload").unwrap();
+                let alias = retain.then(|| messages.retain(&lease).unwrap());
+                let offer = messages.offer_owned(lease).unwrap();
+                assert_eq!(messages.reserve(1).unwrap_err(), Error::NoBuffer);
+                let key = messages.accept(offer);
+                let window = messages.send_window(key).unwrap();
+                assert_eq!(window.bytes(), b"payload");
+                assert!(!window.advance(3).unwrap());
+                let window = messages.send_window(key).unwrap();
+                assert_eq!(window.bytes(), b"load");
+                assert_eq!(window.advance(5), Err(Error::InvalidWriteCount));
+                assert_eq!(messages.send_window(key).unwrap().bytes(), b"load");
+                messages.fail_send(key).unwrap();
+                assert_eq!(messages.fail_send(key), Err(Error::StaleSend));
+                if let Some(alias) = alias {
+                    assert_eq!(&*messages.read(&alias), b"payload");
+                    assert_eq!(messages.reserve(1).unwrap_err(), Error::NoBuffer);
+                    messages.release(alias);
+                }
+                let writer = messages.reserve(16).unwrap();
+                messages.discard(writer);
+            })
+            .unwrap();
+        });
+        assert_eq!(usage.count_total, 0);
+    }
+}
+
+#[test]
+fn rejected_owned_send_returns_the_exact_lease_without_consuming_a_generation() {
+    let mut bytes = [0; 16];
+    let mut buffers = [Buffer::new(&mut bytes)];
+    with_messages(&mut buffers, &mut [SendSlot::EMPTY], |messages| {
+        let lease = messages.copy_from(b"original").unwrap();
+        let first = messages.offer(&lease).unwrap();
+        let original = lease.key;
+        let state = messages.buffers[original.index].state.get();
+        let generation = messages.sends[0].generation;
+        let rejected = messages.offer_owned(lease).unwrap_err();
+        assert_eq!(rejected.error, Error::NoSendSlot);
+        assert_eq!(rejected.lease.key, original);
+        assert_eq!(messages.buffers[original.index].state.get(), state);
+        assert_eq!(messages.sends[0].generation, generation);
+        messages.reject(first);
+        messages.sends[0].generation = u64::MAX;
+        let rejected = messages.offer_owned(rejected.lease).unwrap_err();
+        assert_eq!(rejected.error, Error::GenerationExhausted);
+        assert_eq!(rejected.lease.key, original);
+        assert_eq!(&*messages.read(&rejected.lease), b"original");
+        messages.release(rejected.lease);
+        let writer = messages.reserve(16).unwrap();
+        messages.discard(writer);
+    })
+    .unwrap();
+}
+
+#[test]
+fn atomic_copy_parts_edits_only_initialized_bytes_and_recovers_after_unwind() {
+    let mut bytes = [0xa5; 16];
+    let mut buffers = [Buffer::new(&mut bytes)];
+    with_messages(&mut buffers, &mut [], |messages| {
+        let generation = messages.buffers[0].generation.get();
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = messages.copy_from_parts(&[b"head", b"", b"body"], |copied| {
+                assert_eq!(copied, b"headbody");
+                copied[0] = b'H';
+                panic!("failed application initialization");
+            });
+        }));
+        assert!(outcome.is_err());
+        assert_eq!(messages.buffers[0].generation.get(), generation);
+        let initialized = Cell::new(false);
+        let usage = allocation_counter::measure(|| {
+            let lease = messages
+                .copy_from_parts(&[b"ab", b"cde"], |copied| {
+                    initialized.set(true);
+                    assert_eq!(copied, b"abcde");
+                    copied[1..4].copy_from_slice(b"XYZ");
+                })
+                .unwrap();
+            assert!(initialized.get());
+            assert_eq!(&*messages.read(&lease), b"aXYZe");
+            assert_eq!(
+                messages
+                    .copy_from_parts(&[b"x"], |_| panic!("live owner must reject first"))
+                    .err(),
+                Some(Error::NoBuffer)
+            );
+            messages.release(lease);
+            let writer = messages.reserve(1).unwrap();
+            assert_eq!(&*messages.write(&writer), &[0; 16]);
+            messages.discard(writer);
+        });
+        assert_eq!(usage.count_total, 0);
+    })
+    .unwrap();
+}
+
+#[test]
+fn atomic_copy_preserves_views_sends_and_unexposed_capacity_without_allocating() {
+    let measured = allocation_counter::measure(|| {
+        let mut bytes = [0xa5; 16];
+        let mut buffers = [Buffer::new(&mut bytes)];
+        let mut sends = [SendSlot::EMPTY];
+        with_messages(&mut buffers, &mut sends, |messages| {
+            let first = messages.copy_from(b"original").unwrap();
+            assert_eq!(&*messages.read(&first), b"original");
+            assert_eq!(messages.copy_from(b"bad").err(), Some(Error::NoBuffer));
+            let offer = messages.offer(&first).unwrap();
+            let send = messages.accept(offer);
+            messages.release(first);
+            assert_eq!(messages.copy_from(b"bad").err(), Some(Error::NoBuffer));
+            assert_eq!(messages.send_window(send).unwrap().bytes(), b"original");
+            assert_eq!(messages.send_window(send).unwrap().advance(8), Ok(true));
+            let second = messages.copy_from(b"new").unwrap();
+            assert_eq!(&*messages.read(&second), b"new");
+            core::mem::forget(messages.read(&second));
+            messages.release(second);
+            assert_eq!(messages.copy_from(b"bad").err(), Some(Error::NoBuffer));
+        })
+        .unwrap();
+        assert_eq!(&bytes[..8], b"newginal");
+        assert_eq!(&bytes[8..], &[0xa5; 8]);
+        let mut buffers = [Buffer::new(&mut bytes)];
+        with_messages(&mut buffers, &mut sends, |messages| {
+            let empty = messages.copy_from(b"").unwrap();
+            assert!(messages.read(&empty).is_empty());
+            messages.release(empty);
+            let writer = messages.reserve(1).unwrap();
+            assert_eq!(&*messages.write(&writer), &[0; 16]);
+            messages.discard(writer);
+        })
+        .unwrap();
+    });
+    assert_eq!(measured.count_total, 0);
+}
+
+#[test]
+fn atomic_copy_never_reuses_an_exhausted_generation() {
+    let mut bytes = [0; 8];
+    let mut buffers = [Buffer::new(&mut bytes)];
+    with_messages(&mut buffers, &mut [], |messages| {
+        messages.buffers[0].generation.set(u64::MAX - 1);
+        let last = messages.copy_from(b"last").unwrap();
+        assert_eq!(last.key.generation, u64::MAX);
+        messages.release(last);
+        assert_eq!(
+            messages.copy_from(b"next").err(),
+            Some(Error::GenerationExhausted)
+        );
+    })
+    .unwrap();
+}
 
 #[test]
 fn exact_reservation_never_exposes_or_seals_uncleared_capacity() {

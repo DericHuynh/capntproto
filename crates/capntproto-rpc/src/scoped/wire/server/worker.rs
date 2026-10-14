@@ -6,7 +6,7 @@ use capntproto_rpc_wire::clients::{Endpoint, Route};
 use std::num::NonZeroUsize;
 
 type Running<'p, 'id, I, const C: usize, const P: usize> =
-    dispatch::Running<'id, connection::Task<'p, 'id, I, C, P>>;
+    dispatch::Running<'id, connection::Request<'p, 'id, I, C, P>>;
 type Peer<'p, 'id, 's, I, P, const C: usize, const H: usize> =
     Driver<'p, 'id, 's, I, Results, P, Rc<dyn ClientHook>, C, H>;
 
@@ -24,10 +24,7 @@ struct Entry<'p, 'id, I, const C: usize, const H: usize> {
 }
 impl<'p, 'id, I, const C: usize, const H: usize> Entry<'p, 'id, I, C, H> {
     fn request(&self) -> &connection::Request<'p, 'id, I, C, H> {
-        self.running
-            .owner()
-            .as_call()
-            .expect("accepted incoming Call")
+        self.running.owner()
     }
 }
 
@@ -107,27 +104,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         if let Some(kind) = driver.disconnected() {
             return Err(Error::from_kind(kind));
         }
-        let Some(ready) = driver.runtime.next_ready().map_err(wire_error)? else {
-            return Ok(false);
-        };
-        let Some(request) = ready.owner().as_call() else {
-            return Ok(false);
-        };
-        let key = request.answer();
-        if driver
-            .ledgers
-            .answers
-            .is_third_party(key)
-            .map_err(wire_error)?
-            && !driver
-                .ledgers
-                .answers
-                .get(key)
-                .map_err(wire_error)?
-                .owner
-                .producer
-                .transfer_ready()
-        {
+        if !driver.has_pending_call() && driver.runtime.queued() == 0 {
             return Ok(false);
         }
         let index = self
@@ -137,29 +114,69 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             .unwrap_or(self.entries.len());
         if index == self.entries.len() {
             if index == self.maximum {
-                // Leave the ready request with the dispatcher. A completed
-                // execution will wake the coordinator and free this capacity.
                 return Ok(false);
             }
             self.entries.try_reserve(1).map_err(wire_error)?;
         }
-        let results = driver
-            .ledgers
-            .answers
-            .get(key)
-            .map_err(wire_error)?
-            .owner
-            .producer
-            .clone();
-        // Generated dispatch enforces method cancellation via the supplied
-        // executor. Dropping our interest must not cancel a protected method.
-        let execute = driver
-            .ledgers
-            .answers
-            .dispatch(key, true)
-            .map_err(wire_error)?;
+        let (running, execute, results) = if let Some((running, execute)) =
+            driver.dispatch_immediate_call(true).map_err(wire_error)?
+        {
+            let key = running.owner().answer();
+            let results = driver
+                .ledgers
+                .answers
+                .get(key)
+                .expect("dispatched answer remains owned until Return")
+                .owner
+                .producer
+                .clone();
+            (running, execute, results)
+        } else {
+            // A pending route, remote target or older task keeps ordinary FIFO
+            // dispatch. Queueing itself is progress: network controls must get
+            // another turn to prepare a third-party destination before execution.
+            let enqueued = matches!(driver.retry_call(), Ok(Some(_)));
+            let Some(ready) = driver.runtime.next_ready().map_err(wire_error)? else {
+                return Ok(enqueued);
+            };
+            let Some(request) = ready.owner().as_call() else {
+                return Ok(enqueued);
+            };
+            let key = request.answer();
+            let results = &driver
+                .ledgers
+                .answers
+                .get(key)
+                .map_err(wire_error)?
+                .owner
+                .producer;
+            if driver
+                .ledgers
+                .answers
+                .is_third_party(key)
+                .map_err(wire_error)?
+                && !results.transfer_ready()
+            {
+                return Ok(enqueued);
+            }
+            let results = results.clone();
+            // Generated dispatch enforces cancellation via its supplied executor.
+            let execute = driver
+                .ledgers
+                .answers
+                .dispatch(key, true)
+                .map_err(wire_error)?;
+            (
+                ready.accept().map_owner(|task| match task {
+                    connection::Task::Call(call) => call,
+                    _ => unreachable!("preflighted incoming Call"),
+                }),
+                execute,
+                results,
+            )
+        };
         let entry = Entry {
-            running: ready.accept(),
+            running,
             results,
             stage: if execute {
                 Stage::Prepare
@@ -220,6 +237,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     .map_err(wire_error)
             },
             |_| {},
+            |_, _, _, _| Ok(false),
         )
     }
 
@@ -272,6 +290,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     .map_err(wire_error)
             },
             |_| {},
+            |_, _, _, _| Ok(false),
         )
     }
 
@@ -297,6 +316,12 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             usize,
         ) -> capnp::Result<Option<Results>>,
         mut prepare: impl FnMut(&Results),
+        mut publish_plain: impl FnMut(
+            &mut Peer<'p, 'id, '_, I, P, C, H>,
+            &mut messages::Messages<'p, '_, '_>,
+            &connection::Request<'p, 'id, I, C, H>,
+            &connection::PreparedReturn<capnp::message::HeapAllocator>,
+        ) -> capnp::Result<bool>,
     ) -> Poll<capnp::Result<Progress>> {
         if let Some(kind) = driver.disconnected() {
             return Poll::Ready(Err(Error::from_kind(kind)));
@@ -308,7 +333,10 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             self.remaining = self.entries.len();
         }
         let mut advanced = false;
-        for _ in 0..budget.get() {
+        let mut remaining_budget = budget.get();
+        let exclusive = self.entries.len() == 1;
+        while remaining_budget != 0 {
+            remaining_budget -= 1;
             let index = self.cursor;
             self.cursor = if index + 1 == self.entries.len() {
                 0
@@ -329,6 +357,9 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     &mut refresh,
                     &mut publish,
                     &mut prepare,
+                    &mut publish_plain,
+                    &mut remaining_budget,
+                    exclusive,
                 )
             } else {
                 Poll::Pending
@@ -389,6 +420,14 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             usize,
         ) -> capnp::Result<Option<Results>>,
         prepare: &mut impl FnMut(&Results),
+        publish_plain: &mut impl FnMut(
+            &mut Peer<'p, 'id, '_, I, P, C, H>,
+            &mut messages::Messages<'p, '_, '_>,
+            &connection::Request<'p, 'id, I, C, H>,
+            &connection::PreparedReturn<capnp::message::HeapAllocator>,
+        ) -> capnp::Result<bool>,
+        remaining_budget: &mut usize,
+        exclusive: bool,
     ) -> Poll<capnp::Result<Progress>> {
         let key = entry.request().answer();
         // AwaitFromThirdParty may retire on Finish before the child completes.
@@ -444,23 +483,48 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     _ => None,
                 };
                 // Clone the Rc before invoking any original hook code.
-                let target = match local {
-                    Some(Ok(hook)) => hook.add_ref(),
-                    Some(Err(kind)) => crate::broken::new_cap(Error::from_kind(kind)),
-                    None => {
-                        hooks
-                            .export_client(&mut driver.runtime, entry.running.target())?
-                            .hook
-                    }
+                let target: Rc<dyn ClientHook> = match local {
+                    Some(Ok(hook)) => hook,
+                    Some(Err(kind)) => Rc::from(crate::broken::new_cap(Error::from_kind(kind))),
+                    None => hooks
+                        .export_client(&mut driver.runtime, entry.running.target())?
+                        .hook
+                        .into(),
                 };
                 let prepared = hooks.prepare_received_server(entry.request(), driver, messages)?;
                 refresh(hooks, driver);
-                let execution = prepared.execute(&*target, &entry.results, executor.clone())?;
+                let mut execution = prepared.execute(&*target, &entry.results, executor.clone())?;
                 entry.stage = if entry.results.transfer_ready() {
                     Stage::Transfer(entry.results.start_transfer(execution)?)
+                } else if exclusive && *remaining_budget != 0 {
+                    // With one worker there is no intervening dispatch or IO.
+                    // Poll before moving the execution into its suspended slot;
+                    // synchronous services need no stored Execute state. Charge
+                    // the same quantum as the separate Execute step.
+                    *remaining_budget -= 1;
+                    if entry.results.poll_work(&mut execution, cx).is_ready() {
+                        Stage::Collect
+                    } else {
+                        Stage::Execute(execution)
+                    }
                 } else {
                     Stage::Execute(execution)
                 };
+                if exclusive && *remaining_budget >= 2 && matches!(entry.stage, Stage::Collect) {
+                    if let Some(payload) = entry.results.plain_payload() {
+                        let PayloadBody::Return(source) = &payload.body else {
+                            unreachable!()
+                        };
+                        if publish_plain(driver, messages, entry.request(), source)? {
+                            // A synchronous completion needs no suspended
+                            // Collect state. Account for both Collect and
+                            // Publish before retiring the ordinary owner.
+                            *remaining_budget -= 2;
+                            entry.results.returned();
+                            return Poll::Ready(Ok(Progress::Replied));
+                        }
+                    }
+                }
             }
             Stage::Execute(execution) => {
                 // An independently executed protected method may publish an
@@ -485,6 +549,21 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                         .map_err(wire_error)?;
                 if !canceled_transfer && entry.results.poll_completed(cx).is_pending() {
                     return Poll::Pending;
+                }
+                if *remaining_budget != 0 && !canceled_transfer {
+                    if let Some(payload) = entry.results.plain_payload() {
+                        let PayloadBody::Return(source) = &payload.body else {
+                            unreachable!()
+                        };
+                        if publish_plain(driver, messages, entry.request(), source)? {
+                            // Collection and publication remain separately
+                            // charged, although no retained intermediate result
+                            // is needed when the answer can retire immediately.
+                            *remaining_budget -= 1;
+                            entry.results.returned();
+                            return Poll::Ready(Ok(Progress::Replied));
+                        }
+                    }
                 }
                 let redirect = entry.results.redirect();
                 if redirect
@@ -566,15 +645,14 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         }
     }
 }
+#[inline(always)]
 fn release<'p, 'id, I, P: Copy + Eq, const C: usize, const H: usize>(
     entry: Entry<'p, 'id, I, C, H>,
     driver: &mut Peer<'p, 'id, '_, I, P, C, H>,
     messages: &mut messages::Messages<'p, '_, '_>,
 ) {
     drop(entry.stage);
-    let connection::Task::Call(call) = driver.runtime.complete(entry.running) else {
-        unreachable!()
-    };
+    let call = driver.runtime.complete(entry.running);
     driver.release_call(call, messages);
 }
 

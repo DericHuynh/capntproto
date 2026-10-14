@@ -558,7 +558,7 @@ impl<V> io::Close for Writer<V> {
 #[derive(Default)]
 pub struct Bundle {
     #[cfg(unix)]
-    fds: capntproto_rpc_wire::attachments::Sender<Rc<std::os::fd::OwnedFd>, 4>,
+    fds: Option<Box<capntproto_rpc_wire::attachments::Sender<Rc<std::os::fd::OwnedFd>, 4>>>,
     credit: Option<Rc<crate::admission::Permit>>,
 }
 
@@ -620,8 +620,8 @@ impl<V> Writer<V> {
         #[cfg(unix)]
         let frame = {
             let mut frame = frame;
-            if let Some(resources) = resources {
-                frame.set_fds(resources.fds.iter().cloned().collect());
+            if let Some(fds) = resources.and_then(|resources| resources.fds.as_ref()) {
+                frame.set_fds(fds.iter().cloned().collect());
             }
             frame
         };
@@ -665,6 +665,24 @@ impl Resources {
             maximum: maximum_fds.min(253),
         }
     }
+    #[cfg(unix)]
+    fn attach_fd(&self, bundle: &mut Bundle, fd: Option<Rc<std::os::fd::OwnedFd>>) -> u8 {
+        let Some(fd) = fd.filter(|_| self.maximum != 0) else {
+            return u8::MAX;
+        };
+        // Plain TCP/QUIC calls carry only their admission permit. Allocate
+        // attachment storage only once a real resource is actually published.
+        bundle
+            .fds
+            .get_or_insert_with(|| {
+                Box::new(capntproto_rpc_wire::attachments::Sender::new(
+                    Capacity::Growing {
+                        maximum: self.maximum,
+                    },
+                ))
+            })
+            .push(Some(fd))
+    }
 }
 impl Default for Resources {
     fn default() -> Self {
@@ -674,13 +692,7 @@ impl Default for Resources {
 impl Output<resources::Import> for Resources {
     type Bundle = Bundle;
     fn bundle(&self) -> Bundle {
-        Bundle {
-            #[cfg(unix)]
-            fds: capntproto_rpc_wire::attachments::Sender::new(Capacity::Growing {
-                maximum: self.maximum,
-            }),
-            credit: None,
-        }
+        Bundle::default()
     }
     fn retain_call(
         &self,
@@ -698,7 +710,16 @@ impl Output<resources::Import> for Resources {
     ) -> u8 {
         #[cfg(unix)]
         {
-            FileDescriptors::<4>::default().attach(owner, imports, &mut bundle.fds)
+            self.attach_fd(
+                bundle,
+                match owner {
+                    Route::Capability(Endpoint::Imported(remote)) => {
+                        imports.get(remote.reference()).metadata().fd
+                    }
+                    Route::Capability(Endpoint::Local(hook)) | Route::Vine(hook) => hook.get_fd(),
+                    _ => None,
+                },
+            )
         }
         #[cfg(not(unix))]
         {

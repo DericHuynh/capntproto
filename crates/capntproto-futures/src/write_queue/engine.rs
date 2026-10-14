@@ -111,7 +111,7 @@ where
 {
     let shared = Owner::new(Shared {
         queued: Flag::new(false),
-        queue: QueueCell::new(Queue {
+        queue: QueueCell::new(Queue::<M> {
             messages: VecDeque::new(),
             terminal: None,
             accepting: true,
@@ -137,11 +137,20 @@ where
         loop {
             match receiver.next(&mut batch).await {
                 Batch::Messages(through) => {
-                    crate::serialize::write_message_refs(
-                        &mut writer,
-                        batch.iter().map(|(message, _)| message),
-                    )
-                    .await?;
+                    // A complete contiguous frame needs no segment-table or
+                    // vectored-write future. Keep that larger state machine on
+                    // the segmented/batched branch, preserving the same flush
+                    // watermark and message lifetime on partial writes.
+                    if let Some(bytes) = (batch.len() == 1)
+                        .then(|| batch.front().unwrap().0.framed_bytes()).flatten()
+                    {
+                        writer.write_all(bytes).await?;
+                    } else {
+                        crate::serialize::write_message_refs(
+                            &mut writer,
+                            batch.iter().map(|(message, _)| message),
+                        ).await?;
+                    }
                     writer.flush().await?;
                     receiver.0.diagnostics.metrics.lock().unwrap().active = BatchMetrics::default();
                     for (message, completion) in batch.drain(..) {

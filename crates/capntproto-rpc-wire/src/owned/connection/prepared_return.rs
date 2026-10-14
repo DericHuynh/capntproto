@@ -124,6 +124,18 @@ impl<A: capnp::message::Allocator> PreparedReturn<A> {
                 .ok_or_else(|| capnp::Error::from_kind(capnp::ErrorKind::ReadLimitExceeded))?;
         }
         self.message.validate_capability_indices(0, selected)?;
+        if let [segment] = &*segments {
+            let mut prefix = [0; 8];
+            prefix[4..].copy_from_slice(&((segment.len() / 8) as u32).to_le_bytes());
+            let lease = messages
+                .copy_from_parts(&[&prefix, segment], |bytes| {
+                    let returned = self.returned + 8;
+                    bytes[returned..returned + 4].copy_from_slice(&answer.to_wire().to_le_bytes());
+                    bytes[returned + 4] = (bytes[returned + 4] & !2) | (u8::from(no_finish) << 1);
+                })
+                .map_err(super::super::Error::Storage)?;
+            return Ok(Some(Frame::new(lease, options)));
+        }
         let mut writer = messages
             .reserve_exact(length)
             .map_err(super::super::Error::Storage)?;
@@ -177,6 +189,54 @@ fn frame_layout(segments: &[&[u8]]) -> Option<(usize, usize)> {
 impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
     Driver<'pool, 'id, 's, I, A, P, S, CAPS, PATH>
 {
+    /// Publish a data-only result directly when its answer has no pipeline or
+    /// handoff dependencies. Validation and output reservation precede the
+    /// ordinary Return transition; unavailable fast paths leave the answer
+    /// untouched. The caller must still release its running request.
+    #[allow(clippy::too_many_arguments)]
+    pub fn try_send_answer_prepared<B: capnp::message::Allocator, R>(
+        &mut self,
+        request: &Request<'pool, 'id, I, CAPS, PATH>,
+        source: &PreparedReturn<B>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        queue: &mut messages::Queue<'pool, '_, R>,
+        options: capnp::message::ReaderOptions,
+        resources: R,
+    ) -> Result<Option<A>, Error> {
+        let key = request.answer();
+        self.check_answer_completion(key)?;
+        let mut pending = self
+            .ledgers
+            .answers
+            .prepare_return(key)
+            .map_err(|e| Error::Pipeline(pipelines::Error::Answer(e)))?;
+        if !pending.can_retire_without_finish() {
+            return Ok(None);
+        }
+        let output = queue
+            .reserve_with(resources)
+            .map_err(|e| Error::Input(super::super::Error::Storage(e)))?;
+        pending
+            .omit_finish()
+            .map_err(|e| Error::Pipeline(pipelines::Error::Answer(e)))?;
+        let Some(frame) = source
+            .copy(key.id(), true, messages, options)
+            .map_err(Error::Input)?
+        else {
+            return Ok(None);
+        };
+        let offer = frame.offer(messages).map_err(Error::Input)?;
+        let retired = pending
+            .accept()
+            .expect("no pipeline retains the omitted-Finish answer");
+        output.accept(messages, offer);
+        Ok(Some(
+            retired
+                .release(messages)
+                .release(messages, &mut self.runtime),
+        ))
+    }
+
     /// Prepare a data-only hosted answer without walking and rebuilding its
     /// envelope. None requests the normal codec to compact too many segments.
     /// Capability indices, traversal/nesting limits and publication ownership

@@ -1,5 +1,19 @@
 # 0.1.0 developer preview (unpublished)
 
+- Replace the four Kani CI shards with source-bound Verus contracts and
+  verus-tla induction, including full-width arithmetic, ownership rejection
+  contracts, temporal fairness assumptions and deliberate-fault controls.
+  Keep optional bounded Kani investigations available outside the CI gate.
+- Reduce portable plaintext TCP instruction cost below 20 million for both
+  peers in the small-call workload with ordinary full LTO. Reuse checked
+  immutable message views and completion storage, fuse ready dispatch and reply
+  handoff, preserve idle scheduler state, and isolate multi-segment lookup from
+  common bounds checks. The instruction ceiling now gates both peers.
+- Preserve queued-hook reentrancy and partial-write ownership, check bounds
+  without overflowing word counts, and add 32-bit Miri coverage for cached
+  reader provenance and promise ownership. Immediate hosted promise errors are
+  boxed; the allocation-free engine retains caller-owned storage.
+
 - Guarantee eight-byte alignment in the caller-owned retained-parameters test
   fixture, fixing its 32-bit Miri failure while preserving single/multi-segment
   and shared/copied parameter lifetime checks.
@@ -23,8 +37,7 @@
   TLC checks. CI requires complete positive proofs and four logical negative
   controls, publishes separate diagnostics/timing graphs, and verifies the
   temporal library itself before use. Normal Rust builds have no new dependency.
-- Run Kani as four required proof/control shards with bounded resources and
-  checkpointed evidence. Include the RPC wire crate in LLVM coverage; retain
+- Include the RPC wire crate in LLVM coverage; retain
   measured counters and detailed errors when the coverage gate fails. Permit
   at most 0.5 percentage points of scheduling variation while still rejecting
   lost instrumentation and zero-hit regressions.

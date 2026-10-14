@@ -462,7 +462,7 @@ fn hook_collection_reactivates_already_idle_maintenance() {
         // collection observes the final application owner disappearing.
         coordinator.active = 1;
         coordinator.cursor = 0;
-        coordinator.wake.changed.store(false, Ordering::Release);
+        coordinator.wake.changed.store(0, Ordering::Release);
         for _ in 0..256 {
             let result =
                 coordinator.poll_work(messages, &mut queue, &mut scratch, &NoResources, &mut cx);
@@ -565,14 +565,14 @@ fn published_direct_call_sleeps_until_cancellation_or_new_admission() {
             }
             assert_eq!(coordinator.active, 0);
             assert!(queue.is_empty());
-            assert!(!coordinator.wake.changed.load(Ordering::Acquire));
+            assert_eq!(coordinator.wake.changed.load(Ordering::Acquire), 0);
             let second = if cancel {
                 drop(request.take());
                 None
             } else {
                 Some(call())
             };
-            assert!(coordinator.wake.changed.load(Ordering::Acquire));
+            assert_ne!(coordinator.wake.changed.load(Ordering::Acquire), 0);
             for _ in 0..256 {
                 if let Poll::Ready(result) =
                     coordinator.poll_work(messages, &mut queue, &mut scratch, &NoResources, &mut cx)
@@ -1812,4 +1812,49 @@ fn newly_published_output_cannot_report_idle_before_physical_flush() {
         assert_eq!(control.idle_transitions, [false, true]);
         reclaimed(messages);
     });
+}
+
+#[test]
+fn outgoing_notification_coalesces_without_losing_general_work() {
+    use std::sync::atomic::AtomicUsize;
+    struct Count(AtomicUsize);
+    impl std::task::Wake for Count {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let state = Arc::<WorkWake>::default();
+    let outgoing = Waker::from(Arc::new(EnqueueWake(state.clone())));
+    let general = Waker::from(state.clone());
+    let first = Arc::new(Count(AtomicUsize::new(0)));
+    let second = Arc::new(Count(AtomicUsize::new(0)));
+    for outgoing_first in [true, false] {
+        state.parent.register(&Waker::from(first.clone()));
+        state.changed.store(0, Ordering::Release);
+        let before = first.0.load(Ordering::SeqCst);
+        if outgoing_first {
+            outgoing.wake_by_ref();
+        } else {
+            general.wake_by_ref();
+        }
+        assert_eq!(
+            state.changed.load(Ordering::Acquire),
+            if outgoing_first { 4 } else { 0x3f }
+        );
+        if outgoing_first {
+            general.wake_by_ref();
+        } else {
+            outgoing.wake_by_ref();
+        }
+        assert_eq!(state.changed.load(Ordering::Acquire), 0x3f);
+        assert_eq!(first.0.load(Ordering::SeqCst), before + 1);
+        // The consumer registers before consuming the pending mask. A later
+        // outgoing-only notification must reach the new task, not the old one.
+        state.parent.register(&Waker::from(second.clone()));
+        assert_eq!(state.changed.swap(0, Ordering::AcqRel), 0x3f);
+        outgoing.wake_by_ref();
+        assert_eq!(state.changed.load(Ordering::Acquire), 4);
+        assert_eq!(first.0.load(Ordering::SeqCst), before + 1);
+    }
+    assert_eq!(second.0.load(Ordering::SeqCst), 2);
 }

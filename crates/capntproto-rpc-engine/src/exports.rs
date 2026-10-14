@@ -33,6 +33,10 @@ use crate::{
     references::ExportRefs,
 };
 use core::{fmt, marker::PhantomData};
+#[cfg(capntproto_verus)]
+use vstd::prelude::*;
+#[cfg(capntproto_verus)]
+include!("exports/verified.rs");
 
 mod descriptors;
 pub use descriptors::{DescriptorCheck, DescriptorError};
@@ -44,6 +48,7 @@ pub use release::{LeasedReleases, ReleaseBatch, ReleaseError, Releases};
 type Brand<'id> = PhantomData<fn(&'id ()) -> &'id ()>;
 const ID_LIMIT: u64 = 1 << 30;
 
+#[cfg_attr(capntproto_verus, verus_verify)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     NonemptyStorage,
@@ -85,11 +90,13 @@ pub struct Rejected<T> {
     pub value: T,
 }
 
+#[cfg_attr(capntproto_verus, verus_verify)]
 enum State {
     Staged,
     Live(ExportRefs),
     Retired,
 }
+#[cfg_attr(capntproto_verus, verus_verify)]
 struct Entry<T> {
     #[cfg(feature = "alloc")]
     presence: crate::observation::Presence,
@@ -100,8 +107,51 @@ struct Entry<T> {
     promise: promise::ImportState,
 }
 impl<T> Entry<T> {
+    #[inline]
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures r == (self.local == 0 && self.state is Retired)))]
     fn reclaimable(&self) -> bool {
         self.local == 0 && matches!(self.state, State::Retired)
+    }
+    #[inline]
+    #[cfg_attr(capntproto_verus, verus_spec(ensures aborted(*old(self), *final(self))))]
+    fn abort(&mut self) {
+        if matches!(self.state, State::Staged) {
+            self.state = State::Retired;
+        }
+        self.pending = 0;
+    }
+    #[inline]
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures reserved(*old(self), *final(self), r)))]
+    fn grant(&mut self) -> Result<(), Error> {
+        if matches!(self.promise, promise::ImportState::Resolved) {
+            return Err(Error::Promise(promise::Error::AlreadyResolved));
+        }
+        let published = match &self.state {
+            State::Staged => 0,
+            State::Live(refs) => refs.count(),
+            State::Retired => return Err(Error::StaleKey),
+        };
+        let pending = self
+            .pending
+            .checked_add(1)
+            .ok_or(Error::RemoteReferencesExhausted)?;
+        published
+            .checked_add(pending)
+            .ok_or(Error::RemoteReferencesExhausted)?;
+        self.pending = pending;
+        Ok(())
+    }
+    #[inline]
+    #[cfg_attr(capntproto_verus, verus_spec(requires valid_entry(*old(self)), ensures committed(*old(self), *final(self))))]
+    fn commit(&mut self) {
+        match &mut self.state {
+            State::Staged => {
+                self.state = State::Live(crate::references::published_refs(self.pending))
+            }
+            State::Live(refs) => refs.retain(self.pending).expect("reserved grants"),
+            State::Retired => (),
+        }
+        self.pending = 0;
     }
 }
 
@@ -297,10 +347,7 @@ impl<'id, 'storage, T> Exports<'id, 'storage, T> {
         }
         for slot in &mut *self.slots {
             if let Some(entry) = &mut slot.entry {
-                if matches!(entry.state, State::Staged) {
-                    entry.state = State::Retired;
-                }
-                entry.pending = 0;
+                entry.abort();
             }
         }
         self.open_batch = false;
@@ -508,19 +555,7 @@ impl<'id, T> Batch<'_, 'id, '_, T> {
         if self.exports.pending_resolution == Some(key) {
             return Err(Error::ResolutionConflict);
         }
-        if entry.promise == promise::ImportState::Resolved {
-            return Err(Error::Promise(promise::Error::AlreadyResolved));
-        }
-        let published = match &entry.state {
-            State::Staged => 0,
-            State::Live(refs) => refs.count(),
-            State::Retired => return Err(Error::StaleKey),
-        };
-        published
-            .checked_add(entry.pending)
-            .and_then(|n| n.checked_add(1))
-            .ok_or(Error::RemoteReferencesExhausted)?;
-        entry.pending += 1;
+        entry.grant()?;
         Ok(Grant {
             key,
             promise: entry.promise == promise::ImportState::Pending,
@@ -538,17 +573,7 @@ impl<'id, T> Batch<'_, 'id, '_, T> {
         }
         for slot in &mut *self.exports.slots {
             if let Some(entry) = &mut slot.entry {
-                match &mut entry.state {
-                    State::Staged => {
-                        let mut refs = ExportRefs::new();
-                        refs.retain(entry.pending - 1)
-                            .expect("reserved initial grants");
-                        entry.state = State::Live(refs);
-                    }
-                    State::Live(refs) => refs.retain(entry.pending).expect("reserved grants"),
-                    State::Retired => (),
-                }
-                entry.pending = 0;
+                entry.commit();
             }
         }
         self.exports.open_batch = false;

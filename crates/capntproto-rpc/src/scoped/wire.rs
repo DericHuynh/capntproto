@@ -58,6 +58,18 @@ enum PayloadKind {
     Results,
 }
 impl Payload {
+    pub(crate) fn retain_plain_context(
+        &mut self,
+        context: Rc<dyn std::any::Any>,
+    ) -> Result<(), Rc<dyn std::any::Any>> {
+        if let PayloadBody::Admitted(message) = &mut self.body {
+            debug_assert!(self.caps.is_empty());
+            message.retain_owner(context);
+            Ok(())
+        } else {
+            Err(context)
+        }
+    }
     pub(crate) fn into_response(self) -> Box<dyn capnp::private::capability::ResponseHook> {
         match self.body {
             PayloadBody::Admitted(message) => {
@@ -242,6 +254,7 @@ impl<'id> ClientHooks<'id> {
         )
     }
     #[allow(clippy::too_many_arguments, clippy::result_large_err)]
+    #[inline(never)]
     pub(super) fn enqueue_wire_using<
         'pool,
         'storage,
@@ -619,7 +632,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                         .unwrap_or_else(|| Box::new(crate::broken::Pipeline::new(error.clone()))),
                 );
             }
-            call.complete(Err(error));
+            call.complete_boxed(Err(error));
         }
     }
     /// Publish a completed local/remote output to owned generated clients, then
@@ -635,6 +648,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
         self.poll_using(hooks, driver, messages, cx, false, |_, _| {}, |_| None)
     }
     #[allow(clippy::too_many_arguments)]
+    #[inline(never)]
     pub(crate) fn poll_using<A, P: Copy + Eq, S, const PATH: usize>(
         &mut self,
         hooks: &mut ClientHooks<'id>,
@@ -744,6 +758,61 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
             driver.release_output(CallOutput::Remote(*response), messages);
         }
     }
+    pub(super) fn accepts_plain(&self, key: capntproto_rpc_engine::questions::Key<'id>) -> bool {
+        self.task.is_none()
+            && self.pipeline.is_none()
+            && self.call.as_ref().is_some_and(|call| {
+                call.third_party.is_none()
+                    && matches!(self.direct, Some(DirectStage::Sent(question)) if question == key)
+                    && matches!(call.results, response::Results::Direct(_))
+                    && !call.is_canceled()
+            })
+    }
+    pub(super) fn deliver_plain(&mut self, message: Box<capntproto_rpc_wire::owned::PlainResults>) {
+        self.direct = None;
+        let mut call = self.call.take().expect("wire completion once");
+        if let Some(credit) = &call.credit {
+            credit.received();
+        }
+        if let Err(message) = call.results.complete_plain(&call.completion, message) {
+            let result = call.results.finish_admitted(Payload {
+                body: PayloadBody::Admitted(message),
+                caps: Vec::new(),
+            });
+            debug_assert!(result.is_ok());
+            call.complete_boxed(Ok(()));
+        }
+    }
+    #[inline(always)]
+    pub(super) fn complete_plain<A, P: Copy + Eq, S, const PATH: usize>(
+        &mut self,
+        key: capntproto_rpc_engine::questions::Key<'id>,
+        driver: &mut Driver<'pool, 'id, '_, I, A, P, S, CAPS, PATH>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+    ) -> capnp::Result<bool> {
+        let Some(call) = &self.call else {
+            return Ok(false);
+        };
+        if self.pipeline.is_some()
+            || call.third_party.is_some()
+            || !matches!(self.direct, Some(DirectStage::Sent(question)) if question == key)
+            || !matches!(call.results, response::Results::Direct(_))
+            || call.is_canceled()
+        {
+            return Ok(false);
+        }
+        let message = match driver.take_plain_output(key, messages) {
+            Ok(Some(message)) => message,
+            Ok(None)
+            | Err(connection::Error::PendingResponse | connection::Error::PendingAuthorization) => {
+                return Ok(false)
+            }
+            Err(error) => return Err(wire_error(error)),
+        };
+        self.deliver_plain(message);
+        Ok(true)
+    }
+
     #[inline(always)]
     fn complete<A, P: Copy + Eq, S, const PATH: usize>(
         &mut self,
@@ -779,7 +848,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                         caps: Vec::new(),
                     });
                     debug_assert!(result.is_ok());
-                    call.complete(Ok(()));
+                    call.complete_boxed(Ok(()));
                     return Ok(());
                 }
             }

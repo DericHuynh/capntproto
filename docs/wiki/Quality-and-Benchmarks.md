@@ -27,7 +27,7 @@ records their rationale.
 | [CI / Documentation](../../.github/workflows/ci-docs.yml) | Called once by CI; Tuesday 05:43 UTC; manual | Documentation/workflow/wiki-tool changes: wiki validation/export and local links. External checks are advisory and run only weekly/manually. `github-wiki`, `documentation-links` |
 | [Verification / Extended](../../.github/workflows/verification-extended.yml) | Called by CI; Wednesday 04:37 UTC; manual | Bounded Miri endian/seed sweep, native cargo-careful checks, LLVM IR size reports, and guard mutation/coverage controls in independent jobs |
 | [Verification / Cargo tests](../../.github/workflows/verification-tests.yml) | Called by CI; Monday 03:19 UTC; manual | One LLVM-instrumented Cargo partition, un-instrumented C++ reference suites, advisory checks, coverage regression report. `cargo-test-report` |
-| [Verification / Formal checks](../../.github/workflows/verification-models.yml) | Called by CI; Monday 03:29 UTC; manual | Verus source/temporal proofs (`verus-report`) and four required Kani proof/control shards (`kani-report-1` through `kani-report-4`), then distributed TLC checks and Rust replays (`models-report`). Separate proof-duration and model-state graphs. |
+| [Verification / Formal checks](../../.github/workflows/verification-models.yml) | Called by CI; Monday 03:29 UTC; manual | Verus source/temporal proofs (`verus-report`) including portable ownership/count contracts and mutation controls, then distributed TLC checks and Rust replays (`models-report`). Separate proof-duration and model-state graphs. |
 | [Verification / Fuzzing](../../.github/workflows/verification-fuzz.yml) | Called by CI; Monday 03:39 UTC; manual | Six libFuzzer/ASan targets and four AFL++ targets with RPC IJON guidance. Engine-specific execution, feedback and finding graphs. `fuzz-report` |
 | [Performance / Dedicated benchmarks](../../.github/workflows/performance.yml) | Called by CI; manual | Build and smoke-test release artifacts on every PR; trusted runs measure application workflows across two dedicated VPC peers, followed by separate loopback controls. `benchmark-bundle`, `benchmark-build-provenance`, `dedicated-benchmark-report` |
 | [Benchmark droplet cleanup](../../.github/workflows/maintenance-benchmarks.yml) | After CI benchmarks, even on failure; every hour at :17 UTC; manual | Destroy this repository's abandoned benchmark resources older than two hours; requires trusted credentials |
@@ -105,13 +105,11 @@ flowchart TD
   checks --> portable[CI: allocation-free ARM checks and link fixture]
   portable --> cargo
   platforms --> cargo[Cargo tests + LLVM coverage]
-  platforms --> kani[Kani proofs + production mutations]
   platforms --> verus[Verus contracts + temporal induction]
-  verus --> models
-  kani --> models[TLA+ checks + Rust replays]
+  verus --> models[TLA+ checks + Rust replays]
   platforms --> fuzz[libFuzzer + AFL++ IJON]
   platforms --> extended[Extended verification]
-  docs --> cargo & kani & fuzz & extended
+  docs --> cargo & verus & fuzz & extended
   cargo & models & fuzz & extended --> benchmark[Release benchmark build; trusted cloud measurement]
   benchmark --> cleanup[Trusted cleanup, even after failure]
   checks & docs & platforms & portable & cargo & models & fuzz & extended & benchmark & cleanup --> result[Required CI result]
@@ -135,7 +133,7 @@ expensive campaigns explicit owners:
 - Cargo selects all ordinary tests/doctests, filtering `tlc`, `native_fuzz_smoke`,
   `serialization_and_ownership_miri`, and the two `authority_and_transition_*`
   controls. LLVM coverage combines the nextest run and the separate doctest run.
-- [Verus and Kani](Formal-Verification.md) check inventoried production proofs
+- [Verus](Formal-Verification.md) check inventoried production proofs
   and required fault controls before the TLC job. Verus also checks unbounded
   temporal induction through the verified verus-tla library. Each lane has
   separate artifacts and graphs; proof duration is not coverage. Proof counts
@@ -1269,7 +1267,8 @@ executable with only the driver selector changed. Counts include startup,
 bootstrap and cleanup; they are not latency ratios. Portable remains **1.46×**
 legacy client instructions and **1.60×** legacy server instructions. The
 development `rpc-instructions` report now includes `server_instructions` as well
-as `client_instructions`; its optional ceiling still applies to the client.
+as `client_instructions`. At that point its optional ceiling applied only to the
+client; the later qualification below gates both peers.
 
 A separate experiment boxed immediate promise errors to shrink successful and
 pending promises. It saved only about 0.4% client and 0.8% server instructions
@@ -2577,3 +2576,82 @@ in release mode from pinned revision
 These results qualify this local sequential loopback workload, not encrypted
 transport performance, concurrent throughput, other hosts or the incomplete
 allocation-free RPC profile.
+
+### Portable instruction qualification below 20 million
+
+The October 14 optimization batch targets complete-process Callgrind Ir for
+100 warmups and 1,000 retained empty plaintext TCP calls. The fresh qualifying
+ordinary full-LTO build measured **19,973,745 client** and **19,257,076 server**
+instructions, against the earlier 25,963,270 / 26,168,694 baseline. Both totals
+include process startup, bootstrap and cleanup. This is an instruction ceiling
+for that workload, not a latency ratio or a claim about every payload size.
+
+Three additional runs of the same executable also passed both ceilings:
+
+| Process | Portable repeat range | Portable median | Matched legacy median | Portable / legacy |
+| --- | ---: | ---: | ---: | ---: |
+| Client | 19,947,637–19,948,423 | 19,947,903 | 17,484,892 | 1.141× |
+| Server | 19,230,956–19,231,520 | 19,231,142 | 16,262,258 | 1.183× |
+
+The primary command uses absolute executable paths; the repeats use relative
+paths. Startup remains included in both. The executable SHA-256 is
+`3c243a83a6cf879474cc9b5a302dac6b2b5e2ab7d3257947d339b39702d5bbc1`.
+The reported threshold is the larger primary result, not a selected best run.
+
+The production changes avoid temporary receipt/result owners, borrow checked
+message views, retain queue ownership through partial writes and flush, and
+reuse exclusive completion storage. Ready server dispatch and data-only replies
+use the same protocol ledgers with fewer scheduler transitions. Cached idle
+state is invalidated by endpoint, cancellation and control notifications; custom
+controls retain their ordinary polling path. Pipelining, descriptor admission,
+wire-ID generations, read limits and retained Finish obligations remain checked.
+A non-cached segment lookup now has its own function, eliminating register saves
+from the common segment-zero bounds check without skipping validation.
+
+Successful and pending hosted promises have a smaller representation; immediate
+errors allocate one box. Fixed-storage RPC builds use their existing completion
+state machine and do not acquire an allocator dependency. Rejected performance
+experiments are not retained, including removal of the post-Return scheduling
+yield and changes that merely increased inlining or moved input through another
+adapter. No PGO, target-CPU tuning, static C++ runtime or changed benchmark work
+is used for this qualification.
+
+Reproduce the ceiling check with:
+
+```sh
+cargo run --locked -p capntproto-dev -- rpc-instructions \
+  --output target/quality/portable-instructions --maximum 20000000
+```
+
+The JSON report and raw client/server profiles retain the workload, compiler,
+flags, executable hash and full instruction totals. The command fails when
+**either** peer exceeds the ceiling; it does not subtract startup or select a
+hot function. Add `--legacy` for a matched control. Optimization artifacts are
+under `target/verus-migration-20261014/` in the development checkout.
+
+All 48 application-workflow smoke checks passed across the four legacy/portable
+client/server combinations, including fanout, dependent and pipelined reads,
+write/read, callbacks and payloads through 4 MiB. Twenty additional echo cases
+passed through 256 KiB. The small-call harness deliberately caps frames at
+512 KiB; larger workflows use its separate 8 MiB frame budget. These smoke checks
+validate responses and completion, not latency on this busy workstation.
+
+The workspace run executed 2,273 tests: 2,271 passed initially, two failed and
+seven were skipped. Both failures passed focused rechecks after updating the
+Miri inventory from 39 to 45 tests and enabling the installed auditable Cargo
+wrapper. No entirely clean second full-workspace run is claimed. The ignored
+inventory gate passed. Independent checks passed all 241 allocation-free
+engine/wire tests, both bare-metal RPC profiles, and 85 workspace doctests
+(13 intentionally ignored). The memory gate completed 180 interpreted
+executions; separate 32-bit Miri runs passed 180 RPC ownership/wakeup tests and
+16 selected-reader/promise tests. Clippy, formatting, unsafe-debt review,
+workflow/security linting and document validation passed.
+
+Verus passed 154 obligations across the 153-function/lemma inventory, all 139
+temporal-library obligations and all 43 negative controls. Its evidence matches
+all 122 current source inputs. The native mutation campaign caught 86 faults;
+eight mutations did not compile, with no surviving mutations or timeouts.
+Native fuzz smoke and the 132 required cross-language RPC scenarios passed,
+along with the bounded upstream check; the two pre-existing upstream-only
+limitations remain separately reported. Hosted CI qualifies the published tree
+and remote measurements separately.

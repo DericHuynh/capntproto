@@ -227,7 +227,9 @@ impl PipelineHook for Pipeline {
 
 pub(crate) struct ClientInner {
     // Once the promise resolves, this will become non-null and point to the underlying object.
-    redirect: Option<Box<dyn ClientHook>>,
+    // A resolved target is immutable. Clone its owner without allocating a new
+    // hook or retaining a cell borrow across application callbacks.
+    redirect: Option<Rc<dyn ClientHook>>,
 
     // The queued::PipelineInner that this client is derived from, if any. We need to hold on
     // to a reference to it so that it doesn't get canceled before the client is resolved.
@@ -261,11 +263,11 @@ pub(crate) struct ClientInner {
 impl ClientInner {
     pub(crate) fn resolve(state: &Rc<RefCell<Self>>, result: Result<Box<dyn ClientHook>, Error>) {
         assert!(state.borrow().redirect.is_none());
-        let client = match result {
+        let client: Rc<dyn ClientHook> = Rc::from(match result {
             Ok(clienthook) => clienthook,
             Err(e) => broken::new_cap(e),
-        };
-        state.borrow_mut().redirect = Some(client.add_ref());
+        });
+        state.borrow_mut().redirect = Some(client.clone());
         let pending = state.borrow_mut().call_forwarding_queue.drain();
         for (args, waiter) in pending {
             let (interface_id, method_id, params, results, hints) = args;
@@ -352,6 +354,22 @@ impl ClientHook for Client {
         )))
     }
 
+    fn new_call_with_hints(
+        &self,
+        interface_id: u64,
+        method_id: u16,
+        size_hint: Option<capnp::MessageSize>,
+        hints: CallHints,
+    ) -> capnp::capability::Request<any_pointer::Owned, any_pointer::Owned> {
+        let redirect = self.inner.borrow().redirect.clone();
+        if let Some(client) = redirect {
+            return client.new_call_with_hints(interface_id, method_id, size_hint, hints);
+        }
+        let mut request = self.new_call(interface_id, method_id, size_hint);
+        request.hook.set_hints(hints);
+        request
+    }
+
     fn call(
         &self,
         interface_id: u64,
@@ -375,7 +393,8 @@ impl ClientHook for Client {
         results: Box<dyn ResultsHook>,
         hints: CallHints,
     ) -> Promise<(), Error> {
-        if let Some(client) = &self.inner.borrow().redirect {
+        let redirect = self.inner.borrow().redirect.clone();
+        if let Some(client) = redirect {
             return client.call_with_hints(interface_id, method_id, params, results, hints);
         }
 
@@ -407,22 +426,18 @@ impl ClientHook for Client {
 
     #[cfg(unix)]
     fn get_fd(&self) -> Option<std::rc::Rc<std::os::fd::OwnedFd>> {
-        self.inner
-            .borrow()
-            .redirect
-            .as_ref()
-            .and_then(|inner| inner.get_fd())
+        let redirect = self.inner.borrow().redirect.clone();
+        redirect.and_then(|inner| inner.get_fd())
     }
 
     fn get_resolved(&self) -> Option<Box<dyn ClientHook>> {
-        match &self.inner.borrow().redirect {
-            Some(inner) => Some(inner.clone()),
-            None => None,
-        }
+        let redirect = self.inner.borrow().redirect.clone();
+        redirect.map(|inner| inner.add_ref())
     }
 
     fn when_more_resolved(&self) -> Option<Promise<Box<dyn ClientHook>, Error>> {
-        if let Some(client) = &self.inner.borrow().redirect {
+        let redirect = self.inner.borrow().redirect.clone();
+        if let Some(client) = redirect {
             return Some(Promise::ok(client.add_ref()));
         }
 
@@ -489,5 +504,91 @@ mod tests {
             Pin::new(&mut pending).poll(&mut cx),
             Poll::Ready(Ok(_))
         ));
+    }
+    #[test]
+    fn resolved_requests_share_the_target_and_release_the_cell_before_callbacks() {
+        use std::cell::Cell;
+        struct Target {
+            state: Weak<RefCell<ClientInner>>,
+            refs: Rc<Cell<usize>>,
+            calls: Rc<Cell<usize>>,
+        }
+        impl Target {
+            fn reenter(&self) {
+                let state = self.state.upgrade().unwrap();
+                assert!(
+                    state.try_borrow_mut().is_ok(),
+                    "callback held the queued cell"
+                );
+            }
+        }
+        impl ClientHook for Target {
+            fn add_ref(&self) -> Box<dyn ClientHook> {
+                self.reenter();
+                self.refs.set(self.refs.get() + 1);
+                broken::new_cap(Error::failed("test target".into()))
+            }
+            fn new_call(
+                &self,
+                interface: u64,
+                method: u16,
+                size: Option<capnp::MessageSize>,
+            ) -> capnp::capability::Request<any_pointer::Owned, any_pointer::Owned> {
+                self.reenter();
+                self.calls.set(self.calls.get() + 1);
+                broken::new_cap(Error::failed("test request".into()))
+                    .new_call(interface, method, size)
+            }
+            fn call(
+                &self,
+                _: u64,
+                _: u16,
+                _: Box<dyn ParamsHook>,
+                _: Box<dyn ResultsHook>,
+            ) -> Promise<(), Error> {
+                self.reenter();
+                Promise::ok(())
+            }
+            fn get_brand(&self) -> usize {
+                0
+            }
+            fn get_ptr(&self) -> usize {
+                self as *const Self as usize
+            }
+            fn get_resolved(&self) -> Option<Box<dyn ClientHook>> {
+                None
+            }
+            fn when_more_resolved(&self) -> Option<Promise<Box<dyn ClientHook>, Error>> {
+                None
+            }
+            fn when_resolved(&self) -> Promise<(), Error> {
+                Promise::ok(())
+            }
+            #[cfg(unix)]
+            fn get_fd(&self) -> Option<Rc<std::os::fd::OwnedFd>> {
+                self.reenter();
+                None
+            }
+        }
+        let client = Client::new(None);
+        let refs = Rc::new(Cell::new(0));
+        let calls = Rc::new(Cell::new(0));
+        ClientInner::resolve(
+            &client.inner,
+            Ok(Box::new(Target {
+                state: Rc::downgrade(&client.inner),
+                refs: refs.clone(),
+                calls: calls.clone(),
+            })),
+        );
+        drop(client.new_call(1, 2, None));
+        drop(client.new_call(3, 4, None));
+        assert_eq!(calls.get(), 2);
+        assert_eq!(refs.get(), 0, "forwarding allocated a temporary hook");
+        assert!(client.get_resolved().is_some());
+        assert!(client.when_more_resolved().is_some());
+        assert_eq!(refs.get(), 2);
+        #[cfg(unix)]
+        assert!(client.get_fd().is_none());
     }
 }

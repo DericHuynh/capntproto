@@ -49,6 +49,17 @@ impl<'pool, 'id, I, const CAPS: usize, const PATH: usize> Task<'pool, 'id, I, CA
     }
 }
 
+/// Optional allocation-backed reply handoff. Deferred frames are untouched;
+/// Delivered replies have released their original question/message owners.
+#[cfg(feature = "alloc")]
+pub enum PlainReceived<'pool, T> {
+    Deferred(Frame<'pool>),
+    Delivered(T, alloc::boxed::Box<super::PlainResults>),
+}
+
+#[cfg(feature = "alloc")]
+mod plain_return;
+
 enum Exchange<'pool, 'id, I, const CAPS: usize> {
     Pending(Question<'pool, 'id>),
     Returned(Response<'pool, 'id, I, CAPS>),
@@ -118,6 +129,7 @@ struct PreparedStorage<'pool, 'id, 's, I, const CAPS: usize, const PATH: usize> 
 /// service retained operations or terminate the connection on exhaustion.
 pub struct Driver<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize> {
     allow_answer_handoff: bool,
+    defer_calls: bool,
     descriptors: crate::publication::descriptors::Descriptors<binding::Route<'id, P, S, PATH>>,
     pub ledgers:
         connection::Connection<'id, 's, I, clients::Client<'id>, Answer<'pool, 'id, A, CAPS>>,
@@ -233,7 +245,7 @@ enum IncomingKind {
     Join,
     Return(u32, bool),
     Resolve,
-    Finish,
+    Finish(AnswerId, bool),
     Release,
     SenderLoopback,
     ReceiverLoopback(u32),
@@ -428,6 +440,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         };
         Ok(Self {
             allow_answer_handoff: false,
+            defer_calls: false,
             descriptors: Default::default(),
             ledgers: connection.ledgers,
             message_capabilities: storage.message_capabilities,
@@ -823,6 +836,70 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         })
     }
 
+    /// Let an integrated worker try direct local dispatch before queueing a
+    /// Call. The caller must service `has_pending_call` before reading more
+    /// Calls; ordinary maintenance still supplies the ordered fallback.
+    pub fn defer_call_dispatch(&mut self, enabled: bool) {
+        self.defer_calls = enabled;
+    }
+    pub fn has_pending_call(&self) -> bool {
+        self.call.is_some()
+    }
+    /// Accept a settled local target only when no older task is queued. The
+    /// same graph ticket freezes its route, consumes sequence space and retains
+    /// its target. Rejections leave the admitted Call available for retry.
+    #[allow(clippy::type_complexity)]
+    pub fn dispatch_immediate_call(
+        &mut self,
+        cancellation: bool,
+    ) -> Result<
+        Option<(
+            dispatch::Running<'id, Request<'pool, 'id, I, CAPS, PATH>>,
+            bool,
+        )>,
+        Error,
+    > {
+        self.check_live()?;
+        let Some(call) = &self.call else {
+            return Ok(None);
+        };
+        let TargetRef::Hosted(lease) = call.target() else {
+            return Ok(None);
+        };
+        let key = call.answer();
+        if self
+            .ledgers
+            .answers
+            .is_third_party(key)
+            .map_err(|e| Error::Input(super::Error::Admission(inbound::Error::Answer(e))))?
+        {
+            return Ok(None);
+        }
+        let Some(ticket) = self
+            .runtime
+            .prepare_immediate(self.ledgers.exports.get(lease))
+            .map_err(Error::Dispatch)?
+        else {
+            return Ok(None);
+        };
+        if !matches!(
+            ticket.destination(),
+            clients::Destination::Endpoint {
+                location: clients::Location::Local | clients::Location::Broken,
+                ..
+            }
+        ) {
+            return Ok(None);
+        }
+        let execute = self
+            .ledgers
+            .answers
+            .dispatch(key, cancellation)
+            .map_err(|e| Error::Input(super::Error::Admission(inbound::Error::Answer(e))))?;
+        let call = self.call.take().expect("preflighted incoming Call");
+        Ok(Some((ticket.accept_owned(call), execute)))
+    }
+
     pub fn retry_call(&mut self) -> Result<Option<answers::Key<'id>>, Error> {
         self.check_live()?;
         if self.call.is_some() && !self.normal_dispatch_available() {
@@ -917,8 +994,91 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     /// for control producers). Unreachable words are included. Rejection leaves
     /// the frame and protocol tables intact; Busy never invokes the factory.
     #[allow(clippy::too_many_arguments, clippy::result_large_err)]
-    #[inline(always)]
+    #[inline(never)]
     pub fn receive_with_policy(
+        &mut self,
+        frame: Frame<'pool>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        scratch: &mut [u32],
+        receiver: &mut impl ImportReceiver<I>,
+        make_producer: impl FnOnce(usize) -> capnp::Result<A>,
+    ) -> Result<Received<'id, A>, Rejected<'pool, A>> {
+        if self.disconnected.is_none() && !self.ledgers.questions.is_empty() {
+            let blocked = self.resolution.is_some() || self.exchanges.iter().any(|slot| {
+                matches!(&slot.exchange, Some(Exchange::Returned(response))
+                    if (response.requires_ordered_propagation() || slot.handoff.is_some())
+                        && (self.outgoing.pending_for(response.key()) || self.invocation_pipelines.iter().any(|slot| slot.pending_for(response.key()))))
+            });
+            if !blocked {
+                let admitted = frame
+                    .with(messages, |root| -> Result<_, super::Error> {
+                        use capnp::traits::IntoInternalStructReader;
+                        let fields =
+                            rpc_capnp::api::MessageRef::from(root.into_internal_struct_reader());
+                        if fields.tag() != rpc_capnp::api::MessageUnionTag::Return {
+                            return Ok(None);
+                        }
+                        let result = rpc_capnp::return_::Reader::from(
+                            fields.r#return()?.into_internal_struct_reader(),
+                        );
+                        let id = result.get_answer_id();
+                        let Some((index, question)) =
+                            self.exchanges
+                                .iter()
+                                .enumerate()
+                                .find_map(|(index, slot)| match &slot.exchange {
+                                    Some(Exchange::Pending(question))
+                                        if question.key().id().to_wire() == id =>
+                                    {
+                                        Some((index, question))
+                                    }
+                                    _ => None,
+                                })
+                        else {
+                            return Ok(None);
+                        };
+                        question
+                            .try_admit_plain_return(
+                                result,
+                                &frame,
+                                messages,
+                                &mut self.ledgers.questions,
+                                false,
+                            )
+                            .map(|admitted| admitted.map(|admitted| (index, admitted)))
+                    })
+                    .and_then(core::convert::identity);
+                match admitted {
+                    Ok(Some((index, admitted))) => {
+                        // The exclusive receive operation has not exposed a callback
+                        // between locating the owner and committing its admission.
+                        let slot = &mut self.exchanges[index];
+                        let Some(Exchange::Pending(question)) = slot.exchange.take() else {
+                            unreachable!("admitted plain reply owner")
+                        };
+                        let response =
+                            question.finish_return(frame, messages, admitted.into_general());
+                        let key = response.key();
+                        slot.exchange = Some(Exchange::Returned(response));
+                        return Ok(Received::Returned(key));
+                    }
+                    Ok(None) => (),
+                    Err(error) => {
+                        return Err(Rejected {
+                            error: Error::Input(error),
+                            frame,
+                            producer: None,
+                        })
+                    }
+                }
+            }
+        }
+        self.receive_general(frame, messages, scratch, receiver, make_producer)
+    }
+
+    #[allow(clippy::too_many_arguments, clippy::result_large_err)]
+    #[inline(never)]
+    fn receive_general(
         &mut self,
         frame: Frame<'pool>,
         messages: &mut messages::Messages<'pool, '_, '_>,
@@ -939,8 +1099,87 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 if (response.requires_ordered_propagation() || slot.handoff.is_some()) && (self.outgoing.pending_for(response.key()) || self.invocation_pipelines.iter().any(|slot| slot.pending_for(response.key()))))
         });
         let mut admitted_return = None;
+        let mut admitted_call = None;
+        let mut call_owner = None;
+        let mut make_producer = Some(make_producer);
         let kind = frame
             .with_size(messages, |root, words| -> Result<_, super::Error> {
+                use capnp::traits::IntoInternalStructReader;
+                use rpc_capnp::api::{MessageRef, MessageUnionTag, ReturnRef, ReturnUnionTag};
+                // Classify without traversing the payload of request/control
+                // messages which their admission transaction will read below.
+                // A tag never certifies the corresponding pointer or body.
+                let fields = MessageRef::from(root.into_internal_struct_reader());
+                match fields.tag() {
+                    MessageUnionTag::Return => {
+                        let result = rpc_capnp::return_::Reader::from(
+                            fields.r#return()?.into_internal_struct_reader(),
+                        );
+                        let id = result.get_answer_id();
+                        let awaiting = ReturnRef::from(result.into_internal_struct_reader()).tag()
+                            == ReturnUnionTag::AwaitFromThirdParty;
+                        if !awaiting && !propagation_blocked {
+                            if let Some(question) =
+                                self.exchanges.iter().find_map(|slot| match &slot.exchange {
+                                    Some(Exchange::Pending(question))
+                                        if question.key().id().to_wire() == id =>
+                                    {
+                                        Some(question)
+                                    }
+                                    _ => None,
+                                })
+                            {
+                                admitted_return = Some(question.admit_return(
+                                    result,
+                                    &frame,
+                                    messages,
+                                    &mut self.ledgers.questions,
+                                    &mut self.ledgers.imports,
+                                    &mut self.ledgers.exports,
+                                    &mut self.ledgers.answers,
+                                    scratch,
+                                    receiver,
+                                    self.message_capabilities,
+                                )?);
+                            }
+                        }
+                        return Ok(Kind::Return(id, awaiting));
+                    }
+
+                    MessageUnionTag::Call => {
+                        if self.call.is_none() && self.echo.is_none() {
+                            let producer = make_producer.take().unwrap()(words)?;
+                            call_owner =
+                                Some(answer::State::new(pipelines::Results::new(producer)));
+                            let rpc_capnp::message::Call(call) =
+                                root.which().map_err(|_| super::Error::WrongMessage)?
+                            else {
+                                unreachable!("classified Call");
+                            };
+                            admitted_call = Some(Request::admit_decoded(
+                                &frame,
+                                messages,
+                                call?,
+                                &mut self.ledgers.imports,
+                                &mut self.ledgers.exports,
+                                &mut self.ledgers.answers,
+                                &mut call_owner,
+                                receiver,
+                                self.message_capabilities,
+                                self.message_path,
+                            )?);
+                        }
+                        return Ok(Kind::Call(words));
+                    }
+                    MessageUnionTag::Bootstrap => return Ok(Kind::Bootstrap),
+                    MessageUnionTag::Provide => return Ok(Kind::Provide),
+                    MessageUnionTag::Accept => return Ok(Kind::Accept),
+                    MessageUnionTag::ThirdPartyAnswer => return Ok(Kind::ThirdPartyAnswer),
+                    MessageUnionTag::Join => return Ok(Kind::Join),
+                    MessageUnionTag::Resolve => return Ok(Kind::Resolve),
+                    MessageUnionTag::Release => return Ok(Kind::Release),
+                    _ => (),
+                }
                 Ok(
                     match root.which().map_err(|_| super::Error::WrongMessage)? {
                         rpc_capnp::message::Call(_) => Kind::Call(words),
@@ -949,42 +1188,14 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                         rpc_capnp::message::Accept(_) => Kind::Accept,
                         rpc_capnp::message::ThirdPartyAnswer(_) => Kind::ThirdPartyAnswer,
                         rpc_capnp::message::Join(_) => Kind::Join,
-                        rpc_capnp::message::Return(result) => {
-                            let result = result?;
-                            let id = result.get_answer_id();
-                            let awaiting = matches!(
-                                result.which(),
-                                Ok(rpc_capnp::return_::AwaitFromThirdParty(_))
-                            );
-                            if !awaiting && !propagation_blocked {
-                                if let Some(question) =
-                                    self.exchanges.iter().find_map(|slot| match &slot.exchange {
-                                        Some(Exchange::Pending(question))
-                                            if question.key().id().to_wire() == id =>
-                                        {
-                                            Some(question)
-                                        }
-                                        _ => None,
-                                    })
-                                {
-                                    admitted_return = Some(question.admit_return(
-                                        result,
-                                        &frame,
-                                        messages,
-                                        &mut self.ledgers.questions,
-                                        &mut self.ledgers.imports,
-                                        &mut self.ledgers.exports,
-                                        &mut self.ledgers.answers,
-                                        scratch,
-                                        receiver,
-                                        self.message_capabilities,
-                                    )?);
-                                }
-                            }
-                            Kind::Return(id, awaiting)
-                        }
                         rpc_capnp::message::Resolve(_) => Kind::Resolve,
-                        rpc_capnp::message::Finish(_) => Kind::Finish,
+                        rpc_capnp::message::Finish(finish) => {
+                            let finish = finish?;
+                            Kind::Finish(
+                                AnswerId::from_wire(finish.get_question_id()),
+                                finish.get_release_result_caps(),
+                            )
+                        }
                         rpc_capnp::message::Release(_) => Kind::Release,
                         rpc_capnp::message::Abort(exception) => {
                             Kind::Abort(controls::abort_reason(exception?)?)
@@ -1025,7 +1236,8 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 return Err(Rejected {
                     error: Error::Input(error),
                     frame,
-                    producer: None,
+                    producer: call_owner
+                        .map(|owner| owner.release(messages).release(messages, &mut self.runtime)),
                 })
             }
         };
@@ -1040,6 +1252,18 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 frame,
                 producer: None,
             });
+        }
+        if let Some(admitted) = admitted_call {
+            let call = admitted.finish(frame);
+            let key = call.answer();
+            self.call = Some(call);
+            if self.defer_calls {
+                return Ok(Received::DeferredCall(key));
+            }
+            return match self.retry_call() {
+                Ok(_) => Ok(Received::Queued(key)),
+                Err(_) => Ok(Received::DeferredCall(key)),
+            };
         }
         match kind {
             Kind::Return(id, awaiting) => {
@@ -1119,7 +1343,14 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     }
                 }
             }
-            other => self.receive_control(other, frame, messages, scratch, receiver, make_producer),
+            other => self.receive_control(
+                other,
+                frame,
+                messages,
+                scratch,
+                receiver,
+                make_producer.expect("unconsumed control producer"),
+            ),
         }
     }
 
@@ -1309,6 +1540,9 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 };
                 let key = call.answer();
                 self.call = Some(call);
+                if self.defer_calls {
+                    return Ok(Received::DeferredCall(key));
+                }
                 match self.retry_call() {
                     Ok(_) => Ok(Received::Queued(key)),
                     Err(_) => Ok(Received::DeferredCall(key)),
@@ -1372,9 +1606,10 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     Err(_) => Ok(Received::DeferredResolution),
                 }
             }
-            Kind::Finish => {
-                let outcome = answer::finished(
-                    &frame,
+            Kind::Finish(id, release_result_caps) => {
+                let outcome = answer::finished_parts(
+                    id,
+                    release_result_caps,
                     messages,
                     &mut self.ledgers.answers,
                     &mut self.ledgers.exports,

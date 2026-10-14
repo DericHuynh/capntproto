@@ -40,11 +40,16 @@ impl crate::introspect::Introspect for Owned {
 
 pub type Reader<'a> = &'a [u8];
 
+/// # Safety
+/// The non-null pointer must name initialized bytes in one live allocation for
+/// the returned lifetime, with no mutation while the shared view is borrowed.
 pub(crate) unsafe fn reader_from_raw_parts<'a>(p: *const u8, len: u32) -> Reader<'a> {
-    ::core::slice::from_raw_parts(p, len as usize)
+    // SAFETY: the caller guarantees the complete readable extent and lifetime.
+    unsafe { ::core::slice::from_raw_parts(p, len as usize) }
 }
 
 impl<'a> crate::traits::FromPointerReader<'a> for Reader<'a> {
+    #[inline(always)]
     fn get_from_pointer(
         reader: &PointerReader<'a>,
         default: Option<&'a [crate::Word]>,
@@ -55,8 +60,12 @@ impl<'a> crate::traits::FromPointerReader<'a> for Reader<'a> {
 
 pub type Builder<'a> = &'a mut [u8];
 
+/// # Safety
+/// The non-null pointer must name initialized writable bytes in one live
+/// allocation, exclusively accessible for the returned mutable borrow.
 pub(crate) unsafe fn builder_from_raw_parts<'a>(p: *mut u8, len: u32) -> Builder<'a> {
-    ::core::slice::from_raw_parts_mut(p, len as usize)
+    // SAFETY: the caller guarantees the complete writable extent and exclusivity.
+    unsafe { ::core::slice::from_raw_parts_mut(p, len as usize) }
 }
 
 impl<'a> crate::traits::FromPointerBuilder<'a> for Builder<'a> {

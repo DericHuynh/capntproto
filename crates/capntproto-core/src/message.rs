@@ -277,6 +277,40 @@ pub struct CheckedStructReader<S: ReaderSegments> {
     reader: Reader<S>,
 }
 
+/// An owning immutable message selected at a pointer word. Retains no hook table
+/// and performs ordinary checked traversal when the application reads its target.
+pub struct CheckedPointerReader<S: ReaderSegments> {
+    root: layout::CachedPointerRoot,
+    reader: Reader<S>,
+}
+impl<S: ReaderSegments> CheckedPointerReader<S> {
+    /// Retain a pointer from exactly these same immutable segments, checking
+    /// every segment's identity and extent. Copies or incomplete segment sets
+    /// are rejected. A missing/default pointer has no segment dependency.
+    /// Starts a fresh traversal budget charging the selected pointer word;
+    /// descendants use the supplied nesting and traversal limits.
+    #[inline(always)]
+    pub fn retain(
+        root: any_pointer::Reader<'_>,
+        segments: S,
+        options: ReaderOptions,
+    ) -> Result<Self> {
+        let root =
+            layout::CachedPointerRoot::retain(root.reader, &segments, options.nesting_limit)?;
+        let reader = Reader::new(segments, options);
+        reader.arena.amplified_read(root.words())?;
+        Ok(Self { root, reader })
+    }
+    /// Borrow the selected pointer without decoding its ancestors again.
+    #[inline(always)]
+    pub fn root(&self) -> any_pointer::Reader<'_> {
+        // SAFETY: retain checked all immutable segments against the source.
+        // The cache stores offsets; borrow checks the current extent and uses
+        // fresh bases, including after moving an inline segment provider.
+        any_pointer::Reader::new(unsafe { self.root.borrow(&self.reader.arena) })
+    }
+}
+
 /// An immutable message with one optional selected struct. Dispatchers can
 /// cache a view they already decoded without traversing its path a second time.
 /// Selection preserves the message's existing traversal and nesting budgets.
@@ -393,6 +427,47 @@ where
     #[inline(always)]
     pub fn get_root<'a, T: FromPointerReader<'a>>(&'a self) -> Result<T> {
         self.get_root_internal()?.get_as()
+    }
+
+    /// Inspect this message through a short-lived arena which caches segment
+    /// zero. The callback cannot return readers borrowing that arena. It shares
+    /// this reader's traversal budget, and far pointers use the original owner.
+    pub fn with_root<R>(
+        &self,
+        read: impl for<'a> FnOnce(any_pointer::Reader<'a>) -> R,
+    ) -> Result<R> {
+        let arena = self.arena.cached()?;
+        let pointer = layout::PointerReader::get_root_from_arena(&arena)?;
+        Ok(read(any_pointer::Reader::new(pointer)))
+    }
+
+    /// Select a pointer while consuming its immutable segment owner. The
+    /// selector may decline without producing a cache. A selected pointer must
+    /// belong to the supplied root's arena (or be a default/null reader).
+    /// Validation uses this reader's limits; the retained view starts the given
+    /// independent budget. Its offsets survive moving an inline segment owner.
+    #[inline(always)]
+    pub fn try_select_pointer<T, E: From<Error>>(
+        self,
+        options: ReaderOptions,
+        select: impl for<'a> FnOnce(
+            any_pointer::Reader<'a>,
+        )
+            -> core::result::Result<Option<(any_pointer::Reader<'a>, T)>, E>,
+    ) -> core::result::Result<Option<(CheckedPointerReader<S>, T)>, E> {
+        let (root, value) = {
+            let arena = self.arena.cached()?;
+            let pointer = layout::PointerReader::get_root_from_arena(&arena)?;
+            let Some((selected, value)) = select(any_pointer::Reader::new(pointer))? else {
+                return Ok(None);
+            };
+            let root =
+                layout::CachedPointerRoot::select(selected.reader, &arena, options.nesting_limit)?;
+            (root, value)
+        };
+        let reader = Reader::new(self.into_segments(), options);
+        reader.arena.amplified_read(root.words())?;
+        Ok(Some((CheckedPointerReader { root, reader }, value)))
     }
 
     pub fn into_segments(self) -> S {
@@ -601,6 +676,7 @@ impl<A: Allocator> BuilderTemplate<A> {
 
     /// Copy the complete segment into a fresh allocator. Relative pointers keep
     /// their offsets; later edits use the ordinary builder allocation rules.
+    #[inline(always)]
     pub fn instantiate<B: Allocator>(&self, allocator: B) -> Builder<B> {
         let mut message = Builder::new(allocator);
         message
@@ -693,6 +769,7 @@ pub struct SelectedStructBuilderTemplate<A: Allocator> {
     root: layout::CachedStructRoot,
 }
 impl<A: Allocator> SelectedStructBuilderTemplate<A> {
+    #[inline(always)]
     pub fn instantiate<B: Allocator>(&self, allocator: B) -> SelectedStructBuilder<B> {
         SelectedStructBuilder {
             message: self.message.instantiate(allocator),
@@ -708,6 +785,7 @@ pub struct SelectedBuilderTemplate<A: Allocator> {
     offset: usize,
 }
 impl<A: Allocator> SelectedBuilderTemplate<A> {
+    #[inline(always)]
     pub fn instantiate<B: Allocator>(&self, allocator: B) -> SelectedBuilder<B> {
         SelectedBuilder {
             message: self.message.instantiate(allocator),
@@ -741,6 +819,7 @@ impl<A: Allocator> SelectedBuilder<A> {
     /// list checks use the ordinary reader arena, including on owned builders.
     pub fn validate_capability_indices(&self, count: u32, options: ReaderOptions) -> Result<()> {
         let arena = ReaderArenaImpl::new(self.message.get_segments_for_output(), options);
+        let arena = arena.cached()?;
         let (start, _) = arena.get_segment(self.segment)?;
         // SAFETY: select validated this word's location in the owning arena.
         // The exclusive selection permits edits only below that word, so its

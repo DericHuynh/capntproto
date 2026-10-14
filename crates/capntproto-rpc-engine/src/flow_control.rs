@@ -8,6 +8,7 @@ use core::time::Duration;
 mod adaptive;
 pub mod incoming;
 pub mod outgoing;
+mod policy;
 use adaptive::{AdaptiveWindow, Snapshot};
 
 /// A resource or clock input could not be applied. No strings are allocated.
@@ -82,21 +83,22 @@ impl Window {
     }
 
     pub fn is_ready(&self) -> bool {
-        (self.adaptive.is_none() && self.in_flight <= self.largest)
-            || self.in_flight < self.largest
-            || self.in_flight - self.largest < self.size as u128
+        policy::ready(
+            self.adaptive.is_some(),
+            self.in_flight,
+            self.largest,
+            self.size,
+        )
     }
 
     /// Charge a send before querying an optional external window getter. Failing
     /// admission leaves credit unchanged. `now` is used only by adaptive mode.
     pub fn sent(&mut self, size: u128, now: Duration) -> Result<Receipt, Error> {
         self.check_time(now)?;
-        let total = self
-            .in_flight
-            .checked_add(size)
-            .ok_or(Error::CounterOverflow)?;
+        let (total, largest) =
+            policy::sent(self.in_flight, self.largest, size).ok_or(Error::CounterOverflow)?;
         self.in_flight = total;
-        self.largest = self.largest.max(size);
+        self.largest = largest;
         if self.adaptive.is_some() {
             self.last_time = Some(now);
         }
@@ -113,9 +115,7 @@ impl Window {
     /// acknowledgement must cause the adapter to fail the stream.
     pub fn ack(&mut self, receipt: Receipt, now: Duration) -> Result<(), Error> {
         self.check_time(now)?;
-        let remaining = self
-            .in_flight
-            .checked_sub(receipt.size)
+        let remaining = policy::acknowledged(self.in_flight, receipt.size)
             .ok_or(Error::InvalidAcknowledgement)?;
         if let Some(snapshot) = receipt.snapshot {
             let adaptive = self

@@ -216,3 +216,5 @@ impl<'receipts, 'path, 'message, 'answer, 'export, 'import, A, E, I>
 
 mod controls;
 pub use controls::{finished, released, Finished};
+
+pub(crate) use controls::finished_parts;

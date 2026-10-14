@@ -3302,6 +3302,127 @@ pub struct PointerReader<'a> {
     nesting_limit: i32,
 }
 
+/// A selected pointer word, represented only by its segment and byte offset.
+/// Borrowing always derives a fresh pointer from the current segment owner.
+#[derive(Clone, Copy)]
+pub(crate) struct CachedPointerRoot {
+    offset: Option<usize>,
+    segment_id: u32,
+    nesting_limit: i32,
+}
+impl CachedPointerRoot {
+    /// The selection is made while its sole segment owner remains borrowed.
+    /// Rebase only offsets, and reject a pointer from another reader arena.
+    #[inline(always)]
+    pub(crate) fn select(
+        root: PointerReader<'_>,
+        arena: &dyn ReaderArena,
+        nesting_limit: i32,
+    ) -> Result<Self> {
+        if root.pointer.is_null() {
+            return Ok(Self {
+                offset: None,
+                segment_id: 0,
+                nesting_limit,
+            });
+        }
+        if !core::ptr::addr_eq(root.arena, arena) {
+            return Err(Error::from_kind(ErrorKind::WrongArena));
+        }
+        let (base, words) = arena.get_segment(root.segment_id)?;
+        let length = words as usize * BYTES_PER_WORD;
+        let offset = (root.pointer as usize)
+            .checked_sub(base as usize)
+            .filter(|offset| *offset <= length && BYTES_PER_WORD <= length - *offset)
+            .ok_or_else(|| Error::from_kind(ErrorKind::MessageContainsOutOfBoundsPointer))?;
+        Ok(Self {
+            offset: Some(offset),
+            segment_id: root.segment_id,
+            nesting_limit,
+        })
+    }
+
+    #[inline(always)]
+    pub(crate) fn retain<S: crate::message::ReaderSegments>(
+        root: PointerReader<'_>,
+        segments: &S,
+        nesting_limit: i32,
+    ) -> Result<Self> {
+        if root.pointer.is_null() {
+            return Ok(Self {
+                offset: None,
+                segment_id: 0,
+                nesting_limit,
+            });
+        }
+        let mut offset = None;
+        for index in 0..segments.len() {
+            let index = u32::try_from(index)
+                .map_err(|_| Error::from_kind(ErrorKind::MessageSizeOverflow))?;
+            let (base, words) = root.arena.get_segment(index)?;
+            let segment = segments
+                .get_segment(index)
+                .ok_or_else(|| Error::from_kind(ErrorKind::InvalidSegmentId(index)))?;
+            if segment.as_ptr() != base || segment.len() != words as usize * BYTES_PER_WORD {
+                return Err(Error::from_kind(ErrorKind::TypeMismatch));
+            }
+            if index == root.segment_id {
+                offset = Some(
+                    (root.pointer as usize)
+                        .checked_sub(base as usize)
+                        .filter(|offset| {
+                            *offset <= segment.len() && BYTES_PER_WORD <= segment.len() - *offset
+                        })
+                        .ok_or_else(|| {
+                            Error::from_kind(ErrorKind::MessageContainsOutOfBoundsPointer)
+                        })?,
+                );
+            }
+        }
+        let count = u32::try_from(segments.len())
+            .map_err(|_| Error::from_kind(ErrorKind::MessageSizeOverflow))?;
+        if root.arena.get_segment(count).is_ok() {
+            return Err(Error::from_kind(ErrorKind::TypeMismatch));
+        }
+        let offset =
+            offset.ok_or_else(|| Error::from_kind(ErrorKind::InvalidSegmentId(root.segment_id)))?;
+        Ok(Self {
+            offset: Some(offset),
+            segment_id: root.segment_id,
+            nesting_limit,
+        })
+    }
+    pub(crate) fn words(&self) -> u64 {
+        u64::from(self.offset.is_some())
+    }
+    /// The arena must retain the original immutable segment contents. Addresses
+    /// may change when an inline owner moves; its slices must stay live while
+    /// the returned view is borrowed. No capability table is retained.
+    #[inline(always)]
+    pub(crate) unsafe fn borrow<'a>(&self, arena: &'a dyn ReaderArena) -> PointerReader<'a> {
+        let Some(offset) = self.offset else {
+            return PointerReader::new_default();
+        };
+        let (base, words) = arena
+            .get_segment(self.segment_id)
+            .expect("validated immutable segment");
+        let length = words as usize * BYTES_PER_WORD;
+        assert!(
+            offset <= length && BYTES_PER_WORD <= length - offset,
+            "selected segment became shorter"
+        );
+        PointerReader {
+            arena,
+            cap_table: Default::default(),
+            // SAFETY: the live segment and entire pointer word were bounded
+            // above; retain established its immutable contents and location.
+            pointer: unsafe { base.add(offset) }.cast(),
+            segment_id: self.segment_id,
+            nesting_limit: self.nesting_limit,
+        }
+    }
+}
+
 impl<'a> PointerReader<'a> {
     pub(crate) fn arena_identity(&self) -> &'a dyn ReaderArena {
         self.arena
@@ -3407,7 +3528,7 @@ impl<'a> PointerReader<'a> {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn get_struct(self, default: Option<&'a [crate::Word]>) -> Result<StructReader<'a>> {
         let reff: *const WirePointer = if self.pointer.is_null() {
             zero_pointer()
@@ -3472,6 +3593,7 @@ impl<'a> PointerReader<'a> {
         }
     }
 
+    #[inline(always)]
     pub fn get_text(self, default: Option<&[crate::Word]>) -> Result<text::Reader<'a>> {
         let reff = if self.pointer.is_null() {
             zero_pointer()
@@ -3481,6 +3603,7 @@ impl<'a> PointerReader<'a> {
         unsafe { wire_helpers::read_text_pointer(self.arena, self.segment_id, reff, default) }
     }
 
+    #[inline(always)]
     pub fn get_data(&self, default: Option<&'a [crate::Word]>) -> Result<data::Reader<'a>> {
         let reff = if self.pointer.is_null() {
             zero_pointer()
@@ -4652,12 +4775,13 @@ impl CachedStructRoot {
         }
     }
 
+    #[inline(always)]
     pub(crate) fn retain<S: crate::message::ReaderSegments>(
         root: StructReader<'_>,
         segments: &S,
         nesting_limit: i32,
     ) -> Result<Self> {
-        let mut cached = Self::new(root)?;
+        let mut cached = None;
         if root.data_size != 0 || root.pointer_count != 0 {
             // Compare every segment, including those reached by far pointers.
             // Equality of just the selected segment is insufficient. The new
@@ -4672,6 +4796,9 @@ impl CachedStructRoot {
                 if segment.as_ptr() != base || segment.len() != words as usize * BYTES_PER_WORD {
                     return Err(Error::from_kind(ErrorKind::TypeMismatch));
                 }
+                if index == root.segment_id {
+                    cached = Some(Self::from_segment(root, base, words)?);
+                }
             }
             let count = u32::try_from(segments.len())
                 .map_err(|_| Error::from_kind(ErrorKind::MessageSizeOverflow))?;
@@ -4683,16 +4810,29 @@ impl CachedStructRoot {
                     ErrorKind::MessageIsTooDeeplyNestedOrContainsCycles,
                 ));
             }
+            let mut cached = cached
+                .ok_or_else(|| Error::from_kind(ErrorKind::InvalidSegmentId(root.segment_id)))?;
             cached.nesting_limit = nesting_limit - 1;
+            return Ok(cached);
         }
-        Ok(cached)
+        Self::new(root)
     }
 
+    #[inline(always)]
     pub(crate) fn new(root: StructReader<'_>) -> Result<Self> {
+        let (base, words) = if root.data_size == 0 && root.pointer_count == 0 {
+            (ptr::null(), 0)
+        } else {
+            root.arena.get_segment(root.segment_id)?
+        };
+        Self::from_segment(root, base, words)
+    }
+
+    #[inline(always)]
+    fn from_segment(root: StructReader<'_>, base: *const u8, words: u32) -> Result<Self> {
         let (data, pointers) = if root.data_size == 0 && root.pointer_count == 0 {
             (0, 0)
         } else {
-            let (base, words) = root.arena.get_segment(root.segment_id)?;
             let bytes = words as usize * BYTES_PER_WORD;
             let offset = |pointer: *const u8, length: usize| -> Result<usize> {
                 if length == 0 && pointer.is_null() {
@@ -4729,6 +4869,7 @@ impl CachedStructRoot {
     /// The supplied arena must own the original segment contents and lengths,
     /// without mutation. Addresses may have changed when the owner moved.
     /// Segment storage must remain stable for the returned view's lifetime.
+    #[inline(always)]
     pub(crate) unsafe fn borrow<'a>(&self, arena: &'a dyn ReaderArena) -> StructReader<'a> {
         let base = if self.extent != 0 {
             let (base, words) = arena

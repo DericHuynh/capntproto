@@ -3,7 +3,12 @@
 //! Callers retain capability authority before claiming an embargo and keep it
 //! until successful completion or cancellation. No IO or allocator is involved.
 use core::marker::PhantomData;
+#[cfg(capntproto_verus)]
+use vstd::prelude::*;
+#[cfg(capntproto_verus)]
+include!("provision/verified.rs");
 
+#[cfg_attr(capntproto_verus, verus_verify)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     NonemptyStorage,
@@ -25,20 +30,26 @@ impl core::error::Error for Error {}
 /// One identifier within a provision. Accept and disembargo can arrive in either
 /// order, exactly once each. Ending the provision cancels a pending embargo, but
 /// does not revoke an already released acceptance's independently held authority.
+#[cfg_attr(capntproto_verus, verus_verify)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct EmbargoState {
     claimed: bool,
     released: bool,
     closed: bool,
 }
+#[cfg_attr(capntproto_verus, verus_spec(r => ensures embargo_initial(r)))]
+const fn initial_embargo() -> EmbargoState {
+    EmbargoState {
+        claimed: false,
+        released: false,
+        closed: false,
+    }
+}
 impl EmbargoState {
     pub const fn new() -> Self {
-        Self {
-            claimed: false,
-            released: false,
-            closed: false,
-        }
+        initial_embargo()
     }
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures embargo_claim(*old(self), *final(self), r)))]
     pub fn claim(&mut self) -> Result<(), Error> {
         if self.closed {
             return Err(Error::Closed);
@@ -49,6 +60,7 @@ impl EmbargoState {
         self.claimed = true;
         Ok(())
     }
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures embargo_release(*old(self), *final(self), r)))]
     pub fn release(&mut self) -> Result<(), Error> {
         if self.closed {
             return Err(Error::Closed);
@@ -59,9 +71,11 @@ impl EmbargoState {
         self.released = true;
         Ok(())
     }
+    #[cfg_attr(capntproto_verus, verus_spec(ensures embargo_close(*old(self), *final(self))))]
     pub fn close(&mut self) {
         self.closed = true;
     }
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures r == embargo_readiness(*self)))]
     pub fn readiness(&self) -> Result<(), Error> {
         if !self.claimed {
             return Err(Error::Pending);

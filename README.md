@@ -9,7 +9,7 @@ with a native schema compiler, compatibility adapters, encrypted transport and
 correctness tooling. Start with the **[project wiki](docs/wiki/Home.md)**.
 
 The CI badge covers the full PR/main pipeline: platform checks, Cargo/coverage,
-Verus/Kani/TLA+, fuzzing, extended verification and release benchmarks. Fork/Dependabot PRs
+Verus/TLA+, fuzzing, extended verification and release benchmarks. Fork/Dependabot PRs
 build benchmarks without cloud measurement. See the [workflow graph](docs/wiki/Quality-and-Benchmarks.md#workflow-dependencies)
 and [independent results and graphs](https://github.com/DericHuynh/capntproto/tree/reports).
 
@@ -25,12 +25,13 @@ qualification remain work in progress; see the [release criteria](docs/wiki/Rele
 - **Serialization and capability RPC:** maintained `capnp`, `capnpc` and
   `capnp-rpc` crates, with generated Rust APIs and C++ interoperability tests.
   [Runtime scope](docs/wiki/Runtime-Status.md) · [C++ parity](docs/wiki/Cpp-Parity.md).
+  [Portable TCP instruction qualification](docs/wiki/Quality-and-Benchmarks.md#portable-instruction-qualification-below-20-million).
 - **Adapters and transport:** TCP, TLS 1.3 and standard QUIC v1 with optional mutual
   TLS; JSON/text codecs, ByteStream, HTTP, WebSockets and JSON-RPC; encrypted
   multiparty sessions through quiche and durable storage. [TCP, TLS and QUIC guide](docs/wiki/TCP-TLS-and-QUIC.md).
   [Compatibility adapters](docs/wiki/Compatibility-Adapters.md) · [Architecture](docs/wiki/Architecture.md).
 - **Executable correctness checks:** Rust tests, C++ comparisons, Verus source
-  contracts and temporal induction, Kani proofs of portable Rust, bounded TLA+
+  contracts and temporal induction for portable Rust, bounded TLA+
   models, fuzzing, memory checks and LLVM coverage regression gates.
   [Testing](docs/wiki/Testing.md) · [Formal verification](docs/wiki/Formal-Verification.md) · [Qualification limits](docs/wiki/Model-Conformance.md).
 - **RPC application APIs:** owned connections and native vats, typed bootstraps

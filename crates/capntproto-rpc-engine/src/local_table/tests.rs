@@ -8,6 +8,44 @@ use crate::{
 use core::cell::Cell;
 use std::{collections::BTreeMap, vec::Vec};
 
+#[test]
+fn construction_uses_final_id_without_consuming_ids_on_rejection_or_unwind() {
+    let mut dense = [const { Slot::EMPTY }; 3];
+    let mut high = [];
+    let mut adopted = [];
+    let mut table = LocalTable::<ExportId, (u32, u32), _, _, _>::try_new(
+        BorrowedSlots::new(&mut dense),
+        BorrowedSparse::new(&mut high),
+        BorrowedSparse::new(&mut adopted),
+    )
+    .unwrap();
+    let build = |id: ExportId, value| (id.to_wire(), value);
+    let first = table.try_push_with(11, build).unwrap();
+    let second = table.try_push_with(12, build).unwrap();
+    let third = table.try_push_with(13, build).unwrap();
+    assert_eq!(
+        table.try_push_with(17, |_, _| panic!("full cannot invoke constructor")),
+        Err(InsertError {
+            kind: InsertErrorKind::Full,
+            value: 17
+        })
+    );
+    assert_eq!(table.remove(first), Some((0, 11)));
+    assert_eq!(table.remove(third), Some((2, 13)));
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = table.try_push_with(19, |id, _| {
+            assert_eq!(id, first);
+            panic!("construction failed")
+        });
+    }))
+    .is_err());
+    assert_eq!(table.get(second), Some(&(1, 12)));
+    assert_eq!(table.try_push_with(23, build), Ok(first));
+    assert_eq!(table.try_push_with(29, build), Ok(third));
+    assert_eq!(table.get(first), Some(&(0, 23)));
+    assert_eq!(table.get(third), Some(&(2, 29)));
+}
+
 fn compare<const N: usize, const H: usize, const A: usize>() {
     let mut dense = [const { Slot::EMPTY }; N];
     let mut high = [const { SparseSlot::EMPTY }; H];

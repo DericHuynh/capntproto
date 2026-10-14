@@ -130,6 +130,7 @@ impl<'a> TryFrom<Reader<'a>> for &'a str {
 }
 
 impl<'a> crate::traits::FromPointerReader<'a> for Reader<'a> {
+    #[inline(always)]
     fn get_from_pointer(
         reader: &crate::private::layout::PointerReader<'a>,
         default: Option<&'a [crate::Word]>,

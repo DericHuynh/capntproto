@@ -14,6 +14,8 @@ const COMMIT: &str = "426d8b01e7ffb910a36c15e1f870ff985bb61eef";
 const BUNDLE_SHA: &str = "624018662868563a7bec0dd07be5e4dd0c3d61124b4b55105765884bf2d4d1a0";
 const TLA_COMMIT: &str = "e7eda3f24b60fbbf4396e623a06da9ec32512c0e";
 const SOURCES: &[&str] = &[
+    "crates/capntproto-core/src/private/arena/fixed/limits.rs",
+    "crates/capntproto-core/src/wire_capability/map/policy.rs",
     "src/semantics/revisions.rs",
     "src/semantics/verified/revisions.rs",
     "src/semantics/sequence.rs",
@@ -165,7 +167,10 @@ fn validate(
                 && summary["success"] == true
                 && summary["encountered-error"] == false
                 && summary["errors"] == 0
-                && summary["verified"] == count
+                // Loop bodies have separate obligations in addition to their
+                // function. The exact function inventory and every row
+                // still have to succeed; obligation count cannot be smaller.
+                && crate::number(summary, "verified")? >= count as u64
                 && rows.values().all(|v| v["success"] == true),
             "Verus proof failed"
         );
@@ -175,7 +180,7 @@ fn validate(
 fn control_source(root: &Path, control: &Value) -> Result<(PathBuf, String)> {
     let source = crate::string(control, "source")?;
     ensure!(
-        SOURCES.contains(&source),
+        source_paths(root)?.contains(source),
         "mutation source is outside verified inventory"
     );
     let before = fs::read_to_string(root.join(source))?;
@@ -187,6 +192,25 @@ fn control_source(root: &Path, control: &Value) -> Result<(PathBuf, String)> {
     let to = crate::string(control, "to")?;
     ensure!(from != to, "mutation does not change source");
     Ok((PathBuf::from(source), before.replacen(from, to, 1)))
+}
+fn source_paths(root: &Path) -> Result<BTreeSet<String>> {
+    let mut sources = SOURCES
+        .iter()
+        .map(|s| (*s).to_owned())
+        .collect::<BTreeSet<_>>();
+    for entry in walkdir::WalkDir::new(root.join("crates/capntproto-rpc-engine/src")) {
+        let entry = entry?;
+        if entry.file_type().is_file() && entry.path().extension().is_some_and(|s| s == "rs") {
+            sources.insert(
+                entry
+                    .path()
+                    .strip_prefix(root)?
+                    .to_string_lossy()
+                    .into_owned(),
+            );
+        }
+    }
+    Ok(sources)
 }
 fn plan(root: &Path) -> Result<(Value, BTreeSet<String>)> {
     let plan = crate::read_json(root.join("verification/verus/plan.json"))?;
@@ -223,7 +247,7 @@ fn plan(root: &Path) -> Result<(Value, BTreeSet<String>)> {
 }
 fn inputs(root: &Path) -> Result<BTreeMap<String, String>> {
     let mut inputs = BTreeMap::new();
-    for name in SOURCES.iter().copied().chain([
+    for name in source_paths(root)?.iter().map(String::as_str).chain([
         "verification/verus/plan.json",
         "dev/src/verus.rs",
         "dev/src/verus/tests.rs",
@@ -397,8 +421,8 @@ fn verify(root: &Path, output: &Path, cancel: &Cancellation) -> Result<()> {
         crate::write_json(output.join("evidence.json"), &evidence)?;
         for control in plan["controls"].as_array().unwrap() {
             let copy = tempfile::tempdir()?;
-            for source in SOURCES {
-                crate::write(copy.path().join(source), fs::read(root.join(source))?)?;
+            for source in source_paths(root)? {
+                crate::write(copy.path().join(&source), fs::read(root.join(&source))?)?;
             }
             let (path, mutated) = control_source(root, control)?;
             crate::write(copy.path().join(path), mutated)?;
@@ -449,7 +473,7 @@ fn verify(root: &Path, output: &Path, cancel: &Cancellation) -> Result<()> {
     } else {
         evidence["error"].as_str().unwrap().to_owned()
     };
-    crate::write(output.join("README.md"), format!("# Verus and verus-tla: {status}\n\n{details}\n\nSee [production proofs](proofs.json), [temporal library](temporal-library.json) and [source-bound evidence](evidence.json). Each JSON report includes per-function SMT timings. Control failures are expected and their logs identify the violated obligation.\n\n![SMT time per production contract and temporal lemma](proofs.svg)\n\nScope: local handoff, outgoing-question, non-recycling route sequence, stream publication and revision policies, full-width counters and unbounded traces. Progress assumes fair draining/lifting, Return processing/local release or route allocation. Authentication, network delivery, output acceptance, capability-table generations, storage IO and constructor/Default wrappers are outside these proofs; native tests, Kani and retained distributed models cover those boundaries.\n"))?;
+    crate::write(output.join("README.md"), format!("# Verus and verus-tla: {status}\n\n{details}\n\nSee [production proofs](proofs.json), [temporal library](temporal-library.json) and [source-bound evidence](evidence.json). Each JSON report includes per-function SMT timings. Control failures are expected and their logs identify the violated obligation.\n\n![SMT time per production contract and temporal lemma](proofs.svg)\n\nScope: production handoff/question temporal induction; reply ownership, answer lifetime/adoption, import revival, export reservation, wire references, promise/embargo transitions, message counts/progress, flow control, ring/growth/fixed-arena bounds and capability indices. Full-width source contracts preserve owned values and rejection state. Progress assumes fair draining/lifting, Return processing/local release or route allocation. Container traversal/batch composition, pointer provenance, buffer bytes, callbacks, authentication, network/storage IO and constructor/Default wrappers remain outside these contracts; native, Miri, compile-fail and distributed-model checks cover integration boundaries. Optional bounded Kani checks remain local, not a CI prerequisite.\n"))?;
     result
 }
 

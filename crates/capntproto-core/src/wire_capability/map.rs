@@ -1,5 +1,6 @@
 //! Explicit index translation for copying between RPC payloads.
 use crate::{Error, ErrorKind, Result};
+mod policy;
 
 /// Validated destination indices. The connection must separately bind both
 /// descriptor tables to their grants; this object does not create authority.
@@ -10,7 +11,7 @@ pub struct IndexMap<'a> {
 }
 impl<'a> IndexMap<'a> {
     pub fn new(indices: &'a [u32], destination_count: u32) -> Result<Self> {
-        if indices.iter().any(|&i| i >= destination_count) {
+        if !policy::valid(indices, destination_count) {
             return Err(Error::from_kind(
                 ErrorKind::MessageContainsInvalidCapabilityPointer,
             ));
@@ -31,13 +32,9 @@ impl<'a> IndexMap<'a> {
     }
     pub(crate) fn remap(self, source: u32) -> Result<u32> {
         let Some(indices) = self.indices else {
-            return if source < self.count {
-                Ok(source)
-            } else {
-                Err(Error::from_kind(
-                    ErrorKind::MessageContainsInvalidCapabilityPointer,
-                ))
-            };
+            return policy::identity(source, self.count).ok_or_else(|| {
+                Error::from_kind(ErrorKind::MessageContainsInvalidCapabilityPointer)
+            });
         };
         usize::try_from(source)
             .ok()

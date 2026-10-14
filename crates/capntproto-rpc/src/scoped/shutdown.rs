@@ -3,8 +3,24 @@
 //! calls finish, and every callback runs after releasing the state borrow.
 use super::{completion, Context, Error, Future, Pin, Poll, Rc, RefCell, Waker};
 
+enum Notification {
+    Task(Waker),
+    Response(std::rc::Weak<RefCell<super::response::State>>),
+}
+impl Notification {
+    fn wake(self) {
+        match self {
+            Self::Task(wake) => wake.wake(),
+            Self::Response(state) => {
+                if let Some(state) = state.upgrade() {
+                    super::response::notify_closed(&state);
+                }
+            }
+        }
+    }
+}
 struct Waiter {
-    wake: Option<Waker>,
+    wake: Option<Notification>,
     next: Option<usize>,
 }
 #[derive(Default)]
@@ -26,6 +42,36 @@ impl Clone for Receiver {
     }
 }
 impl Receiver {
+    pub(super) fn is_closed(&self) -> bool {
+        self.state.borrow().reason.is_some()
+    }
+    /// Direct completions already retain their receiving task's waker. Register
+    /// that state weakly instead of cloning a second copy of the same waker.
+    pub(super) fn watch_response(&mut self, response: &Rc<RefCell<super::response::State>>) {
+        if self.slot.is_some() {
+            return;
+        }
+        let mut state = self.state.borrow_mut();
+        if state.reason.is_some() {
+            return;
+        }
+        let slot = match state.free {
+            Some(slot) => {
+                state.free = state.waiters[slot].next;
+                slot
+            }
+            None => {
+                let slot = state.waiters.len();
+                state.waiters.push(Waiter {
+                    wake: None,
+                    next: None,
+                });
+                slot
+            }
+        };
+        state.waiters[slot].wake = Some(Notification::Response(Rc::downgrade(response)));
+        self.slot = Some(slot);
+    }
     pub(super) fn reason(&self) -> Option<Error> {
         self.state.borrow().reason.clone()
     }
@@ -59,10 +105,9 @@ impl Future for Receiver {
                 return Poll::Ready(Ok(reason.clone()));
             }
             if self.slot.is_some_and(|slot| {
-                state.waiters[slot]
-                    .wake
-                    .as_ref()
-                    .is_some_and(|wake| wake.will_wake(cx.waker()))
+                state.waiters[slot].wake.as_ref().is_some_and(
+                    |wake| matches!(wake, Notification::Task(wake) if wake.will_wake(cx.waker())),
+                )
             }) {
                 return Poll::Pending;
             }
@@ -91,7 +136,10 @@ impl Future for Receiver {
                     }
                 },
             };
-            (slot, state.waiters[slot].wake.replace(wake))
+            (
+                slot,
+                state.waiters[slot].wake.replace(Notification::Task(wake)),
+            )
         };
         self.slot = Some(slot);
         drop(old);

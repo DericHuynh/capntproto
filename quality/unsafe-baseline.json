@@ -1,12 +1,6 @@
 {
   "description": "Pre-existing owned core-runtime unsafe documentation debt, not a safety audit. Linux default workspace features, Rust 1.97.0. Changes to these source files require review; fix new unsafe lint violations rather than expanding exceptions. Full diagnostics: target/quality/unsafe/clippy.jsonl.",
   "files": {
-    "crates/capntproto-core/src/data.rs": {
-      "diagnostics": {
-        "unsafe_op_in_unsafe_fn": 2
-      },
-      "sha256": "134359b11a600dec0905660e498f9f835af06d12dda373164119a22ff1a35119"
-    },
     "crates/capntproto-core/src/lib.rs": {
       "diagnostics": {
         "clippy::undocumented_unsafe_blocks": 2
@@ -18,7 +12,7 @@
         "clippy::undocumented_unsafe_blocks": 9,
         "unsafe_op_in_unsafe_fn": 2
       },
-      "sha256": "96f4981b13214dbd4ea560c8a5c021a449b9bd2154a4e7191f3d46950cd02b31"
+      "sha256": "ff36414573360dfdeb56af96395a61a0b27deea2ec38ab0fbf5dedd139dc25d4"
     },
     "crates/capntproto-core/src/primitive_list.rs": {
       "diagnostics": {
@@ -30,7 +24,7 @@
       "diagnostics": {
         "clippy::undocumented_unsafe_blocks": 12
       },
-      "sha256": "dcf8e4171d17190c22a746a1c3441f97bed4d0dee73b3768e304e67452aa3d4a"
+      "sha256": "cb55ec7db7d235569ef2a389c05d9b6f46ed9842c848f6950780890064296e7e"
     },
     "crates/capntproto-core/src/private/layout.rs": {
       "diagnostics": {
@@ -38,7 +32,7 @@
         "clippy::undocumented_unsafe_blocks": 91,
         "unsafe_op_in_unsafe_fn": 366
       },
-      "sha256": "e153f05d64830a4922a3f39a7ab1a047db07a34da30e7b5472a7176fdd1e8254"
+      "sha256": "9476ac9909afed58b5c2fed8cca8bda107cfcdf550e9da9f8b10d2a6b794cb50"
     },
     "crates/capntproto-core/src/private/layout_test.rs": {
       "diagnostics": {

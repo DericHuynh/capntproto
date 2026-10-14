@@ -142,6 +142,104 @@ where
     pub(crate) fn get_segments(&self) -> &S {
         &self.segments
     }
+
+    #[inline(always)]
+    pub(crate) fn cached(&self) -> Result<CachedReaderArena<'_, S>> {
+        Ok(CachedReaderArena {
+            inner: self,
+            first: self.get_segment(0)?,
+        })
+    }
+}
+
+/// A short-lived borrow caches the common segment, never a movable owner. The
+/// source remains borrowed until every view into this arena has been destroyed.
+pub(crate) struct CachedReaderArena<'a, S> {
+    inner: &'a ReaderArenaImpl<S>,
+    first: (*const u8, u32),
+}
+impl<S: ReaderSegments> CachedReaderArena<'_, S> {
+    // Keep non-cached segment lookup and its error storage out of the vtable's
+    // common segment-zero bounds check. The same arena validates other segments.
+    #[inline(never)]
+    unsafe fn check_other_offset_and_read(
+        &self,
+        id: u32,
+        start: *const u8,
+        offset: i32,
+        words: usize,
+    ) -> Result<*const u8> {
+        // SAFETY: forward the caller's live pointer and offset unchanged to its
+        // original arena, which validates the full target before forming it.
+        unsafe { self.inner.check_offset_and_read(id, start, offset, words) }
+    }
+}
+// SAFETY: first was checked by the original arena while it is borrowed for 'a.
+// All other segments and the traversal budget belong to that same live arena.
+// No cached pointer survives a move of its segment owner.
+unsafe impl<S: ReaderSegments> ReaderArena for CachedReaderArena<'_, S> {
+    #[inline(always)]
+    fn get_segment(&self, id: u32) -> Result<(*const u8, u32)> {
+        if id == 0 {
+            Ok(self.first)
+        } else {
+            self.inner.get_segment(id)
+        }
+    }
+    fn contains_interval(&self, id: u32, start: *const u8, words: usize) -> Result<()> {
+        let (base, length) = self.get_segment(id)?;
+        let offset = (start as usize)
+            .checked_sub(base as usize)
+            .ok_or_else(|| Error::from_kind(ErrorKind::MessageContainsOutOfBoundsPointer))?;
+        let bytes = length as usize * BYTES_PER_WORD;
+        if offset > bytes || words > (bytes - offset) / BYTES_PER_WORD {
+            return Err(Error::from_kind(
+                ErrorKind::MessageContainsOutOfBoundsPointer,
+            ));
+        }
+        self.inner.read_limiter.can_read(words)
+    }
+    #[inline(always)]
+    unsafe fn check_offset_and_read(
+        &self,
+        id: u32,
+        start: *const u8,
+        offset: i32,
+        words: usize,
+    ) -> Result<*const u8> {
+        if id != 0 {
+            // SAFETY: only the lookup strategy changes; the original arena
+            // receives the same live pointer, signed offset and requested extent.
+            return unsafe { self.check_other_offset_and_read(id, start, offset, words) };
+        }
+        let (base, length) = self.first;
+        let invalid = || Error::from_kind(ErrorKind::MessageContainsOutOfBoundsPointer);
+        let relative = (start as usize)
+            .checked_sub(base as usize)
+            .ok_or_else(invalid)?;
+        let bytes = length as usize * BYTES_PER_WORD;
+        let target = (relative as u64).wrapping_add_signed(i64::from(offset) * 8);
+        if target > bytes as u64 {
+            return Err(invalid());
+        }
+        let target = usize::try_from(target).unwrap();
+        if words > (bytes - target) / BYTES_PER_WORD {
+            return Err(invalid());
+        }
+        self.inner.read_limiter.can_read(words)?;
+        // SAFETY: the cached/delegated segment remains live, and the complete
+        // target was checked before forming this pointer (including on 32-bit).
+        Ok(unsafe { base.add(target) })
+    }
+    fn amplified_read(&self, words: u64) -> Result<()> {
+        self.inner.amplified_read(words)
+    }
+    fn nesting_limit(&self) -> i32 {
+        self.inner.nesting_limit()
+    }
+    fn size_in_words(&self) -> usize {
+        self.inner.size_in_words()
+    }
 }
 
 unsafe impl<S> ReaderArena for ReaderArenaImpl<S>
@@ -169,21 +267,23 @@ where
     }
 
     fn contains_interval(&self, id: u32, start: *const u8, size_in_words: usize) -> Result<()> {
-        let (segment_start, segment_len) = self.get_segment(id)?;
-        let this_start: usize = segment_start as usize;
-        let this_size: usize = segment_len as usize * BYTES_PER_WORD;
-        let start = start as usize;
-        let size = size_in_words * BYTES_PER_WORD;
-
-        if !(start >= this_start && start - this_start + size <= this_size) {
-            Err(Error::from_kind(
+        let (base, words) = self.get_segment(id)?;
+        let offset = (start as usize)
+            .checked_sub(base as usize)
+            .ok_or_else(|| Error::from_kind(ErrorKind::MessageContainsOutOfBoundsPointer))?;
+        // Divide the remaining extent instead of multiplying an untrusted word
+        // count or adding it to an address. Rejection must not overflow even
+        // when the caller supplies usize::MAX on a 32-bit target.
+        let bytes = words as usize * BYTES_PER_WORD;
+        if offset > bytes || size_in_words > (bytes - offset) / BYTES_PER_WORD {
+            return Err(Error::from_kind(
                 ErrorKind::MessageContainsOutOfBoundsPointer,
-            ))
-        } else {
-            self.read_limiter.can_read(size_in_words)
+            ));
         }
+        self.read_limiter.can_read(size_in_words)
     }
 
+    #[inline(always)]
     unsafe fn check_offset_and_read(
         &self,
         id: u32,
@@ -193,15 +293,22 @@ where
     ) -> Result<*const u8> {
         let (base, words) = self.get_segment(id)?;
         let invalid = || Error::from_kind(ErrorKind::MessageContainsOutOfBoundsPointer);
-        let offset = (offset_in_words as isize)
-            .checked_mul(isize::try_from(BYTES_PER_WORD).unwrap())
-            .ok_or_else(invalid)?;
         let relative = (start as usize)
             .checked_sub(base as usize)
             .ok_or_else(invalid)?;
-        let target = relative.checked_add_signed(offset).ok_or_else(invalid)?;
         let segment_bytes = words as usize * BYTES_PER_WORD;
-        if target > segment_bytes || size_in_words > (segment_bytes - target) / BYTES_PER_WORD {
+        // The caller supplies a position in this live allocation. Its length
+        // is at most isize::MAX; a signed 32-bit word offset cannot overflow
+        // the positive u64 range. Negative targets wrap above every possible
+        // allocation length and are rejected by the same comparison. Widen
+        // before multiplying so 32-bit targets reject, rather than truncate,
+        // a malicious offset larger than their address space.
+        let target = (relative as u64).wrapping_add_signed(i64::from(offset_in_words) * 8);
+        if target > segment_bytes as u64 {
+            return Err(invalid());
+        }
+        let target = usize::try_from(target).unwrap();
+        if size_in_words > (segment_bytes - target) / BYTES_PER_WORD {
             return Err(invalid());
         }
         self.read_limiter.can_read(size_in_words)?;

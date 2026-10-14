@@ -59,6 +59,25 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         options: capnp::message::ReaderOptions,
         resources: R,
     ) -> Result<Option<questions::Key<'id>>, Error> {
+        self.try_send_immediate_borrowed(
+            target, method, &params, messages, queue, minimum, options, resources,
+        )
+    }
+    /// Borrow the prepared envelope through publication, avoiding moves of the
+    /// general content-reader variant through hosted scheduling adapters.
+    #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
+    pub fn try_send_immediate_borrowed<R>(
+        &mut self,
+        target: &clients::Client<'id>,
+        method: calls::DynamicCall,
+        params: &ImmediateParams<'_>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        queue: &mut messages::Queue<'pool, '_, R>,
+        minimum: usize,
+        options: capnp::message::ReaderOptions,
+        resources: R,
+    ) -> Result<Option<questions::Key<'id>>, Error> {
         self.check_live()?;
         if !method.no_promise_pipelining
             || method.only_promise_pipeline
@@ -86,7 +105,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             return Err(Error::InvalidInvocationTarget);
         }
         let target = remote.id();
-        let (template, minimum) = match &params {
+        let (template, minimum) = match params {
             ImmediateParams::Content(params) => {
                 let size = params.target_size().map_err(|e| Error::Input(e.into()))?;
                 if size.cap_count != 0 {
@@ -136,7 +155,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                         self.allow_answer_handoff,
                         |field| {
                             field.copy_with_capabilities(
-                                params,
+                                *params,
                                 capnp::wire_capability::IndexMap::identity(0),
                             )
                         },

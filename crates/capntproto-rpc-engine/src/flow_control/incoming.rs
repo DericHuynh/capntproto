@@ -30,28 +30,21 @@ impl Incoming {
     /// Once paused, resume strictly below the limit. At zero, a later limit
     /// increase is required even after every charged call completes.
     pub fn paused(&self) -> bool {
-        let paused = if self.paused.get() {
-            self.words.get() >= self.limit.get()
-        } else {
-            self.words.get() > self.limit.get()
-        };
+        let paused = super::policy::paused(self.words.get(), self.limit.get(), self.paused.get());
         self.paused.set(paused);
         paused
     }
     fn add(&self, words: usize) -> Result<(), Error> {
-        let total = self
-            .words
-            .get()
-            .checked_add(words)
-            .ok_or(Error::CounterOverflow)?;
+        let (total, paused) =
+            super::policy::charge(self.words.get(), words, self.limit.get(), self.paused.get())
+                .ok_or(Error::CounterOverflow)?;
         self.words.set(total);
-        if total > self.limit.get() {
-            self.paused.set(true);
-        }
+        self.paused.set(paused);
         Ok(())
     }
     fn release(&self, words: usize) {
-        self.words.set(self.words.get() - words);
+        self.words
+            .set(super::policy::release(self.words.get(), words));
     }
     pub fn charge(&self, words: usize) -> Result<Charge<'_>, Error> {
         self.add(words)?;

@@ -4,6 +4,10 @@
 #![forbid(unsafe_code)]
 use crate::ids::AnswerId;
 use core::marker::PhantomData;
+#[cfg(capntproto_verus)]
+use vstd::prelude::*;
+#[cfg(capntproto_verus)]
+include!("answers/verified.rs");
 mod admission;
 mod network;
 mod third_party;
@@ -11,6 +15,7 @@ pub use third_party::ThirdPartyAdmission;
 mod pipelines;
 pub use admission::Admission;
 pub use pipelines::{PipelineAdmission, PipelineError, PipelineSlot, Pipelines};
+#[cfg_attr(capntproto_verus, verus_verify)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Redirect {
     None,
@@ -21,6 +26,7 @@ enum Redirect {
 
 type Brand<'id> = PhantomData<fn(&'id ()) -> &'id ()>;
 
+#[cfg_attr(capntproto_verus, verus_verify)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     NonemptyStorage,
@@ -49,12 +55,14 @@ pub struct Rejected<T> {
     pub value: T,
 }
 
+#[cfg_attr(capntproto_verus, verus_verify)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum State {
     Queued,
     Running { cancellation: bool },
     Returned,
 }
+#[cfg_attr(capntproto_verus, verus_verify)]
 pub struct Record<T> {
     #[cfg(feature = "alloc")]
     presence: crate::observation::Presence,
@@ -69,8 +77,91 @@ pub struct Record<T> {
     value: T,
 }
 impl<T> Record<T> {
+    #[inline]
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures r == reclaimable(*self)))]
     fn reclaimable(&self) -> bool {
-        self.finished && self.state == State::Returned && self.pipelines == 0
+        self.finished && matches!(self.state, State::Returned) && self.pipelines == 0
+    }
+    #[inline]
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures r == wire_live(*self)))]
+    fn wire_live(&self) -> bool {
+        !(self.finished && matches!(self.state, State::Returned))
+    }
+    #[inline]
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures r == cancel_requested(*self)))]
+    fn cancellation_requested(&self) -> bool {
+        self.finished
+            && self.pipelines == 0
+            && matches!(
+                self.state,
+                State::Queued | State::Running { cancellation: true }
+            )
+    }
+    #[inline]
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures retained(*old(self), *final(self), r)))]
+    fn retain_pipeline(&mut self) -> Result<(), Error> {
+        self.pipelines = self.pipelines.checked_add(1).ok_or(Error::ReferenceLimit)?;
+        Ok(())
+    }
+    #[inline]
+    #[cfg_attr(capntproto_verus, verus_spec( requires old(self).pipelines > 0,
+        ensures *final(self) == (Record { pipelines: (old(self).pipelines - 1) as u32, ..*old(self) })
+    ))]
+    fn release_pipeline(&mut self) {
+        self.pipelines -= 1;
+    }
+    #[inline]
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures dispatched(*old(self), *final(self), cancellation, r)))]
+    fn dispatch(&mut self, cancellation: bool) -> Result<bool, Error> {
+        if !matches!(self.state, State::Queued) {
+            return Err(Error::AlreadyDispatched);
+        }
+        self.state = State::Running { cancellation };
+        Ok(!self.finished || self.pipelines != 0)
+    }
+    #[inline]
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures finished(*old(self), *final(self), release, r)))]
+    fn finish(&mut self, release: bool) -> Option<(bool, bool)> {
+        if self.finished {
+            return None;
+        }
+        self.finished = true;
+        Some((self.cancellation_requested(), release && !self.provision))
+    }
+    #[inline]
+    #[cfg_attr(capntproto_verus, verus_spec(ensures
+        *final(self) == (Record { state: State::Returned, finished: old(self).finished || no_finish, ..*old(self) })
+    ))]
+    fn accept_return(&mut self, no_finish: bool) {
+        self.finished |= no_finish;
+        self.state = State::Returned;
+    }
+    #[inline]
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures r == (omission_allowed && self.pipelines == 0)))]
+    fn can_retire_on_return(&self, omission_allowed: bool) -> bool {
+        omission_allowed && self.pipelines == 0
+    }
+    #[inline]
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures r == adoption_result(*self)))]
+    fn prepare_adoption(&self) -> Result<(), Error> {
+        match self.redirect {
+            Redirect::None | Redirect::ThirdParty => return Err(Error::NotRedirected),
+            Redirect::Adopted => return Err(Error::AlreadyAdopted),
+            Redirect::Available => (),
+        }
+        self.pipelines.checked_add(1).ok_or(Error::ReferenceLimit)?;
+        Ok(())
+    }
+    #[inline]
+    #[cfg_attr(capntproto_verus, verus_spec(requires adoption_result(*old(self)) == Ok(()),
+        ensures *final(self) == (Record { redirect: Redirect::Adopted,
+            pipelines: (old(self).pipelines as int + if retain { 1int } else { 0int }) as u32, ..*old(self) })
+    ))]
+    fn adopt(&mut self, retain: bool) {
+        self.redirect = Redirect::Adopted;
+        if retain {
+            self.pipelines += 1;
+        }
     }
 }
 /// Caller storage holds both wire-live answers and retired answers retained by
@@ -253,7 +344,7 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
         if r.provision {
             return Err(Error::NotCallable);
         }
-        r.pipelines = r.pipelines.checked_add(1).ok_or(Error::ReferenceLimit)?;
+        r.retain_pipeline()?;
         Ok(Pipeline {
             key: Key {
                 index,
@@ -270,22 +361,14 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
     /// Wire lookup is intentionally not used: that ID may already be reused.
     pub fn retain_pipeline(&mut self, lease: &Pipeline<'id>) -> Result<Pipeline<'id>, Error> {
         let record = self.record_mut(lease.key)?;
-        record.pipelines = record
-            .pipelines
-            .checked_add(1)
-            .ok_or(Error::ReferenceLimit)?;
+        record.retain_pipeline()?;
         Ok(Pipeline { key: lease.key })
     }
     /// Re-evaluate when polling a task or after releasing a pipeline lease.
     /// Accepted pipeline calls still need the result after their parent's Finish.
     pub fn cancellation_requested(&self, key: Key<'id>) -> Result<bool, Error> {
         let r = self.record(key)?;
-        Ok(r.finished
-            && r.pipelines == 0
-            && matches!(
-                r.state,
-                State::Queued | State::Running { cancellation: true }
-            ))
+        Ok(r.cancellation_requested())
     }
     pub fn release_pipeline(&mut self, lease: Pipeline<'id>) -> Option<T> {
         let index = lease.key.index;
@@ -295,7 +378,7 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
     /// Retain the finished owner for explicit draining outside ledger borrows.
     pub fn release_pipeline_deferred(&mut self, lease: Pipeline<'id>) {
         let r = self.record_mut(lease.key).expect("live pipeline lease");
-        r.pipelines -= 1;
+        r.release_pipeline();
     }
     pub fn take_finished(&mut self, index: usize) -> Option<T> {
         self.slots.get(index)?;
@@ -305,7 +388,7 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
         self.slots.iter().position(|s| {
             s.record
                 .as_ref()
-                .is_some_and(|r| r.id == id && !(r.finished && r.state == State::Returned))
+                .is_some_and(|r| r.id == id && r.wire_live())
         })
     }
     fn reclaim(&mut self, index: usize) -> Option<T> {
@@ -323,13 +406,7 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
     /// needs the result: skip application execution and publish cancelled Return.
     pub fn dispatch(&mut self, key: Key<'id>, allow_cancellation: bool) -> Result<bool, Error> {
         let r = self.record_mut(key)?;
-        if r.state != State::Queued {
-            return Err(Error::AlreadyDispatched);
-        }
-        r.state = State::Running {
-            cancellation: allow_cancellation,
-        };
-        Ok(!r.finished || r.pipelines != 0)
+        r.dispatch(allow_cancellation)
     }
     /// Unknown/late/duplicate Finish is harmless, as in the hosted runtime.
     /// Result grants may be released only on the first Finish. Returned owners
@@ -339,16 +416,9 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
             return Finished::ignored();
         };
         let r = self.slots[index].record.as_mut().unwrap();
-        if r.finished {
+        let Some((cancel, release_result_caps)) = r.finish(release_result_caps) else {
             return Finished::ignored();
-        }
-        r.finished = true;
-        let release_result_caps = release_result_caps && !r.provision;
-        let cancel = r.pipelines == 0
-            && matches!(
-                r.state,
-                State::Queued | State::Running { cancellation: true }
-            );
+        };
         let retired = self.reclaim(index);
         Finished {
             cancel,
@@ -430,6 +500,14 @@ impl<T> Return<'_, '_, '_, T> {
             && !record.provision
             && self.key.id.to_wire() < (1 << 30)
     }
+    /// A data-only Return can retire immediately when no admitted pipeline
+    /// needs a retained result. Omission still requires wire-layer validation.
+    pub fn can_retire_without_finish(&self) -> bool {
+        self.answers
+            .record(self.key)
+            .unwrap()
+            .can_retire_on_return(self.can_omit_finish())
+    }
     /// Select omission on this publication ticket only. Rejection/drop leaves
     /// the answer untouched; admitted local pipelines survive acceptance.
     pub fn omit_finish(&mut self) -> Result<(), Error> {
@@ -441,8 +519,7 @@ impl<T> Return<'_, '_, '_, T> {
     }
     pub fn accept(self) -> Option<T> {
         let r = self.answers.record_mut(self.key).unwrap();
-        r.finished |= self.no_finish;
-        r.state = State::Returned;
+        r.accept_return(self.no_finish);
         self.answers.reclaim(self.key.index)
     }
 }

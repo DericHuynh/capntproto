@@ -1047,3 +1047,113 @@ fn invocation_and_resolve_publish_resources_with_exact_descriptors_and_retry_bac
         panic!("cleanup");
     });
 }
+
+#[test]
+fn direct_plain_return_is_transactional_and_pins_the_original_result() {
+    use super::super::PlainReceived;
+    use capnp::private::capability::ResponseHook;
+    with_driver(|mut driver, messages| {
+        let target = remote(&mut driver);
+        let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+        let request = capnp::message::Builder::new_default();
+        let key = driver
+            .try_send_immediate(
+                &target,
+                DynamicCall {
+                    no_promise_pipelining: true,
+                    ..Default::default()
+                },
+                request.get_root_as_reader().unwrap(),
+                messages,
+                &mut queue,
+                128,
+                Default::default(),
+                (),
+            )
+            .unwrap()
+            .unwrap();
+        drain(&mut queue, messages, |_| {});
+        fn reply<'p>(
+            messages: &mut messages::Messages<'p, '_, '_>,
+            id: u32,
+            malformed: bool,
+            omit: bool,
+        ) -> Frame<'p> {
+            Frame::build(messages, 128, Default::default(), |b| {
+                let root = b.try_init_root::<Message>()?;
+                let mut result = root.into_field(Message::RETURN).init()?;
+                result.scalar(Return::ANSWER_ID).set(id);
+                result.scalar(Return::NO_FINISH_NEEDED).set(omit);
+                let content = result
+                    .into_field(Return::RESULTS)
+                    .init()?
+                    .into_field(Payload::CONTENT);
+                if malformed {
+                    content.set_capability_index(0)
+                } else {
+                    content
+                        .cast::<capnp::field_api::Data>()
+                        .copy_from(b"exact result")
+                }
+            })
+            .unwrap()
+        }
+        let frame = reply(messages, key.id().to_wire(), false, true);
+        let PlainReceived::Deferred(frame) = driver
+            .try_receive_plain_owned::<()>(frame, messages, |_| None)
+            .unwrap_or_else(|(e, _)| panic!("{e:?}"))
+        else {
+            panic!("unclaimed result")
+        };
+        assert!(driver.ledgers.questions.contains(key));
+        frame.release(messages);
+        let frame = reply(messages, key.id().to_wire(), true, true);
+        let (error, frame) = match driver.try_receive_plain_owned(frame, messages, |_| Some(17)) {
+            Err(rejected) => rejected,
+            Ok(_) => panic!("invalid capability must be rejected"),
+        };
+        assert!(matches!(error, Error::Input(_)));
+        assert!(driver.ledgers.questions.contains(key));
+        frame.release(messages);
+        let frame = reply(messages, key.id().to_wire(), false, false);
+        let PlainReceived::Deferred(frame) = driver
+            .try_receive_plain_owned(frame, messages, |_| Some(17))
+            .unwrap_or_else(|(e, _)| panic!("{e:?}"))
+        else {
+            panic!("Finish obligation uses ordinary receive")
+        };
+        assert!(driver.ledgers.questions.contains(key));
+        frame.release(messages);
+        let frame = reply(messages, key.id().to_wire(), false, true);
+        let PlainReceived::Delivered(sink, result) = driver
+            .try_receive_plain_owned(frame, messages, |selected| {
+                assert_eq!(selected, key);
+                Some(17)
+            })
+            .unwrap_or_else(|(e, _)| panic!("{e:?}"))
+        else {
+            panic!("owned plain reply")
+        };
+        assert_eq!(sink, 17);
+        assert!(driver.ledgers.questions.is_empty());
+        assert!(!driver.ledgers.questions.has_pending_finish());
+        assert_eq!(
+            result
+                .get()
+                .unwrap()
+                .get_as::<capnp::data::Reader>()
+                .unwrap(),
+            b"exact result"
+        );
+        driver.runtime.release(target);
+        close(driver, messages, &mut queue);
+        assert_eq!(
+            result
+                .get()
+                .unwrap()
+                .get_as::<capnp::data::Reader>()
+                .unwrap(),
+            b"exact result"
+        );
+    });
+}

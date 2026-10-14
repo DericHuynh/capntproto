@@ -35,12 +35,17 @@
 //! ```
 use crate::{ids::ImportId, promise, references::ImportRefs};
 use core::{fmt, marker::PhantomData};
+#[cfg(capntproto_verus)]
+use vstd::prelude::*;
+#[cfg(capntproto_verus)]
+include!("imports/verified.rs");
 mod batch;
 pub use batch::{Receive, ReceiveError, ReceiveSlot, Resolution};
 
 // Invariance prevents shortening one domain's lifetime to match another domain.
 type Brand<'id> = PhantomData<fn(&'id ()) -> &'id ()>;
 
+#[cfg_attr(capntproto_verus, verus_verify)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     NonemptyStorage,
@@ -73,6 +78,7 @@ pub struct Rejected<T> {
     pub value: T,
 }
 
+#[cfg_attr(capntproto_verus, verus_verify)]
 struct Entry<T> {
     #[cfg(feature = "alloc")]
     presence: crate::observation::Presence,
@@ -85,6 +91,7 @@ struct Entry<T> {
 
 /// Storage and cleanup capacity for one distinct import. Generations survive
 /// removal and reuse. An exhausted vacant slot is permanently retired.
+#[cfg_attr(capntproto_verus, verus_verify)]
 pub struct Slot<T> {
     generation: u64,
     entry: Option<Entry<T>>,
@@ -94,6 +101,44 @@ impl<T> Slot<T> {
         generation: 0,
         entry: None,
     };
+    #[inline]
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures r == match self.entry {
+        Some(entry) => if self.generation == generation && entry.local != 0 { Some(&entry.value) } else { None },
+        None => None,
+    }))]
+    fn resolve(&self, generation: u64) -> Option<&T> {
+        let entry = self.entry.as_ref()?;
+        if self.generation == generation && entry.local != 0 {
+            Some(&entry.value)
+        } else {
+            None
+        }
+    }
+    #[inline]
+    #[cfg_attr(capntproto_verus, verus_spec(r => requires old(self).entry.is_some(),
+        ensures received(*old(self), *final(self), r)
+    ))]
+    fn receive(&mut self) -> Result<bool, Error> {
+        let entry = self.entry.as_mut().expect("located import");
+        let local = entry
+            .local
+            .checked_add(1)
+            .ok_or(Error::LocalReferencesExhausted)?;
+        let revived = entry.local == 0;
+        let generation = if revived {
+            self.generation
+                .checked_add(1)
+                .ok_or(Error::GenerationExhausted)?
+        } else {
+            self.generation
+        };
+        if entry.remote.receive(1).is_err() {
+            return Err(Error::RemoteReferencesExhausted);
+        }
+        entry.local = local;
+        self.generation = generation;
+        Ok(revived)
+    }
 }
 
 /// Non-owning token for delayed work. It is neither a wire ID nor a capability
@@ -299,27 +344,9 @@ impl<'id, T> Imports<'id, '_, T> {
     pub fn receive(&mut self, id: ImportId) -> Result<Local<'id>, Error> {
         let index = self.index(id).ok_or(Error::Missing)?;
         let slot = &mut self.slots[index];
-        let entry = slot.entry.as_mut().expect("located import");
-        let local = entry
-            .local
-            .checked_add(1)
-            .ok_or(Error::LocalReferencesExhausted)?;
-        let generation = if entry.local == 0 {
-            slot.generation
-                .checked_add(1)
-                .ok_or(Error::GenerationExhausted)?
-        } else {
-            slot.generation
-        };
-        entry
-            .remote
-            .receive(1)
-            .map_err(|_| Error::RemoteReferencesExhausted)?;
-        if entry.local == 0 {
+        if slot.receive()? {
             self.pending_releases -= 1;
         }
-        entry.local = local;
-        slot.generation = generation;
         Ok(self.local(index))
     }
 
@@ -365,8 +392,7 @@ impl<'id, T> Imports<'id, '_, T> {
 
     pub fn resolve(&self, key: Key<'id>) -> Option<&T> {
         let slot = self.slots.get(key.index)?;
-        let entry = slot.entry.as_ref()?;
-        (slot.generation == key.generation && entry.local != 0).then_some(&entry.value)
+        slot.resolve(key.generation)
     }
 
     /// Inspect exactly one slot, so the caller controls the cleanup scan budget.

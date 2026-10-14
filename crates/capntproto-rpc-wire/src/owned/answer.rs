@@ -8,10 +8,16 @@ mod tests;
 pub struct State<'pool, A> {
     pub owner: A,
     frame: Option<Frame<'pool>>,
+    // Set only by the private validated data-only publication path.
+    plain_return: bool,
 }
 impl<'pool, A> State<'pool, A> {
     pub fn new(owner: A) -> Self {
-        Self { owner, frame: None }
+        Self {
+            owner,
+            frame: None,
+            plain_return: false,
+        }
     }
     pub fn with_result<R>(
         &self,
@@ -86,7 +92,7 @@ pub fn try_send<'pool, 'a, A>(
     };
     let retired = pending.accept();
     queue.accept(messages, offer);
-    Ok(keep_frame(key, answers, retired, frame))
+    Ok(keep_frame(key, answers, retired, frame, false))
 }
 
 /// Convenience for callers which discard replies on rejection. Use `try_send`
@@ -133,7 +139,7 @@ pub(super) fn send_prepared<'pool, 'a, A>(
         Ok(retired)
     })();
     match result {
-        Ok(retired) => Ok(keep_frame(key, answers, retired, frame)),
+        Ok(retired) => Ok(keep_frame(key, answers, retired, frame, true)),
         Err(error) => {
             frame.release(messages);
             Err(error)
@@ -193,7 +199,7 @@ pub fn try_send_granting<'pool, 'a, 'batch, 'e, 'table, A, E>(
     batch.commit();
     let retired = pending.accept();
     queue.accept(messages, offer);
-    Ok(keep_frame(key, answers, retired, frame))
+    Ok(keep_frame(key, answers, retired, frame, false))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -217,6 +223,7 @@ fn keep_frame<'pool, 'a, A>(
     answers: &mut answers::Answers<'a, '_, State<'pool, A>>,
     mut retired: Option<State<'pool, A>>,
     frame: Frame<'pool>,
+    plain_return: bool,
 ) -> Option<State<'pool, A>> {
     let state = if let Some(retired) = retired.as_mut() {
         retired
@@ -227,6 +234,7 @@ fn keep_frame<'pool, 'a, A>(
     };
     debug_assert!(state.frame.is_none());
     state.frame = Some(frame);
+    state.plain_return = plain_return;
     retired
 }
 
@@ -237,13 +245,41 @@ pub fn finished<'pool, 'a, 'e, A, E>(
     exports: &mut exports::Exports<'e, '_, E>,
     scratch: &mut [u32],
 ) -> Result<Option<answers::Finished<State<'pool, A>>>, Error> {
-    let id = frame.with(messages, |root| {
+    let (id, release_result_caps) = frame.with(messages, |root| {
         let rpc_capnp::message::Finish(finish) = root.which().map_err(|_| Error::WrongMessage)?
         else {
             return Err(Error::WrongMessage);
         };
-        Ok(AnswerId::from_wire(finish?.get_question_id()))
+        let finish = finish?;
+        Ok::<_, Error>((
+            AnswerId::from_wire(finish.get_question_id()),
+            finish.get_release_result_caps(),
+        ))
     })??;
+    finished_parts(id, release_result_caps, messages, answers, exports, scratch)
+}
+
+pub(super) fn finished_parts<'pool, 'a, 'e, A, E>(
+    id: AnswerId,
+    release_result_caps: bool,
+    messages: &mut messages::Messages<'pool, '_, '_>,
+    answers: &mut answers::Answers<'a, '_, State<'pool, A>>,
+    exports: &mut exports::Exports<'e, '_, E>,
+    scratch: &mut [u32],
+) -> Result<Option<answers::Finished<State<'pool, A>>>, Error> {
+    // The private publication certificate proves this exact answer's retained
+    // immutable Return has no capability grants. Finish still commits through
+    // the same answer ledger (including cancellation and pipeline retention),
+    // but there is no export transaction or wire payload to decode again.
+    if answers
+        .lookup(id)
+        .and_then(|key| answers.get(key).ok())
+        .is_some_and(|state| state.plain_return)
+    {
+        return Ok(answers
+            .prepare_finish(id, release_result_caps)
+            .map(|pending| pending.accept()));
+    }
     let original = match answers
         .lookup(id)
         .and_then(|key| answers.get(key).ok())
@@ -255,25 +291,17 @@ pub fn finished<'pool, 'a, 'e, A, E>(
         )),
         None => None,
     };
-    let result = frame
-        .with(messages, |root| {
-            let rpc_capnp::message::Finish(finish) =
-                root.which().map_err(|_| Error::WrongMessage)?
-            else {
-                return Err(Error::WrongMessage);
-            };
-            let finish = finish?;
-            let mut apply = |original: Option<rpc_capnp::message::Reader<'_>>| {
-                inbound::finished(finish, original, answers, exports, scratch)
-                    .map(|pending| pending.accept())
-                    .map_err(Error::Admission)
-            };
-            match &original {
-                Some(original) => original.with(messages, |reader| apply(Some(reader)))?,
-                None => apply(None),
-            }
-        })
-        .and_then(core::convert::identity);
+    let mut apply = |original: Option<rpc_capnp::message::Reader<'_>>| {
+        inbound::finished_parts(id, release_result_caps, original, answers, exports, scratch)
+            .map(|pending| pending.accept())
+            .map_err(Error::Admission)
+    };
+    let result = match &original {
+        Some(original) => original
+            .with(messages, |reader| apply(Some(reader)))
+            .and_then(core::convert::identity),
+        None => apply(None),
+    };
     if let Some(original) = original {
         original.release(messages);
     }
@@ -357,7 +385,7 @@ pub fn try_send_reflected<'pool, 'a, 'batch, 'e, 'table, A, E, I>(
         references.imports,
         references.questions,
     );
-    Ok(keep_frame(key, answers, retired, frame))
+    Ok(keep_frame(key, answers, retired, frame, false))
 }
 
 mod tail;

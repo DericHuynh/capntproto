@@ -13,6 +13,11 @@ impl Output {
     pub const fn new() -> Self {
         Self { flushing: false }
     }
+    /// No accepted bytes remain to flush. A caller must also check its FIFO
+    /// and failure state before using this as an idle certificate.
+    pub fn is_clean(&self) -> bool {
+        !self.flushing
+    }
 
     /// Poll writes and flushes with bounded work. Ready(Ok) means both the FIFO
     /// and transport buffer are empty. The queue's individual receipts still

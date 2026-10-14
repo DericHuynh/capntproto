@@ -304,6 +304,7 @@ fn imported_metadata_is_ready_during_synchronous_server_dispatch() {
                     ),
                     |_, _, _, _| panic!("dispatch precedes publication"),
                     |_| {},
+                    |_, _, _, _| Ok(false),
                 ),
                 Poll::Ready(Ok(Progress::Advanced))
             ));

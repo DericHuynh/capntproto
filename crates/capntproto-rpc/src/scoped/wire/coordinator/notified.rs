@@ -1,6 +1,7 @@
 //! Poll terminal futures only after their own notification. IO readiness and
 //! cooperative work yields do not require polling unrelated shutdown futures.
-use super::{Arc, AtomicBool, Context, Future, Ordering, Pin, Poll, Waker};
+use super::{Arc, Context, Future, Ordering, Pin, Poll, Waker};
+use std::sync::atomic::AtomicBool;
 
 struct Wake {
     ready: AtomicBool,
@@ -39,6 +40,7 @@ impl<F> Notified<F> {
 }
 impl<F: Future + Unpin> Future for Notified<F> {
     type Output = F::Output;
+    #[inline(always)]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
         // With no notification, the registered parent is still current. A
@@ -52,6 +54,15 @@ impl<F: Future + Unpin> Future for Notified<F> {
         {
             return Poll::Pending;
         }
+        this.poll_notified(cx)
+    }
+}
+impl<F: Future + Unpin> Notified<F> {
+    // Keep registration and arbitrary future polling out of the overwhelmingly
+    // common unnotified path, including its return-value and unwind storage.
+    #[inline(never)]
+    fn poll_notified(&mut self, cx: &mut Context<'_>) -> Poll<F::Output> {
+        let this = self;
         // Register first: a concurrent notification must wake the current task,
         // even when the preceding poll used a different task's waker.
         this.wake.parent.register(cx.waker());

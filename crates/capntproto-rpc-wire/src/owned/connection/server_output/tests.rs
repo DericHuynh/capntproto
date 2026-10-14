@@ -5,6 +5,116 @@ use core::num::NonZeroUsize;
 const ZERO: Word = word(0, 0, 0, 0, 0, 0, 0, 0);
 type Peer<'p, 'id, 's> = Driver<'p, 'id, 's, (), u32, u8, u32, 4, 4>;
 
+#[cfg(feature = "alloc")]
+#[test]
+fn direct_prepared_return_preserves_dependencies_and_rolls_back_every_capacity_failure() {
+    let mut prepared = PreparedReturn::from_template(
+        &PreparedReturnTemplate::default(),
+        capnp::message::HeapAllocator::new(),
+    );
+    prepared
+        .results()
+        .set_as::<capnp::text::Owned>("direct")
+        .unwrap();
+    let measured = allocation_counter::measure(|| {
+        with_driver(|mut driver, messages| {
+            let (call, target) = request(&mut driver, messages, false);
+            let key = call.answer();
+            let pipeline = driver.ledgers.answers.pipeline(key.id()).unwrap();
+            let mut slots = [None];
+            let mut queue = messages::Queue::new(&mut slots).unwrap();
+            assert!(driver
+                .try_send_answer_prepared(
+                    &call,
+                    &prepared,
+                    messages,
+                    &mut queue,
+                    Default::default(),
+                    ()
+                )
+                .unwrap()
+                .is_none());
+            assert!(queue.is_empty());
+            assert!(driver.ledgers.answers.release_pipeline(pipeline).is_none());
+
+            let mut empty = messages::Queue::new(&mut []).unwrap();
+            assert!(driver
+                .try_send_answer_prepared(
+                    &call,
+                    &prepared,
+                    messages,
+                    &mut empty,
+                    Default::default(),
+                    ()
+                )
+                .is_err());
+            let mut held = [const { None }; 6];
+            for slot in &mut held {
+                *slot = messages.reserve(1).ok();
+            }
+            assert!(driver
+                .try_send_answer_prepared(
+                    &call,
+                    &prepared,
+                    messages,
+                    &mut queue,
+                    Default::default(),
+                    ()
+                )
+                .is_err());
+            assert!(queue.is_empty());
+            assert!(driver.ledgers.answers.get(key).unwrap().owner.is_pending());
+            for writer in held.into_iter().flatten() {
+                messages.discard(writer);
+            }
+            let strict = capnp::message::ReaderOptions {
+                nesting_limit: 0,
+                ..Default::default()
+            };
+            assert!(driver
+                .try_send_answer_prepared(&call, &prepared, messages, &mut queue, strict, ())
+                .is_err());
+            assert!(queue.is_empty());
+            assert!(driver.ledgers.answers.get(key).unwrap().owner.is_pending());
+
+            assert_eq!(
+                driver
+                    .try_send_answer_prepared(
+                        &call,
+                        &prepared,
+                        messages,
+                        &mut queue,
+                        Default::default(),
+                        ()
+                    )
+                    .unwrap(),
+                Some(73)
+            );
+            assert!(driver.ledgers.answers.get(key).is_err());
+            drain(&mut queue, messages, |root| {
+                let rpc_capnp::message::Return(Ok(returned)) = root.which().unwrap() else {
+                    panic!("return")
+                };
+                assert!(returned.get_no_finish_needed());
+                let rpc_capnp::return_::Results(Ok(payload)) = returned.which().unwrap() else {
+                    panic!("results")
+                };
+                assert_eq!(
+                    payload
+                        .get_content()
+                        .get_as::<capnp::text::Reader>()
+                        .unwrap(),
+                    "direct"
+                );
+            });
+            driver.release_call(call, messages);
+            driver.runtime.release(target);
+            close(driver, messages, &mut queue);
+        })
+    });
+    assert_eq!(measured.count_total, 0);
+}
+
 #[test]
 fn prepared_data_reply_reuses_storage_and_late_cancel_rebuilds_without_allocating() {
     check_prepared_data_reply(false);

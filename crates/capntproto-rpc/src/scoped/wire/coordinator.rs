@@ -6,7 +6,7 @@ use capntproto_rpc_engine::{ids::ImportId, io};
 use capntproto_rpc_wire::owned::{pipelines, tasks, Frame};
 use std::num::NonZeroUsize;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicU8, Ordering},
     Arc,
 };
 mod bootstrap;
@@ -26,7 +26,7 @@ use transport::{Input, NoResources, Output};
 // waker directly, so they cannot continually restart completed idle scans.
 #[derive(Default)]
 struct WorkWake {
-    changed: AtomicBool,
+    changed: AtomicU8,
     parent: futures::task::AtomicWaker,
 }
 impl std::task::Wake for WorkWake {
@@ -34,8 +34,20 @@ impl std::task::Wake for WorkWake {
         self.wake_by_ref();
     }
     fn wake_by_ref(self: &Arc<Self>) {
-        if !self.changed.swap(true, Ordering::AcqRel) {
+        if self.changed.fetch_or(0x3f, Ordering::AcqRel) == 0 {
             self.parent.wake();
+        }
+    }
+}
+
+struct EnqueueWake(Arc<WorkWake>);
+impl std::task::Wake for EnqueueWake {
+    fn wake(self: Arc<Self>) {
+        self.wake_by_ref();
+    }
+    fn wake_by_ref(self: &Arc<Self>) {
+        if self.0.changed.fetch_or(1 << 2, Ordering::AcqRel) == 0 {
+            self.0.parent.wake();
         }
     }
 }
@@ -75,6 +87,29 @@ pub trait Control<
     /// Notify protocol quiescence after output flush. This is advisory transport
     /// policy, not a peer acknowledgement or permission to discard active refs.
     fn set_idle(&mut self, _idle: bool) {}
+    /// Whether `received` observes hosted client metadata for this event.
+    /// Returning false defers synchronization to application dispatch/delivery;
+    /// the callback must not expose newly admitted hooks itself in that case.
+    fn observes_hooks(&self, _event: &connection::Received<'id, server::Results>) -> bool {
+        true
+    }
+    /// True only when receiving a plain result cannot enable control work.
+    /// Arbitrary policies retain the full rescan after every received event.
+    /// Opt in only when received() ignores ordinary data-only Returns. Allows
+    /// their original application owner to take completion during admission.
+    /// Arbitrary controls keep the observable admitted-then-delivered lifecycle.
+    fn accepts_direct_plain_return(&self) -> bool {
+        false
+    }
+    /// True only when an ordinary directly published Call cannot enable this
+    /// idle policy, including by releasing FIFO capacity. Independent commands
+    /// must still notify the registered control waker.
+    fn direct_publication_preserves_idle(&self) -> bool {
+        false
+    }
+    fn plain_return_preserves_idle(&self) -> bool {
+        false
+    }
     fn received(
         &mut self,
         event: connection::Received<'id, server::Results>,
@@ -122,6 +157,13 @@ impl<R: std::fmt::Debug, W: std::fmt::Debug> std::fmt::Display for RunError<R, W
 }
 impl<R: std::fmt::Debug, W: std::fmt::Debug> std::error::Error for RunError<R, W> {}
 
+#[derive(Default)]
+struct Pump<'id> {
+    frames: usize,
+    returned: Option<capntproto_rpc_engine::questions::Key<'id>>,
+    blocked: bool,
+}
+
 /// One hosted connection, owning application futures and the portable driver.
 /// Public hooks/foreign/driver fields let Control implement network policy in
 /// the same generative scope. Poll `run` with caller-owned IO and a stop future.
@@ -142,12 +184,15 @@ pub struct Coordinator<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: us
     delivered: bool,
     cursor: usize,
     wake: Arc<WorkWake>,
+    enqueue_waker: Waker,
+    parent: Option<Waker>,
     commands: Rc<handle::Commands>,
     output: io::Output,
     registration: Option<network::Registration>,
     policy: Rc<policy::Policy>,
     idle: bool,
     control_idle: bool,
+    direct_publication: bool,
 }
 impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
     Coordinator<'p, 'id, 's, I, P, C, H>
@@ -172,13 +217,16 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
     /// Bootstrap admission remains ordered, bounded and cancelable before the
     /// connection task is polled for the first time.
     pub(crate) fn new_using_commands(
-        driver: Peer<'p, 'id, 's, I, P, C, H>,
+        mut driver: Peer<'p, 'id, 's, I, P, C, H>,
         hooks: ClientHooks<'id>,
         maximum: NonZeroUsize,
         executor: Option<Rc<dyn capability::CallExecutor>>,
         options: Options,
         commands: Rc<Commands>,
     ) -> capnp::Result<Self> {
+        driver.defer_call_dispatch(true);
+        let wake = Arc::<WorkWake>::default();
+        let enqueue_waker = Waker::from(Arc::new(EnqueueWake(wake.clone())));
         Ok(Self {
             driver,
             hooks,
@@ -190,13 +238,16 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             output_blocked: false,
             delivered: false,
             cursor: 0,
-            wake: Arc::default(),
+            wake,
+            enqueue_waker,
+            parent: None,
             commands,
             output: io::Output::new(),
             registration: None,
             policy: policy::Policy::new(),
             idle: false,
             control_idle: false,
+            direct_publication: false,
         })
     }
 
@@ -236,7 +287,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
     fn changed(&mut self) {
         self.control_idle = false;
         self.active = 0x15
-            | (u8::from(self.driver.runtime.queued() != 0) << 1)
+            | (u8::from(self.driver.runtime.queued() != 0 || self.driver.has_pending_call()) << 1)
             | (u8::from(!self.worker.is_empty()) << 3)
             | (u8::from(!self.commands.is_empty()) << 5);
         self.calls.invalidate_scan();
@@ -274,15 +325,133 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         cx: &mut Context<'_>,
         remaining: &mut usize,
     ) -> Poll<capnp::Result<()>> {
-        self.wake.parent.register(cx.waker());
-        if self.wake.changed.swap(false, Ordering::AcqRel) {
-            self.resume_at(2);
+        // An unnotified same-task poll retains its existing registration.
+        // Notification consumes AtomicWaker's owner, so register again before
+        // consuming the flag. A changed task always replaces the registration.
+        let notified = self.wake.changed.load(Ordering::Acquire) != 0;
+        let same_parent = self
+            .parent
+            .as_ref()
+            .is_some_and(|parent| parent.will_wake(cx.waker()));
+        if notified || !same_parent {
+            self.wake.parent.register(cx.waker());
+            if !same_parent {
+                self.parent = Some(cx.waker().clone());
+            }
+        }
+        if notified || !same_parent {
+            let changed = self.wake.changed.swap(0, Ordering::AcqRel);
+            if changed == 1 << 2 {
+                // A newly enqueued request cannot change foreign promises,
+                // server tasks, network controls or cleanup before admission.
+                if self.active == 0 {
+                    self.cursor = 2;
+                }
+                self.active |= 1 << 2;
+                self.calls.invalidate_scan();
+            } else if changed != 0 {
+                self.resume_at(2);
+            }
+        }
+        if self.hooks.inbox.enqueue_wake.borrow().is_none() {
+            *self.hooks.inbox.enqueue_wake.borrow_mut() = Some(self.enqueue_waker.clone());
         }
         // IO-only or spurious polls must preserve a completed idle scan. Real
         // protocol progress and application wakeups invalidate it explicitly.
         if self.active == 0 {
             return Poll::Pending;
         }
+        // A plain reply often leaves only an outgoing request and cleanup.
+        // Certifying empty cleanup needs no lane adapters or scan state.
+        if self.active == ((1 << 2) | (1 << 4))
+            && *remaining > 0
+            && self.driver.maintenance_is_idle()
+        {
+            self.active &= !(1 << 4);
+            *remaining -= 1;
+        }
+        if self.active == 1 << 2
+            && *remaining > 0
+            && self.calls.is_empty()
+            && !self.hooks.inbox.queue.borrow().is_empty()
+        {
+            let quantum = (*remaining).min(8);
+            *remaining -= quantum;
+            self.cursor = 3;
+            if let Err(error) = queue.ensure_capacity() {
+                if error == messages::Error::NoSendSlot && !queue.is_empty() {
+                    self.output_blocked = true;
+                    self.active = 0;
+                    return Poll::Pending;
+                }
+                return Poll::Ready(Err(wire_error(error)));
+            }
+            let waker = Waker::from(self.wake.clone());
+            self.commands.register(&waker);
+            let result = self.poll_calls(
+                messages,
+                queue,
+                scratch,
+                output,
+                &mut Context::from_waker(&waker),
+                NonZeroUsize::new(quantum).unwrap(),
+            );
+            return match result {
+                Poll::Ready(Err(error)) => Poll::Ready(Err(*error)),
+                Poll::Ready(Ok(Progress::Published))
+                    if self.calls.idle_after_publication()
+                        && self.hooks.inbox.queue.borrow().is_empty()
+                        && self.wake.changed.load(Ordering::Acquire) == 0 =>
+                {
+                    self.direct_publication = true;
+                    self.control_idle = false;
+                    // This lane began with every other lane certified idle.
+                    // Immediate publication adds one locally retained question,
+                    // no capability grants or deferred task. Hook collection
+                    // may retire graph owners; those alone need cleanup now.
+                    // Application/resource notifications already prevent this
+                    // branch through WorkWake's changed check above.
+                    if self.driver.runtime.has_retired() {
+                        self.driver.invalidate_maintenance();
+                        self.active = 1 << 4;
+                    } else {
+                        self.active = 0;
+                    }
+                    Poll::Ready(Ok(()))
+                }
+                Poll::Ready(Ok(Progress::Idle)) | Poll::Pending => {
+                    self.active = 0;
+                    if self.driver.runtime.has_retired() {
+                        self.driver.invalidate_maintenance();
+                        self.active = 1 << 4;
+                    }
+                    Poll::Pending
+                }
+                Poll::Ready(Ok(Progress::Yield)) => {
+                    cx.waker().wake_by_ref();
+                    Poll::Pending
+                }
+                Poll::Ready(Ok(progress)) => {
+                    self.changed();
+                    self.delivered |= progress == Progress::Completed;
+                    Poll::Ready(Ok(()))
+                }
+            };
+        }
+        self.poll_active_work(messages, queue, scratch, output, cx, remaining)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[inline(never)]
+    fn poll_active_work<O: Output<I>>(
+        &mut self,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        queue: &mut messages::Queue<'p, '_, O::Bundle>,
+        scratch: &mut [u32],
+        output: &O,
+        cx: &mut Context<'_>,
+        remaining: &mut usize,
+    ) -> Poll<capnp::Result<()>> {
         let waker = Waker::from(self.wake.clone());
         self.commands.register(&waker);
         let mut application_cx = Context::from_waker(&waker);
@@ -306,17 +475,24 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             // allowance, so ready work cannot bypass the cooperative budget.
             let empty = match index {
                 0 => self.foreign.is_empty(),
-                1 => self.driver.runtime.queued() == 0,
+                1 => self.driver.runtime.queued() == 0 && !self.driver.has_pending_call(),
                 // Admission and publication share this lane. A fresh request
                 // in the hook inbox needs the same quantum as an admitted
                 // invocation; otherwise it takes an extra scheduler rotation
                 // just to publish its already-ready frame.
                 2 => self.hooks.inbox.queue.borrow().is_empty() && self.calls.is_empty(),
                 3 => self.worker.is_empty(),
+                4 => self.driver.maintenance_is_idle(),
                 5 => self.commands.is_empty(),
                 _ => false,
             };
-            if empty && matches!(index, 1 | 2 | 3 | 5) {
+            // A queued outgoing call's admission refreshes all hooks before
+            // dispatch. An empty foreign lane can share that upcoming refresh;
+            // without queued calls it still collects retired/changed endpoints.
+            let refresh_in_admission = index == 0
+                && self.active & (1 << 2) != 0
+                && !self.hooks.inbox.queue.borrow().is_empty();
+            if empty && (index != 0 || refresh_in_admission) {
                 // Empty lanes still consume their fair quantum and advance the
                 // cursor, but need no publication/callback setup. Admission's
                 // wake remains registered before certifying its queue idle.
@@ -387,80 +563,13 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         Ok(true) => Poll::Ready(Ok(())),
                         Err(e) => Poll::Ready(Err(e)),
                     },
-                    2 => match self.calls.poll_using(
-                        &mut self.hooks,
-                        &mut self.driver,
+                    2 => match self.poll_calls(
                         messages,
-                        options.reader,
+                        queue,
+                        scratch,
+                        output,
                         &mut application_cx,
                         quantum,
-                        |runtime, hook| self.foreign.import(runtime, hook),
-                        |hooks, driver| {
-                            hooks.collect_wire_optional(
-                                driver,
-                                |owner| output.metadata_if_present(owner),
-                                foreign::local_metadata,
-                            )
-                        },
-                        |invocations, driver, messages, credit, publication| {
-                            let mut bundle = output.bundle();
-                            if let Some(credit) = credit {
-                                output.retain_call(&mut bundle, credit)?;
-                            }
-                            let direct = match publication {
-                                super::calls::Publication::Immediate {
-                                    target,
-                                    method,
-                                    params,
-                                } => {
-                                    return driver
-                                        .try_send_immediate_from(
-                                            target,
-                                            method,
-                                            params,
-                                            messages,
-                                            queue,
-                                            options.output_bytes.get(),
-                                            options.reader,
-                                            bundle,
-                                        )
-                                        .map(|key| key.map(super::calls::Published::Immediate))
-                                        .map_err(wire_error);
-                                }
-                                super::calls::Publication::Queued { direct } => direct,
-                            };
-                            if direct {
-                                return driver
-                                    .send_invocation_using(
-                                        messages,
-                                        queue,
-                                        options.output_bytes.get(),
-                                        options.reader,
-                                        scratch,
-                                        bundle,
-                                        |owner, imports, bundle| {
-                                            output.attach(owner, imports, bundle)
-                                        },
-                                    )
-                                    .map(|sent| sent.map(super::calls::Published::Queued))
-                                    .map_err(wire_error);
-                            }
-                            invocations
-                                .send_one_with_resources(
-                                    driver,
-                                    messages,
-                                    queue,
-                                    options.output_bytes.get(),
-                                    options.reader,
-                                    scratch,
-                                    bundle,
-                                    |owner, imports, bundle| output.attach(owner, imports, bundle),
-                                )
-                                .map(|sent| sent.map(super::calls::Published::Queued))
-                                .map_err(|error| {
-                                    wire_error(format!("outgoing invocation: {error:?}"))
-                                })
-                        },
                     ) {
                         Poll::Ready(Ok(Progress::Idle)) => Poll::Pending,
                         Poll::Ready(Ok(Progress::Yield)) => continue,
@@ -474,41 +583,16 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                             Poll::Ready(Ok(()))
                         }
                         Poll::Ready(Ok(_)) => Poll::Ready(Ok(())),
-                        Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+                        Poll::Ready(Err(e)) => Poll::Ready(Err(*e)),
                         Poll::Pending => Poll::Pending,
                     },
-                    3 => match self.worker.poll_using(
-                        &mut self.hooks,
-                        &mut self.driver,
+                    3 => match self.poll_worker(
                         messages,
-                        options.output_bytes.get(),
-                        options.reader,
+                        queue,
+                        scratch,
+                        output,
                         &mut application_cx,
                         quantum,
-                        |runtime, hook| self.foreign.import(runtime, hook),
-                        |hooks, driver| {
-                            hooks.collect_wire_optional(
-                                driver,
-                                |owner| output.metadata_if_present(owner),
-                                foreign::local_metadata,
-                            )
-                        },
-                        |driver, messages, key, bytes| {
-                            driver
-                                .send_answer_using(
-                                    key,
-                                    messages,
-                                    queue,
-                                    bytes,
-                                    options.reader,
-                                    scratch,
-                                    output.bundle(),
-                                    |owner, imports, bundle| output.attach(owner, imports, bundle),
-                                    server::Results::write_exception,
-                                )
-                                .map_err(wire_error)
-                        },
-                        |results| results.prepare_trace(&self.policy),
                     ) {
                         Poll::Ready(Ok(server::Progress::Idle)) => Poll::Pending,
                         Poll::Ready(Ok(server::Progress::Yield)) => continue,
@@ -561,16 +645,28 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             }
             if let Poll::Ready(result) = outcome {
                 result?;
-                self.changed();
                 // Its response cannot have arrived during publication. The
                 // inbox wake was registered by calls.poll_using; preserve any
                 // cancellation/new-call wake delivered during its callbacks.
                 if published
                     && self.calls.idle_after_publication()
                     && self.hooks.inbox.queue.borrow().is_empty()
-                    && !self.wake.changed.load(Ordering::Acquire)
+                    && self.wake.changed.load(Ordering::Acquire) == 0
                 {
+                    // This publication used the direct, settled, data-only
+                    // path. Hook collection already ran in admission; it did
+                    // not create another task, foreign promise or worker.
+                    // Preserve those lanes' idle scans while restarting the
+                    // question/cleanup scan that publication actually changed.
+                    self.control_idle = false;
+                    self.driver.invalidate_maintenance();
+                    self.active |= 1 << 4;
                     self.active &= !(1 << 2);
+                    if self.foreign.is_empty() {
+                        self.active &= !1;
+                    }
+                } else {
+                    self.changed();
                 }
                 advanced = true;
                 // Publish promptly and give a completed application's waker a
@@ -666,7 +762,8 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 stop.as_mut(),
                 &mut pending,
             )
-            .await;
+            .await
+            .map_err(|error| *error);
         reader.finish_frame();
         if let Some(frame) = pending {
             frame.release(messages);
@@ -755,6 +852,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 &mut pending,
             )
             .await
+            .map_err(|error| *error)
         };
         reader.finish_frame();
         if let Some(frame) = pending {
@@ -863,6 +961,380 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         }
     }
 
+    // Independent stack frames keep inactive lane adapters out of register
+    // allocation and drop paths. The scheduler retains the shared work budget.
+    #[allow(clippy::too_many_arguments)]
+    #[inline(never)]
+    fn poll_calls<O: Output<I>>(
+        &mut self,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        queue: &mut messages::Queue<'p, '_, O::Bundle>,
+        scratch: &mut [u32],
+        output: &O,
+        cx: &mut Context<'_>,
+        quantum: NonZeroUsize,
+    ) -> Poll<Result<Progress, Box<Error>>> {
+        let options = self.options;
+        self.calls.poll_using(
+            &mut self.hooks,
+            &mut self.driver,
+            messages,
+            options.reader,
+            cx,
+            quantum,
+            |runtime, hook| self.foreign.import(runtime, hook),
+            |hooks, driver| {
+                hooks.collect_wire_optional(
+                    driver,
+                    |owner| output.metadata_if_present(owner),
+                    foreign::local_metadata,
+                )
+            },
+            |invocations, driver, messages, credit, publication| {
+                let mut bundle = output.bundle();
+                if let Some(credit) = credit {
+                    output.retain_call(&mut bundle, credit)?;
+                }
+                let direct = match publication {
+                    super::calls::Publication::Immediate {
+                        target,
+                        method,
+                        params,
+                    } => {
+                        return driver
+                            .try_send_immediate_borrowed(
+                                target,
+                                method,
+                                params,
+                                messages,
+                                queue,
+                                options.output_bytes.get(),
+                                options.reader,
+                                bundle,
+                            )
+                            .map(|key| key.map(super::calls::Published::Immediate))
+                            .map_err(wire_error);
+                    }
+                    super::calls::Publication::Queued { direct } => direct,
+                };
+                if direct {
+                    return driver
+                        .send_invocation_using(
+                            messages,
+                            queue,
+                            options.output_bytes.get(),
+                            options.reader,
+                            scratch,
+                            bundle,
+                            |owner, imports, bundle| output.attach(owner, imports, bundle),
+                        )
+                        .map(|sent| sent.map(super::calls::Published::Queued))
+                        .map_err(wire_error);
+                }
+                invocations
+                    .send_one_with_resources(
+                        driver,
+                        messages,
+                        queue,
+                        options.output_bytes.get(),
+                        options.reader,
+                        scratch,
+                        bundle,
+                        |owner, imports, bundle| output.attach(owner, imports, bundle),
+                    )
+                    .map(|sent| sent.map(super::calls::Published::Queued))
+                    .map_err(|error| wire_error(format!("outgoing invocation: {error:?}")))
+            },
+        )
+    }
+
+    // Independent stack frames keep inactive lane adapters out of register
+    // allocation and drop paths. The scheduler retains the shared work budget.
+    #[allow(clippy::too_many_arguments)]
+    #[inline(never)]
+    fn poll_worker<O: Output<I>>(
+        &mut self,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        queue: &mut messages::Queue<'p, '_, O::Bundle>,
+        scratch: &mut [u32],
+        output: &O,
+        cx: &mut Context<'_>,
+        quantum: NonZeroUsize,
+    ) -> Poll<capnp::Result<server::Progress>> {
+        let options = self.options;
+        let queue = RefCell::new(queue);
+        self.worker.poll_using(
+            &mut self.hooks,
+            &mut self.driver,
+            messages,
+            options.output_bytes.get(),
+            options.reader,
+            cx,
+            quantum,
+            |runtime, hook| self.foreign.import(runtime, hook),
+            |hooks, driver| {
+                hooks.collect_wire_optional(
+                    driver,
+                    |owner| output.metadata_if_present(owner),
+                    foreign::local_metadata,
+                )
+            },
+            |driver, messages, key, bytes| {
+                driver
+                    .send_answer_using(
+                        key,
+                        messages,
+                        &mut queue.borrow_mut(),
+                        bytes,
+                        options.reader,
+                        scratch,
+                        output.bundle(),
+                        |owner, imports, bundle| output.attach(owner, imports, bundle),
+                        server::Results::write_exception,
+                    )
+                    .map_err(wire_error)
+            },
+            |results| results.prepare_trace(&self.policy),
+            |driver, messages, request, source| {
+                driver
+                    .try_send_answer_prepared(
+                        request,
+                        source,
+                        messages,
+                        &mut queue.borrow_mut(),
+                        options.reader,
+                        output.bundle(),
+                    )
+                    .map(|retired| retired.is_some())
+                    .map_err(wire_error)
+            },
+        )
+    }
+
+    // Keep the ordinary buffered pump out of the byte-reader async state
+    // machine. Both paths retain the same cooperative budget and stop ordering.
+    #[allow(clippy::too_many_arguments)]
+    #[inline(never)]
+    fn poll_prepared<O: Output<I>, R: Input<I>, W: io::WriteResources<O::Bundle>>(
+        &mut self,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        queue: &mut messages::Queue<'p, '_, O::Bundle>,
+        reader: &mut R,
+        writer: &mut W,
+        scratch: &mut [u32],
+        output: &O,
+        controls: &mut impl Control<'p, 'id, 's, I, P, C, H, O>,
+        mut stop: Pin<&mut impl Future<Output = capnp::Result<()>>>,
+        pending: &mut Option<Frame<'p>>,
+        pump: &mut Pump<'id>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Option<usize>, Box<Cause<R::Error, W::Error>>>> {
+        loop {
+            // A Busy envelope is retried intact before reading another one.
+            // Its original producer is returned only on non-Busy rejections.
+            if pending.is_some() {
+                if let Poll::Ready(result) = self.poll_stop(stop.as_mut(), cx) {
+                    return Poll::Ready(
+                        result
+                            .map(|_| None)
+                            .map_err(|error| Box::new(Cause::Protocol(error))),
+                    );
+                }
+                if pump.blocked {
+                    match self.poll_io_work(messages, queue, writer, scratch, output, controls, cx)
+                    {
+                        Err(error) => return Poll::Ready(Err(error)),
+                        Ok(true) => return Poll::Pending,
+                        Ok(false) => (),
+                    }
+                }
+                let frame = pending.take().expect("pending admission");
+                let frame = if controls.accepts_direct_plain_return() && !self.calls.is_empty() {
+                    match self.driver.try_receive_plain_owned(frame, messages, |key| {
+                        self.calls.plain_receiver(key)
+                    }) {
+                        Ok(connection::PlainReceived::Delivered(index, message)) => {
+                            let was_idle =
+                                self.active == 0 && self.control_idle && !self.output_blocked;
+                            reader.finish_frame();
+                            pump.blocked = false;
+                            self.calls.deliver_plain(index, message);
+                            if controls.plain_return_preserves_idle() {
+                                if self.active == 0 {
+                                    self.cursor = 2;
+                                }
+                                // This fused transition admits no grants and
+                                // requires noFinishNeeded. It only removes the
+                                // original question and pins immutable bytes.
+                                // Endpoint/cancellation/control side effects
+                                // independently notify WorkWake; preserve an
+                                // existing cleanup certificate in their absence.
+                                self.active |= if was_idle {
+                                    1 << 2
+                                } else {
+                                    (1 << 2) | (1 << 4)
+                                };
+                                self.calls.invalidate_scan();
+                                if !was_idle {
+                                    self.driver.invalidate_maintenance();
+                                }
+                            } else {
+                                self.resume_at(2);
+                            }
+                            cx.waker().wake_by_ref();
+                            return Poll::Pending;
+                        }
+                        Ok(connection::PlainReceived::Deferred(frame)) => frame,
+                        Err((error, frame)) => {
+                            *pending = Some(frame);
+                            return Poll::Ready(Err(Box::new(Cause::Protocol(wire_error(error)))));
+                        }
+                    }
+                } else {
+                    frame
+                };
+                let event = match self.driver.receive_with_policy(
+                    frame,
+                    messages,
+                    scratch,
+                    reader,
+                    |words| {
+                        Ok(server::Results::with_charge(
+                            self.policy.charge(words)?,
+                            self.hooks.inbox.message_pool.clone(),
+                        ))
+                    },
+                ) {
+                    Ok(event) => {
+                        reader.finish_frame();
+                        pump.blocked = false;
+                        event
+                    }
+                    Err(rejected) => {
+                        *pending = Some(rejected.frame);
+                        if rejected.error == connection::Error::Busy {
+                            // The driver rejects Busy before invoking its producer factory.
+                            debug_assert!(rejected.producer.is_none());
+                            if !pump.blocked {
+                                pump.blocked = true;
+                                cx.waker().wake_by_ref();
+                            }
+                            return Poll::Pending;
+                        } else {
+                            return Poll::Ready(Err(Box::new(Cause::Protocol(wire_error(
+                                rejected.error,
+                            )))));
+                        }
+                    }
+                };
+                if let connection::Received::Aborted(kind) = event {
+                    return Poll::Ready(Err(Box::new(Cause::Protocol(Error::from_kind(kind)))));
+                }
+                if controls.observes_hooks(&event) {
+                    self.hooks.collect_wire_optional(
+                        &mut self.driver,
+                        |owner| output.metadata_if_present(owner),
+                        foreign::local_metadata,
+                    );
+                }
+                let first = if matches!(
+                    event,
+                    connection::Received::Queued(_) | connection::Received::DeferredCall(_)
+                ) {
+                    1
+                } else {
+                    2
+                };
+                if let connection::Received::Returned(key) = &event {
+                    pump.returned = Some(*key);
+                }
+                controls
+                    .received(event, self, messages, queue)
+                    .map_err(|error| Box::new(Cause::Protocol(error)))?;
+                if pump.returned.is_none() {
+                    self.resume_at(first);
+                }
+            }
+            // Shutdown must not need a fresh input buffer. A full pool can still
+            // drain accepted output and release its protocol owners normally.
+            if let Poll::Ready(result) = self.poll_stop(stop.as_mut(), cx) {
+                return Poll::Ready(
+                    result
+                        .map(|()| None)
+                        .map_err(|error| Box::new(Cause::Protocol(error))),
+                );
+            }
+            if let Some(key) = pump.returned.take() {
+                let completed = self
+                    .calls
+                    .returned(
+                        key,
+                        &mut self.hooks,
+                        &mut self.driver,
+                        messages,
+                        cx,
+                        |hooks, driver| {
+                            hooks.collect_wire_optional(
+                                driver,
+                                |owner| output.metadata_if_present(owner),
+                                foreign::local_metadata,
+                            )
+                        },
+                    )
+                    .map_err(|error| Box::new(Cause::Protocol(error)))?;
+                if completed == Some(true) && controls.plain_return_preserves_idle() {
+                    // Receipt-free completion changed only outgoing ownership
+                    // and its cleanup. Preserve unrelated idle lane scans.
+                    if self.active == 0 {
+                        self.cursor = 2;
+                    }
+                    self.active |= (1 << 2) | (1 << 4);
+                    self.calls.invalidate_scan();
+                    self.driver.invalidate_maintenance();
+                } else {
+                    self.resume_at(2);
+                }
+                if completed.is_some() {
+                    // Let the application enqueue its next call before
+                    // scanning cleanup, coalescing both in the next turn.
+                    cx.waker().wake_by_ref();
+                    return Poll::Pending;
+                }
+            }
+            match self.poll_io_work(messages, queue, writer, scratch, output, controls, cx) {
+                Err(error) => return Poll::Ready(Err(error)),
+                Ok(true) => return Poll::Pending,
+                Ok(false) => (),
+            }
+            std::task::ready!(self.policy.poll_ready(cx));
+            let size = std::task::ready!(reader.poll_frame_size(cx)).map_err(|error| {
+                Cause::Input(tasks::ReceiveError::Input(
+                    capntproto_rpc_wire::io::ReceiveError::Io(error),
+                ))
+            })?;
+            let size = size.unwrap_or(self.options.input_bytes.get()).max(8);
+            if size > self.options.input_bytes.get() {
+                return Poll::Ready(Err(Box::new(Cause::Protocol(Error::from_kind(
+                    capnp::ErrorKind::BufferNotLargeEnough,
+                )))));
+            }
+            if let Some(frame) = reader
+                .take_buffered_frame(messages, self.options.reader)
+                .map_err(|error| Cause::Protocol(wire_error(error)))?
+            {
+                *pending = Some(frame);
+                pump.frames += 1;
+                if pump.frames < self.options.budget.get().min(8) {
+                    continue;
+                }
+                pump.frames = 0;
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+            return Poll::Ready(Ok(Some(size)));
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn drive<O: Output<I>, R: Input<I>, W: io::WriteResources<O::Bundle>>(
         &mut self,
@@ -875,151 +1347,32 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         controls: &mut impl Control<'p, 'id, 's, I, P, C, H, O>,
         mut stop: Pin<&mut impl Future<Output = capnp::Result<()>>>,
         pending: &mut Option<Frame<'p>>,
-    ) -> Result<(), Cause<R::Error, W::Error>> {
-        let mut frames = 0;
-        let mut returned = None;
-        let mut blocked = false;
+    ) -> Result<(), Box<Cause<R::Error, W::Error>>> {
+        let mut pump = Pump::default();
         loop {
             // Buffered transports can admit and prepare their next frame in
             // one polling state. Keep the same yields and budgets as byte IO,
             // without suspending a separate future at each envelope boundary.
-            let prepared = std::future::poll_fn(|cx| loop {
-                // A Busy envelope is retried intact before reading another one.
-                // Its original producer is returned only on non-Busy rejections.
-                if pending.is_some() {
-                    if let Poll::Ready(result) = self.poll_stop(stop.as_mut(), cx) {
-                        return Poll::Ready(result.map(|_| None).map_err(Cause::Protocol));
-                    }
-                    if blocked {
-                        match self
-                            .poll_io_work(messages, queue, writer, scratch, output, controls, cx)
-                        {
-                            Err(error) => return Poll::Ready(Err(error)),
-                            Ok(true) => return Poll::Pending,
-                            Ok(false) => (),
-                        }
-                    }
-                    let frame = pending.take().expect("pending admission");
-                    let event = match self.driver.receive_with_policy(
-                        frame,
-                        messages,
-                        scratch,
-                        reader,
-                        |words| {
-                            Ok(server::Results::with_charge(
-                                self.policy.charge(words)?,
-                                self.hooks.inbox.message_pool.clone(),
-                            ))
-                        },
-                    ) {
-                        Ok(event) => {
-                            reader.finish_frame();
-                            blocked = false;
-                            event
-                        }
-                        Err(rejected) => {
-                            *pending = Some(rejected.frame);
-                            if rejected.error == connection::Error::Busy {
-                                // The driver rejects Busy before invoking its producer factory.
-                                debug_assert!(rejected.producer.is_none());
-                                if !blocked {
-                                    blocked = true;
-                                    cx.waker().wake_by_ref();
-                                }
-                                return Poll::Pending;
-                            } else {
-                                return Poll::Ready(Err(Cause::Protocol(wire_error(
-                                    rejected.error,
-                                ))));
-                            }
-                        }
-                    };
-                    if let connection::Received::Aborted(kind) = event {
-                        return Poll::Ready(Err(Cause::Protocol(Error::from_kind(kind))));
-                    }
-                    self.hooks.collect_wire_optional(
-                        &mut self.driver,
-                        |owner| output.metadata_if_present(owner),
-                        foreign::local_metadata,
-                    );
-                    let first = if matches!(
-                        event,
-                        connection::Received::Queued(_) | connection::Received::DeferredCall(_)
-                    ) {
-                        1
-                    } else {
-                        2
-                    };
-                    if let connection::Received::Returned(key) = &event {
-                        returned = Some(*key);
-                    }
-                    controls
-                        .received(event, self, messages, queue)
-                        .map_err(Cause::Protocol)?;
-                    self.resume_at(first);
+            let prepared = std::future::poll_fn(|cx| {
+                let result = self.poll_prepared(
+                    messages,
+                    queue,
+                    reader,
+                    writer,
+                    scratch,
+                    output,
+                    controls,
+                    stop.as_mut(),
+                    pending,
+                    &mut pump,
+                    cx,
+                );
+                // A suspended poll already yielded to the executor. Count only
+                // frames processed without suspension toward fairness.
+                if result.is_pending() {
+                    pump.frames = 0;
                 }
-                // Shutdown must not need a fresh input buffer. A full pool can still
-                // drain accepted output and release its protocol owners normally.
-                if let Poll::Ready(result) = self.poll_stop(stop.as_mut(), cx) {
-                    return Poll::Ready(result.map(|()| None).map_err(Cause::Protocol));
-                }
-                if let Some(key) = returned.take() {
-                    if self
-                        .calls
-                        .returned(
-                            key,
-                            &mut self.hooks,
-                            &mut self.driver,
-                            messages,
-                            cx,
-                            |hooks, driver| {
-                                hooks.collect_wire_optional(
-                                    driver,
-                                    |owner| output.metadata_if_present(owner),
-                                    foreign::local_metadata,
-                                )
-                            },
-                        )
-                        .map_err(Cause::Protocol)?
-                    {
-                        // Let the application observe the reply and enqueue its
-                        // next call before scanning the remaining lanes. The
-                        // scheduled continuation also registers input readiness.
-                        cx.waker().wake_by_ref();
-                        return Poll::Pending;
-                    }
-                }
-                match self.poll_io_work(messages, queue, writer, scratch, output, controls, cx) {
-                    Err(error) => return Poll::Ready(Err(error)),
-                    Ok(true) => return Poll::Pending,
-                    Ok(false) => (),
-                }
-                std::task::ready!(self.policy.poll_ready(cx));
-                let size = std::task::ready!(reader.poll_frame_size(cx)).map_err(|error| {
-                    Cause::Input(tasks::ReceiveError::Input(
-                        capntproto_rpc_wire::io::ReceiveError::Io(error),
-                    ))
-                })?;
-                let size = size.unwrap_or(self.options.input_bytes.get()).max(8);
-                if size > self.options.input_bytes.get() {
-                    return Poll::Ready(Err(Cause::Protocol(Error::from_kind(
-                        capnp::ErrorKind::BufferNotLargeEnough,
-                    ))));
-                }
-                if let Some(frame) = reader
-                    .take_buffered_frame(messages, self.options.reader)
-                    .map_err(|error| Cause::Protocol(wire_error(error)))?
-                {
-                    *pending = Some(frame);
-                    frames += 1;
-                    if frames < self.options.budget.get().min(8) {
-                        continue;
-                    }
-                    frames = 0;
-                    cx.waker().wake_by_ref();
-                    return Poll::Pending;
-                }
-                return Poll::Ready(Ok(Some(size)));
+                result
             })
             .await?;
             let Some(size) = prepared else { return Ok(()) };
@@ -1031,7 +1384,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     Ok(writing) => writing,
                     Err(rejected) => {
                         messages.discard(rejected.writer);
-                        return Err(Cause::Protocol(wire_error(rejected.error)));
+                        return Err(Box::new(Cause::Protocol(wire_error(rejected.error))));
                     }
                 };
                 let cancel = Cell::new(None);
@@ -1045,43 +1398,54 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 let mut receive = std::pin::pin!(receive);
                 let mut first_read = true;
                 std::future::poll_fn(|cx| {
-                    let end = match self.poll_stop(stop.as_mut(), cx) {
-                        Poll::Ready(result) => Some(result.map_err(Cause::Protocol)),
-                        Poll::Pending => {
-                            // Prepared frame storage commonly already contains the
-                            // complete input. Admit it before rescanning work which
-                            // cannot observe this frame yet. The outer frame budget
-                            // still bounds a continuously readable peer.
-                            if first_read {
-                                first_read = false;
-                                if let Poll::Ready(received) = receive.as_mut().poll(cx) {
-                                    return Poll::Ready(
-                                        received.finish(messages).map_err(Cause::Input),
-                                    );
+                    let result = (|| {
+                        let end = match self.poll_stop(stop.as_mut(), cx) {
+                            Poll::Ready(result) => {
+                                Some(result.map_err(|error| Box::new(Cause::Protocol(error))))
+                            }
+                            Poll::Pending => {
+                                // Prepared frame storage commonly already contains the
+                                // complete input. Admit it before rescanning work which
+                                // cannot observe this frame yet. The outer frame budget
+                                // still bounds a continuously readable peer.
+                                if first_read {
+                                    first_read = false;
+                                    if let Poll::Ready(received) = receive.as_mut().poll(cx) {
+                                        return Poll::Ready(
+                                            received
+                                                .finish(messages)
+                                                .map_err(|error| Box::new(Cause::Input(error))),
+                                        );
+                                    }
+                                }
+                                match self.poll_io_work(
+                                    messages, queue, writer, scratch, output, controls, cx,
+                                ) {
+                                    Err(error) => Some(Err(error)),
+                                    Ok(true) => return Poll::Pending,
+                                    Ok(false) => None,
                                 }
                             }
-                            match self.poll_io_work(
-                                messages, queue, writer, scratch, output, controls, cx,
-                            ) {
-                                Err(error) => Some(Err(error)),
-                                Ok(true) => return Poll::Pending,
-                                Ok(false) => None,
-                            }
-                        }
-                    };
-                    if let Some(end) = end {
-                        cancel.set(Some(capnp::ErrorKind::Disconnected));
-                        // Cancellation is polled before IO and must return the writer now.
-                        let Poll::Ready(received) = receive.as_mut().poll(cx) else {
-                            unreachable!("ready cancellation completes the receive")
                         };
-                        let _ = received.finish(messages);
-                        return Poll::Ready(end.map(|_| None));
+                        if let Some(end) = end {
+                            cancel.set(Some(capnp::ErrorKind::Disconnected));
+                            // Cancellation is polled before IO and must return the writer now.
+                            let Poll::Ready(received) = receive.as_mut().poll(cx) else {
+                                unreachable!("ready cancellation completes the receive")
+                            };
+                            let _ = received.finish(messages);
+                            return Poll::Ready(end.map(|_| None));
+                        }
+                        receive.as_mut().poll(cx).map(|received| {
+                            received
+                                .finish(messages)
+                                .map_err(|error| Box::new(Cause::Input(error)))
+                        })
+                    })();
+                    if result.is_pending() {
+                        pump.frames = 0;
                     }
-                    receive
-                        .as_mut()
-                        .poll(cx)
-                        .map(|received| received.finish(messages).map_err(Cause::Input))
+                    result
                 })
                 .await?
             };
@@ -1092,11 +1456,11 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             // Otherwise every input causes a full scan of the old state first.
             // Bound an always-readable peer without putting an executor round
             // trip in front of each already-received call or reply.
-            frames += 1;
-            if frames < self.options.budget.get().min(8) {
+            pump.frames += 1;
+            if pump.frames < self.options.budget.get().min(8) {
                 continue;
             }
-            frames = 0;
+            pump.frames = 0;
             let mut yielded = false;
             std::future::poll_fn(|cx| {
                 if yielded {
@@ -1112,7 +1476,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[inline(always)]
+    #[inline(never)]
     fn poll_io_work<R, O: Output<I>, W: io::WriteResources<O::Bundle>>(
         &mut self,
         messages: &mut messages::Messages<'p, '_, '_>,
@@ -1122,7 +1486,24 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         output: &O,
         controls: &mut impl Control<'p, 'id, 's, I, P, C, H, O>,
         cx: &mut Context<'_>,
-    ) -> Result<bool, Cause<R, W::Error>> {
+    ) -> Result<bool, Box<Cause<R, W::Error>>> {
+        // IO readiness alone changes no protocol state. Preserve a completed
+        // scan while waiting for the next frame, including the parent waker
+        // registration. Pending flushes and newly queued output still run.
+        if self.active == 0
+            && !self.delivered
+            && self.control_idle
+            && self.wake.changed.load(Ordering::Acquire) == 0
+            && self.output.is_clean()
+            && queue.is_empty()
+            && !queue.is_failed()
+            && self
+                .parent
+                .as_ref()
+                .is_some_and(|parent| parent.will_wake(cx.waker()))
+        {
+            return Ok(false);
+        }
         // Publication can end a lane scan early to flush promptly. Continue
         // its unused budget after flushing, instead of scheduling an otherwise
         // idle executor turn. All passes share the same cooperative allowance.
@@ -1138,7 +1519,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     .output
                     .poll(writer, queue, messages, cx, self.options.budget)
                 {
-                    Poll::Ready(Err(e)) => return Err(Cause::Output(e)),
+                    Poll::Ready(Err(e)) => return Err(Box::new(Cause::Output(e))),
                     Poll::Ready(Ok(())) => true,
                     Poll::Pending => false,
                 };
@@ -1155,7 +1536,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             // including on idle polls. A control callback can wake before that
             // registration: its changed flag is consumed later in this same
             // turn. Registering here as well only repeats the atomic operation.
-            if self.wake.changed.load(Ordering::Acquire) {
+            if self.wake.changed.load(Ordering::Acquire) & !(1 << 2) != 0 {
                 self.control_idle = false;
             }
             if !self.control_idle {
@@ -1170,14 +1551,22 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         self.changed();
                         cx.waker().wake_by_ref();
                     }
-                    Poll::Ready(Err(e)) => return Err(Cause::Protocol(e)),
+                    Poll::Ready(Err(e)) => return Err(Box::new(Cause::Protocol(e))),
                     _ => self.control_idle = true,
                 }
             }
+            let control_was_idle = self.control_idle;
+            self.direct_publication = false;
             if let Poll::Ready(result) =
                 self.poll_work_budget(messages, queue, scratch, output, cx, &mut remaining)
             {
-                result.map_err(Cause::Protocol)?;
+                result.map_err(|error| Box::new(Cause::Protocol(error)))?;
+            }
+            let preserves_control = control_was_idle
+                && self.direct_publication
+                && controls.direct_publication_preserves_idle();
+            if preserves_control {
+                self.control_idle = true;
             }
             // Publish bytes produced by this turn without an executor round trip.
             // Physical flush remains owned by Output, including a Pending receipt.
@@ -1197,16 +1586,28 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         .output
                         .poll(writer, queue, messages, cx, self.options.budget)
                     {
-                        Poll::Ready(Err(error)) => return Err(Cause::Output(error)),
+                        Poll::Ready(Err(error)) => return Err(Box::new(Cause::Output(error))),
                         Poll::Ready(Ok(())) => true,
                         Poll::Pending => false,
                     };
                 if queue.len() < queued {
-                    self.control_idle = false;
+                    if !preserves_control {
+                        self.control_idle = false;
+                    }
                     if std::mem::take(&mut self.output_blocked) {
                         self.changed();
                     }
                 }
+            }
+            if preserves_control
+                && self.active == 1 << 4
+                && remaining != 0
+                && self.driver.maintenance_is_idle()
+            {
+                // The new plain question adds no immediate cleanup. Spend the
+                // same empty-lane quantum here without rebuilding poll adapters.
+                remaining -= 1;
+                self.active = 0;
             }
             let idle = self.active == 0
                 && output_ready

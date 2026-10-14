@@ -19,7 +19,45 @@ pub struct NoAllocSegmentTableInfo {
     pub total_segments_length_bytes: usize,
 }
 
+#[inline(always)]
 pub(super) fn read_segment_table(
+    slice: &[u8],
+    options: ReaderOptions,
+) -> Result<NoAllocSegmentTableInfo> {
+    // The one-segment wire format has exactly two scalar fields. Preserve the
+    // general parser's alignment, overflow, budget and truncation checks, but
+    // avoid its cursor, count loop and padding machinery for this layout.
+    if let Some(header) = slice.get(..8) {
+        if header[..4] == [0; 4] {
+            verify_alignment(slice.as_ptr())?;
+            let words = u32::from_le_bytes(header[4..8].try_into().unwrap()) as usize;
+            let bytes = words
+                .checked_mul(BYTES_PER_WORD)
+                .ok_or_else(|| Error::from_kind(ErrorKind::MessageSizeOverflow))?;
+            if options
+                .traversal_limit_in_words
+                .is_some_and(|limit| words > limit)
+            {
+                return Err(Error::from_kind(ErrorKind::MessageTooLarge(words)));
+            }
+            if bytes > slice.len() - 8 {
+                return Err(Error::from_kind(ErrorKind::MessageEndsPrematurely(
+                    words,
+                    (slice.len() - 8) / BYTES_PER_WORD,
+                )));
+            }
+            return Ok(NoAllocSegmentTableInfo {
+                segments_count: 1,
+                segment_table_length_bytes: 8,
+                total_segments_length_bytes: bytes,
+            });
+        }
+    }
+    read_segment_table_general(slice, options)
+}
+
+#[inline(never)]
+fn read_segment_table_general(
     slice: &[u8],
     options: ReaderOptions,
 ) -> Result<NoAllocSegmentTableInfo> {
@@ -218,7 +256,7 @@ impl<T: AsRef<[u8]>> ReaderSegments for NoAllocBufferSegments<T> {
         match self.segment_type {
             NoAllocBufferSegmentType::SingleSegment(length_bytes) => {
                 if idx == 0 {
-                    Some(&self.buffer.as_ref()[8..8 + length_bytes])
+                    Some(&self.buffer.as_ref()[8..][..length_bytes])
                 } else {
                     None
                 }
@@ -361,6 +399,42 @@ fn calculate_data_offset(segments_count: usize) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn single_segment_parser_matches_general_validation() {
+        #[repr(align(8))]
+        struct Bytes([u8; 48]);
+        for offset in [0, 1, 7] {
+            for words in [0u32, 1, 4, u32::MAX] {
+                let mut bytes = Bytes([0; 48]);
+                bytes.0[offset + 4..offset + 8].copy_from_slice(&words.to_le_bytes());
+                for length in [0, 3, 4, 7, 8, 9, 16, 40] {
+                    let slice = &bytes.0[offset..offset + length];
+                    for limit in [None, Some(0), Some(4)] {
+                        let options = crate::message::ReaderOptions {
+                            traversal_limit_in_words: limit,
+                            ..Default::default()
+                        };
+                        let normalize = |result: crate::Result<super::NoAllocSegmentTableInfo>| {
+                            result
+                                .map(|info| {
+                                    (
+                                        info.segments_count,
+                                        info.segment_table_length_bytes,
+                                        info.total_segments_length_bytes,
+                                    )
+                                })
+                                .map_err(|error| error.kind)
+                        };
+                        assert_eq!(
+                            normalize(super::read_segment_table(slice, options)),
+                            normalize(super::read_segment_table_general(slice, options)),
+                            "offset={offset}, words={words}, length={length}, limit={limit:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
     #[cfg(feature = "alloc")]
     use quickcheck::{quickcheck, TestResult};
 

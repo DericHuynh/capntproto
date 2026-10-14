@@ -18,10 +18,27 @@ pub fn finished<'b, 's, 'a, 'e, 'as_, 'es, A, E>(
     exports: &'b mut exports::Exports<'e, 'es, E>,
     scratch: &'s mut [u32],
 ) -> Result<Finished<'b, 's, 'a, 'e, 'as_, 'es, A, E>, Error> {
-    let Some(answer) = answers.prepare_finish(
+    finished_parts(
         AnswerId::from_wire(finish.get_question_id()),
         finish.get_release_result_caps(),
-    ) else {
+        original,
+        answers,
+        exports,
+        scratch,
+    )
+}
+
+/// Same transaction for metadata decoded from an immutable Finish envelope.
+#[allow(clippy::type_complexity)]
+pub(crate) fn finished_parts<'b, 's, 'a, 'e, 'as_, 'es, A, E>(
+    id: AnswerId,
+    release_result_caps: bool,
+    original: Option<rpc_capnp::message::Reader<'_>>,
+    answers: &'b mut answers::Answers<'a, 'as_, A>,
+    exports: &'b mut exports::Exports<'e, 'es, E>,
+    scratch: &'s mut [u32],
+) -> Result<Finished<'b, 's, 'a, 'e, 'as_, 'es, A, E>, Error> {
+    let Some(answer) = answers.prepare_finish(id, release_result_caps) else {
         return Ok(Finished {
             answer: None,
             releases: None,

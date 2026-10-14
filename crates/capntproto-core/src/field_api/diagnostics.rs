@@ -21,6 +21,8 @@ impl Location {
     /// Without `alloc`, errors retain their kind but cannot own this context.
     /// Format `Location` separately into caller-supplied storage when needed.
     #[cfg(feature = "alloc")]
+    #[cold]
+    #[inline(never)]
     pub fn error(self, mut error: Error) -> Error {
         use alloc::format;
         if matches!(self, Self::Unknown) {
@@ -41,6 +43,7 @@ impl Location {
     }
 
     #[doc(hidden)]
+    #[inline(always)]
     pub fn run<T>(self, operation: impl FnOnce() -> Result<T>) -> Result<T> {
         operation().map_err(|error| self.error(error))
     }

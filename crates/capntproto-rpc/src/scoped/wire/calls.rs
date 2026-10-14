@@ -28,7 +28,7 @@ pub(super) enum Publication<'a, 'id> {
     Immediate {
         target: &'a Client<'id>,
         method: DynamicCall,
-        params: connection::ImmediateParams<'a>,
+        params: &'a connection::ImmediateParams<'a>,
     },
 }
 pub(super) enum Published<'id> {
@@ -104,6 +104,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
     /// lookup; mixed/pipelined workloads continue through the rotating scanner.
     /// The caller yields after completion and resumes ordinary maintenance
     /// before reading another frame, preserving cooperative fairness.
+    #[inline(always)]
     pub(super) fn returned<A, P: Copy + Eq>(
         &mut self,
         key: capntproto_rpc_engine::questions::Key<'id>,
@@ -112,15 +113,24 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         messages: &mut messages::Messages<'p, '_, '_>,
         cx: &mut Context<'_>,
         refresh: impl FnMut(&mut ClientHooks<'id>, &mut Peer<'p, 'id, '_, I, A, P, C, H>),
-    ) -> capnp::Result<bool> {
+    ) -> capnp::Result<Option<bool>> {
         if self.entries.len() > 8 {
-            return Ok(false);
+            return Ok(None);
         }
         let Some(index) = self.entries.iter().position(|entry| entry.as_ref().is_some_and(|entry|
             entry.local.is_none() && entry.wire.task.is_none() && entry.wire.pipeline.is_none()
                 && matches!(entry.wire.direct, Some(DirectStage::Sent(question)) if question == key))) else {
-            return Ok(false);
+            return Ok(None);
         };
+        if self.entries[index]
+            .as_mut()
+            .unwrap()
+            .wire
+            .complete_plain(key, driver, messages)?
+        {
+            self.entries[index] = None;
+            return Ok(Some(true));
+        }
         match self.entries[index].as_mut().unwrap().wire.poll_using(
             hooks,
             driver,
@@ -130,13 +140,35 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             refresh,
             |hook| Some(hook.add_ref()),
         ) {
-            Poll::Pending => Ok(false),
+            Poll::Pending => Ok(None),
             Poll::Ready(result) => {
                 result?;
                 self.entries[index] = None;
-                Ok(true)
+                Ok(Some(false))
             }
         }
+    }
+    pub(super) fn plain_receiver(
+        &self,
+        key: capntproto_rpc_engine::questions::Key<'id>,
+    ) -> Option<usize> {
+        if self.entries.len() > 8 {
+            return None;
+        }
+        self.entries.iter().position(|entry| {
+            entry
+                .as_ref()
+                .is_some_and(|entry| entry.local.is_none() && entry.wire.accepts_plain(key))
+        })
+    }
+    pub(super) fn deliver_plain(
+        &mut self,
+        index: usize,
+        message: Box<capntproto_rpc_wire::owned::PlainResults>,
+    ) {
+        let entry = self.entries[index].as_mut().expect("selected reply owner");
+        entry.wire.deliver_plain(message);
+        self.entries[index] = None;
     }
     pub(crate) fn has_unpublished(&self) -> bool {
         self.pending.is_some()
@@ -207,7 +239,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         params,
                     } => {
                         return driver
-                            .try_send_immediate_from(
+                            .try_send_immediate_borrowed(
                                 target,
                                 method,
                                 params,
@@ -234,6 +266,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                     .map_err(wire_error)
             },
         )
+        .map(|result| result.map_err(|error| *error))
     }
     /// Attach resources to the exact accepted Call using the same scheduler.
     #[allow(clippy::too_many_arguments)]
@@ -273,7 +306,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         params,
                     } => {
                         return driver
-                            .try_send_immediate_from(
+                            .try_send_immediate_borrowed(
                                 target,
                                 method,
                                 params,
@@ -319,6 +352,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                     .map_err(wire_error)
             },
         )
+        .map(|result| result.map_err(|error| *error))
     }
     #[allow(clippy::too_many_arguments)]
     #[inline(always)]
@@ -342,9 +376,9 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             Option<Rc<crate::admission::Permit>>,
             Publication<'_, 'id>,
         ) -> capnp::Result<Option<Published<'id>>>,
-    ) -> Poll<capnp::Result<Progress>> {
+    ) -> Poll<Result<Progress, Box<Error>>> {
         if let Some(kind) = driver.disconnected() {
-            return Poll::Ready(Err(Error::from_kind(kind)));
+            return Poll::Ready(Err(Box::new(Error::from_kind(kind))));
         }
         let mut advanced = false;
         let mut remaining_budget = budget.get();
@@ -366,6 +400,45 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 progress => return Poll::Ready(Ok(progress.unwrap_or(Progress::Idle))),
             }
         }
+        self.poll_nonempty(
+            hooks,
+            driver,
+            messages,
+            options,
+            cx,
+            budget,
+            advanced,
+            remaining_budget,
+            import,
+            refresh,
+            send,
+        )
+    }
+    #[allow(clippy::too_many_arguments)]
+    #[inline(never)]
+    fn poll_nonempty<A, P: Copy + Eq>(
+        &mut self,
+        hooks: &mut ClientHooks<'id>,
+        driver: &mut Peer<'p, 'id, '_, I, A, P, C, H>,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        options: capnp::message::ReaderOptions,
+        cx: &mut Context<'_>,
+        budget: NonZeroUsize,
+        mut advanced: bool,
+        mut remaining_budget: usize,
+        mut import: impl FnMut(
+            &mut Runtime<'p, 'id, '_, I, P, Rc<dyn ClientHook>, C, H>,
+            &dyn ClientHook,
+        ) -> capnp::Result<Client<'id>>,
+        mut refresh: impl FnMut(&mut ClientHooks<'id>, &mut Peer<'p, 'id, '_, I, A, P, C, H>),
+        mut send: impl FnMut(
+            &mut connection::Invocations<'s, 'wait, 'p, 'id, I, C>,
+            &mut Peer<'p, 'id, '_, I, A, P, C, H>,
+            &mut messages::Messages<'p, '_, '_>,
+            Option<Rc<crate::admission::Permit>>,
+            Publication<'_, 'id>,
+        ) -> capnp::Result<Option<Published<'id>>>,
+    ) -> Poll<Result<Progress, Box<Error>>> {
         // Immediate settled calls have no queued dispatch, projection, local
         // execution or internal completion channel. Visit only their actual
         // owners and admission, retaining a rotating cursor and the caller's
@@ -441,6 +514,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 0 => {
                     refresh(hooks, driver);
                     self.admit(hooks, driver, messages, options, cx, &mut import, &mut send)
+                        .map_err(|error| *error)
                 }
                 1 => self.accept_local(driver),
                 2 => self.send_next(driver, messages, &mut send),
@@ -505,7 +579,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             match result {
                 Err(error) => {
                     self.remaining = size;
-                    return Poll::Ready(Err(error));
+                    return Poll::Ready(Err(Box::new(error)));
                 }
                 Ok(Some(progress)) => {
                     self.remaining = size;
@@ -684,22 +758,20 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             Option<Rc<crate::admission::Permit>>,
             Publication<'_, 'id>,
         ) -> capnp::Result<Option<Published<'id>>>,
-    ) -> capnp::Result<Option<Progress>> {
+    ) -> Result<Option<Progress>, Box<Error>> {
         if self.pending.is_none() {
             self.pending = match hooks.poll_owned_next(cx) {
                 Poll::Ready(call) => call,
                 Poll::Pending => None,
             };
-        }
-        let Some(call) = self.pending.as_mut() else {
-            return Ok(None);
-        };
-        // poll_next registered the shared inbox notification. Both hosted
-        // response adapters notify that inbox on abandonment, and closing the
-        // hook set does the same. Admission needs no second shutdown waiter.
-        if call.is_canceled() {
+            // poll_owned_next checks cancellation immediately before returning
+            // its owner; no application callback intervenes here.
+        } else if self.pending.as_ref().is_some_and(|call| call.is_canceled()) {
             drop(self.pending.take());
             return Ok(Some(Progress::Advanced));
+        }
+        if self.pending.is_none() {
+            return Ok(None);
         }
         if !self.invocations.has_capacity() {
             // The hosted receiver may have just completed while its tracked
@@ -738,7 +810,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             {
                 Ok(credit) => credit,
                 Err(error) => {
-                    self.pending.take().unwrap().complete(Err(error));
+                    self.pending.take().unwrap().complete_boxed(Err(error));
                     return Ok(Some(Progress::Advanced));
                 }
             };
@@ -772,7 +844,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             let publication = Publication::Immediate {
                 target,
                 method,
-                params,
+                params: &params,
             };
             if let Some(published) = send(
                 &mut self.invocations,
@@ -811,6 +883,23 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 return Ok(Some(Progress::Published));
             }
         }
+        self.admit_queued(index, hooks, driver, messages, options, import)
+            .map_err(Box::new)
+    }
+    #[allow(clippy::too_many_arguments)]
+    #[inline(never)]
+    fn admit_queued<A, P: Copy + Eq>(
+        &mut self,
+        index: usize,
+        hooks: &mut ClientHooks<'id>,
+        driver: &mut Peer<'p, 'id, '_, I, A, P, C, H>,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        options: capnp::message::ReaderOptions,
+        import: &mut impl FnMut(
+            &mut Runtime<'p, 'id, '_, I, P, Rc<dyn ClientHook>, C, H>,
+            &dyn ClientHook,
+        ) -> capnp::Result<Client<'id>>,
+    ) -> capnp::Result<Option<Progress>> {
         let call = self.pending.take().expect("pending call");
         let wire = match hooks.enqueue_wire_using(
             *call,
@@ -855,7 +944,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         error: Error,
     ) {
         if let Some(call) = self.pending {
-            call.complete(Err(error.clone()));
+            call.complete_boxed(Err(error.clone()));
         }
         self.invocations.terminate(driver, messages);
         for mut entry in self.entries.into_iter().flatten() {

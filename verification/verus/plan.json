@@ -1,40 +1,129 @@
 {
   "format": 1,
   "functions": [
-    "capntproto_proofs::handoff::HandoffPhase::clone",
-    "capntproto_proofs::handoff::HandoffState::accept",
-    "capntproto_proofs::handoff::HandoffState::accepted",
-    "capntproto_proofs::handoff::HandoffState::clone",
-    "capntproto_proofs::handoff::HandoffState::direct_calls",
-    "capntproto_proofs::handoff::HandoffState::direct_ready",
-    "capntproto_proofs::handoff::HandoffState::drain",
-    "capntproto_proofs::handoff::HandoffState::drained",
-    "capntproto_proofs::handoff::HandoffState::enqueue",
-    "capntproto_proofs::handoff::HandoffState::invoke_direct",
-    "capntproto_proofs::handoff::HandoffState::is_revoked",
-    "capntproto_proofs::handoff::HandoffState::lift",
-    "capntproto_proofs::handoff::HandoffState::pending",
-    "capntproto_proofs::handoff::HandoffState::phase",
-    "capntproto_proofs::handoff::HandoffState::provide",
-    "capntproto_proofs::handoff::HandoffState::revoke",
-    "capntproto_proofs::handoff::initial_state",
-    "capntproto_proofs::handoff::preserves",
-    "capntproto_proofs::handoff::progress",
-    "capntproto_proofs::handoff::safety",
-    "capntproto_proofs::question::Delivery::clone",
-    "capntproto_proofs::question::DuplicateReturn::clone",
-    "capntproto_proofs::question::Finish::clone",
-    "capntproto_proofs::question::Question::can_pipeline",
-    "capntproto_proofs::question::Question::is_awaiting_return",
-    "capntproto_proofs::question::Question::release",
-    "capntproto_proofs::question::Question::return_delivery",
-    "capntproto_proofs::question::Question::returned",
-    "capntproto_proofs::question::Release::clone",
-    "capntproto_proofs::question::initial_state",
-    "capntproto_proofs::question::preserves",
-    "capntproto_proofs::question::progress",
-    "capntproto_proofs::question::safe_effect",
-    "capntproto_proofs::question::safety",
+    "capntproto_proofs::engine::answers::Error::clone",
+    "capntproto_proofs::engine::answers::Record::accept_return",
+    "capntproto_proofs::engine::answers::Record::adopt",
+    "capntproto_proofs::engine::answers::Record::can_retire_on_return",
+    "capntproto_proofs::engine::answers::Record::cancellation_requested",
+    "capntproto_proofs::engine::answers::Record::dispatch",
+    "capntproto_proofs::engine::answers::Record::finish",
+    "capntproto_proofs::engine::answers::Record::prepare_adoption",
+    "capntproto_proofs::engine::answers::Record::reclaimable",
+    "capntproto_proofs::engine::answers::Record::release_pipeline",
+    "capntproto_proofs::engine::answers::Record::retain_pipeline",
+    "capntproto_proofs::engine::answers::Record::wire_live",
+    "capntproto_proofs::engine::answers::Redirect::clone",
+    "capntproto_proofs::engine::answers::State::clone",
+    "capntproto_proofs::engine::answers::retained_producer_survives_finish",
+    "capntproto_proofs::engine::answers::retire_direct_return",
+    "capntproto_proofs::engine::completion::Error::clone",
+    "capntproto_proofs::engine::completion::state::abandon",
+    "capntproto_proofs::engine::completion::state::can_claim",
+    "capntproto_proofs::engine::completion::state::cancel",
+    "capntproto_proofs::engine::completion::state::observed",
+    "capntproto_proofs::engine::completion::state::replace",
+    "capntproto_proofs::engine::completion::state::send",
+    "capntproto_proofs::engine::completion::state::take",
+    "capntproto_proofs::engine::completion::state::take_abandoned",
+    "capntproto_proofs::engine::exports::Entry::abort",
+    "capntproto_proofs::engine::exports::Entry::commit",
+    "capntproto_proofs::engine::exports::Entry::grant",
+    "capntproto_proofs::engine::exports::Entry::reclaimable",
+    "capntproto_proofs::engine::exports::Error::clone",
+    "capntproto_proofs::engine::exports::accepted_reservations_preserve_bounds",
+    "capntproto_proofs::engine::exports::unaccepted_grants_do_not_publish",
+    "capntproto_proofs::engine::flow_control::policy::acknowledged",
+    "capntproto_proofs::engine::flow_control::policy::acquire",
+    "capntproto_proofs::engine::flow_control::policy::charge",
+    "capntproto_proofs::engine::flow_control::policy::paused",
+    "capntproto_proofs::engine::flow_control::policy::ready",
+    "capntproto_proofs::engine::flow_control::policy::release",
+    "capntproto_proofs::engine::flow_control::policy::sent",
+    "capntproto_proofs::engine::handoff::HandoffPhase::clone",
+    "capntproto_proofs::engine::handoff::HandoffState::accept",
+    "capntproto_proofs::engine::handoff::HandoffState::accepted",
+    "capntproto_proofs::engine::handoff::HandoffState::clone",
+    "capntproto_proofs::engine::handoff::HandoffState::direct_calls",
+    "capntproto_proofs::engine::handoff::HandoffState::direct_ready",
+    "capntproto_proofs::engine::handoff::HandoffState::drain",
+    "capntproto_proofs::engine::handoff::HandoffState::drained",
+    "capntproto_proofs::engine::handoff::HandoffState::enqueue",
+    "capntproto_proofs::engine::handoff::HandoffState::invoke_direct",
+    "capntproto_proofs::engine::handoff::HandoffState::is_revoked",
+    "capntproto_proofs::engine::handoff::HandoffState::lift",
+    "capntproto_proofs::engine::handoff::HandoffState::pending",
+    "capntproto_proofs::engine::handoff::HandoffState::phase",
+    "capntproto_proofs::engine::handoff::HandoffState::provide",
+    "capntproto_proofs::engine::handoff::HandoffState::revoke",
+    "capntproto_proofs::engine::handoff::initial_state",
+    "capntproto_proofs::engine::handoff::preserves",
+    "capntproto_proofs::engine::handoff::progress",
+    "capntproto_proofs::engine::handoff::safety",
+    "capntproto_proofs::engine::ids::AnswerId::clone",
+    "capntproto_proofs::engine::ids::EmbargoId::clone",
+    "capntproto_proofs::engine::ids::ExportId::clone",
+    "capntproto_proofs::engine::ids::ImportId::clone",
+    "capntproto_proofs::engine::ids::QuestionId::clone",
+    "capntproto_proofs::engine::imports::Error::clone",
+    "capntproto_proofs::engine::imports::Slot::receive",
+    "capntproto_proofs::engine::imports::Slot::resolve",
+    "capntproto_proofs::engine::imports::revived_import_cannot_reuse_stale_generation",
+    "capntproto_proofs::engine::messages::Error::clone",
+    "capntproto_proofs::engine::messages::policy::State::clone",
+    "capntproto_proofs::engine::messages::policy::advance",
+    "capntproto_proofs::engine::messages::policy::reclaimable",
+    "capntproto_proofs::engine::messages::policy::release",
+    "capntproto_proofs::engine::messages::policy::retain",
+    "capntproto_proofs::engine::messages::policy::ring_offset",
+    "capntproto_proofs::engine::promise::Error::clone",
+    "capntproto_proofs::engine::promise::ImportState::clone",
+    "capntproto_proofs::engine::promise::ImportState::descriptor",
+    "capntproto_proofs::engine::promise::ImportState::resolution",
+    "capntproto_proofs::engine::provision::EmbargoState::claim",
+    "capntproto_proofs::engine::provision::EmbargoState::clone",
+    "capntproto_proofs::engine::provision::EmbargoState::close",
+    "capntproto_proofs::engine::provision::EmbargoState::readiness",
+    "capntproto_proofs::engine::provision::EmbargoState::release",
+    "capntproto_proofs::engine::provision::Error::clone",
+    "capntproto_proofs::engine::provision::initial_embargo",
+    "capntproto_proofs::engine::question::Delivery::clone",
+    "capntproto_proofs::engine::question::DuplicateReturn::clone",
+    "capntproto_proofs::engine::question::Finish::clone",
+    "capntproto_proofs::engine::question::Question::can_pipeline",
+    "capntproto_proofs::engine::question::Question::is_awaiting_return",
+    "capntproto_proofs::engine::question::Question::release",
+    "capntproto_proofs::engine::question::Question::return_delivery",
+    "capntproto_proofs::engine::question::Question::returned",
+    "capntproto_proofs::engine::question::Release::clone",
+    "capntproto_proofs::engine::question::initial_state",
+    "capntproto_proofs::engine::question::preserves",
+    "capntproto_proofs::engine::question::progress",
+    "capntproto_proofs::engine::question::safe_effect",
+    "capntproto_proofs::engine::question::safety",
+    "capntproto_proofs::engine::questions::Error::clone",
+    "capntproto_proofs::engine::questions::Record::can_pipeline",
+    "capntproto_proofs::engine::questions::Record::reclaimable",
+    "capntproto_proofs::engine::questions::Record::retain",
+    "capntproto_proofs::engine::questions::ResultsTo::clone",
+    "capntproto_proofs::engine::questions::cleanup_waits_for_return_and_accepted_finish",
+    "capntproto_proofs::engine::references::Error::clone",
+    "capntproto_proofs::engine::references::ExportRefs::count",
+    "capntproto_proofs::engine::references::ExportRefs::release",
+    "capntproto_proofs::engine::references::ExportRefs::retain",
+    "capntproto_proofs::engine::references::ImportRefs::count",
+    "capntproto_proofs::engine::references::ImportRefs::pending_release",
+    "capntproto_proofs::engine::references::ImportRefs::receive",
+    "capntproto_proofs::engine::references::ReleaseTicket::commit",
+    "capntproto_proofs::engine::references::ReleaseTicket::count",
+    "capntproto_proofs::engine::references::initial_export",
+    "capntproto_proofs::engine::references::initial_import",
+    "capntproto_proofs::engine::references::published_refs",
+    "capntproto_proofs::fixed::reserve",
+    "capntproto_proofs::fixed::rewind",
+    "capntproto_proofs::indices::identity",
+    "capntproto_proofs::indices::valid",
+    "capntproto_proofs::limits::growth_target",
     "capntproto_proofs::revisions::Revision::checked_next",
     "capntproto_proofs::revisions::Revision::clone",
     "capntproto_proofs::revisions::Revision::get",
@@ -73,63 +162,63 @@
       "source": "crates/capntproto-rpc-engine/src/handoff.rs",
       "from": "if pending.checked_add(self.drained).is_none() {",
       "to": "if false {",
-      "function": "capntproto_proofs::handoff::HandoffState::enqueue"
+      "function": "capntproto_proofs::engine::handoff::HandoffState::enqueue"
     },
     {
       "name": "unauthorized-accept",
       "source": "crates/capntproto-rpc-engine/src/handoff.rs",
       "from": "if !authorized || self.revoked || matches!(self.phase, HandoffPhase::Proxying) {",
       "to": "if self.revoked || matches!(self.phase, HandoffPhase::Proxying) {",
-      "function": "capntproto_proofs::handoff::HandoffState::accept"
+      "function": "capntproto_proofs::engine::handoff::HandoffState::accept"
     },
     {
       "name": "early-lift",
       "source": "crates/capntproto-rpc-engine/src/handoff.rs",
       "from": " || self.pending != 0",
       "to": "",
-      "function": "capntproto_proofs::handoff::HandoffState::lift"
+      "function": "capntproto_proofs::engine::handoff::HandoffState::lift"
     },
     {
       "name": "missing-drain-fairness",
       "source": "crates/capntproto-rpc-engine/src/handoff/verified.rs",
       "from": "        spec.entails(weak_fairness(|s, t| drain_step(s, t))),\n",
       "to": "",
-      "function": "capntproto_proofs::handoff::progress"
+      "function": "capntproto_proofs::engine::handoff::progress"
     },
     {
       "name": "early-question-reclaim",
       "source": "crates/capntproto-rpc-engine/src/question.rs",
       "from": "State::Cancelled => (None, false),",
       "to": "State::Cancelled => (None, true),",
-      "function": "capntproto_proofs::question::Question::release"
+      "function": "capntproto_proofs::engine::question::Question::release"
     },
     {
       "name": "duplicate-question-finish",
       "source": "crates/capntproto-rpc-engine/src/question.rs",
       "from": "State::Released => (None, true),",
       "to": "State::Released => (Some(Finish { release_result_caps: false }), true),",
-      "function": "capntproto_proofs::question::Question::release"
+      "function": "capntproto_proofs::engine::question::Question::release"
     },
     {
       "name": "deliver-cancelled-question",
       "source": "crates/capntproto-rpc-engine/src/question.rs",
       "from": "State::Cancelled => Ok(Delivery::Discard),",
       "to": "State::Cancelled => Ok(Delivery::Deliver),",
-      "function": "capntproto_proofs::question::Question::return_delivery"
+      "function": "capntproto_proofs::engine::question::Question::return_delivery"
     },
     {
       "name": "missing-question-release-fairness",
       "source": "crates/capntproto-rpc-engine/src/question/verified.rs",
       "from": "        spec.entails(weak_fairness(|s, t| release_trace(s, t))),\n",
       "to": "",
-      "function": "capntproto_proofs::question::progress"
+      "function": "capntproto_proofs::engine::question::progress"
     },
     {
       "name": "missing-question-return-fairness",
       "source": "crates/capntproto-rpc-engine/src/question/verified.rs",
       "from": "        spec.entails(weak_fairness(|s, t| return_trace(s, t))),\n",
       "to": "",
-      "function": "capntproto_proofs::question::progress"
+      "function": "capntproto_proofs::engine::question::progress"
     },
     {
       "name": "zero-route-id",
@@ -221,6 +310,153 @@
       "from": "revision.0 <= expected.0",
       "to": "revision.0 == expected.0",
       "function": "capntproto_proofs::revisions::Revisions::publish"
+    },
+    {
+      "name": "admit-outgoing-at-equality",
+      "source": "crates/capntproto-rpc-engine/src/flow_control/policy.rs",
+      "from": "if used >= limit {",
+      "to": "if used > limit {",
+      "function": "capntproto_proofs::engine::flow_control::policy::acquire"
+    },
+    {
+      "name": "resume-incoming-at-equality",
+      "source": "crates/capntproto-rpc-engine/src/flow_control/policy.rs",
+      "from": "if was_paused {\n        used >= limit",
+      "to": "if was_paused {\n        used > limit",
+      "function": "capntproto_proofs::engine::flow_control::policy::paused"
+    },
+    {
+      "name": "grow-beyond-resource-maximum",
+      "source": "crates/capntproto-rpc-engine/src/storage/limits.rs",
+      "from": "current.saturating_mul(2).min(maximum)",
+      "to": "current.saturating_mul(2)",
+      "function": "capntproto_proofs::limits::growth_target"
+    },
+    {
+      "name": "omit-retained-answer-dependency",
+      "source": "crates/capntproto-rpc-engine/src/answers.rs",
+      "from": "self.pipelines = self.pipelines.checked_add(1)",
+      "to": "self.pipelines = self.pipelines.checked_add(0)",
+      "function": "capntproto_proofs::engine::answers::Record::retain_pipeline"
+    },
+    {
+      "name": "cancel-queued-pipeline-after-finish",
+      "source": "crates/capntproto-rpc-engine/src/answers.rs",
+      "from": "Ok(!self.finished || self.pipelines != 0)",
+      "to": "Ok(!self.finished)",
+      "function": "capntproto_proofs::engine::answers::Record::dispatch"
+    },
+    {
+      "name": "reserve-retired-answer-wire-id",
+      "source": "crates/capntproto-rpc-engine/src/answers.rs",
+      "from": "!(self.finished && matches!(self.state, State::Returned))",
+      "to": "true",
+      "function": "capntproto_proofs::engine::answers::Record::wire_live"
+    },
+    {
+      "name": "cancel-pipelined-answer",
+      "source": "crates/capntproto-rpc-engine/src/answers.rs",
+      "from": "self.finished\n            && self.pipelines == 0\n            &&",
+      "to": "self.finished\n            &&",
+      "function": "capntproto_proofs::engine::answers::Record::cancellation_requested"
+    },
+    {
+      "name": "reuse-before-finish-acceptance",
+      "source": "crates/capntproto-rpc-engine/src/questions.rs",
+      "from": "self.references == 0 && self.finish.is_none() && !self.lifecycle.is_awaiting_return()",
+      "to": "self.references == 0 && !self.lifecycle.is_awaiting_return()",
+      "function": "capntproto_proofs::engine::questions::Record::reclaimable"
+    },
+    {
+      "name": "reuse-buffer-with-pending-send",
+      "source": "crates/capntproto-rpc-engine/src/messages/policy.rs",
+      "from": "            readers: 0,\n            sends: 0,\n            ..",
+      "to": "            readers: 0,\n            ..",
+      "function": "capntproto_proofs::engine::messages::policy::reclaimable"
+    },
+    {
+      "name": "complete-partial-message-send",
+      "source": "crates/capntproto-rpc-engine/src/messages/policy.rs",
+      "from": "Ok((position + count, count == remaining))",
+      "to": "Ok((position + count, true))",
+      "function": "capntproto_proofs::engine::messages::policy::advance"
+    },
+    {
+      "name": "revive-import-with-stale-generation",
+      "source": "crates/capntproto-rpc-engine/src/imports.rs",
+      "from": "self.generation = generation;",
+      "to": "let _ = generation;",
+      "function": "capntproto_proofs::engine::imports::Slot::receive"
+    },
+    {
+      "name": "reject-exact-capacity",
+      "source": "crates/capntproto-core/src/private/arena/fixed/limits.rs",
+      "from": "if id != 0 || amount > capacity - used",
+      "to": "if id != 0 || amount >= capacity - used",
+      "function": "capntproto_proofs::fixed::reserve"
+    },
+    {
+      "name": "repeat-local-adoption",
+      "source": "crates/capntproto-rpc-engine/src/answers.rs",
+      "from": "self.redirect = Redirect::Adopted;",
+      "to": "self.redirect = Redirect::Available;",
+      "function": "capntproto_proofs::engine::answers::Record::adopt"
+    },
+    {
+      "name": "release-adopted-producer",
+      "source": "crates/capntproto-rpc-engine/src/answers.rs",
+      "from": "if retain {\n            self.pipelines += 1;\n        }",
+      "to": "if retain {\n            self.pipelines += 0;\n        }",
+      "function": "capntproto_proofs::engine::answers::Record::adopt"
+    },
+    {
+      "name": "accept-closed-reply",
+      "source": "crates/capntproto-rpc-engine/src/completion/state.rs",
+      "from": "if !matches!(phase, Phase::Pending) {",
+      "to": "if false {",
+      "function": "capntproto_proofs::engine::completion::state::send"
+    },
+    {
+      "name": "discard-canceled-reply",
+      "source": "crates/capntproto-rpc-engine/src/completion/state.rs",
+      "from": "*phase = Phase::Abandoned(value);",
+      "to": "*phase = Phase::Closed;",
+      "function": "capntproto_proofs::engine::completion::state::abandon"
+    },
+    {
+      "name": "discard-tracked-reply-on-shutdown",
+      "source": "crates/capntproto-rpc-engine/src/completion/state.rs",
+      "from": "Phase::Value(value) | Phase::Abandoned(value) => Some(value),",
+      "to": "Phase::Value(_value) | Phase::Abandoned(_value) => None,",
+      "function": "capntproto_proofs::engine::completion::state::cancel"
+    },
+    {
+      "name": "reuse-shared-reply-with-live-endpoints",
+      "source": "crates/capntproto-rpc-engine/src/completion/state.rs",
+      "from": "    endpoints == 0",
+      "to": "    true",
+      "function": "capntproto_proofs::engine::completion::state::can_claim"
+    },
+    {
+      "name": "accept-out-of-range-identity-index",
+      "source": "crates/capntproto-core/src/wire_capability/map/policy.rs",
+      "from": "if source < count {",
+      "to": "if source <= count {",
+      "function": "capntproto_proofs::indices::identity"
+    },
+    {
+      "name": "publish-aborted-export",
+      "source": "crates/capntproto-rpc-engine/src/exports.rs",
+      "from": "self.state = State::Retired;",
+      "to": "self.state = State::Live(crate::references::published_refs(1));",
+      "function": "capntproto_proofs::engine::exports::Entry::abort"
+    },
+    {
+      "name": "retire-answer-with-live-pipeline",
+      "source": "crates/capntproto-rpc-engine/src/answers.rs",
+      "from": "        omission_allowed && self.pipelines == 0",
+      "to": "        omission_allowed",
+      "function": "capntproto_proofs::engine::answers::Record::can_retire_on_return"
     }
   ]
 }

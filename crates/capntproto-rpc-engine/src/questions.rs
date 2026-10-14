@@ -10,8 +10,13 @@ use crate::{
     question::{self, Question},
 };
 use core::marker::PhantomData;
+#[cfg(capntproto_verus)]
+use vstd::prelude::*;
+#[cfg(capntproto_verus)]
+include!("questions/verified.rs");
 type Brand<'id> = PhantomData<fn(&'id ()) -> &'id ()>;
 
+#[cfg_attr(capntproto_verus, verus_verify)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     NonemptyStorage,
@@ -34,12 +39,14 @@ impl core::error::Error for Error {}
 
 /// Opaque caller-storage record. Use Slot::EMPTY to initialize storage.
 /// Result ownership fixed when an outgoing question is reserved.
+#[cfg_attr(capntproto_verus, verus_verify)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResultsTo {
     Caller,
     Yourself,
     ThirdParty,
 }
+#[cfg_attr(capntproto_verus, verus_verify)]
 pub struct Record {
     #[cfg(feature = "alloc")]
     presence: crate::observation::Presence,
@@ -53,6 +60,27 @@ pub struct Record {
     published: bool,
     destination: ResultsTo,
     provision: bool,
+}
+impl Record {
+    #[inline]
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures r == question_reclaimable(*self)))]
+    fn reclaimable(&self) -> bool {
+        self.references == 0 && self.finish.is_none() && !self.lifecycle.is_awaiting_return()
+    }
+    #[inline]
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures r == question_pipeline(*self)))]
+    fn can_pipeline(&self) -> bool {
+        self.published && self.references != 0 && !self.provision && self.lifecycle.can_pipeline()
+    }
+    #[inline]
+    #[cfg_attr(capntproto_verus, verus_spec(r => ensures question_retained(*old(self), *final(self), r)))]
+    fn retain(&mut self) -> Result<(), Error> {
+        self.references = self
+            .references
+            .checked_add(1)
+            .ok_or(Error::ReferenceLimit)?;
+        Ok(())
+    }
 }
 pub type Slot = local_table::Slot<Record>;
 pub type AdoptedSlot = peer_table::Slot<QuestionId, Record>;
@@ -260,12 +288,12 @@ impl<'id, 'storage> Questions<'id, 'storage> {
             .ok_or(Error::GenerationExhausted)?;
         let id = self
             .table
-            .try_push(Record {
+            .try_push_with((), |id, ()| Record {
                 #[cfg(feature = "alloc")]
                 presence: self.observation.enter(),
                 #[cfg(feature = "alloc")]
                 credit: None,
-                id: <QuestionId as crate::ids::WireId>::from_wire(0),
+                id,
                 generation,
                 references: 1,
                 lifecycle: Question::new(),
@@ -276,7 +304,6 @@ impl<'id, 'storage> Questions<'id, 'storage> {
             })
             .map_err(|_| Error::Full)?;
         self.generation = generation;
-        self.table.get_mut(id).unwrap().id = id;
         Ok(Reservation {
             questions: self,
             key: Key {
@@ -334,45 +361,42 @@ impl<'id, 'storage> Questions<'id, 'storage> {
     /// while the application keeps the result/question reference alive.
     pub fn pipeline_id(&self, local: &Local<'id>) -> Result<QuestionId, Error> {
         let record = self.record(local.key)?;
-        if !record.published
-            || record.references == 0
-            || record.provision
-            || !record.lifecycle.can_pipeline()
-        {
+        if !record.can_pipeline() {
             return Err(Error::PipelineReleased);
         }
         Ok(record.id)
     }
     pub fn retain(&mut self, local: &Local<'id>) -> Result<Local<'id>, Error> {
         let record = self.record_mut(local.key)?;
-        record.references = record
-            .references
-            .checked_add(1)
-            .ok_or(Error::ReferenceLimit)?;
+        record.retain()?;
         Ok(Local { key: local.key })
     }
     /// Keep the Finish obligation in the record until output accepts it.
+    #[inline(always)]
     pub fn release(&mut self, local: Local<'id>) {
         let record = self.record_mut(local.key).expect("live local question");
         record.references -= 1;
         if record.references == 0 {
             record.finish = record.lifecycle.release().finish;
-            if record.finish.is_some() {
+            let finish = record.finish.is_some();
+            let reclaim = record.reclaimable();
+            if finish {
                 self.pending_finishes += 1;
             }
-            self.reclaim(local.key.id);
+            if reclaim {
+                self.table.remove(local.key.id);
+            }
         }
     }
     fn reclaim(&mut self, id: QuestionId) {
-        if self.table.get(id).is_some_and(|r| {
-            r.references == 0 && r.finish.is_none() && !r.lifecycle.is_awaiting_return()
-        }) {
+        if self.table.get(id).is_some_and(Record::reclaimable) {
             self.table.remove(id);
         }
     }
     /// Decode/validate the Return and its descriptors before this transition.
     /// A discarded response must not import result capabilities: the earlier
     /// Finish releases them remotely. No callbacks or IO run during admission.
+    #[inline(always)]
     pub fn returned(
         &mut self,
         id: QuestionId,
@@ -392,7 +416,9 @@ impl<'id, 'storage> Questions<'id, 'storage> {
             generation: record.generation,
             brand: PhantomData,
         };
-        self.reclaim(id);
+        if record.reclaimable() {
+            self.table.remove(id);
+        }
         Ok((key, delivery))
     }
     pub fn results_to(&self, id: QuestionId) -> Result<ResultsTo, Error> {
@@ -437,11 +463,35 @@ impl<'id, 'storage> Questions<'id, 'storage> {
         id: QuestionId,
         no_finish_needed: bool,
     ) -> Result<Receive<'_, 'id, 'storage>, Error> {
+        self.prepare_receive_matching(id, None, no_finish_needed)
+    }
+    /// Preflight a reply for an owning driver's exact generation in one lookup.
+    #[inline(always)]
+    pub fn prepare_receive_owned(
+        &mut self,
+        key: Key<'id>,
+        no_finish_needed: bool,
+    ) -> Result<Receive<'_, 'id, 'storage>, Error> {
+        self.prepare_receive_matching(key.id, Some(key.generation), no_finish_needed)
+    }
+    #[inline(always)]
+    fn prepare_receive_matching(
+        &mut self,
+        id: QuestionId,
+        generation: Option<u64>,
+        no_finish_needed: bool,
+    ) -> Result<Receive<'_, 'id, 'storage>, Error> {
         let record = self
             .table
             .get(id)
-            .filter(|r| r.published)
-            .ok_or(Error::UnknownQuestion)?;
+            .filter(|r| {
+                r.published && generation.is_none_or(|generation| r.generation == generation)
+            })
+            .ok_or(if generation.is_some() {
+                Error::StaleKey
+            } else {
+                Error::UnknownQuestion
+            })?;
         let delivery = record
             .lifecycle
             .return_delivery()
@@ -468,6 +518,42 @@ impl<'id> Receive<'_, 'id, '_> {
     pub fn delivery(&self) -> question::Delivery {
         self.delivery
     }
+    /// Commit a validated Return and release one exact local observer in the
+    /// same lookup. A mismatched owner is returned without changing either
+    /// question. Remaining pipelines and retained Finish work are unchanged.
+    #[inline(always)]
+    pub fn accept_releasing(
+        self,
+        local: Local<'id>,
+    ) -> Result<(Key<'id>, question::Delivery), (Error, Local<'id>)> {
+        if local.key.id != self.id {
+            return Err((Error::StaleKey, local));
+        }
+        let record = match self.questions.record_mut(local.key) {
+            Ok(record) => record,
+            Err(error) => return Err((error, local)),
+        };
+        let delivery = record
+            .lifecycle
+            .returned(self.no_finish_needed)
+            .expect("preflight Return");
+        record.references -= 1;
+        let finish = if record.references == 0 {
+            record.finish = record.lifecycle.release().finish;
+            record.finish.is_some()
+        } else {
+            false
+        };
+        let reclaim = record.reclaimable();
+        if finish {
+            self.questions.pending_finishes += 1;
+        }
+        if reclaim {
+            self.questions.table.remove(self.id);
+        }
+        Ok((local.key, delivery))
+    }
+    #[inline(always)]
     pub fn accept(self) -> (Key<'id>, question::Delivery) {
         self.questions
             .returned(self.id, self.no_finish_needed)
@@ -499,6 +585,7 @@ impl<'id, 'storage> Reservation<'_, 'id, 'storage> {
         self.destination() != ResultsTo::Caller
     }
     /// Call only as the corresponding immutable message enters ordered output.
+    #[inline(always)]
     pub fn accept(mut self) -> Local<'id> {
         self.questions.record_mut(self.key).unwrap().published = true;
         self.committed = true;

@@ -540,7 +540,7 @@ fn emit(ctx: &GeneratorContext, id: u64, out: &mut String) -> capnp::Result<()> 
                             } else {
                                 expression
                             };
-                            writeln!(readers,"{doc}#[inline] pub fn {method}(&self)->{cp}::Result<{ret}>{{{guard}{location}.run(||{{{expression}}})}}").unwrap();
+                            writeln!(readers,"{doc}#[inline(always)] pub fn {method}(&self)->{cp}::Result<{ret}>{{{guard}{location}.run(||{{{expression}}})}}").unwrap();
                             writeln!(writers,"{doc}#[inline] pub fn {method}(&mut self)->{f}::PointerField<'_,{k}>{{{f}::PointerField::new(self.0.raw(),{off},{def},{selection}).with_location({location})}}\n{doc}#[inline] pub fn into_{snake}(self)->{f}::PointerField<'a,{k}>{{{f}::PointerField::new(self.0.into_raw(),{off},{def},{selection}).with_location({location})}}").unwrap();
                             let descriptor_selection = if union {
                                 format!("Some({f}::Selection{{offset:{},tag:{disc},clear:<{mutname}<'static,{ps}>>::__clear_union}})",s.get_discriminant_offset())

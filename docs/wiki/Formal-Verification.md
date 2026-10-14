@@ -2,7 +2,7 @@
 
 Use Verus for source-level contracts and induction where bounded exploration
 grows too large, and verus-tla for temporal induction with explicit fairness
-assumptions. Keep Kani for bounded Rust memory/ownership checks and TLA+/TLC for
+assumptions. Retain optional Kani harnesses for bounded Rust memory/ownership investigation and TLA+/TLC for
 distributed scenarios and trace replay until equivalent replacements are proved.
 Keep compile-fail contracts for borrowing and API roles, Miri for
 executed aliasing/ownership paths, allocation counters for the no-alloc contract,
@@ -26,7 +26,7 @@ exact [production proof inventory](../../verification/verus/plan.json). Verifica
 uses `--no-cheating`; no project `assume`, `admit` or `external_body` is accepted.
 Verus, its SMT solver and bundled `vstd` specifications remain trusted tooling.
 
-The entrypoint imports the **actual** handoff, question, route-sequence, stream-gate
+The entrypoint imports the **actual** portable engine, fixed-arena bounds, capability-index mapping, route-sequence, stream-gate
 and revision implementations. Contracts
 are ordinary `cfg_attr` annotations, with spec/proof definitions included only
 under `capntproto_verus`. These annotations add no Verus dependency, allocations,
@@ -52,19 +52,22 @@ double release of result capabilities. Ordinary and no-return construction are
 both included. Temporal progress reaches the released state **provided Return
 processing and local release are weakly fair**. This is conditional progress,
 not a promise that a remote peer responds. Output acceptance and table-generation
-reuse remain separate ledger responsibilities checked by Kani and native tests.
+reuse remain separate ledger responsibilities checked by the source contracts
+below and native tests.
 
-These question proofs replace the eight-operation Kani lifecycle search. Kani
-still verifies the associated constructors and Default wrapper against their
+These question proofs replace the eight-operation Kani lifecycle search. Optional
+Kani harnesses cover the associated constructors and Default wrapper against their
 expected initial behavior; these wrappers are outside the Verus attribute
 macro's supported subset. Executable bodies are imported unchanged, including
 the common initializer used by those wrappers.
 
-The runner checks all **64 functions and lemmas**, positive success, and the intended
-failed function for **22 isolated mutations**. Removing drain reservation, accept
+The runner checks all **153 functions and lemmas**, positive success, and the intended
+failed function for **43 isolated mutations**. Removing drain reservation, accept
 authorization, the pending-call lift guard, or drain fairness must fail a logical
 obligation. Early question reclamation, duplicate Finish, delivery after
 cancellation and either missing question fairness assumption must likewise fail.
+Direct answer retirement also proves that an omitted-Finish Return reclaims its
+producer only when no pipeline retains it; a mutation bypassing that check fails.
 Compilation errors, timeouts and missing proofs fail the campaign. Source hashes and raw diagnostics are checkpointed; per-function SMT
 timings have a separate graph. These counts are not Cargo tests or coverage.
 
@@ -79,6 +82,33 @@ with per-operation contracts and ownership invariants before removing bounded
 checks. A detached mathematical model alone is not a replacement for those
 implementation proofs. For TLC replacements, preserve scheduler assumptions,
 failure actions, refinement to Rust, and negative controls first.
+
+## Portable source contracts (October 14, 2026)
+
+The four Kani CI shards are replaced by the Verus lane. The new contracts check
+actual production operations over full-width inputs, including rejection atomicity
+and preservation of arbitrary owned values, without bounded history enumeration:
+
+| Production operations | Verified properties |
+| --- | --- |
+| Import/export reference counts and release tickets | Checked admission, over-release rejection, terminal export state and explicit cleanup commit |
+| Export reservations and import revival | Staging/abort versus publication, counter bounds, unchanged owner on rejection, generation advancement and stale-key rejection |
+| Reply slots | Once-only delivery, rejected owner preservation, cancellation/abandonment recovery and endpoint admission |
+| Answer records | Retained pipeline ownership across Finish/Return, cancellation policy, wire-ID retirement and once-only adoption |
+| Question records | No reclamation before accepted Finish and Return, publication/provision pipeline policy and reference overflow |
+| Message state and queue indices | Independent reader/send counts, no recycling while either remains, partial-write progress, overflow-safe FIFO wrap |
+| Flow control and storage | Full-width credit bounds, hysteresis, acknowledgment accounting and bounded growth |
+| Fixed arena and capability maps | Reservation/rollback bounds and exact identity/explicit index bounds |
+| Promise and embargo transitions | Descriptor/resolution admission, replay rejection and authority after revoke |
+
+The proof inventory includes derived clones and supporting lemmas; its function
+count is not a count of independent protocol guarantees. Constructor/Default
+wrappers, container traversal and batch composition, pointer provenance, buffer
+bytes, waker callbacks, network IO and the complete async driver remain outside
+these contracts. Existing native, compile-fail, Miri, allocation-counter and
+interop suites retain those checks. The optional Kani inventory documents its
+additional bounded scope; no fresh run of that optional inventory is implied by
+a successful Verus CI result.
 
 ## Slow-check replacements (October 13, 2026)
 
@@ -128,10 +158,11 @@ Compile-fail API contracts, release-profile checks, external-consumer builds,
 C++/Rust interoperability, storage crashes, Miri and fuzz campaigns therefore
 remain required. A local transition theorem would not establish their compiler,
 ABI, optimizer, memory or IO guarantees. The slow graph/dispatch Kani proofs
-also remain until their actual ownership operations have deductive contracts;
-substituting a detached scalar model would weaken the checks.
+remain available locally. They are no longer CI gates: the Verus contracts below
+prove the listed source operations; native and Miri suites retain integration
+checks. This does not claim deductive verification of the entire graph/dispatcher.
 
-## Portable engine proofs
+## Optional bounded portable-engine proofs
 
 The [proof inventory](../../verification/kani.json) pins **Kani 0.68.0**. Its
 release bundles **CBMC 6.11.0** and Rust **nightly-2026-08-21**. This verifier
@@ -242,37 +273,17 @@ sources are never mutated by these checks.
 ## CI and evidence
 
 The single PR/main CI entrypoint calls **Verification / Formal checks**.
-Its Verus lane and four required Kani shards run first, then the retained TLC/Rust-replay job. Release benchmarks
-depend on successful completion of this workflow. Standalone manual and weekly
-runs use the same jobs; no new overlapping push/PR trigger is added.
+Its required Verus lane runs first, then the retained TLC/Rust-replay job.
+Release benchmarks depend on successful completion of this workflow. Standalone
+manual and weekly runs use the same jobs; no overlapping push/PR trigger is added.
+The workflow validator rejects a restored Kani matrix or a bypassed Verus gate.
 
-Each `kani-report-1` through `kani-report-4` contains `README.md`, `FAILED-PROOFS.md`, the per-harness duration
-graph, raw JSON checks/counterexamples, logs and source/tool identities. Timing
-bars are not coverage percentages. TLC retains its separate state-count and
-outcome graphs in `models-report`; proofs are not added to Cargo test counts.
 `verus-report` contains the production/library JSON, mutation logs, source/tool
-identities, and a separate SMT-time graph. Both proof lanes must succeed before
-the distributed models and subsequent benchmark qualification can run.
-
-Sorted proof names are distributed round-robin; each mutation follows its proof.
-The workflow validator requires all four shards and disables matrix fail-fast.
-Each runner uses one verifier at a time with a 10 GiB per-process address-space
-limit, a 600-second proof deadline and a 65-minute campaign step deadline inside
-a 75-minute job. Exhaustion is a failure, never a successful negative control.
-Completed proof/control evidence is checkpointed before the next control starts.
-This bounds resource peaks and leaves time to upload partial diagnostics after
-a step failure. A lost hosted runner can still prevent artifact upload.
-The frozen-route/barrier proof splits the full `called × reflected` boolean
-cross-product into four proofs with the same assertions and arbitrary peer ID.
-This avoids constructing all four large histories together before SAT slicing;
-no input combination is removed.
-The adoption lifetime proof likewise splits cancellation-before-return from
-return-before-cancellation, retaining arbitrary wire IDs and all assertions.
-Two graph ownership harnesses select Kani's bundled Kissat solver after the
-default solver exhausted its resource budget; all other harnesses retain the
-default CaDiCaL solver. Their local verification takes up to about 270 seconds,
-so the per-proof deadline includes headroom for slower CI runners. Neither the
-address-space limit nor any assertion or unwinding check is relaxed.
+identities, and a separate SMT-time graph. Positive proofs and every intended
+logical mutation failure must succeed. Missing proofs, compile errors, solver
+errors and timeouts fail closed. Diagnostics are uploaded even on failure.
+TLC retains separate state-count and outcome graphs in `models-report`; neither
+proof counts nor SMT timings are reported as Cargo test coverage.
 
 The hosted ownership migration remains incomplete. Shared credit, question/table
 and handoff transitions, wire-reference accounting, scoped import/export ownership,

@@ -9,10 +9,15 @@ use core::{
     pin::Pin,
     task::{Context, Poll, Waker},
 };
+mod state;
+use state::{observed, Phase};
+#[cfg(capntproto_verus)]
+use vstd::prelude::*;
 
 #[cfg(feature = "alloc")]
 pub mod shared;
 
+#[cfg_attr(capntproto_verus, verus_verify)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     Busy,
@@ -31,15 +36,6 @@ impl core::fmt::Display for Error {
     }
 }
 impl core::error::Error for Error {}
-enum Phase<T> {
-    Idle,
-    Pending,
-    Value(T),
-    Abandoned(T),
-    Canceled,
-    Closed,
-    Consumed,
-}
 struct State<T> {
     phase: Phase<T>,
     waker: Option<Waker>,
@@ -97,7 +93,7 @@ impl<T> Slot<T> {
     /// A forgotten endpoint requires exclusive recovery via `pair`; it never
     /// permits a stale receiver or producer to access another call's result.
     pub fn try_pair(&self) -> Result<(Sender<'_, T>, Receiver<'_, T>), Error> {
-        if self.endpoints.get() != 0 {
+        if !state::can_claim(self.endpoints.get()) {
             return Err(Error::Busy);
         }
         let previous = {
@@ -194,10 +190,7 @@ impl<'a, T> Sender<'a, T> {
 fn send<T>(slot: &Slot<T>, value: T) -> Result<(), T> {
     let waker = {
         let mut state = slot.state.borrow_mut();
-        if !matches!(state.phase, Phase::Pending) {
-            return Err(value);
-        }
-        state.phase = Phase::Value(value);
+        state::send(&mut state.phase, value)?;
         state.waker.take()
     };
     wake(waker);
@@ -242,9 +235,6 @@ impl<T> Drop for Sender<'_, T> {
             cancel_pending(&slot, false)
         }
     }
-}
-fn observed<T>(phase: &Phase<T>) -> bool {
-    !matches!(phase, Phase::Pending | Phase::Value(_))
 }
 /// A unique producer and cleanup observer over fixed or optional shared storage.
 /// After publishing, poll until the receiver takes or abandons the reply. A
@@ -311,28 +301,14 @@ impl<T> Delivery<'_, T> {
     /// Recover only an abandoned reply. A live receiver's value remains intact.
     pub fn take_abandoned(&mut self) -> Option<T> {
         let mut state = self.slot.state.borrow_mut();
-        if !matches!(state.phase, Phase::Abandoned(_)) {
-            return None;
-        }
-        let Phase::Abandoned(value) = core::mem::replace(&mut state.phase, Phase::Closed) else {
-            unreachable!()
-        };
-        Some(value)
+        state::take_abandoned(&mut state.phase)
     }
     /// Shut down delivery and return an unconsumed value for explicit cleanup.
     /// A result already taken by the receiver remains its owner's obligation.
     pub fn cancel(&mut self) -> Option<T> {
         let (value, waker, observer) = {
             let mut state = self.slot.state.borrow_mut();
-            let value = match state.phase {
-                Phase::Pending | Phase::Value(_) | Phase::Abandoned(_) => {
-                    match core::mem::replace(&mut state.phase, Phase::Canceled) {
-                        Phase::Value(value) | Phase::Abandoned(value) => Some(value),
-                        _ => None,
-                    }
-                }
-                _ => None,
-            };
+            let value = state::cancel(&mut state.phase);
             (value, state.waker.take(), state.observed_waker.take())
         };
         drop(observer);
@@ -374,17 +350,10 @@ impl<T> Receiver<'_, T> {
 }
 #[inline]
 fn take<T>(phase: &mut Phase<T>) -> Poll<Result<T, Error>> {
-    if matches!(phase, Phase::Pending) {
-        return Poll::Pending;
+    match state::take(phase) {
+        Some(result) => Poll::Ready(result),
+        None => Poll::Pending,
     }
-    if !matches!(phase, Phase::Value(_) | Phase::Canceled) {
-        return Poll::Ready(Err(Error::Consumed));
-    }
-    Poll::Ready(match core::mem::replace(phase, Phase::Consumed) {
-        Phase::Value(value) => Ok(value),
-        Phase::Canceled => Err(Error::Canceled),
-        _ => Err(Error::Consumed),
-    })
 }
 impl<T> Future for Receiver<'_, T> {
     type Output = Result<T, Error>;
@@ -446,13 +415,7 @@ fn drop_receiver<T>(slot: &Slot<T>) {
     let _endpoint = ReleaseEndpoint(slot);
     let (waker, observer) = {
         let mut state = slot.state.borrow_mut();
-        if matches!(state.phase, Phase::Value(_)) {
-            if let Phase::Value(value) = core::mem::replace(&mut state.phase, Phase::Closed) {
-                state.phase = Phase::Abandoned(value);
-            }
-        } else if !matches!(state.phase, Phase::Abandoned(_)) {
-            state.phase = Phase::Closed;
-        }
+        state::abandon(&mut state.phase);
         (state.waker.take(), state.observed_waker.take())
     };
     drop(waker);

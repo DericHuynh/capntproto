@@ -78,23 +78,23 @@
   "controls": [
     {
       "name": "admit-outgoing-at-equality",
-      "source": "src/flow_control/outgoing.rs",
-      "from": "used >= self.limit.get()",
-      "to": "used > self.limit.get()",
+      "source": "src/flow_control/policy.rs",
+      "from": "if used >= limit {",
+      "to": "if used > limit {",
       "harness": "flow_control::outgoing::proofs::outgoing_full_width_admission_never_wraps_or_revokes_accepted_credit",
       "expected_check": "accepted admission stays within its limit"
     },
     {
       "name": "resume-incoming-at-equality",
-      "source": "src/flow_control/incoming.rs",
-      "from": "self.words.get() >= self.limit.get()",
-      "to": "self.words.get() > self.limit.get()",
+      "source": "src/flow_control/policy.rs",
+      "from": "if was_paused {\n        used >= limit",
+      "to": "if was_paused {\n        used > limit",
       "harness": "flow_control::incoming::proofs::incoming_charges_preserve_counts_and_hysteresis",
       "expected_check": "paused input resumes strictly below its limit"
     },
     {
       "name": "grow-beyond-resource-maximum",
-      "source": "src/storage.rs",
+      "source": "src/storage/limits.rs",
       "from": "current.saturating_mul(2).min(maximum)",
       "to": "current.saturating_mul(2)",
       "harness": "storage::proofs::growing_capacity_preserves_full_width_bounds",
@@ -127,8 +127,8 @@
     {
       "name": "omit-retained-answer-dependency",
       "source": "src/answers.rs",
-      "from": "record.pipelines = record\n            .pipelines\n            .checked_add(1)",
-      "to": "record.pipelines = record\n            .pipelines\n            .checked_add(0)",
+      "from": "self.pipelines = self.pipelines.checked_add(1)",
+      "to": "self.pipelines = self.pipelines.checked_add(0)",
       "harness": "answers::proofs::retained_pipeline_stays_on_original_generation",
       "expected_check": "retained pipeline increments the original generation dependency"
     },
@@ -167,16 +167,16 @@
     {
       "name": "cancel-queued-pipeline-after-finish",
       "source": "src/answers.rs",
-      "from": "Ok(!r.finished || r.pipelines != 0)",
-      "to": "Ok(!r.finished)",
+      "from": "Ok(!self.finished || self.pipelines != 0)",
+      "to": "Ok(!self.finished)",
       "harness": "answers::proofs::peer_reuse_cannot_redirect_an_older_pipeline_lease",
       "expected_check": "queued pipeline still executes after Finish"
     },
     {
       "name": "reserve-retired-answer-wire-id",
       "source": "src/answers.rs",
-      "from": "r.id == id && !(r.finished && r.state == State::Returned)",
-      "to": "r.id == id",
+      "from": "!(self.finished && matches!(self.state, State::Returned))",
+      "to": "true",
       "harness": "answers::proofs::peer_reuse_cannot_redirect_an_older_pipeline_lease",
       "expected_check": "retired answer ID accepts reuse"
     },
@@ -199,16 +199,16 @@
     {
       "name": "cancel-pipelined-answer",
       "source": "src/answers.rs",
-      "from": "let cancel = r.pipelines == 0",
-      "to": "let cancel = true",
+      "from": "self.finished\n            && self.pipelines == 0\n            &&",
+      "to": "self.finished\n            &&",
       "harness": "answers::proofs::admitted_pipeline_retains_answer_across_finish_and_return",
       "expected_check": "admitted pipeline prevents execution cancellation"
     },
     {
       "name": "reuse-before-finish-acceptance",
       "source": "src/questions.rs",
-      "from": "r.references == 0 && r.finish.is_none() && !r.lifecycle.is_awaiting_return()",
-      "to": "r.references == 0 && !r.lifecycle.is_awaiting_return()",
+      "from": "self.references == 0 && self.finish.is_none() && !self.lifecycle.is_awaiting_return()",
+      "to": "self.references == 0 && !self.lifecycle.is_awaiting_return()",
       "harness": "questions::proofs::question_cleanup_requires_return_and_accepted_finish",
       "expected_check": "pending Finish retains question ID"
     },
@@ -222,17 +222,17 @@
     },
     {
       "name": "reuse-buffer-with-pending-send",
-      "source": "src/messages.rs",
-      "from": "if readers == 0 && sends == 0 {",
-      "to": "if readers == 0 {",
+      "source": "src/messages/policy.rs",
+      "from": "            readers: 0,\n            sends: 0,\n            ..",
+      "to": "            readers: 0,\n            ..",
       "harness": "messages::proofs::message_ownership_and_send_lifecycle",
       "expected_check": "queued send retains message buffer"
     },
     {
       "name": "complete-partial-message-send",
-      "source": "src/messages.rs",
-      "from": "if next == length {",
-      "to": "if true {",
+      "source": "src/messages/policy.rs",
+      "from": "Ok((position + count, count == remaining))",
+      "to": "Ok((position + count, true))",
       "harness": "messages::proofs::partial_send_completion_preserves_ownership",
       "expected_check": "partial write keeps send reserved"
     },
@@ -247,15 +247,15 @@
     {
       "name": "publish-aborted-export",
       "source": "src/exports.rs",
-      "from": "if matches!(entry.state, State::Staged) {\n                    entry.state = State::Retired;\n                }",
-      "to": "if matches!(entry.state, State::Staged) {\n                    entry.state = State::Live(ExportRefs::new());\n                }",
+      "from": "if matches!(self.state, State::Staged) {\n            self.state = State::Retired;\n        }",
+      "to": "if matches!(self.state, State::Staged) {\n            self.state = State::Live(ExportRefs::new());\n        }",
       "harness": "exports::proofs::export_publication_and_lease_lifecycle",
       "expected_check": "unaccepted export is not published"
     },
     {
       "name": "revive-import-with-stale-generation",
       "source": "src/imports.rs",
-      "from": "slot.generation = generation;",
+      "from": "self.generation = generation;",
       "to": "let _ = generation;",
       "harness": "imports::proofs::import_generation_and_cleanup_lifecycle",
       "expected_check": "revived import rejects stale key"
@@ -280,9 +280,9 @@
     {
       "name": "reject-exact-capacity",
       "package": "capntproto-core",
-      "source": "src/private/arena/fixed.rs",
-      "from": "if id != 0 || amount > self.remaining() {",
-      "to": "if id != 0 || amount >= self.remaining() {",
+      "source": "src/private/arena/fixed/limits.rs",
+      "from": "if id != 0 || amount > capacity - used",
+      "to": "if id != 0 || amount >= capacity - used",
       "harness": "private::arena::fixed::proofs::fixed_reservations_preserve_live_words",
       "expected_check": "fixed reservation accepts exactly available capacity"
     },
@@ -344,17 +344,17 @@
     },
     {
       "name": "repeat-local-adoption",
-      "source": "src/answers/adoption.rs",
-      "from": "record.redirect = Redirect::Adopted;\n        record.pipelines += 1;",
-      "to": "record.redirect = Redirect::Available;\n        record.pipelines += 1;",
+      "source": "src/answers.rs",
+      "from": "self.redirect = Redirect::Adopted;",
+      "to": "self.redirect = Redirect::Available;",
       "harness": "answers::adoption::proofs::redirected_answer_adoption_is_once_and_retains_producer",
       "expected_check": "redirected result may only be adopted once"
     },
     {
       "name": "release-adopted-producer",
-      "source": "src/answers/adoption.rs",
-      "from": "record.pipelines += 1;",
-      "to": "record.pipelines += 0;",
+      "source": "src/answers.rs",
+      "from": "if retain {\n            self.pipelines += 1;\n        }",
+      "to": "if retain {\n            self.pipelines += 0;\n        }",
       "harness": "answers::adoption::proofs::redirected_answer_adoption_is_once_and_retains_producer",
       "expected_check": "adoption retains the local result producer"
     },
@@ -393,23 +393,23 @@
     },
     {
       "name": "accept-closed-reply",
-      "source": "src/completion.rs",
-      "from": "if !matches!(state.phase, Phase::Pending) {\n            return Err(value);\n        }",
-      "to": "if false { return Err(value); }",
+      "source": "src/completion/state.rs",
+      "from": "if !matches!(phase, Phase::Pending) {",
+      "to": "if false {",
       "harness": "completion::proofs::scoped_reply_transfers_once_and_preserves_rejected_owner",
       "expected_check": "closed receiver preserves rejected reply owner"
     },
     {
       "name": "discard-canceled-reply",
-      "source": "src/completion.rs",
-      "from": "state.phase = Phase::Abandoned(value);",
+      "source": "src/completion/state.rs",
+      "from": "*phase = Phase::Abandoned(value);",
       "to": "drop(value);",
       "harness": "completion::proofs::scoped_reply_transfers_once_and_preserves_rejected_owner",
       "expected_check": "undelivered reply prevents premature slot reuse"
     },
     {
       "name": "discard-tracked-reply-on-shutdown",
-      "source": "src/completion.rs",
+      "source": "src/completion/state.rs",
       "from": "Phase::Value(value) | Phase::Abandoned(value) => Some(value),",
       "to": "Phase::Value(value) | Phase::Abandoned(value) => { drop(value); None },",
       "harness": "completion::proofs::tracked_reply_reclaims_only_unobserved_owner",
@@ -417,9 +417,9 @@
     },
     {
       "name": "reuse-shared-reply-with-live-endpoints",
-      "source": "src/completion.rs",
-      "from": "if self.endpoints.get() != 0 {",
-      "to": "if false {",
+      "source": "src/completion/state.rs",
+      "from": "    endpoints == 0",
+      "to": "    true",
       "harness": "completion::proofs::shared_reply_claim_preserves_accessible_endpoint_identity",
       "expected_check": "shared reply refuses live endpoint reuse"
     },
@@ -522,9 +522,9 @@
     {
       "name": "accept-out-of-range-identity-index",
       "package": "capntproto-core",
-      "source": "src/wire_capability/map.rs",
-      "from": "source < self.count",
-      "to": "source <= self.count",
+      "source": "src/wire_capability/map/policy.rs",
+      "from": "if source < count {",
+      "to": "if source <= count {",
       "harness": "wire_capability::map::proofs::identity_mapping_is_exact_and_bounded",
       "expected_check": "assertion failed: source < count"
     },

@@ -1039,6 +1039,35 @@ impl<
     > Control<'p, 'id, 's, resources::Import, (), C, H, vat::Resources>
     for NetworkControl<'p, 'id, V, F, C, H>
 {
+    fn observes_hooks(&self, event: &connection::Received<'id, server::Results>) -> bool {
+        !matches!(
+            event,
+            connection::Received::Queued(_)
+                | connection::Received::DeferredCall(_)
+                | connection::Received::Returned(_)
+        )
+    }
+    fn accepts_direct_plain_return(&self) -> bool {
+        true
+    }
+    fn direct_publication_preserves_idle(&self) -> bool {
+        self.plain_return_preserves_idle()
+    }
+    fn plain_return_preserves_idle(&self) -> bool {
+        <TwoParty<'id, F> as Control<'p, 'id, 's, resources::Import, (), C, H, vat::Resources>>::plain_return_preserves_idle(&self.bootstrap)
+            && self.pending.is_empty()
+            && self.sent.is_empty()
+            && self.local.is_empty()
+            && self.handoffs.is_empty()
+            && self.provided.is_empty()
+            && self.barriers.is_empty()
+            && self.produced.is_empty()
+            && self.commands.adoptions.borrow().is_empty()
+            && self.commands.queue.borrow().is_empty()
+            && self.commands.provisions.borrow().is_empty()
+            && self.commands.forwarding.borrow().is_empty()
+            && self.commands.markers.borrow().is_empty()
+    }
     fn set_idle(&mut self, idle: bool) {
         let idle = idle
             && self.pending.is_empty()

@@ -8,6 +8,8 @@ const ZERO: Word = word(0, 0, 0, 0, 0, 0, 0, 0);
 #[test]
 fn retained_plain_results_pin_the_pool_and_survive_connection_teardown() {
     use capnp::private::capability::ResponseHook;
+    let owner = alloc::rc::Rc::new(());
+    let weak = alloc::rc::Rc::downgrade(&owner);
     let mut pool = messages::GrowingBuffers::new(1, 392, 399);
     let growth = connection::Growth {
         initial: 0,
@@ -79,7 +81,9 @@ fn retained_plain_results_pin_the_pool_and_survive_connection_teardown() {
                         |_| (),
                     )
                     .unwrap_or_else(|r| panic!("{}", r.error));
-                let plain = response.take_plain_results().unwrap();
+                let mut plain = response.take_plain_results().unwrap();
+                let info = allocation_counter::measure(|| plain.retain_owner(owner));
+                assert_eq!(info.count_total, 0);
                 assert!(response.take_plain_results().is_none());
                 response.release(messages, questions, imports, exports, answers);
                 questions.pending_finish().unwrap().accept();
@@ -104,6 +108,9 @@ fn retained_plain_results_pin_the_pool_and_survive_connection_teardown() {
             .unwrap(),
         b"retained"
     );
+    assert!(weak.upgrade().is_some());
+    drop(plain);
+    assert!(weak.upgrade().is_none());
 }
 
 #[test]

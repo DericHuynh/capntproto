@@ -4,6 +4,7 @@
 use super::{BuilderArena, ReaderArena};
 use crate::{Error, ErrorKind, Result};
 use core::{marker::PhantomData, slice};
+mod limits;
 
 pub(crate) struct FixedArena<'a> {
     // Keep provenance in a raw pointer: reborrowing the arena metadata must not
@@ -139,22 +140,19 @@ unsafe impl BuilderArena for FixedArena<'_> {
         Some(self.used)
     }
     unsafe fn rewind_allocations(&mut self, checkpoint: u32) {
-        assert!((1..=self.used).contains(&checkpoint));
+        let length = limits::rewind(self.used, checkpoint).expect("valid allocation checkpoint");
         // SAFETY: the caller relinquishes every unpublished reservation since
         // this arena's checkpoint. Both bounds lie inside the original slice.
         unsafe {
             self.base
                 .add(checkpoint as usize * 8)
-                .write_bytes(0, (self.used - checkpoint) as usize * 8);
+                .write_bytes(0, length as usize * 8);
         }
         self.used = checkpoint;
     }
 
     fn allocate(&mut self, id: u32, amount: u32) -> Option<u32> {
-        if id != 0 || amount > self.remaining() {
-            return None;
-        }
-        let start = self.used;
+        let (start, end) = limits::reserve(self.used, self.capacity, id, amount)?;
         // SAFETY: amount fits the remaining original allocation; start may be
         // one-past-end only for zero words. No live object overlaps this range.
         unsafe {
@@ -162,7 +160,7 @@ unsafe impl BuilderArena for FixedArena<'_> {
                 .add(start as usize * 8)
                 .write_bytes(0, amount as usize * 8);
         }
-        self.used += amount;
+        self.used = end;
         Some(start)
     }
 

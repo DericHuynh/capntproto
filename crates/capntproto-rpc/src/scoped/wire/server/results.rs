@@ -9,15 +9,8 @@ mod tests;
 struct State {
     message_pool: Option<capnp::message::SegmentPool>,
     tail_origin: RefCell<Option<Handle>>,
-    redirect: RefCell<Option<Rc<tail::Redirect>>>,
-    destination: RefCell<Option<tail::Destination>>,
+    network: RefCell<Option<Box<NetworkState>>>,
     transferred: Cell<bool>,
-    network: RefCell<
-        Option<(
-            Option<Rc<crate::third_party::ThirdPartyExchange>>,
-            Box<dyn std::any::Any>,
-        )>,
-    >,
     context: RefCell<Option<Rc<dyn std::any::Any>>>,
     method: Cell<Option<DynamicCall>>,
     payload: RefCell<Option<Rc<Payload>>>,
@@ -27,6 +20,17 @@ struct State {
     charge: RefCell<Option<coordinator::policy::Charge>>,
     trace_prepared: Cell<bool>,
     trace: RefCell<Option<String>>,
+}
+// Ordinary answers do not own network transfers. Keep their larger, optional
+// state separate without changing the lifetime of any transfer or guard.
+#[derive(Default)]
+struct NetworkState {
+    redirect: Option<Rc<tail::Redirect>>,
+    destination: Option<tail::Destination>,
+    guard: Option<(
+        Option<Rc<crate::third_party::ThirdPartyExchange>>,
+        Box<dyn std::any::Any>,
+    )>,
 }
 impl State {
     fn notify(&self) {
@@ -52,7 +56,11 @@ impl Results {
         *self.0.tail_origin.borrow_mut() = origin;
     }
     pub(crate) fn redirect(&self) -> Option<Rc<tail::Redirect>> {
-        self.0.redirect.borrow().clone()
+        self.0
+            .network
+            .borrow()
+            .as_ref()
+            .and_then(|state| state.redirect.clone())
     }
     pub(crate) fn transfer_ready(&self) -> bool {
         self.0.transferred.get()
@@ -63,12 +71,24 @@ impl Results {
         permit: capntproto_rpc_engine::flow_control::outgoing::OwnedPermit,
     ) {
         crate::admission::retain_context(&mut self.0.context.borrow_mut(), Rc::new(permit));
-        *self.0.destination.borrow_mut() = Some(destination);
+        let previous = self
+            .0
+            .network
+            .borrow_mut()
+            .get_or_insert_with(Default::default)
+            .destination
+            .replace(destination);
+        drop(previous);
         self.0.transferred.set(true);
     }
     pub(crate) fn start_transfer(&self, execution: Execution) -> capnp::Result<Work> {
         let work = execution.boxed_local().shared();
-        let destination = self.0.destination.borrow_mut().take();
+        let destination = self
+            .0
+            .network
+            .borrow_mut()
+            .as_mut()
+            .and_then(|state| state.destination.take());
         if let Some(destination) = destination {
             destination.start(Transfer {
                 results: self.clone(),
@@ -82,7 +102,13 @@ impl Results {
         exchange: Option<Rc<crate::third_party::ThirdPartyExchange>>,
         guard: Box<dyn std::any::Any>,
     ) {
-        let previous = self.0.network.borrow_mut().replace((exchange, guard));
+        let previous = self
+            .0
+            .network
+            .borrow_mut()
+            .get_or_insert_with(Default::default)
+            .guard
+            .replace((exchange, guard));
         drop(previous);
     }
     pub(crate) fn release_embargo(&self, id: &[u8]) -> capnp::Result<()> {
@@ -91,6 +117,7 @@ impl Results {
             .network
             .borrow()
             .as_ref()
+            .and_then(|state| state.guard.as_ref())
             .and_then(|(exchange, _)| exchange.clone())
             .ok_or_else(|| Error::failed("missing authenticated provision".into()))?;
         exchange.disembargo(id)
@@ -105,7 +132,17 @@ impl Results {
         Self(Rc::new(State {
             message_pool,
             charge: RefCell::new(charge),
-            ..State::default()
+            tail_origin: RefCell::new(None),
+            transferred: Cell::new(false),
+            network: RefCell::new(None),
+            context: RefCell::new(None),
+            method: Cell::new(None),
+            payload: RefCell::new(None),
+            pipeline: RefCell::new(None),
+            completion: RefCell::new(None),
+            wake: RefCell::new(Vec::new()),
+            trace_prepared: Cell::new(false),
+            trace: RefCell::new(None),
         }))
     }
     pub(in crate::scoped::wire) fn returned(&self) {
@@ -170,6 +207,19 @@ impl Results {
             .as_ref()
             .and_then(|r| r.as_ref().err())
             .cloned()
+    }
+    pub(super) fn plain_payload(&self) -> Option<Rc<Payload>> {
+        if self.transfer_ready()
+            || self.redirect().is_some()
+            || self.0.pipeline.borrow().is_some()
+            || !matches!(&*self.0.completion.borrow(), Some(Ok(())))
+        {
+            return None;
+        }
+        let payload = self.0.payload.borrow();
+        let payload = payload.as_ref()?;
+        (payload.caps.is_empty() && matches!(payload.body, PayloadBody::Return(_)))
+            .then(|| payload.clone())
     }
     pub(in crate::scoped::wire) fn early_pipeline(&self) -> Option<Box<dyn PipelineHook>> {
         self.0
@@ -383,7 +433,7 @@ impl Drop for Execution {
 
 struct Hook {
     results: Results,
-    message: Option<connection::PreparedReturn<capnp::message::HeapAllocator>>,
+    message: Option<Box<connection::PreparedReturn<capnp::message::HeapAllocator>>>,
     caps: Vec<Option<Box<dyn ClientHook>>>,
     executor: Option<Rc<dyn capability::CallExecutor>>,
 }
@@ -392,7 +442,7 @@ impl Drop for Hook {
         let caps = std::mem::take(&mut self.caps);
         let payload = Rc::new(match self.message.take() {
             Some(message) => Payload {
-                body: PayloadBody::Return(Box::new(message)),
+                body: PayloadBody::Return(message),
                 caps,
             },
             None => Payload::owned(Default::default(), caps),
@@ -439,8 +489,9 @@ impl ResultsHook for Hook {
                 thread_local! {
                     static TEMPLATE: connection::PreparedReturnTemplate = Default::default();
                 }
-                TEMPLATE
-                    .with(|template| connection::PreparedReturn::from_template(template, allocator))
+                Box::new(TEMPLATE.with(|template| {
+                    connection::PreparedReturn::from_template(template, allocator)
+                }))
             })
             .results();
         root.imbue_mut(&mut self.caps);
@@ -481,7 +532,15 @@ impl ResultsHook for Hook {
                                 Box::new(crate::broken::Pipeline::new(error)),
                             );
                         };
-                        *self.results.0.redirect.borrow_mut() = Some(redirect);
+                        let previous = self
+                            .results
+                            .0
+                            .network
+                            .borrow_mut()
+                            .get_or_insert_with(Default::default)
+                            .redirect
+                            .replace(redirect);
+                        drop(previous);
                         self.set_pipeline_from(pipeline.add_ref())
                             .expect("unpublished tail pipeline");
                         return (
@@ -654,6 +713,7 @@ impl<'id> ClientHooks<'id> {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[inline(never)]
     pub(super) fn collect_server_output<
         'pool,
         I,

@@ -414,6 +414,7 @@ impl<S: Schema> PointerType for Struct<S> {
             p.get_struct(S::SIZE, None).map(Into::into),
         )))
     }
+    #[inline(always)]
     fn read<'a>(p: PointerReader<'a>, d: Option<&'a [Word]>) -> Result<Self::Ref<'a>> {
         Ok(p.get_struct(d)?.into())
     }

@@ -25,15 +25,12 @@ impl Outgoing {
         self.limit.set(limit);
     }
     fn acquire(&self) -> Result<(), Full> {
-        let used = self.used.get();
-        if used >= self.limit.get() {
-            return Err(Full);
-        }
-        self.used.set(used + 1);
+        let next = super::policy::acquire(self.used.get(), self.limit.get()).ok_or(Full)?;
+        self.used.set(next);
         Ok(())
     }
     fn release(&self) {
-        self.used.set(self.used.get() - 1);
+        self.used.set(super::policy::release(self.used.get(), 1));
     }
     pub fn reserve(&self) -> Result<Permit<'_>, Full> {
         self.acquire()?;

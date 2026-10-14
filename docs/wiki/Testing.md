@@ -286,7 +286,8 @@ Run the pinned [Kani proofs](Formal-Verification.md) with
 `cargo run --locked -p capntproto-dev -- kani`. The command checks the proof
 inventory and uses deliberate production-code mutations as negative controls.
 It writes source-bound JSON, counterexamples, failure links and a per-harness
-time graph. Kani is a required CI predecessor of the retained TLA+ model job.
+time graph. These bounded harnesses are optional local checks. CI runs the expanded Verus
+source-contract and mutation inventory before the retained TLA+ model job.
 
 ## Models, simulation and evidence
 
@@ -408,3 +409,22 @@ bounds/aliasing tests and code review remain necessary for the pointer-heavy
 serialization runtime. Its layout implementation stays together during this
 maintenance change; RPC dispatch/capability handling and schema node generation
 are split into focused modules without altering message layout.
+
+The October 14 cached-reader review refreshes the hashes for `message.rs`,
+`private/arena.rs` and `private/layout.rs` without increasing their existing
+unsafe-lint counts. New cache borrows retain the original segment owner, retain
+only offsets across moves, check all segment identities when transferring a
+selection, and recheck the selected word's extent before borrowing it. Relative
+offsets are widened before arithmetic on 32-bit targets; nonzero segments use
+the original arena checks. The data-slice helpers now state their readable or
+exclusive writable lifetime contracts and use explicit unsafe blocks, removing
+the two `unsafe_op_in_unsafe_fn` diagnostics in `data.rs`. The 32-bit Miri lane
+includes the selected-reader and immediate-promise ownership regressions. These
+changes do not reclassify inherited unsafe documentation debt as verified code.
+
+The memory qualification inventory now includes 31 ownership tests and 14 wire,
+orphan, generated-API and schema tests. All 45 run with aligned and unaligned
+storage under both Stacked Borrows and Tree Borrows: 180 interpreted executions,
+plus a deliberate freed-pointer control that must fail. The pinned inventory
+was updated for the six added selected-reader regressions; no test was filtered
+out to accommodate the count change.

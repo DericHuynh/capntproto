@@ -191,3 +191,87 @@ fn outgoing_credit_survives_cancellation_late_return_and_stale_generation() {
         assert_eq!(observed.get(), 0);
     }
 }
+
+#[test]
+fn combined_return_release_preserves_other_observers_and_finish_backpressure() {
+    for no_finish in [false, true] {
+        for observers in 0..4 {
+            let mut slots = [Slot::EMPTY];
+            with_questions(&mut slots, |questions| {
+                let local = questions.reserve().unwrap().accept();
+                let key = local.key();
+                let mut others = [None, None, None];
+                for owner in others.iter_mut().take(observers) {
+                    *owner = Some(questions.retain(&local).unwrap());
+                }
+                assert_eq!(
+                    questions
+                        .prepare_receive_owned(key, no_finish)
+                        .unwrap()
+                        .accept_releasing(local)
+                        .unwrap(),
+                    (key, Delivery::Deliver)
+                );
+                if observers != 0 {
+                    assert!(questions.contains(key));
+                    assert!(!questions.has_pending_finish());
+                    assert_eq!(
+                        questions.returned(key.id(), no_finish),
+                        Err(Error::DuplicateReturn)
+                    );
+                    for owner in others.into_iter().flatten() {
+                        questions.release(owner);
+                    }
+                }
+                if !no_finish {
+                    assert!(matches!(questions.reserve(), Err(Error::Full)));
+                    assert!(!questions.pending_finish().unwrap().release_result_caps());
+                    // Dropping an unaccepted Finish keeps the ID occupied.
+                    assert!(matches!(questions.reserve(), Err(Error::Full)));
+                    questions.pending_finish().unwrap().accept();
+                }
+                assert!(questions.is_empty());
+                let reused = questions.reserve().unwrap().accept();
+                assert_eq!(reused.key().id(), key.id());
+                assert_ne!(reused.key(), key);
+                questions
+                    .prepare_receive_owned(reused.key(), true)
+                    .unwrap()
+                    .accept_releasing(reused)
+                    .unwrap();
+            })
+            .unwrap();
+        }
+    }
+}
+
+#[test]
+fn combined_return_rejects_another_questions_owner_transactionally() {
+    let mut slots = [Slot::EMPTY, Slot::EMPTY];
+    with_questions(&mut slots, |questions| {
+        let first = questions.reserve().unwrap().accept();
+        let second = questions.reserve().unwrap().accept();
+        let first_key = first.key();
+        let second_key = second.key();
+        let (error, second) = questions
+            .prepare_receive_owned(first_key, true)
+            .unwrap()
+            .accept_releasing(second)
+            .unwrap_err();
+        assert_eq!(error, Error::StaleKey);
+        assert!(questions.contains(first_key));
+        assert!(questions.contains(second_key));
+        questions
+            .prepare_receive_owned(first_key, true)
+            .unwrap()
+            .accept_releasing(first)
+            .unwrap();
+        questions
+            .prepare_receive_owned(second_key, true)
+            .unwrap()
+            .accept_releasing(second)
+            .unwrap();
+        assert!(questions.is_empty());
+    })
+    .unwrap();
+}

@@ -62,3 +62,13 @@ fn ambiguous_or_external_mutations_are_rejected() {
     control["source"] = "../outside.rs".into();
     assert!(control_source(dir.path(), &control).is_err());
 }
+
+#[test]
+fn loop_obligations_are_additional_to_the_exact_function_inventory() {
+    let mut data = report();
+    data["verification-results"]["verified"] = json!(2);
+    let expected = BTreeSet::from(["f".to_owned()]);
+    validate(&data, 0, 1, Some(&expected), None).unwrap();
+    data["verification-results"]["verified"] = json!(0);
+    assert!(validate(&data, 0, 1, Some(&expected), None).is_err());
+}

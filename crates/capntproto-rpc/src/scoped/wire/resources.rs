@@ -58,6 +58,7 @@ impl<'id> ClientHooks<'id> {
         self.collect_wire_optional(driver, |owner| Some(imported(owner)), local);
     }
 
+    #[inline(always)]
     pub(crate) fn collect_wire_optional<
         I,
         A,

@@ -48,28 +48,14 @@ impl<'pool> Frame<'pool> {
     /// Copy a complete stream frame into caller storage, checking the segment
     /// table, exact length and reader limits before returning an immutable owner.
     /// Pointer and capability validation still occurs during protocol admission.
+    #[inline(always)]
     pub fn copy_from(
         messages: &mut messages::Messages<'pool, '_, '_>,
         bytes: &[u8],
         options: capnp::message::ReaderOptions,
     ) -> Result<Self, Error> {
-        let writer = messages
-            .reserve_exact(bytes.len())
-            .map_err(Error::Storage)?;
-        let copied = messages
-            .try_write(&writer)
-            .map(|mut output| output.copy_from_slice(bytes));
-        if let Err(error) = copied {
-            messages.discard(writer);
-            return Err(Error::Storage(error));
-        }
-        let frame = match messages.seal(writer, bytes.len()) {
-            Ok(lease) => Self::new(lease, options),
-            Err(rejected) => {
-                messages.discard(rejected.writer);
-                return Err(Error::Storage(rejected.error));
-            }
-        };
+        let lease = messages.copy_from(bytes).map_err(Error::Storage)?;
+        let frame = Self::new(lease, options);
         if let Err(error) = frame.size_in_words(messages) {
             frame.release(messages);
             return Err(error);
@@ -166,7 +152,20 @@ impl<'pool> Frame<'pool> {
             }
         };
         match messages.seal(writer, length) {
-            Ok(lease) => Ok(Self::new(lease, options)),
+            Ok(lease) => Ok(Self {
+                lease,
+                options,
+                single_bytes: core::cell::Cell::new(
+                    if options
+                        .traversal_limit_in_words
+                        .is_none_or(|limit| (length - 8) / 8 <= limit)
+                    {
+                        core::num::NonZeroUsize::new(length)
+                    } else {
+                        None
+                    },
+                ),
+            }),
             Err(rejected) => {
                 messages.discard(rejected.writer);
                 Err(Error::Storage(rejected.error))
@@ -175,6 +174,15 @@ impl<'pool> Frame<'pool> {
     }
     pub fn release(self, messages: &mut messages::Messages<'pool, '_, '_>) {
         messages.release(self.lease);
+    }
+    fn offer(
+        self,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+    ) -> Result<messages::Offer<'pool>, Error> {
+        messages.offer_owned(self.lease).map_err(|rejected| {
+            messages.release(rejected.lease);
+            Error::Storage(rejected.error)
+        })
     }
     /// Retain immutable allocated bytes independently of this frame's lease.
     /// Caller-owned fixed storage cannot escape its scope and returns `None`.
@@ -186,6 +194,7 @@ impl<'pool> Frame<'pool> {
         messages.share(&self.lease)
     }
     #[cfg(feature = "alloc")]
+    #[inline(always)]
     fn share_segments(
         &self,
         messages: &messages::Messages<'pool, '_, '_>,
@@ -209,9 +218,29 @@ impl<'pool> Frame<'pool> {
         };
         Ok(Some(segments))
     }
+    #[cfg(feature = "alloc")]
+    fn retain_plain_payload(
+        &self,
+        messages: &messages::Messages<'pool, '_, '_>,
+        payload: rpc_capnp::payload::Reader<'_>,
+    ) -> Result<Option<alloc::boxed::Box<PlainParams>>, Error> {
+        let Some(segments) = self.share_segments(messages)? else {
+            return Ok(None);
+        };
+        let message = capnp::message::CheckedPointerReader::retain(
+            payload.get_content(),
+            segments,
+            capnp::message::ReaderOptions {
+                traversal_limit_in_words: None,
+                nesting_limit: i32::MAX,
+            },
+        )?;
+        Ok(Some(alloc::boxed::Box::new(PlainParams { message })))
+    }
     /// Full serialized segment words, including unreachable data but excluding
     /// the segment table. Admission policies must not use root target_size(),
     /// which could let unused words bypass their accounting.
+    #[inline(always)]
     pub fn size_in_words(
         &self,
         messages: &messages::Messages<'pool, '_, '_>,
@@ -256,7 +285,20 @@ impl<'pool> Frame<'pool> {
             .and_then(core::convert::identity);
         match result {
             Ok(length) => match messages.seal(writer, length) {
-                Ok(lease) => Ok(Self::new(lease, options)),
+                Ok(lease) => Ok(Self {
+                    lease,
+                    options,
+                    single_bytes: core::cell::Cell::new(
+                        if options
+                            .traversal_limit_in_words
+                            .is_none_or(|limit| (length - 8) / 8 <= limit)
+                        {
+                            core::num::NonZeroUsize::new(length)
+                        } else {
+                            None
+                        },
+                    ),
+                }),
                 Err(rejected) => {
                     messages.discard(rejected.writer);
                     Err(Error::Storage(rejected.error))
@@ -268,6 +310,7 @@ impl<'pool> Frame<'pool> {
             }
         }
     }
+    #[inline(always)]
     pub fn with<R>(
         &self,
         messages: &messages::Messages<'pool, '_, '_>,
@@ -275,10 +318,13 @@ impl<'pool> Frame<'pool> {
     ) -> Result<R, Error> {
         let view = messages.read(&self.lease);
         let reader = self.reader(&view)?;
-        Ok(f(reader.get_root()?))
+        reader
+            .with_root(|root| root.get_as().map(f))?
+            .map_err(Into::into)
     }
     /// Inspect the root together with its full serialized word charge using
     /// one framing pass. The count includes unreachable data in every segment.
+    #[inline(always)]
     pub fn with_size<R>(
         &self,
         messages: &messages::Messages<'pool, '_, '_>,
@@ -286,7 +332,13 @@ impl<'pool> Frame<'pool> {
     ) -> Result<R, Error> {
         let view = messages.read(&self.lease);
         let reader = self.reader(&view)?;
-        Ok(f(reader.get_root()?, reader.size_in_words()))
+        let words = self
+            .single_bytes
+            .get()
+            .map_or_else(|| reader.size_in_words(), |length| (length.get() - 8) / 8);
+        reader
+            .with_root(|root| root.get_as().map(|root| f(root, words)))?
+            .map_err(Into::into)
     }
 }
 
@@ -450,7 +502,9 @@ impl<'i, 'e, 'a, I, const N: usize> Receipts<'i, 'e, 'a, I, N> {
         exports: &mut exports::Exports<'e, '_, E>,
         answers: &mut answers::Answers<'a, '_, A>,
     ) {
-        reception::full::release_slots(self.slots(), imports, exports, answers);
+        if self.count != 0 {
+            reception::full::release_slots(self.slots(), imports, exports, answers);
+        }
     }
 }
 
@@ -508,6 +562,8 @@ pub struct EnqueueRejected<C> {
 #[must_use = "release the task when dispatch finishes or the call is canceled"]
 pub struct Call<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> {
     frame: Frame<'pool>,
+    #[cfg(feature = "alloc")]
+    plain_params: core::cell::Cell<Option<alloc::boxed::Box<PlainParams>>>,
     receipts: Receipts<'i, 'e, 'a, I, N>,
     answer: answers::Key<'a>,
     target: Target<'e, 'a>,
@@ -515,6 +571,35 @@ pub struct Call<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> {
     path_len: usize,
     method: calls::DynamicCall,
     allows_handoff: bool,
+}
+// Admission records all ownership before the source frame is moved. This
+// allows the connection classifier and Call admission to share one reader.
+struct AdmittedCall<'i, 'e, 'a, I, const N: usize, const P: usize> {
+    #[cfg(feature = "alloc")]
+    plain_params: core::cell::Cell<Option<alloc::boxed::Box<PlainParams>>>,
+    receipts: Receipts<'i, 'e, 'a, I, N>,
+    answer: answers::Key<'a>,
+    target: Target<'e, 'a>,
+    path: Buffer<u16, P>,
+    path_len: usize,
+    method: calls::DynamicCall,
+    allows_handoff: bool,
+}
+impl<'i, 'e, 'a, I, const N: usize, const P: usize> AdmittedCall<'i, 'e, 'a, I, N, P> {
+    fn finish<'pool>(self, frame: Frame<'pool>) -> Call<'pool, 'i, 'e, 'a, I, N, P> {
+        Call {
+            frame,
+            #[cfg(feature = "alloc")]
+            plain_params: self.plain_params,
+            receipts: self.receipts,
+            answer: self.answer,
+            target: self.target,
+            path: self.path,
+            path_len: self.path_len,
+            method: self.method,
+            allows_handoff: self.allows_handoff,
+        }
+    }
 }
 impl<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> Call<'pool, 'i, 'e, 'a, I, N, P> {
     /// Bind the exact admitted target and move this owning request into ordered
@@ -668,8 +753,6 @@ impl<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> Call<'pool, 'i, 'e, '
         capacity: Capacity,
         path_capacity: Capacity,
     ) -> Result<Self, Rejected<'pool, A>> {
-        let mut receipts = Receipts::new();
-        let mut path = Buffer::Inline([0; P]);
         let mut owner = Some(owner);
         let outcome = frame
             .with(messages, |root| {
@@ -678,97 +761,186 @@ impl<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> Call<'pool, 'i, 'e, '
                 else {
                     return Err(Error::WrongMessage);
                 };
-                let call = call?;
-                let target = call.get_target()?;
-                let payload = call.get_params()?;
-                prepare_target_path(target, &mut path, path_capacity)?;
-                let descriptors = payload.get_cap_table()?;
-                // The target receipt is moved into Call::target at acceptance;
-                // it does not need persistent payload storage. In particular,
-                // a descriptor-free hosted call (N = 0) must not allocate three
-                // vectors and their container solely for that temporary slot.
-                // Still charge the target against the configured receipt bound.
-                let plain = descriptors.is_empty();
-                if plain {
-                    if capacity.maximum::<N>() == 0 {
-                        return Err(Error::Capacity);
-                    }
-                } else {
-                    receipts.initialize(payload, imports, 1, receiver, capacity)?;
-                }
-                let count = receipts.count;
-                let mut target_export = [exports::LeaseSlot::none()];
-                let mut target_answer = [answers::PipelineSlot::none()];
-                let slots = if plain {
-                    reception::full::Slots {
-                        imports: &mut [],
-                        exports: &mut target_export,
-                        answers: &mut target_answer,
-                    }
-                } else {
-                    receipts.storage.slots()
-                };
-                match target.which().map_err(|_| Error::WrongMessage)? {
-                    rpc_capnp::message_target::ImportedCap(id) => {
-                        slots.exports[count] = exports::LeaseSlot::new(ExportId::from_wire(id))
-                    }
-                    rpc_capnp::message_target::PromisedAnswer(answer) => {
-                        slots.answers[count] = answers::PipelineSlot::new(AnswerId::from_wire(
-                            answer?.get_question_id(),
-                        ))
-                    }
-                }
-                let pending = inbound::full::call_parts(
-                    call,
-                    target,
-                    payload,
+                Self::admit_decoded(
+                    &frame,
+                    messages,
+                    call?,
                     imports,
                     exports,
                     answers,
-                    reception::full::Slots {
-                        imports: &mut slots.imports[..count],
-                        exports: &mut slots.exports[..count + 1],
-                        answers: &mut slots.answers[..count + 1],
-                    },
-                    &mut path,
+                    &mut owner,
+                    receiver,
+                    capacity,
+                    path_capacity,
                 )
-                .map_err(Error::Admission)?;
-                let admitted = pending.accept(owner.take().unwrap());
-                let (target, length) = match admitted.target {
-                    pipeline::Target::Hosted(lease) => (Target::Hosted(lease), 0),
-                    pipeline::Target::Promised { answer, path } => {
-                        (Target::Promised(answer), path.fields().len())
-                    }
-                };
-                let answer = admitted.answer;
-                receipts.deliver(imports, receiver, descriptors);
-                let incoming = calls::Incoming::new(call);
-                Ok((
-                    answer,
-                    target,
-                    length,
-                    incoming.hints(),
-                    incoming.allows_third_party_tail_call(),
-                ))
             })
             .and_then(core::convert::identity);
         match outcome {
-            Ok((answer, target, path_len, method, allows_handoff)) => Ok(Self {
-                frame,
-                receipts,
-                answer,
-                target,
-                path,
-                path_len,
-                method,
-                allows_handoff,
-            }),
+            Ok(admitted) => Ok(admitted.finish(frame)),
             Err(error) => Err(Rejected {
                 error,
                 frame,
                 owner: owner.unwrap(),
             }),
         }
+    }
+    #[allow(clippy::too_many_arguments)]
+    #[inline(never)]
+    fn admit_decoded<E, A>(
+        _frame: &Frame<'pool>,
+        _messages: &messages::Messages<'pool, '_, '_>,
+        call: rpc_capnp::call::Reader<'_>,
+        imports: &mut imports::Imports<'i, '_, I>,
+        exports: &mut exports::Exports<'e, '_, E>,
+        answers: &mut answers::Answers<'a, '_, A>,
+        owner: &mut Option<A>,
+        receiver: &mut impl ImportReceiver<I>,
+        capacity: Capacity,
+        path_capacity: Capacity,
+    ) -> Result<AdmittedCall<'i, 'e, 'a, I, N, P>, Error> {
+        let mut receipts = Receipts::new();
+        #[cfg(feature = "alloc")]
+        let mut plain_params = None;
+        let mut path = Buffer::Inline([0; P]);
+        let (answer, target, path_len, method, allows_handoff) = (|| {
+            let target = call.get_target()?;
+            let payload = call.get_params()?;
+            let descriptors = payload.get_cap_table()?;
+            // The target receipt is moved into Call::target at acceptance;
+            // it does not need persistent payload storage. In particular,
+            // a descriptor-free hosted call (N = 0) must not allocate three
+            // vectors and their container solely for that temporary slot.
+            // Still charge the target against the configured receipt bound.
+            let plain = descriptors.is_empty();
+            if plain
+                && matches!(
+                    call.get_send_results_to().which(),
+                    Ok(rpc_capnp::call::send_results_to::Caller(()))
+                )
+            {
+                if let Ok(rpc_capnp::message_target::ImportedCap(id)) = target.which() {
+                    // There are no payload receipts or pipeline dependencies.
+                    // Preflight the same two ledgers directly, retaining both
+                    // exclusive tickets until every fallible operation ends.
+                    if capacity.maximum::<N>() == 0 {
+                        return Err(Error::Capacity);
+                    }
+                    inbound::caller_question(call.get_question_id()).map_err(Error::Admission)?;
+                    payload
+                        .get_content()
+                        .validate_capability_indices(0)
+                        .map_err(|e| Error::Admission(inbound::Error::Reception(e.into())))?;
+                    let target = exports
+                        .prepare_lease(ExportId::from_wire(id))
+                        .map_err(|e| {
+                            Error::Admission(inbound::Error::Reception(reception::Error::Exports(
+                                e.into(),
+                            )))
+                        })?;
+                    let answer = answers
+                        .prepare_admission(AnswerId::from_wire(call.get_question_id()), None)
+                        .map_err(|e| {
+                            Error::Admission(inbound::Error::Reception(reception::Error::Answers(
+                                e.into(),
+                            )))
+                        })?
+                        .allow_handoff(call.get_allow_third_party_tail_call());
+                    #[cfg(feature = "alloc")]
+                    {
+                        plain_params = _frame.retain_plain_payload(_messages, payload)?;
+                    }
+                    let target = Target::Hosted(target.accept());
+                    let (answer, dependency) = answer.accept(owner.take().unwrap());
+                    debug_assert!(dependency.is_none());
+                    return Ok((
+                        answer,
+                        target,
+                        0,
+                        calls::Incoming::new(call).hints(),
+                        call.get_allow_third_party_tail_call(),
+                    ));
+                }
+            }
+            prepare_target_path(target, &mut path, path_capacity)?;
+            if plain {
+                if capacity.maximum::<N>() == 0 {
+                    return Err(Error::Capacity);
+                }
+            } else {
+                receipts.initialize(payload, imports, 1, receiver, capacity)?;
+            }
+            let count = receipts.count;
+            let mut target_export = [exports::LeaseSlot::none()];
+            let mut target_answer = [answers::PipelineSlot::none()];
+            let slots = if plain {
+                reception::full::Slots {
+                    imports: &mut [],
+                    exports: &mut target_export,
+                    answers: &mut target_answer,
+                }
+            } else {
+                receipts.storage.slots()
+            };
+            match target.which().map_err(|_| Error::WrongMessage)? {
+                rpc_capnp::message_target::ImportedCap(id) => {
+                    slots.exports[count] = exports::LeaseSlot::new(ExportId::from_wire(id))
+                }
+                rpc_capnp::message_target::PromisedAnswer(answer) => {
+                    slots.answers[count] =
+                        answers::PipelineSlot::new(AnswerId::from_wire(answer?.get_question_id()))
+                }
+            }
+            let pending = inbound::full::call_parts(
+                call,
+                target,
+                payload,
+                imports,
+                exports,
+                answers,
+                reception::full::Slots {
+                    imports: &mut slots.imports[..count],
+                    exports: &mut slots.exports[..count + 1],
+                    answers: &mut slots.answers[..count + 1],
+                },
+                &mut path,
+            )
+            .map_err(Error::Admission)?;
+            // Retain the checked payload while its admission reader is live.
+            // Fixed storage returns None and never allocates. All fallible
+            // retention is before committing answer/receipt ownership.
+            #[cfg(feature = "alloc")]
+            if plain {
+                plain_params = _frame.retain_plain_payload(_messages, payload)?;
+            }
+            let admitted = pending.accept(owner.take().unwrap());
+            let (target, length) = match admitted.target {
+                pipeline::Target::Hosted(lease) => (Target::Hosted(lease), 0),
+                pipeline::Target::Promised { answer, path } => {
+                    (Target::Promised(answer), path.fields().len())
+                }
+            };
+            let answer = admitted.answer;
+            receipts.deliver(imports, receiver, descriptors);
+            let incoming = calls::Incoming::new(call);
+            Ok((
+                answer,
+                target,
+                length,
+                incoming.hints(),
+                incoming.allows_third_party_tail_call(),
+            ))
+        })()?;
+        Ok(AdmittedCall {
+            #[cfg(feature = "alloc")]
+            plain_params: core::cell::Cell::new(plain_params),
+            receipts,
+            answer,
+            target,
+            path,
+            path_len,
+            method,
+            allows_handoff,
+        })
     }
     pub fn answer(&self) -> answers::Key<'a> {
         self.answer
@@ -814,6 +986,9 @@ impl<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> Call<'pool, 'i, 'e, '
         &self,
         messages: &messages::Messages<'pool, '_, '_>,
     ) -> Result<Option<alloc::boxed::Box<PlainParams>>, Error> {
+        if let Some(params) = self.plain_params.take() {
+            return Ok(Some(params));
+        }
         if self.receipts.count != 0 {
             return Ok(None);
         }
@@ -821,10 +996,9 @@ impl<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> Call<'pool, 'i, 'e, '
             return Ok(None);
         };
         self.with(messages, |params| {
-            use capnp::traits::IntoInternalStructReader;
             let payload = params.incoming().payload()?;
-            capnp::message::CheckedStructReader::retain(
-                payload.into_internal_struct_reader(),
+            capnp::message::CheckedPointerReader::retain(
+                payload.get_content(),
                 segments,
                 capnp::message::ReaderOptions {
                     traversal_limit_in_words: None,
@@ -948,14 +1122,14 @@ impl<'m, 'r, 'i, 'e, 'a, I, const N: usize> Request<'m, 'r, 'i, 'e, 'a, I, N> {
 /// is private so unchecked frames cannot bypass admission's traversal limits.
 #[cfg(feature = "alloc")]
 pub struct PlainParams {
-    message: capnp::message::CheckedStructReader<
+    message: capnp::message::CheckedPointerReader<
         capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
     >,
 }
 #[cfg(feature = "alloc")]
 impl capnp::private::capability::ParamsHook for PlainParams {
     fn get(&self) -> capnp::Result<capnp::any_pointer::Reader<'_>> {
-        Ok(rpc_capnp::payload::Reader::from(self.message.root()).get_content())
+        Ok(self.message.root())
     }
 }
 

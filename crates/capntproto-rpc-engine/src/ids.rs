@@ -6,6 +6,8 @@
 //! identity or slot freshness; only the protocol lifecycle permits reuse.
 
 use core::{fmt, hash::Hash};
+#[cfg(capntproto_verus)]
+use vstd::prelude::*;
 
 mod sealed {
     pub trait Id {}
@@ -18,6 +20,7 @@ pub trait WireId: sealed::Id + Copy + Eq + Ord + Hash {
 
 macro_rules! ids {
     ($($name:ident),+ $(,)?) => {$(
+        #[cfg_attr(capntproto_verus, verus_verify)]
         #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
         pub struct $name(u32);
 

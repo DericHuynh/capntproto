@@ -205,9 +205,10 @@ struct OwnedResponse {
 impl crate::scoped::response::ResultsSender {
     pub(crate) fn send_payload(
         self,
-        payload: crate::scoped::wire::Payload,
+        mut payload: crate::scoped::wire::Payload,
         context: Option<Rc<dyn Any>>,
     ) {
+        let context = context.and_then(|context| payload.retain_plain_context(context).err());
         if context.is_none() {
             self.send_response(payload.into_response());
             return;
@@ -558,6 +559,7 @@ impl Request {
         context: Option<Rc<dyn Any>>,
         // None is a local request. Some(None) needs a fresh remote envelope.
         envelope: Option<Option<&capntproto_rpc_wire::owned::connection::PreparedCallTemplate>>,
+        hints: CallHints,
     ) -> Box<Self> {
         use capntproto_rpc_wire::owned::connection::PreparedCall;
         let message = match envelope {
@@ -584,7 +586,7 @@ impl Request {
             interface_id,
             method_id,
             client: Some(RequestClient::Scoped(client)),
-            hints: CallHints::default(),
+            hints,
             is_streaming: false,
         })
     }
@@ -632,21 +634,34 @@ impl RequestHook for Request {
             && !self.hints.only_promise_pipeline
             && !self.is_streaming
             && self.third_party.is_none()
-            && crate::scoped::response::available(self.client.as_deref().expect("unsent request"))
+            && match self.client.as_ref().expect("unsent request") {
+                RequestClient::Scoped(hook) => hook.direct_response_available(),
+                RequestClient::Hook(hook) => crate::scoped::response::available(&**hook),
+            }
         {
             // The request already owns exactly the parameter storage required
             // by this call. Transfer its box instead of allocating another
             // ParamsHook and moving the builder and capability table into it.
             let client = self.client.take().unwrap();
             let context = self.context.take();
-            return crate::scoped::response::request(
-                &*client,
-                self.interface_id,
-                self.method_id,
-                self.hints,
-                self,
-                context,
-            );
+            return match client {
+                RequestClient::Scoped(hook) => crate::scoped::response::request_scoped(
+                    &hook,
+                    self.interface_id,
+                    self.method_id,
+                    self.hints,
+                    self,
+                    context,
+                ),
+                RequestClient::Hook(hook) => crate::scoped::response::request(
+                    &*hook,
+                    self.interface_id,
+                    self.method_id,
+                    self.hints,
+                    self,
+                    context,
+                ),
+            };
         }
         let tmp = *self;
         let Self {

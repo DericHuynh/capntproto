@@ -30,7 +30,7 @@ pub struct Args {
     /// Train and measure the legacy Rust driver as a matched control.
     #[arg(long)]
     pub legacy: bool,
-    /// Fail after writing the report if client instructions exceed this ceiling.
+    /// Fail after writing the report if either peer’s instructions exceed this ceiling.
     #[arg(long)]
     pub maximum: Option<u64>,
 }
@@ -127,7 +127,7 @@ pub fn run(args: Args) -> Result<()> {
     let report = json!({
         "client_instructions": count, "maximum": args.maximum,
         "server_instructions": server_count,
-        "passes": args.maximum.is_none_or(|limit| count <= limit),
+        "passes": within_ceiling(count, server_count, args.maximum),
         "driver": if args.legacy { "legacy" } else { "portable" }, "protocol": "plaintext TCP",
         "measurement": "complete Callgrind Ir process, including startup/bootstrap/cleanup",
         "payload_bytes": 0, "warmups": 100, "retained_calls": 1000,
@@ -148,7 +148,7 @@ pub fn run(args: Args) -> Result<()> {
     );
     ensure!(
         report["passes"] == true,
-        "client instruction ceiling exceeded"
+        "client or server instruction ceiling exceeded"
     );
     Ok(())
 }
@@ -318,6 +318,10 @@ fn measure(
     Ok(value)
 }
 
+fn within_ceiling(client: u64, server: u64, maximum: Option<u64>) -> bool {
+    maximum.is_none_or(|limit| client <= limit && server <= limit)
+}
+
 fn instruction_count(profile: &str) -> Result<u64> {
     let events = profile
         .lines()
@@ -346,6 +350,14 @@ fn instruction_count(profile: &str) -> Result<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn instruction_ceiling_requires_both_complete_peers() {
+        let limit = 20_000_000;
+        assert!(within_ceiling(limit, limit, Some(limit)));
+        assert!(!within_ceiling(limit + 1, limit, Some(limit)));
+        assert!(!within_ceiling(limit, limit + 1, Some(limit)));
+        assert!(within_ceiling(u64::MAX, u64::MAX, None));
+    }
     #[test]
     fn selects_ir_without_assuming_event_order_or_using_partial_summary() {
         assert_eq!(

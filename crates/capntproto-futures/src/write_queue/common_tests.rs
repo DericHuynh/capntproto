@@ -143,3 +143,88 @@ fn one_enqueue_clock_sample_per_batch_preserves_oldest_age() {
     assert_eq!(snapshot.message_count, 1);
     assert_eq!(snapshot.wait_time, Duration::from_secs(1));
 }
+
+#[test]
+fn contiguous_frame_retains_its_owner_until_partial_write_and_flush_finish() {
+    use std::{
+        cell::RefCell,
+        pin::Pin,
+        rc::Rc,
+        task::{Context, Waker},
+    };
+    #[derive(Default)]
+    struct Output {
+        bytes: Vec<u8>,
+        writable: bool,
+        flushed: bool,
+    }
+    struct Writer(Rc<RefCell<Output>>);
+    impl AsyncWrite for Writer {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+            bytes: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            let mut state = self.0.borrow_mut();
+            if !state.writable {
+                return Poll::Pending;
+            }
+            state.writable = false;
+            let n = bytes.len().min(3);
+            state.bytes.extend_from_slice(&bytes[..n]);
+            Poll::Ready(Ok(n))
+        }
+        fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            if self.0.borrow().flushed {
+                Poll::Ready(Ok(()))
+            } else {
+                Poll::Pending
+            }
+        }
+        fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            self.poll_flush(cx)
+        }
+    }
+    struct Frame([u8; 16]);
+    impl AsOutputSegments for Frame {
+        fn as_output_segments(&self) -> capnp::OutputSegments<'_> {
+            panic!("contiguous frame must not rebuild segment metadata")
+        }
+        fn framed_bytes(&self) -> Option<&[u8]> {
+            Some(&self.0)
+        }
+        fn size_in_bytes(&self) -> usize {
+            8
+        }
+    }
+    let output = Rc::new(RefCell::new(Output::default()));
+    let (sender, driver) = write_queue(Writer(output.clone()));
+    let expected = [0, 0, 0, 0, 1, 0, 0, 0, 8, 7, 6, 5, 4, 3, 2, 1];
+    let receipt = sender.send(Frame(expected));
+    futures::pin_mut!(driver, receipt);
+    let mut cx = Context::from_waker(Waker::noop());
+    for _ in 0..6 {
+        output.borrow_mut().writable = true;
+        assert!(driver.as_mut().poll(&mut cx).is_pending());
+        assert!(receipt.as_mut().poll(&mut cx).is_pending());
+        assert_eq!(
+            sender
+                .outgoing_queue()
+                .output_snapshot()
+                .active
+                .message_count,
+            1
+        );
+    }
+    assert_eq!(output.borrow().bytes, expected);
+    output.borrow_mut().flushed = true;
+    assert!(driver.as_mut().poll(&mut cx).is_pending());
+    let Poll::Ready(Ok(frame)) = receipt.as_mut().poll(&mut cx) else {
+        panic!("flushed receipt")
+    };
+    assert_eq!(frame.0, expected);
+    assert_eq!(
+        sender.outgoing_queue().output_snapshot(),
+        OutputSnapshot::default()
+    );
+}

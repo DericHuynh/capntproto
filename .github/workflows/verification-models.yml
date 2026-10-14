@@ -50,59 +50,9 @@ jobs:
           if test -f target/verification/verus/README.md; then
             cat target/verification/verus/README.md >> "$GITHUB_STEP_SUMMARY"
           fi
-  kani:
-    name: Kani proofs and mutation controls (${{ matrix.shard }}/4)
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4]
-    # Every proof and its controls belong to exactly one shard. A single verifier
-    # avoids concurrent solver memory peaks; keep time for diagnostics/upload.
-    timeout-minutes: 75
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/dev-setup # zizmor: ignore[self-repository]
-        with:
-          cache-key: kani-0.68.0
-      - name: Install pinned Kani and verified release bundle
-        run: |
-          cargo install kani-verifier --version 0.68.0 --locked
-          curl --fail --location --retry 3 https://github.com/model-checking/kani/releases/download/kani-0.68.0/kani-0.68.0-x86_64-unknown-linux-gnu.tar.gz -o "$RUNNER_TEMP/kani.tar.gz"
-          echo "32e2b484d73ede0bbf64a2cf0879c4259422497d8aec4ee67d448de9ae7843d3  $RUNNER_TEMP/kani.tar.gz" | sha256sum --check --strict
-          cargo kani setup --use-local-bundle "$RUNNER_TEMP/kani.tar.gz"
-          cargo fetch --locked
-      - name: Prove production code and detect deliberate faults
-        timeout-minutes: 65
-        env:
-          KANI_SHARD: ${{ matrix.shard }}
-        run: |
-          # Reserve host memory for the runner. Limit each verifier descendant;
-          # an exhausted process fails the shard and cannot count as a proof.
-          ulimit -v 10485760
-          cargo run --locked -p capntproto-dev -- kani --jobs 1 --shard "$KANI_SHARD" --shards 4 --output target/verification/kani
-      - id: kani-report
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: kani-report-${{ matrix.shard }}
-          path: target/verification/kani/
-          if-no-files-found: warn
-          retention-days: 30
-      - name: Link proof failures, counterexamples and graph
-        if: always()
-        env:
-          REPORT_URL: ${{ steps.kani-report.outputs.artifact-url }}
-        run: |
-          printf '[Kani proofs, counterexamples and per-harness graph](%s)\n' "$REPORT_URL" >> "$GITHUB_STEP_SUMMARY"
-          if test -f target/verification/kani/FAILED-PROOFS.md; then
-            cat target/verification/kani/FAILED-PROOFS.md >> "$GITHUB_STEP_SUMMARY"
-          fi
   models:
     name: Check distributed TLA+ models after Rust proofs
-    needs: [verus, kani]
+    needs: [verus]
     runs-on: ubuntu-26.04
     timeout-minutes: 180
     steps:

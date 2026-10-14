@@ -66,7 +66,9 @@ pub struct Promise<T, E> {
 
 #[cfg(feature = "alloc")]
 enum PromiseInner<T, E> {
-    Immediate(Result<T, E>),
+    // Keep potentially large error context off every deferred promise. Success
+    // stays inline; only a synchronously rejected promise allocates its error.
+    Immediate(Result<T, alloc::boxed::Box<E>>),
     Deferred(Pin<alloc::boxed::Box<dyn Future<Output = core::result::Result<T, E>> + 'static>>),
     Empty,
 }
@@ -85,7 +87,7 @@ impl<T, E> Promise<T, E> {
 
     pub fn err(error: E) -> Self {
         Self {
-            inner: PromiseInner::Immediate(Err(error)),
+            inner: PromiseInner::Immediate(Err(alloc::boxed::Box::new(error))),
         }
     }
 
@@ -108,7 +110,7 @@ impl<T, E> Future for Promise<T, E> {
             PromiseInner::Empty => panic!("Promise polled after done."),
             ref mut imm @ PromiseInner::Immediate(_) => {
                 match core::mem::replace(imm, PromiseInner::Empty) {
-                    PromiseInner::Immediate(r) => Poll::Ready(r),
+                    PromiseInner::Immediate(r) => Poll::Ready(r.map_err(|error| *error)),
                     _ => unreachable!(),
                 }
             }
@@ -121,7 +123,7 @@ impl<T, E> Future for Promise<T, E> {
 impl<T, E> From<Result<T, E>> for Promise<T, E> {
     fn from(value: Result<T, E>) -> Self {
         Self {
-            inner: PromiseInner::Immediate(value),
+            inner: PromiseInner::Immediate(value.map_err(alloc::boxed::Box::new)),
         }
     }
 }
@@ -817,4 +819,73 @@ pub async fn get_resolved_cap<C: FromClientHook>(cap: C) -> C {
         hook = resolved;
     }
     FromClientHook::new(hook)
+}
+
+#[cfg(all(test, feature = "alloc"))]
+mod promise_tests {
+    use super::*;
+    use alloc::rc::Rc;
+    use core::{cell::Cell, marker::PhantomPinned, task::Waker};
+    struct OwnedError {
+        drops: Rc<Cell<usize>>,
+        _marker: PhantomPinned,
+    }
+    impl Drop for OwnedError {
+        fn drop(&mut self) {
+            self.drops.set(self.drops.get() + 1);
+        }
+    }
+    #[test]
+    fn rejected_promises_transfer_or_drop_the_exact_error_once() {
+        for poll in [false, true] {
+            for from_result in [false, true] {
+                let drops = Rc::new(Cell::new(0));
+                let error = OwnedError {
+                    drops: drops.clone(),
+                    _marker: PhantomPinned,
+                };
+                let mut promise: Promise<(), OwnedError> = if from_result {
+                    Err(error).into()
+                } else {
+                    Promise::err(error)
+                };
+                if poll {
+                    let Poll::Ready(Err(error)) = Pin::new(&mut promise)
+                        .poll(&mut core::task::Context::from_waker(Waker::noop()))
+                    else {
+                        panic!()
+                    };
+                    assert_eq!(drops.get(), 0);
+                    drop(promise);
+                    assert_eq!(drops.get(), 0);
+                    drop(error);
+                } else {
+                    drop(promise);
+                }
+                assert_eq!(drops.get(), 1);
+            }
+        }
+    }
+    #[test]
+    fn immediate_and_deferred_success_transfer_their_owned_values() {
+        for deferred in [false, true] {
+            let value = Rc::new(7);
+            let mut promise: Promise<_, ()> = if deferred {
+                let value = value.clone();
+                Promise::from_future(async move { Ok(value) })
+            } else {
+                Promise::ok(value.clone())
+            };
+            let Poll::Ready(Ok(result)) =
+                Pin::new(&mut promise).poll(&mut core::task::Context::from_waker(Waker::noop()))
+            else {
+                panic!()
+            };
+            assert!(Rc::ptr_eq(&value, &result));
+            drop(promise);
+            assert_eq!(Rc::strong_count(&value), 2);
+            drop(result);
+            assert_eq!(Rc::strong_count(&value), 1);
+        }
+    }
 }

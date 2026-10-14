@@ -31,6 +31,7 @@ impl<'pool, 'q> Question<'pool, 'q> {
     /// encoder and patched with this reservation's ID. The caller must preserve
     /// its Caller destination, empty descriptor table and reader limits. No
     /// public API accepts a raw frame through this path.
+    #[inline(always)]
     pub(super) fn publish_template(
         reservation: questions::Reservation<'_, 'q, '_>,
         messages: &mut messages::Messages<'pool, '_, '_>,
@@ -39,18 +40,11 @@ impl<'pool, 'q> Question<'pool, 'q> {
         method: (u64, u16),
         allows_handoff: bool,
     ) -> Result<Self, super::Error> {
-        let offer = match messages.offer(&frame.lease) {
-            Ok(offer) => offer,
-            Err(error) => {
-                frame.release(messages);
-                return Err(super::Error::Storage(error));
-            }
-        };
+        let offer = frame.offer(messages)?;
         let local = reservation.accept();
         queue.accept(messages, offer);
         // The send queue retains its own affine offer through partial writes.
         // Data-only Return admission needs no view of these bytes afterwards.
-        frame.release(messages);
         Ok(Self {
             key: local.key(),
             local: Some(local),
@@ -253,67 +247,119 @@ impl<'pool, 'q> Question<'pool, 'q> {
         receiver: &mut impl ImportReceiver<I>,
         capacity: Capacity,
     ) -> Result<AdmittedReturn<'i, 'e, 'a, I, N>, Error> {
-        let receipts = Receipts::new();
-        // Verify the owning question before calling any descriptor factory.
-        if result.get_answer_id() != self.key.id().to_wire() || !questions.contains(self.key) {
-            return Err(Error::WrongMessage);
+        if let Some(admitted) =
+            self.try_admit_plain_return(result, _frame, messages, questions, false)?
+        {
+            return Ok(admitted.into_general());
         }
-        // A privately published plain Call owns no parameter grants.
-        // Empty result descriptors likewise have no import, export or
-        // answer effects to prepare. Validate the whole result graph,
-        // then commit the same question transition (including canceled
-        // delivery and noFinishNeeded) without three empty transactions.
-        if matches!(self.original, Original::DataOnly { .. }) {
-            if let rpc_capnp::return_::Results(payload) =
-                result.which().map_err(|_| Error::WrongMessage)?
-            {
-                let payload = payload?;
-                if payload.get_cap_table()?.is_empty() {
-                    let pending = questions
-                        .prepare_receive(self.key.id(), result.get_no_finish_needed())
-                        .map_err(|error| Error::Admission(inbound::Error::Question(error)))?;
-                    payload
-                        .get_content()
-                        .validate_capability_indices(0)
-                        .map_err(|error| {
-                            Error::Admission(inbound::Error::Reception(
-                                crate::reception::Error::from(error),
-                            ))
-                        })?;
-                    #[cfg(feature = "alloc")]
-                    let plain = _frame
-                        .share_segments(messages)?
-                        .map(|segments| {
-                            use capnp::traits::IntoInternalStructReader;
-                            capnp::message::CheckedStructReader::retain(
-                                payload.into_internal_struct_reader(),
-                                segments,
-                                capnp::message::ReaderOptions {
-                                    traversal_limit_in_words: None,
-                                    nesting_limit: i32::MAX,
-                                },
-                            )
-                            .map(|message| alloc::boxed::Box::new(PlainResults { message }))
-                        })
-                        .transpose()?;
-                    let (_, delivery) = pending.accept();
-                    let kind = match delivery {
-                        capntproto_rpc_engine::question::Delivery::Discard => Kind::Discarded,
-                        _ => Kind::Results,
-                    };
-                    return Ok(AdmittedReturn {
-                        receipts,
-                        kind,
-                        #[cfg(feature = "alloc")]
-                        plain,
-                    });
-                }
-            }
+        let receipts = Receipts::new();
+        if !questions.contains(self.key) {
+            return Err(Error::WrongMessage);
         }
         self.admit_complex_return(
             result, messages, questions, imports, exports, answers, scratch, receiver, receipts,
             capacity,
         )
+    }
+
+    /// The empty-descriptor transaction is shared by the ordinary receive path
+    /// and its compact reply entry point. None has no ledger or owner effects.
+    #[inline(always)]
+    pub(super) fn prepare_plain_return<'m, 'a, 'storage>(
+        &self,
+        result: rpc_capnp::return_::Reader<'m>,
+        questions: &'a mut questions::Questions<'q, 'storage>,
+        owned_only: bool,
+    ) -> Result<
+        Option<(
+            questions::Receive<'a, 'q, 'storage>,
+            capnp::any_pointer::Reader<'m>,
+        )>,
+        Error,
+    > {
+        if result.get_answer_id() != self.key.id().to_wire() {
+            return Err(Error::WrongMessage);
+        }
+        if !matches!(self.original, Original::DataOnly { .. }) {
+            return Ok(None);
+        }
+        let pending = questions
+            .prepare_receive_owned(self.key, result.get_no_finish_needed())
+            .map_err(|error| {
+                if error == questions::Error::StaleKey {
+                    Error::WrongMessage
+                } else {
+                    Error::Admission(inbound::Error::Question(error))
+                }
+            })?;
+        if owned_only && pending.delivery() == capntproto_rpc_engine::question::Delivery::Discard {
+            return Ok(None);
+        }
+        use capnp::traits::IntoInternalStructReader;
+        let fields = rpc_capnp::api::ReturnRef::from(result.into_internal_struct_reader());
+        if fields.tag() != rpc_capnp::api::ReturnUnionTag::Results {
+            return Ok(None);
+        }
+        let payload =
+            rpc_capnp::payload::Reader::from(fields.results()?.into_internal_struct_reader());
+        if payload.has_cap_table() && !payload.get_cap_table()?.is_empty() {
+            return Ok(None);
+        }
+        let content = payload.get_content();
+        content.validate_capability_indices(0).map_err(|error| {
+            Error::Admission(inbound::Error::Reception(crate::reception::Error::from(
+                error,
+            )))
+        })?;
+        Ok(Some((pending, content)))
+    }
+    #[inline(always)]
+    pub(super) fn try_admit_plain_return(
+        &self,
+        result: rpc_capnp::return_::Reader<'_>,
+        _frame: &Frame<'pool>,
+        _messages: &messages::Messages<'pool, '_, '_>,
+        questions: &mut questions::Questions<'q, '_>,
+        owned_only: bool,
+    ) -> Result<Option<AdmittedPlain>, Error> {
+        let Some((pending, _content)) = self.prepare_plain_return(result, questions, owned_only)?
+        else {
+            return Ok(None);
+        };
+        #[cfg(feature = "alloc")]
+        let plain = _frame
+            .share_segments(_messages)?
+            .map(|segments| {
+                capnp::message::CheckedPointerReader::retain(
+                    _content,
+                    segments,
+                    capnp::message::ReaderOptions {
+                        traversal_limit_in_words: None,
+                        nesting_limit: i32::MAX,
+                    },
+                )
+                .map(|message| {
+                    alloc::boxed::Box::new(PlainResults {
+                        message,
+                        owner: None,
+                    })
+                })
+            })
+            .transpose()?;
+        #[cfg(feature = "alloc")]
+        if owned_only && plain.is_none() {
+            return Ok(None);
+        }
+        #[cfg(not(feature = "alloc"))]
+        if owned_only {
+            return Ok(None);
+        }
+        let (_, delivery) = pending.accept();
+        Ok(Some(AdmittedPlain {
+            discarded: delivery == capntproto_rpc_engine::question::Delivery::Discard,
+            #[cfg(feature = "alloc")]
+            plain,
+        }))
     }
 
     // Keep descriptor transactions and handoff decoding out of ordinary
@@ -391,6 +437,30 @@ impl<'pool, 'q> Question<'pool, 'q> {
             plain: None,
         })
     }
+    #[cfg(feature = "alloc")]
+    pub(super) fn finish_plain(
+        self,
+        frame: Frame<'pool>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        pending: questions::Receive<'_, 'q, '_>,
+        admitted: AdmittedPlain,
+    ) -> alloc::boxed::Box<PlainResults> {
+        // Plain admission validated the entire payload and excluded canceled
+        // delivery before retaining its immutable allocating segment owner.
+        debug_assert!(!admitted.discarded);
+        let plain = admitted.plain.expect("owned plain result");
+        if let Some(local) = self.local {
+            pending
+                .accept_releasing(local)
+                .expect("matching plain reply owner");
+        } else {
+            pending.accept();
+        }
+        self.original.release(messages);
+        frame.release(messages);
+        plain
+    }
+    #[inline(always)]
     pub(super) fn finish_return<'i, 'e, 'a, I, const N: usize>(
         self,
         frame: Frame<'pool>,
@@ -411,6 +481,42 @@ impl<'pool, 'q> Question<'pool, 'q> {
 }
 // Private proof that admission has committed for this question and frame. It
 // never escapes the exclusive receive operation that owns both affine values.
+pub(super) struct AdmittedPlain {
+    discarded: bool,
+    #[cfg(feature = "alloc")]
+    plain: Option<alloc::boxed::Box<PlainResults>>,
+}
+impl AdmittedPlain {
+    #[cfg(feature = "alloc")]
+    pub(super) fn owned(
+        message: capnp::message::CheckedPointerReader<
+            capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
+        >,
+    ) -> Self {
+        Self {
+            discarded: false,
+            plain: Some(alloc::boxed::Box::new(PlainResults {
+                message,
+                owner: None,
+            })),
+        }
+    }
+
+    pub(super) fn into_general<'i, 'e, 'a, I, const N: usize>(
+        self,
+    ) -> AdmittedReturn<'i, 'e, 'a, I, N> {
+        AdmittedReturn {
+            receipts: Receipts::new(),
+            kind: if self.discarded {
+                Kind::Discarded
+            } else {
+                Kind::Results
+            },
+            #[cfg(feature = "alloc")]
+            plain: self.plain,
+        }
+    }
+}
 pub(super) struct AdmittedReturn<'i, 'e, 'a, I, const N: usize> {
     receipts: Receipts<'i, 'e, 'a, I, N>,
     kind: Kind<'a>,
@@ -423,14 +529,25 @@ pub(super) struct AdmittedReturn<'i, 'e, 'a, I, const N: usize> {
 /// reuse until the final response reader has gone away.
 #[cfg(feature = "alloc")]
 pub struct PlainResults {
-    message: capnp::message::CheckedStructReader<
+    message: capnp::message::CheckedPointerReader<
         capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
     >,
+    owner: Option<alloc::rc::Rc<dyn core::any::Any>>,
+}
+#[cfg(feature = "alloc")]
+impl PlainResults {
+    /// Keep a caller's admission/transport owner alive through the final result
+    /// reader, without allocating a second response wrapper. This does not grant
+    /// protocol authority or change the immutable message. Attach at most once.
+    pub fn retain_owner(&mut self, owner: alloc::rc::Rc<dyn core::any::Any>) {
+        assert!(self.owner.is_none(), "result owner already attached");
+        self.owner = Some(owner);
+    }
 }
 #[cfg(feature = "alloc")]
 impl capnp::private::capability::ResponseHook for PlainResults {
     fn get(&self) -> capnp::Result<capnp::any_pointer::Reader<'_>> {
-        Ok(rpc_capnp::payload::Reader::from(self.message.root()).get_content())
+        Ok(self.message.root())
     }
 }
 #[must_use = "retry Return or terminate this connection"]
@@ -650,6 +767,7 @@ impl<'pool, 'q, 'i, 'e, 'a, I, const N: usize> Response<'pool, 'q, 'i, 'e, 'a, I
     pub(crate) fn local_ref(&self) -> Option<&questions::Local<'q>> {
         self.local.as_ref()
     }
+    #[inline(always)]
     pub fn release<E, A>(
         self,
         messages: &mut messages::Messages<'pool, '_, '_>,

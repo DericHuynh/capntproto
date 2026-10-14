@@ -163,10 +163,52 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         }
     }
 
-    /// Take either an ordinary wire response or an authenticated cross-connection
-    /// result. Result publication waits for all existing observers; their retained
-    /// old routes continue to own Finish through any ordered loopback barrier.
-    /// This is the completion entry point used by typed invocation/session APIs.
+    /// Take an admitted data-only result after every existing pipeline observer
+    /// has consumed its route. Other result kinds remain owned by the driver
+    /// for `take_output`; authentication and cancellation follow the same ledger.
+    #[cfg(feature = "alloc")]
+    #[inline(always)]
+    pub fn take_plain_output(
+        &mut self,
+        key: questions::Key<'id>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+    ) -> Result<Option<alloc::boxed::Box<super::super::question::PlainResults>>, Error> {
+        self.check_live()?;
+        if self.outgoing.pending_for(key)
+            || self
+                .invocation_pipelines
+                .iter()
+                .any(|slot| slot.pending_for(key))
+        {
+            return Err(Error::PendingResponse);
+        }
+        let slot = self
+            .exchanges
+            .iter_mut()
+            .find(|slot| {
+                slot.exchange
+                    .as_ref()
+                    .is_some_and(|exchange| exchange.key() == key)
+            })
+            .ok_or(Error::UnknownQuestion)?;
+        if !slot.authorized {
+            return Err(Error::PendingAuthorization);
+        }
+        let Some(Exchange::Returned(response)) = &mut slot.exchange else {
+            return Err(Error::PendingResponse);
+        };
+        let Some(plain) = response.take_plain_results() else {
+            return Ok(None);
+        };
+        let Some(Exchange::Returned(response)) = slot.exchange.take() else {
+            unreachable!()
+        };
+        self.release_response(response, messages);
+        Ok(Some(plain))
+    }
+
+    /// Take the general result, including capability and authenticated handoff
+    /// ownership. Existing observers must consume their routes first.
     pub fn take_output(
         &mut self,
         key: questions::Key<'id>,

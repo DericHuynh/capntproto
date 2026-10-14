@@ -208,8 +208,19 @@ impl<I: LocalId, T, D: Storage<T>, H: SparseStorage<I, T>, A: SparseStorage<I, T
     }
 
     pub fn try_push(&mut self, value: T) -> Result<I, InsertError<T>> {
+        self.try_push_with(value, |_, value| value)
+    }
+
+    /// Construct a value with its final ID, before consuming that ID. A failed
+    /// reservation returns the input untouched; constructor unwinding leaves
+    /// every ID and existing entry intact (growth may retain empty capacity).
+    pub fn try_push_with<V>(
+        &mut self,
+        value: V,
+        build: impl FnOnce(I, V) -> T,
+    ) -> Result<I, InsertError<V>> {
         let index = if self.free_len != 0 {
-            self.pop_free() as usize
+            self.dense.slots()[0].free_id as usize
         } else {
             if self.issued as u64 == u64::from(LOW_LIMIT) {
                 return Err(InsertError {
@@ -223,12 +234,18 @@ impl<I: LocalId, T, D: Storage<T>, H: SparseStorage<I, T>, A: SparseStorage<I, T
                     value,
                 });
             }
-            let index = self.issued;
-            self.issued += 1;
-            index
+            self.issued
         };
+        let id = I::from_wire(index as u32);
+        let value = build(id, value);
+        if self.free_len != 0 {
+            let selected = self.pop_free();
+            debug_assert_eq!(selected as usize, index);
+        } else {
+            self.issued += 1;
+        }
         self.dense.slots_mut()[index].value = Some(value);
-        Ok(I::from_wire(index as u32))
+        Ok(id)
     }
 
     pub fn get(&self, id: I) -> Option<&T> {
@@ -261,6 +278,7 @@ impl<I: LocalId, T, D: Storage<T>, H: SparseStorage<I, T>, A: SparseStorage<I, T
             .as_mut()
     }
 
+    #[inline(always)]
     pub fn remove(&mut self, id: I) -> Option<T> {
         let raw = id.to_wire();
         if raw & HIGH_BIT != 0 {
@@ -307,6 +325,7 @@ impl<I: LocalId, T, D: Storage<T>, H: SparseStorage<I, T>, A: SparseStorage<I, T
             .chain(self.adopted.values_mut())
     }
 
+    #[inline(always)]
     fn push_free(&mut self, id: u32) {
         let slots = self.dense.slots_mut();
         let mut position = self.free_len;
@@ -322,10 +341,14 @@ impl<I: LocalId, T, D: Storage<T>, H: SparseStorage<I, T>, A: SparseStorage<I, T
         slots[position].free_id = id;
     }
 
+    #[inline(always)]
     fn pop_free(&mut self) -> u32 {
         let slots = self.dense.slots_mut();
         let id = slots[0].free_id;
         self.free_len -= 1;
+        if self.free_len == 0 {
+            return id;
+        }
         let last = slots[self.free_len].free_id;
         let mut position = 0;
         while position * 2 + 1 < self.free_len {

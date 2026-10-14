@@ -38,9 +38,13 @@ use core::{
     marker::PhantomData,
 };
 mod backing;
+mod policy;
 #[cfg(feature = "alloc")]
 pub use backing::SharedBytes;
 use backing::{Buffers, Bytes};
+use policy::State;
+#[cfg(capntproto_verus)]
+use vstd::prelude::*;
 #[cfg(feature = "alloc")]
 mod growing;
 #[cfg(feature = "alloc")]
@@ -50,6 +54,7 @@ pub use queue::{Queue, QueueEntry, QueueSlot, QueueWindow};
 
 type Brand<'id> = PhantomData<fn(&'id ()) -> &'id ()>;
 
+#[cfg_attr(capntproto_verus, verus_verify)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     NonemptyStorage,
@@ -84,17 +89,6 @@ impl fmt::Display for Error {
     }
 }
 impl core::error::Error for Error {}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum State {
-    Free,
-    Writing,
-    Sealed {
-        length: usize,
-        readers: u32,
-        sends: u32,
-    },
-}
 
 /// Caller-owned byte storage; neither alignment nor Cap'n Proto validity is
 /// implied by this pool. The framing/decoder layer validates those properties.
@@ -205,6 +199,13 @@ pub struct Offer<'id> {
     key: SendKey<'id>,
 }
 
+/// Rejected ownership transfer preserves the caller's original reader lease.
+#[derive(Debug)]
+pub struct OfferError<'id> {
+    pub error: Error,
+    pub lease: Lease<'id>,
+}
+
 pub struct Messages<'id, 'storage, 'bytes> {
     buffers: Buffers<'storage, 'bytes>,
     sends: crate::storage::Storage<'storage, SendSlot>,
@@ -264,6 +265,87 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
     /// beyond it remain inaccessible until a later reservation clears them.
     pub fn reserve_exact(&mut self, length: usize) -> Result<Writer<'id>, Error> {
         self.reserve_length(length, true)
+    }
+    /// Copy a complete message into reusable storage in one exclusive borrow.
+    /// The entire exposed prefix is overwritten before sealing; no mutable
+    /// view or partially initialized writer can escape this operation.
+    pub fn copy_from(&mut self, source: &[u8]) -> Result<Lease<'id>, Error> {
+        self.copy_from_parts(&[source], |_| {})
+    }
+
+    /// Copy a complete initialized message, then edit it before sealing. No
+    /// mutable view escapes the callback and only copied bytes are exposed.
+    /// Failure to reserve preserves every live owner. If the callback unwinds,
+    /// the unused buffer remains free and its exclusive view is dropped.
+    #[inline(always)]
+    pub fn copy_from_parts(
+        &mut self,
+        parts: &[&[u8]],
+        edit: impl FnOnce(&mut [u8]),
+    ) -> Result<Lease<'id>, Error> {
+        let length = parts.iter().try_fold(0usize, |length, part| {
+            length.checked_add(part.len()).ok_or(Error::InvalidLength)
+        })?;
+        let initialize = |bytes: &mut [u8]| {
+            let bytes = &mut bytes[..length];
+            let mut remaining = &mut bytes[..];
+            for part in parts {
+                let (next, rest) = remaining.split_at_mut(part.len());
+                next.copy_from_slice(part);
+                remaining = rest;
+            }
+            edit(bytes);
+        };
+        let mut exhausted = false;
+        for (index, buffer) in self.buffers.iter().enumerate() {
+            if buffer.state.get() != State::Free || buffer.capacity.get() < length {
+                continue;
+            }
+            let Ok(mut bytes) = buffer.bytes.try_borrow_mut() else {
+                continue;
+            };
+            if !bytes.exclusive() {
+                continue;
+            }
+            if buffer.generation.get() == u64::MAX {
+                exhausted = true;
+                continue;
+            }
+            initialize(&mut bytes);
+            buffer.generation.set(buffer.generation.get() + 1);
+            buffer.state.set(State::Sealed {
+                length,
+                readers: 1,
+                sends: 0,
+            });
+            return Ok(Lease {
+                key: BufferKey {
+                    index,
+                    generation: buffer.generation.get(),
+                },
+                brand: PhantomData,
+            });
+        }
+        let index = self.buffers.append(length).ok_or(if exhausted {
+            Error::GenerationExhausted
+        } else {
+            Error::NoBuffer
+        })?;
+        let buffer = &self.buffers[index];
+        initialize(&mut buffer.bytes.borrow_mut());
+        buffer.generation.set(buffer.generation.get() + 1);
+        buffer.state.set(State::Sealed {
+            length,
+            readers: 1,
+            sends: 0,
+        });
+        Ok(Lease {
+            key: BufferKey {
+                index,
+                generation: buffer.generation.get(),
+            },
+            brand: PhantomData,
+        })
     }
     fn reserve_length(&mut self, minimum: usize, exact: bool) -> Result<Writer<'id>, Error> {
         let mut exhausted = false;
@@ -409,12 +491,14 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
     /// Retain a zero-copy view without borrowing the connection's entire pool.
     /// The view borrows this lease: release it only after the view is dropped.
     /// Other buffers, reference counts and sends remain available meanwhile.
+    #[inline(always)]
     pub fn read<'view>(&self, lease: &'view Lease<'id>) -> Ref<'view, [u8]>
     where
         'storage: 'view,
     {
         self.bytes(lease.key)
     }
+    #[inline(always)]
     fn bytes(&self, key: BufferKey) -> Ref<'storage, [u8]> {
         let buffer = self.buffers.at(key.index);
         debug_assert_eq!(buffer.generation.get(), key.generation);
@@ -425,19 +509,7 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
     }
     pub fn retain(&mut self, lease: &Lease<'id>) -> Result<Lease<'id>, Error> {
         let state = &self.buffers[lease.key.index].state;
-        let State::Sealed {
-            length,
-            readers,
-            sends,
-        } = state.get()
-        else {
-            unreachable!()
-        };
-        state.set(State::Sealed {
-            length,
-            readers: readers.checked_add(1).ok_or(Error::ReferencesExhausted)?,
-            sends,
-        });
+        state.set(policy::retain(state.get(), false)?);
         Ok(Lease {
             key: lease.key,
             brand: PhantomData,
@@ -447,6 +519,7 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
     /// owns its allocation. Caller-borrowed buffers return None. A shared owner
     /// pins this buffer against reuse and counts toward the provider's limits.
     #[cfg(feature = "alloc")]
+    #[inline(always)]
     pub fn share(&self, lease: &Lease<'id>) -> Option<SharedBytes> {
         let buffer = &self.buffers[lease.key.index];
         let State::Sealed { length, .. } = buffer.state.get() else {
@@ -454,44 +527,38 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
         };
         buffer.bytes.borrow().share(0..length)
     }
+    #[inline(always)]
     pub fn release(&mut self, lease: Lease<'id>) {
         let state = &self.buffers[lease.key.index].state;
-        let State::Sealed {
-            length,
-            readers,
-            sends,
-        } = state.get()
-        else {
-            unreachable!()
-        };
-        state.set(State::Sealed {
-            length,
-            readers: readers - 1,
-            sends,
+        let next = policy::release(state.get(), false);
+        state.set(if policy::reclaimable(next) {
+            State::Free
+        } else {
+            next
         });
-        self.reclaim(lease.key.index);
-    }
-    fn reclaim(&mut self, index: usize) {
-        if let State::Sealed { readers, sends, .. } = self.buffers[index].state.get() {
-            if readers == 0 && sends == 0 {
-                self.buffers[index].state.set(State::Free);
-            }
-        }
     }
 
     /// Reserve send storage and its message reference before queue acceptance.
     /// Failure leaves both capacities/counters unchanged, preserving the lease.
     pub fn offer(&mut self, lease: &Lease<'id>) -> Result<Offer<'id>, Error> {
-        let state = &self.buffers[lease.key.index].state;
-        let State::Sealed {
-            length,
-            readers,
-            sends,
-        } = state.get()
-        else {
-            unreachable!()
+        self.offer_inner(lease.key, false)
+    }
+    /// Transfer a reader lease into an offered send in one transaction. No
+    /// buffer becomes free between the two owners. On rejection all counters
+    /// and generations are unchanged and the original lease is returned.
+    pub fn offer_owned(&mut self, lease: Lease<'id>) -> Result<Offer<'id>, OfferError<'id>> {
+        self.offer_inner(lease.key, true)
+            .map_err(|error| OfferError { error, lease })
+    }
+    #[inline(always)]
+    fn offer_inner(&mut self, buffer: BufferKey, consume: bool) -> Result<Offer<'id>, Error> {
+        let state = &self.buffers[buffer.index].state;
+        let next = policy::retain(state.get(), true)?;
+        let next = if consume {
+            policy::release(next, false)
+        } else {
+            next
         };
-        let count = sends.checked_add(1).ok_or(Error::ReferencesExhausted)?;
         let index = self
             .sends
             .iter()
@@ -510,15 +577,11 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
         let slot = &mut self.sends[index];
         slot.generation += 1;
         slot.send = Some(Send {
-            buffer: lease.key,
+            buffer,
             position: 0,
             phase: Phase::Offered,
         });
-        state.set(State::Sealed {
-            length,
-            readers,
-            sends: count,
-        });
+        state.set(next);
         Ok(Offer {
             key: SendKey {
                 index,
@@ -556,12 +619,24 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
         &mut self,
         key: SendKey<'id>,
     ) -> Result<SendWindow<'_, 'id, 'storage, 'bytes>, Error> {
-        let send = self.accepted(key)?;
-        let bytes = Ref::map(self.bytes(send.buffer), |bytes| &bytes[send.position..]);
+        let slot = self.sends.get_mut(key.index).ok_or(Error::StaleSend)?;
+        if slot.generation != key.generation {
+            return Err(Error::StaleSend);
+        }
+        let send = slot
+            .send
+            .filter(|send| send.phase == Phase::Accepted)
+            .ok_or(Error::StaleSend)?;
+        let buffer = self.buffers.at(send.buffer.index);
+        let State::Sealed { length, .. } = buffer.state.get() else {
+            unreachable!("accepted send owns sealed bytes")
+        };
+        let bytes = Ref::map(buffer.bytes.borrow(), |bytes| &bytes[send.position..length]);
         Ok(SendWindow {
-            messages: self,
-            key,
+            send: &mut slot.send,
+            buffer,
             bytes,
+            brand: PhantomData,
         })
     }
     /// The adapter has stopped using this send's bytes after cancellation/error.
@@ -575,20 +650,12 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
     fn finish_send(&mut self, index: usize) {
         let send = self.sends[index].send.take().expect("live send");
         let state = &self.buffers[send.buffer.index].state;
-        let State::Sealed {
-            length,
-            readers,
-            sends,
-        } = state.get()
-        else {
-            unreachable!()
-        };
-        state.set(State::Sealed {
-            length,
-            readers,
-            sends: sends - 1,
+        let next = policy::release(state.get(), true);
+        state.set(if policy::reclaimable(next) {
+            State::Free
+        } else {
+            next
         });
-        self.reclaim(send.buffer.index);
     }
 }
 
@@ -606,19 +673,18 @@ impl Drop for Messages<'_, '_, '_> {
 /// An exclusive completion window. The bytes remain immutable and borrowed
 /// until the caller commits or drops the window; neither action allocates.
 pub struct SendWindow<'a, 'id, 'storage, 'bytes> {
-    messages: &'a mut Messages<'id, 'storage, 'bytes>,
-    key: SendKey<'id>,
+    // Validate the generation once when acquiring these exclusive owners. The
+    // slot cannot be replaced or reused until this window ends.
+    send: &'a mut Option<Send>,
+    buffer: &'storage Buffer<'bytes>,
     bytes: Ref<'storage, [u8]>,
+    brand: Brand<'id>,
 }
 impl SendWindow<'_, '_, '_, '_> {
     /// Whether no bytes have been accepted for this exact send. Resource-aware
     /// queues consult the authoritative cursor rather than a second progress bit.
     pub fn is_start(&self) -> bool {
-        self.messages.sends[self.key.index]
-            .send
-            .expect("live window")
-            .position
-            == 0
+        self.send.expect("live window").position == 0
     }
 
     pub fn bytes(&self) -> &[u8] {
@@ -627,10 +693,8 @@ impl SendWindow<'_, '_, '_, '_> {
     /// Retain exactly the unsent suffix for an owning transport adapter.
     #[cfg(feature = "alloc")]
     pub fn share(&self) -> Option<SharedBytes> {
-        let send = self.messages.sends[self.key.index]
-            .send
-            .expect("live window");
-        self.messages.buffers[send.buffer.index]
+        let send = self.send.expect("live window");
+        self.buffer
             .bytes
             .borrow()
             .share(send.position..send.position + self.bytes.len())
@@ -639,28 +703,22 @@ impl SendWindow<'_, '_, '_, '_> {
     /// released. Zero on an empty message completes without an IO call; zero
     /// on a nonempty suffix is an error. Invalid counts preserve all progress.
     pub fn advance(self, count: usize) -> Result<bool, Error> {
-        let send = self.messages.sends[self.key.index]
-            .send
-            .expect("live window");
+        let send = self.send.expect("live window");
         let remaining = self.bytes.len();
-        let length = send.position + remaining;
-        if count > remaining {
-            return Err(Error::InvalidWriteCount);
-        }
-        if count == 0 && remaining != 0 {
-            return Err(Error::WriteZero);
-        }
-        let next = send.position + count;
+        let (next, complete) = policy::advance(send.position, remaining, count)?;
         drop(self.bytes);
-        if next == length {
-            self.messages.finish_send(self.key.index);
+        if complete {
+            self.send.take();
+            let state = &self.buffer.state;
+            let next = policy::release(state.get(), true);
+            state.set(if policy::reclaimable(next) {
+                State::Free
+            } else {
+                next
+            });
             Ok(true)
         } else {
-            self.messages.sends[self.key.index]
-                .send
-                .as_mut()
-                .unwrap()
-                .position = next;
+            self.send.as_mut().unwrap().position = next;
             Ok(false)
         }
     }

@@ -274,7 +274,7 @@ jobs:
           {
             printf '\n## Pipeline results\n\n'
             jq -r 'to_entries[] | "- \(.key): \(.value.result)"' <<< "$RESULTS"
-            printf '\nCargo/coverage, formal checks (Kani then TLA+), fuzzing and extended checks run after platform checks. Release benchmarks follow verification. Fork and Dependabot PRs build benchmarks without cloud credentials; their cloud measurement and cleanup are skipped. CodeQL runs independently through GitHub default setup.\n'
+            printf '\nCargo/coverage, formal checks (Verus then TLA+), fuzzing and extended checks run after platform checks. Release benchmarks follow verification. Fork and Dependabot PRs build benchmarks without cloud credentials; their cloud measurement and cleanup are skipped. CodeQL runs independently through GitHub default setup.\n'
           } >> README.md
           cat README.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

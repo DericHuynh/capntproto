@@ -15,6 +15,14 @@ impl Credit {
             received: Cell::new(false),
         })
     }
+    #[inline(always)]
+    pub(super) fn ensure(&self) -> capnp::Result<()> {
+        if self.permit.borrow().is_none() {
+            self.acquire()?;
+        }
+        Ok(())
+    }
+    #[inline(always)]
     pub(super) fn acquire(&self) -> capnp::Result<Rc<Permit>> {
         if let Some(permit) = self.permit.borrow().as_ref() {
             return Ok(permit.clone());
