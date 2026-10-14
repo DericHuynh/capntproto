@@ -26,13 +26,13 @@ exact [production proof inventory](../../verification/verus/plan.json). Verifica
 uses `--no-cheating`; no project `assume`, `admit` or `external_body` is accepted.
 Verus, its SMT solver and bundled `vstd` specifications remain trusted tooling.
 
-The entrypoint imports the **actual** `HandoffState` implementation. Contracts
+The entrypoint imports the **actual** `HandoffState` and `Question` implementations. Contracts
 are ordinary `cfg_attr` annotations, with spec/proof definitions included only
 under `capntproto_verus`. These annotations add no Verus dependency, allocations,
 runtime checks or proof data to normal builds. Explicit option checks and enum pattern matches
 keep executable operations within Verus's supported Rust subset.
 
-Twenty verified functions cover the initializer, getters, all seven mutating
+The handoff's twenty verified functions cover the initializer, getters, all seven mutating
 operations, derived clones and three induction lemmas. The contracts preserve
 exact admission, rejection atomicity, authorization, counter conservation,
 revocation and phase changes for every valid full-width `u64` state. verus-tla
@@ -42,11 +42,29 @@ embargoed handoff eventually becomes direct or is revoked, **provided draining
 and lifting are weakly fair**. Caller scheduling must satisfy those assumptions;
 network delivery and authentication are outside this theorem.
 
-The runner checks complete function inventories, positive success, and the
-intended failed function for four isolated mutations. Removing drain reservation,
-accept authorization, the pending-call lift guard, or drain fairness must fail
-a logical obligation. Compilation errors, timeouts and missing proofs fail the
-campaign. Source hashes and raw diagnostics are checkpointed; per-function SMT
+Fourteen additional question functions cover the common initializer, getters,
+Return/release contracts, derived clones and four lemmas. An erased history
+records returned/released interest and the cumulative number of Finish effects.
+Induction proves at most one Finish over arbitrary operation histories, including
+duplicates and cancellation; the effect lemma prohibits early ID reclamation and
+double release of result capabilities. Ordinary and no-return construction are
+both included. Temporal progress reaches the released state **provided Return
+processing and local release are weakly fair**. This is conditional progress,
+not a promise that a remote peer responds. Output acceptance and table-generation
+reuse remain separate ledger responsibilities checked by Kani and native tests.
+
+These question proofs replace the eight-operation Kani lifecycle search. Kani
+still verifies the associated constructors and Default wrapper against their
+expected initial behavior; these wrappers are outside the Verus attribute
+macro's supported subset. Executable bodies are imported unchanged, including
+the common initializer used by those wrappers.
+
+The runner checks all 34 functions, positive success, and the intended failed
+function for nine isolated mutations. Removing drain reservation, accept
+authorization, the pending-call lift guard, or drain fairness must fail a logical
+obligation. Early question reclamation, duplicate Finish, delivery after
+cancellation and either missing question fairness assumption must likewise fail.
+Compilation errors, timeouts and missing proofs fail the campaign. Source hashes and raw diagnostics are checkpointed; per-function SMT
 timings have a separate graph. These counts are not Cargo tests or coverage.
 
 This replaces Kani's handoff transition induction, preserving its boundary
@@ -95,7 +113,7 @@ overflow or pointer checks to make a proof pass.
 | High question IDs | Two sparse slots; arbitrary starting cursor including wraparound, live-ID collision, capacity failure and rollback. |
 | Adopted questions | Arbitrary `u32` ID, independent storage ranges, invalid/duplicate/full rejection and original owner preservation. |
 | Peer answer storage | Arbitrary `u32` keys, two inline slots and one sparse slot; bounded rejection, replacement and removal. |
-| Question lifecycle | All eight-operation histories from ordinary/no-return construction; at most one Finish, correct result-cap release and no early reuse while Return is outstanding. |
+| Question initialization | Ordinary, Default and no-return wrappers match the verified initializer. Arbitrary lifecycle histories and conditional temporal progress now run in Verus above. |
 | Fixed streaming credit | Arbitrary `u128` send sizes and `usize` windows, overflow rejection, both acknowledgement orders and credit conservation. |
 | Adaptive clock rejection | Arbitrary sizes and full-width seconds; a backwards clock cannot release credit or change the window. This is not a full adaptive-controller or timing proof. |
 | Fixed arena reservations | One to four words of aligned byte storage, two arbitrary full-width `u32` segment IDs and reservation sizes, then reset/drop. Checks exact admission, disjoint advancement, preservation of live bytes, zeroing and unchanged unused storage. Not arbitrary capacity or a proof of the wire encoder. |

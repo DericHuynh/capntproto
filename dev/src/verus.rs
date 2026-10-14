@@ -15,6 +15,8 @@ const BUNDLE_SHA: &str = "624018662868563a7bec0dd07be5e4dd0c3d61124b4b5510576588
 const TLA_COMMIT: &str = "e7eda3f24b60fbbf4396e623a06da9ec32512c0e";
 const SOURCES: &[&str] = &[
     "verification/verus/main.rs",
+    "crates/capntproto-rpc-engine/src/question.rs",
+    "crates/capntproto-rpc-engine/src/question/verified.rs",
     "crates/capntproto-rpc-engine/src/handoff.rs",
     "crates/capntproto-rpc-engine/src/handoff/verified.rs",
 ];
@@ -441,7 +443,7 @@ fn verify(root: &Path, output: &Path, cancel: &Cancellation) -> Result<()> {
     } else {
         evidence["error"].as_str().unwrap().to_owned()
     };
-    crate::write(output.join("README.md"), format!("# Verus and verus-tla: {status}\n\n{details}\n\nSee [production proofs](proofs.json), [temporal library](temporal-library.json) and [source-bound evidence](evidence.json). Each JSON report includes per-function SMT timings. Control failures are expected and their logs identify the violated obligation.\n\n![SMT time per production contract and temporal lemma](proofs.svg)\n\nScope: the local handoff policy, full-width counters and unbounded traces. Progress assumes fair draining and lifting. Authentication, network delivery, other engine modules and Rust's Default wrapper are outside this Verus proof.\n"))?;
+    crate::write(output.join("README.md"), format!("# Verus and verus-tla: {status}\n\n{details}\n\nSee [production proofs](proofs.json), [temporal library](temporal-library.json) and [source-bound evidence](evidence.json). Each JSON report includes per-function SMT timings. Control failures are expected and their logs identify the violated obligation.\n\n![SMT time per production contract and temporal lemma](proofs.svg)\n\nScope: local handoff and outgoing-question policies, full-width counters and unbounded traces. Progress assumes fair draining/lifting or Return processing/local release. Authentication, network delivery, output acceptance, table generations and constructor/Default wrappers are outside this Verus proof; Kani retains the wrapper and ledger checks.\n"))?;
     result
 }
 

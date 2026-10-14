@@ -39,7 +39,7 @@ fn prepared() -> Prepared {
             method: 9,
             ..Default::default()
         },
-        params: Payload::owned(Default::default(), vec![]),
+        params: Payload::owned(Default::default(), vec![]).into_params(),
     }
 }
 

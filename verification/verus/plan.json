@@ -20,7 +20,21 @@
     "capntproto_proofs::handoff::initial_state",
     "capntproto_proofs::handoff::preserves",
     "capntproto_proofs::handoff::progress",
-    "capntproto_proofs::handoff::safety"
+    "capntproto_proofs::handoff::safety",
+    "capntproto_proofs::question::Delivery::clone",
+    "capntproto_proofs::question::DuplicateReturn::clone",
+    "capntproto_proofs::question::Finish::clone",
+    "capntproto_proofs::question::Question::can_pipeline",
+    "capntproto_proofs::question::Question::is_awaiting_return",
+    "capntproto_proofs::question::Question::release",
+    "capntproto_proofs::question::Question::return_delivery",
+    "capntproto_proofs::question::Question::returned",
+    "capntproto_proofs::question::Release::clone",
+    "capntproto_proofs::question::initial_state",
+    "capntproto_proofs::question::preserves",
+    "capntproto_proofs::question::progress",
+    "capntproto_proofs::question::safe_effect",
+    "capntproto_proofs::question::safety"
   ],
   "library_verified": 139,
   "controls": [
@@ -51,6 +65,41 @@
       "from": "        spec.entails(weak_fairness(|s, t| drain_step(s, t))),\n",
       "to": "",
       "function": "capntproto_proofs::handoff::progress"
+    },
+    {
+      "name": "early-question-reclaim",
+      "source": "crates/capntproto-rpc-engine/src/question.rs",
+      "from": "State::Cancelled => (None, false),",
+      "to": "State::Cancelled => (None, true),",
+      "function": "capntproto_proofs::question::Question::release"
+    },
+    {
+      "name": "duplicate-question-finish",
+      "source": "crates/capntproto-rpc-engine/src/question.rs",
+      "from": "State::Released => (None, true),",
+      "to": "State::Released => (Some(Finish { release_result_caps: false }), true),",
+      "function": "capntproto_proofs::question::Question::release"
+    },
+    {
+      "name": "deliver-cancelled-question",
+      "source": "crates/capntproto-rpc-engine/src/question.rs",
+      "from": "State::Cancelled => Ok(Delivery::Discard),",
+      "to": "State::Cancelled => Ok(Delivery::Deliver),",
+      "function": "capntproto_proofs::question::Question::return_delivery"
+    },
+    {
+      "name": "missing-question-release-fairness",
+      "source": "crates/capntproto-rpc-engine/src/question/verified.rs",
+      "from": "        spec.entails(weak_fairness(|s, t| release_trace(s, t))),\n",
+      "to": "",
+      "function": "capntproto_proofs::question::progress"
+    },
+    {
+      "name": "missing-question-return-fairness",
+      "source": "crates/capntproto-rpc-engine/src/question/verified.rs",
+      "from": "        spec.entails(weak_fairness(|s, t| return_trace(s, t))),\n",
+      "to": "",
+      "function": "capntproto_proofs::question::progress"
     }
   ]
 }

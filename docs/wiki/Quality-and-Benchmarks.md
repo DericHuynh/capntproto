@@ -1183,6 +1183,58 @@ and GitHub CI were not rerun. Raw measurements, intermediate binaries, source
 patch and executable identities are retained under
 `target/portable-optimization/worker-20261012/`.
 
+### Retained portable request readers (October 13, 2026)
+
+Upstream Rust RPC's Params owns the incoming message and capability table directly
+(see the upstream implementation linked above). The portable hosted adapter now
+retains the admitted parameter struct and its immutable segment owner. It uses
+the frame's validated segment layout and cached method metadata, avoiding another
+envelope decode. Prepared server calls own their ParamsHook directly, so dispatch
+passes that owner to the service without an intermediate payload representation.
+Segment identity checks remain in CheckedStructReader::retain. Requests with
+capability descriptors still use their exact receipts; fixed caller buffers still
+copy into the hosted Params owner. The allocation-free engine and wire profile
+have no new allocation or dependency.
+
+Three complete-process Callgrind trials against a0b5b3926 used ordinary
+release/full LTO, one codegen unit, overflow checks, 100 warmups and 1,000 empty
+plaintext TCP calls:
+
+| Portable process | Before | After | Change |
+|---|---:|---:|---:|
+| Client | 25,983,035 | 25,997,058 | +0.05% |
+| Server | 27,634,357 | 27,145,018 | −1.77% |
+
+Five rotated repetitions on two physical cores, with 10,000 warmups and 10,000
+retained calls per peer and payload, produced these pooled p50 ratios:
+
+| Payload | After / before | After / C++ | After / legacy | After / upstream Rust |
+|---|---:|---:|---:|---:|
+| Empty | 1.000× | 1.117× | 1.144× | 1.127× |
+| 64 B | 0.997× | 1.146× | 1.155× | 1.133× |
+| 1 KiB | 0.998× | 1.135× | 1.158× | 1.122× |
+| 64 KiB | 1.006× | 1.209× | 1.268× | 1.087× |
+
+P50 stayed within 0.7% of the baseline. P99 was mixed: empty calls changed from
+123.5 to 147.9 µs, 64 B from 124.0 to 111.5 µs, 1 KiB from 157.7 to 130.4 µs, and
+64 KiB from 223.8 to 242.8 µs. Local builds, tests and profilers were stopped during
+latency measurement, but this remains a shared workstation. These measurements
+establish lower server instruction cost, not a p99 improvement or remote
+qualification. The **1.00× legacy target remains unmet**.
+
+Validation passed 516 engine/wire/runtime tests (the changed hosted adapter was
+retested with all 232 RPC unit tests), 233 tests with allocation disabled, and
+30 transport/interoperability/handoff tests. Regressions check retained parameter
+identity and lifetime for single/multiple segments, fixed-buffer fallback and
+capability-bearing requests. The cross-runtime test passes all 132 required
+scenarios plus the bounded upstream check and two expected upstream-only controls.
+Clippy, formatting and the bare-metal wire build passed. Verus verifies 34 source
+functions and lemmas, the 139-function temporal library and nine fault controls;
+Kani retains the constructor wrapper check. The full workspace/coverage campaign
+is delegated to hosted CI for this batch. Raw profiles, both rejected and retained
+candidates, long latency trials and executable identities are retained under
+`target/portable-optimization/verus-20261013/`.
+
 ### Legacy call completion overhead
 
 The legacy driver now polls method execution and result completion in one

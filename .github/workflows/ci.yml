@@ -299,7 +299,7 @@ jobs:
     needs: [platforms, documentation, portability]
     uses: ./.github/workflows/verification-tests.yml # zizmor: ignore[self-repository]
   models:
-    name: Verify Kani proofs and distributed models
+    name: Verify formal proofs and distributed models
     needs: [platforms, documentation]
     uses: ./.github/workflows/verification-models.yml # zizmor: ignore[self-repository]
   fuzz:

@@ -1040,6 +1040,7 @@ fn received_server_uses_admitted_receipts_and_recovers_from_hook_capacity() {
                 |_| (),
             )
             .unwrap_or_else(|_| panic!("admit"));
+            assert!(call.share_plain_params(messages).unwrap().is_none());
             let mut full = ClientHooks::new(0, 4);
             assert!(full
                 .prepare_received_server(&call, &mut driver, messages)
@@ -1271,4 +1272,127 @@ fn hosted_hook_bridge_exceeds_inline_capability_capacity_in_both_directions() {
             },
         );
     });
+}
+
+#[test]
+fn retained_plain_params_keep_segments_and_outlive_the_connection() {
+    use capntproto_rpc_engine::ids::ExportId;
+    use capntproto_rpc_wire::clients as binding;
+    fn prepare<'p>(
+        messages: &mut messages::Messages<'p, '_, '_>,
+        segmented: bool,
+        shared: bool,
+    ) -> server::Prepared {
+        with_peer(4, |mut driver| {
+            let target = driver
+                .runtime
+                .endpoint(Route::local(42), clients::Location::Local)
+                .unwrap();
+            let export = {
+                let mut batch = driver.ledgers.exports.batch();
+                let grant = binding::stage(&mut driver.runtime, &mut batch, &target).unwrap();
+                batch.commit();
+                grant.id()
+            };
+            let mut builder = capnp::message::Builder::new(
+                capnp::message::HeapAllocator::new().first_segment_words(if segmented {
+                    1
+                } else {
+                    128
+                }),
+            );
+            {
+                let root = builder.init_root::<rpc_capnp::message::Builder<'_>>();
+                let mut call = root.init_call();
+                call.set_question_id(9);
+                call.set_interface_id(47);
+                call.set_method_id(3);
+                call.set_no_promise_pipelining(true);
+                call.reborrow()
+                    .init_target()
+                    .set_imported_cap(export.to_wire());
+                call.reborrow().init_send_results_to().set_caller(());
+                call.init_params()
+                    .get_content()
+                    .set_as::<capnp::data::Owned>(b"retained parameters".as_slice())
+                    .unwrap();
+            }
+            assert_eq!(builder.get_segments_for_output().len() > 1, segmented);
+            let bytes = capnp::serialize::write_message_to_words(&builder);
+            let frame = Frame::copy_from(messages, &bytes, Default::default()).unwrap();
+            let call = connection::Request::admit(
+                frame,
+                messages,
+                &mut driver.ledgers.imports,
+                &mut driver.ledgers.exports,
+                &mut driver.ledgers.answers,
+                connection::Answer::new(owned::pipelines::Results::new(())),
+                |_| (),
+            )
+            .unwrap_or_else(|_| panic!("admit"));
+            assert_eq!(call.share_plain_params(messages).unwrap().is_some(), shared);
+            let original = call
+                .with(messages, |p| {
+                    p.incoming()
+                        .payload()
+                        .unwrap()
+                        .get_content()
+                        .get_as::<capnp::data::Reader>()
+                        .unwrap()
+                        .as_ptr()
+                })
+                .unwrap();
+            let mut hooks = ClientHooks::new(0, 0);
+            let prepared = hooks
+                .prepare_received_server(&call, &mut driver, messages)
+                .unwrap();
+            assert_eq!(prepared.method().interface, 47);
+            assert_eq!(prepared.method().method, 3);
+            assert!(prepared.method().no_promise_pipelining);
+            let payload = prepared;
+            assert_eq!(
+                payload
+                    .params()
+                    .unwrap()
+                    .get_as::<capnp::data::Reader>()
+                    .unwrap()
+                    .as_ptr()
+                    == original,
+                shared
+            );
+            driver.release_call(call, messages);
+            hooks.close(&mut driver.runtime, Error::disconnected("done".into()));
+            let exported = driver
+                .ledgers
+                .exports
+                .release(ExportId::from_wire(export.to_wire()), 1)
+                .unwrap()
+                .unwrap();
+            driver.runtime.release(exported);
+            driver.runtime.release(target);
+            payload
+        })
+    }
+    for segmented in [false, true] {
+        for shared in [false, true] {
+            let payload = if shared {
+                with_pool(|messages| prepare(messages, segmented, true))
+            } else {
+                let mut bytes = [0u8; 4096];
+                let mut buffers = [messages::Buffer::new(&mut bytes)];
+                messages::with_messages(&mut buffers, &mut [], |messages| {
+                    prepare(messages, segmented, false)
+                })
+                .unwrap()
+            };
+            assert_eq!(
+                payload
+                    .params()
+                    .unwrap()
+                    .get_as::<capnp::data::Reader>()
+                    .unwrap(),
+                b"retained parameters"
+            );
+        }
+    }
 }

@@ -787,6 +787,35 @@ impl<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> Call<'pool, 'i, 'e, '
             }))
         })?
     }
+    /// Retain capability-free parameters with their already admitted segment
+    /// layout. The selected reader owns the same immutable bytes; fixed caller
+    /// storage and capability-bearing requests use the receipt-based path.
+    #[cfg(feature = "alloc")]
+    pub fn share_plain_params(
+        &self,
+        messages: &messages::Messages<'pool, '_, '_>,
+    ) -> Result<Option<alloc::boxed::Box<PlainParams>>, Error> {
+        if self.receipts.count != 0 {
+            return Ok(None);
+        }
+        let Some(segments) = self.frame.share_segments(messages)? else {
+            return Ok(None);
+        };
+        self.with(messages, |params| {
+            use capnp::traits::IntoInternalStructReader;
+            let payload = params.incoming().payload()?;
+            capnp::message::CheckedStructReader::retain(
+                payload.into_internal_struct_reader(),
+                segments,
+                capnp::message::ReaderOptions {
+                    traversal_limit_in_words: None,
+                    nesting_limit: i32::MAX,
+                },
+            )
+            .map(|message| Some(alloc::boxed::Box::new(PlainParams { message })))
+        })?
+        .map_err(Error::from)
+    }
     /// Share the admitted frame's immutable bytes, without interpreting IDs as
     /// capability authority. Its receipts remain available only through `with`.
     #[cfg(feature = "alloc")]
@@ -893,6 +922,21 @@ impl<'m, 'r, 'i, 'e, 'a, I, const N: usize> Request<'m, 'r, 'i, 'e, 'a, I, N> {
             &self.receipts.storage.exports()[index],
             &self.receipts.storage.answers()[index],
         )
+    }
+}
+
+/// Retained admitted parameters with no capability descriptors. Construction
+/// is private so unchecked frames cannot bypass admission's traversal limits.
+#[cfg(feature = "alloc")]
+pub struct PlainParams {
+    message: capnp::message::CheckedStructReader<
+        capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
+    >,
+}
+#[cfg(feature = "alloc")]
+impl capnp::private::capability::ParamsHook for PlainParams {
+    fn get(&self) -> capnp::Result<capnp::any_pointer::Reader<'_>> {
+        Ok(rpc_capnp::payload::Reader::from(self.message.root()).get_content())
     }
 }
 

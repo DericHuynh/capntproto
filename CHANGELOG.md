@@ -1,5 +1,11 @@
 # 0.1.0 developer preview (unpublished)
 
+- Verify outgoing question lifecycle contracts and unbounded safety/progress with
+  Verus and verus-tla, replacing the eight-operation Kani search while retaining
+  constructor and ledger checks. Add five deliberate-fault controls.
+- Retain admitted portable RPC parameter readers without decoding their envelope
+  again; preserve capability-receipt handling and caller-owned buffer fallback.
+
 - Add pinned Verus and verus-tla verification of the actual no-alloc handoff
   implementation. Replace its Kani transition proof with full-width contracts
   and unbounded temporal induction; preserve the Default wrapper and distributed

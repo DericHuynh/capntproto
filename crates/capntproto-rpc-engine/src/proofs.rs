@@ -7,50 +7,23 @@ use crate::{
 };
 use core::time::Duration;
 
+// Associated constructor/Default wrappers stay checked by Kani. Verus imports
+// their common initializer and proves all transition histories without a bound.
 #[kani::proof]
-#[kani::unwind(9)]
-fn question_finish_once_and_delayed_reuse() {
-    let no_return: bool = kani::any();
-    let mut question = if no_return {
-        Question::no_return()
-    } else {
-        Question::new()
-    };
-    let mut pending = !no_return;
-    let mut released = false;
-    let mut finish_needed = true;
-    let mut finishes = 0;
-    for _ in 0..8 {
-        if kani::any() {
-            let no_finish: bool = kani::any();
-            let result = question.returned(no_finish);
-            if pending {
-                assert_eq!(
-                    result,
-                    Ok(if released {
-                        Delivery::Discard
-                    } else {
-                        Delivery::Deliver
-                    })
-                );
-                pending = false;
-                finish_needed = !no_finish;
-            } else {
-                assert!(result.is_err());
-            }
-        } else {
-            let result = question.release();
-            assert_eq!(result.reclaim, !pending);
-            assert_eq!(result.finish.is_some(), !released && finish_needed);
-            if let Some(finish) = result.finish {
-                assert_eq!(finish.release_result_caps, pending);
-                finishes += 1;
-            }
-            released = true;
-        }
-        assert!(finishes <= 1);
-        assert_eq!(question.is_awaiting_return(), pending);
+#[kani::unwind(3)]
+fn question_constructor_wrappers_match_verified_initial_state() {
+    for mut question in [Question::new(), Question::default()] {
+        assert!(question.is_awaiting_return());
+        assert!(question.can_pipeline());
+        assert_eq!(question.return_delivery(), Ok(Delivery::Deliver));
+        assert_eq!(question.returned(false), Ok(Delivery::Deliver));
+        assert!(!question.release().finish.unwrap().release_result_caps);
     }
+    let mut question = Question::no_return();
+    assert!(!question.is_awaiting_return());
+    assert!(question.can_pipeline());
+    assert!(question.return_delivery().is_err());
+    assert!(!question.release().finish.unwrap().release_result_caps);
 }
 
 #[kani::proof]

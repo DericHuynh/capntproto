@@ -14,7 +14,7 @@ pub use worker::{Progress, Worker};
 #[must_use = "dispatch the prepared invocation or drop its owned parameters"]
 pub struct Prepared {
     method: DynamicCall,
-    params: Payload,
+    params: Box<dyn ParamsHook>,
 }
 impl ParamsHook for Payload {
     fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
@@ -45,7 +45,7 @@ impl Prepared {
         self.method
     }
     pub fn params(&self) -> capnp::Result<any_pointer::Reader<'_>> {
-        self.params.reader()
+        self.params.get()
     }
     /// Use the admitted destination and its original result context. In
     /// particular, the adapter does not replace the context's executor,
@@ -59,7 +59,7 @@ impl Prepared {
         destination.call_with_hints(
             self.method.interface,
             self.method.method,
-            self.params.into_params(),
+            self.params,
             results,
             CallHints {
                 no_promise_pipelining: self.method.no_promise_pipelining,
@@ -103,7 +103,7 @@ impl<'id> ClientHooks<'id> {
             content.imbue(&caps);
             Ok(Prepared {
                 method: params.hints(),
-                params: Payload::copy(content)?,
+                params: Payload::copy(content)?.into_params(),
             })
         })
         .map_err(wire_error)?
@@ -126,6 +126,12 @@ impl<'id> ClientHooks<'id> {
         driver: &mut Driver<'pool, 'id, '_, I, A, P, S, CAPS, PATH>,
         messages: &messages::Messages<'pool, '_, '_>,
     ) -> capnp::Result<Prepared> {
+        if let Some(message) = call.share_plain_params(messages).map_err(wire_error)? {
+            return Ok(Prepared {
+                method: call.method(),
+                params: message,
+            });
+        }
         call.with(messages, |params| {
             let mut caps = Vec::with_capacity(params.capability_count());
             for index in 0..params.capability_count() {
@@ -160,7 +166,8 @@ impl<'id> ClientHooks<'id> {
                     call.share_frame(messages),
                     PayloadKind::Params,
                     params.capability_count(),
-                )?,
+                )?
+                .into_params(),
             })
         })
         .map_err(wire_error)?
