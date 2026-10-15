@@ -1283,6 +1283,66 @@ fn buffered_plain_return_is_transactional_and_pins_the_original_result() {
 }
 
 #[test]
+fn buffered_plain_return_rejects_invalid_framing_and_defers_unknown_questions() {
+    with_driver(|mut driver, messages| {
+        let target = remote(&mut driver);
+        let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+        let request = capnp::message::Builder::new_default();
+        let key = driver
+            .try_send_immediate(
+                &target,
+                DynamicCall {
+                    no_promise_pipelining: true,
+                    ..Default::default()
+                },
+                request.get_root_as_reader().unwrap(),
+                messages,
+                &mut queue,
+                128,
+                Default::default(),
+                (),
+            )
+            .unwrap()
+            .unwrap();
+        drain(&mut queue, messages, |_| {});
+        let frame = Frame::build(messages, 128, Default::default(), |b| {
+            let root = b.try_init_root::<Message>()?;
+            let mut result = root.into_field(Message::RETURN).init()?;
+            result.scalar(Return::ANSWER_ID).set(key.id().to_wire() + 1);
+            result.scalar(Return::NO_FINISH_NEEDED).set(true);
+            result
+                .into_field(Return::RESULTS)
+                .init()?
+                .into_field(Payload::CONTENT)
+                .cast::<capnp::field_api::Data>()
+                .copy_from(b"wrong question")
+        })
+        .unwrap();
+        let bytes = messages.read(&frame.lease).to_vec();
+        frame.release(messages);
+        assert!(driver
+            .try_receive_plain_buffered::<()>(&bytes, Default::default(), messages, |_| panic!(
+                "unknown question must not select a sink"
+            ))
+            .unwrap()
+            .is_none());
+        for length in [0, 4, bytes.len() - 1] {
+            let result = driver.try_receive_plain_buffered::<()>(
+                &bytes[..length],
+                Default::default(),
+                messages,
+                |_| panic!("invalid frame must not select a sink"),
+            );
+            assert!(matches!(result, Err(Error::Input(_))));
+            assert!(driver.ledgers.questions.contains(key));
+            assert!(!driver.ledgers.questions.has_pending_finish());
+        }
+        driver.runtime.release(target);
+        close(driver, messages, &mut queue);
+    });
+}
+
+#[test]
 fn direct_deferred_admission_matches_general_validation_and_ownership() {
     // Compare the specialized Call classifier to the full receive path, with
     // identical tables and wire bytes. In particular, rejected input may neither

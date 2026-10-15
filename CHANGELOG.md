@@ -1,5 +1,10 @@
 # 0.1.0 developer preview (unpublished)
 
+- Add regression coverage for forwarded RPC success/failure, fallback request
+  envelopes, failed response reuse, occupied queue storage, raw partial reads and
+  invalid plain replies. Requalify the coverage reference after the instruction
+  optimization batch, retaining all measured gaps and the existing thresholds.
+
 - Keep portable request initialization concrete before trait-object coercion so
   the pinned LLVM coverage compiler accepts the optimized in-place allocation.
 

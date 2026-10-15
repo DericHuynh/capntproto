@@ -6,6 +6,48 @@ use core::{
 };
 
 #[test]
+fn nonempty_queue_storage_rejection_preserves_its_lease_and_resources() {
+    struct Resource<'a>(&'a core::cell::Cell<usize>);
+    impl Drop for Resource<'_> {
+        fn drop(&mut self) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+    let dropped = core::cell::Cell::new(0);
+    let mut bytes = [0; 8];
+    let mut buffers = [Buffer::new(&mut bytes)];
+    with_messages(&mut buffers, &mut [], |messages| {
+        let lease = messages.copy_from(b"retained").unwrap();
+        let mut entries = [Some(QueueEntry {
+            message: QueuedMessage::Owned { lease, position: 0 },
+            resources: Resource(&dropped),
+        })];
+        assert!(matches!(
+            Queue::with_resources(&mut entries),
+            Err(Error::NonemptyStorage)
+        ));
+        assert_eq!(dropped.get(), 0);
+        let entry = entries[0].take().unwrap();
+        let QueuedMessage::Owned { lease, .. } = entry.message else {
+            panic!("original owner")
+        };
+        assert_eq!(&*messages.read(&lease), b"retained");
+        messages.release(lease);
+        drop(entry.resources);
+        assert_eq!(dropped.get(), 1);
+        let mut queue = Queue::with_resources(&mut entries).unwrap();
+        let lease = messages.copy_from(b"reused").unwrap();
+        queue
+            .reserve_with(Resource(&dropped))
+            .unwrap()
+            .accept_owned(lease);
+        assert!(queue.window(messages).unwrap().unwrap().advance(6).unwrap());
+        assert_eq!(dropped.get(), 2);
+    })
+    .unwrap();
+}
+
+#[test]
 fn owned_fifo_needs_no_send_slots_and_preserves_resources_through_partial_writes() {
     struct Resource<'a>(&'a core::cell::Cell<usize>);
     impl Drop for Resource<'_> {

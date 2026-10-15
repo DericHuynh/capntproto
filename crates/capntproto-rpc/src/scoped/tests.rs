@@ -985,3 +985,174 @@ fn prepared_request_keeps_its_allocation_through_admission_and_final_hint_change
         .unwrap();
     }
 }
+
+#[test]
+fn forwarding_preserves_parameters_results_errors_and_releases_both_call_permits() {
+    for plain in [false, true] {
+        for fail in [false, true] {
+            clients::with_growing_graph::<u32, u8, _>(0, 4, |graph| {
+                let source_route = graph.endpoint(1, Location::Local).unwrap();
+                let target_route = graph.endpoint(2, Location::Local).unwrap();
+                let mut source = ClientHooks::new(1, 1);
+                let mut target = ClientHooks::new(1, 1);
+                let client = source.export_snapshot(graph, &source_route).unwrap();
+                let destination = target.export_snapshot(graph, &target_route).unwrap();
+                let mut request = client.hook.new_call_with_hints(
+                    47,
+                    3,
+                    None,
+                    CallHints {
+                        no_promise_pipelining: plain,
+                        only_promise_pipeline: false,
+                    },
+                );
+                request.get().set_as("forwarded parameters").unwrap();
+                let mut reply = request.send();
+                let mut forwarding = next(&mut source).forward(&*destination.hook);
+                assert_eq!(source.inbox.live_calls.get(), 1);
+                let mut call = next(&mut target);
+                assert_eq!((call.interface_id(), call.method_id()), (47, 3));
+                assert_eq!(call.hints().no_promise_pipelining, plain);
+                assert_eq!(
+                    call.params()
+                        .unwrap()
+                        .get_as::<capnp::text::Reader>()
+                        .unwrap(),
+                    "forwarded parameters"
+                );
+                call.results()
+                    .get()
+                    .unwrap()
+                    .set_as("forwarded result")
+                    .unwrap();
+                call.complete(if fail {
+                    Err(Error::failed("forwarded failure".into()))
+                } else {
+                    Ok(())
+                });
+                let completion = ready(&mut forwarding);
+                if fail {
+                    assert_eq!(completion.unwrap_err().extra, "forwarded failure");
+                    assert_eq!(error(ready(&mut reply.promise)).extra, "forwarded failure");
+                } else {
+                    completion.unwrap();
+                    assert_eq!(
+                        ready(&mut reply.promise)
+                            .unwrap()
+                            .get()
+                            .unwrap()
+                            .get_as::<capnp::text::Reader>()
+                            .unwrap(),
+                        "forwarded result"
+                    );
+                }
+                assert_eq!(source.inbox.live_calls.get(), 0);
+                assert_eq!(target.inbox.live_calls.get(), 0);
+                drop((forwarding, reply, client, destination));
+                source.close(graph, Error::disconnected("done".into()));
+                target.close(graph, Error::disconnected("done".into()));
+                graph.release(source_route);
+                graph.release(target_route);
+                assert_eq!(graph.take_retired(), Some(1));
+                assert_eq!(graph.take_retired(), Some(2));
+                assert!(graph.is_empty());
+            })
+            .unwrap();
+        }
+    }
+}
+
+#[test]
+fn general_request_fallback_preserves_envelopes_and_direct_response_ownership() {
+    use capnp::private::capability::RequestHook;
+    for envelope in [false, true] {
+        clients::with_growing_graph::<u32, u8, _>(0, 2, |graph| {
+            let route = graph.endpoint(7, Location::Remote(1)).unwrap();
+            let mut hooks = ClientHooks::new(1, 1);
+            let client = hooks.export_snapshot(graph, &route).unwrap();
+            let hints = CallHints {
+                no_promise_pipelining: true,
+                only_promise_pipeline: false,
+            };
+            let mut request = if envelope {
+                let hook = client
+                    .hook
+                    .as_any()
+                    .unwrap()
+                    .downcast_ref::<Hook>()
+                    .unwrap();
+                Box::new(
+                    crate::local::Params::scoped(
+                        47,
+                        3,
+                        capnp::message::HeapAllocator::new(),
+                        Some(None),
+                    )
+                    .into_request(
+                        47,
+                        3,
+                        hints,
+                        Hook(hook.0.clone(), hook.1.clone()),
+                        None,
+                        None,
+                    ),
+                )
+            } else {
+                let mut request = Box::new(crate::local::Request::new(
+                    47,
+                    3,
+                    None,
+                    client.hook.add_ref(),
+                ));
+                request.set_hints(hints);
+                request
+            };
+            RequestHook::get(&mut *request)
+                .set_as("fallback parameters")
+                .unwrap();
+            assert_eq!(request.prepared_call().is_some(), envelope);
+            assert!(ParamsHook::as_any(&*request)
+                .unwrap()
+                .is::<crate::local::Request>());
+            assert_eq!(
+                ParamsHook::get(&*request)
+                    .unwrap()
+                    .get_as::<capnp::text::Reader>()
+                    .unwrap(),
+                "fallback parameters"
+            );
+            let mut reply = request.send();
+            let mut call = next(&mut hooks);
+            assert_eq!(
+                call.params()
+                    .unwrap()
+                    .get_as::<capnp::text::Reader>()
+                    .unwrap(),
+                "fallback parameters"
+            );
+            assert_eq!((call.interface_id(), call.method_id()), (47, 3));
+            call.results()
+                .get()
+                .unwrap()
+                .set_as("fallback result")
+                .unwrap();
+            call.complete(Ok(()));
+            assert_eq!(
+                ready(&mut reply.promise)
+                    .unwrap()
+                    .get()
+                    .unwrap()
+                    .get_as::<capnp::text::Reader>()
+                    .unwrap(),
+                "fallback result"
+            );
+            assert_eq!(hooks.inbox.live_calls.get(), 0);
+            drop((reply, client));
+            hooks.close(graph, Error::disconnected("done".into()));
+            graph.release(route);
+            assert_eq!(graph.take_retired(), Some(7));
+            assert!(graph.is_empty());
+        })
+        .unwrap();
+    }
+}

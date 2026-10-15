@@ -919,6 +919,50 @@ mod promise_tests {
         }
     }
     #[test]
+    fn typed_shared_response_errors_release_the_receiver_and_allow_reuse() {
+        struct Failed(Rc<ResponseReceiver<Error>>, Rc<Cell<usize>>);
+        impl
+            crate::private::capability::SharedPromise<
+                alloc::boxed::Box<dyn ResponseHook>,
+                alloc::boxed::Box<Error>,
+            > for Failed
+        {
+            fn poll(
+                &self,
+                _: &mut core::task::Context<'_>,
+            ) -> Poll<Result<alloc::boxed::Box<dyn ResponseHook>, alloc::boxed::Box<Error>>>
+            {
+                Poll::Ready(Err(alloc::boxed::Box::new(Error::failed(
+                    alloc::string::String::from("injected completion failure"),
+                ))))
+            }
+            fn cancel(self: Rc<Self>) {
+                assert!(self.0.state.borrow().is_none());
+                self.1.set(self.1.get() + 1);
+            }
+        }
+        let receiver = Rc::new(ResponseReceiver::default());
+        let canceled = Rc::new(Cell::new(0));
+        for expected in 1..=2 {
+            let untyped: Promise<Response<any_pointer::Owned>, Error> =
+                Promise::from_shared_response(
+                    receiver.clone(),
+                    Rc::new(Failed(receiver.clone(), canceled.clone())),
+                    Response::new,
+                );
+            let mut typed = untyped.into_typed_response::<any_pointer::Owned>();
+            let Poll::Ready(Err(error)) =
+                Pin::new(&mut typed).poll(&mut core::task::Context::from_waker(Waker::noop()))
+            else {
+                panic!("expected completion error")
+            };
+            assert_eq!(error.extra, "injected completion failure");
+            drop(typed);
+            assert_eq!(canceled.get(), expected);
+            assert!(receiver.state.borrow().is_none());
+        }
+    }
+    #[test]
     fn typed_shared_response_preserves_one_receiver_and_hook_ownership() {
         // Response mapping must not enlarge the ubiquitous server completion.
         assert!(core::mem::size_of::<Promise<(), Error>>() <= 3 * core::mem::size_of::<usize>());

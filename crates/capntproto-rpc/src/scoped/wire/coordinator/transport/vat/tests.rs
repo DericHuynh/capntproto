@@ -218,6 +218,59 @@ fn ready_ok<T>(value: Poll<Result<T, IoError<Error>>>) -> T {
 }
 
 #[test]
+fn raw_frame_fallback_preserves_partial_reads_and_admission_boundary() {
+    struct Raw(Vec<u8>);
+    impl crate::IncomingMessage for Raw {
+        fn framed_bytes(&self) -> Option<&[u8]> {
+            Some(&self.0)
+        }
+        fn size_in_words(&self) -> usize {
+            2
+        }
+        fn get_body(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+            panic!("raw fallback must not traverse the payload")
+        }
+    }
+    for consume in [false, true] {
+        let (connection, state) = fixture();
+        let (mut reader, _writer, _) = connection.into_io(NonZeroUsize::new(32).unwrap());
+        let expected = frame();
+        reader.start(Box::new(Raw(expected.clone()))).unwrap();
+        let mut received = Vec::new();
+        while received.len() < expected.len() {
+            let mut bytes = [0xa5; 5];
+            let count = ready_ok(reader.poll_read(&mut cx(), &mut bytes));
+            assert!(count > 0);
+            received.extend_from_slice(&bytes[..count]);
+            assert_eq!(&bytes[count..], &vec![0xa5; 5 - count]);
+            if consume {
+                break;
+            }
+        }
+        if consume {
+            reader.consume_buffered_frame();
+        } else {
+            assert_eq!(received, expected);
+            assert!(matches!(
+                reader.poll_read(&mut cx(), &mut [0; 1]),
+                Poll::Ready(Err(_))
+            ));
+            reader.finish_frame();
+        }
+        assert!(reader.message.is_none());
+        if consume {
+            assert!(reader.poll_read(&mut cx(), &mut [0; 1]).is_pending());
+            assert_eq!(state.reads.get(), 1);
+        } else {
+            // Reading across an unfinished admission is terminal, so no new
+            // receive may hide the error or reuse its attachment boundary.
+            assert_eq!(ready_ok(reader.poll_read(&mut cx(), &mut [0; 1])), 0);
+            assert_eq!(state.reads.get(), 0);
+        }
+    }
+}
+
+#[test]
 fn incoming_segment_bytes_and_capability_indices_are_preserved_without_traversal() {
     let (connection, state) = fixture();
     assert_eq!(connection.id(), 23);

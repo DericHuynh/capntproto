@@ -528,6 +528,76 @@ the archive to inspect `target/quality/fuzz/README.md` and `FAILED-TESTS.md`, gr
 `target/verification/native-fuzz/` logs, and `fuzz/artifacts/` reproducer inputs.
 Packaging runs even when a campaign fails, and retains the failing run's evidence.
 
+### October 15 instruction-optimization coverage review
+
+The pinned coverage compiler needs a concrete `Box<Call>` binding before the
+request is coerced to `RequestHook`. Commit `848a41e54` fixes that inference
+without changing the in-place allocation. The full instrumented build then
+exposed coverage decreases from the preceding RPC optimization batch. The
+original measurement and failed comparison remain in
+`target/ci-fix-20261015/coverage/`; they are not relabeled as passing evidence.
+
+Six additional regression tests check forwarded success/error results and both
+call permits, fallback request envelopes and response ownership, receiver reuse
+after a failed shared response, rejection of occupied queue storage without
+losing its lease, raw partial reads and the terminal admission boundary, and
+malformed or unknown-question buffered replies without consuming a live question.
+All six pass under stable and the pinned coverage compiler. The complete
+instrumented Cargo partition passes 2,085 tests and the runnable doctests pass.
+These tests additionally exercise 32 lines in `local.rs`, 33 in `scoped.rs`,
+41 in `scoped/response.rs`, and 10 in the transport adapter.
+
+The replacement is the complete, unmodified measured summary from
+`target/ci-fix-20261015/with-regressions/coverage/summary.json`. Independent checks
+match all 977 source hashes, all mapped counters to the raw LLVM export, and all
+group totals. There are 839 mapped and 138 explicitly unmapped files; no measured
+source loses instrumentation. The scope, compiler, instrumentation options and
+per-file/per-group 0.5 percentage-point tolerance remain unchanged. The revised
+reference still requires an independent fresh run; copying the reference does
+not turn the failed measurement into a successful gate.
+
+| Source group | Lines, previous → measured | Regions | Functions | Branches |
+| --- | ---: | ---: | ---: | ---: |
+| async-framing | 2599/2725 → 2657/2780 | 3964/4171 → 4055/4258 | 262/287 → 273/297 | 271/284 → 271/284 |
+| capability-rpc | 60623/68116 → 62613/70196 | 98394/110344 → 101956/114060 | 5588/6551 → 5741/6719 | 5344/7120 → 5603/7470 |
+| optional-compatibility | 5222/5802 → 5222/5802 | 8194/9431 → 8194/9431 | 449/542 → 449/542 | 545/742 → 545/742 |
+| runtime | 30710/36423 → 30733/36446 | 45425/53725 → 45485/53785 | 2846/3141 → 2847/3142 | 3284/4446 → 3284/4446 |
+| rust-codegen | 3874/4270 → 3874/4270 | 6514/7509 → 6514/7509 | 140/160 → 140/160 | 549/638 → 549/638 |
+| schema-compiler | 9531/9814 → 9531/9814 | 16222/16842 → 16222/16842 | 654/690 → 654/690 | 1101/1322 → 1101/1322 |
+| tests-and-verification | 69943/89110 → 69986/89155 | 101679/130904 → 101743/130970 | 4306/5500 → 4311/5505 | 2423/4262 → 2424/4262 |
+| tools-fuzz-examples-benchmarks | 11243/16919 → 11357/17044 | 20712/31684 → 20895/31894 | 893/1310 → 902/1316 | 1515/2457 → 1533/2485 |
+| wire-runtime | 20493/23752 → 20753/23996 | 31235/37162 → 31626/37538 | 2372/2840 → 2400/2864 | 1846/2353 → 1859/2363 |
+
+No group exceeds the old tolerance. The review retains all 31 rejected metrics
+across 17 files, including genuine remaining gaps:
+
+| File (under `crates/`) | Rejected metrics | Review and remaining limitations |
+| --- | --- | --- |
+| `capntproto-core/src/capability.rs` | branches | Response ownership and error tests add untaken assertion/panic arms. Reuse after failure and cancellation ownership are tested; invariant arms remain unexecuted. |
+| `capntproto-rpc-engine/src/messages.rs` | functions, branches | Owned-send and copy helpers add checked states and mappings. Error formatting, buffer capacity access and some defensive outcomes remain unmeasured. |
+| `capntproto-rpc-engine/src/messages/queue.rs` | lines, regions, branches | The FIFO now owns leases as well as tracked sends. Partial writes, resource lifetime, mixed FIFO order, shared buffers and occupied-storage rejection are tested; impossible owned-state alternatives and some terminal errors remain uncovered. |
+| `capntproto-rpc-engine/src/messages/queue/tests.rs` | branches | The new storage-rejection test deliberately never takes its wrong-owner panic arm. |
+| `capntproto-rpc-engine/src/questions.rs` | branches | Final plain-return reclamation adds observer/Finish/owner predicates. The existing matrix checks observer counts 0–3, wrong owners and backpressure; not every composite predicate outcome is measured. |
+| `capntproto-rpc-wire/src/owned/connection.rs` | lines, regions, branches | Idle maintenance and fused ownership paths expand the driver. Construction failures, redirected calls and some cancellation/maintenance combinations remain gaps. |
+| `capntproto-rpc-wire/src/owned/connection/growing/tests.rs` | functions | Invalid-frame tests add sink selectors that must never execute on rejection. Their zero-hit mappings are retained. |
+| `capntproto-rpc-wire/src/owned/connection/invocation/template.rs` | branches | Prepared publication adds private-envelope invariants and rejection paths. Some pool/copy failures and impossible message variants remain unexecuted. |
+| `capntproto-rpc-wire/src/owned/connection/plain_return.rs` | regions, functions | Malformed framing, unknown questions, unclaimed results and invalid capabilities are tested transactionally. Fixed-storage sharing and some pending-pipeline/ordering fallbacks remain uncovered. |
+| `capntproto-rpc-wire/src/owned/connection/prepared_return.rs` | lines, regions, branches | Direct queue publication adds owner/copy paths. Private-header impossible variants and some storage failures remain gaps. |
+| `capntproto-rpc/src/local.rs` | lines, regions, functions, branches | New tests restore general request, envelope and direct-response fallback coverage. Third-party-tail eligibility, busy/revoked diagnostics and some cancellation paths remain unmeasured. |
+| `capntproto-rpc/src/membrane.rs` | regions, functions | The added cancellation-guard delegation is not exercised by this partition; revocation/resolution error alternatives also remain visible. |
+| `capntproto-rpc/src/scoped.rs` | branches | Forwarding success and errors now exercise both parameter representations and permit release. Allocation failure and some introduced/closed endpoint combinations remain gaps. |
+| `capntproto-rpc/src/scoped/wire/coordinator.rs` | functions, branches | New work lanes and fused dispatch have fairness/backpressure regressions, but custom-control defaults, simultaneous pending/error conditions and retirement combinations are not exhaustive. |
+| `capntproto-rpc/src/scoped/wire/coordinator/transport/vat.rs` | branches | Raw partial reads and admission boundaries are now exercised. Stream-driver EOF, oversize, flush-error and metadata rejection combinations remain partly unmeasured. |
+| `capntproto-rpc/src/scoped/wire/coordinator/transport/vat/tests.rs` | lines, functions | Raw-frame fixtures intentionally never decode the payload and include untaken failure arms. |
+| `capntproto-rpc/src/scoped/wire/server/results/tests.rs` | branches | Additional ownership assertions introduce untaken panic branches. |
+
+Source identity: `53161b315652a9c9796fc7efda51a312c850e7225804cc16dc6846116f220e60`.
+Raw LLVM JSON SHA-256: `3e101fa5182a8ef8ea156e4c714a5ae9be3a86b7840ac42125e08d67b527e3ff`.
+Previous baseline SHA-256: `713cdf57840f7cd96acaa2357d110443e675c08b23dddb5ba40ef4d6cc1f8e99`.
+Replacement summary SHA-256: `956e9006fd555916cf648bb817070b54d459ac74c2011f35a5136714a5c79c4d`.
+The independent audit is retained in `target/ci-fix-20261015/coverage-review.json`.
+This review does not claim exhaustive scheduler coverage or production qualification.
+
 ## Dedicated remote workflows and loopback controls
 
 The CI runner provisions **two** dedicated droplets: one client and one server,
