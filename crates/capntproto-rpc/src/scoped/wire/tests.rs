@@ -63,7 +63,7 @@ fn data_payloads_share_validated_frames_and_outlive_the_driver_scope() {
                             content,
                             frame.share(messages),
                             kind,
-                            0,
+                            Vec::new(),
                         )
                         .unwrap();
                         assert!(matches!(payload.body, PayloadBody::Shared { .. }));
@@ -124,6 +124,113 @@ fn data_payloads_share_validated_frames_and_outlive_the_driver_scope() {
             }
         };
         assert_eq!(content, b"shared payload");
+    }
+}
+
+#[test]
+fn admitted_capability_payloads_keep_slot_identity_and_outlive_their_frame() {
+    use rpc_capnp::api::{Call, CapDescriptor, Message, Payload as WirePayload, Return};
+    for kind in [PayloadKind::Params, PayloadKind::Results] {
+        for shared in [false, true] {
+            let mut pool = messages::GrowingBuffers::new(1, 256, 263);
+            let payload = messages::with_growing_messages(
+                &mut pool,
+                storage::Growth {
+                    initial: 0,
+                    maximum: 0,
+                },
+                |messages| {
+                    let frame = Frame::build(messages, 256, Default::default(), |builder| {
+                        let root = builder.try_init_root::<Message>()?;
+                        let mut payload = match kind {
+                            PayloadKind::Params => root
+                                .into_field(Message::CALL)
+                                .init()?
+                                .into_field(Call::PARAMS)
+                                .init()?,
+                            PayloadKind::Results => root
+                                .into_field(Message::RETURN)
+                                .init()?
+                                .into_field(Return::RESULTS)
+                                .init()?,
+                        };
+                        payload
+                            .field(WirePayload::CONTENT)
+                            .set_capability_index(1)?;
+                        let mut caps = payload.field(WirePayload::CAP_TABLE).init(2)?;
+                        caps.get_mut(0).unwrap().void(CapDescriptor::NONE).set();
+                        caps.get_mut(1)
+                            .unwrap()
+                            .scalar(CapDescriptor::SENDER_HOSTED)
+                            .set(77);
+                        Ok(())
+                    })
+                    .unwrap();
+                    let payload = frame
+                        .with(messages, |root| {
+                            let content = match root.which().unwrap() {
+                                rpc_capnp::message::Call(call) => {
+                                    call.unwrap().get_params().unwrap().get_content()
+                                }
+                                rpc_capnp::message::Return(returned) => {
+                                    let rpc_capnp::return_::Results(payload) =
+                                        returned.unwrap().which().unwrap()
+                                    else {
+                                        panic!()
+                                    };
+                                    payload.unwrap().get_content()
+                                }
+                                _ => panic!(),
+                            };
+                            content.validate_capability_indices(2).unwrap();
+                            Payload::retain_admitted_or_copy(
+                                content,
+                                shared.then(|| frame.share(messages).unwrap()),
+                                kind,
+                                vec![
+                                    None,
+                                    Some(crate::broken::new_cap(Error::failed(
+                                        "original admitted hook".into(),
+                                    ))),
+                                ],
+                            )
+                            .unwrap()
+                        })
+                        .unwrap();
+                    frame.release(messages);
+                    if shared {
+                        assert_eq!(
+                            messages.reserve(256).unwrap_err(),
+                            messages::Error::NoBuffer
+                        );
+                        assert_eq!(payload.reader().unwrap().capability_index().unwrap(), 1);
+                    }
+                    payload
+                },
+            )
+            .unwrap();
+            drop(pool);
+            let capability = match kind {
+                PayloadKind::Params => payload
+                    .into_params()
+                    .get()
+                    .unwrap()
+                    .get_as_capability::<capability::Client>()
+                    .unwrap(),
+                PayloadKind::Results => payload
+                    .into_response()
+                    .get()
+                    .unwrap()
+                    .get_as_capability::<capability::Client>()
+                    .unwrap(),
+            };
+            let request = capability.hook.new_call(0, 0, None).send();
+            let error = match futures::executor::block_on(request.promise) {
+                Err(error) => error,
+                Ok(_) => panic!("the retained hook must preserve its failure"),
+            };
+            assert_eq!(error.extra, "original admitted hook");
+        }
     }
 }
 

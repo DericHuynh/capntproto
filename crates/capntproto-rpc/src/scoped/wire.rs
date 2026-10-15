@@ -76,7 +76,7 @@ impl Payload {
                 debug_assert!(self.caps.is_empty());
                 message
             }
-            PayloadBody::Shared { message } => {
+            PayloadBody::Shared { message } if self.caps.is_empty() => {
                 debug_assert!(self.caps.is_empty());
                 message
             }
@@ -106,19 +106,21 @@ impl Payload {
         reader: any_pointer::Reader<'_>,
         bytes: Option<messages::SharedBytes>,
         kind: PayloadKind,
-        descriptor_count: usize,
+        caps: Vec<Option<Box<dyn ClientHook>>>,
     ) -> capnp::Result<Self> {
         // Both callers use the content and receipts of an admitted immutable
         // Call/Return. Admission already traversed this entire graph under its
-        // original limits and validated every capability index. With no
-        // descriptors, that proves the shared payload contains no capabilities;
-        // another target_size traversal cannot establish any additional fact.
-        // Nonempty tables still copy/remap through their admitted hook owners.
-        if descriptor_count == 0 {
-            if let Some(bytes) = bytes {
-                return Self::from_admitted_bytes(bytes, kind);
-            }
+        // original limits and validated every capability index. Each supplied
+        // slot is already bound through that frame's exact admission receipt.
+        // Retain those hooks in the original slot order alongside the immutable
+        // frame; no payload copy or capability-index remapping is required.
+        if let Some(bytes) = bytes {
+            let mut payload = Self::from_admitted_bytes(bytes, kind)?;
+            payload.caps = caps;
+            return Ok(payload);
         }
+        let mut reader = reader;
+        reader.imbue(&caps);
         Self::copy(reader)
     }
     #[inline(always)]
@@ -281,13 +283,11 @@ impl<'id> ClientHooks<'id> {
         let mut direct_stage = None;
         let outcome = (|| {
             let target = self.target(&call)?;
-            // A settled imported endpoint cannot become a local producer or
-            // acquire a new promise pipeline. Its hosted owner can consume the
-            // driver's result directly, without another completion channel and
-            // polling ledger. Dispatch ordering and question ownership remain
-            // in the same portable driver as every other invocation.
+            // A settled imported endpoint cannot become a local producer. Its
+            // hosted owner can consume the driver's result directly, without
+            // another completion channel and polling ledger. Projections use
+            // the same queued task and question identities as Invocations.
             let direct = direct
-                && call.hints.no_promise_pipelining
                 && call.third_party.is_none()
                 && driver.runtime.is_settled(target).map_err(wire_error)?
                 && matches!(
@@ -302,15 +302,23 @@ impl<'id> ClientHooks<'id> {
                 );
             let params = call.params()?;
             let size = params.target_size()?;
+            // A private one-slot table with a reachable capability already has
+            // the identity mapping. Its original hook still passes through the
+            // ordinary import/membrane path below. Larger or foreign tables
+            // retain the copy which collects and remaps reachable capabilities.
+            let direct_caps = (size.cap_count != 0)
+                .then(|| call.params.single_capability_table())
+                .flatten();
             // Data-only parameters already have the identity wire cap mapping.
             // Keep their caller-owned reader through the transactional copy
             // instead of allocating and copying a second hosted message first.
-            let payload = if size.cap_count == 0 {
+            let payload = if size.cap_count == 0 || direct_caps.is_some() {
                 None
             } else {
                 Some(Payload::copy(params)?)
             };
-            let caps = payload.as_ref().map_or(&[][..], |payload| &payload.caps);
+            let caps = direct_caps
+                .unwrap_or_else(|| payload.as_ref().map_or(&[][..], |payload| &payload.caps));
             if caps.len() > driver.capability_capacity() {
                 return Err(Error::overloaded(
                     "wire capability capacity exhausted".into(),
@@ -550,6 +558,15 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
             let path = pipeline::Path::new(&fields);
             let routed = if let Some(response) = &self.tail_response {
                 driver.tail_pipeline(response, path, messages)
+            } else if let Some(stage) = self.direct {
+                match stage {
+                    DirectStage::Queued => driver.invocation_pipeline(
+                        self.task.expect("queued direct task"),
+                        path,
+                        messages,
+                    ),
+                    DirectStage::Sent(question) => driver.pipeline(question, path),
+                }
             } else {
                 invocations.pipeline_with(
                     driver,
@@ -969,9 +986,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                             };
                             caps.push(cap);
                         }
-                        let mut content = payload.content();
-                        content.imbue(&caps);
-                        Payload::retain_admitted_or_copy(content, remote.share_results(messages), PayloadKind::Results, payload.capability_count())
+                        Payload::retain_admitted_or_copy(payload.content(), remote.share_results(messages), PayloadKind::Results, caps)
                     }
                     owned::Reply::Exception(error) => {
                         Err(crate::rpc::remote_exception_to_error(error))

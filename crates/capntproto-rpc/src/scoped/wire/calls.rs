@@ -264,12 +264,14 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         pipeline: Box<dyn PipelineHook>,
     ) {
         for entry in self.entries.iter().flatten() {
-            if entry
-                .wire
-                .task
-                .and_then(|task| self.invocations.question_for(task))
-                == Some(key)
-            {
+            let question = match entry.wire.direct {
+                Some(DirectStage::Sent(question)) => Some(question),
+                _ => entry
+                    .wire
+                    .task
+                    .and_then(|task| self.invocations.question_for(task)),
+            };
+            if question == Some(key) {
                 // Once any path has been used, preserve the original ordering
                 // route. An independent-path Join fence can shorten it later.
                 if let Some(state) = &entry.wire.pipeline {

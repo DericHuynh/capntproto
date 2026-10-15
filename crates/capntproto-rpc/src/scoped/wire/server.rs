@@ -29,7 +29,7 @@ impl ParamsHook for SharedPayload {
 impl Payload {
     pub(super) fn into_params(self) -> Box<dyn ParamsHook> {
         match self.body {
-            PayloadBody::Shared { message } => {
+            PayloadBody::Shared { message } if self.caps.is_empty() => {
                 // Admission proved this immutable frame has no capabilities.
                 // The existing allocation already owns its storage and reader;
                 // wrapping the Payload again would add a box to every call.
@@ -157,15 +157,13 @@ impl<'id> ClientHooks<'id> {
                 };
                 caps.push(hook);
             }
-            let mut content = params.incoming().payload()?.get_content();
-            content.imbue(&caps);
             Ok(Prepared {
                 method: params.incoming().hints(),
                 params: Payload::retain_admitted_or_copy(
-                    content,
+                    params.incoming().payload()?.get_content(),
                     call.share_frame(messages),
                     PayloadKind::Params,
-                    params.capability_count(),
+                    caps,
                 )?
                 .into_params(),
             })

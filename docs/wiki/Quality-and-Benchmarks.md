@@ -875,7 +875,11 @@ The borrowed-frame TCP receive path additionally retains one completed spill
 allocation up to 8 MiB per connection. This transport cache is separate from
 application segments and the portable wire-buffer budget. It never retains a
 larger spill, exposes only completely received frames, and is freed with the
-stream. Owning receive APIs continue transferring their frame allocation.
+stream. Completed spills up to 128 KiB can replace a smaller primary receive
+buffer, avoiding the second underlying read for a repeated frame of that size.
+The primary buffer remains bounded by the larger of its configured size and
+128 KiB; the separate retained spill remains bounded by 8 MiB. Owning receive
+APIs continue transferring their frame allocation and do not promote buffers.
 
 The allocation-free engine retains caller-owned storage and the same protocol
 transitions. The library's default remains legacy while bilateral Join and
@@ -2879,6 +2883,56 @@ separate `portable-loopback/README.md` and `summary.json` apply the same 1.05×
 faster-reference target to every payload, including 64 KiB; invalid/missing or
 duplicate trials fail validation. Valid misses remain advisory evidence while
 the gap is open. Partial results are salvaged before host cleanup on failure.
+
+### Capability and receive-path experiments (October 15, 2026)
+
+The next candidate keeps admitted capability payloads in their immutable frame
+with their independently owned hooks. Descriptor validation and binding still
+precede sharing, and original capability slot indices remain intact. Fixed
+storage still copies the reachable payload. A private one-slot outgoing table
+can likewise skip the intermediate payload copy; foreign and larger tables
+retain the ordinary collection/remapping path. Tests cover null slots, hook
+identity, response and parameter owners surviving their input frame, and pool
+storage remaining unavailable while shared bytes survive.
+
+Settled remote calls now consume their driver's result directly even when they
+permit pipelining. Their projections use the original queued task or published
+question, and ordered Return propagation still precedes result release. Local,
+unresolved and third-party calls retain invocation bindings. Tests exercise
+projections before and after publication, remote exceptions, late projections,
+queued cancellation and late Returns. All 258 RPC tests and 72 mixed-driver
+workflow checks pass, together with Clippy. The borrowed-buffer promotion also
+passes 43 futures tests and all 24 buffered-input integration checks.
+
+Two other prototypes were rejected: expanding synchronous server dispatch to
+multiple active entries, and polling a queued completion binding immediately
+after Return. Their full timing and instruction evidence is retained; neither
+improved the complete capability comparison. Payload sharing and direct remote
+completion alone also do not establish the 1.05× latency target.
+
+The complete rotating local run still passes only six of twelve workflow
+cells. Portable/faster-reference p50 ratios are 1.019× (empty), 1.481× (small),
+1.488× (1 KiB), 1.305× (fan-out), 1.685× (dependent), 1.345× (pipelined),
+0.895× (write/read), 1.312× (callback), 0.964× (64 KiB), 0.710× (256 KiB),
+0.845× (1 MiB), and 1.113× (4 MiB). A separate complete four-payload loopback
+campaign passes all four cells at 0.659×, 0.905×, 1.032× and 0.994×. Both
+campaigns retain every trial; the host still alternates between roughly 20 and
+30 µs small-call regimes. These local results do not qualify the dedicated
+workflow target. The candidate SHA-256 is
+`c8eab04905e72eb873be9eaef823bc5624b0912048d70fedf0fc05b61b91d18d`.
+Matched empty-call instructions remain 17,835,521 / 17,147,351 on the client
+(1.040×) and 16,434,449 / 16,057,415 on the server (1.023×). All candidate,
+rejected-prototype and raw timing evidence is retained in
+`target/portable-performance-capabilities-20261015/`.
+
+Dedicated qualification encountered two independent stale-cache failures:
+[the first run](https://github.com/DericHuynh/capntproto/actions/runs/38819400269)
+found an existing smoke directory, and
+[the retry](https://github.com/DericHuynh/capntproto/actions/runs/38820781958)
+passed smoke but found an existing remote report directory. Both stopped before
+provisioning measurement hosts. Smoke and measurement evidence now live under
+fresh runner-temporary paths, outside the restored Cargo target cache. Neither
+failed run supplies remote latency evidence.
 
 ### Portable and legacy instruction qualification
 

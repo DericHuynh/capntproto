@@ -568,6 +568,13 @@ enum CallParams {
     Hook(Box<dyn ParamsHook>),
 }
 impl CallParams {
+    fn single_capability_table(&self) -> Option<&[Option<Box<dyn ClientHook>>]> {
+        match self {
+            Self::Request(request) => request.single_capability_table(),
+            Self::Hook(_) => None,
+        }
+    }
+
     #[inline(always)]
     fn prepared_call(
         &self,

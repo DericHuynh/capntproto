@@ -690,12 +690,12 @@ fn large_remote_call_retries_output_and_preserves_exception_diagnostics() {
                 calls.entries.iter().flatten().count() + usize::from(calls.pending.is_some()),
                 1
             );
+            assert_eq!(
+                calls.invocations.capacity(),
+                0,
+                "settled remote calls need no completion channel"
+            );
             if no_pipeline {
-                assert_eq!(
-                    calls.invocations.capacity(),
-                    0,
-                    "direct calls need no completion channel"
-                );
                 assert!(
                     calls.pending.is_some(),
                     "failed immediate output preserves the request"
@@ -751,8 +751,125 @@ fn large_remote_call_retries_output_and_preserves_exception_diagnostics() {
 }
 
 #[test]
+fn direct_remote_projections_keep_the_parent_question_before_and_after_publication() {
+    for project_before_send in [false, true] {
+        with_peer(|mut driver, messages| {
+            let mut hooks = ClientHooks::new(24, 24);
+            let client = remote(&mut driver, &mut hooks);
+            let mut parent = request(&client, 1).send();
+            let mut calls = Calls::new(8, None).unwrap();
+            let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+            assert!(matches!(
+                tick(
+                    &mut calls,
+                    &mut hooks,
+                    &mut driver,
+                    messages,
+                    &mut queue,
+                    &mut Context::from_waker(Waker::noop())
+                ),
+                Poll::Ready(Ok(Progress::Advanced))
+            ));
+            if !project_before_send {
+                drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+            }
+            let child = capability::Client::new(parent.pipeline.hook.get_pipelined_cap(&[]));
+            calls.entries[0]
+                .as_mut()
+                .unwrap()
+                .wire
+                .poll_pipelines(&mut hooks, &mut driver, &mut calls.invocations, messages)
+                .unwrap();
+            assert_eq!(calls.invocations.capacity(), 0);
+            drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+            let Some(DirectStage::Sent(question)) = calls.entries[0].as_ref().unwrap().wire.direct
+            else {
+                panic!("published direct parent")
+            };
+            let parent_bytes = drain(&mut queue, messages);
+            assert!(!parent_bytes.is_empty());
+            for _ in 0..64 {
+                driver
+                    .poll_maintenance(
+                        messages,
+                        &mut queue,
+                        128,
+                        Default::default(),
+                        &mut [0; 24],
+                        NonZeroUsize::new(8).unwrap(),
+                    )
+                    .unwrap();
+                hooks.collect(&mut driver.runtime);
+            }
+            let child_reply = request(&child, 2).send();
+            drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+            let bytes = drain(&mut queue, messages);
+            let mut remaining = bytes.as_slice();
+            let decoded =
+                capnp::serialize::read_message(&mut remaining, Default::default()).unwrap();
+            assert!(remaining.is_empty());
+            let rpc_capnp::message::Call(call) = decoded
+                .get_root::<rpc_capnp::message::Reader>()
+                .unwrap()
+                .which()
+                .unwrap()
+            else {
+                panic!("child Call")
+            };
+            let call = call.unwrap();
+            assert_eq!(call.get_method_id(), 2);
+            let rpc_capnp::message_target::PromisedAnswer(target) =
+                call.get_target().unwrap().which().unwrap()
+            else {
+                panic!("promised-answer route")
+            };
+            assert_eq!(target.unwrap().get_question_id(), question.id().to_wire());
+            let reply = Frame::build(messages, 512, Default::default(), |builder| {
+                calls::exception(
+                    builder,
+                    capntproto_rpc_engine::ids::AnswerId::from_wire(question.id().to_wire()),
+                    capnp::ErrorKind::Overloaded,
+                    "parent rejected",
+                )
+            })
+            .unwrap();
+            driver
+                .receive(reply, messages, &mut [0; 24], |_| (), || ())
+                .unwrap_or_else(|_| panic!("parent Return"));
+            // Return must propagate to existing wire projections before the
+            // parent result owner can release its question.
+            for _ in 0..64 {
+                driver
+                    .poll_maintenance(
+                        messages,
+                        &mut queue,
+                        128,
+                        Default::default(),
+                        &mut [0; 24],
+                        NonZeroUsize::new(8).unwrap(),
+                    )
+                    .unwrap();
+                hooks.collect(&mut driver.runtime);
+                drain(&mut queue, messages);
+            }
+            drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+            let error = ready(&mut parent.promise).err().expect("parent exception");
+            assert_eq!(error.extra, "remote exception: parent rejected");
+            let late = capability::Client::new(parent.pipeline.hook.get_pipelined_cap(&[]));
+            let mut late_reply = request(&late, 3).send();
+            let error = ready(&mut late_reply.promise)
+                .err()
+                .expect("late projection exception");
+            assert_eq!(error.extra, "remote exception: parent rejected");
+            drop((late_reply, late, child_reply, child, parent, client));
+            teardown(calls, hooks, driver, messages, &mut queue);
+        });
+    }
+}
+
+#[test]
 fn direct_remote_cancellation_reclaims_queued_and_late_return_owners() {
-    for sent in [false, true] {
+    for (sent, no_pipeline) in [(false, false), (false, true), (true, false), (true, true)] {
         with_peer(|mut driver, messages| {
             let mut hooks = ClientHooks::new(24, 24);
             let client = remote(&mut driver, &mut hooks);
@@ -773,7 +890,7 @@ fn direct_remote_cancellation_reclaims_queued_and_late_return_owners() {
                 .unwrap();
             let mut request = request(&client, 1);
             request.hook.set_hints(CallHints {
-                no_promise_pipelining: true,
+                no_promise_pipelining: no_pipeline,
                 ..Default::default()
             });
             let response = request.send();

@@ -76,6 +76,10 @@ pub(crate) struct Params {
 }
 
 impl Params {
+    pub(crate) fn single_capability_table(&self) -> Option<&[Option<Box<dyn ClientHook>>]> {
+        matches!(self.cap_table.as_slice(), [Some(_)]).then_some(&self.cap_table)
+    }
+
     #[inline(always)]
     pub(crate) fn scoped(
         interface_id: u64,
