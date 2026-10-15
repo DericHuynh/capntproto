@@ -1,21 +1,1570 @@
 {
   "benchmark": {
     "attempt": 1,
-    "commit": "4344e78c595e2288f17f398b0bcc42e3a1653133",
-    "conclusion": "cancelled",
+    "commit": "2c9548c998fb4a42153bab51844771be60fba865",
+    "conclusion": "success",
     "data": {
-      "charts": [],
+      "charts": [
+        {
+          "coverage": false,
+          "name": "latency-p50",
+          "note": "Measured TCP driver: legacy. TCP p50 gate: passed (1.15x at every payload). Relative bars use C++ Cap'n Proto as the reference; each panel includes zero. Native QUIC is encrypted; other baselines are plaintext.",
+          "panels": [
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto TCP (legacy)",
+                  "value": 33.564
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 41.122
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 62.174
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 29.319
+                },
+                {
+                  "color": [
+                    213,
+                    94,
+                    0
+                  ],
+                  "label": "Capntproto QUIC/TLS",
+                  "value": 54.194
+                },
+                {
+                  "color": [
+                    86,
+                    180,
+                    233
+                  ],
+                  "label": "Rust RPC (upstream)",
+                  "value": 39.454
+                }
+              ],
+              "title": "0 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto TCP (legacy)",
+                  "value": 33.543
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 40.741
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 62.83
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 31.774
+                },
+                {
+                  "color": [
+                    213,
+                    94,
+                    0
+                  ],
+                  "label": "Capntproto QUIC/TLS",
+                  "value": 55.149
+                },
+                {
+                  "color": [
+                    86,
+                    180,
+                    233
+                  ],
+                  "label": "Rust RPC (upstream)",
+                  "value": 40.489
+                }
+              ],
+              "title": "64 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto TCP (legacy)",
+                  "value": 38.134
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 42.283
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 68.605
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 30.636
+                },
+                {
+                  "color": [
+                    213,
+                    94,
+                    0
+                  ],
+                  "label": "Capntproto QUIC/TLS",
+                  "value": 58.716
+                },
+                {
+                  "color": [
+                    86,
+                    180,
+                    233
+                  ],
+                  "label": "Rust RPC (upstream)",
+                  "value": 41.725
+                }
+              ],
+              "title": "1024 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto TCP (legacy)",
+                  "value": 84.101
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 89.174
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 205.196
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 76.68
+                },
+                {
+                  "color": [
+                    213,
+                    94,
+                    0
+                  ],
+                  "label": "Capntproto QUIC/TLS",
+                  "value": 211.442
+                },
+                {
+                  "color": [
+                    86,
+                    180,
+                    233
+                  ],
+                  "label": "Rust RPC (upstream)",
+                  "value": 95.967
+                }
+              ],
+              "title": "65536 byte payload"
+            }
+          ],
+          "title": "Median round-trip latency (p50)",
+          "unit": "Microseconds - lower is better"
+        },
+        {
+          "coverage": false,
+          "name": "latency-p95",
+          "note": "Measured TCP driver: legacy. TCP p50 gate: passed (1.15x at every payload). Relative bars use C++ Cap'n Proto as the reference; each panel includes zero. Native QUIC is encrypted; other baselines are plaintext.",
+          "panels": [
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto TCP (legacy)",
+                  "value": 42.061
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 63.895
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 101.094
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 40.909
+                },
+                {
+                  "color": [
+                    213,
+                    94,
+                    0
+                  ],
+                  "label": "Capntproto QUIC/TLS",
+                  "value": 67.482
+                },
+                {
+                  "color": [
+                    86,
+                    180,
+                    233
+                  ],
+                  "label": "Rust RPC (upstream)",
+                  "value": 49.059
+                }
+              ],
+              "title": "0 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto TCP (legacy)",
+                  "value": 41.951
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 51.782
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 75.758
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 43.817
+                },
+                {
+                  "color": [
+                    213,
+                    94,
+                    0
+                  ],
+                  "label": "Capntproto QUIC/TLS",
+                  "value": 74.518
+                },
+                {
+                  "color": [
+                    86,
+                    180,
+                    233
+                  ],
+                  "label": "Rust RPC (upstream)",
+                  "value": 59.558
+                }
+              ],
+              "title": "64 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto TCP (legacy)",
+                  "value": 54.315
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 67.29
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 83.862
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 44.01
+                },
+                {
+                  "color": [
+                    213,
+                    94,
+                    0
+                  ],
+                  "label": "Capntproto QUIC/TLS",
+                  "value": 90.433
+                },
+                {
+                  "color": [
+                    86,
+                    180,
+                    233
+                  ],
+                  "label": "Rust RPC (upstream)",
+                  "value": 63.224
+                }
+              ],
+              "title": "1024 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto TCP (legacy)",
+                  "value": 122.665
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 142.185
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 292.779
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 90.262
+                },
+                {
+                  "color": [
+                    213,
+                    94,
+                    0
+                  ],
+                  "label": "Capntproto QUIC/TLS",
+                  "value": 239.269
+                },
+                {
+                  "color": [
+                    86,
+                    180,
+                    233
+                  ],
+                  "label": "Rust RPC (upstream)",
+                  "value": 115.433
+                }
+              ],
+              "title": "65536 byte payload"
+            }
+          ],
+          "title": "Tail round-trip latency (p95)",
+          "unit": "Microseconds - lower is better"
+        },
+        {
+          "coverage": false,
+          "name": "latency-p99",
+          "note": "Measured TCP driver: legacy. TCP p50 gate: passed (1.15x at every payload). Relative bars use C++ Cap'n Proto as the reference; each panel includes zero. Native QUIC is encrypted; other baselines are plaintext.",
+          "panels": [
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto TCP (legacy)",
+                  "value": 50.728
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 73.061
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 113.394
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 46.631
+                },
+                {
+                  "color": [
+                    213,
+                    94,
+                    0
+                  ],
+                  "label": "Capntproto QUIC/TLS",
+                  "value": 78.182
+                },
+                {
+                  "color": [
+                    86,
+                    180,
+                    233
+                  ],
+                  "label": "Rust RPC (upstream)",
+                  "value": 56.794
+                }
+              ],
+              "title": "0 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto TCP (legacy)",
+                  "value": 49.731
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 60.125
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 86.554
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 52.434
+                },
+                {
+                  "color": [
+                    213,
+                    94,
+                    0
+                  ],
+                  "label": "Capntproto QUIC/TLS",
+                  "value": 88.787
+                },
+                {
+                  "color": [
+                    86,
+                    180,
+                    233
+                  ],
+                  "label": "Rust RPC (upstream)",
+                  "value": 71.639
+                }
+              ],
+              "title": "64 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto TCP (legacy)",
+                  "value": 65.268
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 79.047
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 95.46
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 51.345
+                },
+                {
+                  "color": [
+                    213,
+                    94,
+                    0
+                  ],
+                  "label": "Capntproto QUIC/TLS",
+                  "value": 104.197
+                },
+                {
+                  "color": [
+                    86,
+                    180,
+                    233
+                  ],
+                  "label": "Rust RPC (upstream)",
+                  "value": 73.296
+                }
+              ],
+              "title": "1024 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto TCP (legacy)",
+                  "value": 132.655
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 155.725
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 319.052
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 100.162
+                },
+                {
+                  "color": [
+                    213,
+                    94,
+                    0
+                  ],
+                  "label": "Capntproto QUIC/TLS",
+                  "value": 256.202
+                },
+                {
+                  "color": [
+                    86,
+                    180,
+                    233
+                  ],
+                  "label": "Rust RPC (upstream)",
+                  "value": 129.198
+                }
+              ],
+              "title": "65536 byte payload"
+            }
+          ],
+          "title": "Tail round-trip latency (p99)",
+          "unit": "Microseconds - lower is better"
+        },
+        {
+          "coverage": false,
+          "name": "request-rate",
+          "note": "Measured TCP driver: legacy. TCP p50 gate: passed (1.15x at every payload). Relative bars use C++ Cap'n Proto as the reference; each panel includes zero. Native QUIC is encrypted; other baselines are plaintext.",
+          "panels": [
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto TCP (legacy)",
+                  "value": 28773.915547809745
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 22207.08340671849
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 14557.265898107273
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 31747.150858295652
+                },
+                {
+                  "color": [
+                    213,
+                    94,
+                    0
+                  ],
+                  "label": "Capntproto QUIC/TLS",
+                  "value": 17865.90308368596
+                },
+                {
+                  "color": [
+                    86,
+                    180,
+                    233
+                  ],
+                  "label": "Rust RPC (upstream)",
+                  "value": 24559.316949203927
+                }
+              ],
+              "title": "0 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto TCP (legacy)",
+                  "value": 28824.68322653173
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 23566.296845326422
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 15449.284711867704
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 28813.040071983272
+                },
+                {
+                  "color": [
+                    213,
+                    94,
+                    0
+                  ],
+                  "label": "Capntproto QUIC/TLS",
+                  "value": 17364.034901071154
+                },
+                {
+                  "color": [
+                    86,
+                    180,
+                    233
+                  ],
+                  "label": "Rust RPC (upstream)",
+                  "value": 22283.57176740269
+                }
+              ],
+              "title": "64 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto TCP (legacy)",
+                  "value": 23425.887421575633
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 20549.39548610335
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 14170.855091984593
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 30325.08693338159
+                },
+                {
+                  "color": [
+                    213,
+                    94,
+                    0
+                  ],
+                  "label": "Capntproto QUIC/TLS",
+                  "value": 15474.78696827955
+                },
+                {
+                  "color": [
+                    86,
+                    180,
+                    233
+                  ],
+                  "label": "Rust RPC (upstream)",
+                  "value": 21486.700196690974
+                }
+              ],
+              "title": "1024 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto TCP (legacy)",
+                  "value": 10674.24416173443
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 10016.101464037325
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 4601.760820705562
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 12765.23750914106
+                },
+                {
+                  "color": [
+                    213,
+                    94,
+                    0
+                  ],
+                  "label": "Capntproto QUIC/TLS",
+                  "value": 4657.65131491845
+                },
+                {
+                  "color": [
+                    86,
+                    180,
+                    233
+                  ],
+                  "label": "Rust RPC (upstream)",
+                  "value": 10107.065887360139
+                }
+              ],
+              "title": "65536 byte payload"
+            }
+          ],
+          "title": "Sequential request rate",
+          "unit": "Requests / second - higher is better"
+        },
+        {
+          "coverage": false,
+          "name": "latency-difference",
+          "note": "Measured TCP driver: legacy. TCP p50 gate: passed (1.15x at every payload). Relative bars use C++ Cap'n Proto as the reference; each panel includes zero. Native QUIC is encrypted; other baselines are plaintext.",
+          "panels": [
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto TCP (legacy)",
+                  "value": -18.379456252127813
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 0.0
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 51.19400807353729
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": -28.702397743300423
+                },
+                {
+                  "color": [
+                    213,
+                    94,
+                    0
+                  ],
+                  "label": "Capntproto QUIC/TLS",
+                  "value": 31.78833714313507
+                },
+                {
+                  "color": [
+                    86,
+                    180,
+                    233
+                  ],
+                  "label": "Rust RPC (upstream)",
+                  "value": -4.056222946354748
+                }
+              ],
+              "title": "0 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto TCP (legacy)",
+                  "value": -17.667705750963403
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 0.0
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 54.21810952112123
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": -22.009769028742543
+                },
+                {
+                  "color": [
+                    213,
+                    94,
+                    0
+                  ],
+                  "label": "Capntproto QUIC/TLS",
+                  "value": 35.36486585994454
+                },
+                {
+                  "color": [
+                    86,
+                    180,
+                    233
+                  ],
+                  "label": "Rust RPC (upstream)",
+                  "value": -0.618541518372151
+                }
+              ],
+              "title": "64 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto TCP (legacy)",
+                  "value": -9.812454177801955
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 0.0
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 62.25196887638058
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": -27.54534919471182
+                },
+                {
+                  "color": [
+                    213,
+                    94,
+                    0
+                  ],
+                  "label": "Capntproto QUIC/TLS",
+                  "value": 38.86431899344891
+                },
+                {
+                  "color": [
+                    86,
+                    180,
+                    233
+                  ],
+                  "label": "Rust RPC (upstream)",
+                  "value": -1.3196793037390964
+                }
+              ],
+              "title": "1024 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto TCP (legacy)",
+                  "value": -5.688877924058577
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 0.0
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": 130.10743041693766
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": -14.010810325879742
+                },
+                {
+                  "color": [
+                    213,
+                    94,
+                    0
+                  ],
+                  "label": "Capntproto QUIC/TLS",
+                  "value": 137.11171417677798
+                },
+                {
+                  "color": [
+                    86,
+                    180,
+                    233
+                  ],
+                  "label": "Rust RPC (upstream)",
+                  "value": 7.617691255298631
+                }
+              ],
+              "title": "65536 byte payload"
+            }
+          ],
+          "title": "Median latency difference from C++ Cap'n Proto",
+          "unit": "Percent difference - negative is less latency"
+        },
+        {
+          "coverage": false,
+          "name": "request-rate-difference",
+          "note": "Measured TCP driver: legacy. TCP p50 gate: passed (1.15x at every payload). Relative bars use C++ Cap'n Proto as the reference; each panel includes zero. Native QUIC is encrypted; other baselines are plaintext.",
+          "panels": [
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto TCP (legacy)",
+                  "value": 29.570889705869874
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 0.0
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": -34.44764613392165
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 42.95956959701843
+                },
+                {
+                  "color": [
+                    213,
+                    94,
+                    0
+                  ],
+                  "label": "Capntproto QUIC/TLS",
+                  "value": -19.548628892523357
+                },
+                {
+                  "color": [
+                    86,
+                    180,
+                    233
+                  ],
+                  "label": "Rust RPC (upstream)",
+                  "value": 10.592266888022749
+                }
+              ],
+              "title": "0 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto TCP (legacy)",
+                  "value": 22.313163649417977
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 0.0
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": -34.443307689508515
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 22.263757692152495
+                },
+                {
+                  "color": [
+                    213,
+                    94,
+                    0
+                  ],
+                  "label": "Capntproto QUIC/TLS",
+                  "value": -26.31835618876742
+                },
+                {
+                  "color": [
+                    86,
+                    180,
+                    233
+                  ],
+                  "label": "Rust RPC (upstream)",
+                  "value": -5.443048970921016
+                }
+              ],
+              "title": "64 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto TCP (legacy)",
+                  "value": 13.99793944020169
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 0.0
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": -31.04003910203724
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 47.57167408593168
+                },
+                {
+                  "color": [
+                    213,
+                    94,
+                    0
+                  ],
+                  "label": "Capntproto QUIC/TLS",
+                  "value": -24.694685161203566
+                },
+                {
+                  "color": [
+                    86,
+                    180,
+                    233
+                  ],
+                  "label": "Rust RPC (upstream)",
+                  "value": 4.561227658601852
+                }
+              ],
+              "title": "1024 byte payload"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "Capntproto TCP (legacy)",
+                  "value": 6.570846951382814
+                },
+                {
+                  "color": [
+                    230,
+                    159,
+                    0
+                  ],
+                  "label": "Cap'n Proto C++",
+                  "value": 0.0
+                },
+                {
+                  "color": [
+                    0,
+                    158,
+                    115
+                  ],
+                  "label": "gRPC (tonic)",
+                  "value": -54.0563677671585
+                },
+                {
+                  "color": [
+                    204,
+                    121,
+                    167
+                  ],
+                  "label": "WebSockets",
+                  "value": 27.447166494613384
+                },
+                {
+                  "color": [
+                    213,
+                    94,
+                    0
+                  ],
+                  "label": "Capntproto QUIC/TLS",
+                  "value": -53.498361297140576
+                },
+                {
+                  "color": [
+                    86,
+                    180,
+                    233
+                  ],
+                  "label": "Rust RPC (upstream)",
+                  "value": 0.9081819273638603
+                }
+              ],
+              "title": "65536 byte payload"
+            }
+          ],
+          "title": "Request rate difference from C++ Cap'n Proto",
+          "unit": "Percent difference - positive is more requests"
+        },
+        {
+          "coverage": false,
+          "name": "instruction-counts",
+          "note": "Maintained Rust serialization only; includes validation and ownership cleanup. Payload sizes perform different amounts of work. These are not RPC latency or cross-protocol comparisons; no historical regression baseline is established.",
+          "panels": [
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "64 bytes",
+                  "value": 615.0
+                },
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "1024 bytes",
+                  "value": 5558.0
+                },
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "65536 bytes",
+                  "value": 328716.0
+                }
+              ],
+              "title": "decode"
+            },
+            {
+              "bars": [
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "64 bytes",
+                  "value": 447.0
+                },
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "1024 bytes",
+                  "value": 548.0
+                },
+                {
+                  "color": [
+                    0,
+                    114,
+                    178
+                  ],
+                  "label": "65536 bytes",
+                  "value": 66641.0
+                }
+              ],
+              "title": "encode"
+            }
+          ],
+          "title": "Serialization CPU work (Callgrind)",
+          "unit": "Executed instructions"
+        }
+      ],
       "format": 1,
       "kind": "benchmark",
-      "note": "This workflow attempt produced no public measurement artifact.",
-      "origin": null,
-      "source_id": null,
-      "status": "unavailable",
+      "note": "Measured TCP driver: legacy. Measurement collection completed; performance acceptance is separate. Check the workflow conclusion and benchmark artifact; legacy or unrecorded results do not qualify the portable driver.",
+      "origin": {
+        "attempt": 1,
+        "commit": "2c9548c998fb4a42153bab51844771be60fba865",
+        "repository": "DericHuynh/capntproto",
+        "run_id": 38763852450
+      },
+      "source_id": "8e271aff22c866b6079e37d986646fdbd910d013df07b345dc7671df286e2383",
+      "status": "passed",
       "tests": null
     },
-    "date": "2026-10-15T14:25:42Z",
-    "run_id": 38751293855,
-    "url": "https://github.com/DericHuynh/capntproto/actions/runs/38751293855"
+    "date": "2026-10-15T15:50:28Z",
+    "run_id": 38763852450,
+    "url": "https://github.com/DericHuynh/capntproto/actions/runs/38763852450"
   },
   "cargo": [
     {
@@ -836,6 +2385,744 @@
       "date": "2026-10-15T14:25:42Z",
       "run_id": 38751293855,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/38751293855"
+    },
+    {
+      "attempt": 1,
+      "commit": "2c9548c998fb4a42153bab51844771be60fba865",
+      "conclusion": "success",
+      "data": {
+        "charts": [
+          {
+            "coverage": true,
+            "name": "coverage-lines",
+            "note": "Gray: reviewed baseline. Blue: current run. N/A: no mapped counters; never treated as 0% or 100%.",
+            "panels": [
+              {
+                "bars": [
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "async framing / baseline",
+                    "value": 95.57553956834532
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "async framing / current",
+                    "value": 95.57553956834532
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "capability rpc / baseline",
+                    "value": 89.19739016468175
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "capability rpc / current",
+                    "value": 89.19739016468175
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "optional compatibility / baseline",
+                    "value": 90.00344708721131
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "optional compatibility / current",
+                    "value": 90.00344708721131
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "runtime / baseline",
+                    "value": 84.32475443121331
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "runtime / current",
+                    "value": 84.32475443121331
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "rust codegen / baseline",
+                    "value": 90.72599531615926
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "rust codegen / current",
+                    "value": 90.72599531615926
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "schema compiler / baseline",
+                    "value": 97.11636437742001
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "schema compiler / current",
+                    "value": 97.11636437742001
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "tests and verification / baseline",
+                    "value": 78.4992428915933
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "tests and verification / current",
+                    "value": 78.49308001166416
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "tools fuzz examples benchmarks / baseline",
+                    "value": 66.63341938512086
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "tools fuzz examples benchmarks / current",
+                    "value": 66.66471277842908
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "wire runtime / baseline",
+                    "value": 86.48524754125688
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "wire runtime / current",
+                    "value": 86.48524754125688
+                  }
+                ],
+                "title": "Source groups (different groups cover different code)"
+              }
+            ],
+            "title": "LLVM lines: current versus reviewed baseline",
+            "unit": "Coverage (%) - higher is better"
+          },
+          {
+            "coverage": true,
+            "name": "coverage-regions",
+            "note": "Gray: reviewed baseline. Blue: current run. N/A: no mapped counters; never treated as 0% or 100%.",
+            "panels": [
+              {
+                "bars": [
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "async framing / baseline",
+                    "value": 95.23250352278065
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "async framing / current",
+                    "value": 95.23250352278065
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "capability rpc / baseline",
+                    "value": 89.38804138172891
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "capability rpc / current",
+                    "value": 89.38804138172891
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "optional compatibility / baseline",
+                    "value": 86.88368147598347
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "optional compatibility / current",
+                    "value": 86.88368147598347
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "runtime / baseline",
+                    "value": 84.56818815654923
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "runtime / current",
+                    "value": 84.56818815654923
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "rust codegen / baseline",
+                    "value": 86.74923425223065
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "rust codegen / current",
+                    "value": 86.74923425223065
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "schema compiler / baseline",
+                    "value": 96.3187269920437
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "schema compiler / current",
+                    "value": 96.3187269920437
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "tests and verification / baseline",
+                    "value": 77.68420248911964
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "tests and verification / current",
+                    "value": 77.68064378206694
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "tools fuzz examples benchmarks / baseline",
+                    "value": 65.51388975982944
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "tools fuzz examples benchmarks / current",
+                    "value": 65.55061388123278
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "wire runtime / baseline",
+                    "value": 84.25062603228729
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "wire runtime / current",
+                    "value": 84.25062603228729
+                  }
+                ],
+                "title": "Source groups (different groups cover different code)"
+              }
+            ],
+            "title": "LLVM regions: current versus reviewed baseline",
+            "unit": "Coverage (%) - higher is better"
+          },
+          {
+            "coverage": true,
+            "name": "coverage-functions",
+            "note": "Gray: reviewed baseline. Blue: current run. N/A: no mapped counters; never treated as 0% or 100%.",
+            "panels": [
+              {
+                "bars": [
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "async framing / baseline",
+                    "value": 91.91919191919192
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "async framing / current",
+                    "value": 91.91919191919192
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "capability rpc / baseline",
+                    "value": 85.44426253906832
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "capability rpc / current",
+                    "value": 85.44426253906832
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "optional compatibility / baseline",
+                    "value": 82.84132841328413
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "optional compatibility / current",
+                    "value": 82.84132841328413
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "runtime / baseline",
+                    "value": 90.61107574793125
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "runtime / current",
+                    "value": 90.61107574793125
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "rust codegen / baseline",
+                    "value": 87.5
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "rust codegen / current",
+                    "value": 87.5
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "schema compiler / baseline",
+                    "value": 94.78260869565217
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "schema compiler / current",
+                    "value": 94.78260869565217
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "tests and verification / baseline",
+                    "value": 78.31062670299727
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "tests and verification / current",
+                    "value": 78.31062670299727
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "tools fuzz examples benchmarks / baseline",
+                    "value": 68.54103343465046
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "tools fuzz examples benchmarks / current",
+                    "value": 68.63636363636364
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "wire runtime / baseline",
+                    "value": 83.79888268156425
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "wire runtime / current",
+                    "value": 83.79888268156425
+                  }
+                ],
+                "title": "Source groups (different groups cover different code)"
+              }
+            ],
+            "title": "LLVM functions: current versus reviewed baseline",
+            "unit": "Coverage (%) - higher is better"
+          },
+          {
+            "coverage": true,
+            "name": "coverage-branches",
+            "note": "Gray: reviewed baseline. Blue: current run. N/A: no mapped counters; never treated as 0% or 100%.",
+            "panels": [
+              {
+                "bars": [
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "async framing / baseline",
+                    "value": 95.4225352112676
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "async framing / current",
+                    "value": 95.4225352112676
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "capability rpc / baseline",
+                    "value": 75.00669344042838
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "capability rpc / current",
+                    "value": 75.00669344042838
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "optional compatibility / baseline",
+                    "value": 73.45013477088949
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "optional compatibility / current",
+                    "value": 73.45013477088949
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "runtime / baseline",
+                    "value": 73.86414754835808
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "runtime / current",
+                    "value": 73.86414754835808
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "rust codegen / baseline",
+                    "value": 86.05015673981191
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "rust codegen / current",
+                    "value": 86.05015673981191
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "schema compiler / baseline",
+                    "value": 83.28290468986384
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "schema compiler / current",
+                    "value": 83.28290468986384
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "tests and verification / baseline",
+                    "value": 56.87470671046457
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "tests and verification / current",
+                    "value": 56.87470671046457
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "tools fuzz examples benchmarks / baseline",
+                    "value": 61.690140845070424
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "tools fuzz examples benchmarks / current",
+                    "value": 61.690140845070424
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "wire runtime / baseline",
+                    "value": 78.67118070249683
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "wire runtime / current",
+                    "value": 78.67118070249683
+                  }
+                ],
+                "title": "Source groups (different groups cover different code)"
+              }
+            ],
+            "title": "LLVM branches: current versus reviewed baseline",
+            "unit": "Coverage (%) - higher is better"
+          }
+        ],
+        "format": 1,
+        "kind": "cargo",
+        "note": "Evidence passed.",
+        "origin": {
+          "attempt": 1,
+          "commit": "2c9548c998fb4a42153bab51844771be60fba865",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 38763852450
+        },
+        "source_id": "8e271aff22c866b6079e37d986646fdbd910d013df07b345dc7671df286e2383",
+        "status": "passed",
+        "tests": {
+          "command_passed": true,
+          "complete": true,
+          "errors": 0,
+          "failed": 0,
+          "failures": [],
+          "passed": 2172,
+          "skipped": 20,
+          "suites": 204,
+          "total": 2192
+        }
+      },
+      "date": "2026-10-15T15:50:28Z",
+      "run_id": 38763852450,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/38763852450"
     }
   ],
   "format": 1,
@@ -1532,6 +3819,220 @@
       "date": "2026-10-15T14:25:42Z",
       "run_id": 38751293855,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/38751293855"
+    },
+    {
+      "attempt": 1,
+      "commit": "2c9548c998fb4a42153bab51844771be60fba865",
+      "conclusion": "success",
+      "data": {
+        "charts": [
+          {
+            "name": "fuzz-executions",
+            "note": "Bounded campaigns including seed calibration; execution counts are not comparable performance benchmarks.",
+            "panels": [
+              {
+                "bars": [
+                  {
+                    "label": "libFuzzer / capnp_framing",
+                    "value": 16384
+                  },
+                  {
+                    "label": "libFuzzer / capnp_pointers",
+                    "value": 16384
+                  },
+                  {
+                    "label": "libFuzzer / capnp_schema",
+                    "value": 16384
+                  },
+                  {
+                    "label": "libFuzzer / native_packet",
+                    "value": 1024
+                  },
+                  {
+                    "label": "libFuzzer / native_stream",
+                    "value": 1024
+                  },
+                  {
+                    "label": "libFuzzer / rpc_lifecycle",
+                    "value": 16384
+                  }
+                ],
+                "title": "libFuzzer + ASan"
+              },
+              {
+                "bars": [
+                  {
+                    "label": "AFL++ / capnp_framing",
+                    "value": 756798
+                  },
+                  {
+                    "label": "AFL++ / capnp_pointers",
+                    "value": 1829375
+                  },
+                  {
+                    "label": "AFL++ / capnp_schema",
+                    "value": 712790
+                  },
+                  {
+                    "label": "AFL++ / rpc_lifecycle",
+                    "value": 107468
+                  }
+                ],
+                "title": "AFL++ + RPC IJON"
+              }
+            ],
+            "title": "Fuzzing executions by engine",
+            "unit": "Executions"
+          },
+          {
+            "name": "fuzz-coverage",
+            "note": "Engine-local counters, not LLVM source coverage. Do not compare counts across engines or builds.",
+            "panels": [
+              {
+                "bars": [
+                  {
+                    "label": "libFuzzer / capnp_framing",
+                    "value": 611
+                  },
+                  {
+                    "label": "libFuzzer / capnp_pointers",
+                    "value": 1270
+                  },
+                  {
+                    "label": "libFuzzer / capnp_schema",
+                    "value": 3232
+                  },
+                  {
+                    "label": "libFuzzer / native_packet",
+                    "value": 5574
+                  },
+                  {
+                    "label": "libFuzzer / native_stream",
+                    "value": 5609
+                  },
+                  {
+                    "label": "libFuzzer / rpc_lifecycle",
+                    "value": 7262
+                  }
+                ],
+                "title": "libFuzzer + ASan"
+              },
+              {
+                "bars": [
+                  {
+                    "label": "AFL++ / capnp_framing",
+                    "value": 1043
+                  },
+                  {
+                    "label": "AFL++ / capnp_pointers",
+                    "value": 1719
+                  },
+                  {
+                    "label": "AFL++ / capnp_schema",
+                    "value": 4929
+                  },
+                  {
+                    "label": "AFL++ / rpc_lifecycle",
+                    "value": 11906
+                  }
+                ],
+                "title": "AFL++ + RPC IJON"
+              }
+            ],
+            "title": "Fuzzer feedback by engine",
+            "unit": "Feedback entries"
+          },
+          {
+            "name": "fuzz-findings",
+            "note": "Saved crashes/hangs are findings requiring triage, not confirmed unique bugs. Missing results remain unknown.",
+            "panels": [
+              {
+                "bars": [
+                  {
+                    "label": "libFuzzer / capnp_framing",
+                    "value": 0
+                  },
+                  {
+                    "label": "libFuzzer / capnp_pointers",
+                    "value": 0
+                  },
+                  {
+                    "label": "libFuzzer / capnp_schema",
+                    "value": 0
+                  },
+                  {
+                    "label": "libFuzzer / native_packet",
+                    "value": 0
+                  },
+                  {
+                    "label": "libFuzzer / native_stream",
+                    "value": 0
+                  },
+                  {
+                    "label": "libFuzzer / rpc_lifecycle",
+                    "value": 0
+                  }
+                ],
+                "title": "libFuzzer + ASan"
+              },
+              {
+                "bars": [
+                  {
+                    "label": "AFL++ / capnp_framing crashes",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / capnp_framing hangs",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / capnp_pointers crashes",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / capnp_pointers hangs",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / capnp_schema crashes",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / capnp_schema hangs",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / rpc_lifecycle crashes",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / rpc_lifecycle hangs",
+                    "value": 0
+                  }
+                ],
+                "title": "AFL++ + RPC IJON"
+              }
+            ],
+            "title": "Saved fuzzing findings",
+            "unit": "Inputs"
+          }
+        ],
+        "format": 1,
+        "kind": "fuzz",
+        "note": "Evidence passed.",
+        "origin": {
+          "attempt": 1,
+          "commit": "2c9548c998fb4a42153bab51844771be60fba865",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 38763852450
+        },
+        "source_id": "8e271aff22c866b6079e37d986646fdbd910d013df07b345dc7671df286e2383",
+        "status": "passed",
+        "tests": null
+      },
+      "date": "2026-10-15T15:50:28Z",
+      "run_id": 38763852450,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/38763852450"
     }
   ],
   "models": [
@@ -2114,6 +4615,38 @@
       "commit": "4344e78c595e2288f17f398b0bcc42e3a1653133",
       "conclusion": "cancelled",
       "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "models",
+        "note": "Lane failed or did not complete; inspect the linked CI run.",
+        "origin": {
+          "attempt": 1,
+          "commit": "4344e78c595e2288f17f398b0bcc42e3a1653133",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 38751293855
+        },
+        "source_id": "6900e1f9f6459d84db520390b88bfb12b0760df3c9c8ff87e47540e13ef2bbd4",
+        "status": "failed",
+        "tests": {
+          "command_passed": false,
+          "complete": false,
+          "errors": 0,
+          "failed": 1,
+          "passed": 232,
+          "skipped": 7,
+          "suites": 88,
+          "total": 240
+        }
+      },
+      "date": "2026-10-15T14:25:42Z",
+      "run_id": 38751293855,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/38751293855"
+    },
+    {
+      "attempt": 1,
+      "commit": "2c9548c998fb4a42153bab51844771be60fba865",
+      "conclusion": "success",
+      "data": {
         "charts": [
           {
             "name": "tla-outcomes",
@@ -2148,27 +4681,27 @@
                 "bars": [
                   {
                     "label": "CapnpRealtime",
-                    "value": 2278093
-                  },
-                  {
-                    "label": "RealtimeConfigBoundary",
-                    "value": 32134
+                    "value": 2278000
                   },
                   {
                     "label": "RpcNativeProvisioning",
-                    "value": 139257
+                    "value": 139275
+                  },
+                  {
+                    "label": "RealtimeConfigBoundary",
+                    "value": 31306
                   },
                   {
                     "label": "StructuralEquality",
-                    "value": 18989
+                    "value": 19984
                   },
                   {
                     "label": "RealtimeReceiptLifecycle",
-                    "value": 43028
+                    "value": 43239
                   },
                   {
                     "label": "DatagramReentry",
-                    "value": 14185
+                    "value": 14344
                   },
                   {
                     "label": "BulkConfigBoundary",
@@ -2176,23 +4709,23 @@
                   },
                   {
                     "label": "RpcFieldOwners",
-                    "value": 25843
+                    "value": 25839
                   },
                   {
                     "label": "GrantRevocation",
-                    "value": 50515
+                    "value": 50480
                   },
                   {
                     "label": "ShutdownWaiters",
-                    "value": 49841
+                    "value": 49827
                   },
                   {
                     "label": "RpcNativeArbitration",
-                    "value": 23268
+                    "value": 23113
                   },
                   {
                     "label": "RpcRealtimeReceiver",
-                    "value": 34637
+                    "value": 34629
                   },
                   {
                     "label": "CapnpConformance",
@@ -2200,15 +4733,15 @@
                   },
                   {
                     "label": "RouteShutdownCompletion",
-                    "value": 17622
+                    "value": 17736
                   },
                   {
                     "label": "RpcPersistenceExpiry",
-                    "value": 10978
+                    "value": 10913
                   },
                   {
                     "label": "Other models",
-                    "value": 292365
+                    "value": 292071
                   }
                 ],
                 "title": "Generated states"
@@ -2217,27 +4750,27 @@
                 "bars": [
                   {
                     "label": "CapnpRealtime",
-                    "value": 365572
-                  },
-                  {
-                    "label": "RealtimeConfigBoundary",
-                    "value": 25441
+                    "value": 365524
                   },
                   {
                     "label": "RpcNativeProvisioning",
-                    "value": 25358
+                    "value": 25368
+                  },
+                  {
+                    "label": "RealtimeConfigBoundary",
+                    "value": 24613
                   },
                   {
                     "label": "StructuralEquality",
-                    "value": 18989
+                    "value": 19984
                   },
                   {
                     "label": "RealtimeReceiptLifecycle",
-                    "value": 13742
+                    "value": 13869
                   },
                   {
                     "label": "DatagramReentry",
-                    "value": 12959
+                    "value": 13087
                   },
                   {
                     "label": "BulkConfigBoundary",
@@ -2245,23 +4778,23 @@
                   },
                   {
                     "label": "RpcFieldOwners",
-                    "value": 9933
+                    "value": 9923
                   },
                   {
                     "label": "GrantRevocation",
-                    "value": 9663
+                    "value": 9635
                   },
                   {
                     "label": "ShutdownWaiters",
-                    "value": 8054
+                    "value": 8042
                   },
                   {
                     "label": "RpcNativeArbitration",
-                    "value": 7569
+                    "value": 7491
                   },
                   {
                     "label": "RpcRealtimeReceiver",
-                    "value": 7210
+                    "value": 7203
                   },
                   {
                     "label": "CapnpConformance",
@@ -2269,15 +4802,15 @@
                   },
                   {
                     "label": "RouteShutdownCompletion",
-                    "value": 4789
+                    "value": 4834
                   },
                   {
                     "label": "RpcPersistenceExpiry",
-                    "value": 4581
+                    "value": 4551
                   },
                   {
                     "label": "Other models",
-                    "value": 101107
+                    "value": 100888
                   }
                 ],
                 "title": "Distinct states"
@@ -2289,37 +4822,30 @@
         ],
         "format": 1,
         "kind": "models",
-        "note": "Lane failed or did not complete; inspect the linked CI run.",
+        "note": "Evidence passed.",
         "origin": {
           "attempt": 1,
-          "commit": "4344e78c595e2288f17f398b0bcc42e3a1653133",
+          "commit": "2c9548c998fb4a42153bab51844771be60fba865",
           "repository": "DericHuynh/capntproto",
-          "run_id": 38751293855
+          "run_id": 38763852450
         },
-        "source_id": "6900e1f9f6459d84db520390b88bfb12b0760df3c9c8ff87e47540e13ef2bbd4",
-        "status": "failed",
+        "source_id": "8e271aff22c866b6079e37d986646fdbd910d013df07b345dc7671df286e2383",
+        "status": "passed",
         "tests": {
-          "command_passed": false,
-          "complete": false,
+          "command_passed": true,
+          "complete": true,
           "errors": 0,
-          "failed": 1,
-          "failures": [
-            {
-              "name": "replay_tlc_native_route_traces",
-              "output": "thread 'replay_tlc_native_route_traces' (37702) panicked at tests/native_multiparty.rs:1204:22:\ncalled `Result::unwrap()` on an `Err` value: Elapsed(())\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n             at /rustc/17fd5b8a37b6667b6cc137f3cc35f09759768a3b/library/std/src/panicking.rs:676:5\n   1: core::panicking::panic_fmt\n             at /rustc/17fd5b8a37b6667b6cc137f3cc35f09759768a3b/library/core/src/panicking.rs:80:14\n   2: core::result::unwrap_failed\n             at /rustc/17fd5b8a37b6667b6cc137f3cc35f09759768a3b/library/core/src/result.rs:1870:5\n   3: <core::result::Result<(), tokio::time::error::Elapsed>>::unwrap\n             at /home/runner/.rustup/toolchains/nightly-2026-08-29-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/result.rs:1232:23\n   4: native_multiparty::replay_tlc_native_route_traces::{closure#0}::{closure#0}\n             at ./tests/native_multiparty.rs:1204:22\n   5: <tokio::task::local::RunUntil<native_multiparty::replay_tlc_native_route_traces::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}\n             at /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/src/task/local.rs:1073:44\n   6: <tokio::task::local::LocalSet>::with::<core::task::poll::Poll<()>, <tokio::task::local::RunUntil<native_multiparty::replay_tlc_native_route_traces::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}>::{closure#0}\n             at /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/src/task/local.rs:824:13\n   7: <std::thread::local::LocalKey<tokio::task::local::LocalData>>::try_with::<<tokio::task::local::LocalSet>::with<core::task::poll::Poll<()>, <tokio::task::local::RunUntil<native_multiparty::replay_tlc_native_route_traces::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}>::{closure#0}, core::task::poll::Poll<()>>\n             at /home/runner/.rustup/toolchains/nightly-2026-08-29-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/thread/local.rs:463:12\n   8: <std::thread::local::LocalKey<tokio::task::local::LocalData>>::with::<<tokio::task::local::LocalSet>::with<core::task::poll::Poll<()>, <tokio::task::local::RunUntil<native_multiparty::replay_tlc_native_route_traces::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}>::{closure#0}, core::task::poll::Poll<()>>\n             at /home/runner/.rustup/toolchains/nightly-2026-08-29-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/thread/local.rs:427:20\n   9: <tokio::task::local::LocalSet>::with::<core::task::poll::Poll<()>, <tokio::task::local::RunUntil<native_multiparty::replay_tlc_native_route_traces::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}>\n             at /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/src/task/local.rs:822:17\n  10: <tokio::task::local::RunUntil<native_multiparty::replay_tlc_native_route_traces::{closure#0}::{closure#0}> as core::future::future::Future>::poll\n             at /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/src/task/local.rs:1063:22\n  11: <tokio::task::local::LocalSet>::run_until::<native_multiparty::replay_tlc_native_route_traces::{closure#0}::{closure#0}>::{closure#0}\n             at /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/src/task/local.rs:720:19\n  12: native_multiparty::replay_tlc_native_route_traces::{closure#0}\n             at ./tests/native_multiparty.rs:1207:10\n  13: <core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>> as core::future::future::Future>::poll\n             at /home/runner/.rustup/toolchains/nightly-2026-08-29-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/future/future.rs:133:9\n  14: <core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>> as core::future::future::Future>::poll\n             at /home/runner/.rustup/toolchains/nightly-2026-08-29-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/c",
-              "suite": "capntproto::native_multiparty",
-              "truncated": true
-            }
-          ],
-          "passed": 232,
+          "failed": 0,
+          "failures": [],
+          "passed": 233,
           "skipped": 7,
           "suites": 88,
           "total": 240
         }
       },
-      "date": "2026-10-15T14:25:42Z",
-      "run_id": 38751293855,
-      "url": "https://github.com/DericHuynh/capntproto/actions/runs/38751293855"
+      "date": "2026-10-15T15:50:28Z",
+      "run_id": 38763852450,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/38763852450"
     }
   ]
 }
