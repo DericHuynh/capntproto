@@ -598,6 +598,15 @@ Replacement summary SHA-256: `956e9006fd555916cf648bb817070b54d459ac74c2011f35a5
 The independent audit is retained in `target/ci-fix-20261015/coverage-review.json`.
 This review does not claim exhaustive scheduler coverage or production qualification.
 
+The first hosted run's exported counters also match the local snapshot except
+for two environment-dependent default closures and minor scheduling variation.
+CI supplies `GITHUB_RUN_ID` and `CAPNTPROTO_REFERENCE_CXX`, so default workflow-ID
+and compiler selection initially lost one function hit each. Both selections
+now have direct tests for configured and absent values, with no process-wide
+environment mutation. Their coverage no longer depends on those CI variables;
+the measured reference is unchanged. The comparison is retained in
+`target/ci-fix-20261015/hosted-local-comparison.json`.
+
 ## Dedicated remote workflows and loopback controls
 
 The CI runner provisions **two** dedicated droplets: one client and one server,

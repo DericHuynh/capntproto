@@ -304,11 +304,14 @@ fn instrumented(args: &[&str], build: &Path, profiles: &Path) -> Command {
         .env("CAPNTPROTO_COVERAGE_CHILDREN_NATIVE", "1");
     cmd
 }
+fn reference_compiler(configured: Option<String>) -> String {
+    configured.unwrap_or_else(|| "clang++".into())
+}
+
 /// Build and execute the independent C++ reference suites without coverage instrumentation.
 /// The cache is bound to the complete C++ inputs, compiler and collector code.
 pub fn cpp(r: &mut Runner) -> Result<()> {
-    let clang_binary =
-        std::env::var("CAPNTPROTO_REFERENCE_CXX").unwrap_or_else(|_| "clang++".into());
+    let clang_binary = reference_compiler(std::env::var("CAPNTPROTO_REFERENCE_CXX").ok());
     let clang = r.run("clang", v::command(&clang_binary).arg("--version"))?;
     let inputs: BTreeMap<_, _> = v::distribution::source_hashes(&root())?
         .into_iter()
@@ -665,6 +668,15 @@ pub fn collect(r: &mut Runner) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reference_compiler_preserves_overrides_and_tests_the_local_default_in_ci() {
+        assert_eq!(reference_compiler(None), "clang++");
+        assert_eq!(reference_compiler(Some("clang++-22".into())), "clang++-22");
+        assert_eq!(
+            reference_compiler(Some("/tools/custom-clang".into())),
+            "/tools/custom-clang"
+        );
+    }
     #[test]
     fn scope_excludes_dependencies_generated_files_and_path_escapes() {
         for path in [

@@ -3,6 +3,10 @@ use super::*;
 use std::{fs, net::Ipv4Addr};
 mod report;
 
+fn workflow_run_id(configured: Option<String>) -> String {
+    configured.unwrap_or_else(|| std::process::id().to_string())
+}
+
 struct Host {
     public: Ipv4Addr,
     private: Ipv4Addr,
@@ -323,7 +327,7 @@ pub(super) fn run(
         "remote output already exists; preserve the previous evidence and use a fresh output"
     );
     fs::create_dir_all(&remote)?;
-    let run = std::env::var("GITHUB_RUN_ID").unwrap_or_else(|_| std::process::id().to_string());
+    let run = workflow_run_id(std::env::var("GITHUB_RUN_ID").ok());
     let attempt = std::env::var("GITHUB_RUN_ATTEMPT").unwrap_or("1".into());
     ensure!(
         run.parse::<u64>().is_ok() && attempt.parse::<u64>().is_ok(),

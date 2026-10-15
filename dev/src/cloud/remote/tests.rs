@@ -1,5 +1,14 @@
 use super::*;
 use std::cell::RefCell;
+
+#[test]
+fn workflow_identity_uses_the_override_or_current_process_without_global_env_changes() {
+    assert_eq!(workflow_run_id(None), std::process::id().to_string());
+    assert_eq!(workflow_run_id(Some("1234".into())), "1234");
+    // Invalid configured identities must still reach run()'s numeric check.
+    assert_eq!(workflow_run_id(Some("invalid".into())), "invalid");
+}
+
 #[derive(Default)]
 struct ApiFixture {
     hosts: RefCell<Vec<Value>>,

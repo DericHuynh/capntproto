@@ -1,5 +1,9 @@
 # 0.1.0 developer preview (unpublished)
 
+- Exercise both configured and local-default workflow identities and C++
+  compiler selection without mutating process-wide environment variables, so
+  coverage of these tooling paths does not depend on running inside CI.
+
 - Add regression coverage for forwarded RPC success/failure, fallback request
   envelopes, failed response reuse, occupied queue storage, raw partial reads and
   invalid plain replies. Requalify the coverage reference after the instruction
