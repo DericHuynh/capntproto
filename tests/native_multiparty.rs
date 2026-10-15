@@ -1198,10 +1198,15 @@ async fn replay_tlc_native_route_traces() {
     assert!(!traces.is_empty());
     tokio::task::LocalSet::new()
         .run_until(async {
-            for trace in traces {
-                tokio::time::timeout(Duration::from_secs(5), replay_route(trace))
+            for (index, trace) in traces.into_iter().enumerate() {
+                eprintln!("native-route trace {index}");
+                // A rejection trace establishes two real QUIC sessions, each
+                // with its own ten-second authentication deadline. This outer
+                // watchdog must allow those bounded operations to finish or
+                // report their own error on a contended verification runner.
+                tokio::time::timeout(Duration::from_secs(30), replay_route(trace))
                     .await
-                    .unwrap();
+                    .expect("native-route trace stalled; see the last action above");
             }
         })
         .await;
@@ -1220,6 +1225,7 @@ async fn replay_route(trace: RouteTrace) {
     let mut incoming = None;
     let mut _peer = None;
     for step in trace.steps {
+        eprintln!("native-route action {}: {:?}", step.action, step.state);
         match step.action.as_str() {
             "request" => {
                 let mut route = network.as_mut().unwrap().connect(b.public_key()).unwrap();

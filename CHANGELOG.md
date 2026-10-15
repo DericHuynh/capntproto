@@ -1,5 +1,9 @@
 # 0.1.0 developer preview (unpublished)
 
+- Give native-route trace replays an outer watchdog that accommodates their
+  bounded QUIC authentication operations, and report the exact trace, action
+  and model state on timeout. Preserve every route and identity assertion.
+
 - Exercise both configured and local-default workflow identities and C++
   compiler selection without mutating process-wide environment variables, so
   coverage of these tooling paths does not depend on running inside CI.
