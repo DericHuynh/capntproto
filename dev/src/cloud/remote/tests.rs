@@ -245,6 +245,11 @@ fn pair_lifecycle_cleans_up_after_second_creation_and_measurement_failures() {
         assert!(!state.join("server/client").exists());
         assert!(!state.join("client/host").exists());
         if mode == "measurement" {
+            let output = dir.path().join("output");
+            let loopback_host = crate::read_json(output.join("droplet.json")).unwrap();
+            let topology = crate::read_json(output.join("remote/topology.json")).unwrap();
+            assert_eq!(loopback_host, topology["client"]);
+            assert_ne!(loopback_host, topology["server"]);
             let calls = commands.0.borrow();
             assert!(calls
                 .iter()

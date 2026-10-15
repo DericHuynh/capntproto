@@ -354,6 +354,10 @@ pub(super) fn run(
             remote.join("topology.json"),
             &json!({"topology":"two-droplet-vpc","server":server.receipt,"client":client.receipt}),
         )?;
+        // Loopback controls run on the client after the two-host workloads.
+        // The quality importer requires that machine's provisioning receipt
+        // beside its environment and trials, independently of remote topology.
+        crate::write_json(output.join("droplet.json"), &client.receipt)?;
         let archive = state.join("bundle.tar.gz");
         let mut tar = tar::Builder::new(flate2::write::GzEncoder::new(
             fs::File::create(&archive)?,
