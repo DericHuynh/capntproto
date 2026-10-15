@@ -1040,7 +1040,9 @@ impl ClientHook for Hook {
         // the large request directly into its final box without a second owner.
         let call = Box::<Call>::new_uninit();
         let request = crate::local::Params::scoped(interface, method, allocator, template);
-        capability::Request::new(Box::write(
+        // Keep initialization concrete before coercing to RequestHook. The
+        // pinned coverage compiler otherwise infers an unsized Box::write.
+        let call: Box<Call> = Box::write(
             call,
             Call {
                 third_party: None,
@@ -1057,7 +1059,8 @@ impl ClientHook for Hook {
                     .map_or_else(Shutdown::new, |inbox| inbox.shutdown.clone()),
                 _permit: Permit(Weak::new()),
             },
-        ))
+        );
+        capability::Request::new(call)
     }
     fn call(
         &self,

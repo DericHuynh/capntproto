@@ -1,5 +1,8 @@
 # 0.1.0 developer preview (unpublished)
 
+- Keep portable request initialization concrete before trait-object coercion so
+  the pinned LLVM coverage compiler accepts the optimized in-place allocation.
+
 - Qualify portable plaintext TCP within 1.05× of legacy instructions on both
   client and server for the small-call workload with ordinary full LTO. Reuse
   response ownership, transfer affine output leases directly into the FIFO,
