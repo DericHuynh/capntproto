@@ -348,7 +348,8 @@ mod tests {
             .unwrap();
         let mut drained = handle.on_empty();
         drop(handle);
-        let first = Waker::from(Arc::new(Notify::default()));
+        let first_counter = Arc::new(Notify::default());
+        let first = Waker::from(first_counter.clone());
         assert!(Pin::new(&mut tasks)
             .poll(&mut Context::from_waker(&first))
             .is_pending());
@@ -363,11 +364,14 @@ mod tests {
         assert_eq!(polls.get(), 2);
         assert_eq!(results.borrow().as_slice(), &[Ok(())]);
         assert!(poll(&mut drained).is_pending());
-        assert!(registered.borrow().as_ref().unwrap().will_wake(&second));
+        // will_wake() is only a best-effort identity check (in particular under
+        // Miri). Verify delivery to the current parent and not the old parent.
+        let old_previous = first_counter.0.load(Ordering::SeqCst);
         let previous = counter.0.load(Ordering::SeqCst);
         ready.set(true);
         registered.borrow().as_ref().unwrap().wake_by_ref();
         assert!(counter.0.load(Ordering::SeqCst) > previous);
+        assert_eq!(first_counter.0.load(Ordering::SeqCst), old_previous);
         assert_eq!(
             Pin::new(&mut tasks).poll(&mut Context::from_waker(&second)),
             Poll::Ready(Ok(()))
