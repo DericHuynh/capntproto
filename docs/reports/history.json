@@ -1,7 +1,7 @@
 {
   "benchmark": {
     "attempt": 1,
-    "commit": "a0da9df093e111ed0ab54dab8d95cec9a402b5b2",
+    "commit": "4344e78c595e2288f17f398b0bcc42e3a1653133",
     "conclusion": "cancelled",
     "data": {
       "charts": [],
@@ -13,9 +13,9 @@
       "status": "unavailable",
       "tests": null
     },
-    "date": "2026-10-15T14:14:21Z",
-    "run_id": 38749608015,
-    "url": "https://github.com/DericHuynh/capntproto/actions/runs/38749608015"
+    "date": "2026-10-15T14:25:42Z",
+    "run_id": 38751293855,
+    "url": "https://github.com/DericHuynh/capntproto/actions/runs/38751293855"
   },
   "cargo": [
     {
@@ -818,6 +818,24 @@
       "date": "2026-10-15T14:14:21Z",
       "run_id": 38749608015,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/38749608015"
+    },
+    {
+      "attempt": 1,
+      "commit": "4344e78c595e2288f17f398b0bcc42e3a1653133",
+      "conclusion": "cancelled",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "cargo",
+        "note": "This workflow attempt produced no public measurement artifact.",
+        "origin": null,
+        "source_id": null,
+        "status": "unavailable",
+        "tests": null
+      },
+      "date": "2026-10-15T14:25:42Z",
+      "run_id": 38751293855,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/38751293855"
     }
   ],
   "format": 1,
@@ -1491,6 +1509,29 @@
       "date": "2026-10-15T14:14:21Z",
       "run_id": 38749608015,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/38749608015"
+    },
+    {
+      "attempt": 1,
+      "commit": "4344e78c595e2288f17f398b0bcc42e3a1653133",
+      "conclusion": "cancelled",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "fuzz",
+        "note": "Workflow failed after measurement; see the CI run.",
+        "origin": {
+          "attempt": 1,
+          "commit": "4344e78c595e2288f17f398b0bcc42e3a1653133",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 38751293855
+        },
+        "source_id": "6900e1f9f6459d84db520390b88bfb12b0760df3c9c8ff87e47540e13ef2bbd4",
+        "status": "failed",
+        "tests": null
+      },
+      "date": "2026-10-15T14:25:42Z",
+      "run_id": 38751293855,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/38751293855"
     }
   ],
   "models": [
@@ -2067,6 +2108,218 @@
       "date": "2026-10-15T14:14:21Z",
       "run_id": 38749608015,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/38749608015"
+    },
+    {
+      "attempt": 1,
+      "commit": "4344e78c595e2288f17f398b0bcc42e3a1653133",
+      "conclusion": "cancelled",
+      "data": {
+        "charts": [
+          {
+            "name": "tla-outcomes",
+            "note": "Unique module/configuration/expected-exit checks. Expected invariant violations are successful controls.",
+            "panels": [
+              {
+                "bars": [
+                  {
+                    "label": "Invariant/liveness checks",
+                    "value": 429
+                  },
+                  {
+                    "label": "Expected counterexamples",
+                    "value": 691
+                  },
+                  {
+                    "label": "Failed / incomplete checks",
+                    "value": 0
+                  }
+                ],
+                "title": "Observed outcomes"
+              }
+            ],
+            "title": "TLA+ checks and expected counterexamples",
+            "unit": "Checks"
+          },
+          {
+            "name": "tla-states",
+            "note": "Counts sum independent bounded configurations; they are not globally distinct states or a proof beyond those bounds.",
+            "panels": [
+              {
+                "bars": [
+                  {
+                    "label": "CapnpRealtime",
+                    "value": 2278093
+                  },
+                  {
+                    "label": "RealtimeConfigBoundary",
+                    "value": 32134
+                  },
+                  {
+                    "label": "RpcNativeProvisioning",
+                    "value": 139257
+                  },
+                  {
+                    "label": "StructuralEquality",
+                    "value": 18989
+                  },
+                  {
+                    "label": "RealtimeReceiptLifecycle",
+                    "value": 43028
+                  },
+                  {
+                    "label": "DatagramReentry",
+                    "value": 14185
+                  },
+                  {
+                    "label": "BulkConfigBoundary",
+                    "value": 71671
+                  },
+                  {
+                    "label": "RpcFieldOwners",
+                    "value": 25843
+                  },
+                  {
+                    "label": "GrantRevocation",
+                    "value": 50515
+                  },
+                  {
+                    "label": "ShutdownWaiters",
+                    "value": 49841
+                  },
+                  {
+                    "label": "RpcNativeArbitration",
+                    "value": 23268
+                  },
+                  {
+                    "label": "RpcRealtimeReceiver",
+                    "value": 34637
+                  },
+                  {
+                    "label": "CapnpConformance",
+                    "value": 10067
+                  },
+                  {
+                    "label": "RouteShutdownCompletion",
+                    "value": 17622
+                  },
+                  {
+                    "label": "RpcPersistenceExpiry",
+                    "value": 10978
+                  },
+                  {
+                    "label": "Other models",
+                    "value": 292365
+                  }
+                ],
+                "title": "Generated states"
+              },
+              {
+                "bars": [
+                  {
+                    "label": "CapnpRealtime",
+                    "value": 365572
+                  },
+                  {
+                    "label": "RealtimeConfigBoundary",
+                    "value": 25441
+                  },
+                  {
+                    "label": "RpcNativeProvisioning",
+                    "value": 25358
+                  },
+                  {
+                    "label": "StructuralEquality",
+                    "value": 18989
+                  },
+                  {
+                    "label": "RealtimeReceiptLifecycle",
+                    "value": 13742
+                  },
+                  {
+                    "label": "DatagramReentry",
+                    "value": 12959
+                  },
+                  {
+                    "label": "BulkConfigBoundary",
+                    "value": 10816
+                  },
+                  {
+                    "label": "RpcFieldOwners",
+                    "value": 9933
+                  },
+                  {
+                    "label": "GrantRevocation",
+                    "value": 9663
+                  },
+                  {
+                    "label": "ShutdownWaiters",
+                    "value": 8054
+                  },
+                  {
+                    "label": "RpcNativeArbitration",
+                    "value": 7569
+                  },
+                  {
+                    "label": "RpcRealtimeReceiver",
+                    "value": 7210
+                  },
+                  {
+                    "label": "CapnpConformance",
+                    "value": 5062
+                  },
+                  {
+                    "label": "RouteShutdownCompletion",
+                    "value": 4789
+                  },
+                  {
+                    "label": "RpcPersistenceExpiry",
+                    "value": 4581
+                  },
+                  {
+                    "label": "Other models",
+                    "value": 101107
+                  }
+                ],
+                "title": "Distinct states"
+              }
+            ],
+            "title": "TLA+ explored states by model",
+            "unit": "States"
+          }
+        ],
+        "format": 1,
+        "kind": "models",
+        "note": "Lane failed or did not complete; inspect the linked CI run.",
+        "origin": {
+          "attempt": 1,
+          "commit": "4344e78c595e2288f17f398b0bcc42e3a1653133",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 38751293855
+        },
+        "source_id": "6900e1f9f6459d84db520390b88bfb12b0760df3c9c8ff87e47540e13ef2bbd4",
+        "status": "failed",
+        "tests": {
+          "command_passed": false,
+          "complete": false,
+          "errors": 0,
+          "failed": 1,
+          "failures": [
+            {
+              "name": "replay_tlc_native_route_traces",
+              "output": "thread 'replay_tlc_native_route_traces' (37702) panicked at tests/native_multiparty.rs:1204:22:\ncalled `Result::unwrap()` on an `Err` value: Elapsed(())\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n             at /rustc/17fd5b8a37b6667b6cc137f3cc35f09759768a3b/library/std/src/panicking.rs:676:5\n   1: core::panicking::panic_fmt\n             at /rustc/17fd5b8a37b6667b6cc137f3cc35f09759768a3b/library/core/src/panicking.rs:80:14\n   2: core::result::unwrap_failed\n             at /rustc/17fd5b8a37b6667b6cc137f3cc35f09759768a3b/library/core/src/result.rs:1870:5\n   3: <core::result::Result<(), tokio::time::error::Elapsed>>::unwrap\n             at /home/runner/.rustup/toolchains/nightly-2026-08-29-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/result.rs:1232:23\n   4: native_multiparty::replay_tlc_native_route_traces::{closure#0}::{closure#0}\n             at ./tests/native_multiparty.rs:1204:22\n   5: <tokio::task::local::RunUntil<native_multiparty::replay_tlc_native_route_traces::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}\n             at /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/src/task/local.rs:1073:44\n   6: <tokio::task::local::LocalSet>::with::<core::task::poll::Poll<()>, <tokio::task::local::RunUntil<native_multiparty::replay_tlc_native_route_traces::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}>::{closure#0}\n             at /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/src/task/local.rs:824:13\n   7: <std::thread::local::LocalKey<tokio::task::local::LocalData>>::try_with::<<tokio::task::local::LocalSet>::with<core::task::poll::Poll<()>, <tokio::task::local::RunUntil<native_multiparty::replay_tlc_native_route_traces::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}>::{closure#0}, core::task::poll::Poll<()>>\n             at /home/runner/.rustup/toolchains/nightly-2026-08-29-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/thread/local.rs:463:12\n   8: <std::thread::local::LocalKey<tokio::task::local::LocalData>>::with::<<tokio::task::local::LocalSet>::with<core::task::poll::Poll<()>, <tokio::task::local::RunUntil<native_multiparty::replay_tlc_native_route_traces::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}>::{closure#0}, core::task::poll::Poll<()>>\n             at /home/runner/.rustup/toolchains/nightly-2026-08-29-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/thread/local.rs:427:20\n   9: <tokio::task::local::LocalSet>::with::<core::task::poll::Poll<()>, <tokio::task::local::RunUntil<native_multiparty::replay_tlc_native_route_traces::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}>\n             at /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/src/task/local.rs:822:17\n  10: <tokio::task::local::RunUntil<native_multiparty::replay_tlc_native_route_traces::{closure#0}::{closure#0}> as core::future::future::Future>::poll\n             at /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/src/task/local.rs:1063:22\n  11: <tokio::task::local::LocalSet>::run_until::<native_multiparty::replay_tlc_native_route_traces::{closure#0}::{closure#0}>::{closure#0}\n             at /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/src/task/local.rs:720:19\n  12: native_multiparty::replay_tlc_native_route_traces::{closure#0}\n             at ./tests/native_multiparty.rs:1207:10\n  13: <core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>> as core::future::future::Future>::poll\n             at /home/runner/.rustup/toolchains/nightly-2026-08-29-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/future/future.rs:133:9\n  14: <core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>> as core::future::future::Future>::poll\n             at /home/runner/.rustup/toolchains/nightly-2026-08-29-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/c",
+              "suite": "capntproto::native_multiparty",
+              "truncated": true
+            }
+          ],
+          "passed": 232,
+          "skipped": 7,
+          "suites": 88,
+          "total": 240
+        }
+      },
+      "date": "2026-10-15T14:25:42Z",
+      "run_id": 38751293855,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/38751293855"
     }
   ]
 }
