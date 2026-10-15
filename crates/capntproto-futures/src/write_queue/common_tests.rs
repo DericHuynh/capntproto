@@ -231,7 +231,7 @@ fn contiguous_frame_retains_its_owner_until_partial_write_and_flush_finish() {
 
 #[test]
 fn contiguous_frame_io_failures_release_owners_and_fail_all_receipts() {
-    use std::{pin::Pin, sync::atomic::AtomicUsize, task::Context};
+    use std::sync::atomic::AtomicUsize;
     struct Frame {
         bytes: [u8; 16],
         drops: Arc<AtomicUsize>,
@@ -256,29 +256,22 @@ fn contiguous_frame_io_failures_release_owners_and_fail_all_receipts() {
         Flush,
     }
     struct Writer(Fault);
-    impl AsyncWrite for Writer {
-        fn poll_write(
-            self: Pin<&mut Self>,
-            _: &mut Context<'_>,
-            bytes: &[u8],
-        ) -> Poll<std::io::Result<usize>> {
-            Poll::Ready(match self.0 {
+    impl std::io::Write for Writer {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            match self.0 {
                 Fault::Write => Err(std::io::ErrorKind::BrokenPipe.into()),
                 Fault::Zero => Ok(0),
                 Fault::Flush => Ok(bytes.len()),
-            })
+            }
         }
-        fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-            Poll::Ready(Err(std::io::ErrorKind::BrokenPipe.into()))
-        }
-        fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-            self.poll_flush(cx)
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::ErrorKind::BrokenPipe.into())
         }
     }
     for fault in [Fault::Write, Fault::Zero, Fault::Flush] {
         for count in [1, 2] {
             let drops = Arc::new(AtomicUsize::new(0));
-            let (sender, driver) = write_queue(Writer(fault));
+            let (sender, driver) = write_queue(futures::io::AllowStdIo::new(Writer(fault)));
             let receipts: Vec<_> = (0..count)
                 .map(|_| {
                     sender.send(Frame {
