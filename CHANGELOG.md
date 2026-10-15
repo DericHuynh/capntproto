@@ -1,5 +1,15 @@
 # 0.1.0 developer preview (unpublished)
 
+- Qualify portable plaintext TCP within 1.05× of legacy instructions on both
+  client and server for the small-call workload with ordinary full LTO. Reuse
+  response ownership, transfer affine output leases directly into the FIFO,
+  reduce scheduling and table work, and preserve control/cancellation paths.
+  Add a same-executable paired benchmark gate with `--compare-legacy` and
+  `--maximum-ratio 1.05` and publish three passing comparisons.
+- Reject wire-relative offsets beyond the native address space without panicking
+  on 32-bit targets. Cover reader bounds, queue ownership, wake delivery and
+  partial-write/control interleavings with native, Miri and formal checks.
+
 - Require Rustls 0.23.46 and update every affected lockfile for the October 14
   security advisories. Audit all eleven owned lockfiles and retain diagnostics
   from every failed audit instead of stopping at the first one.

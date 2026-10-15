@@ -63,31 +63,36 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
         method: u16,
     ) -> capnp::Result<Self> {
         let message = template.message.instantiate(allocator);
-        let message = if template.method == (interface, method) {
-            message
-        } else {
-            message.into_inner().select(|root| {
-                let root = root.get_as::<rpc_capnp::message::Builder>()?;
-                let rpc_capnp::message::Call(call) =
-                    root.which().expect("private Call discriminant")
-                else {
-                    unreachable!("private Call envelope")
-                };
-                let mut call = call?;
-                call.set_interface_id(interface);
-                call.set_method_id(method);
-                Ok(call.get_params()?.get_content())
-            })?
+        let method = calls::DynamicCall {
+            interface,
+            method,
+            no_promise_pipelining: true,
+            only_promise_pipeline: false,
         };
+        if template.method == (method.interface, method.method) {
+            return Ok(Self {
+                message,
+                offsets: template.offsets,
+                method,
+            });
+        }
+        // Keep the common immutable-header copy separate from reselecting an
+        // envelope for another method, avoiding a large builder join temporary.
+        let message = message.into_inner().select(|root| {
+            let root = root.get_as::<rpc_capnp::message::Builder>()?;
+            let rpc_capnp::message::Call(call) = root.which().expect("private Call discriminant")
+            else {
+                unreachable!("private Call envelope")
+            };
+            let mut call = call?;
+            call.set_interface_id(method.interface);
+            call.set_method_id(method.method);
+            Ok(call.get_params()?.get_content())
+        })?;
         Ok(Self {
             message,
             offsets: template.offsets,
-            method: calls::DynamicCall {
-                interface,
-                method,
-                no_promise_pipelining: true,
-                only_promise_pipeline: false,
-            },
+            method,
         })
     }
     pub fn new(
@@ -201,7 +206,6 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
             .validate_capability_indices(0, selected_options)?;
         Ok(Some(EncodedCall {
             segment,
-            method,
             options,
             template: PlainTemplate {
                 method: (method.interface, method.method),
@@ -220,7 +224,6 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
 pub struct EncodedCall<'a> {
     segment: &'a [u8],
     template: PlainTemplate,
-    method: calls::DynamicCall,
     options: capnp::message::ReaderOptions,
 }
 impl<'a> EncodedCall<'a> {
@@ -251,7 +254,6 @@ impl<'a> EncodedCall<'a> {
         Ok(Self {
             segment,
             template: PlainTemplate::read_segment(segment, method, options)?,
-            method,
             options,
         })
     }
@@ -264,7 +266,10 @@ impl<'a> EncodedCall<'a> {
         method: calls::DynamicCall,
         options: capnp::message::ReaderOptions,
     ) -> Result<PlainTemplate, super::super::super::Error> {
-        if self.method != method {
+        if self.template.method != (method.interface, method.method)
+            || !method.no_promise_pipelining
+            || method.only_promise_pipeline
+        {
             return Err(super::super::super::Error::WrongMessage);
         }
         if options.traversal_limit_in_words == self.options.traversal_limit_in_words
@@ -326,6 +331,7 @@ impl PlainTemplate {
             .validate_capability_indices(0)?;
         Ok(template)
     }
+    #[inline(always)]
     pub(super) fn copy_segment<'pool>(
         self,
         segment: &[u8],

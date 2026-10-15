@@ -57,6 +57,8 @@ pub struct Worker<'p, 'id, I, const C: usize, const H: usize> {
     maximum: usize,
     cursor: usize,
     remaining: usize,
+    completed_plain: bool,
+    results_cache: results::Cache,
     executor: Option<Rc<dyn capability::CallExecutor>>,
 }
 impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
@@ -66,11 +68,23 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             maximum,
             cursor: 0,
             remaining: 0,
+            completed_plain: false,
+            results_cache: results::Cache::default(),
             executor,
         }
     }
     pub fn is_empty(&self) -> bool {
         self.entries.iter().all(Option::is_none)
+    }
+    pub(in crate::scoped::wire) fn results(
+        &self,
+        charge: Option<coordinator::policy::Charge>,
+        pool: Option<capnp::message::SegmentPool>,
+    ) -> Results {
+        self.results_cache.acquire(charge, pool)
+    }
+    pub(crate) fn completed_plain(&self) -> bool {
+        self.completed_plain
     }
     pub(crate) fn invalidate_scan(&mut self) {
         self.remaining = 0;
@@ -97,6 +111,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
     /// Accept only the oldest ready incoming ordinary Call. False leaves other
     /// tasks, including authenticated handoffs, untouched for their owner.
     /// Failure reserves neither a worker slot nor a dispatcher destination.
+    #[inline(always)]
     pub fn accept<P: Copy + Eq>(
         &mut self,
         driver: &mut Peer<'p, 'id, '_, I, P, C, H>,
@@ -118,7 +133,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             }
             self.entries.try_reserve(1).map_err(wire_error)?;
         }
-        let (running, execute, results) = if let Some((running, execute)) =
+        if let Some((running, execute)) =
             driver.dispatch_immediate_call(true).map_err(wire_error)?
         {
             let key = running.owner().answer();
@@ -130,8 +145,10 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 .owner
                 .producer
                 .clone();
-            (running, execute, results)
-        } else {
+            self.install(index, running, execute, results);
+            return Ok(true);
+        }
+        let (running, execute, results) = {
             // A pending route, remote target or older task keeps ordinary FIFO
             // dispatch. Queueing itself is progress: network controls must get
             // another turn to prepare a third-party destination before execution.
@@ -175,6 +192,18 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 results,
             )
         };
+        self.install(index, running, execute, results);
+        Ok(true)
+    }
+
+    #[inline(always)]
+    fn install(
+        &mut self,
+        index: usize,
+        running: Running<'p, 'id, I, C, H>,
+        execute: bool,
+        results: Results,
+    ) {
         let entry = Entry {
             running,
             results,
@@ -193,7 +222,6 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             self.entries[index] = Some(entry);
         }
         self.remaining = self.entries.len();
-        Ok(true)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -323,6 +351,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             &connection::PreparedReturn<capnp::message::HeapAllocator>,
         ) -> capnp::Result<bool>,
     ) -> Poll<capnp::Result<Progress>> {
+        self.completed_plain = false;
         if let Some(kind) = driver.disconnected() {
             return Poll::Ready(Err(Error::from_kind(kind)));
         }
@@ -360,6 +389,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     &mut publish_plain,
                     &mut remaining_budget,
                     exclusive,
+                    &mut self.completed_plain,
                 )
             } else {
                 Poll::Pending
@@ -368,7 +398,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 self.remaining = self.entries.len();
                 if matches!(outcome, Ok(Progress::Replied)) {
                     let entry = self.entries[index].take().expect("replied operation");
-                    release(entry, driver, messages);
+                    self.results_cache.recycle(release(entry, driver, messages));
                 }
                 if matches!(outcome, Ok(Progress::Advanced)) {
                     advanced = true;
@@ -428,6 +458,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         ) -> capnp::Result<bool>,
         remaining_budget: &mut usize,
         exclusive: bool,
+        completed_plain: &mut bool,
     ) -> Poll<capnp::Result<Progress>> {
         let key = entry.request().answer();
         // AwaitFromThirdParty may retire on Finish before the child completes.
@@ -493,7 +524,11 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 };
                 let prepared = hooks.prepare_received_server(entry.request(), driver, messages)?;
                 refresh(hooks, driver);
-                let mut execution = prepared.execute(&*target, &entry.results, executor.clone())?;
+                let mut execution = if exclusive && *remaining_budget != 0 {
+                    prepared.execute_during_dispatch(&*target, &entry.results, executor.clone())?
+                } else {
+                    prepared.execute(&*target, &entry.results, executor.clone())?
+                };
                 entry.stage = if entry.results.transfer_ready() {
                     Stage::Transfer(entry.results.start_transfer(execution)?)
                 } else if exclusive && *remaining_budget != 0 {
@@ -512,15 +547,13 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 };
                 if exclusive && *remaining_budget >= 2 && matches!(entry.stage, Stage::Collect) {
                     if let Some(payload) = entry.results.plain_payload() {
-                        let PayloadBody::Return(source) = &payload.body else {
-                            unreachable!()
-                        };
-                        if publish_plain(driver, messages, entry.request(), source)? {
+                        if publish_plain(driver, messages, entry.request(), &payload)? {
                             // A synchronous completion needs no suspended
                             // Collect state. Account for both Collect and
                             // Publish before retiring the ordinary owner.
                             *remaining_budget -= 2;
                             entry.results.returned();
+                            *completed_plain = entry.request().capability_count() == 0;
                             return Poll::Ready(Ok(Progress::Replied));
                         }
                     }
@@ -552,10 +585,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 }
                 if *remaining_budget != 0 && !canceled_transfer {
                     if let Some(payload) = entry.results.plain_payload() {
-                        let PayloadBody::Return(source) = &payload.body else {
-                            unreachable!()
-                        };
-                        if publish_plain(driver, messages, entry.request(), source)? {
+                        if publish_plain(driver, messages, entry.request(), &payload)? {
                             // Collection and publication remain separately
                             // charged, although no retained intermediate result
                             // is needed when the answer can retire immediately.
@@ -641,7 +671,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         messages: &mut messages::Messages<'p, '_, '_>,
     ) {
         for entry in self.entries.into_iter().flatten() {
-            release(entry, driver, messages);
+            drop(release(entry, driver, messages));
         }
     }
 }
@@ -650,10 +680,11 @@ fn release<'p, 'id, I, P: Copy + Eq, const C: usize, const H: usize>(
     entry: Entry<'p, 'id, I, C, H>,
     driver: &mut Peer<'p, 'id, '_, I, P, C, H>,
     messages: &mut messages::Messages<'p, '_, '_>,
-) {
+) -> Results {
     drop(entry.stage);
     let call = driver.runtime.complete(entry.running);
     driver.release_call(call, messages);
+    entry.results
 }
 
 impl<'id> ClientHooks<'id> {

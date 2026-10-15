@@ -2,6 +2,24 @@ use super::*;
 const ZERO: crate::Word = crate::word(0, 0, 0, 0, 0, 0, 0, 0);
 
 #[test]
+fn relative_offsets_larger_than_native_addresses_are_rejected() {
+    static WORDS: [crate::Word; 2] = [ZERO; 2];
+    let arena = GeneratedCodeArena::new(&WORDS);
+    let (start, _) = arena.get_segment(0).unwrap();
+    for offset in [i32::MIN, -1, 3, 0x1fff_ffff, 0x2000_0000, i32::MAX] {
+        // SAFETY: start is the beginning of the arena's live segment. The
+        // offset is deliberately invalid and must fail before pointer creation.
+        let error = unsafe { arena.check_offset(0, start, offset) }.unwrap_err();
+        assert_eq!(error.kind, ErrorKind::MessageContainsOutOfBoundsPointer);
+    }
+    for offset in [0, 1, 2] {
+        // SAFETY: start belongs to this segment; its end is allowed but unused.
+        let target = unsafe { arena.check_offset(0, start, offset) }.unwrap();
+        assert_eq!(target, start.wrapping_add(offset as usize * BYTES_PER_WORD));
+    }
+}
+
+#[test]
 fn cached_intervals_reject_invalid_ranges_without_spending_traversal_budget() {
     let storage = [ZERO; 4];
     let bytes = crate::Word::words_to_bytes(&storage);

@@ -54,7 +54,7 @@ pub(super) fn connect<V: 'static>(
     let joins = context.join_network.clone();
     context
         .tasks
-        .try_add(async move {
+        .try_add_connection(async move {
             let outcome = run(
                 connection,
                 bootstrap,
@@ -164,6 +164,7 @@ async fn run<V: 'static>(
                     embargoes: driver.observe_embargoes(),
                 });
                 driver.set_descriptors(coordinator::multiparty::introduction::descriptors());
+                driver.use_owned_output_queues(true);
                 let mut coordinator = coordinator::Coordinator::new_using_commands(
                     driver,
                     ClientHooks::new(options.hooks.get(), options.concurrency.get())

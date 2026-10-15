@@ -20,7 +20,7 @@ fn no_finish_reply_commits_only_with_fifo_capacity_and_rejects_non_data_results(
                     let key = answers
                         .admit(id, State::new(41))
                         .unwrap_or_else(|_| panic!("admit"));
-                    let mut slots = [None; 2];
+                    let mut slots = [const { None }; 2];
                     let mut queue = messages::Queue::new(&mut slots).unwrap();
                     let busy = Frame::build(messages, 512, Default::default(), |builder| {
                         calls::acknowledge(builder, AnswerId::from_wire(9))
@@ -106,7 +106,7 @@ fn output_backpressure_preserves_completed_reply_for_retry() {
                 let key = answers
                     .admit(id, State::new(41))
                     .unwrap_or_else(|_| panic!("answer"));
-                let mut slots = [None; 2];
+                let mut slots = [const { None }; 2];
                 let mut queue = messages::Queue::new(&mut slots).unwrap();
                 let busy = Frame::build(messages, 512, Default::default(), |b| {
                     calls::acknowledge(b, AnswerId::from_wire(4))
@@ -179,7 +179,7 @@ fn backpressured_capability_reply_keeps_grants_and_handles_finish_before_retry()
                         let key = answers
                             .admit(id, State::new(41))
                             .unwrap_or_else(|_| panic!("answer"));
-                        let mut slots = [None; 2];
+                        let mut slots = [const { None }; 2];
                         let mut queue = messages::Queue::new(&mut slots).unwrap();
                         let busy = Frame::build(messages, 512, Default::default(), |b| {
                             calls::acknowledge(b, AnswerId::from_wire(4))

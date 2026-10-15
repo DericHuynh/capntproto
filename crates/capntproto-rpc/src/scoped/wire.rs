@@ -35,7 +35,7 @@ pub(crate) struct Payload {
 }
 enum PayloadBody {
     Owned(Box<capnp::message::Builder<capnp::message::HeapAllocator>>),
-    Return(Box<connection::PreparedReturn<capnp::message::HeapAllocator>>),
+    Return(Rc<connection::PreparedReturn<capnp::message::HeapAllocator>>),
     Admitted(Box<owned::PlainResults>),
     Shared { message: Box<SharedPayload> },
 }

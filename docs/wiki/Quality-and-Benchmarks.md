@@ -2655,81 +2655,98 @@ These results qualify this local sequential loopback workload, not encrypted
 transport performance, concurrent throughput, other hosts or the incomplete
 allocation-free RPC profile.
 
-### Portable instruction qualification below 20 million
+### Portable and legacy instruction qualification
 
-The October 14 optimization batch targets complete-process Callgrind Ir for
-100 warmups and 1,000 retained empty plaintext TCP calls. The fresh qualifying
-ordinary full-LTO build measured **19,973,745 client** and **19,257,076 server**
-instructions, against the earlier 25,963,270 / 26,168,694 baseline. Both totals
-include process startup, bootstrap and cleanup. This is an instruction ceiling
-for that workload, not a latency ratio or a claim about every payload size.
+The October 15 optimization batch meets a **1.05× portable/legacy instruction
+limit on both peers** for 100 warmups and 1,000 retained empty plaintext TCP
+calls. Each comparison runs both drivers from the same ordinary full-LTO
+executable. Complete-process Callgrind Ir includes startup, bootstrap and cleanup.
+This qualifies the local small-call workload; it does not establish latency,
+encrypted transport or large-payload parity.
 
-Three additional runs of the same executable also passed both ceilings:
+| Process | Portable instructions | Matched legacy instructions | Portable / legacy |
+| --- | ---: | ---: | ---: |
+| Client | 18,317,712 | 17,449,559 | 1.049752× |
+| Server | 17,061,152 | 16,264,956 | 1.048952× |
 
-| Process | Portable repeat range | Portable median | Matched legacy median | Portable / legacy |
+Two more paired runs of that executable also pass both limits:
+
+| Run | Portable client / server | Legacy client / server | Client ratio | Server ratio |
 | --- | ---: | ---: | ---: | ---: |
-| Client | 19,947,637–19,948,423 | 19,947,903 | 17,484,892 | 1.141× |
-| Server | 19,230,956–19,231,520 | 19,231,142 | 16,262,258 | 1.183× |
+| Repeat 1 | 18,318,194 / 17,062,974 | 17,451,839 / 16,267,066 | 1.049643× | 1.048928× |
+| Repeat 2 | 18,319,310 / 17,063,592 | 17,452,607 / 16,267,288 | 1.049660× | 1.048951× |
 
-The primary command uses absolute executable paths; the repeats use relative
-paths. Startup remains included in both. The executable SHA-256 is
-`3c243a83a6cf879474cc9b5a302dac6b2b5e2ab7d3257947d339b39702d5bbc1`.
-The reported threshold is the larger primary result, not a selected best run.
+The worst ratio across all three runs is **1.049753× client, 1.048952× server**
+(rounded upward). Portable instructions decreased 8.2% client and 11.3% server
+from this batch's starting measurements. Shared promise polling also improves
+legacy; the comparison does not rely on making the control slower.
 
-The production changes avoid temporary receipt/result owners, borrow checked
-message views, retain queue ownership through partial writes and flush, and
-reuse exclusive completion storage. Ready server dispatch and data-only replies
-use the same protocol ledgers with fewer scheduler transitions. Cached idle
-state is invalidated by endpoint, cancellation and control notifications; custom
-controls retain their ordinary polling path. Pipelining, descriptor admission,
-wire-ID generations, read limits and retained Finish obligations remain checked.
-A non-cached segment lookup now has its own function, eliminating register saves
-from the common segment-zero bounds check without skipping validation.
+The qualifying build used clean commit
+`0d3a409d124563837f828fea69b33550d54fb0cb`, Rust 1.97.0, Valgrind 3.25.1,
+one codegen unit, fat LTO and enabled overflow checks on an AMD Ryzen 7 5800H.
+Executable SHA-256:
+`c11d46ed16a19bb59df15efb7b9c60b7b6834ec2dfdba14bd41cd2a20ca272e8`.
+The repeats reuse that exact binary; subsequent commits adjust test assertions,
+reviewed source hashes and documentation. No PGO, target-CPU tuning, static C++
+runtime or reduced benchmark workload is used.
 
-Successful and pending hosted promises have a smaller representation; immediate
-errors allocate one box. Fixed-storage RPC builds use their existing completion
-state machine and do not acquire an allocator dependency. Rejected performance
-experiments are not retained, including removal of the post-Return scheduling
-yield and changes that merely increased inlining or moved input through another
-adapter. No PGO, target-CPU tuning, static C++ runtime or changed benchmark work
-is used for this qualification.
+The production changes reuse exclusive response/result storage, preserve typed
+response ownership without another boxed future, and transfer affine message
+leases directly into the FIFO. Ready server dispatch avoids redundant task
+scheduling; validated final Returns reclaim their records without intermediate
+updates that are immediately discarded. Concrete reader validation and focused
+inlining remove repeated dispatch and table lookups.
 
-Reproduce the ceiling check with:
+These paths retain protocol ledgers, admission limits, partial-write ownership,
+FIFO ordering, cancellation, shutdown and control wakeups. Generic hooks,
+pipelines and retained Finish obligations keep their general paths. Fixed-storage
+RPC keeps caller-owned memory and has no new allocator dependency. A malformed
+relative-pointer offset that could panic on 32-bit targets now returns a bounds
+error, with native and Miri regressions.
+
+Reproduce the paired gate with:
 
 ```sh
 cargo run --locked -p capntproto-dev -- rpc-instructions \
-  --output target/quality/portable-instructions --maximum 20000000
+  --output target/quality/portable-instructions \
+  --compare-legacy --maximum-ratio 1.05
 ```
 
-The JSON report and raw client/server profiles retain the workload, compiler,
-flags, executable hash and full instruction totals. The command fails when
-**either** peer exceeds the ceiling; it does not subtract startup or select a
-hot function. Add `--legacy` for a matched control. Optimization artifacts are
-under `target/verus-migration-20261014/` in the development checkout.
+The command fails if **either peer** exceeds the ratio. `--maximum` can impose
+an additional absolute ceiling. JSON reports preserve both drivers' totals,
+compiler flags, workload, executable hash and source revision; raw Callgrind
+profiles are retained. Local evidence is under `target/portable-105-20261014/`,
+including `qualified/report.json`, both `qualified-repeat*/report.json` files,
+and `qualification-summary.json`.
 
 All 48 application-workflow smoke checks passed across the four legacy/portable
 client/server combinations, including fanout, dependent and pipelined reads,
 write/read, callbacks and payloads through 4 MiB. Twenty additional echo cases
-passed through 256 KiB. The small-call harness deliberately caps frames at
-512 KiB; larger workflows use its separate 8 MiB frame budget. These smoke checks
-validate responses and completion, not latency on this busy workstation.
+passed through 256 KiB. The small-call harness caps frames at 512 KiB; larger
+workflows use a separate 8 MiB budget. These checks validate results and
+completion, not latency on this workstation.
 
-The workspace run executed 2,273 tests: 2,271 passed initially, two failed and
-seven were skipped. Both failures passed focused rechecks after updating the
-Miri inventory from 39 to 45 tests and enabling the installed auditable Cargo
-wrapper. No entirely clean second full-workspace run is claimed. The ignored
-inventory gate passed. Independent checks passed all 241 allocation-free
-engine/wire tests, both bare-metal RPC profiles, and 85 workspace doctests
-(13 intentionally ignored). The memory gate completed 180 interpreted
-executions; separate 32-bit Miri runs passed 180 RPC ownership/wakeup tests and
-16 selected-reader/promise tests. Clippy, formatting, unsafe-debt review,
-workflow/security linting and document validation passed.
+The frozen workspace run passed **2,301 tests, with seven intentionally skipped**.
+All 85 workspace doctests passed (13 intentionally ignored). The six portability
+profiles passed 522 test executions, including allocation-free ownership checks;
+bare-metal core/engine/wire/RPC checks and the portable release executable passed
+for `thumbv7em-none-eabi`. The full memory gate passed 180 interpreted Miri
+executions. Additional 32-bit Miri checks passed response/admission/shutdown/task
+ownership, affine queues, selected readers and promise ownership, including the
+oversized-relative-offset and fragmented-frame regressions.
 
-Verus passed 154 obligations across the 153-function/lemma inventory, all 139
-temporal-library obligations and all 43 negative controls. Its evidence matches
-all 122 current source inputs. The native mutation campaign caught 86 faults;
-eight mutations did not compile, with no surviving mutations or timeouts.
-Native fuzz smoke and the 132 required cross-language RPC scenarios passed,
-along with the bounded upstream check; the two pre-existing upstream-only
-limitations remain separately reported. Hosted CI qualifies the published tree
+The native mutation campaign caught all 86 compilable faults; eight mutations
+were unbuildable, with no surviving mutations or timeouts. Native fuzz smoke,
+all 132 required cross-language RPC scenarios and the bounded upstream-Rust
+check passed; two documented upstream-only limitations remain separately
+reported. Clippy, formatting, unsafe-documentation debt and workflow checks
+passed. Updated unsafe source hashes preserve every existing exception count.
+
+Verus passed 155 production obligations, all 139 temporal-library obligations
+and all 43 deliberate-fault controls, with source-bound evidence covering 122
+inputs. The added lemma justifies eliding the intermediate state for an exclusive
+validated Return with no Finish obligation. Three optional bounded Kani queue
+proofs also passed for tracked and directly owned sends. Formal contracts do not
+prove IO, callback behavior or pointer provenance; native fault/reentrancy tests
+and 32-bit Miri cover those boundaries. Hosted CI qualifies the published tree
 and remote measurements separately.

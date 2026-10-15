@@ -219,6 +219,7 @@ impl<'pool> Frame<'pool> {
         Ok(Some(segments))
     }
     #[cfg(feature = "alloc")]
+    #[inline(always)]
     fn retain_plain_payload(
         &self,
         messages: &messages::Messages<'pool, '_, '_>,
@@ -785,7 +786,7 @@ impl<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> Call<'pool, 'i, 'e, '
         }
     }
     #[allow(clippy::too_many_arguments)]
-    #[inline(never)]
+    #[inline(always)]
     fn admit_decoded<E, A>(
         _frame: &Frame<'pool>,
         _messages: &messages::Messages<'pool, '_, '_>,
@@ -948,6 +949,10 @@ impl<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> Call<'pool, 'i, 'e, '
     /// Scalar method metadata captured from the immutable admitted Call.
     pub fn method(&self) -> calls::DynamicCall {
         self.method
+    }
+    /// Number of admitted parameter descriptors retained by this request.
+    pub fn capability_count(&self) -> usize {
+        self.receipts.count
     }
     /// Whether this admitted ordinary Call permits third-party answer handoff.
     pub fn allows_third_party_tail_call(&self) -> bool {

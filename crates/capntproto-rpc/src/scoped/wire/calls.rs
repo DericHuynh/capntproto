@@ -148,6 +148,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             }
         }
     }
+    #[inline(always)]
     pub(super) fn plain_receiver(
         &self,
         key: capntproto_rpc_engine::questions::Key<'id>,
@@ -161,6 +162,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 .is_some_and(|entry| entry.local.is_none() && entry.wire.accepts_plain(key))
         })
     }
+    #[inline(always)]
     pub(super) fn deliver_plain(
         &mut self,
         index: usize,
@@ -822,17 +824,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             };
             let encoded = call
                 .params
-                .as_any()
-                .and_then(|params| {
-                    params
-                        .downcast_ref::<crate::local::Request>()
-                        .and_then(crate::local::Request::prepared_call)
-                        .or_else(|| {
-                            params
-                                .downcast_ref::<crate::local::Params>()
-                                .and_then(crate::local::Params::prepared_call)
-                        })
-                })
+                .prepared_call()
                 .map(|builder| builder.encoded(method, options))
                 .transpose()
                 .map_err(wire_error)?

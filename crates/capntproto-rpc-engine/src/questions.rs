@@ -267,6 +267,7 @@ impl<'id, 'storage> Questions<'id, 'storage> {
     pub fn is_empty(&self) -> bool {
         self.table.is_empty()
     }
+    #[inline(always)]
     pub fn reserve(&mut self) -> Result<Reservation<'_, 'id, 'storage>, Error> {
         self.reserve_kind(ResultsTo::Caller)
     }
@@ -278,6 +279,7 @@ impl<'id, 'storage> Questions<'id, 'storage> {
     pub fn reserve_third_party(&mut self) -> Result<Reservation<'_, 'id, 'storage>, Error> {
         self.reserve_kind(ResultsTo::ThirdParty)
     }
+    #[inline(always)]
     fn reserve_kind(
         &mut self,
         destination: ResultsTo,
@@ -320,6 +322,7 @@ impl<'id, 'storage> Questions<'id, 'storage> {
             .filter(|r| r.generation == key.generation)
             .ok_or(Error::StaleKey)
     }
+    #[inline(always)]
     fn record_mut(&mut self, key: Key<'id>) -> Result<&mut Record, Error> {
         self.table
             .get_mut(key.id)
@@ -339,6 +342,7 @@ impl<'id, 'storage> Questions<'id, 'storage> {
     /// The guard invokes no callbacks and survives cancellation until both the
     /// Return and Finish obligations retire. Fixed profiles allocate nothing.
     #[cfg(feature = "alloc")]
+    #[inline(always)]
     pub fn retain_credit(
         &mut self,
         key: Key<'id>,
@@ -533,6 +537,14 @@ impl<'id> Receive<'_, 'id, '_> {
             Ok(record) => record,
             Err(error) => return Err((error, local)),
         };
+        if self.no_finish_needed && record.references == 1 && record.finish.is_none() {
+            // Exclusive preflight already validated Return and fixed its delivery.
+            // This consumes the last local owner and owes no Finish: discard the
+            // record directly instead of mutating lifecycle fields just to drop
+            // them. Generation validation above still rejects a mismatched owner.
+            self.questions.table.remove(self.id);
+            return Ok((local.key, self.delivery));
+        }
         let delivery = record
             .lifecycle
             .returned(self.no_finish_needed)

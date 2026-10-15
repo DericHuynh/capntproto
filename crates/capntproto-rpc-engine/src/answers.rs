@@ -391,6 +391,7 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
                 .is_some_and(|r| r.id == id && r.wire_live())
         })
     }
+    #[inline(always)]
     fn reclaim(&mut self, index: usize) -> Option<T> {
         if self.slots[index]
             .record
@@ -517,6 +518,9 @@ impl<T> Return<'_, '_, '_, T> {
         self.no_finish = true;
         Ok(())
     }
+    // Consume the detached owner at its caller so large inline protocol state
+    // does not cross an additional return-value boundary.
+    #[inline(always)]
     pub fn accept(self) -> Option<T> {
         let r = self.answers.record_mut(self.key).unwrap();
         r.accept_return(self.no_finish);

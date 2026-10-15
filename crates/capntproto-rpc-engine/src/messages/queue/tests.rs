@@ -6,6 +6,141 @@ use core::{
 };
 
 #[test]
+fn owned_fifo_needs_no_send_slots_and_preserves_resources_through_partial_writes() {
+    struct Resource<'a>(&'a core::cell::Cell<usize>);
+    impl Drop for Resource<'_> {
+        fn drop(&mut self) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+    let dropped = core::cell::Cell::new(0);
+    let mut first = [0; 3];
+    let mut second = [0; 3];
+    let mut buffers = [Buffer::new(&mut first), Buffer::new(&mut second)];
+    let usage = allocation_counter::measure(|| {
+        with_messages(&mut buffers, &mut [], |messages| {
+            let mut entries = [const { None }; 2];
+            let mut queue = Queue::with_resources(&mut entries).unwrap();
+            for bytes in [b"abc", b"def"] {
+                let lease = messages.copy_from(bytes).unwrap();
+                queue
+                    .reserve_with(Resource(&dropped))
+                    .unwrap()
+                    .accept_owned(lease);
+            }
+            assert!(matches!(
+                queue.reserve_with(Resource(&dropped)),
+                Err(Error::NoSendSlot)
+            ));
+            assert_eq!(dropped.get(), 1); // rejected reservation releases only itself.
+            let window = queue.window(messages).unwrap().unwrap();
+            assert!(window.resources().is_some());
+            assert_eq!(window.advance(0), Err(Error::WriteZero));
+            assert!(queue
+                .window(messages)
+                .unwrap()
+                .unwrap()
+                .resources()
+                .is_some());
+            assert!(!queue.window(messages).unwrap().unwrap().advance(1).unwrap());
+            let window = queue.window(messages).unwrap().unwrap();
+            assert_eq!(window.bytes(), b"bc");
+            assert!(window.resources().is_none());
+            assert_eq!(window.advance(3), Err(Error::InvalidWriteCount));
+            assert_eq!(queue.window(messages).unwrap().unwrap().bytes(), b"bc");
+            assert!(queue.window(messages).unwrap().unwrap().advance(2).unwrap());
+            assert_eq!(dropped.get(), 2);
+            let lease = messages.copy_from(b"ghi").unwrap();
+            queue
+                .reserve_with(Resource(&dropped))
+                .unwrap()
+                .accept_owned(lease);
+            assert_eq!(queue.window(messages).unwrap().unwrap().bytes(), b"def");
+            queue.fail();
+            assert!(queue.discard_one(messages).unwrap());
+            assert!(queue.discard_one(messages).unwrap());
+            assert!(!queue.discard_one(messages).unwrap());
+            assert_eq!(dropped.get(), 4);
+            let a = messages.reserve(3).unwrap();
+            let b = messages.reserve(3).unwrap();
+            messages.discard(a);
+            messages.discard(b);
+        })
+        .unwrap();
+    });
+    assert_eq!(usage.count_total, 0);
+}
+
+#[test]
+fn tracked_and_owned_entries_share_one_ordered_fifo() {
+    for owned_first in [false, true] {
+        let mut a = [0; 3];
+        let mut b = [0; 3];
+        let mut buffers = [Buffer::new(&mut a), Buffer::new(&mut b)];
+        with_messages(&mut buffers, &mut [SendSlot::EMPTY], |messages| {
+            let mut entries = [const { None }; 2];
+            let mut queue = Queue::new(&mut entries).unwrap();
+            for (index, text) in [b"abc", b"def"].into_iter().enumerate() {
+                let lease = messages.copy_from(text).unwrap();
+                if (index == 0) == owned_first {
+                    queue.reserve().unwrap().accept_owned(lease);
+                } else {
+                    let offer = messages.offer_owned(lease).unwrap();
+                    queue.reserve().unwrap().accept(messages, offer);
+                }
+            }
+            for expected in [b"abc", b"def"] {
+                let window = queue.window(messages).unwrap().unwrap();
+                assert_eq!(window.bytes(), expected);
+                assert!(!window.advance(1).unwrap());
+                assert_eq!(
+                    queue.window(messages).unwrap().unwrap().bytes(),
+                    &expected[1..]
+                );
+                assert!(queue.window(messages).unwrap().unwrap().advance(2).unwrap());
+            }
+            assert!(queue.is_empty());
+        })
+        .unwrap();
+    }
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn owned_fifo_shared_output_pins_pool_after_completion_and_failure() {
+    for failed in [false, true] {
+        let mut pool = GrowingBuffers::new(1, 16, 23);
+        let shared = with_growing_messages(
+            &mut pool,
+            crate::connection::Growth {
+                initial: 0,
+                maximum: 0,
+            },
+            |messages| {
+                let mut entries = [None];
+                let mut queue = Queue::new(&mut entries).unwrap();
+                let lease = messages.copy_from(b"retained").unwrap();
+                queue.reserve().unwrap().accept_owned(lease);
+                let window = queue.window(messages).unwrap().unwrap();
+                let shared = window.share().unwrap();
+                if failed {
+                    drop(window);
+                    queue.fail();
+                    assert!(queue.discard_one(messages).unwrap());
+                } else {
+                    assert!(window.advance(8).unwrap());
+                }
+                assert_eq!(messages.reserve(8).unwrap_err(), Error::NoBuffer);
+                shared
+            },
+        )
+        .unwrap();
+        drop(pool);
+        assert_eq!(&*shared, b"retained");
+    }
+}
+
+#[test]
 fn capacity_probe_neither_builds_resources_nor_reserves_a_publication() {
     struct Resources;
     impl Default for Resources {
@@ -46,7 +181,7 @@ fn fifo_reuses_ring_slots_without_overtaking_partial_frames_or_losing_pending_pr
     let mut buffers = [Buffer::new(&mut first), Buffer::new(&mut second)];
     let mut sends = [SendSlot::EMPTY, SendSlot::EMPTY];
     with_messages(&mut buffers, &mut sends, |messages| {
-        let mut entries = [None; 2];
+        let mut entries = [const { None }; 2];
         let mut queue = Queue::new(&mut entries).unwrap();
         for text in [b"abc", b"def"] {
             let writer = messages.reserve(3).unwrap();
@@ -116,59 +251,65 @@ impl io::Write for Fault {
 }
 #[test]
 fn every_mid_frame_io_failure_is_terminal_and_never_exposes_the_next_frame() {
-    for fail_at in 1..=3 {
-        for zero in [false, true] {
-            let mut a = [0; 3];
-            let mut b = [0; 3];
-            let mut buffers = [Buffer::new(&mut a), Buffer::new(&mut b)];
-            let mut sends = [SendSlot::EMPTY, SendSlot::EMPTY];
-            with_messages(&mut buffers, &mut sends, |messages| {
-                let mut entries = [None; 2];
-                let mut queue = Queue::new(&mut entries).unwrap();
-                for _ in 0..2 {
-                    let w = messages.reserve(3).unwrap();
-                    let l = messages.seal(w, 3).unwrap();
-                    let o = messages.offer(&l).unwrap();
-                    queue.reserve().unwrap().accept(messages, o);
-                    messages.release(l);
-                }
-                let mut writer = Fault {
-                    calls: 0,
-                    fail_at,
-                    zero,
-                };
-                let mut cx = Context::from_waker(Waker::noop());
-                let expected = if zero {
-                    io::SendError::State(Error::WriteZero)
-                } else {
-                    io::SendError::Io(9)
-                };
-                assert_eq!(
-                    io::poll_queue(
-                        &mut writer,
-                        &mut queue,
-                        messages,
-                        &mut cx,
-                        NonZeroUsize::new(8).unwrap()
-                    ),
-                    Poll::Ready(Err(expected))
-                );
-                assert!(queue.is_failed());
-                assert_eq!(queue.len(), 2);
-                assert!(matches!(queue.reserve(), Err(Error::QueueFailed)));
-                assert!(matches!(
-                    io::poll_queue(
-                        &mut writer,
-                        &mut queue,
-                        messages,
-                        &mut cx,
-                        NonZeroUsize::new(8).unwrap()
-                    ),
-                    Poll::Ready(Err(io::SendError::State(Error::QueueFailed)))
-                ));
-                assert_eq!(writer.calls, fail_at);
-            })
-            .unwrap();
+    for owned in [false, true] {
+        for fail_at in 1..=3 {
+            for zero in [false, true] {
+                let mut a = [0; 3];
+                let mut b = [0; 3];
+                let mut buffers = [Buffer::new(&mut a), Buffer::new(&mut b)];
+                let mut sends = [SendSlot::EMPTY, SendSlot::EMPTY];
+                with_messages(&mut buffers, &mut sends, |messages| {
+                    let mut entries = [const { None }; 2];
+                    let mut queue = Queue::new(&mut entries).unwrap();
+                    for _ in 0..2 {
+                        let w = messages.reserve(3).unwrap();
+                        let l = messages.seal(w, 3).unwrap();
+                        if owned {
+                            queue.reserve().unwrap().accept_owned(l);
+                        } else {
+                            let o = messages.offer(&l).unwrap();
+                            queue.reserve().unwrap().accept(messages, o);
+                            messages.release(l);
+                        }
+                    }
+                    let mut writer = Fault {
+                        calls: 0,
+                        fail_at,
+                        zero,
+                    };
+                    let mut cx = Context::from_waker(Waker::noop());
+                    let expected = if zero {
+                        io::SendError::State(Error::WriteZero)
+                    } else {
+                        io::SendError::Io(9)
+                    };
+                    assert_eq!(
+                        io::poll_queue(
+                            &mut writer,
+                            &mut queue,
+                            messages,
+                            &mut cx,
+                            NonZeroUsize::new(8).unwrap()
+                        ),
+                        Poll::Ready(Err(expected))
+                    );
+                    assert!(queue.is_failed());
+                    assert_eq!(queue.len(), 2);
+                    assert!(matches!(queue.reserve(), Err(Error::QueueFailed)));
+                    assert!(matches!(
+                        io::poll_queue(
+                            &mut writer,
+                            &mut queue,
+                            messages,
+                            &mut cx,
+                            NonZeroUsize::new(8).unwrap()
+                        ),
+                        Poll::Ready(Err(io::SendError::State(Error::QueueFailed)))
+                    ));
+                    assert_eq!(writer.calls, fail_at);
+                })
+                .unwrap();
+            }
         }
     }
 }
@@ -435,7 +576,7 @@ fn resource_io_failure_never_retries_transfer_or_exposes_successor() {
             &mut buffers,
             &mut [const { SendSlot::EMPTY }; 2],
             |messages| {
-                let mut entries = [None; 2];
+                let mut entries = [const { None }; 2];
                 let mut queue = Queue::with_resources(&mut entries).unwrap();
                 for resource in [41, 43] {
                     let w = messages.reserve(3).unwrap();

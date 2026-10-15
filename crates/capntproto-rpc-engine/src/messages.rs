@@ -273,6 +273,48 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
         self.copy_from_parts(&[source], |_| {})
     }
 
+    /// Copy directly into an immutable allocating owner. The buffer remains
+    /// charged to this provider and cannot be reused while any shared owner
+    /// survives, including after this scope ends. Fixed storage returns None
+    /// without reserving or changing any buffer.
+    #[cfg(feature = "alloc")]
+    #[inline(always)]
+    pub fn copy_shared(&mut self, source: &[u8]) -> Result<Option<SharedBytes>, Error> {
+        let backing::Buffers::Growing(buffers) = &self.buffers else {
+            return Ok(None);
+        };
+        let mut exhausted = false;
+        for index in 0..buffers.len() {
+            let buffer = buffers.at(index);
+            if buffer.state.get() != State::Free || buffer.capacity.get() < source.len() {
+                continue;
+            }
+            let Ok(mut bytes) = buffer.bytes.try_borrow_mut() else {
+                continue;
+            };
+            if !bytes.exclusive() {
+                continue;
+            }
+            if buffer.generation.get() == u64::MAX {
+                exhausted = true;
+                continue;
+            }
+            bytes[..source.len()].copy_from_slice(source);
+            buffer.generation.set(buffer.generation.get() + 1);
+            return Ok(bytes.share(0..source.len()));
+        }
+        let index = buffers.append(source.len()).ok_or(if exhausted {
+            Error::GenerationExhausted
+        } else {
+            Error::NoBuffer
+        })?;
+        let buffer = buffers.at(index);
+        let mut bytes = buffer.bytes.borrow_mut();
+        bytes[..source.len()].copy_from_slice(source);
+        buffer.generation.set(buffer.generation.get() + 1);
+        Ok(bytes.share(0..source.len()))
+    }
+
     /// Copy a complete initialized message, then edit it before sealing. No
     /// mutable view escapes the callback and only copied bytes are exposed.
     /// Failure to reserve preserves every live owner. If the callback unwinds,

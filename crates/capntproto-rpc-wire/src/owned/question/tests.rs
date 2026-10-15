@@ -56,6 +56,7 @@ fn retained_plain_results_pin_the_pool_and_survive_connection_teardown() {
                     queue.reserve().unwrap(),
                     (7, 2),
                     false,
+                    false,
                 )
                 .unwrap();
                 flush(messages, &mut queue);
@@ -163,6 +164,7 @@ fn empty_descriptor_results_validate_content_for_live_and_canceled_questions() {
                                 frame,
                                 queue.reserve().unwrap(),
                                 (7, 2),
+                                false,
                                 false,
                             )
                             .unwrap()

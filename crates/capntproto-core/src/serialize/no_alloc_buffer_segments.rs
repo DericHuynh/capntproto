@@ -132,10 +132,9 @@ fn read_segment_table_general(
 pub type NoAllocSliceSegments<'b> = NoAllocBufferSegments<&'b [u8]>;
 
 enum NoAllocBufferSegmentType {
-    /// The buffer contains a single segment, with length in bytes given by
-    /// the value of the `usize` parameter. The segment starts at byte index
-    /// 8 of the buffer.
-    SingleSegment(usize),
+    /// Exclusive end of the single segment; its start is byte index 8.
+    /// Even an empty segment ends at 8, leaving zero for the enum tag.
+    SingleSegment(core::num::NonZeroUsize),
 
     /// The buffer contains multiple segments. In this case, the segment table
     /// needs to be re-parsed on each call to `get_segment()`.
@@ -171,7 +170,12 @@ impl<T> NoAllocBufferSegments<T> {
             Self {
                 buffer,
                 segment_type: NoAllocBufferSegmentType::SingleSegment(
-                    info.total_segments_length_bytes,
+                    // Impossible metadata remains out of bounds and panics on
+                    // access as before; valid slice extents cannot overflow.
+                    core::num::NonZeroUsize::new(
+                        info.total_segments_length_bytes.saturating_add(8),
+                    )
+                    .unwrap(),
                 ),
             }
         } else {
@@ -254,9 +258,9 @@ impl<T: AsRef<[u8]>> ReaderSegments for NoAllocBufferSegments<T> {
         let idx: usize = idx.try_into().unwrap();
 
         match self.segment_type {
-            NoAllocBufferSegmentType::SingleSegment(length_bytes) => {
+            NoAllocBufferSegmentType::SingleSegment(end) => {
                 if idx == 0 {
-                    Some(&self.buffer.as_ref()[8..][..length_bytes])
+                    Some(&self.buffer.as_ref()[8..end.get()])
                 } else {
                     None
                 }

@@ -77,9 +77,11 @@ impl<'id, T> Admission<'_, 'id, '_, T> {
     }
     /// No fallible operation or user callback occurs after preflight. The new
     /// answer and its source dependency become visible in one transition.
+    #[inline(always)]
     pub fn accept(self, value: T) -> (Key<'id>, Option<Pipeline<'id>>) {
         self.accept_with(value, false)
     }
+    #[inline(always)]
     pub(super) fn accept_with(
         self,
         value: T,

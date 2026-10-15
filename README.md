@@ -25,7 +25,7 @@ qualification remain work in progress; see the [release criteria](docs/wiki/Rele
 - **Serialization and capability RPC:** maintained `capnp`, `capnpc` and
   `capnp-rpc` crates, with generated Rust APIs and C++ interoperability tests.
   [Runtime scope](docs/wiki/Runtime-Status.md) · [C++ parity](docs/wiki/Cpp-Parity.md).
-  [Portable TCP instruction qualification](docs/wiki/Quality-and-Benchmarks.md#portable-instruction-qualification-below-20-million).
+  Local small-call TCP qualification: [portable instructions within 1.05× of legacy on both peers](docs/wiki/Quality-and-Benchmarks.md#portable-and-legacy-instruction-qualification).
 - **Adapters and transport:** TCP, TLS 1.3 and standard QUIC v1 with optional mutual
   TLS; JSON/text codecs, ByteStream, HTTP, WebSockets and JSON-RPC; encrypted
   multiparty sessions through quiche and durable storage. [TCP, TLS and QUIC guide](docs/wiki/TCP-TLS-and-QUIC.md).

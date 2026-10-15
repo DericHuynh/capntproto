@@ -214,6 +214,7 @@ impl<I: LocalId, T, D: Storage<T>, H: SparseStorage<I, T>, A: SparseStorage<I, T
     /// Construct a value with its final ID, before consuming that ID. A failed
     /// reservation returns the input untouched; constructor unwinding leaves
     /// every ID and existing entry intact (growth may retain empty capacity).
+    #[inline(always)]
     pub fn try_push_with<V>(
         &mut self,
         value: V,

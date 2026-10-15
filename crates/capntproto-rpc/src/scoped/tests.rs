@@ -932,3 +932,56 @@ fn response_context_callbacks_cannot_bypass_capacity_or_enqueue_after_close() {
     })
     .unwrap();
 }
+
+#[test]
+fn prepared_request_keeps_its_allocation_through_admission_and_final_hint_changes() {
+    for change_hints in [false, true] {
+        clients::with_growing_graph::<u32, u8, _>(0, 4, |graph| {
+            let route = graph.endpoint(7, Location::Remote(1)).unwrap();
+            let mut hooks = ClientHooks::new(1, 2);
+            let client = hooks.export_snapshot(graph, &route).unwrap();
+            let mut request = client.hook.new_call_with_hints(
+                47,
+                3,
+                None,
+                CallHints {
+                    no_promise_pipelining: !change_hints,
+                    only_promise_pipeline: false,
+                },
+            );
+            request.get().set_as("owned parameters").unwrap();
+            if change_hints {
+                request.hook.set_hints(CallHints {
+                    no_promise_pipelining: true,
+                    only_promise_pipeline: false,
+                });
+            }
+            let address = (&*request.hook as *const dyn capnp::private::capability::RequestHook)
+                .cast::<()>() as usize;
+            let mut reply = request.send();
+            let Poll::Ready(Some(call)) =
+                hooks.poll_owned_next(&mut Context::from_waker(Waker::noop()))
+            else {
+                panic!("admitted request")
+            };
+            assert_eq!((&*call as *const Call) as usize, address);
+            assert_eq!(
+                call.params()
+                    .unwrap()
+                    .get_as::<capnp::text::Reader>()
+                    .unwrap(),
+                "owned parameters"
+            );
+            assert_eq!((call.interface_id(), call.method_id()), (47, 3));
+            assert!(call.hints().no_promise_pipelining);
+            call.complete_boxed(Err(Error::failed("completed".into())));
+            assert_eq!(error(ready(&mut reply.promise)).extra, "completed");
+            assert_eq!(hooks.inbox.live_calls.get(), 0);
+            drop((reply, client));
+            hooks.collect(graph);
+            graph.release(route);
+            hooks.close(graph, Error::disconnected("done".into()));
+        })
+        .unwrap();
+    }
+}

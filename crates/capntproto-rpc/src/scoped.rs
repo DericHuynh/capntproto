@@ -61,7 +61,7 @@ struct Inbox {
     joins: Option<wire::coordinator::multiparty::Handle>,
     queue: RefCell<VecDeque<Box<Call>>>,
     wake: RefCell<Option<Waker>>,
-    enqueue_wake: RefCell<Option<Waker>>,
+    enqueue_wake: RefCell<Option<Rc<wire::coordinator::EnqueueWake>>>,
     shutdown: Shutdown,
     closed: Cell<bool>,
     live_calls: Cell<usize>,
@@ -69,9 +69,9 @@ struct Inbox {
 }
 impl Inbox {
     fn notify_enqueue(&self) {
-        let wake = self.enqueue_wake.borrow_mut().take();
+        let wake = self.enqueue_wake.borrow().clone();
         match wake {
-            Some(wake) => wake.wake(),
+            Some(wake) => wake.notify(),
             None => self.notify(),
         }
     }
@@ -556,32 +556,214 @@ pub struct Call {
     interface: u64,
     method: u16,
     hints: CallHints,
-    params: Box<dyn ParamsHook>,
+    params: CallParams,
     results: response::Results,
     completion: CallCompletion,
     shutdown: Shutdown,
     // Last: release admission after destroying callback-bearing call owners.
     _permit: Permit,
 }
+enum CallParams {
+    Request(crate::local::Params),
+    Hook(Box<dyn ParamsHook>),
+}
+impl CallParams {
+    #[inline(always)]
+    fn prepared_call(
+        &self,
+    ) -> Option<&capntproto_rpc_wire::owned::connection::PreparedCall<capnp::message::HeapAllocator>>
+    {
+        match self {
+            Self::Request(request) => request.prepared_call(),
+            Self::Hook(hook) => hook.as_any().and_then(|params| {
+                params
+                    .downcast_ref::<crate::local::Request>()
+                    .and_then(crate::local::Request::prepared_call)
+                    .or_else(|| {
+                        params
+                            .downcast_ref::<crate::local::Params>()
+                            .and_then(crate::local::Params::prepared_call)
+                    })
+            }),
+        }
+    }
+    fn into_hook(self) -> Box<dyn ParamsHook> {
+        match self {
+            Self::Request(request) => Box::new(request),
+            Self::Hook(hook) => hook,
+        }
+    }
+    fn request_mut(&mut self) -> &mut crate::local::Params {
+        match self {
+            Self::Request(request) => request,
+            _ => unreachable!("unsent request"),
+        }
+    }
+}
+impl std::ops::Deref for CallParams {
+    type Target = dyn ParamsHook;
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Request(request) => request,
+            Self::Hook(hook) => &**hook,
+        }
+    }
+}
+impl capnp::private::capability::RequestHook for Call {
+    fn get(&mut self) -> any_pointer::Builder<'_> {
+        self.params.request_mut().builder()
+    }
+    fn get_brand(&self) -> usize {
+        0
+    }
+    fn set_hints(&mut self, hints: CallHints) {
+        self.hints = hints;
+    }
+    fn third_party_tail_target(&self) -> Option<Box<dyn std::any::Any>> {
+        tail_target(&Hook(self.endpoint.clone(), self.credit.clone()))
+    }
+    fn set_third_party_tail_target(
+        &mut self,
+        contact: any_pointer::Reader<'_>,
+    ) -> capnp::Result<()> {
+        if self.third_party.is_some() || self.third_party_tail_target().is_none() {
+            return Err(Error::failed("ineligible tail transfer".into()));
+        }
+        contact.validate_capability_indices(0)?;
+        let mut body = capnp::message::Builder::new_default();
+        body.set_root(contact)?;
+        self.third_party = Some(Rc::new(body));
+        Ok(())
+    }
+    fn send(self: Box<Self>) -> capability::RemotePromise<any_pointer::Owned> {
+        if self.hints.no_promise_pipelining
+            && !self.hints.only_promise_pipeline
+            && self.third_party.is_none()
+            && {
+                let unintroduced = self.endpoint.introduced.borrow().is_none()
+                    && self.endpoint.introduction.borrow().is_none();
+                unintroduced
+                    || Hook(self.endpoint.clone(), self.credit.clone()).direct_response_available()
+            }
+        {
+            return response::request_prepared(self);
+        }
+        self.into_request().send()
+    }
+    fn send_for_pipeline(self: Box<Self>) -> any_pointer::Pipeline {
+        self.into_request().send_for_pipeline()
+    }
+    fn send_streaming(self: Box<Self>) -> Promise<(), Error> {
+        self.into_request().send_streaming()
+    }
+    fn tail_send(
+        self: Box<Self>,
+    ) -> Option<(
+        u32,
+        Promise<(), Error>,
+        Box<dyn capnp::private::capability::PipelineHook>,
+    )> {
+        self.into_request().tail_send()
+    }
+}
+impl Call {
+    #[inline(always)]
+    fn enqueue_owned(
+        mut self: Box<Self>,
+        inbox: Option<Rc<Inbox>>,
+    ) -> Result<Rc<Inbox>, Box<Error>> {
+        if let Some(error) = self.endpoint.failure.borrow().clone() {
+            return Err(Box::new(error));
+        }
+        let Some(inbox) = inbox.filter(|inbox| !inbox.closed.get()) else {
+            return Err(Box::new(Error::disconnected(
+                "scoped ClientHook driver closed".into(),
+            )));
+        };
+        if inbox.live_calls.get() == inbox.maximum_calls {
+            return Err(Box::new(Error::overloaded(
+                "scoped call capacity exhausted".into(),
+            )));
+        }
+        let credit = self
+            .credit
+            .take()
+            .or_else(|| inbox.admission.clone().map(admission::Credit::new));
+        if self.endpoint.remote.get() {
+            if let Some(credit) = &credit {
+                credit.ensure()?;
+            }
+        }
+        if inbox.queue.borrow_mut().try_reserve(1).is_err() {
+            return Err(Box::new(Error::overloaded(
+                "scoped call queue exhausted".into(),
+            )));
+        }
+        // Reserve before invoking a custom results hook, which may reenter or
+        // close this connection. The guard rolls back even during unwinding.
+        inbox.live_calls.set(inbox.live_calls.get() + 1);
+        let permit = Permit(Rc::downgrade(&inbox));
+        if let Some(credit) = &credit {
+            self.results.retain_context(credit.clone());
+        }
+        if inbox.closed.get() {
+            return Err(Box::new(Error::disconnected(
+                "scoped ClientHook driver closed".into(),
+            )));
+        }
+        self.credit = credit;
+        // Requests built by this hook already retain this exact shutdown state.
+        // General incoming ParamsHook calls acquire it only at admission.
+        if matches!(self.params, CallParams::Hook(_)) {
+            self.shutdown = inbox.shutdown.clone();
+        }
+        self._permit = permit;
+        inbox.queue.borrow_mut().push_back(self);
+        inbox.notify_enqueue();
+        Ok(inbox)
+    }
+
+    fn into_request(self: Box<Self>) -> Box<crate::local::Request> {
+        let CallParams::Request(request) = self.params else {
+            unreachable!("unsent request")
+        };
+        let context = self
+            .credit
+            .clone()
+            .map(|credit| credit as Rc<dyn std::any::Any>);
+        Box::new(request.into_request(
+            self.interface,
+            self.method,
+            self.hints,
+            Hook(self.endpoint, self.credit),
+            context,
+            self.third_party,
+        ))
+    }
+}
 enum CallCompletion {
+    Unsent,
     Promise(completion::Delivery<'static, capnp::Result<()>>),
     Response(response::Completion),
 }
 impl CallCompletion {
     fn is_observed(&self) -> bool {
         match self {
+            Self::Unsent => unreachable!("unadmitted request"),
             Self::Promise(delivery) => delivery.is_observed(),
             Self::Response(completion) => completion.is_observed(),
         }
     }
     fn poll_observed(&mut self, cx: &mut Context<'_>) -> Poll<()> {
         match self {
+            Self::Unsent => unreachable!("unadmitted request"),
             Self::Promise(delivery) => delivery.poll_observed(cx),
             Self::Response(completion) => completion.poll_observed(cx),
         }
     }
     fn complete(&mut self, result: capnp::Result<()>) {
         match self {
+            Self::Unsent => unreachable!("unadmitted request"),
             Self::Promise(delivery) => {
                 let _ = delivery.try_send(result);
             }
@@ -643,8 +825,13 @@ impl Call {
             shutdown: _,
             _permit,
         } = self;
-        let operation =
-            target.call_with_hints(interface, method, params, results.into_hook(), hints);
+        let operation = target.call_with_hints(
+            interface,
+            method,
+            params.into_hook(),
+            results.into_hook(),
+            hints,
+        );
         Promise::from_future(async move {
             let result = operation.await;
             completion.complete(result.clone());
@@ -695,10 +882,10 @@ impl Hook {
             third_party,
             CallCompletion::Promise(sender.track()),
         ) {
-            Ok((shutdown, inbox)) => Promise::from_future(Reply {
+            Ok(inbox) => Promise::from_future(Reply {
                 receiver: Some(receiver),
-                shutdown,
-                inbox,
+                shutdown: inbox.shutdown.clone(),
+                inbox: Rc::downgrade(&inbox),
             }),
             Err(error) => Promise::err(*error),
         }
@@ -711,65 +898,25 @@ impl Hook {
         interface: u64,
         method: u16,
         params: Box<dyn ParamsHook>,
-        mut results: response::Results,
+        results: response::Results,
         hints: CallHints,
         third_party: Option<Rc<capnp::message::Builder<capnp::message::HeapAllocator>>>,
         completion: CallCompletion,
-    ) -> Result<(Shutdown, Weak<Inbox>), Box<Error>> {
-        if let Some(error) = self.0.failure.borrow().clone() {
-            return Err(Box::new(error));
-        }
-        let Some(inbox) = self.0.inbox.upgrade().filter(|inbox| !inbox.closed.get()) else {
-            return Err(Box::new(Error::disconnected(
-                "scoped ClientHook driver closed".into(),
-            )));
-        };
-        if inbox.live_calls.get() == inbox.maximum_calls {
-            return Err(Box::new(Error::overloaded(
-                "scoped call capacity exhausted".into(),
-            )));
-        }
-        let credit = self
-            .1
-            .clone()
-            .or_else(|| inbox.admission.clone().map(admission::Credit::new));
-        if self.0.remote.get() {
-            if let Some(credit) = &credit {
-                credit.ensure()?;
-            }
-        }
-        if inbox.queue.borrow_mut().try_reserve(1).is_err() {
-            return Err(Box::new(Error::overloaded(
-                "scoped call queue exhausted".into(),
-            )));
-        }
-        // Reserve before invoking a custom results hook, which may reenter or
-        // close this connection. The guard rolls back even during unwinding.
-        inbox.live_calls.set(inbox.live_calls.get() + 1);
-        let permit = Permit(Rc::downgrade(&inbox));
-        if let Some(credit) = &credit {
-            results.retain_context(credit.clone());
-        }
-        if inbox.closed.get() {
-            return Err(Box::new(Error::disconnected(
-                "scoped ClientHook driver closed".into(),
-            )));
-        }
-        inbox.queue.borrow_mut().push_back(Box::new(Call {
-            credit,
+    ) -> Result<Rc<Inbox>, Box<Error>> {
+        let call = Box::new(Call {
+            credit: self.1.clone(),
             third_party,
             endpoint: self.0.clone(),
             interface,
             method,
             hints,
-            params,
+            params: CallParams::Hook(params),
             results,
             completion,
-            shutdown: inbox.shutdown.clone(),
-            _permit: permit,
-        }));
-        inbox.notify_enqueue();
-        Ok((inbox.shutdown.clone(), Rc::downgrade(&inbox)))
+            shutdown: Shutdown::new(),
+            _permit: Permit(Weak::new()),
+        });
+        call.enqueue_owned(self.0.inbox.upgrade())
     }
 
     pub(crate) fn direct_response_available(&self) -> bool {
@@ -875,7 +1022,6 @@ impl ClientHook for Hook {
                 }
             }
         }
-        let context = credit.clone().map(|credit| credit as Rc<dyn std::any::Any>);
         let allocator = crate::local::result_allocator(size);
         let allocator = match inbox.as_ref().and_then(|inbox| inbox.message_pool.as_ref()) {
             Some(pool) => allocator.segment_pool(pool.clone()),
@@ -890,14 +1036,27 @@ impl ClientHook for Hook {
                 })
             })
         });
-        capability::Request::new(crate::local::Request::scoped(
-            interface,
-            method,
-            allocator,
-            Self(self.0.clone(), credit),
-            context,
-            template,
-            hints,
+        // Allocate before constructing the arena, allowing the compiler to write
+        // the large request directly into its final box without a second owner.
+        let call = Box::<Call>::new_uninit();
+        let request = crate::local::Params::scoped(interface, method, allocator, template);
+        capability::Request::new(Box::write(
+            call,
+            Call {
+                third_party: None,
+                credit,
+                endpoint: self.0.clone(),
+                interface,
+                method,
+                hints,
+                params: CallParams::Request(request),
+                results: response::Results::Unsent,
+                completion: CallCompletion::Unsent,
+                shutdown: inbox
+                    .as_ref()
+                    .map_or_else(Shutdown::new, |inbox| inbox.shutdown.clone()),
+                _permit: Permit(Weak::new()),
+            },
         ))
     }
     fn call(

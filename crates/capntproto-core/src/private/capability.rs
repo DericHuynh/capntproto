@@ -25,6 +25,16 @@ use crate::any_pointer;
 use crate::capability::{Params, Promise, RemotePromise, Request, Results};
 use crate::MessageSize;
 
+/// A single promise receiver over an existing shared completion allocation.
+/// Implementations own interior synchronization and must register a task on
+/// Pending. The promise calls cancel exactly once on drop, including after
+/// successful polling; cancel must distinguish observation from abandonment.
+/// Sharing producer state does not clone the promise's receiver ownership.
+pub trait SharedPromise<T, E> {
+    fn poll(&self, cx: &mut core::task::Context<'_>) -> core::task::Poll<Result<T, E>>;
+    fn cancel(self: alloc::rc::Rc<Self>);
+}
+
 pub trait ResponseHook {
     fn get(&self) -> crate::Result<any_pointer::Reader<'_>>;
 }
@@ -203,6 +213,22 @@ pub trait ClientHook {
         self.call(interface_id, method_id, params, results)
     }
 
+    /// Start a call during an inbound dispatch poll. The caller has already
+    /// admitted it and released all protocol-table borrows before running user
+    /// code. Unlike call_with_hints, local implementations may dispatch before
+    /// returning. Pending operations retain ordinary cancellation, streaming
+    /// ordering and revocation behavior. Opaque wrappers keep their usual path.
+    fn call_during_dispatch(
+        &self,
+        interface_id: u64,
+        method_id: u16,
+        params: alloc::boxed::Box<dyn ParamsHook>,
+        results: alloc::boxed::Box<dyn ResultsHook>,
+        hints: crate::capability::CallHints,
+    ) -> Promise<(), crate::Error> {
+        self.call_with_hints(interface_id, method_id, params, results, hints)
+    }
+
     /// An owned reference to the descriptor associated with this capability.
     /// May be available before a promise resolves. The owner remains alive for
     /// as long as a caller or outgoing message retains this reference.
@@ -258,6 +284,13 @@ impl Clone for alloc::boxed::Box<dyn ClientHook> {
     }
 }
 
+/// A context retained until protected execution completes. Shared contexts
+/// retain their existing allocation; owned adapters preserve their exact guard.
+pub enum CancellationGuard {
+    Owned(alloc::boxed::Box<dyn core::any::Any>),
+    Shared(alloc::rc::Rc<dyn core::any::Any>),
+}
+
 pub trait ResultsHook {
     /// Identify this exact result sink. Transforming/policy wrappers should use
     /// the default rather than exposing an inner sink through this method.
@@ -281,6 +314,11 @@ pub trait ResultsHook {
     /// Retain protocol context until a non-cancellable method actually completes.
     fn cancellation_guard(&self) -> Option<alloc::boxed::Box<dyn core::any::Any>> {
         None
+    }
+    /// Retain the cancellation context without boxing an already shared owner.
+    /// The default preserves custom hooks implementing cancellation_guard().
+    fn cancellation_context(&self) -> Option<CancellationGuard> {
+        self.cancellation_guard().map(CancellationGuard::Owned)
     }
     /// Wire calls supply their RPC system's executor. Pure local calls can use
     /// the executor configured on their local capability.

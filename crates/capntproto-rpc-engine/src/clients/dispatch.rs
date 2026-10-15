@@ -217,6 +217,7 @@ pub struct Immediate<'a, 'id, 's, T, P> {
 impl<'id, T, P: Copy + Eq> Immediate<'_, 'id, '_, T, P> {
     /// Commit a directly dispatched operation with the same target ownership
     /// as `Ready::accept`, without inserting and removing an intermediate task.
+    #[inline(always)]
     pub fn accept_owned<C>(self, owner: C) -> Running<'id, C> {
         Running {
             target: self.accept(),
@@ -455,6 +456,7 @@ impl<'id, 's, T: 's, P: Copy + Eq + 's, C, G: GraphStorage<'id, 's, T, P>>
             queued: &mut self.queued,
         }))
     }
+    #[inline(always)]
     pub fn complete<U>(&mut self, task: Running<'id, U>) -> U {
         self.graph.graph_mut().release(task.target);
         task.owner

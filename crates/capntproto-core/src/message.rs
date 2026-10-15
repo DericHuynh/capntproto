@@ -817,6 +817,7 @@ impl<A: Allocator> SelectedBuilder<A> {
     /// reader budget. Charges the selected pointer word and its descendants;
     /// ancestors are not traversed. All segment, pointer, nesting and amplified
     /// list checks use the ordinary reader arena, including on owned builders.
+    #[inline(always)]
     pub fn validate_capability_indices(&self, count: u32, options: ReaderOptions) -> Result<()> {
         let arena = ReaderArenaImpl::new(self.message.get_segments_for_output(), options);
         let arena = arena.cached()?;

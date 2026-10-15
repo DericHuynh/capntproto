@@ -604,6 +604,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     output,
                     template.method,
                     self.allow_answer_handoff,
+                    self.owned_output,
                 )
                 .map_err(Error::Input)?
             } else {

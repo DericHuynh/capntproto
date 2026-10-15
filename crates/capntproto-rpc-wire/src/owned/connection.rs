@@ -130,6 +130,7 @@ struct PreparedStorage<'pool, 'id, 's, I, const CAPS: usize, const PATH: usize> 
 pub struct Driver<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize> {
     allow_answer_handoff: bool,
     defer_calls: bool,
+    owned_output: bool,
     descriptors: crate::publication::descriptors::Descriptors<binding::Route<'id, P, S, PATH>>,
     pub ledgers:
         connection::Connection<'id, 's, I, clients::Client<'id>, Answer<'pool, 'id, A, CAPS>>,
@@ -441,6 +442,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         Ok(Self {
             allow_answer_handoff: false,
             defer_calls: false,
+            owned_output: false,
             descriptors: Default::default(),
             ledgers: connection.ledgers,
             message_capabilities: storage.message_capabilities,
@@ -842,13 +844,32 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     pub fn defer_call_dispatch(&mut self, enabled: bool) {
         self.defer_calls = enabled;
     }
+
+    /// Let the output FIFO own unobserved plain message leases directly. Its
+    /// capacity remains the publication bound; these entries do not consume
+    /// separately addressable message-pool send slots. Partial-write and terminal
+    /// cleanup obligations are unchanged. Disabled for existing fixed adapters.
+    pub fn use_owned_output_queues(&mut self, enabled: bool) {
+        self.owned_output = enabled;
+    }
     pub fn has_pending_call(&self) -> bool {
         self.call.is_some()
+    }
+    /// Whether the deferred request has no parameter capabilities, pipeline
+    /// target or third-party answer. Such admission only retains its hosted
+    /// target and creates its answer; it cannot resolve another capability.
+    pub fn has_plain_pending_call(&self) -> bool {
+        self.call.as_ref().is_some_and(|call| {
+            call.capability_count() == 0
+                && matches!(call.target(), TargetRef::Hosted(_))
+                && self.ledgers.answers.is_third_party(call.answer()) == Ok(false)
+        })
     }
     /// Accept a settled local target only when no older task is queued. The
     /// same graph ticket freezes its route, consumes sequence space and retains
     /// its target. Rejections leave the admitted Call available for retry.
     #[allow(clippy::type_complexity)]
+    #[inline(always)]
     pub fn dispatch_immediate_call(
         &mut self,
         cancellation: bool,
@@ -994,7 +1015,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     /// for control producers). Unreachable words are included. Rejection leaves
     /// the frame and protocol tables intact; Busy never invokes the factory.
     #[allow(clippy::too_many_arguments, clippy::result_large_err)]
-    #[inline(never)]
+    #[inline(always)]
     pub fn receive_with_policy(
         &mut self,
         frame: Frame<'pool>,
@@ -1073,7 +1094,67 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 }
             }
         }
-        self.receive_general(frame, messages, scratch, receiver, make_producer)
+        let mut make_producer = Some(make_producer);
+        if self.defer_calls
+            && self.disconnected.is_none()
+            && self.call.is_none()
+            && self.echo.is_none()
+        {
+            // The hosted worker owns dispatch. Ordinary Call admission can
+            // commit directly to its pending slot without constructing the
+            // general control/Return classification and its optional owners.
+            // The same decoder and two-ledger transaction enforce every limit.
+            let mut owner = None;
+            let admitted = frame
+                .with_size(messages, |root, words| {
+                    use capnp::traits::IntoInternalStructReader;
+                    let fields =
+                        rpc_capnp::api::MessageRef::from(root.into_internal_struct_reader());
+                    if fields.tag() != rpc_capnp::api::MessageUnionTag::Call {
+                        return Ok(None);
+                    }
+                    let producer = make_producer.take().unwrap()(words)?;
+                    owner = Some(answer::State::new(pipelines::Results::new(producer)));
+                    let rpc_capnp::message::Call(call) =
+                        root.which().map_err(|_| super::Error::WrongMessage)?
+                    else {
+                        unreachable!("classified Call")
+                    };
+                    Request::admit_decoded(
+                        &frame,
+                        messages,
+                        call?,
+                        &mut self.ledgers.imports,
+                        &mut self.ledgers.exports,
+                        &mut self.ledgers.answers,
+                        &mut owner,
+                        receiver,
+                        self.message_capabilities,
+                        self.message_path,
+                    )
+                    .map(Some)
+                })
+                .and_then(core::convert::identity);
+            match admitted {
+                Ok(Some(admitted)) => {
+                    let call = admitted.finish(frame);
+                    let key = call.answer();
+                    self.call = Some(call);
+                    return Ok(Received::DeferredCall(key));
+                }
+                Err(error) => {
+                    return Err(Rejected {
+                        error: Error::Input(error),
+                        frame,
+                        producer: owner.map(|owner| {
+                            owner.release(messages).release(messages, &mut self.runtime)
+                        }),
+                    })
+                }
+                Ok(None) => (),
+            }
+        }
+        self.receive_general(frame, messages, scratch, receiver, make_producer.unwrap())
     }
 
     #[allow(clippy::too_many_arguments, clippy::result_large_err)]
@@ -1718,6 +1799,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             &mut self.ledgers.answers,
         );
     }
+    #[inline(always)]
     pub fn release_call(
         &mut self,
         call: Request<'pool, 'id, I, CAPS, PATH>,
