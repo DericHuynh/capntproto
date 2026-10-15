@@ -1,5 +1,8 @@
 # Failed workspace tests
 
-[Workflow run and full logs](https://github.com/DericHuynh/capntproto/actions/runs/38662238943) · commit `f5ccfe200140340197d47cadb1b47ed6cfa457a7` · attempt 1
+[Workflow run and full logs](https://github.com/DericHuynh/capntproto/actions/runs/38664518056) · commit `e80b4f7515f313e8449f923d808f5963d96b3c4f` · attempt 1
 
-No test inventory was produced. A build or infrastructure failure is not a passing test run. Inspect the workflow logs.
+Recorded: **0 failed**, **0 without a terminal result**, 2146 passed and 20 skipped.
+
+No completed test reported a failure.
+
