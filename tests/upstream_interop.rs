@@ -207,21 +207,53 @@ fn row(
             return Err(format!("missing case {case}: {stdout}"));
         }
     }
-    let deadline = Instant::now() + Duration::from_secs(10);
+    wait_for_server_exit(Duration::from_secs(10), || {
+        match server.0.try_wait().map_err(|e| e.to_string())? {
+            None => Ok(false),
+            Some(status) if status.success() => Ok(true),
+            Some(status) => Err(format!("server {status}")),
+        }
+    })?;
+    reader.join().map_err(|_| "server reader panicked")?;
+    Ok(())
+}
+
+fn wait_for_server_exit(
+    timeout: Duration,
+    mut exited: impl FnMut() -> Result<bool, String>,
+) -> Result<(), String> {
+    let deadline = Instant::now() + timeout;
     loop {
-        if let Some(status) = server.0.try_wait().map_err(|e| e.to_string())? {
-            if !status.success() {
-                return Err(format!("server {status}"));
-            }
-            break;
+        if exited()? {
+            return Ok(());
         }
         if Instant::now() >= deadline {
             return Err("server did not shut down after client EOF".into());
         }
         std::thread::sleep(Duration::from_millis(10));
     }
-    reader.join().map_err(|_| "server reader panicked")?;
-    Ok(())
+}
+
+#[test]
+fn server_shutdown_wait_handles_pending_timeout_and_poll_errors() {
+    // Do not depend on the OS scheduler leaving the real peer alive long enough
+    // to exercise the pending/timeout paths during the interoperability matrix.
+    wait_for_server_exit(Duration::ZERO, || Ok(true)).unwrap();
+    let mut polls = 0;
+    wait_for_server_exit(Duration::from_secs(10), || {
+        polls += 1;
+        Ok(polls == 2)
+    })
+    .unwrap();
+    assert_eq!(polls, 2);
+    assert_eq!(
+        wait_for_server_exit(Duration::ZERO, || Ok(false)).unwrap_err(),
+        "server did not shut down after client EOF"
+    );
+    assert_eq!(
+        wait_for_server_exit(Duration::ZERO, || Err("poll failure".into())).unwrap_err(),
+        "poll failure"
+    );
 }
 
 #[test]

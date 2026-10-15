@@ -27,6 +27,69 @@ fn record(id: u64, kind: &str, date: &str, attempt: u64) -> Value {
 const DATE: &str = "2026-09-28T10:00:00Z";
 const XML: &str = r#"<testsuites tests="4" failures="1" errors="1" skipped="1"><testsuite name="crate" tests="4" failures="1" errors="1" skipped="1"><testcase name="ok" classname="crate"/><testcase name="ignored" classname="crate"><skipped/></testcase><testcase name="bad" classname="crate"><failure>assertion failed</failure></testcase><testcase name="abort" classname="crate"><error>signal 6</error></testcase></testsuite></testsuites>"#;
 #[test]
+fn collect_origin_is_explicit_and_malformed_ci_metadata_fails_closed() {
+    let directory = tempfile::tempdir().unwrap();
+    let output = directory.path().join("publication.json");
+    let commit = "a".repeat(40);
+    // Exercise the real CLI in child environments; never mutate the test runner's
+    // environment, and never rely on whether this test is running in Actions.
+    let command = || {
+        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_capntproto-dev"));
+        command
+            .args(["reports", "collect", "--kind", "cargo", "--input"])
+            .arg(directory.path())
+            .arg("--output")
+            .arg(&output)
+            .env("GITHUB_REPOSITORY", "example/capntproto")
+            .env("GITHUB_RUN_ID", "42")
+            .env("GITHUB_RUN_ATTEMPT", "2")
+            .env("GITHUB_SHA", &commit);
+        command
+    };
+    for hosted in [false, true] {
+        let mut child = command();
+        if !hosted {
+            for key in [
+                "GITHUB_REPOSITORY",
+                "GITHUB_RUN_ID",
+                "GITHUB_RUN_ATTEMPT",
+                "GITHUB_SHA",
+            ] {
+                child.env_remove(key);
+            }
+        }
+        let result = child.output().unwrap();
+        assert!(result.status.success(), "{result:?}");
+        let publication = capntproto_dev::read_json(&output).unwrap();
+        assert_eq!(publication["status"], "unavailable");
+        let expected = if hosted {
+            json!({"repository":"example/capntproto","run_id":42,"attempt":2,"commit":commit})
+        } else {
+            Value::Null
+        };
+        assert_eq!(publication["origin"], expected);
+    }
+    for (key, value) in [
+        ("GITHUB_REPOSITORY", None),
+        ("GITHUB_RUN_ID", Some("not-a-number")),
+        ("GITHUB_RUN_ATTEMPT", Some("not-a-number")),
+        ("GITHUB_SHA", Some("not-a-commit")),
+    ] {
+        // A failed collection must remove a previous publication, not leave it
+        // looking like fresh evidence for the current run.
+        write(&output, "stale publication").unwrap();
+        let mut child = command();
+        match value {
+            Some(value) => child.env(key, value),
+            None => child.env_remove(key),
+        };
+        let result = child.output().unwrap();
+        assert!(!result.status.success(), "{key}: {result:?}");
+        assert!(!output.exists(), "{key}: stale publication survived");
+    }
+}
+
+#[test]
 fn counts_ignore_nested_test_output() {
     let counts = data::test_counts(
         &format!("cargo output\n{}\n{}", suite(2, 1, 1), suite(5, 0, 0)),

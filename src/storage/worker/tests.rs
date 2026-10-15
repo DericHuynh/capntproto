@@ -490,6 +490,52 @@ async fn owner_panic_is_uncertain_and_waiting_requests_are_not_applied() {
 async fn cancellation_races_never_report_not_applied_for_a_committed_write() {
     let (_dir, owner) = worker(Config::default()).await;
     let client = owner.client(1);
+    let check = |cancelled, result: Result<Revision, Error>, head| match cancelled {
+        Cancellation::Cancelled => {
+            assert!(matches!(result, Err(Error::Cancelled)));
+            assert_eq!(head, Revision::INITIAL);
+        }
+        Cancellation::TooLate => {
+            assert_eq!(result.unwrap(), Revision::new(1));
+            assert_eq!(head, Revision::new(1));
+        }
+    };
+    // Establish both sides of the race deterministically before stressing its
+    // arbitration. A fast or heavily instrumented runner may otherwise observe
+    // only one outcome in all 64 attempts.
+    let (blocked, release) = pause(&client).await;
+    let queued_object = ObjectKey::new(65);
+    let queued = client
+        .try_put(queued_object, Revision::INITIAL, b"race", OPTIONS)
+        .unwrap();
+    let cancelled = queued.cancel();
+    assert_eq!(cancelled, Cancellation::Cancelled);
+    drop(release);
+    blocked.await.unwrap();
+    let result = queued.await;
+    let head = client
+        .try_status(queued_object, OPTIONS)
+        .unwrap()
+        .await
+        .unwrap()
+        .head;
+    check(cancelled, result, head);
+
+    let completed_object = ObjectKey::new(66);
+    let mut completed = client
+        .try_put(completed_object, Revision::INITIAL, b"race", OPTIONS)
+        .unwrap();
+    let result = (&mut completed).await;
+    let cancelled = completed.cancel();
+    assert_eq!(cancelled, Cancellation::TooLate);
+    let head = client
+        .try_status(completed_object, OPTIONS)
+        .unwrap()
+        .await
+        .unwrap()
+        .head;
+    check(cancelled, result, head);
+
     for id in 1..=64 {
         let object = ObjectKey::new(id);
         let pending = client
@@ -503,16 +549,7 @@ async fn cancellation_races_never_report_not_applied_for_a_committed_write() {
             .await
             .unwrap()
             .head;
-        match cancelled {
-            Cancellation::Cancelled => {
-                assert!(matches!(result, Err(Error::Cancelled)));
-                assert_eq!(head, Revision::INITIAL);
-            }
-            Cancellation::TooLate => {
-                assert_eq!(result.unwrap(), Revision::new(1));
-                assert_eq!(head, Revision::new(1));
-            }
-        }
+        check(cancelled, result, head);
     }
     owner.shutdown(ShutdownMode::Drain).wait().await;
 }
