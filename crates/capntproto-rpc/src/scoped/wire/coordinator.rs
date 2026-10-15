@@ -40,12 +40,11 @@ impl std::task::Wake for WorkWake {
     }
 }
 
-struct EnqueueWake(Arc<WorkWake>);
-impl std::task::Wake for EnqueueWake {
-    fn wake(self: Arc<Self>) {
-        self.wake_by_ref();
-    }
-    fn wake_by_ref(self: &Arc<Self>) {
+// Enqueue originates on the local hook thread. Keep this notification reusable
+// without cloning/dropping an atomic task waker for every admitted call.
+pub(in crate::scoped) struct EnqueueWake(Arc<WorkWake>);
+impl EnqueueWake {
+    pub(in crate::scoped) fn notify(&self) {
         if self.0.changed.fetch_or(1 << 2, Ordering::AcqRel) == 0 {
             self.0.parent.wake();
         }
@@ -108,6 +107,12 @@ pub trait Control<
         false
     }
     fn plain_return_preserves_idle(&self) -> bool {
+        false
+    }
+    /// Admission of an ordinary descriptor-free Call to a hosted target does
+    /// not enable this idle control policy. Independent commands must notify
+    /// its registered waker. Custom policies retain the general rescan.
+    fn plain_call_preserves_idle(&self) -> bool {
         false
     }
     fn received(
@@ -184,7 +189,7 @@ pub struct Coordinator<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: us
     delivered: bool,
     cursor: usize,
     wake: Arc<WorkWake>,
-    enqueue_waker: Waker,
+    enqueue_waker: Rc<EnqueueWake>,
     parent: Option<Waker>,
     commands: Rc<handle::Commands>,
     output: io::Output,
@@ -226,7 +231,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
     ) -> capnp::Result<Self> {
         driver.defer_call_dispatch(true);
         let wake = Arc::<WorkWake>::default();
-        let enqueue_waker = Waker::from(Arc::new(EnqueueWake(wake.clone())));
+        let enqueue_waker = Rc::new(EnqueueWake(wake.clone()));
         Ok(Self {
             driver,
             hooks,
@@ -314,8 +319,17 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         cx: &mut Context<'_>,
     ) -> Poll<capnp::Result<()>> {
         let mut budget = self.options.budget.get();
-        self.poll_work_budget(messages, queue, scratch, output, cx, &mut budget)
+        self.poll_work_budget(
+            messages,
+            queue,
+            scratch,
+            output,
+            cx,
+            &mut budget,
+            &Waker::from(self.wake.clone()),
+        )
     }
+    #[allow(clippy::too_many_arguments)]
     fn poll_work_budget<O: Output<I>>(
         &mut self,
         messages: &mut messages::Messages<'p, '_, '_>,
@@ -324,6 +338,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         output: &O,
         cx: &mut Context<'_>,
         remaining: &mut usize,
+        waker: &Waker,
     ) -> Poll<capnp::Result<()>> {
         // An unnotified same-task poll retains its existing registration.
         // Notification consumes AtomicWaker's owner, so register again before
@@ -353,7 +368,14 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 self.resume_at(2);
             }
         }
-        if self.hooks.inbox.enqueue_wake.borrow().is_none() {
+        if !self
+            .hooks
+            .inbox
+            .enqueue_wake
+            .borrow()
+            .as_ref()
+            .is_some_and(|old| Rc::ptr_eq(old, &self.enqueue_waker))
+        {
             *self.hooks.inbox.enqueue_wake.borrow_mut() = Some(self.enqueue_waker.clone());
         }
         // IO-only or spurious polls must preserve a completed idle scan. Real
@@ -386,15 +408,15 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 }
                 return Poll::Ready(Err(wire_error(error)));
             }
-            let waker = Waker::from(self.wake.clone());
-            self.commands.register(&waker);
+            self.commands.register(waker);
             let result = self.poll_calls(
                 messages,
                 queue,
                 scratch,
                 output,
-                &mut Context::from_waker(&waker),
+                &mut Context::from_waker(waker),
                 NonZeroUsize::new(quantum).unwrap(),
+                false,
             );
             return match result {
                 Poll::Ready(Err(error)) => Poll::Ready(Err(*error)),
@@ -438,7 +460,87 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 }
             };
         }
-        self.poll_active_work(messages, queue, scratch, output, cx, remaining)
+        // A newly received plain call preserves every other lane's idle
+        // certificate. Service admission and execution with the same quanta
+        // as the rotating scanner, without rebuilding its six adapters.
+        if self.active == ((1 << 1) | (1 << 3)) && *remaining > 1 {
+            *remaining -= 1;
+            if self.worker.accept(&mut self.driver)?
+                && self.driver.runtime.queued() == 0
+                && !self.driver.has_pending_call()
+                && self.wake.changed.load(Ordering::Acquire) == 0
+            {
+                self.active = 1 << 3;
+                self.cursor = 3;
+            } else {
+                self.changed();
+            }
+        }
+        if self.active == 1 << 3 && *remaining > 0 {
+            let quantum = (*remaining).min(8);
+            *remaining -= quantum;
+            self.cursor = 4;
+            if let Err(error) = queue.ensure_capacity() {
+                if error == messages::Error::NoSendSlot && !queue.is_empty() {
+                    self.output_blocked = true;
+                    self.active = 0;
+                    return Poll::Pending;
+                }
+                return Poll::Ready(Err(wire_error(error)));
+            }
+            self.commands.register(waker);
+            let result = self.poll_worker(
+                messages,
+                queue,
+                scratch,
+                output,
+                &mut Context::from_waker(waker),
+                NonZeroUsize::new(quantum).unwrap(),
+            );
+            if self.driver.runtime.has_retired() {
+                self.driver.invalidate_maintenance();
+                self.active |= 1 << 4;
+            }
+            return match result {
+                Poll::Ready(Err(error)) => Poll::Ready(Err(error)),
+                Poll::Ready(Ok(server::Progress::Replied))
+                    if self.worker.completed_plain()
+                        && self.worker.is_empty()
+                        && self.calls.is_empty()
+                        && self.foreign.is_empty()
+                        && self.commands.is_empty()
+                        && self.driver.runtime.queued() == 0
+                        && !self.driver.has_pending_call()
+                        && self.hooks.inbox.queue.borrow().is_empty()
+                        && self.wake.changed.load(Ordering::Acquire) == 0 =>
+                {
+                    self.direct_publication = true;
+                    self.control_idle = false;
+                    self.active = if self.driver.runtime.has_retired()
+                        || !self.driver.maintenance_is_idle()
+                    {
+                        self.driver.invalidate_maintenance();
+                        1 << 4
+                    } else {
+                        0
+                    };
+                    Poll::Ready(Ok(()))
+                }
+                Poll::Ready(Ok(server::Progress::Yield)) => {
+                    cx.waker().wake_by_ref();
+                    Poll::Pending
+                }
+                Poll::Ready(Ok(server::Progress::Idle)) | Poll::Pending => {
+                    self.active &= !(1 << 3);
+                    Poll::Pending
+                }
+                Poll::Ready(Ok(_)) => {
+                    self.changed();
+                    Poll::Ready(Ok(()))
+                }
+            };
+        }
+        self.poll_active_work(messages, queue, scratch, output, cx, remaining, waker)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -451,10 +553,10 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         output: &O,
         cx: &mut Context<'_>,
         remaining: &mut usize,
+        waker: &Waker,
     ) -> Poll<capnp::Result<()>> {
-        let waker = Waker::from(self.wake.clone());
-        self.commands.register(&waker);
-        let mut application_cx = Context::from_waker(&waker);
+        self.commands.register(waker);
+        let mut application_cx = Context::from_waker(waker);
         let mut advanced = false;
         let queued = queue.len();
         let mut completed = false;
@@ -497,7 +599,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 // cursor, but need no publication/callback setup. Admission's
                 // wake remains registered before certifying its queue idle.
                 if index == 2 {
-                    self.hooks.register_next(&waker);
+                    self.hooks.register_next(waker);
                 }
                 *remaining -= 1;
                 self.active &= !(1 << index);
@@ -570,6 +672,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         output,
                         &mut application_cx,
                         quantum,
+                        true,
                     ) {
                         Poll::Ready(Ok(Progress::Idle)) => Poll::Pending,
                         Poll::Ready(Ok(Progress::Yield)) => continue,
@@ -645,6 +748,48 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             }
             if let Poll::Ready(result) = outcome {
                 result?;
+                if index == 1
+                    && self.active == ((1 << 1) | (1 << 3))
+                    && self.driver.runtime.queued() == 0
+                    && !self.driver.has_pending_call()
+                    && self.wake.changed.load(Ordering::Acquire) == 0
+                {
+                    // The sole new work was a plain deferred request. Moving
+                    // it into the worker changes neither controls nor other
+                    // application lanes; execution performs hook refresh.
+                    self.active = 1 << 3;
+                    advanced = true;
+                    continue;
+                }
+                if index == 3
+                    && self.worker.completed_plain()
+                    && self.worker.is_empty()
+                    && self.calls.is_empty()
+                    && self.foreign.is_empty()
+                    && self.commands.is_empty()
+                    && self.driver.runtime.queued() == 0
+                    && !self.driver.has_pending_call()
+                    && self.hooks.inbox.queue.borrow().is_empty()
+                    && self.wake.changed.load(Ordering::Acquire) == 0
+                {
+                    // A descriptor-free request just published a descriptor-free
+                    // Return and retired its answer. Dispatch refreshed hooks;
+                    // there are no other application owners to rescan. Keep
+                    // ledger cleanup active when releasing the request made it
+                    // necessary. Reentrant callbacks and application wakeups
+                    // invalidate this certificate through WorkWake above.
+                    self.direct_publication = true;
+                    self.control_idle = false;
+                    self.active = if self.driver.runtime.has_retired()
+                        || !self.driver.maintenance_is_idle()
+                    {
+                        self.driver.invalidate_maintenance();
+                        1 << 4
+                    } else {
+                        0
+                    };
+                    return Poll::Ready(Ok(()));
+                }
                 // Its response cannot have arrived during publication. The
                 // inbox wake was registered by calls.poll_using; preserve any
                 // cancellation/new-call wake delivered during its callbacks.
@@ -961,10 +1106,10 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         }
     }
 
-    // Independent stack frames keep inactive lane adapters out of register
-    // allocation and drop paths. The scheduler retains the shared work budget.
+    // Inline the small lane adapter into the scheduler so its concrete closures
+    // share borrows and eliminate intermediate publication moves.
     #[allow(clippy::too_many_arguments)]
-    #[inline(never)]
+    #[inline(always)]
     fn poll_calls<O: Output<I>>(
         &mut self,
         messages: &mut messages::Messages<'p, '_, '_>,
@@ -973,6 +1118,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         output: &O,
         cx: &mut Context<'_>,
         quantum: NonZeroUsize,
+        mut refresh: bool,
     ) -> Poll<Result<Progress, Box<Error>>> {
         let options = self.options;
         self.calls.poll_using(
@@ -984,11 +1130,16 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             quantum,
             |runtime, hook| self.foreign.import(runtime, hook),
             |hooks, driver| {
-                hooks.collect_wire_optional(
-                    driver,
-                    |owner| output.metadata_if_present(owner),
-                    foreign::local_metadata,
-                )
+                // Enqueue-only work after a certified idle scan has no new
+                // routing/descriptor information. Skip only that first refresh;
+                // queued, local or reentrant progress still refreshes normally.
+                if std::mem::replace(&mut refresh, true) {
+                    hooks.collect_wire_optional(
+                        driver,
+                        |owner| output.metadata_if_present(owner),
+                        foreign::local_metadata,
+                    );
+                }
             },
             |invocations, driver, messages, credit, publication| {
                 let mut bundle = output.bundle();
@@ -1048,10 +1199,10 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         )
     }
 
-    // Independent stack frames keep inactive lane adapters out of register
-    // allocation and drop paths. The scheduler retains the shared work budget.
+    // Inline the small lane adapter into the scheduler so its concrete closures
+    // share borrows and eliminate intermediate publication moves.
     #[allow(clippy::too_many_arguments)]
-    #[inline(never)]
+    #[inline(always)]
     fn poll_worker<O: Output<I>>(
         &mut self,
         messages: &mut messages::Messages<'p, '_, '_>,
@@ -1111,10 +1262,43 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         )
     }
 
+    #[inline(always)]
+    fn delivered_plain<O: Output<I>>(
+        &mut self,
+        index: usize,
+        message: Box<capntproto_rpc_wire::owned::PlainResults>,
+        controls: &impl Control<'p, 'id, 's, I, P, C, H, O>,
+    ) {
+        let was_idle = self.active == 0 && self.control_idle && !self.output_blocked;
+        self.calls.deliver_plain(index, message);
+        if controls.plain_return_preserves_idle() {
+            if self.active == 0 {
+                self.cursor = 2;
+            }
+            // This fused transition admits no grants and
+            // requires noFinishNeeded. It only removes the
+            // original question and pins immutable bytes.
+            // Endpoint/cancellation/control side effects
+            // independently notify WorkWake; preserve an
+            // existing cleanup certificate in their absence.
+            self.active |= if was_idle {
+                1 << 2
+            } else {
+                (1 << 2) | (1 << 4)
+            };
+            self.calls.invalidate_scan();
+            if !was_idle {
+                self.driver.invalidate_maintenance();
+            }
+        } else {
+            self.resume_at(2);
+        }
+    }
+
     // Keep the ordinary buffered pump out of the byte-reader async state
     // machine. Both paths retain the same cooperative budget and stop ordering.
     #[allow(clippy::too_many_arguments)]
-    #[inline(never)]
+    #[inline(always)]
     fn poll_prepared<O: Output<I>, R: Input<I>, W: io::WriteResources<O::Bundle>>(
         &mut self,
         messages: &mut messages::Messages<'p, '_, '_>,
@@ -1128,6 +1312,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         pending: &mut Option<Frame<'p>>,
         pump: &mut Pump<'id>,
         cx: &mut Context<'_>,
+        waker: &Waker,
     ) -> Poll<Result<Option<usize>, Box<Cause<R::Error, W::Error>>>> {
         loop {
             // A Busy envelope is retried intact before reading another one.
@@ -1141,8 +1326,9 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     );
                 }
                 if pump.blocked {
-                    match self.poll_io_work(messages, queue, writer, scratch, output, controls, cx)
-                    {
+                    match self.poll_io_work_using(
+                        messages, queue, writer, scratch, output, controls, cx, waker,
+                    ) {
                         Err(error) => return Poll::Ready(Err(error)),
                         Ok(true) => return Poll::Pending,
                         Ok(false) => (),
@@ -1154,33 +1340,9 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         self.calls.plain_receiver(key)
                     }) {
                         Ok(connection::PlainReceived::Delivered(index, message)) => {
-                            let was_idle =
-                                self.active == 0 && self.control_idle && !self.output_blocked;
                             reader.finish_frame();
                             pump.blocked = false;
-                            self.calls.deliver_plain(index, message);
-                            if controls.plain_return_preserves_idle() {
-                                if self.active == 0 {
-                                    self.cursor = 2;
-                                }
-                                // This fused transition admits no grants and
-                                // requires noFinishNeeded. It only removes the
-                                // original question and pins immutable bytes.
-                                // Endpoint/cancellation/control side effects
-                                // independently notify WorkWake; preserve an
-                                // existing cleanup certificate in their absence.
-                                self.active |= if was_idle {
-                                    1 << 2
-                                } else {
-                                    (1 << 2) | (1 << 4)
-                                };
-                                self.calls.invalidate_scan();
-                                if !was_idle {
-                                    self.driver.invalidate_maintenance();
-                                }
-                            } else {
-                                self.resume_at(2);
-                            }
+                            self.delivered_plain(index, message, controls);
                             cx.waker().wake_by_ref();
                             return Poll::Pending;
                         }
@@ -1193,13 +1355,14 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 } else {
                     frame
                 };
+                let was_idle = self.active == 0 && self.control_idle && !self.output_blocked;
                 let event = match self.driver.receive_with_policy(
                     frame,
                     messages,
                     scratch,
                     reader,
                     |words| {
-                        Ok(server::Results::with_charge(
+                        Ok(self.worker.results(
                             self.policy.charge(words)?,
                             self.hooks.inbox.message_pool.clone(),
                         ))
@@ -1248,10 +1411,25 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 if let connection::Received::Returned(key) = &event {
                     pump.returned = Some(*key);
                 }
+                let plain_call = was_idle
+                    && matches!(event, connection::Received::DeferredCall(_))
+                    && self.driver.has_plain_pending_call()
+                    && self.driver.runtime.queued() == 0
+                    && self.calls.is_empty()
+                    && self.worker.is_empty()
+                    && self.foreign.is_empty()
+                    && self.commands.is_empty();
                 controls
                     .received(event, self, messages, queue)
                     .map_err(|error| Box::new(Cause::Protocol(error)))?;
-                if pump.returned.is_none() {
+                if plain_call
+                    && controls.plain_call_preserves_idle()
+                    && self.wake.changed.load(Ordering::Acquire) == 0
+                {
+                    self.active = (1 << 1) | (1 << 3);
+                    self.cursor = 1;
+                    self.worker.invalidate_scan();
+                } else if pump.returned.is_none() {
                     self.resume_at(first);
                 }
             }
@@ -1301,7 +1479,9 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     return Poll::Pending;
                 }
             }
-            match self.poll_io_work(messages, queue, writer, scratch, output, controls, cx) {
+            match self.poll_io_work_using(
+                messages, queue, writer, scratch, output, controls, cx, waker,
+            ) {
                 Err(error) => return Poll::Ready(Err(error)),
                 Ok(true) => return Poll::Pending,
                 Ok(false) => (),
@@ -1317,6 +1497,34 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 return Poll::Ready(Err(Box::new(Cause::Protocol(Error::from_kind(
                     capnp::ErrorKind::BufferNotLargeEnough,
                 )))));
+            }
+            if controls.accepts_direct_plain_return() && !self.calls.is_empty() {
+                if let Poll::Ready(result) = self.poll_stop(stop.as_mut(), cx) {
+                    return Poll::Ready(
+                        result
+                            .map(|_| None)
+                            .map_err(|error| Box::new(Cause::Protocol(error))),
+                    );
+                }
+                if let Some(bytes) = reader.buffered_frame() {
+                    if bytes.len() > self.options.input_bytes.get() {
+                        return Poll::Ready(Err(Box::new(Cause::Protocol(Error::from_kind(
+                            capnp::ErrorKind::BufferNotLargeEnough,
+                        )))));
+                    }
+                    if let Some((index, message)) = self
+                        .driver
+                        .try_receive_plain_buffered(bytes, self.options.reader, messages, |key| {
+                            self.calls.plain_receiver(key)
+                        })
+                        .map_err(|error| Box::new(Cause::Protocol(wire_error(error))))?
+                    {
+                        reader.consume_buffered_frame();
+                        self.delivered_plain(index, message, controls);
+                        cx.waker().wake_by_ref();
+                        return Poll::Pending;
+                    }
+                }
             }
             if let Some(frame) = reader
                 .take_buffered_frame(messages, self.options.reader)
@@ -1348,6 +1556,9 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         mut stop: Pin<&mut impl Future<Output = capnp::Result<()>>>,
         pending: &mut Option<Frame<'p>>,
     ) -> Result<(), Box<Cause<R::Error, W::Error>>> {
+        // All application lanes use one stable wake identity. Borrow it across
+        // polls rather than incrementing an atomic Arc count for every lane.
+        let waker = Waker::from(self.wake.clone());
         let mut pump = Pump::default();
         loop {
             // Buffered transports can admit and prepare their next frame in
@@ -1366,6 +1577,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     pending,
                     &mut pump,
                     cx,
+                    &waker,
                 );
                 // A suspended poll already yielded to the executor. Count only
                 // frames processed without suspension toward fairness.
@@ -1418,8 +1630,8 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                                         );
                                     }
                                 }
-                                match self.poll_io_work(
-                                    messages, queue, writer, scratch, output, controls, cx,
+                                match self.poll_io_work_using(
+                                    messages, queue, writer, scratch, output, controls, cx, &waker,
                                 ) {
                                     Err(error) => Some(Err(error)),
                                     Ok(true) => return Poll::Pending,
@@ -1475,8 +1687,8 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         }
     }
 
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
-    #[inline(never)]
     fn poll_io_work<R, O: Output<I>, W: io::WriteResources<O::Bundle>>(
         &mut self,
         messages: &mut messages::Messages<'p, '_, '_>,
@@ -1486,6 +1698,25 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         output: &O,
         controls: &mut impl Control<'p, 'id, 's, I, P, C, H, O>,
         cx: &mut Context<'_>,
+    ) -> Result<bool, Box<Cause<R, W::Error>>> {
+        let waker = Waker::from(self.wake.clone());
+        self.poll_io_work_using(
+            messages, queue, writer, scratch, output, controls, cx, &waker,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
+    fn poll_io_work_using<R, O: Output<I>, W: io::WriteResources<O::Bundle>>(
+        &mut self,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        queue: &mut messages::Queue<'p, '_, O::Bundle>,
+        writer: &mut W,
+        scratch: &mut [u32],
+        output: &O,
+        controls: &mut impl Control<'p, 'id, 's, I, P, C, H, O>,
+        cx: &mut Context<'_>,
+        waker: &Waker,
     ) -> Result<bool, Box<Cause<R, W::Error>>> {
         // IO readiness alone changes no protocol state. Preserve a completed
         // scan while waiting for the next frame, including the parent waker
@@ -1544,8 +1775,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 // application futures. IO-only polls can retain their idle result.
                 // Use the same notifying waker as the other application lanes; the
                 // poll_work check below also catches a wake during this callback.
-                let waker = Waker::from(self.wake.clone());
-                let mut control_cx = Context::from_waker(&waker);
+                let mut control_cx = Context::from_waker(waker);
                 match controls.poll(self, messages, queue, scratch, output, &mut control_cx) {
                     Poll::Ready(Ok(true)) => {
                         self.changed();
@@ -1558,7 +1788,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             let control_was_idle = self.control_idle;
             self.direct_publication = false;
             if let Poll::Ready(result) =
-                self.poll_work_budget(messages, queue, scratch, output, cx, &mut remaining)
+                self.poll_work_budget(messages, queue, scratch, output, cx, &mut remaining, waker)
             {
                 result.map_err(|error| Box::new(Cause::Protocol(error)))?;
             }

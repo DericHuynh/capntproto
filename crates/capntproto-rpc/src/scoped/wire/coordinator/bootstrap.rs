@@ -52,6 +52,9 @@ where
     fn plain_return_preserves_idle(&self) -> bool {
         self.pending.is_empty()
     }
+    fn plain_call_preserves_idle(&self) -> bool {
+        self.pending.is_empty()
+    }
     fn set_idle(&mut self, idle: bool) {
         if let Some(notify) = &mut self.idle {
             notify(idle);

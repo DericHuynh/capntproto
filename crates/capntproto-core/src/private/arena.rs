@@ -68,7 +68,9 @@ pub unsafe trait ReaderArena {
             ));
         }
         let target_idx = i64::try_from(start_idx - this_start).unwrap() + offset;
-        if target_idx < 0 || usize::try_from(target_idx).unwrap() > this_size {
+        // A wire offset can exceed usize on a 32-bit target. Reject it in
+        // the widened domain before converting it to a native pointer offset.
+        if target_idx < 0 || target_idx as u64 > this_size as u64 {
             Err(Error::from_kind(
                 ErrorKind::MessageContainsOutOfBoundsPointer,
             ))
@@ -97,6 +99,20 @@ pub unsafe trait ReaderArena {
         let target = unsafe { self.check_offset(segment_id, start, offset_in_words)? };
         self.contains_interval(segment_id, target, size_in_words)?;
         Ok(target)
+    }
+
+    /// Validate descendants using this arena's concrete bounds implementation.
+    ///
+    /// # Safety
+    /// The pointer must retain this exact arena; its pointer word and segment ID
+    /// must have been validated by it. The existing traversal budget is shared.
+    unsafe fn validate_capability_indices(
+        &self,
+        pointer: super::layout::PointerReader<'_>,
+        count: u32,
+    ) -> Result<()> {
+        // SAFETY: the supplied pointer's original arena meets the same contract.
+        pointer.validate_capability_indices_default(count)
     }
 
     fn amplified_read(&self, virtual_amount: u64) -> Result<()>;
@@ -233,6 +249,16 @@ unsafe impl<S: ReaderSegments> ReaderArena for CachedReaderArena<'_, S> {
         // target was checked before forming this pointer (including on 32-bit).
         Ok(unsafe { base.add(target) })
     }
+    #[inline(always)]
+    unsafe fn validate_capability_indices(
+        &self,
+        pointer: super::layout::PointerReader<'_>,
+        count: u32,
+    ) -> Result<()> {
+        // SAFETY: the caller guarantees pointer and concrete arena have identical
+        // identity, so inlining changes lookup cost, not memory or budget checks.
+        unsafe { pointer.validate_capability_indices_in(self, count) }
+    }
     fn amplified_read(&self, words: u64) -> Result<()> {
         self.inner.amplified_read(words)
     }
@@ -320,6 +346,16 @@ where
         Ok(unsafe { base.add(target) })
     }
 
+    #[inline(always)]
+    unsafe fn validate_capability_indices(
+        &self,
+        pointer: super::layout::PointerReader<'_>,
+        count: u32,
+    ) -> Result<()> {
+        // SAFETY: the caller guarantees pointer and concrete arena have identical
+        // identity, so inlining changes lookup cost, not memory or budget checks.
+        unsafe { pointer.validate_capability_indices_in(self, count) }
+    }
     fn amplified_read(&self, virtual_amount: u64) -> Result<()> {
         self.read_limiter
             .can_read(usize::try_from(virtual_amount).unwrap())

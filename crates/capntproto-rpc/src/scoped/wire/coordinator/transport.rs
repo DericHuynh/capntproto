@@ -13,6 +13,18 @@ use capntproto_rpc_wire::{attachments::Sender, clients::Endpoint, Capacity};
 /// after admission, EOF, failure or cancellation, before any following frame.
 /// A discarded run future requires dropping this input along with its pool.
 pub trait Input<I>: io::Read + ImportReceiver<I> {
+    /// Borrow an untouched complete frame after poll_frame_size, without IO.
+    /// A successful direct admission calls consume_buffered_frame; rejection
+    /// leaves this frame and its ancillary resources available for normal input.
+    fn buffered_frame(&self) -> Option<&[u8]> {
+        None
+    }
+    /// Consume the frame exposed above and release its unused resources.
+    /// Implementations exposing a frame must override this method.
+    fn consume_buffered_frame(&mut self) {
+        self.finish_frame();
+    }
+
     /// Transfer an already buffered complete frame after `poll_frame_size`.
     /// Implementations must enforce the supplied reader options, perform no IO,
     /// and retain attachments until `finish_frame`, including admission retries.

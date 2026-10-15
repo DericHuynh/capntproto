@@ -3306,7 +3306,7 @@ pub struct PointerReader<'a> {
 /// Borrowing always derives a fresh pointer from the current segment owner.
 #[derive(Clone, Copy)]
 pub(crate) struct CachedPointerRoot {
-    offset: Option<usize>,
+    offset: Option<core::num::NonZeroUsize>,
     segment_id: u32,
     nesting_limit: i32,
 }
@@ -3336,7 +3336,8 @@ impl CachedPointerRoot {
             .filter(|offset| *offset <= length && BYTES_PER_WORD <= length - *offset)
             .ok_or_else(|| Error::from_kind(ErrorKind::MessageContainsOutOfBoundsPointer))?;
         Ok(Self {
-            offset: Some(offset),
+            // The validated pointer word fits, so offset + 1 cannot overflow.
+            offset: core::num::NonZeroUsize::new(offset + 1),
             segment_id: root.segment_id,
             nesting_limit,
         })
@@ -3387,7 +3388,8 @@ impl CachedPointerRoot {
         let offset =
             offset.ok_or_else(|| Error::from_kind(ErrorKind::InvalidSegmentId(root.segment_id)))?;
         Ok(Self {
-            offset: Some(offset),
+            // The validated pointer word fits, so offset + 1 cannot overflow.
+            offset: core::num::NonZeroUsize::new(offset + 1),
             segment_id: root.segment_id,
             nesting_limit,
         })
@@ -3403,6 +3405,7 @@ impl CachedPointerRoot {
         let Some(offset) = self.offset else {
             return PointerReader::new_default();
         };
+        let offset = offset.get() - 1;
         let (base, words) = arena
             .get_segment(self.segment_id)
             .expect("validated immutable segment");

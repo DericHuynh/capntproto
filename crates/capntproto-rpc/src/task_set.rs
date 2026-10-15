@@ -29,6 +29,7 @@ use ready_set::ReadySet;
 
 enum EnqueuedTask<E> {
     Task(Pin<Box<dyn Future<Output = Result<(), E>>>>),
+    Connection(Pin<Box<dyn Future<Output = Result<(), E>>>>),
     Terminate(Result<(), E>),
     OnEmpty(oneshot::Sender<()>),
 }
@@ -62,6 +63,7 @@ impl<E> Future for TaskInProgress<E> {
 #[must_use = "a TaskSet does nothing unless polled"]
 pub(crate) struct TaskSet<E> {
     enqueued: Option<queue::Receiver<EnqueuedTask<E>>>,
+    connection: Option<Pin<Box<dyn Future<Output = Result<(), E>>>>>,
     in_progress: ReadySet<TaskInProgress<E>>,
     on_empty_fulfillers: Vec<oneshot::Sender<()>>,
     reaper: Box<dyn TaskReaper<E>>,
@@ -80,6 +82,7 @@ where
 
         let mut set = Self {
             enqueued: Some(receiver),
+            connection: None,
             in_progress: ReadySet::new(),
             on_empty_fulfillers: vec![],
             reaper,
@@ -100,7 +103,8 @@ where
             return;
         }
         // There is always the one pending() future that we added in `new()`.
-        if self.in_progress.len() <= 1
+        if self.connection.is_none()
+            && self.in_progress.len() <= 1
             && self.enqueued.as_ref().is_none_or(|queue| queue.is_empty())
         {
             for f in std::mem::take(&mut self.on_empty_fulfillers) {
@@ -132,6 +136,19 @@ where
     {
         self.sender
             .send(EnqueuedTask::Task(Box::pin(future)))
+            .map_err(|_| ())
+    }
+
+    /// Poll one bounded connection directly with the parent task's waker.
+    /// Additional connections retain wake-driven scheduling. This removes one
+    /// notification layer without polling from application callbacks or moving
+    /// a future while it is running. The connection must bound each poll.
+    pub(crate) fn try_add_connection<F>(&self, future: F) -> Result<(), ()>
+    where
+        F: Future<Output = Result<(), E>> + 'static,
+    {
+        self.sender
+            .send(EnqueuedTask::Connection(Box::pin(future)))
             .map_err(|_| ())
     }
 
@@ -193,6 +210,13 @@ where
                         }
                         Poll::Pending => self.in_progress.push(TaskInProgress::Task(f)),
                     },
+                    Poll::Ready(Some(EnqueuedTask::Connection(f))) => {
+                        if self.connection.is_none() {
+                            self.connection = Some(f);
+                        } else {
+                            self.in_progress.push(TaskInProgress::Task(f));
+                        }
+                    }
                     Poll::Ready(Some(EnqueuedTask::OnEmpty(f))) => {
                         self.on_empty_fulfillers.push(f);
                     }
@@ -208,10 +232,21 @@ where
             drop(self.enqueued.take());
         }
 
+        if let Some(future) = self.connection.as_mut() {
+            if let Poll::Ready(result) = future.as_mut().poll(cx) {
+                let finished = self.connection.take();
+                drop(finished);
+                match result {
+                    Ok(()) => self.reaper.task_succeeded(),
+                    Err(error) => self.reaper.task_failed(error),
+                }
+            }
+        }
+
         // on_empty() must also complete when it was queued on an already
         // empty set. The sentinel future is not an application task.
         self.update_on_empty_fulfillers();
-        if self.enqueued.is_none() && self.in_progress.len() <= 1 {
+        if self.enqueued.is_none() && self.connection.is_none() && self.in_progress.len() <= 1 {
             return Poll::Ready(Ok(()));
         }
         loop {
@@ -228,7 +263,10 @@ where
                             Err(error) => self.reaper.task_failed(error),
                         }
                         self.update_on_empty_fulfillers();
-                        if self.enqueued.is_none() && self.in_progress.len() <= 1 {
+                        if self.enqueued.is_none()
+                            && self.connection.is_none()
+                            && self.in_progress.len() <= 1
+                        {
                             return Poll::Ready(Ok(()));
                         }
                     }
@@ -262,6 +300,81 @@ mod tests {
     }
     fn poll<F: Future + Unpin>(future: &mut F) -> Poll<F::Output> {
         Pin::new(future).poll(&mut Context::from_waker(futures::task::noop_waker_ref()))
+    }
+
+    #[test]
+    fn direct_connection_preserves_wakes_drain_and_other_task_progress() {
+        use std::{
+            cell::Cell,
+            sync::{
+                atomic::{AtomicUsize, Ordering},
+                Arc,
+            },
+            task::Waker,
+        };
+        #[derive(Default)]
+        struct Notify(AtomicUsize);
+        impl std::task::Wake for Notify {
+            fn wake(self: Arc<Self>) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+        let results = Rc::new(RefCell::new(Vec::new()));
+        let (mut handle, mut tasks) = TaskSet::new(Box::new(Reaper(results.clone())));
+        let ready = Rc::new(Cell::new(false));
+        let registered = Rc::new(RefCell::new(None::<Waker>));
+        let polls = Rc::new(Cell::new(0));
+        handle
+            .try_add_connection({
+                let ready = ready.clone();
+                let registered = registered.clone();
+                let polls = polls.clone();
+                std::future::poll_fn(move |cx| {
+                    polls.set(polls.get() + 1);
+                    *registered.borrow_mut() = Some(cx.waker().clone());
+                    if ready.get() {
+                        Poll::Ready(Err(7))
+                    } else {
+                        Poll::Pending
+                    }
+                })
+            })
+            .unwrap();
+        let (done, mut wait) = oneshot::channel();
+        handle
+            .try_add_connection(std::future::poll_fn(move |cx| {
+                Pin::new(&mut wait).poll(cx).map(|_| Ok(()))
+            }))
+            .unwrap();
+        let mut drained = handle.on_empty();
+        drop(handle);
+        let first = Waker::from(Arc::new(Notify::default()));
+        assert!(Pin::new(&mut tasks)
+            .poll(&mut Context::from_waker(&first))
+            .is_pending());
+        assert_eq!(polls.get(), 1);
+        assert!(poll(&mut drained).is_pending());
+        let counter = Arc::new(Notify::default());
+        let second = Waker::from(counter.clone());
+        done.send(()).unwrap();
+        assert!(Pin::new(&mut tasks)
+            .poll(&mut Context::from_waker(&second))
+            .is_pending());
+        assert_eq!(polls.get(), 2);
+        assert_eq!(results.borrow().as_slice(), &[Ok(())]);
+        assert!(poll(&mut drained).is_pending());
+        assert!(registered.borrow().as_ref().unwrap().will_wake(&second));
+        let previous = counter.0.load(Ordering::SeqCst);
+        ready.set(true);
+        registered.borrow().as_ref().unwrap().wake_by_ref();
+        assert!(counter.0.load(Ordering::SeqCst) > previous);
+        assert_eq!(
+            Pin::new(&mut tasks).poll(&mut Context::from_waker(&second)),
+            Poll::Ready(Ok(()))
+        );
+        assert_eq!(polls.get(), 3);
+        assert_eq!(results.borrow().as_slice(), &[Ok(()), Err(7)]);
+        assert_eq!(poll(&mut drained), Poll::Ready(Ok(())));
     }
 
     #[test]

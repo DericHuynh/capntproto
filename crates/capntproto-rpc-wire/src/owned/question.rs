@@ -39,10 +39,18 @@ impl<'pool, 'q> Question<'pool, 'q> {
         queue: messages::QueueSlot<'_, 'pool, '_, impl Sized>,
         method: (u64, u16),
         allows_handoff: bool,
+        owned_output: bool,
     ) -> Result<Self, super::Error> {
-        let offer = frame.offer(messages)?;
-        let local = reservation.accept();
-        queue.accept(messages, offer);
+        let local = if owned_output {
+            let local = reservation.accept();
+            queue.accept_owned(frame.lease);
+            local
+        } else {
+            let offer = frame.offer(messages)?;
+            let local = reservation.accept();
+            queue.accept(messages, offer);
+            local
+        };
         // The send queue retains its own affine offer through partial writes.
         // Data-only Return admission needs no view of these bytes afterwards.
         Ok(Self {
@@ -438,9 +446,9 @@ impl<'pool, 'q> Question<'pool, 'q> {
         })
     }
     #[cfg(feature = "alloc")]
+    #[inline(always)]
     pub(super) fn finish_plain(
         self,
-        frame: Frame<'pool>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         pending: questions::Receive<'_, 'q, '_>,
         admitted: AdmittedPlain,
@@ -457,7 +465,6 @@ impl<'pool, 'q> Question<'pool, 'q> {
             pending.accept();
         }
         self.original.release(messages);
-        frame.release(messages);
         plain
     }
     #[inline(always)]
@@ -488,6 +495,7 @@ pub(super) struct AdmittedPlain {
 }
 impl AdmittedPlain {
     #[cfg(feature = "alloc")]
+    #[inline(always)]
     pub(super) fn owned(
         message: capnp::message::CheckedPointerReader<
             capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,

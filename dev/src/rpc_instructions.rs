@@ -28,14 +28,25 @@ pub struct Args {
     #[arg(long)]
     pub static_cpp: bool,
     /// Train and measure the legacy Rust driver as a matched control.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "compare_legacy")]
     pub legacy: bool,
+    /// Measure both drivers with this same executable and identical workload.
+    #[arg(long)]
+    pub compare_legacy: bool,
+    /// Require both portable/legacy instruction ratios to stay at or below this bound.
+    #[arg(long, requires = "compare_legacy")]
+    pub maximum_ratio: Option<f64>,
     /// Fail after writing the report if either peer’s instructions exceed this ceiling.
     #[arg(long)]
     pub maximum: Option<u64>,
 }
 
 pub fn run(args: Args) -> Result<()> {
+    ensure!(
+        args.maximum_ratio
+            .is_none_or(|ratio| ratio.is_finite() && ratio > 0.0),
+        "maximum ratio must be positive and finite"
+    );
     ensure!(
         std::env::var_os("RUSTFLAGS").is_none()
             && std::env::var_os("CARGO_ENCODED_RUSTFLAGS").is_none(),
@@ -76,17 +87,25 @@ pub fn run(args: Args) -> Result<()> {
         let profiles = output.join("training");
         fs::create_dir(&profiles)?;
         let profile_pattern = profiles.join("%m-%p.profraw");
-        for size in TRAINING_SIZES {
-            eprintln!("Training TCP peers: {size} bytes");
-            training.push(measure(
-                &instrumented,
-                &profiles,
-                &format!("size-{size}"),
-                size,
-                Some(&profile_pattern),
-                false,
-                args.legacy,
-            )?);
+        let drivers: &[bool] = if args.compare_legacy {
+            &[false, true]
+        } else {
+            std::slice::from_ref(&args.legacy)
+        };
+        for &legacy in drivers {
+            let driver = if legacy { "legacy" } else { "portable" };
+            for size in TRAINING_SIZES {
+                eprintln!("Training {driver} TCP peers: {size} bytes");
+                training.push(measure(
+                    &instrumented,
+                    &profiles,
+                    &format!("{driver}-size-{size}"),
+                    size,
+                    Some(&profile_pattern),
+                    false,
+                    legacy,
+                )?);
+            }
         }
         let sysroot = crate::process::text(Command::new("rustc").args(["--print", "sysroot"]))?;
         let host = compiler
@@ -124,10 +143,32 @@ pub fn run(args: Args) -> Result<()> {
     let server_count = instruction_count(&fs::read_to_string(
         output.join("measured-server.callgrind"),
     )?)?;
+    let comparison = if args.compare_legacy {
+        let output = measure(&executable, &output, "legacy", 0, None, true, true)?;
+        let client = instruction_count(&fs::read_to_string(
+            args.output.join("legacy-client.callgrind"),
+        )?)?;
+        let server = instruction_count(&fs::read_to_string(
+            args.output.join("legacy-server.callgrind"),
+        )?)?;
+        Some(json!({
+            "client_instructions": client, "server_instructions": server,
+            "client_ratio": count as f64 / client as f64,
+            "server_ratio": server_count as f64 / server as f64,
+            "passes": within_ratio(count, server_count, client, server, args.maximum_ratio),
+            "measurement_output": output,
+        }))
+    } else {
+        None
+    };
+    let passes = within_ceiling(count, server_count, args.maximum)
+        && comparison
+            .as_ref()
+            .is_none_or(|value| value["passes"] == true);
     let report = json!({
         "client_instructions": count, "maximum": args.maximum,
         "server_instructions": server_count,
-        "passes": within_ceiling(count, server_count, args.maximum),
+        "passes": passes, "maximum_ratio": args.maximum_ratio, "legacy_control": comparison,
         "driver": if args.legacy { "legacy" } else { "portable" }, "protocol": "plaintext TCP",
         "measurement": "complete Callgrind Ir process, including startup/bootstrap/cleanup",
         "payload_bytes": 0, "warmups": 100, "retained_calls": 1000,
@@ -148,7 +189,7 @@ pub fn run(args: Args) -> Result<()> {
     );
     ensure!(
         report["passes"] == true,
-        "client or server instruction ceiling exceeded"
+        "client or server instruction ceiling/legacy ratio exceeded"
     );
     Ok(())
 }
@@ -347,9 +388,36 @@ fn instruction_count(profile: &str) -> Result<u64> {
     Ok(count)
 }
 
+fn within_ratio(
+    client: u64,
+    server: u64,
+    legacy_client: u64,
+    legacy_server: u64,
+    maximum: Option<f64>,
+) -> bool {
+    legacy_client != 0
+        && legacy_server != 0
+        && maximum.is_none_or(|maximum| {
+            maximum.is_finite()
+                && maximum > 0.0
+                && client as f64 / legacy_client as f64 <= maximum
+                && server as f64 / legacy_server as f64 <= maximum
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn legacy_ratio_requires_both_peers_and_valid_controls() {
+        assert!(within_ratio(105, 210, 100, 200, Some(1.05)));
+        assert!(!within_ratio(106, 210, 100, 200, Some(1.05)));
+        assert!(!within_ratio(105, 211, 100, 200, Some(1.05)));
+        assert!(!within_ratio(0, 210, 0, 200, None));
+        for maximum in [f64::NAN, f64::INFINITY, 0.0, -1.0] {
+            assert!(!within_ratio(1, 1, 100, 100, Some(maximum)));
+        }
+    }
     #[test]
     fn instruction_ceiling_requires_both_complete_peers() {
         let limit = 20_000_000;

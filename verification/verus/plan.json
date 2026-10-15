@@ -96,6 +96,7 @@
     "capntproto_proofs::engine::question::Question::return_delivery",
     "capntproto_proofs::engine::question::Question::returned",
     "capntproto_proofs::engine::question::Release::clone",
+    "capntproto_proofs::engine::question::final_return_needs_no_intermediate_record",
     "capntproto_proofs::engine::question::initial_state",
     "capntproto_proofs::engine::question::preserves",
     "capntproto_proofs::engine::question::progress",

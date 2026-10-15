@@ -29,7 +29,7 @@ pub fn owning_terminal_cleanup(budget: usize) {
         &mut buffers,
         &mut [const { messages::SendSlot::EMPTY }; 4],
         |messages| {
-            let mut slots = [None; 4];
+            let mut slots = [const { None }; 4];
             let mut queue = super::driver::message_queue(&mut slots).unwrap();
             with_owned_peer(|mut peer| {
                 let service = peer

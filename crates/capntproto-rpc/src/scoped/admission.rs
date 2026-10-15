@@ -4,31 +4,35 @@ use crate::admission::{Admission, Permit};
 
 pub(super) struct Credit {
     admission: Rc<Admission>,
-    permit: RefCell<Option<Rc<Permit>>>,
+    permit: std::cell::OnceCell<Rc<Permit>>,
     received: Cell<bool>,
 }
 impl Credit {
     pub(super) fn new(admission: Rc<Admission>) -> Rc<Self> {
         Rc::new(Self {
             admission,
-            permit: RefCell::default(),
+            permit: std::cell::OnceCell::new(),
             received: Cell::new(false),
         })
     }
     #[inline(always)]
     pub(super) fn ensure(&self) -> capnp::Result<()> {
-        if self.permit.borrow().is_none() {
+        if self.permit.get().is_none() {
             self.acquire()?;
         }
         Ok(())
     }
     #[inline(always)]
     pub(super) fn acquire(&self) -> capnp::Result<Rc<Permit>> {
-        if let Some(permit) = self.permit.borrow().as_ref() {
+        if let Some(permit) = self.permit.get() {
             return Ok(permit.clone());
         }
         let permit = self.admission.reserve()?;
-        *self.permit.borrow_mut() = Some(permit.clone());
+        // Publish once. Even a reentrant allocator cannot replace a reservation
+        // already installed by another acquire on this same credit.
+        if self.permit.set(permit.clone()).is_err() {
+            return Ok(self.permit.get().expect("installed reservation").clone());
+        }
         Ok(permit)
     }
     pub(super) fn received(&self) {

@@ -746,6 +746,9 @@ impl ResultsHook for MembraneResults {
     fn cancellation_guard(&self) -> Option<Box<dyn std::any::Any>> {
         self.outer.as_ref()?.cancellation_guard()
     }
+    fn cancellation_context(&self) -> Option<capnp::private::capability::CancellationGuard> {
+        self.outer.as_ref()?.cancellation_context()
+    }
     fn cancellation_executor(&self) -> Option<Rc<dyn capnp::capability::CallExecutor>> {
         self.outer.as_ref()?.cancellation_executor()
     }

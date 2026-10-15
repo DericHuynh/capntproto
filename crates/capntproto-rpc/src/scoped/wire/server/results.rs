@@ -13,7 +13,7 @@ struct State {
     transferred: Cell<bool>,
     context: RefCell<Option<Rc<dyn std::any::Any>>>,
     method: Cell<Option<DynamicCall>>,
-    payload: RefCell<Option<Rc<Payload>>>,
+    payload: RefCell<Option<CompletedPayload>>,
     pipeline: RefCell<Option<Rc<dyn PipelineHook>>>,
     completion: RefCell<Option<capnp::Result<()>>>,
     wake: RefCell<Vec<Waker>>,
@@ -21,6 +21,48 @@ struct State {
     trace_prepared: Cell<bool>,
     trace: RefCell<Option<String>>,
 }
+// A capability-free result already owns an immutable Return. Share that
+// allocation directly; build the general payload wrapper only for consumers
+// which need the capability-aware representation.
+#[derive(Clone)]
+enum CompletedPayload {
+    Plain(Rc<connection::PreparedReturn<capnp::message::HeapAllocator>>),
+    General(Rc<Payload>),
+}
+impl CompletedPayload {
+    fn reader(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+        match self {
+            Self::Plain(message) => message.reader(),
+            Self::General(p) => p.reader(),
+        }
+    }
+    fn plain(&self) -> Option<&Rc<connection::PreparedReturn<capnp::message::HeapAllocator>>> {
+        match self {
+            Self::Plain(message) => Some(message),
+            Self::General(p) if p.caps.is_empty() => match &p.body {
+                PayloadBody::Return(message) => Some(message),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    fn cap_count(&self) -> usize {
+        match self {
+            Self::Plain(_) => 0,
+            Self::General(p) => p.caps.len(),
+        }
+    }
+    fn share(&self) -> Rc<Payload> {
+        match self {
+            Self::Plain(message) => Rc::new(Payload {
+                body: PayloadBody::Return(message.clone()),
+                caps: Vec::new(),
+            }),
+            Self::General(payload) => payload.clone(),
+        }
+    }
+}
+
 // Ordinary answers do not own network transfers. Keep their larger, optional
 // state separate without changing the lifetime of any transfer or guard.
 #[derive(Default)]
@@ -51,6 +93,57 @@ impl State {
 /// the answer retires so early pipelines survive final completion.
 #[derive(Clone, Default)]
 pub struct Results(Rc<State>);
+
+/// One idle result context per worker. Retained hooks, pipelines and protected
+/// executions keep their own state and prevent recycling until they release it.
+#[derive(Default)]
+pub(super) struct Cache(Cell<Option<Results>>);
+impl Cache {
+    #[inline(always)]
+    pub(super) fn acquire(
+        &self,
+        charge: Option<coordinator::policy::Charge>,
+        pool: Option<capnp::message::SegmentPool>,
+    ) -> Results {
+        let cached = self.0.take();
+        match cached {
+            Some(mut results) => {
+                let state = Rc::get_mut(&mut results.0).expect("exclusive cached results");
+                state.message_pool = pool;
+                *state.charge.get_mut() = charge;
+                results
+            }
+            None => Results::with_charge(charge, pool),
+        }
+    }
+    #[inline(always)]
+    pub(super) fn recycle(&self, mut results: Results) {
+        let Some(state) = Rc::get_mut(&mut results.0) else {
+            return;
+        };
+        // Only this private owner remains. Destructors may reenter admission;
+        // neither the cache nor another public result retains this state.
+        drop(state.tail_origin.get_mut().take());
+        drop(state.network.get_mut().take());
+        drop(state.context.get_mut().take());
+        drop(state.payload.get_mut().take());
+        drop(state.pipeline.get_mut().take());
+        drop(state.completion.get_mut().take());
+        state.wake.get_mut().clear();
+        drop(state.charge.get_mut().take());
+        drop(state.trace.get_mut().take());
+        state.transferred.set(false);
+        state.method.set(None);
+        state.trace_prepared.set(false);
+        // Restore an existing cache before dropping the unused, empty owner.
+        let cached = self.0.take();
+        if cached.is_none() {
+            self.0.set(Some(results));
+        } else {
+            self.0.set(cached);
+        }
+    }
+}
 impl Results {
     pub(crate) fn tail_origin(&self, origin: Option<Handle>) {
         *self.0.tail_origin.borrow_mut() = origin;
@@ -208,7 +301,9 @@ impl Results {
             .and_then(|r| r.as_ref().err())
             .cloned()
     }
-    pub(super) fn plain_payload(&self) -> Option<Rc<Payload>> {
+    pub(super) fn plain_payload(
+        &self,
+    ) -> Option<Rc<connection::PreparedReturn<capnp::message::HeapAllocator>>> {
         if self.transfer_ready()
             || self.redirect().is_some()
             || self.0.pipeline.borrow().is_some()
@@ -218,8 +313,7 @@ impl Results {
         }
         let payload = self.0.payload.borrow();
         let payload = payload.as_ref()?;
-        (payload.caps.is_empty() && matches!(payload.body, PayloadBody::Return(_)))
-            .then(|| payload.clone())
+        payload.plain().cloned()
     }
     pub(in crate::scoped::wire) fn early_pipeline(&self) -> Option<Box<dyn PipelineHook>> {
         self.0
@@ -267,19 +361,17 @@ impl Results {
                 .borrow()
                 .clone()
                 .ok_or_else(|| Error::overloaded("server still owns its results".into()))?;
-            if payload.caps.is_empty() {
-                if let PayloadBody::Return(message) = &payload.body {
-                    if let Some(bytes) = message.framed_len() {
-                        // Whole-envelope copies need no payload traversal for
-                        // sizing. Retain the general codec's two staging/tag
-                        // words as well: transferred results can use that path.
-                        // The driver still validates before publication.
-                        return bytes.checked_add(16).ok_or_else(overflow);
-                    }
+            if let Some(message) = payload.plain() {
+                if let Some(bytes) = message.framed_len() {
+                    // Whole-envelope copies need no payload traversal for
+                    // sizing. Retain the general codec's two staging/tag
+                    // words as well: transferred results can use that path.
+                    // The driver still validates before publication.
+                    return bytes.checked_add(16).ok_or_else(overflow);
                 }
             }
             let content = payload.reader()?.target_size()?.word_count;
-            let descriptors = (payload.caps.len() as u64)
+            let descriptors = (payload.cap_count() as u64)
                 .checked_mul(words::<CapDescriptor>())
                 .ok_or_else(overflow)?;
             size = size
@@ -433,20 +525,23 @@ impl Drop for Execution {
 
 struct Hook {
     results: Results,
-    message: Option<Box<connection::PreparedReturn<capnp::message::HeapAllocator>>>,
+    message: Option<Rc<connection::PreparedReturn<capnp::message::HeapAllocator>>>,
     caps: Vec<Option<Box<dyn ClientHook>>>,
     executor: Option<Rc<dyn capability::CallExecutor>>,
 }
 impl Drop for Hook {
     fn drop(&mut self) {
         let caps = std::mem::take(&mut self.caps);
-        let payload = Rc::new(match self.message.take() {
-            Some(message) => Payload {
-                body: PayloadBody::Return(message),
-                caps,
-            },
-            None => Payload::owned(Default::default(), caps),
-        });
+        let payload = match self.message.take() {
+            Some(message) if caps.is_empty() => CompletedPayload::Plain(message),
+            message => CompletedPayload::General(Rc::new(match message {
+                Some(message) => Payload {
+                    body: PayloadBody::Return(message),
+                    caps,
+                },
+                None => Payload::owned(Default::default(), caps),
+            })),
+        };
         let previous = self.results.0.payload.borrow_mut().replace(payload);
         drop(previous);
         self.results.0.notify();
@@ -465,6 +560,11 @@ impl ResultsHook for Hook {
     fn cancellation_guard(&self) -> Option<Box<dyn std::any::Any>> {
         Some(Box::new(self.results.clone()))
     }
+    fn cancellation_context(&self) -> Option<capnp::private::capability::CancellationGuard> {
+        Some(capnp::private::capability::CancellationGuard::Shared(
+            self.results.0.clone(),
+        ))
+    }
     fn cancellation_executor(&self) -> Option<Rc<dyn capability::CallExecutor>> {
         self.executor.clone()
     }
@@ -472,9 +572,8 @@ impl ResultsHook for Hook {
         &mut self,
         hint: Option<capnp::MessageSize>,
     ) -> capnp::Result<any_pointer::Builder<'_>> {
-        let mut root: any_pointer::Builder = self
-            .message
-            .get_or_insert_with(|| {
+        let message =
+            self.message.get_or_insert_with(|| {
                 let hint = hint.map(|mut size| {
                     size.word_count = size
                         .word_count
@@ -489,10 +588,12 @@ impl ResultsHook for Hook {
                 thread_local! {
                     static TEMPLATE: connection::PreparedReturnTemplate = Default::default();
                 }
-                Box::new(TEMPLATE.with(|template| {
+                Rc::new(TEMPLATE.with(|template| {
                     connection::PreparedReturn::from_template(template, allocator)
                 }))
-            })
+            });
+        let mut root = Rc::get_mut(message)
+            .expect("unpublished result builder")
             .results();
         root.imbue_mut(&mut self.caps);
         Ok(root)
@@ -603,7 +704,7 @@ impl Transfer {
                     .clone()
                     .expect("completed transfer payload");
                 Ok(Box::new(TransferResponse {
-                    payload,
+                    payload: payload.share(),
                     _results: self.results,
                 })
                     as Box<dyn capnp::private::capability::ResponseHook>)
@@ -669,6 +770,23 @@ impl Prepared {
         results: &Results,
         executor: Option<Rc<dyn capability::CallExecutor>>,
     ) -> capnp::Result<Execution> {
+        self.execute_using(destination, results, executor, false)
+    }
+    pub(super) fn execute_during_dispatch(
+        self,
+        destination: &dyn ClientHook,
+        results: &Results,
+        executor: Option<Rc<dyn capability::CallExecutor>>,
+    ) -> capnp::Result<Execution> {
+        self.execute_using(destination, results, executor, true)
+    }
+    fn execute_using(
+        self,
+        destination: &dyn ClientHook,
+        results: &Results,
+        executor: Option<Rc<dyn capability::CallExecutor>>,
+        immediate: bool,
+    ) -> capnp::Result<Execution> {
         if results.0.method.get().is_some() {
             return Err(Error::failed("server results already started".into()));
         }
@@ -680,7 +798,20 @@ impl Prepared {
             executor,
         };
         Ok(Execution {
-            operation: Some(self.dispatch(destination, Box::new(hook))),
+            operation: Some(if immediate {
+                destination.call_during_dispatch(
+                    self.method.interface,
+                    self.method.method,
+                    self.params,
+                    Box::new(hook),
+                    CallHints {
+                        no_promise_pipelining: self.method.no_promise_pipelining,
+                        only_promise_pipeline: self.method.only_promise_pipeline,
+                    },
+                )
+            } else {
+                self.dispatch(destination, Box::new(hook))
+            }),
             results: results.clone(),
         })
     }
@@ -744,7 +875,8 @@ impl<'id> ClientHooks<'id> {
             .0
             .payload
             .borrow()
-            .clone()
+            .as_ref()
+            .map(CompletedPayload::share)
             .ok_or_else(|| Error::overloaded("server still owns its results".into()))?;
         let mut retained = Vec::with_capacity(payload.caps.len());
         let result = (|| {

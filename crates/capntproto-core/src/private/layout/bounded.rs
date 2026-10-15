@@ -3,7 +3,31 @@
 use super::*;
 
 impl PointerReader<'_> {
+    #[inline(always)]
     pub(crate) fn validate_capability_indices(&self, count: u32) -> Result<()> {
+        // SAFETY: this reader retains the exact arena that validated its pointer
+        // word. Delegation preserves that identity and the existing read budget.
+        unsafe { self.arena.validate_capability_indices(*self, count) }
+    }
+
+    pub(crate) fn validate_capability_indices_default(&self, count: u32) -> Result<()> {
+        // SAFETY: this uses the original arena retained by the validated reader.
+        unsafe { self.validate_capability_indices_in(self.arena, count) }
+    }
+
+    /// Validate with a concrete arena so near-pointer traversal can inline its
+    /// bounds checks. The general decoder still handles far/composite pointers.
+    ///
+    /// # Safety
+    /// arena must be the exact arena retained by this reader.
+    #[inline(always)]
+    pub(crate) unsafe fn validate_capability_indices_in<
+        A: crate::private::arena::ReaderArena + ?Sized,
+    >(
+        &self,
+        arena: &A,
+        count: u32,
+    ) -> Result<()> {
         let mut current = *self;
         loop {
             if current.is_null() {
@@ -31,7 +55,7 @@ impl PointerReader<'_> {
                     unsafe {
                         let data = usize::from((*current.pointer).struct_data_size());
                         let pointers = usize::from((*current.pointer).struct_ptr_count());
-                        let body = current.arena.check_offset_and_read(
+                        let body = arena.check_offset_and_read(
                             current.segment_id,
                             current.pointer.cast(),
                             (*current.pointer).offset_in_words(),
@@ -52,7 +76,7 @@ impl PointerReader<'_> {
                                 nesting_limit: current.nesting_limit - 1,
                                 ..current
                             }
-                            .validate_capability_indices(count)?;
+                            .validate_capability_indices_in(arena, count)?;
                         }
                     }
                     return Ok(());
@@ -77,7 +101,7 @@ impl PointerReader<'_> {
                             let words = wire_helpers::round_bits_up_to_words(
                                 u64::from(elements) * u64::from(data_bits_per_element(size)),
                             );
-                            current.arena.check_offset_and_read(
+                            arena.check_offset_and_read(
                                 current.segment_id,
                                 current.pointer.cast(),
                                 (*current.pointer).offset_in_words(),
@@ -86,7 +110,7 @@ impl PointerReader<'_> {
                             elements
                         };
                         if size == ElementSize::Void {
-                            current.arena.amplified_read(u64::from(elements))?;
+                            arena.amplified_read(u64::from(elements))?;
                         }
                         return Ok(());
                     }
@@ -96,49 +120,57 @@ impl PointerReader<'_> {
                 // decoding path. No far target is read before validating its pad.
                 _ => current.get_pointer_type()?,
             };
-            match kind {
-                PointerType::Null => (),
-                PointerType::Capability => {
-                    if current.get_capability_index()? >= count {
-                        return Err(Error::from_kind(
-                            ErrorKind::MessageContainsInvalidCapabilityPointer,
-                        ));
-                    }
+            return current.validate_complex_capability_indices(kind, count);
+        }
+    }
+
+    // Keep far pointers and composite lists outside the ordinary data-only
+    // traversal. Their recursive validation has identical limits and charging.
+    #[inline(never)]
+    fn validate_complex_capability_indices(&self, kind: PointerType, count: u32) -> Result<()> {
+        let current = *self;
+        match kind {
+            PointerType::Null => (),
+            PointerType::Capability => {
+                if current.get_capability_index()? >= count {
+                    return Err(Error::from_kind(
+                        ErrorKind::MessageContainsInvalidCapabilityPointer,
+                    ));
                 }
-                PointerType::Struct => {
-                    let value = current.get_struct(None)?;
-                    for i in 0..usize::from(value.get_pointer_section_size()) {
-                        value
-                            .get_pointer_field(i)
-                            .validate_capability_indices(count)?;
-                    }
+            }
+            PointerType::Struct => {
+                let value = current.get_struct(None)?;
+                for i in 0..usize::from(value.get_pointer_section_size()) {
+                    value
+                        .get_pointer_field(i)
+                        .validate_capability_indices(count)?;
                 }
-                PointerType::List => {
-                    let value = current.get_list_any_size(ptr::null())?;
-                    match value.element_size {
-                        ElementSize::Pointer => {
-                            for i in 0..value.len() {
-                                value
-                                    .get_pointer_element(i)
+            }
+            PointerType::List => {
+                let value = current.get_list_any_size(ptr::null())?;
+                match value.element_size {
+                    ElementSize::Pointer => {
+                        for i in 0..value.len() {
+                            value
+                                .get_pointer_element(i)
+                                .validate_capability_indices(count)?;
+                        }
+                    }
+                    ElementSize::InlineComposite if value.struct_pointer_count != 0 => {
+                        for i in 0..value.len() {
+                            let element = value.get_struct_element(i);
+                            for j in 0..usize::from(element.get_pointer_section_size()) {
+                                element
+                                    .get_pointer_field(j)
                                     .validate_capability_indices(count)?;
                             }
                         }
-                        ElementSize::InlineComposite if value.struct_pointer_count != 0 => {
-                            for i in 0..value.len() {
-                                let element = value.get_struct_element(i);
-                                for j in 0..usize::from(element.get_pointer_section_size()) {
-                                    element
-                                        .get_pointer_field(j)
-                                        .validate_capability_indices(count)?;
-                                }
-                            }
-                        }
-                        _ => (),
                     }
+                    _ => (),
                 }
             }
-            return Ok(());
         }
+        Ok(())
     }
 }
 
@@ -319,27 +351,30 @@ mod validation_tests {
                 traversal_limit_in_words: limit,
                 nesting_limit: nesting,
             };
-            let run = |direct| {
+            let run = |mode| {
                 let reader = Reader::new(SegmentArray::new(&segments), options);
                 let walk = || {
-                    reader
-                        .get_root::<any_pointer::Reader>()
-                        .and_then(|root| {
-                            if direct {
-                                root.validate_capability_indices(count)
-                            } else {
-                                general(root.reader, count)
-                            }
-                        })
-                        .map_err(|error| error.kind)
+                    let validate = |root: any_pointer::Reader<'_>| match mode % 3 {
+                        0 => general(root.reader, count),
+                        1 => root.validate_capability_indices(count),
+                        _ => root.reader.validate_capability_indices_default(count),
+                    };
+                    if mode < 3 {
+                        reader.get_root::<any_pointer::Reader>().and_then(validate)
+                    } else {
+                        reader.with_root(validate).and_then(core::convert::identity)
+                    }
+                    .map_err(|error| error.kind)
                 };
                 (walk(), walk())
             };
-            assert_eq!(
-                run(true),
-                run(false),
-                "limit={limit:?}, nesting={nesting}, count={count}"
-            );
+            for mode in 1..6 {
+                assert_eq!(
+                    run(mode),
+                    run(0),
+                    "mode={mode}, limit={limit:?}, nesting={nesting}, count={count}"
+                );
+            }
         }
     }
     #[test]

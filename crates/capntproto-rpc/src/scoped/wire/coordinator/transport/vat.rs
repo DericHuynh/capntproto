@@ -387,6 +387,19 @@ impl<V> ImportReceiver<resources::Import> for Reader<V> {
     }
 }
 impl<V> Input<resources::Import> for Reader<V> {
+    fn buffered_frame(&self) -> Option<&[u8]> {
+        if self.borrowed_frame && self.position == 0 {
+            self.input_frames.as_ref().and_then(|stream| stream.frame())
+        } else {
+            None
+        }
+    }
+    fn consume_buffered_frame(&mut self) {
+        self.position += self.remaining;
+        self.remaining = 0;
+        self.finish_frame();
+    }
+
     fn take_buffered_frame<'p>(
         &mut self,
         messages: &mut messages::Messages<'p, '_, '_>,
@@ -611,6 +624,7 @@ impl<V> Writer<V> {
         }
         Poll::Ready(Ok(()))
     }
+    #[inline(always)]
     fn enqueue(
         &mut self,
         mut frame: crate::OutgoingFrame,

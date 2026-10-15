@@ -5,10 +5,16 @@ use super::*;
 
 /// Caller-owned queue storage. Entries can only be created by consuming an
 /// offered message together with its resources; copied send IDs cannot enqueue.
-#[derive(Clone, Copy)]
 pub struct QueueEntry<'pool, R = ()> {
-    key: SendKey<'pool>,
+    message: QueuedMessage<'pool>,
     resources: R,
+}
+enum QueuedMessage<'pool> {
+    Tracked(SendKey<'pool>),
+    Owned {
+        lease: Lease<'pool>,
+        position: usize,
+    },
 }
 
 pub struct Queue<'pool, 'storage, R = ()> {
@@ -75,6 +81,7 @@ impl<'pool, 'storage, R> Queue<'pool, 'storage, R> {
     }
     /// Resources move into the reservation before any protocol state commits.
     /// Rejection or dropping an unused reservation releases them exactly once.
+    #[inline(always)]
     pub fn reserve_with(
         &mut self,
         resources: R,
@@ -122,9 +129,35 @@ impl<'pool, 'storage, R> Queue<'pool, 'storage, R> {
         if self.is_empty() {
             return Ok(None);
         }
-        let key = self.slots[self.head].as_ref().unwrap().key;
-        let send = messages.send_window(key)?;
-        Ok(Some(QueueWindow { queue: self, send }))
+        let (tracked, buffer, bytes, position) =
+            match &self.slots[self.head].as_ref().unwrap().message {
+                QueuedMessage::Tracked(key) => {
+                    let SendWindow {
+                        send,
+                        buffer,
+                        bytes,
+                        ..
+                    } = messages.send_window(*key)?;
+                    let position = send.expect("live window").position;
+                    (Some(send), buffer, bytes, position)
+                }
+                QueuedMessage::Owned { lease, position } => {
+                    let buffer = messages.buffers.at(lease.key.index);
+                    debug_assert_eq!(buffer.generation.get(), lease.key.generation);
+                    let State::Sealed { length, .. } = buffer.state.get() else {
+                        unreachable!("owned FIFO lease")
+                    };
+                    let bytes = Ref::map(buffer.bytes.borrow(), |bytes| &bytes[*position..length]);
+                    (None, buffer, bytes, *position)
+                }
+            };
+        Ok(Some(QueueWindow {
+            queue: self,
+            tracked,
+            buffer,
+            bytes,
+            position,
+        }))
     }
     /// Stop IO before terminal cleanup; this queue can never publish again.
     pub fn fail(&mut self) {
@@ -137,19 +170,24 @@ impl<'pool, 'storage, R> Queue<'pool, 'storage, R> {
         if self.is_empty() {
             return Ok(false);
         }
-        match messages.fail_send(
-            self.slots[self.head]
-                .as_ref()
-                .expect("occupied queue head")
-                .key,
-        ) {
-            // Public completion IDs may already have finished/failed this send.
-            // Its generation cannot authorize touching a reused send slot, but
-            // its FIFO entry still owns resources that terminal cleanup must drop.
-            Ok(()) | Err(Error::StaleSend) => (),
-            Err(error) => return Err(error),
+        if let QueuedMessage::Tracked(key) = &self.slots[self.head]
+            .as_ref()
+            .expect("occupied queue head")
+            .message
+        {
+            match messages.fail_send(*key) {
+                // A public send ID may already have completed. Its generation
+                // cannot authorize touching a reused slot during cleanup.
+                Ok(()) | Err(Error::StaleSend) => (),
+                Err(error) => return Err(error),
+            }
         }
+        let entry = self.slots[self.head].take().expect("occupied queue head");
         self.pop();
+        if let QueuedMessage::Owned { lease, .. } = entry.message {
+            messages.release(lease);
+        }
+        drop(entry.resources);
         Ok(true)
     }
     fn pop(&mut self) {
@@ -186,38 +224,77 @@ impl<'pool, R> QueueSlot<'_, 'pool, '_, R> {
         let key = messages.accept(offer);
         let index = policy::ring_offset(self.queue.head, self.queue.len, self.queue.slots.len());
         self.queue.slots[index] = Some(QueueEntry {
-            key,
+            message: QueuedMessage::Tracked(key),
             resources: self.resources,
         });
         self.queue.len += 1;
         key
     }
+
+    /// Transfer a lease directly to this reserved FIFO slot. Capacity is bounded
+    /// by this queue; no separately addressable send ID or Messages send slot is
+    /// created. The queue owns progress, resources and terminal cleanup. Partial
+    /// writes cannot expose a successor, and dropping a pending window preserves
+    /// the lease. Stop IO and discard failed queues before reusing their pool.
+    pub fn accept_owned(self, lease: Lease<'pool>) {
+        let index = policy::ring_offset(self.queue.head, self.queue.len, self.queue.slots.len());
+        self.queue.slots[index] = Some(QueueEntry {
+            message: QueuedMessage::Owned { lease, position: 0 },
+            resources: self.resources,
+        });
+        self.queue.len += 1;
+    }
 }
 
 pub struct QueueWindow<'a, 'pool, 'queue, 'buffers, 'bytes, R = ()> {
     queue: &'a mut Queue<'pool, 'queue, R>,
-    send: SendWindow<'a, 'pool, 'buffers, 'bytes>,
+    tracked: Option<&'a mut Option<Send>>,
+    buffer: &'buffers Buffer<'bytes>,
+    bytes: Ref<'buffers, [u8]>,
+    position: usize,
 }
 impl<R> QueueWindow<'_, '_, '_, '_, '_, R> {
     pub fn bytes(&self) -> &[u8] {
-        self.send.bytes()
+        &self.bytes
     }
     #[cfg(feature = "alloc")]
     pub fn share(&self) -> Option<SharedBytes> {
-        self.send.share()
+        self.buffer
+            .bytes
+            .borrow()
+            .share(self.position..self.position + self.bytes.len())
     }
     /// Resources are offered only with the first byte. After any positive
     /// accepted write this returns None, even if the frame remains incomplete.
     pub fn resources(&self) -> Option<&R> {
         let entry = self.queue.slots[self.queue.head].as_ref().unwrap();
-        self.send.is_start().then_some(&entry.resources)
+        (self.position == 0).then_some(&entry.resources)
     }
     /// Complete the oldest frame before allowing access to its successor.
     /// Invalid counts preserve both byte progress and attachment eligibility.
     pub fn advance(self, count: usize) -> Result<bool, Error> {
-        let complete = self.send.advance(count)?;
+        let (next, complete) = policy::advance(self.position, self.bytes.len(), count)?;
+        drop(self.bytes);
         if complete {
+            let state = policy::release(self.buffer.state.get(), self.tracked.is_some());
+            self.buffer.state.set(if policy::reclaimable(state) {
+                State::Free
+            } else {
+                state
+            });
+            if let Some(send) = self.tracked {
+                send.take();
+            }
             self.queue.pop();
+        } else if let Some(send) = self.tracked {
+            send.as_mut().expect("live window").position = next;
+        } else {
+            let QueuedMessage::Owned { position, .. } =
+                &mut self.queue.slots[self.queue.head].as_mut().unwrap().message
+            else {
+                unreachable!("owned FIFO window")
+            };
+            *position = next;
         }
         Ok(complete)
     }

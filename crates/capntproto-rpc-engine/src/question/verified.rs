@@ -102,6 +102,22 @@ proof fn safe_effect(s: Trace, t: Trace, effect: Release)
         effect.finish is Some ==> effect.finish.unwrap().release_result_caps == !s.returned,
 {}
 
+/// An exclusive validated noFinishNeeded Return followed by the last local
+/// release has no observable intermediate state. The table may discard its
+/// record directly when it has no pre-existing Finish obligation.
+pub proof fn final_return_needs_no_intermediate_record(
+    before: Question, returned: Question, released: Question,
+    delivery: Delivery, effect: Release,
+)
+    requires
+        returned_contract(before, returned, true, Ok(delivery)),
+        release_contract(returned, released, effect),
+    ensures
+        effect.reclaim,
+        effect.finish.is_none(),
+        !awaiting_spec(released),
+{}
+
 /// Conditional liveness: eventual Return processing and release of local
 /// interest require caller fairness; no network-delivery assumption is hidden.
 proof fn progress(spec: TempPred<Trace>)

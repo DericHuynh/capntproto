@@ -531,7 +531,7 @@
     {
       "name": "resend-resources-after-partial-write",
       "source": "src/messages/queue.rs",
-      "from": "self.send.is_start().then_some(&entry.resources)",
+      "from": "(self.position == 0).then_some(&entry.resources)",
       "to": "Some(&entry.resources)",
       "harness": "messages::queue::proofs::resources_are_offered_only_before_first_accepted_byte",
       "expected_check": "attachments stop exactly after first accepted byte"

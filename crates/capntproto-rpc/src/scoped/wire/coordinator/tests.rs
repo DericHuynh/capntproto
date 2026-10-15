@@ -1,6 +1,7 @@
 use super::*;
 mod lifecycle;
 mod network;
+mod plain;
 mod policy;
 use capntproto_rpc_engine::{connection as storage, ids::WireId, imports};
 use capntproto_rpc_wire::clients::Route;
@@ -62,9 +63,17 @@ struct Policy {
     wake: Option<Waker>,
     wake_during_poll: bool,
     publish_on_poll: bool,
+    preserve_plain: bool,
+    notify_receive: bool,
     idle_transitions: Vec<bool>,
 }
 impl<'p, 'id, 's> Control<'p, 'id, 's, (), u8, 8, 8> for Policy {
+    fn plain_call_preserves_idle(&self) -> bool {
+        self.preserve_plain
+    }
+    fn direct_publication_preserves_idle(&self) -> bool {
+        self.preserve_plain
+    }
     fn received(
         &mut self,
         event: connection::Received<'id, server::Results>,
@@ -72,6 +81,9 @@ impl<'p, 'id, 's> Control<'p, 'id, 's, (), u8, 8, 8> for Policy {
         _: &mut messages::Messages<'p, '_, '_>,
         _: &mut messages::Queue<'p, '_>,
     ) -> capnp::Result<()> {
+        if self.notify_receive {
+            self.wake.as_ref().expect("registered policy").wake_by_ref();
+        }
         match event {
             connection::Received::Bootstrap(_)
             | connection::Received::Network
@@ -1824,7 +1836,7 @@ fn outgoing_notification_coalesces_without_losing_general_work() {
         }
     }
     let state = Arc::<WorkWake>::default();
-    let outgoing = Waker::from(Arc::new(EnqueueWake(state.clone())));
+    let outgoing = EnqueueWake(state.clone());
     let general = Waker::from(state.clone());
     let first = Arc::new(Count(AtomicUsize::new(0)));
     let second = Arc::new(Count(AtomicUsize::new(0)));
@@ -1833,7 +1845,7 @@ fn outgoing_notification_coalesces_without_losing_general_work() {
         state.changed.store(0, Ordering::Release);
         let before = first.0.load(Ordering::SeqCst);
         if outgoing_first {
-            outgoing.wake_by_ref();
+            outgoing.notify();
         } else {
             general.wake_by_ref();
         }
@@ -1844,7 +1856,7 @@ fn outgoing_notification_coalesces_without_losing_general_work() {
         if outgoing_first {
             general.wake_by_ref();
         } else {
-            outgoing.wake_by_ref();
+            outgoing.notify();
         }
         assert_eq!(state.changed.load(Ordering::Acquire), 0x3f);
         assert_eq!(first.0.load(Ordering::SeqCst), before + 1);
@@ -1852,7 +1864,7 @@ fn outgoing_notification_coalesces_without_losing_general_work() {
         // outgoing-only notification must reach the new task, not the old one.
         state.parent.register(&Waker::from(second.clone()));
         assert_eq!(state.changed.swap(0, Ordering::AcqRel), 0x3f);
-        outgoing.wake_by_ref();
+        outgoing.notify();
         assert_eq!(state.changed.load(Ordering::Acquire), 4);
         assert_eq!(first.0.load(Ordering::SeqCst), before + 1);
     }

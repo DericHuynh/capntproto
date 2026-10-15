@@ -76,6 +76,66 @@ pub(crate) struct Params {
 }
 
 impl Params {
+    #[inline(always)]
+    pub(crate) fn scoped(
+        interface_id: u64,
+        method_id: u16,
+        allocator: message::HeapAllocator,
+        // None is a local request. Some(None) needs a fresh remote envelope.
+        envelope: Option<Option<&capntproto_rpc_wire::owned::connection::PreparedCallTemplate>>,
+    ) -> Self {
+        use capntproto_rpc_wire::owned::connection::PreparedCall;
+        let is_envelope = envelope.is_some();
+        let message = match envelope {
+            None => RequestMessage::Root(message::Builder::new(allocator)),
+            Some(template) => RequestMessage::Envelope(
+                match template {
+                    Some(template) => {
+                        PreparedCall::from_template(template, allocator, interface_id, method_id)
+                    }
+                    None => {
+                        PreparedCall::new(message::Builder::new(allocator), interface_id, method_id)
+                    }
+                }
+                .expect("private request envelope"),
+            ),
+        };
+        Self {
+            request: message,
+            cap_table: Vec::new(),
+            envelope: is_envelope,
+        }
+    }
+    pub(crate) fn builder(&mut self) -> any_pointer::Builder<'_> {
+        let mut result = match &mut self.request {
+            RequestMessage::Root(message) => message.get_root::<any_pointer::Builder>().unwrap(),
+            RequestMessage::Envelope(message) => message.params(),
+        };
+        result.imbue_mut(&mut self.cap_table);
+        result
+    }
+    pub(crate) fn into_request(
+        self,
+        interface_id: u64,
+        method_id: u16,
+        hints: CallHints,
+        client: crate::scoped::Hook,
+        context: Option<Rc<dyn Any>>,
+        third_party: Option<Rc<message::Builder<message::HeapAllocator>>>,
+    ) -> Request {
+        Request {
+            third_party,
+            context,
+            message: self.request,
+            cap_table: self.cap_table,
+            interface_id,
+            method_id,
+            client: Some(RequestClient::Scoped(client)),
+            hints,
+            is_streaming: false,
+        }
+    }
+
     pub(crate) fn prepared_call(
         &self,
     ) -> Option<&capntproto_rpc_wire::owned::connection::PreparedCall<message::HeapAllocator>> {
@@ -550,45 +610,6 @@ impl Request {
             hints: CallHints::default(),
             is_streaming: false,
         }
-    }
-    pub(crate) fn scoped(
-        interface_id: u64,
-        method_id: u16,
-        allocator: message::HeapAllocator,
-        client: crate::scoped::Hook,
-        context: Option<Rc<dyn Any>>,
-        // None is a local request. Some(None) needs a fresh remote envelope.
-        envelope: Option<Option<&capntproto_rpc_wire::owned::connection::PreparedCallTemplate>>,
-        hints: CallHints,
-    ) -> Box<Self> {
-        use capntproto_rpc_wire::owned::connection::PreparedCall;
-        let message = match envelope {
-            None => RequestMessage::Root(message::Builder::new(allocator)),
-            Some(template) => RequestMessage::Envelope(
-                match template {
-                    Some(template) => {
-                        PreparedCall::from_template(template, allocator, interface_id, method_id)
-                    }
-                    None => {
-                        PreparedCall::new(message::Builder::new(allocator), interface_id, method_id)
-                    }
-                }
-                .expect("private request envelope"),
-            ),
-        };
-        // Build the final owner once, rather than moving a full request through
-        // context/envelope decorators and allocating another endpoint wrapper.
-        Box::new(Self {
-            message,
-            third_party: None,
-            context,
-            cap_table: Vec::new(),
-            interface_id,
-            method_id,
-            client: Some(RequestClient::Scoped(client)),
-            hints,
-            is_streaming: false,
-        })
     }
 }
 
@@ -1104,7 +1125,7 @@ where
         };
 
         let permits_immediate_poll = results.permits_immediate_poll();
-        let guard = results.cancellation_guard();
+        let guard = results.cancellation_context();
         let executor = state
             .borrow()
             .executor
@@ -1551,6 +1572,31 @@ where
                 call.await
             }
         })
+    }
+
+    fn call_during_dispatch(
+        &self,
+        interface_id: u64,
+        method_id: u16,
+        params: Box<dyn ParamsHook>,
+        results: Box<dyn ResultsHook>,
+        hints: CallHints,
+    ) -> Promise<(), Error> {
+        if let Some(target) = self.get_resolved() {
+            return target.call_during_dispatch(interface_id, method_id, params, results, hints);
+        }
+        let state = self.state.clone();
+        let task = state.borrow().resolve_task.clone();
+        let call = ClientState::dispatch_or_queue(state, interface_id, method_id, params, results);
+        match task {
+            None => call,
+            Some(task) => Promise::from_future(async move {
+                match futures::future::select(call, task).await {
+                    futures::future::Either::Left((result, _)) => result,
+                    futures::future::Either::Right((_, call)) => call.await,
+                }
+            }),
+        }
     }
 
     fn get_ptr(&self) -> usize {

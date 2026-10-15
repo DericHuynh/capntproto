@@ -13,6 +13,56 @@ fn sends(maximum: usize) -> Growth {
 }
 
 #[test]
+fn direct_shared_copy_preserves_bounds_ownership_and_generation_exhaustion() {
+    let mut pool = GrowingBuffers::new(1, 16, 23);
+    let shared = with_growing_messages(&mut pool, sends(0), |messages| {
+        let shared = messages.copy_shared(b"immutable").unwrap().unwrap();
+        assert_eq!(&*shared, b"immutable");
+        assert_eq!(
+            messages.copy_shared(b"overwrite").err(),
+            Some(Error::NoBuffer)
+        );
+        assert_eq!(messages.reserve(1).unwrap_err(), Error::NoBuffer);
+        shared
+    })
+    .unwrap();
+    with_growing_messages(&mut pool, sends(0), |messages| {
+        assert_eq!(messages.copy_shared(b"x").err(), Some(Error::NoBuffer));
+        let address = shared.as_ptr();
+        drop(shared);
+        let mut replacement = None;
+        let usage = allocation_counter::measure(|| {
+            replacement = messages.copy_shared(b"new").unwrap();
+        });
+        assert_eq!(usage.count_total, 0);
+        let replacement = replacement.unwrap();
+        assert_eq!(replacement.as_ptr(), address);
+        assert_eq!(&*replacement, b"new");
+        drop(replacement);
+        let writer = messages.reserve(9).unwrap();
+        assert!(messages.write(&writer).iter().all(|byte| *byte == 0));
+        messages.discard(writer);
+        messages.buffers[0].generation.set(u64::MAX);
+        assert_eq!(
+            messages.copy_shared(b"x").err(),
+            Some(Error::GenerationExhausted)
+        );
+    })
+    .unwrap();
+    let mut bytes = [0xa5; 16];
+    let mut buffers = [Buffer::new(&mut bytes)];
+    with_messages(&mut buffers, &mut [], |messages| {
+        let usage = allocation_counter::measure(|| {
+            assert!(messages.copy_shared(b"x").unwrap().is_none());
+        });
+        assert_eq!(usage.count_total, 0);
+        assert_eq!(messages.buffers[0].generation.get(), 0);
+        assert_eq!(&**messages.buffers[0].bytes.borrow(), &[0xa5; 16]);
+    })
+    .unwrap();
+}
+
+#[test]
 fn shared_bytes_pin_capacity_across_send_completion_and_scope_teardown() {
     let mut pool = GrowingBuffers::new(1, 16, 23);
     let shared = with_growing_messages(&mut pool, sends(1), |messages| {

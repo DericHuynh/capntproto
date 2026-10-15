@@ -1,4 +1,73 @@
 use super::*;
+
+#[test]
+fn cached_results_clear_state_and_never_reuse_retained_owners() {
+    let cache = Cache::default();
+    let first = cache.acquire(None, None);
+    let retained = first.clone();
+    first.0.method.set(Some(DynamicCall::default()));
+    first.0.complete(Err(Error::failed("old result".into())));
+    cache.recycle(first);
+    let second = cache.acquire(None, None);
+    assert!(!Rc::ptr_eq(&second.0, &retained.0));
+    assert!(second.0.method.get().is_none());
+    assert!(second.0.completion.borrow().is_none());
+    assert_eq!(retained.failure().unwrap().extra, "old result");
+    drop(retained);
+    let pointer = Rc::as_ptr(&second.0);
+    second.0.method.set(Some(DynamicCall::default()));
+    second.0.transferred.set(true);
+    second.0.trace_prepared.set(true);
+    *second.0.trace.borrow_mut() = Some("old trace".into());
+    second.0.complete(Ok(()));
+    cache.recycle(second);
+    let third = cache.acquire(None, None);
+    assert_eq!(Rc::as_ptr(&third.0), pointer);
+    assert!(third.0.method.get().is_none());
+    assert!(third.0.completion.borrow().is_none());
+    assert!(!third.0.transferred.get());
+    assert!(!third.0.trace_prepared.get());
+    assert!(third.0.trace.borrow().is_none());
+}
+
+#[test]
+fn shared_cancellation_guard_retains_context_and_prevents_cache_reuse() {
+    struct Lifetime(Rc<Cell<bool>>);
+    impl Drop for Lifetime {
+        fn drop(&mut self) {
+            self.0.set(true);
+        }
+    }
+    let cache = Cache::default();
+    let dropped = Rc::new(Cell::new(false));
+    let results = cache.acquire(None, None);
+    *results.0.context.borrow_mut() = Some(Rc::new(Lifetime(dropped.clone())));
+    let address = Rc::as_ptr(&results.0);
+    let hook = Hook {
+        results: results.clone(),
+        message: None,
+        caps: vec![],
+        executor: None,
+    };
+    let guard = hook
+        .cancellation_context()
+        .expect("protected execution owner");
+    let capnp::private::capability::CancellationGuard::Shared(owner) = &guard else {
+        panic!("results share their existing context allocation");
+    };
+    assert_eq!(
+        owner.as_ref().downcast_ref::<State>().unwrap() as *const State,
+        address
+    );
+    drop(hook);
+    cache.recycle(results);
+    assert!(!dropped.get());
+    let next = cache.acquire(None, None);
+    assert_ne!(Rc::as_ptr(&next.0), address);
+    drop(guard);
+    assert!(dropped.get());
+}
+
 use capntproto_rpc_engine::{
     clients, connection as storage,
     ids::{ImportId, QuestionId, WireId},

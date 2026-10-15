@@ -82,6 +82,7 @@ impl<A: capnp::message::Allocator> PreparedReturn<A> {
         };
         Ok(payload?.get_content())
     }
+    #[inline(always)]
     fn copy<'pool>(
         &self,
         answer: AnswerId,
@@ -194,6 +195,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     /// ordinary Return transition; unavailable fast paths leave the answer
     /// untouched. The caller must still release its running request.
     #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
     pub fn try_send_answer_prepared<B: capnp::message::Allocator, R>(
         &mut self,
         request: &Request<'pool, 'id, I, CAPS, PATH>,
@@ -225,11 +227,20 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         else {
             return Ok(None);
         };
-        let offer = frame.offer(messages).map_err(Error::Input)?;
-        let retired = pending
-            .accept()
-            .expect("no pipeline retains the omitted-Finish answer");
-        output.accept(messages, offer);
+        let retired = if self.owned_output {
+            let retired = pending
+                .accept()
+                .expect("no pipeline retains the omitted-Finish answer");
+            output.accept_owned(frame.lease);
+            retired
+        } else {
+            let offer = frame.offer(messages).map_err(Error::Input)?;
+            let retired = pending
+                .accept()
+                .expect("no pipeline retains the omitted-Finish answer");
+            output.accept(messages, offer);
+            retired
+        };
         Ok(Some(
             retired
                 .release(messages)

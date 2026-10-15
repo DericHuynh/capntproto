@@ -1,11 +1,11 @@
 //! Local broadcast of the connection's terminal error. Receivers share no
 //! cross-thread mutex or atomic reference count. Waiter slots are recycled when
 //! calls finish, and every callback runs after releasing the state borrow.
-use super::{completion, Context, Error, Future, Pin, Poll, Rc, RefCell, Waker};
+use super::{completion, Cell, Context, Error, Future, Pin, Poll, Rc, RefCell, Waker};
 
 enum Notification {
     Task(Waker),
-    Response(std::rc::Weak<RefCell<super::response::State>>),
+    Response(std::rc::Weak<super::response::State>),
 }
 impl Notification {
     fn wake(self) {
@@ -24,13 +24,20 @@ struct Waiter {
     next: Option<usize>,
 }
 #[derive(Default)]
-struct State {
+struct Inner {
     reason: Option<Error>,
     waiters: Vec<Waiter>,
     free: Option<usize>,
 }
+#[derive(Default)]
+struct State {
+    // Terminal status is monotonic. Polling cancellation should not borrow the
+    // callback-bearing waiter table merely to inspect this independent bit.
+    closed: Cell<bool>,
+    inner: RefCell<Inner>,
+}
 pub(super) struct Receiver {
-    state: Rc<RefCell<State>>,
+    state: Rc<State>,
     slot: Option<usize>,
 }
 impl Clone for Receiver {
@@ -43,15 +50,15 @@ impl Clone for Receiver {
 }
 impl Receiver {
     pub(super) fn is_closed(&self) -> bool {
-        self.state.borrow().reason.is_some()
+        self.state.closed.get()
     }
     /// Direct completions already retain their receiving task's waker. Register
     /// that state weakly instead of cloning a second copy of the same waker.
-    pub(super) fn watch_response(&mut self, response: &Rc<RefCell<super::response::State>>) {
+    pub(super) fn watch_response(&mut self, response: &Rc<super::response::State>) {
         if self.slot.is_some() {
             return;
         }
-        let mut state = self.state.borrow_mut();
+        let mut state = self.state.inner.borrow_mut();
         if state.reason.is_some() {
             return;
         }
@@ -73,7 +80,7 @@ impl Receiver {
         self.slot = Some(slot);
     }
     pub(super) fn reason(&self) -> Option<Error> {
-        self.state.borrow().reason.clone()
+        self.state.inner.borrow().reason.clone()
     }
     pub(super) fn new() -> Self {
         Self {
@@ -83,11 +90,12 @@ impl Receiver {
     }
     pub(super) fn close(&self, error: Error) {
         let waiters = {
-            let mut state = self.state.borrow_mut();
+            let mut state = self.state.inner.borrow_mut();
             if state.reason.is_some() {
                 return;
             }
             state.reason = Some(error);
+            self.state.closed.set(true);
             state.free = None;
             std::mem::take(&mut state.waiters)
         };
@@ -100,7 +108,7 @@ impl Future for Receiver {
     type Output = Result<Error, completion::Error>;
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         {
-            let state = self.state.borrow();
+            let state = self.state.inner.borrow();
             if let Some(reason) = &state.reason {
                 return Poll::Ready(Ok(reason.clone()));
             }
@@ -115,7 +123,7 @@ impl Future for Receiver {
         // Waker::clone can run caller code, including closing the connection.
         let wake = cx.waker().clone();
         let (slot, old) = {
-            let mut state = self.state.borrow_mut();
+            let mut state = self.state.inner.borrow_mut();
             if let Some(reason) = &state.reason {
                 return Poll::Ready(Ok(reason.clone()));
             }
@@ -144,7 +152,7 @@ impl Future for Receiver {
         self.slot = Some(slot);
         drop(old);
         // Replacing a waker can also close the connection synchronously.
-        match &self.state.borrow().reason {
+        match &self.state.inner.borrow().reason {
             Some(reason) => Poll::Ready(Ok(reason.clone())),
             None => Poll::Pending,
         }
@@ -156,7 +164,7 @@ impl Drop for Receiver {
             return;
         };
         let old = {
-            let mut state = self.state.borrow_mut();
+            let mut state = self.state.inner.borrow_mut();
             if state.reason.is_some() {
                 return;
             }
@@ -290,7 +298,7 @@ mod tests {
                 .poll(&mut Context::from_waker(&waker))
                 .is_pending());
         }
-        assert_eq!(source.state.borrow().waiters.len(), 1);
+        assert_eq!(source.state.inner.borrow().waiters.len(), 1);
         source.close(Error::disconnected("closed".into()));
         assert_eq!(wakes.0.load(Ordering::SeqCst), 0);
     }

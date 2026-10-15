@@ -4,20 +4,25 @@ use super::*;
 fn fifo_never_overtakes_partial_frame() {
     let count: usize = kani::any();
     kani::assume(count <= 2);
+    let owned: bool = kani::any();
     let mut a = [0; 2];
     let mut b = [0; 2];
     let mut buffers = [Buffer::new(&mut a), Buffer::new(&mut b)];
     let mut sends = [SendSlot::EMPTY, SendSlot::EMPTY];
     with_messages(&mut buffers, &mut sends, |messages| {
-        let mut slots = [None; 2];
+        let mut slots = [const { None }; 2];
         let mut queue = Queue::new(&mut slots).unwrap();
         for bytes in [[3u8, 5], [7, 9]] {
             let writer = messages.reserve(2).unwrap();
             messages.write(&writer).copy_from_slice(&bytes);
             let lease = messages.seal(writer, 2).unwrap();
-            let offer = messages.offer(&lease).unwrap();
-            queue.reserve().unwrap().accept(messages, offer);
-            messages.release(lease);
+            if owned {
+                queue.reserve().unwrap().accept_owned(lease);
+            } else {
+                let offer = messages.offer(&lease).unwrap();
+                queue.reserve().unwrap().accept(messages, offer);
+                messages.release(lease);
+            }
         }
         let result = queue.window(messages).unwrap().unwrap().advance(count);
         let expected: &[u8] = match count {
@@ -74,6 +79,7 @@ fn terminal_queue_discards_without_releasing_reader() {
 fn resources_are_offered_only_before_first_accepted_byte() {
     let count: usize = kani::any();
     kani::assume(count <= 4);
+    let owned: bool = kani::any();
     let mut bytes = [0; 3];
     let mut buffers = [Buffer::new(&mut bytes)];
     with_messages(&mut buffers, &mut [SendSlot::EMPTY], |messages| {
@@ -81,9 +87,13 @@ fn resources_are_offered_only_before_first_accepted_byte() {
         let mut queue = Queue::with_resources(&mut entries).unwrap();
         let writer = messages.reserve(3).unwrap();
         let lease = messages.seal(writer, 3).unwrap();
-        let offer = messages.offer(&lease).unwrap();
-        queue.reserve_with(71u8).unwrap().accept(messages, offer);
-        messages.release(lease);
+        if owned {
+            queue.reserve_with(71u8).unwrap().accept_owned(lease);
+        } else {
+            let offer = messages.offer(&lease).unwrap();
+            queue.reserve_with(71u8).unwrap().accept(messages, offer);
+            messages.release(lease);
+        }
         assert_eq!(
             queue.window(messages).unwrap().unwrap().resources(),
             Some(&71)
