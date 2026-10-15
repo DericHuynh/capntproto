@@ -137,6 +137,26 @@ impl<A: capnp::message::Allocator> PreparedReturn<A> {
                 .map_err(super::super::Error::Storage)?;
             return Ok(Some(Frame::new(lease, options)));
         }
+        if let [first, second] = &*segments {
+            // Large Data/Text results commonly spill from the envelope into a
+            // second segment. Overwrite the complete frame transactionally,
+            // just like the single-segment path, instead of clearing a large
+            // reusable buffer immediately before copying every byte into it.
+            // The table includes its required zero padding; far pointers keep
+            // their original segment IDs and offsets.
+            let mut prefix = [0; 16];
+            prefix[..4].copy_from_slice(&1u32.to_le_bytes());
+            prefix[4..8].copy_from_slice(&((first.len() / 8) as u32).to_le_bytes());
+            prefix[8..12].copy_from_slice(&((second.len() / 8) as u32).to_le_bytes());
+            let lease = messages
+                .copy_from_parts(&[&prefix, first, second], |bytes| {
+                    let returned = self.returned + 16;
+                    bytes[returned..returned + 4].copy_from_slice(&answer.to_wire().to_le_bytes());
+                    bytes[returned + 4] = (bytes[returned + 4] & !2) | (u8::from(no_finish) << 1);
+                })
+                .map_err(super::super::Error::Storage)?;
+            return Ok(Some(Frame::new(lease, options)));
+        }
         let mut writer = messages
             .reserve_exact(length)
             .map_err(super::super::Error::Storage)?;
@@ -380,6 +400,71 @@ mod tests {
             second_frame.release(messages);
         })
         .unwrap();
+    }
+    #[test]
+    fn two_segment_returns_overwrite_reused_storage_and_preserve_far_data() {
+        let payload: alloc::vec::Vec<u8> = (0..4096).map(|i| (i % 251) as u8).collect();
+        let mut source = PreparedReturn::from_template(
+            &PreparedReturnTemplate::default(),
+            capnp::message::HeapAllocator::new().first_segment_words(16),
+        );
+        source
+            .results()
+            .set_as::<capnp::data::Owned>(payload.as_slice())
+            .unwrap();
+        assert_eq!(source.message.message().get_segments_for_output().len(), 2);
+        let mut words = [word(0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa); 1024];
+        let mut buffers = [messages::Buffer::new(Word::words_to_bytes_mut(&mut words))];
+        messages::with_messages(&mut buffers, &mut [], |messages| {
+            for (id, no_finish) in [(u32::MAX, true), (0, false)] {
+                let frame = source
+                    .copy(
+                        AnswerId::from_wire(id),
+                        no_finish,
+                        messages,
+                        Default::default(),
+                    )
+                    .unwrap()
+                    .unwrap();
+                frame
+                    .with(messages, |root| {
+                        let rpc_capnp::message::Return(returned) = root.which().unwrap() else {
+                            panic!("Return")
+                        };
+                        let returned = returned.unwrap();
+                        assert_eq!(returned.get_answer_id(), id);
+                        assert_eq!(returned.get_no_finish_needed(), no_finish);
+                        assert!(!returned.get_release_param_caps());
+                        let rpc_capnp::return_::Results(results) = returned.which().unwrap() else {
+                            panic!("results")
+                        };
+                        assert_eq!(
+                            results
+                                .unwrap()
+                                .get_content()
+                                .get_as::<capnp::data::Reader>()
+                                .unwrap(),
+                            payload
+                        );
+                    })
+                    .unwrap();
+                frame.release(messages);
+            }
+        })
+        .unwrap();
+        assert_eq!(
+            &Word::words_to_bytes(&words)[12..16],
+            &[0; 4],
+            "table padding cannot expose old bytes"
+        );
+        assert_eq!(
+            source
+                .reader()
+                .unwrap()
+                .get_as::<capnp::data::Reader>()
+                .unwrap(),
+            payload
+        );
     }
     #[test]
     fn segmented_returns_preserve_far_pointers_and_respect_the_reader_segment_limit() {

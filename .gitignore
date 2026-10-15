@@ -67,6 +67,11 @@ _apalache-tmp/
 /research/reports/rpc-pipeline/2026-10-01/*
 !/research/reports/rpc-pipeline/2026-10-01/environment.json
 !/research/reports/rpc-pipeline/2026-10-01/results.json
+!/research/reports/portable-performance/
+/research/reports/portable-performance/*
+!/research/reports/portable-performance/2026-10-15/
+/research/reports/portable-performance/2026-10-15/*
+!/research/reports/portable-performance/2026-10-15/baseline.json
 
 # Locally discovered fuzz inputs; checked-in upstream corpora remain included.
 /fuzz/artifacts/

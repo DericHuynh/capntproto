@@ -2734,6 +2734,81 @@ These results qualify this local sequential loopback workload, not encrypted
 transport performance, concurrent throughput, other hosts or the incomplete
 allocation-free RPC profile.
 
+### Portable workflow gap (October 15, 2026)
+
+[Gap #11](https://github.com/DericHuynh/capntproto/issues/11) targets pooled p50
+≤ **1.05 × min(legacy, C++) for each matching workflow**. The
+[roadmap baseline](Roadmap.md#portable-rpc-performance-gap) records seven failing
+remote workloads from source `2c9548c998fb`. Remote report JSON now includes an
+advisory `portable_target` with each cell's faster reference, ratio and decision;
+the comparison uses integer cross-products and includes the exact 5% boundary.
+Missing or mismatched trials still fail matrix validation before any report.
+
+The first implementation slice keeps direct reply delivery available beyond
+eight outstanding calls. A lazily allocated owner index is bounded by admitted
+calls, validates the full question key/generation, and removes entries on reply,
+cancellation and ordinary completion. Small calls retain their short scan;
+capability and queued paths keep their existing protocol handling. Two-segment
+prepared Returns now overwrite the complete reusable frame, including initialized
+segment-table padding, without clearing the payload immediately before copying
+it. Reader limits, capability validation, far pointers and answer authority are
+unchanged.
+
+Local complete-process Callgrind diagnostics used ten warmups and fifty retained
+workflows with both peers profiled. These totals include startup and setup; they
+are neither per-request costs nor latency qualification:
+
+| Workflow / process | Before instructions | After instructions | Change |
+| --- | ---: | ---: | ---: |
+| fanout-32 / client | 89,380,001 | 78,211,868 | −12.50% |
+| fanout-32 / server | 24,650,717 | 25,530,171 | +3.57% |
+| bulk-4m / client | 217,241,931 | 217,433,092 | +0.09% |
+| bulk-4m / server | 123,907,830 | 110,336,423 | −10.95% |
+| callback / client | 7,624,223 | 7,620,045 | −0.05% |
+| callback / server | 5,831,077 | 5,834,358 | +0.06% |
+
+The before profile attributes 11.4% of fan-out client instructions directly to
+the call scanner, with additional work in repeated `take_output` polling. Copies
+and zeroing account for 97.0% of the 4-MiB server's instructions. The new return
+path removes one redundant clearing pass; receive-buffer allocation/zeroing,
+incoming frame copies and outgoing Call reconstruction remain follow-up work.
+Capability-bearing workflows and output batching also remain open.
+
+The same final driver executable ran the empty TCP echo fixture with 100 warmups
+and 1,000 retained calls. Portable/legacy totals were **17,705,930 / 17,134,501
+client (1.033350×)** and **16,402,479 / 16,044,316 server (1.022324×)**, below the
+separate 1.05× instruction limit on both peers. This uses the driver's `server
+tcp` and `measure tcp` entry points with the same echo fixture. It does not
+supersede the earlier pinned-binary qualification below.
+
+The environment was a shared five-vCPU Linux VM in Debian 13 containers, Rust
+1.97.0 with auditable Cargo, ordinary release/fat LTO, one codegen unit and overflow
+checks, Valgrind 3.24.0, and Clang 19 for the pinned C++ reference. GCC 14.2 hit its
+known internal compiler error building that reference. Local latency runs retain
+all twelve workflows, five rotating repetitions, 250 warmups and 1,000 samples,
+with server/client processes pinned to CPUs 1/2. Repetitions exhibit substantial
+latency shifts; these local results do not close the dedicated two-host gap.
+
+The final latency run also shows why instruction reductions alone are
+insufficient: fan-out pooled p50 rose from **227.515 to 283.768 µs (+24.7%)**,
+empty unary rose from **20.811 to 23.004 µs (+10.5%)**, and 4-MiB echo changed
+from **5,921.544 to 5,992.361 µs (+1.2%)**. Only two of twelve local workflow
+cells meet the faster-reference target in that run. Retain this slice as an
+optimization candidate, not a demonstrated latency improvement. In particular,
+investigate per-reply executor yielding and remaining scans under fan-out before
+qualifying the owner-index change. All samples, including regressions, remain in
+the local evidence bundle.
+
+Final executable SHA-256:
+`f7737934a089a190bf3ad1f58609bd62cb32079fed94bc5a571a110b73a206cc`.
+Raw local trials, profiles, executable identities and experiment scripts are
+retained under `target/portable-performance-20261015/`. Validation passed 253
+RPC unit tests, 119 wire unit tests, four remote-report tests and 72 workflow
+interoperability smoke cases across portable/legacy combinations and both
+portable/C++ directions, including 4-MiB payloads. Clippy, formatting and wiki
+checks passed. Full workspace/Miri/formal campaigns and a new dedicated latency
+campaign are still required for broader qualification.
+
 ### Portable and legacy instruction qualification
 
 The October 15 optimization batch meets a **1.05× portable/legacy instruction

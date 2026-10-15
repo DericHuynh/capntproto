@@ -1,0 +1,207 @@
+{
+  "status": "open",
+  "recorded_date": "2026-10-15",
+  "metric": "pooled p50 per matching plaintext TCP workflow",
+  "maximum_ratio": 1.05,
+  "reference_rule": "min(legacy_p50_ns, cpp_p50_ns) from the same campaign",
+  "measured_commit": "2c9548c998fb4a42153bab51844771be60fba865",
+  "run_url": "https://github.com/DericHuynh/capntproto/actions/runs/38763852450",
+  "artifact_id": 11996354058,
+  "artifact_sha256": "9a4cdde0b60d0a9c2b0b9eaba459e277ccc63d89383e302d8d4444de781b015d",
+  "source_fingerprint": "8e271aff22c866b6079e37d986646fdbd910d013df07b345dc7671df286e2383",
+  "sampling": {
+    "workflow_version": 3,
+    "repetitions": 5,
+    "warmup_per_trial": 250,
+    "retained_per_trial": 1000,
+    "topology": "two dedicated hosts; direct private IPv4 TCP"
+  },
+  "limits": [
+    "Whole fan-out completion is measured, not per-call latency.",
+    "This baseline is frozen; source changes require new matched measurements.",
+    "Tail latency, throughput, CPU and RSS must remain visible; p50 is the optimization target.",
+    "The legacy-only loopback dashboard cannot qualify the portable target."
+  ],
+  "rows": [
+    {
+      "case": {
+        "name": "unary-empty",
+        "payload_bytes": 0,
+        "rpcs_per_iteration": 1,
+        "width": 1
+      },
+      "portable_p50_ns": 116352,
+      "legacy_p50_ns": 117418,
+      "cpp_p50_ns": 129352,
+      "reference": "legacy",
+      "portable_to_reference": 0.9909213238174727,
+      "maximum_p50_ns": 123288,
+      "meets_target": true
+    },
+    {
+      "case": {
+        "name": "unary-small",
+        "payload_bytes": 64,
+        "rpcs_per_iteration": 1,
+        "width": 1
+      },
+      "portable_p50_ns": 118240,
+      "legacy_p50_ns": 116794,
+      "cpp_p50_ns": 132782,
+      "reference": "legacy",
+      "portable_to_reference": 1.0123807729849137,
+      "maximum_p50_ns": 122633,
+      "meets_target": true
+    },
+    {
+      "case": {
+        "name": "unary-1k",
+        "payload_bytes": 1024,
+        "rpcs_per_iteration": 1,
+        "width": 1
+      },
+      "portable_p50_ns": 122648,
+      "legacy_p50_ns": 120481,
+      "cpp_p50_ns": 136099,
+      "reference": "legacy",
+      "portable_to_reference": 1.0179862384940364,
+      "maximum_p50_ns": 126505,
+      "meets_target": true
+    },
+    {
+      "case": {
+        "name": "fanout-32",
+        "payload_bytes": 1024,
+        "rpcs_per_iteration": 32,
+        "width": 32
+      },
+      "portable_p50_ns": 1041810,
+      "legacy_p50_ns": 1011720,
+      "cpp_p50_ns": 769963,
+      "reference": "capnp-cpp",
+      "portable_to_reference": 1.3530650174099275,
+      "maximum_p50_ns": 808461,
+      "meets_target": false
+    },
+    {
+      "case": {
+        "name": "dependent-read",
+        "payload_bytes": 1024,
+        "rpcs_per_iteration": 2,
+        "width": 1
+      },
+      "portable_p50_ns": 284675,
+      "legacy_p50_ns": 259339,
+      "cpp_p50_ns": 281591,
+      "reference": "legacy",
+      "portable_to_reference": 1.0976945233844504,
+      "maximum_p50_ns": 272305,
+      "meets_target": false
+    },
+    {
+      "case": {
+        "name": "pipelined-read",
+        "payload_bytes": 1024,
+        "rpcs_per_iteration": 2,
+        "width": 1
+      },
+      "portable_p50_ns": 193436,
+      "legacy_p50_ns": 167097,
+      "cpp_p50_ns": 168526,
+      "reference": "legacy",
+      "portable_to_reference": 1.157627007067751,
+      "maximum_p50_ns": 175451,
+      "meets_target": false
+    },
+    {
+      "case": {
+        "name": "write-read",
+        "payload_bytes": 1024,
+        "rpcs_per_iteration": 2,
+        "width": 1
+      },
+      "portable_p50_ns": 240346,
+      "legacy_p50_ns": 237916,
+      "cpp_p50_ns": 267474,
+      "reference": "legacy",
+      "portable_to_reference": 1.0102136888649775,
+      "maximum_p50_ns": 249811,
+      "meets_target": true
+    },
+    {
+      "case": {
+        "name": "callback",
+        "payload_bytes": 64,
+        "rpcs_per_iteration": 2,
+        "width": 1
+      },
+      "portable_p50_ns": 278755,
+      "legacy_p50_ns": 242305,
+      "cpp_p50_ns": 269898,
+      "reference": "legacy",
+      "portable_to_reference": 1.1504302428757145,
+      "maximum_p50_ns": 254420,
+      "meets_target": false
+    },
+    {
+      "case": {
+        "name": "bulk-64k",
+        "payload_bytes": 65536,
+        "rpcs_per_iteration": 1,
+        "width": 1
+      },
+      "portable_p50_ns": 553068,
+      "legacy_p50_ns": 566233,
+      "cpp_p50_ns": 567870,
+      "reference": "legacy",
+      "portable_to_reference": 0.9767498538587472,
+      "maximum_p50_ns": 594544,
+      "meets_target": true
+    },
+    {
+      "case": {
+        "name": "bulk-256k",
+        "payload_bytes": 262144,
+        "rpcs_per_iteration": 1,
+        "width": 1
+      },
+      "portable_p50_ns": 1348376,
+      "legacy_p50_ns": 1093015,
+      "cpp_p50_ns": 1122310,
+      "reference": "legacy",
+      "portable_to_reference": 1.2336299135876452,
+      "maximum_p50_ns": 1147665,
+      "meets_target": false
+    },
+    {
+      "case": {
+        "name": "bulk-1m",
+        "payload_bytes": 1048576,
+        "rpcs_per_iteration": 1,
+        "width": 1
+      },
+      "portable_p50_ns": 4549966,
+      "legacy_p50_ns": 4233197,
+      "cpp_p50_ns": 4299913,
+      "reference": "legacy",
+      "portable_to_reference": 1.0748297327055651,
+      "maximum_p50_ns": 4444856,
+      "meets_target": false
+    },
+    {
+      "case": {
+        "name": "bulk-4m",
+        "payload_bytes": 4194304,
+        "rpcs_per_iteration": 1,
+        "width": 1
+      },
+      "portable_p50_ns": 19493488,
+      "legacy_p50_ns": 18419726,
+      "cpp_p50_ns": 18188989,
+      "reference": "capnp-cpp",
+      "portable_to_reference": 1.071719159322159,
+      "maximum_p50_ns": 19098438,
+      "meets_target": false
+    }
+  ]
+}

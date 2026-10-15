@@ -108,6 +108,35 @@ fn matrix(trials: &[Value]) -> Result<Vec<Value>> {
     }
     Ok(rows)
 }
+// Called only after matrix validation: every workflow has all three controls.
+// Keep this advisory while the performance gap is open, and retain every failed
+// cell. A geometric mean can conceal a regression in an individual workload.
+fn portable_target(rows: &[Value]) -> Value {
+    let cells: Vec<_> = rows
+        .iter()
+        .filter(|row| row["implementation"] == "portable")
+        .map(|portable| {
+            let reference = rows
+                .iter()
+                .filter(|row| {
+                    row["case"] == portable["case"]
+                        && matches!(row["implementation"].as_str(), Some("legacy" | "capnp-cpp"))
+                })
+                .min_by_key(|row| row["p50_ns"].as_u64().unwrap())
+                .expect("validated reference peers");
+            let actual = portable["p50_ns"].as_u64().unwrap();
+            let baseline = reference["p50_ns"].as_u64().unwrap();
+            json!({"case":portable["case"], "reference":reference["implementation"],
+                "reference_p50_ns":baseline, "portable_p50_ns":actual,
+                "ratio":actual as f64 / baseline as f64,
+                "meets_target":u128::from(actual) * 100 <= u128::from(baseline) * 105})
+        })
+        .collect();
+    json!({"metric":"pooled p50 per workflow", "maximum_ratio":1.05,
+        "reference_rule":"min(legacy, capnp-cpp) in the same campaign",
+        "advisory":true, "all_workflows_pass":cells.iter().all(|cell| cell["meets_target"] == true),
+        "rows":cells})
+}
 fn validate_hosts(
     topology: &Value,
     client: &Value,
@@ -187,9 +216,10 @@ pub(super) fn generate(output: &Path, bundle: &Path) -> Result<()> {
     );
     let trials = crate::read_json(output.join("client/workflow-trials.json"))?;
     let rows = matrix(trials.as_array().context("missing workflow matrix")?)?;
+    let target = portable_target(&rows);
     crate::write_json(
         output.join("summary.json"),
-        &json!({"workflow_version":VERSION,"topology":topology,"validated":true,"acceptance":"descriptive remote workflow baseline; no loopback ratio gate applied","rows":rows,"unsupported":[{"case":"pipelined-read","implementation":"grpc","reason":"no native capability promise pipelining"},{"case":"pipelined-read","implementation":"websocket","reason":"no native capability promise pipelining"}]}),
+        &json!({"workflow_version":VERSION,"topology":topology,"validated":true,"acceptance":"descriptive remote workflow baseline; no loopback ratio gate applied","portable_target":target,"rows":rows,"unsupported":[{"case":"pipelined-read","implementation":"grpc","reason":"no native capability promise pipelining"},{"case":"pipelined-read","implementation":"websocket","reason":"no native capability promise pipelining"}]}),
     )?;
     let mut text=String::from("# Remote RPC workflows\n\nTwo dedicated droplets, same region/plan/VPC, direct plaintext TCP. Five rotating repetitions, 250 warmups and 1,000 retained workflows per cell. Timings use only the client monotonic clock; validation, response cleanup and ten-second workflow deadlines are included. Setup/compilation is excluded.\n\nA fan-out sample covers completion of all 32 concurrent calls; it is **not** individual request latency. Throughput is closed-loop, not an open-loop saturation or SLO test. RPC/s counts the two calls in dependent/stateful/callback workflows.\n\n| Workflow | Implementation | p50 µs | p95 µs | p99 µs | Workflows/s | RPC/s | p50 / C++ |\n|---|---|---:|---:|---:|---:|---:|---:|\n");
     for row in &rows {
@@ -203,6 +233,20 @@ pub(super) fn generate(output: &Path, bundle: &Path) -> Result<()> {
             row["workflows_per_second"].as_f64().unwrap(),
             row["rpcs_per_second"].as_f64().unwrap(),
             row["p50_ratio_to_cpp"].as_f64().unwrap()
+        );
+    }
+    text += "\n## Portable performance gap\n\nTarget: portable pooled p50 ≤ 1.05 × the faster of legacy and C++ for **each** workflow. This is advisory while the gap remains open; it does not replace correctness, tail-latency or resource evidence.\n\n| Workflow | Faster reference | Portable/reference | Meets 5% target |\n|---|---|---:|---|\n";
+    for row in target["rows"].as_array().unwrap() {
+        text += &format!(
+            "| {} | {} | {:.3}× | {} |\n",
+            row["case"]["name"].as_str().unwrap(),
+            row["reference"].as_str().unwrap(),
+            row["ratio"].as_f64().unwrap(),
+            if row["meets_target"] == true {
+                "yes"
+            } else {
+                "no"
+            },
         );
     }
     text+="\n| Unsupported workflow | Implementation | Reason |\n|---|---|---|\n| pipelined-read | grpc | No native capability promise pipelining |\n| pipelined-read | websocket | No native capability promise pipelining |\n\ngRPC uses protobuf unary calls over HTTP/2; its callback uses a pre-established bidirectional stream. WebSockets use binary protobuf application messages, with 32 outstanding messages for fan-out. Both use application IDs for state and four acknowledged duplex messages per callback (request, notification, acknowledgement, completion). Dependent reads consume temporary state; reusable state is released outside timing. These IDs do not supply capability security. There is no TLS, compression, JSON or base64 in this comparison. RPC/s counts logical application calls, including callbacks, not HTTP/2 streams.\n\n![Remote workflow p50 ratios](p50-ratios.svg)\n\nRaw distributions, per-trial client CPU/RSS logs and both host environments are retained in the adjacent client/server directories. Server CPU counters include setup and campaign idle time; they are not per-request CPU costs. Legacy loopback controls are reported separately in the parent directory.\n";
@@ -252,6 +296,43 @@ mod tests {
             }
         }
         trials
+    }
+    #[test]
+    fn portable_gap_uses_faster_peer_and_exact_inclusive_boundary() {
+        let rows = matrix(&trials()).unwrap();
+        for (legacy, cpp, reference) in [(100, 200, "legacy"), (200, 100, "capnp-cpp")] {
+            for (portable, passes) in [(99, true), (105, true), (106, false)] {
+                let mut measured = rows.clone();
+                for row in &mut measured {
+                    row["p50_ns"] = json!(match row["implementation"].as_str().unwrap() {
+                        "legacy" => legacy,
+                        "capnp-cpp" => cpp,
+                        "portable" => portable,
+                        _ => 1, // Unrelated faster protocols cannot set this target.
+                    });
+                }
+                let target = portable_target(&measured);
+                assert_eq!(target["all_workflows_pass"], passes);
+                let cells = target["rows"].as_array().unwrap();
+                assert_eq!(cells.len(), 12);
+                assert!(cells.iter().all(|cell| cell["reference"] == reference
+                    && cell["reference_p50_ns"] == 100
+                    && cell["meets_target"] == passes));
+            }
+        }
+        // One failing cell keeps the gap open, even if all other cells win.
+        let mut mixed = rows;
+        let portable = mixed
+            .iter_mut()
+            .find(|row| row["implementation"] == "portable")
+            .unwrap();
+        portable["p50_ns"] = json!(11);
+        assert_eq!(portable_target(&mixed)["all_workflows_pass"], false);
+        // Cross-products use widened integers, not rounded ratios or u64 math.
+        for row in &mut mixed {
+            row["p50_ns"] = json!(u64::MAX);
+        }
+        assert_eq!(portable_target(&mixed)["all_workflows_pass"], true);
     }
     #[test]
     fn full_matrix_and_bad_evidence() {
@@ -394,6 +475,11 @@ mod tests {
         generate(&output, &bundle).unwrap();
         let summary = crate::read_json(output.join("summary.json")).unwrap();
         assert_eq!(summary["rows"].as_array().unwrap().len(), 70);
+        assert_eq!(
+            summary["portable_target"]["rows"].as_array().unwrap().len(),
+            12
+        );
+        assert_eq!(summary["portable_target"]["all_workflows_pass"], true);
         let svg = fs::read_to_string(output.join("p50-ratios.svg")).unwrap();
         let parsed = roxmltree::Document::parse(&svg).unwrap();
         assert_eq!(

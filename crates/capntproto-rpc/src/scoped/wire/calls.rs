@@ -1,7 +1,9 @@
 //! Outgoing owned calls and local execution over one portable invocation ledger.
 use super::*;
 use capntproto_rpc_engine::clients::{Destination, Location};
+use capntproto_rpc_engine::ids::WireId;
 use capntproto_rpc_wire::clients::{Endpoint, Route};
+use std::collections::HashMap;
 use std::num::NonZeroUsize;
 
 type Peer<'p, 'id, 's, I, A, P, const C: usize, const H: usize> =
@@ -19,6 +21,9 @@ struct Execution<'p, 'id, I, const C: usize, const H: usize> {
 struct Entry<'p, 'id, I, const C: usize, const H: usize> {
     wire: WireCall<'p, 'id, I, C>,
     local: Option<Box<Execution<'p, 'id, I, C, H>>>,
+    // Survives completion/cancellation taking WireCall::direct, so retirement
+    // always removes its lookup owner before this application slot is reused.
+    reply_id: Option<u32>,
 }
 
 pub(super) enum Publication<'a, 'id> {
@@ -60,6 +65,10 @@ pub enum Progress {
 pub struct Calls<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> {
     invocations: connection::Invocations<'s, 'wait, 'p, 'id, I, C>,
     entries: Vec<Option<Entry<'p, 'id, I, C, H>>>,
+    // An owner lookup, not a protocol ledger. Only immediate calls are indexed;
+    // the entry's full branded/generational key remains authoritative. Allocate
+    // lazily beyond the small-call scan, and remove owners on every retirement.
+    reply_owners: HashMap<u32, usize>,
     pending: Option<Box<Call>>,
     maximum: usize,
     cursor: usize,
@@ -75,6 +84,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         Ok(Self {
             invocations: connection::Invocations::new_growing(0, maximum).map_err(wire_error)?,
             entries: Vec::new(),
+            reply_owners: HashMap::new(),
             pending: None,
             maximum,
             cursor: 0,
@@ -100,8 +110,8 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
     pub(super) fn idle_after_publication(&self) -> bool {
         self.entries.len() == 1 && self.invocations.is_empty()
     }
-    /// Deliver an already-admitted reply to its immediate owner. Bound the
-    /// lookup; mixed/pipelined workloads continue through the rotating scanner.
+    /// Deliver an already-admitted reply to its immediate owner. Large bursts
+    /// use the owner index; mixed/pipelined work retains the rotating scanner.
     /// The caller yields after completion and resumes ordinary maintenance
     /// before reading another frame, preserving cooperative fairness.
     #[inline(always)]
@@ -114,12 +124,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         cx: &mut Context<'_>,
         refresh: impl FnMut(&mut ClientHooks<'id>, &mut Peer<'p, 'id, '_, I, A, P, C, H>),
     ) -> capnp::Result<Option<bool>> {
-        if self.entries.len() > 8 {
-            return Ok(None);
-        }
-        let Some(index) = self.entries.iter().position(|entry| entry.as_ref().is_some_and(|entry|
-            entry.local.is_none() && entry.wire.task.is_none() && entry.wire.pipeline.is_none()
-                && matches!(entry.wire.direct, Some(DirectStage::Sent(question)) if question == key))) else {
+        let Some(index) = self.immediate_receiver(key) else {
             return Ok(None);
         };
         if self.entries[index]
@@ -128,7 +133,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             .wire
             .complete_plain(key, driver, messages)?
         {
-            self.entries[index] = None;
+            self.retire_entry(index);
             return Ok(Some(true));
         }
         match self.entries[index].as_mut().unwrap().wire.poll_using(
@@ -143,7 +148,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             Poll::Pending => Ok(None),
             Poll::Ready(result) => {
                 result?;
-                self.entries[index] = None;
+                self.retire_entry(index);
                 Ok(Some(false))
             }
         }
@@ -153,14 +158,19 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         &self,
         key: capntproto_rpc_engine::questions::Key<'id>,
     ) -> Option<usize> {
-        if self.entries.len() > 8 {
-            return None;
-        }
-        self.entries.iter().position(|entry| {
+        let accepts = |entry: &Option<Entry<'p, 'id, I, C, H>>| {
             entry
                 .as_ref()
                 .is_some_and(|entry| entry.local.is_none() && entry.wire.accepts_plain(key))
-        })
+        };
+        if self.entries.len() <= 8 {
+            self.entries.iter().position(accepts)
+        } else {
+            self.reply_owners
+                .get(&key.id().to_wire())
+                .copied()
+                .filter(|&index| self.entries.get(index).is_some_and(accepts))
+        }
     }
     #[inline(always)]
     pub(super) fn deliver_plain(
@@ -170,6 +180,56 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
     ) {
         let entry = self.entries[index].as_mut().expect("selected reply owner");
         entry.wire.deliver_plain(message);
+        self.retire_entry(index);
+    }
+    #[inline(always)]
+    fn immediate_receiver(&self, key: capntproto_rpc_engine::questions::Key<'id>) -> Option<usize> {
+        let matches = |entry: &Option<Entry<'p, 'id, I, C, H>>| {
+            entry.as_ref().is_some_and(|entry| {
+                entry.local.is_none() && entry.wire.task.is_none() && entry.wire.pipeline.is_none()
+                    && matches!(entry.wire.direct, Some(DirectStage::Sent(question)) if question == key)
+            })
+        };
+        if self.entries.len() <= 8 {
+            self.entries.iter().position(matches)
+        } else {
+            self.reply_owners
+                .get(&key.id().to_wire())
+                .copied()
+                .filter(|&index| self.entries.get(index).is_some_and(matches))
+        }
+    }
+    #[inline(always)]
+    fn prepare_reply_index(&mut self, index: usize) -> capnp::Result<bool> {
+        if self.entries.len().max(index + 1) <= 8 {
+            return Ok(false);
+        }
+        if self.reply_owners.capacity() == 0 {
+            self.reply_owners
+                .try_reserve(self.entries.len() + 1)
+                .map_err(wire_error)?;
+            for (index, entry) in self.entries.iter().enumerate() {
+                if let Some(id) = entry.as_ref().and_then(|entry| entry.reply_id) {
+                    self.reply_owners.insert(id, index);
+                }
+            }
+        } else {
+            self.reply_owners.try_reserve(1).map_err(wire_error)?;
+        }
+        Ok(true)
+    }
+    #[inline(always)]
+    fn retire_entry(&mut self, index: usize) {
+        if !self.reply_owners.is_empty() {
+            if let Some(id) = self.entries[index]
+                .as_ref()
+                .and_then(|entry| entry.reply_id)
+            {
+                if self.reply_owners.get(&id) == Some(&index) {
+                    self.reply_owners.remove(&id);
+                }
+            }
+        }
         self.entries[index] = None;
     }
     pub(crate) fn has_unpublished(&self) -> bool {
@@ -489,7 +549,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         |hook| Some(hook.add_ref()),
                     ) {
                         result?;
-                        self.entries[index - 1] = None;
+                        self.retire_entry(index - 1);
                         return Poll::Ready(Ok(Progress::Completed));
                     }
                 }
@@ -541,7 +601,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                                 &mut refresh,
                             );
                             if matches!(result, Ok(Some(Progress::Completed))) {
-                                self.entries[index] = None;
+                                self.retire_entry(index);
                             }
                             result
                         }
@@ -801,6 +861,10 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             && call.third_party.is_none()
             && call.endpoint.remote.get()
         {
+            // Reserve only for immediate calls, before publication can commit
+            // their question. Queued/local calls need no reply-owner index.
+            let indexed = self.prepare_reply_index(index)?;
+            let call = self.pending.as_ref().expect("pending call");
             // This is only a refreshed routing hint. The driver's exclusive
             // immediate ticket validates settlement, ordering, exact import
             // authority and peer identity before publishing any bytes.
@@ -866,11 +930,15 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         tail_response: None,
                     },
                     local: None,
+                    reply_id: Some(question.id().to_wire()),
                 });
                 if index == self.entries.len() {
                     self.entries.push(entry);
                 } else {
                     self.entries[index] = entry;
+                }
+                if indexed {
+                    self.reply_owners.insert(question.id().to_wire(), index);
                 }
                 return Ok(Some(Progress::Published));
             }
@@ -908,7 +976,11 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 return Err(rejected.error);
             }
         };
-        let entry = Some(Entry { wire, local: None });
+        let entry = Some(Entry {
+            wire,
+            local: None,
+            reply_id: None,
+        });
         if index == self.entries.len() {
             self.entries.push(entry);
         } else {

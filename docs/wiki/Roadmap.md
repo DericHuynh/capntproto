@@ -30,6 +30,55 @@ The [RPC research](RPC-Research.md) preserves its protocol probes and ordered
 acceptance criteria. [RPC applications](RPC-Applications.md) documents the APIs
 already available.
 
+## Portable RPC performance gap
+
+**Open: [gap #11](https://github.com/DericHuynh/capntproto/issues/11), recorded October 15, 2026.** For each matching plaintext TCP workload,
+portable pooled p50 must be at most **1.05 × min(legacy p50, C++ p50)**. Compare
+all peers in the same campaign with matched fixtures, release settings, CPU
+placement and sampling budgets. Faster portable results pass without slowing
+either reference. Apply the target to all twelve remote application workflows
+and separately to the four loopback payloads; never combine those topologies.
+Retain p95/p99, throughput, CPU, RSS and every sample alongside the p50 decision.
+The existing empty-call instruction qualification is a separate contract.
+
+The [frozen baseline](../../research/reports/portable-performance/2026-10-15/baseline.json)
+comes from [run 38763852450](https://github.com/DericHuynh/capntproto/actions/runs/38763852450)
+at `2c9548c998fb`. All 350 remote trials and 120 loopback trials were checked
+against the published percentiles. Seven remote workflows exceed the new target:
+
+| Workflow | Portable p50 | Faster reference p50 | Portable/reference |
+| --- | ---: | ---: | ---: |
+| 32 concurrent 1-KiB calls | 1,041.810 µs | C++ 769.963 µs | 1.353× |
+| Dependent capability read | 284.675 µs | Legacy 259.339 µs | 1.098× |
+| Pipelined capability read | 193.436 µs | Legacy 167.097 µs | 1.158× |
+| Callback | 278.755 µs | Legacy 242.305 µs | 1.150× |
+| 256-KiB echo | 1,348.376 µs | Legacy 1,093.015 µs | 1.234× |
+| 1-MiB echo | 4,549.966 µs | Legacy 4,233.197 µs | 1.075× |
+| 4-MiB echo | 19,493.488 µs | C++ 18,188.989 µs | 1.072× |
+
+Investigate batching/syscall frequency under fan-out, capability-bearing call
+and result paths, and large-frame copying/allocation/polling. Whole-client
+resource logs also show roughly twice legacy's CPU consumption at 4 MiB;
+they include setup and warmup and are not a hot-function profile. Keep lifecycle,
+admission, cancellation, FIFO, partial-write and shutdown guarantees intact.
+Local experiments guide changes; closing this gap requires a fresh dedicated
+campaign with every applicable cell passing, not an empty-call result alone.
+
+The first optimization slice indexes immediate reply owners beyond eight calls,
+checking the full question generation before delivery, and copies two-segment
+prepared Returns without first clearing the destination. Small-call lookup,
+reader validation, resource limits and generic protocol paths remain intact.
+Remote reports now show the faster reference and an exact inclusive 5% decision
+for each workflow; the report remains advisory while this gap is open. See the
+[optimization evidence](Quality-and-Benchmarks.md#portable-workflow-gap-october-15-2026)
+for measurements and remaining work.
+
+Related audit findings remain separate: native QUIC's 64-KiB loopback p50 is
+211.442 µs versus legacy TCP's 84.101 µs, with encryption/architecture differences;
+the serialization decode fixture includes a full byte-validation scan; storage
+research points to durability amortization and ORM worker integration. These do
+not change the portable plaintext target or justify removing fixture validation.
+
 ## Storage and ORM
 
 - Integrate the bounded worker with ORM facets while preserving execution-time
