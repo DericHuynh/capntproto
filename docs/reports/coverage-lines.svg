@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1056" viewBox="0 0 1400 1056" role="img" aria-labelledby="title">
+<title id="title">LLVM lines: current versus reviewed baseline</title>
+<rect width="1400" height="1056" fill="white"/>
+<g font-family="DejaVu Sans, sans-serif">
+<text x="35.00" y="44.00" font-size="27" fill="#1e293b">LLVM lines: current versus reviewed baseline</text>
+<text x="35.00" y="78.00" font-size="14" fill="#64748b">Gray: reviewed baseline. Blue: current run. N&#x2F;A: no mapped counters; never treated as 0% or 100%.</text>
+<text x="35.00" y="122.00" font-size="20" fill="#1e293b">Source groups (different groups cover different code)</text>
+<text x="35.00" y="153.00" font-size="13" fill="#334155">async framing &#x2F; baseline</text>
+<rect x="600.00" y="138.00" width="589.25" height="23" fill="#0868d4"/>
+<text x="1195.25" y="155.00" font-size="13" fill="#334155">95.38</text>
+<text x="35.00" y="195.00" font-size="13" fill="#334155">async framing &#x2F; current</text>
+<rect x="600.00" y="180.00" width="590.48" height="23" fill="#00ac7b"/>
+<text x="1196.48" y="197.00" font-size="13" fill="#334155">95.58</text>
+<text x="35.00" y="237.00" font-size="13" fill="#334155">capability rpc &#x2F; baseline</text>
+<rect x="600.00" y="222.00" width="549.85" height="23" fill="#ef4444"/>
+<text x="1155.85" y="239.00" font-size="13" fill="#334155">89.00</text>
+<text x="35.00" y="279.00" font-size="13" fill="#334155">capability rpc &#x2F; current</text>
+<rect x="600.00" y="264.00" width="550.00" height="23" fill="#e89200"/>
+<text x="1156.00" y="281.00" font-size="13" fill="#334155">89.02</text>
+<text x="35.00" y="321.00" font-size="13" fill="#334155">optional compatibility &#x2F; baseline</text>
+<rect x="600.00" y="306.00" width="556.06" height="23" fill="#8b5cf6"/>
+<text x="1162.06" y="323.00" font-size="13" fill="#334155">90.00</text>
+<text x="35.00" y="363.00" font-size="13" fill="#334155">optional compatibility &#x2F; current</text>
+<rect x="600.00" y="348.00" width="556.06" height="23" fill="#0868d4"/>
+<text x="1162.06" y="365.00" font-size="13" fill="#334155">90.00</text>
+<text x="35.00" y="405.00" font-size="13" fill="#334155">runtime &#x2F; baseline</text>
+<rect x="600.00" y="390.00" width="520.91" height="23" fill="#00ac7b"/>
+<text x="1126.91" y="407.00" font-size="13" fill="#334155">84.31</text>
+<text x="35.00" y="447.00" font-size="13" fill="#334155">runtime &#x2F; current</text>
+<rect x="600.00" y="432.00" width="520.97" height="23" fill="#ef4444"/>
+<text x="1126.97" y="449.00" font-size="13" fill="#334155">84.32</text>
+<text x="35.00" y="489.00" font-size="13" fill="#334155">rust codegen &#x2F; baseline</text>
+<rect x="600.00" y="474.00" width="560.52" height="23" fill="#e89200"/>
+<text x="1166.52" y="491.00" font-size="13" fill="#334155">90.73</text>
+<text x="35.00" y="531.00" font-size="13" fill="#334155">rust codegen &#x2F; current</text>
+<rect x="600.00" y="516.00" width="560.52" height="23" fill="#8b5cf6"/>
+<text x="1166.52" y="533.00" font-size="13" fill="#334155">90.73</text>
+<text x="35.00" y="573.00" font-size="13" fill="#334155">schema compiler &#x2F; baseline</text>
+<rect x="600.00" y="558.00" width="600.00" height="23" fill="#0868d4"/>
+<text x="1206.00" y="575.00" font-size="13" fill="#334155">97.12</text>
+<text x="35.00" y="615.00" font-size="13" fill="#334155">schema compiler &#x2F; current</text>
+<rect x="600.00" y="600.00" width="600.00" height="23" fill="#00ac7b"/>
+<text x="1206.00" y="617.00" font-size="13" fill="#334155">97.12</text>
+<text x="35.00" y="657.00" font-size="13" fill="#334155">tests and verification &#x2F; baseline</text>
+<rect x="600.00" y="642.00" width="484.93" height="23" fill="#ef4444"/>
+<text x="1090.93" y="659.00" font-size="13" fill="#334155">78.49</text>
+<text x="35.00" y="699.00" font-size="13" fill="#334155">tests and verification &#x2F; current</text>
+<rect x="600.00" y="684.00" width="484.99" height="23" fill="#e89200"/>
+<text x="1090.99" y="701.00" font-size="13" fill="#334155">78.50</text>
+<text x="35.00" y="741.00" font-size="13" fill="#334155">tools fuzz examples benchmarks &#x2F; baseline</text>
+<rect x="600.00" y="726.00" width="410.55" height="23" fill="#8b5cf6"/>
+<text x="1016.55" y="743.00" font-size="13" fill="#334155">66.45</text>
+<text x="35.00" y="783.00" font-size="13" fill="#334155">tools fuzz examples benchmarks &#x2F; current</text>
+<rect x="600.00" y="768.00" width="412.02" height="23" fill="#0868d4"/>
+<text x="1018.02" y="785.00" font-size="13" fill="#334155">66.69</text>
+<text x="35.00" y="825.00" font-size="13" fill="#334155">wire runtime &#x2F; baseline</text>
+<rect x="600.00" y="810.00" width="533.05" height="23" fill="#00ac7b"/>
+<text x="1139.05" y="827.00" font-size="13" fill="#334155">86.28</text>
+<text x="35.00" y="867.00" font-size="13" fill="#334155">wire runtime &#x2F; current</text>
+<rect x="600.00" y="852.00" width="533.68" height="23" fill="#ef4444"/>
+<text x="1139.68" y="869.00" font-size="13" fill="#334155">86.38</text>
+<text x="600.00" y="914.00" font-size="13" fill="#64748b">Coverage (%) - higher is better</text>
+<text x="35.00" y="978.00" font-size="13" fill="#64748b">Measured 2026-10-15T04:07:12Z | commit c29eec6891c5</text>
+</g>
+</svg>

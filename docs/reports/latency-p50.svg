@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1628" viewBox="0 0 1400 1628" role="img" aria-labelledby="title">
+<title id="title">Median round-trip latency (p50)</title>
+<rect width="1400" height="1628" fill="white"/>
+<g font-family="DejaVu Sans, sans-serif">
+<text x="35.00" y="44.00" font-size="27" fill="#1e293b">Median round-trip latency (p50)</text>
+<text x="35.00" y="78.00" font-size="14" fill="#64748b">Measured TCP driver: legacy. TCP p50 gate: passed (1.15x at every payload). Relative bars use C++ Cap&#x27;n Proto as the reference; each panel</text>
+<text x="35.00" y="98.00" font-size="14" fill="#64748b">includes zero. Native QUIC is encrypted; other baselines are plaintext.</text>
+<text x="35.00" y="142.00" font-size="20" fill="#1e293b">0 byte payload</text>
+<text x="35.00" y="173.00" font-size="13" fill="#334155">Capntproto TCP (legacy)</text>
+<rect x="600.00" y="158.00" width="308.96" height="23" fill="#0868d4"/>
+<text x="914.96" y="175.00" font-size="13" fill="#334155">33.04</text>
+<text x="35.00" y="215.00" font-size="13" fill="#334155">Cap&#x27;n Proto C++</text>
+<rect x="600.00" y="200.00" width="374.40" height="23" fill="#00ac7b"/>
+<text x="980.40" y="217.00" font-size="13" fill="#334155">40.04</text>
+<text x="35.00" y="257.00" font-size="13" fill="#334155">gRPC (tonic)</text>
+<rect x="600.00" y="242.00" width="600.00" height="23" fill="#ef4444"/>
+<text x="1206.00" y="259.00" font-size="13" fill="#334155">64.16</text>
+<text x="35.00" y="299.00" font-size="13" fill="#334155">WebSockets</text>
+<rect x="600.00" y="284.00" width="286.62" height="23" fill="#e89200"/>
+<text x="892.62" y="301.00" font-size="13" fill="#334155">30.65</text>
+<text x="35.00" y="341.00" font-size="13" fill="#334155">Capntproto QUIC&#x2F;TLS</text>
+<rect x="600.00" y="326.00" width="511.11" height="23" fill="#8b5cf6"/>
+<text x="1117.11" y="343.00" font-size="13" fill="#334155">54.66</text>
+<text x="35.00" y="383.00" font-size="13" fill="#334155">Rust RPC (upstream)</text>
+<rect x="600.00" y="368.00" width="367.10" height="23" fill="#0868d4"/>
+<text x="973.10" y="385.00" font-size="13" fill="#334155">39.26</text>
+<text x="600.00" y="430.00" font-size="13" fill="#64748b">Microseconds - lower is better</text>
+<text x="35.00" y="494.00" font-size="20" fill="#1e293b">64 byte payload</text>
+<text x="35.00" y="525.00" font-size="13" fill="#334155">Capntproto TCP (legacy)</text>
+<rect x="600.00" y="510.00" width="312.27" height="23" fill="#0868d4"/>
+<text x="918.27" y="527.00" font-size="13" fill="#334155">33.65</text>
+<text x="35.00" y="567.00" font-size="13" fill="#334155">Cap&#x27;n Proto C++</text>
+<rect x="600.00" y="552.00" width="371.61" height="23" fill="#00ac7b"/>
+<text x="977.61" y="569.00" font-size="13" fill="#334155">40.05</text>
+<text x="35.00" y="609.00" font-size="13" fill="#334155">gRPC (tonic)</text>
+<rect x="600.00" y="594.00" width="600.00" height="23" fill="#ef4444"/>
+<text x="1206.00" y="611.00" font-size="13" fill="#334155">64.66</text>
+<text x="35.00" y="651.00" font-size="13" fill="#334155">WebSockets</text>
+<rect x="600.00" y="636.00" width="295.53" height="23" fill="#e89200"/>
+<text x="901.53" y="653.00" font-size="13" fill="#334155">31.85</text>
+<text x="35.00" y="693.00" font-size="13" fill="#334155">Capntproto QUIC&#x2F;TLS</text>
+<rect x="600.00" y="678.00" width="516.45" height="23" fill="#8b5cf6"/>
+<text x="1122.45" y="695.00" font-size="13" fill="#334155">55.66</text>
+<text x="35.00" y="735.00" font-size="13" fill="#334155">Rust RPC (upstream)</text>
+<rect x="600.00" y="720.00" width="368.80" height="23" fill="#0868d4"/>
+<text x="974.80" y="737.00" font-size="13" fill="#334155">39.75</text>
+<text x="600.00" y="782.00" font-size="13" fill="#64748b">Microseconds - lower is better</text>
+<text x="35.00" y="846.00" font-size="20" fill="#1e293b">1024 byte payload</text>
+<text x="35.00" y="877.00" font-size="13" fill="#334155">Capntproto TCP (legacy)</text>
+<rect x="600.00" y="862.00" width="300.64" height="23" fill="#0868d4"/>
+<text x="906.64" y="879.00" font-size="13" fill="#334155">34.67</text>
+<text x="35.00" y="919.00" font-size="13" fill="#334155">Cap&#x27;n Proto C++</text>
+<rect x="600.00" y="904.00" width="356.12" height="23" fill="#00ac7b"/>
+<text x="962.12" y="921.00" font-size="13" fill="#334155">41.07</text>
+<text x="35.00" y="961.00" font-size="13" fill="#334155">gRPC (tonic)</text>
+<rect x="600.00" y="946.00" width="600.00" height="23" fill="#ef4444"/>
+<text x="1206.00" y="963.00" font-size="13" fill="#334155">69.20</text>
+<text x="35.00" y="1003.00" font-size="13" fill="#334155">WebSockets</text>
+<rect x="600.00" y="988.00" width="277.34" height="23" fill="#e89200"/>
+<text x="883.34" y="1005.00" font-size="13" fill="#334155">31.99</text>
+<text x="35.00" y="1045.00" font-size="13" fill="#334155">Capntproto QUIC&#x2F;TLS</text>
+<rect x="600.00" y="1030.00" width="491.64" height="23" fill="#8b5cf6"/>
+<text x="1097.64" y="1047.00" font-size="13" fill="#334155">56.70</text>
+<text x="35.00" y="1087.00" font-size="13" fill="#334155">Rust RPC (upstream)</text>
+<rect x="600.00" y="1072.00" width="354.16" height="23" fill="#0868d4"/>
+<text x="960.16" y="1089.00" font-size="13" fill="#334155">40.84</text>
+<text x="600.00" y="1134.00" font-size="13" fill="#64748b">Microseconds - lower is better</text>
+<text x="35.00" y="1198.00" font-size="20" fill="#1e293b">65536 byte payload</text>
+<text x="35.00" y="1229.00" font-size="13" fill="#334155">Capntproto TCP (legacy)</text>
+<rect x="600.00" y="1214.00" width="223.75" height="23" fill="#0868d4"/>
+<text x="829.75" y="1231.00" font-size="13" fill="#334155">78.24</text>
+<text x="35.00" y="1271.00" font-size="13" fill="#334155">Cap&#x27;n Proto C++</text>
+<rect x="600.00" y="1256.00" width="252.63" height="23" fill="#00ac7b"/>
+<text x="858.63" y="1273.00" font-size="13" fill="#334155">88.34</text>
+<text x="35.00" y="1313.00" font-size="13" fill="#334155">gRPC (tonic)</text>
+<rect x="600.00" y="1298.00" width="556.93" height="23" fill="#ef4444"/>
+<text x="1162.93" y="1315.00" font-size="13" fill="#334155">194.76</text>
+<text x="35.00" y="1355.00" font-size="13" fill="#334155">WebSockets</text>
+<rect x="600.00" y="1340.00" width="222.16" height="23" fill="#e89200"/>
+<text x="828.16" y="1357.00" font-size="13" fill="#334155">77.69</text>
+<text x="35.00" y="1397.00" font-size="13" fill="#334155">Capntproto QUIC&#x2F;TLS</text>
+<rect x="600.00" y="1382.00" width="600.00" height="23" fill="#8b5cf6"/>
+<text x="1206.00" y="1399.00" font-size="13" fill="#334155">209.82</text>
+<text x="35.00" y="1439.00" font-size="13" fill="#334155">Rust RPC (upstream)</text>
+<rect x="600.00" y="1424.00" width="281.24" height="23" fill="#0868d4"/>
+<text x="887.24" y="1441.00" font-size="13" fill="#334155">98.35</text>
+<text x="600.00" y="1486.00" font-size="13" fill="#64748b">Microseconds - lower is better</text>
+<text x="35.00" y="1550.00" font-size="13" fill="#64748b">Measured 2026-10-15T04:07:12Z | commit c29eec6891c5</text>
+</g>
+</svg>

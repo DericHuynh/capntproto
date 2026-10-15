@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1744" viewBox="0 0 1400 1744" role="img" aria-labelledby="title">
+<title id="title">TLA+ explored states by model</title>
+<rect width="1400" height="1744" fill="white"/>
+<g font-family="DejaVu Sans, sans-serif">
+<text x="35.00" y="44.00" font-size="27" fill="#1e293b">TLA+ explored states by model</text>
+<text x="35.00" y="78.00" font-size="14" fill="#64748b">Counts sum independent bounded configurations; they are not globally distinct states or a proof beyond those bounds.</text>
+<text x="35.00" y="122.00" font-size="20" fill="#1e293b">Generated states</text>
+<text x="35.00" y="153.00" font-size="13" fill="#334155">CapnpRealtime</text>
+<rect x="600.00" y="138.00" width="600.00" height="23" fill="#0868d4"/>
+<text x="1206.00" y="155.00" font-size="13" fill="#334155">2278240</text>
+<text x="35.00" y="195.00" font-size="13" fill="#334155">RealtimeConfigBoundary</text>
+<rect x="600.00" y="180.00" width="8.46" height="23" fill="#00ac7b"/>
+<text x="614.46" y="197.00" font-size="13" fill="#334155">32136</text>
+<text x="35.00" y="237.00" font-size="13" fill="#334155">RpcNativeProvisioning</text>
+<rect x="600.00" y="222.00" width="36.67" height="23" fill="#ef4444"/>
+<text x="642.67" y="239.00" font-size="13" fill="#334155">139241</text>
+<text x="35.00" y="279.00" font-size="13" fill="#334155">StructuralEquality</text>
+<rect x="600.00" y="264.00" width="5.20" height="23" fill="#e89200"/>
+<text x="611.20" y="281.00" font-size="13" fill="#334155">19737</text>
+<text x="35.00" y="321.00" font-size="13" fill="#334155">RealtimeReceiptLifecycle</text>
+<rect x="600.00" y="306.00" width="11.37" height="23" fill="#8b5cf6"/>
+<text x="617.37" y="323.00" font-size="13" fill="#334155">43163</text>
+<text x="35.00" y="363.00" font-size="13" fill="#334155">DatagramReentry</text>
+<rect x="600.00" y="348.00" width="3.74" height="23" fill="#0868d4"/>
+<text x="609.74" y="365.00" font-size="13" fill="#334155">14209</text>
+<text x="35.00" y="405.00" font-size="13" fill="#334155">BulkConfigBoundary</text>
+<rect x="600.00" y="390.00" width="18.88" height="23" fill="#00ac7b"/>
+<text x="624.88" y="407.00" font-size="13" fill="#334155">71707</text>
+<text x="35.00" y="447.00" font-size="13" fill="#334155">RpcFieldOwners</text>
+<rect x="600.00" y="432.00" width="6.80" height="23" fill="#ef4444"/>
+<text x="612.80" y="449.00" font-size="13" fill="#334155">25832</text>
+<text x="35.00" y="489.00" font-size="13" fill="#334155">GrantRevocation</text>
+<rect x="600.00" y="474.00" width="13.31" height="23" fill="#e89200"/>
+<text x="619.31" y="491.00" font-size="13" fill="#334155">50538</text>
+<text x="35.00" y="531.00" font-size="13" fill="#334155">ShutdownWaiters</text>
+<rect x="600.00" y="516.00" width="13.12" height="23" fill="#8b5cf6"/>
+<text x="619.12" y="533.00" font-size="13" fill="#334155">49836</text>
+<text x="35.00" y="573.00" font-size="13" fill="#334155">RpcNativeArbitration</text>
+<rect x="600.00" y="558.00" width="6.12" height="23" fill="#0868d4"/>
+<text x="612.12" y="575.00" font-size="13" fill="#334155">23246</text>
+<text x="35.00" y="615.00" font-size="13" fill="#334155">RpcRealtimeReceiver</text>
+<rect x="600.00" y="600.00" width="9.19" height="23" fill="#00ac7b"/>
+<text x="615.19" y="617.00" font-size="13" fill="#334155">34880</text>
+<text x="35.00" y="657.00" font-size="13" fill="#334155">CapnpConformance</text>
+<rect x="600.00" y="642.00" width="2.65" height="23" fill="#ef4444"/>
+<text x="608.65" y="659.00" font-size="13" fill="#334155">10067</text>
+<text x="35.00" y="699.00" font-size="13" fill="#334155">RouteShutdownCompletion</text>
+<rect x="600.00" y="684.00" width="4.63" height="23" fill="#e89200"/>
+<text x="610.63" y="701.00" font-size="13" fill="#334155">17598</text>
+<text x="35.00" y="741.00" font-size="13" fill="#334155">RpcPersistenceExpiry</text>
+<rect x="600.00" y="726.00" width="2.89" height="23" fill="#8b5cf6"/>
+<text x="608.89" y="743.00" font-size="13" fill="#334155">10983</text>
+<text x="35.00" y="783.00" font-size="13" fill="#334155">Other models</text>
+<rect x="600.00" y="768.00" width="76.92" height="23" fill="#0868d4"/>
+<text x="682.92" y="785.00" font-size="13" fill="#334155">292065</text>
+<text x="600.00" y="830.00" font-size="13" fill="#64748b">States</text>
+<text x="35.00" y="894.00" font-size="20" fill="#1e293b">Distinct states</text>
+<text x="35.00" y="925.00" font-size="13" fill="#334155">CapnpRealtime</text>
+<rect x="600.00" y="910.00" width="600.00" height="23" fill="#0868d4"/>
+<text x="1206.00" y="927.00" font-size="13" fill="#334155">365655</text>
+<text x="35.00" y="967.00" font-size="13" fill="#334155">RealtimeConfigBoundary</text>
+<rect x="600.00" y="952.00" width="41.75" height="23" fill="#00ac7b"/>
+<text x="647.75" y="969.00" font-size="13" fill="#334155">25443</text>
+<text x="35.00" y="1009.00" font-size="13" fill="#334155">RpcNativeProvisioning</text>
+<rect x="600.00" y="994.00" width="41.58" height="23" fill="#ef4444"/>
+<text x="647.58" y="1011.00" font-size="13" fill="#334155">25342</text>
+<text x="35.00" y="1051.00" font-size="13" fill="#334155">StructuralEquality</text>
+<rect x="600.00" y="1036.00" width="32.39" height="23" fill="#e89200"/>
+<text x="638.39" y="1053.00" font-size="13" fill="#334155">19737</text>
+<text x="35.00" y="1093.00" font-size="13" fill="#334155">RealtimeReceiptLifecycle</text>
+<rect x="600.00" y="1078.00" width="22.65" height="23" fill="#8b5cf6"/>
+<text x="628.65" y="1095.00" font-size="13" fill="#334155">13806</text>
+<text x="35.00" y="1135.00" font-size="13" fill="#334155">DatagramReentry</text>
+<rect x="600.00" y="1120.00" width="21.30" height="23" fill="#0868d4"/>
+<text x="627.30" y="1137.00" font-size="13" fill="#334155">12978</text>
+<text x="35.00" y="1177.00" font-size="13" fill="#334155">BulkConfigBoundary</text>
+<rect x="600.00" y="1162.00" width="17.81" height="23" fill="#00ac7b"/>
+<text x="623.81" y="1179.00" font-size="13" fill="#334155">10852</text>
+<text x="35.00" y="1219.00" font-size="13" fill="#334155">RpcFieldOwners</text>
+<rect x="600.00" y="1204.00" width="16.28" height="23" fill="#ef4444"/>
+<text x="622.28" y="1221.00" font-size="13" fill="#334155">9924</text>
+<text x="35.00" y="1261.00" font-size="13" fill="#334155">GrantRevocation</text>
+<rect x="600.00" y="1246.00" width="15.88" height="23" fill="#e89200"/>
+<text x="621.88" y="1263.00" font-size="13" fill="#334155">9679</text>
+<text x="35.00" y="1303.00" font-size="13" fill="#334155">ShutdownWaiters</text>
+<rect x="600.00" y="1288.00" width="13.20" height="23" fill="#8b5cf6"/>
+<text x="619.20" y="1305.00" font-size="13" fill="#334155">8044</text>
+<text x="35.00" y="1345.00" font-size="13" fill="#334155">RpcNativeArbitration</text>
+<rect x="600.00" y="1330.00" width="12.38" height="23" fill="#0868d4"/>
+<text x="618.38" y="1347.00" font-size="13" fill="#334155">7543</text>
+<text x="35.00" y="1387.00" font-size="13" fill="#334155">RpcRealtimeReceiver</text>
+<rect x="600.00" y="1372.00" width="11.97" height="23" fill="#00ac7b"/>
+<text x="617.97" y="1389.00" font-size="13" fill="#334155">7295</text>
+<text x="35.00" y="1429.00" font-size="13" fill="#334155">CapnpConformance</text>
+<rect x="600.00" y="1414.00" width="8.31" height="23" fill="#ef4444"/>
+<text x="614.31" y="1431.00" font-size="13" fill="#334155">5062</text>
+<text x="35.00" y="1471.00" font-size="13" fill="#334155">RouteShutdownCompletion</text>
+<rect x="600.00" y="1456.00" width="7.82" height="23" fill="#e89200"/>
+<text x="613.82" y="1473.00" font-size="13" fill="#334155">4767</text>
+<text x="35.00" y="1513.00" font-size="13" fill="#334155">RpcPersistenceExpiry</text>
+<rect x="600.00" y="1498.00" width="7.50" height="23" fill="#8b5cf6"/>
+<text x="613.50" y="1515.00" font-size="13" fill="#334155">4569</text>
+<text x="35.00" y="1555.00" font-size="13" fill="#334155">Other models</text>
+<rect x="600.00" y="1540.00" width="165.58" height="23" fill="#0868d4"/>
+<text x="771.58" y="1557.00" font-size="13" fill="#334155">100911</text>
+<text x="600.00" y="1602.00" font-size="13" fill="#64748b">States</text>
+<text x="35.00" y="1666.00" font-size="13" fill="#64748b">Measured 2026-10-15T04:07:12Z | commit c29eec6891c5</text>
+</g>
+</svg>
