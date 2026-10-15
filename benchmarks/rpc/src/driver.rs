@@ -1,6 +1,7 @@
 //! Runs precompiled clients and servers; never invokes a compiler on the benchmark host.
 use crate::Result;
 mod placement;
+pub mod portable;
 pub mod tail;
 pub mod workflows;
 use placement::Placement;
@@ -75,8 +76,29 @@ fn trial_with_iterations(
     placement: Option<&Placement>,
     iterations: usize,
 ) -> Result<Value> {
+    trial_for_driver(exe, protocol, bytes, placement, iterations, None)
+}
+
+fn trial_for_driver(
+    exe: &Path,
+    protocol: &str,
+    bytes: usize,
+    placement: Option<&Placement>,
+    iterations: usize,
+    driver: Option<&str>,
+) -> Result<Value> {
+    let portable = match driver {
+        Some("portable") => Some("1"),
+        Some("legacy") => Some("0"),
+        None => None,
+        _ => return Err("unknown TCP driver".into()),
+    };
+    let mut command = Placement::command(exe, placement.map(|p| p.server_cpu));
+    if let Some(portable) = portable {
+        command.env("CAPNTPROTO_BENCH_PORTABLE", portable);
+    }
     let mut server = Server(
-        Placement::command(exe, placement.map(|p| p.server_cpu))
+        command
             .arg("server")
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -96,6 +118,9 @@ fn trial_with_iterations(
         return Err("server must use loopback".into());
     }
     let mut client = Placement::command(exe, placement.map(|p| p.client_cpu));
+    if let Some(portable) = portable {
+        client.env("CAPNTPROTO_BENCH_PORTABLE", portable);
+    }
     client.args(["measure", address]);
     if protocol != "capnp-cpp" {
         client.arg(serde_json::to_string(&ready["public"])?);

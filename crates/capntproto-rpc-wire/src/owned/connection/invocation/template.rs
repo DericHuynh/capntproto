@@ -147,8 +147,8 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
     pub fn into_inner(self) -> capnp::message::Builder<A> {
         self.message.into_inner()
     }
-    /// Return a single-segment data-only certificate, or let the general codec
-    /// handle multiple segments. Any capability pointer in the content fails
+    /// Return a data-only certificate for one or two segments, or let the general
+    /// codec handle more segments. Any capability pointer in the content fails
     /// validation; callers with a capability table must use the general codec.
     #[inline(always)]
     pub fn encoded(
@@ -162,19 +162,18 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
         let Some((call, target)) = self.offsets else {
             return Ok(None);
         };
-        let capnp::OutputSegments::SingleSegment([segment]) =
-            self.message().get_segments_for_output()
-        else {
-            return Ok(None);
+        let segments = self.message().get_segments_for_output();
+        let (segment, second) = match &*segments {
+            [segment] => (*segment, None),
+            [segment, second] => (*segment, Some(*second)),
+            _ => return Ok(None),
         };
+        let words = segment.len() / 8 + second.map_or(0, |segment| segment.len() / 8);
         if options
             .traversal_limit_in_words
-            .is_some_and(|limit| segment.len() / 8 > limit)
+            .is_some_and(|limit| words > limit)
         {
-            return Err(capnp::Error::from_kind(capnp::ErrorKind::MessageTooLarge(
-                segment.len() / 8,
-            ))
-            .into());
+            return Err(capnp::Error::from_kind(capnp::ErrorKind::MessageTooLarge(words)).into());
         }
         // The private immutable envelope has exactly these three struct
         // layouts. The public editor can only change the selected content.
@@ -206,6 +205,7 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
             .validate_capability_indices(0, selected_options)?;
         Ok(Some(EncodedCall {
             segment,
+            second,
             options,
             template: PlainTemplate {
                 method: (method.interface, method.method),
@@ -217,12 +217,13 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
     }
 }
 
-/// An immutable single-segment Call constructed by a safe message builder.
+/// An immutable data-only Call constructed by a safe message builder.
 /// Builder ownership excludes overlapping wire objects; changing scalar IDs
 /// therefore cannot change parameters, pointers, or capability descriptors.
 /// Raw wire bytes cannot construct this certificate.
 pub struct EncodedCall<'a> {
     segment: &'a [u8],
+    second: Option<&'a [u8]>,
     template: PlainTemplate,
     options: capnp::message::ReaderOptions,
 }
@@ -253,10 +254,12 @@ impl<'a> EncodedCall<'a> {
     ) -> Result<Self, super::super::super::Error> {
         Ok(Self {
             segment,
+            second: None,
             template: PlainTemplate::read_segment(segment, method, options)?,
             options,
         })
     }
+    #[cfg(test)]
     pub(super) fn segment(&self) -> &'a [u8] {
         self.segment
     }
@@ -276,9 +279,80 @@ impl<'a> EncodedCall<'a> {
             && options.nesting_limit == self.options.nesting_limit
         {
             Ok(self.template)
+        } else if let Some(second) = self.second {
+            // The private certificate already proves the immutable envelope's
+            // method, target layout and empty capability table. Recheck only
+            // the ordinary envelope/payload traversal under the new limits.
+            let segments = [self.segment, second];
+            let words = self.segment.len() / 8 + second.len() / 8;
+            if options
+                .traversal_limit_in_words
+                .is_some_and(|limit| words > limit)
+            {
+                return Err(
+                    capnp::Error::from_kind(capnp::ErrorKind::MessageTooLarge(words)).into(),
+                );
+            }
+            let reader =
+                capnp::message::Reader::new(capnp::message::SegmentArray::new(&segments), options);
+            let root = reader.get_root::<rpc_capnp::message::Reader>()?;
+            let rpc_capnp::message::Call(call) = root
+                .which()
+                .map_err(|_| super::super::super::Error::WrongMessage)?
+            else {
+                return Err(super::super::super::Error::WrongMessage);
+            };
+            call?
+                .get_params()?
+                .get_content()
+                .validate_capability_indices(0)?;
+            Ok(self.template)
         } else {
             PlainTemplate::read_segment(self.segment, method, options)
         }
+    }
+    #[inline(always)]
+    pub(super) fn copy<'pool>(
+        &self,
+        template: PlainTemplate,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        question: QuestionId,
+        target: ImportId,
+        allow_handoff: bool,
+        options: capnp::message::ReaderOptions,
+    ) -> Result<Frame<'pool>, super::super::super::Error> {
+        let Some(second) = self.second else {
+            return template.copy_segment(
+                self.segment,
+                messages,
+                question,
+                target,
+                allow_handoff,
+                options,
+            );
+        };
+        let first_words = u32::try_from(self.segment.len() / 8)
+            .map_err(|_| super::super::super::Error::Capacity)?;
+        let second_words =
+            u32::try_from(second.len() / 8).map_err(|_| super::super::super::Error::Capacity)?;
+        let mut header = [0; 16];
+        header[..4].copy_from_slice(&1u32.to_le_bytes());
+        header[4..8].copy_from_slice(&first_words.to_le_bytes());
+        header[8..12].copy_from_slice(&second_words.to_le_bytes());
+        let lease = messages
+            .copy_from_parts(&[&header, self.segment, second], |output| {
+                // Both scalar fields belong to the immutable first-segment header.
+                // Copying both segments preserves all far pointers and landing pads.
+                let body = &mut output[16..];
+                body[template.call..template.call + 4]
+                    .copy_from_slice(&question.to_wire().to_le_bytes());
+                body[template.target..template.target + 4]
+                    .copy_from_slice(&target.to_wire().to_le_bytes());
+                body[template.call + 16] =
+                    (body[template.call + 16] & !0b101) | u8::from(allow_handoff);
+            })
+            .map_err(super::super::super::Error::Storage)?;
+        Ok(Frame::new(lease, options))
     }
 }
 
@@ -296,14 +370,12 @@ impl PlainTemplate {
         method: calls::DynamicCall,
         options: capnp::message::ReaderOptions,
     ) -> Result<Self, super::super::super::Error> {
+        let words = segment.len() / 8;
         if options
             .traversal_limit_in_words
-            .is_some_and(|limit| segment.len() / 8 > limit)
+            .is_some_and(|limit| words > limit)
         {
-            return Err(capnp::Error::from_kind(capnp::ErrorKind::MessageTooLarge(
-                segment.len() / 8,
-            ))
-            .into());
+            return Err(capnp::Error::from_kind(capnp::ErrorKind::MessageTooLarge(words)).into());
         }
         let segments = [segment];
         let reader =
@@ -436,6 +508,118 @@ impl PlainTemplate {
 mod tests {
     use super::*;
     use capnp::{field_api::Data, word, Word};
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn two_segment_call_preserves_far_payload_and_revalidates_limits() {
+        use capnp::message::{HeapAllocator, Reader, ReaderOptions, SegmentArray};
+        let mut call = PreparedCall::from_template(
+            &PreparedCallTemplate::default(),
+            HeapAllocator::new().first_segment_words(32),
+            17,
+            3,
+        )
+        .unwrap();
+        let data = [0xa5; 4096];
+        call.params()
+            .set_as::<capnp::data::Owned>(&data[..])
+            .unwrap();
+        let segments = call.message().get_segments_for_output();
+        assert_eq!(segments.len(), 2);
+        let words = segments
+            .iter()
+            .map(|segment| segment.len() / 8)
+            .sum::<usize>();
+        let encoded = call
+            .encoded(call.method, ReaderOptions::new())
+            .unwrap()
+            .unwrap();
+        assert!(encoded.second.is_some());
+        for nesting_limit in -1..8 {
+            for limit in [
+                Some(0),
+                Some(words - 1),
+                Some(words),
+                Some(words + 32),
+                None,
+            ] {
+                let options = ReaderOptions {
+                    nesting_limit,
+                    traversal_limit_in_words: limit,
+                };
+                let expected = (|| -> capnp::Result<()> {
+                    if limit.is_some_and(|limit| words > limit) {
+                        return Err(capnp::Error::from_kind(capnp::ErrorKind::MessageTooLarge(
+                            words,
+                        )));
+                    }
+                    let reader = Reader::new(SegmentArray::new(&segments), options);
+                    let root = reader.get_root::<rpc_capnp::message::Reader>()?;
+                    let rpc_capnp::message::Call(value) = root.which().unwrap() else {
+                        panic!()
+                    };
+                    value?
+                        .get_params()?
+                        .get_content()
+                        .validate_capability_indices(0)
+                })()
+                .map_err(crate::owned::Error::from);
+                assert_eq!(call.encoded(call.method, options).map(|_| ()), expected);
+                assert_eq!(
+                    encoded.for_policy(call.method, options).is_ok(),
+                    expected.is_ok()
+                );
+            }
+        }
+        let mut output_words = [word(0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa); 1024];
+        let mut buffers = [messages::Buffer::new(Word::words_to_bytes_mut(
+            &mut output_words,
+        ))];
+        messages::with_messages(&mut buffers, &mut [], |messages| {
+            for (id, handoff) in [(u32::MAX, true), (0, false)] {
+                let frame = encoded
+                    .copy(
+                        encoded.template,
+                        messages,
+                        QuestionId::from_wire(id),
+                        ImportId::from_wire(id),
+                        handoff,
+                        ReaderOptions::new(),
+                    )
+                    .unwrap();
+                assert_eq!(&messages.read(&frame.lease)[12..16], &[0; 4]);
+                frame
+                    .with(messages, |root| {
+                        let rpc_capnp::message::Call(value) = root.which().unwrap() else {
+                            panic!()
+                        };
+                        let value = value.unwrap();
+                        assert_eq!(value.get_question_id(), id);
+                        assert!(matches!(value.get_target().unwrap().which().unwrap(),
+                        rpc_capnp::message_target::ImportedCap(target) if target == id));
+                        assert_eq!((value.get_interface_id(), value.get_method_id()), (17, 3));
+                        assert!(value.get_no_promise_pipelining());
+                        assert_eq!(value.get_allow_third_party_tail_call(), handoff);
+                        assert_eq!(
+                            value
+                                .get_params()
+                                .unwrap()
+                                .get_content()
+                                .get_as::<capnp::data::Reader>()
+                                .unwrap(),
+                            &data
+                        );
+                    })
+                    .unwrap();
+                frame.release(messages);
+            }
+        })
+        .unwrap();
+        assert_eq!(
+            call.params().get_as::<capnp::data::Builder>().unwrap(),
+            data
+        );
+    }
 
     #[cfg(feature = "alloc")]
     #[test]

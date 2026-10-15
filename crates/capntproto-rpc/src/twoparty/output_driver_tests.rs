@@ -409,6 +409,37 @@ fn borrowed_frames_hold_exact_input_until_finished_and_end_on_truncation() {
 }
 
 #[test]
+fn reusable_output_sends_first_frame_eagerly_and_flushes_a_following_burst() {
+    let output = Rc::new(Output::default());
+    output.allowed.set(usize::MAX);
+    output.flushed.set(true);
+    let mut network = VatNetwork::new(
+        futures::io::Cursor::new(Vec::<u8>::new()),
+        Writer(output.clone()),
+        VatId::Client,
+        Default::default(),
+    );
+    let mut connection = network.connection.take().unwrap();
+    let mut stream = connection.take_outgoing_stream().unwrap();
+    let mut cx = Context::from_waker(Waker::noop());
+    assert!(network._output_driver.poll_network(&mut cx).is_pending());
+    let (first, mut expected) = frame("first");
+    stream.send(first).unwrap();
+    assert_eq!(*output.bytes.borrow(), expected);
+    let (second, bytes) = frame("second");
+    stream.send(second).unwrap();
+    assert_eq!(*output.bytes.borrow(), expected);
+    expected.extend(bytes);
+    assert!(matches!(stream.poll_flush(&mut cx), Poll::Ready(Ok(()))));
+    assert_eq!(*output.bytes.borrow(), expected);
+    let (third, bytes) = frame("first after flush");
+    stream.send(third).unwrap();
+    expected.extend(bytes);
+    assert_eq!(*output.bytes.borrow(), expected);
+    assert!(matches!(stream.poll_flush(&mut cx), Poll::Ready(Ok(()))));
+}
+
+#[test]
 fn reusable_output_observes_partial_writes_physical_flush_and_shared_fifo_order() {
     let output = Rc::new(Output::default());
     let mut network = VatNetwork::new(

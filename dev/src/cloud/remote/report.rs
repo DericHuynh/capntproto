@@ -120,7 +120,8 @@ fn portable_target(rows: &[Value]) -> Value {
                 .iter()
                 .filter(|row| {
                     row["case"] == portable["case"]
-                        && matches!(row["implementation"].as_str(), Some("legacy" | "capnp-cpp"))
+                        && (row["implementation"] == "legacy"
+                            || row["implementation"] == "capnp-cpp")
                 })
                 .min_by_key(|row| row["p50_ns"].as_u64().unwrap())
                 .expect("validated reference peers");
@@ -315,9 +316,11 @@ mod tests {
                 assert_eq!(target["all_workflows_pass"], passes);
                 let cells = target["rows"].as_array().unwrap();
                 assert_eq!(cells.len(), 12);
-                assert!(cells.iter().all(|cell| cell["reference"] == reference
-                    && cell["reference_p50_ns"] == 100
-                    && cell["meets_target"] == passes));
+                for cell in cells {
+                    assert_eq!(cell["reference"], reference);
+                    assert_eq!(cell["reference_p50_ns"], 100);
+                    assert_eq!(cell["meets_target"], passes);
+                }
             }
         }
         // One failing cell keeps the gap open, even if all other cells win.

@@ -419,6 +419,25 @@ pub(super) fn run(
                 cancel,
             )?;
         }
+        commands.ssh(&client.options, &client.public.to_string(),
+            "bash -o pipefail -c 'timeout --kill-after=10s 10m /root/bench/driver compare-portable /root/bench /root/results/portable-loopback 2>&1 | tee /root/results/portable-loopback.log'", 620, cancel)?;
+        fs::create_dir_all(output.join("portable-loopback"))?;
+        for file in [
+            "portable-loopback/trials.json",
+            "portable-loopback/environment.json",
+            "portable-loopback/summary.json",
+            "portable-loopback/README.md",
+            "portable-loopback.log",
+        ] {
+            commands.download(
+                &client.options,
+                &client.public.to_string(),
+                output,
+                file,
+                120,
+                cancel,
+            )?;
+        }
         Ok(())
     })();
     if result.is_err() {
@@ -433,6 +452,27 @@ pub(super) fn run(
             );
             if let Err(error) = retrieve(commands, host, &remote.join(role), &salvage) {
                 eprintln!("Could not salvage {role} artifacts: {error}");
+            }
+            if role == "client" {
+                let _ = fs::create_dir_all(output.join("portable-loopback"));
+                for file in [
+                    "portable-loopback.log",
+                    "portable-loopback/environment.json",
+                    "portable-loopback/trials.json",
+                    "portable-loopback/summary.json",
+                    "portable-loopback/README.md",
+                ] {
+                    if let Err(error) = commands.download(
+                        &host.options,
+                        &host.public.to_string(),
+                        output,
+                        file,
+                        120,
+                        &salvage,
+                    ) {
+                        eprintln!("Could not salvage {file}: {error}");
+                    }
+                }
             }
         }
     }

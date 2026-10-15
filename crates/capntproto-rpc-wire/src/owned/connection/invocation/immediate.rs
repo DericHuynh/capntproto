@@ -134,10 +134,9 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .map_err(|e| Error::Input(super::super::super::Error::Storage(e)))?;
         let reservation = self.ledgers.questions.reserve().map_err(Error::Question)?;
         let frame = match params {
-            ImmediateParams::EncodedCall(encoded) => template
-                .expect("validated encoded Call")
-                .copy_segment(
-                    encoded.segment(),
+            ImmediateParams::EncodedCall(encoded) => encoded
+                .copy(
+                    template.expect("validated encoded Call"),
                     messages,
                     reservation.id(),
                     target,

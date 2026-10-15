@@ -16,6 +16,9 @@ use futures_util::AsyncRead;
 const DEFAULT_BUFFER_WORDS: usize = 8192;
 // Every legal segment table fits, even when a frame's body needs direct I/O.
 const MIN_BUFFER_WORDS: usize = capnp::serialize::SEGMENTS_COUNT_LIMIT / 2;
+// Borrowed frames have no escaping allocation owner. Reuse one completed spill
+// for the next frame, bounded independently of potentially unlimited readers.
+const MAX_CACHED_SPILL_WORDS: usize = 1 << 20;
 
 struct Frame {
     // Like C++'s segment0, the common segment needs no tagged lookup or heap
@@ -278,6 +281,7 @@ pub struct BufferedRead<R> {
     end: usize,
     frame: Option<Frame>,
     spill: Option<Spill>,
+    spare: Vec<Word>,
     terminal: Option<Result<()>>,
     consumed: u64,
     borrowed: bool,
@@ -306,6 +310,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
             end: 0,
             frame: None,
             spill: None,
+            spare: Vec::new(),
             terminal: None,
             consumed: 0,
             borrowed: false,
@@ -551,11 +556,20 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
     }
 
     /// Release a borrowed frame. Calling this without a frame leaves partial
-    /// input untouched, so canceled polls can resume normally.
+    /// input untouched, so canceled polls can resume normally. A completed spill
+    /// of at most 8 MiB is retained for reuse until the stream is dropped. Its
+    /// contents cannot be observed until a subsequent complete read overwrites
+    /// the entire exposed frame; owning receive APIs still transfer their storage.
     pub fn finish_borrowed_frame(&mut self) {
-        if core::mem::take(&mut self.borrowed) && self.spill.take().is_none() {
-            let bytes = self.frame.take().expect("borrowed frame").bytes;
-            self.consume_buffered(bytes);
+        if core::mem::take(&mut self.borrowed) {
+            if let Some(spill) = self.spill.take() {
+                if spill.storage.capacity() <= MAX_CACHED_SPILL_WORDS {
+                    self.spare = spill.storage;
+                }
+            } else {
+                let bytes = self.frame.take().expect("borrowed frame").bytes;
+                self.consume_buffered(bytes);
+            }
         }
     }
 
@@ -588,7 +602,13 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
                     return Poll::Ready(Ok(true));
                 }
                 if frame.bytes > self.buffer.len() * 4 || !(self.read_ahead)(&self.input) {
-                    let mut storage = Word::allocate_zeroed_vec(frame.bytes / 8);
+                    let words = frame.bytes / 8;
+                    let mut storage = core::mem::take(&mut self.spare);
+                    if storage.capacity() < words {
+                        storage = Word::allocate_zeroed_vec(words);
+                    } else {
+                        storage.resize(words, capnp::word(0, 0, 0, 0, 0, 0, 0, 0));
+                    }
                     let filled = self.end - self.begin;
                     Word::words_to_bytes_mut(&mut storage)[..filled]
                         .copy_from_slice(&Word::words_to_bytes(&self.buffer)[self.begin..self.end]);
@@ -632,6 +652,40 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
                 });
             }
             self.end += count;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "exercises the 8 MiB retention boundary; small fragmented reuse is covered separately"
+    )]
+    fn borrowed_spill_cache_has_a_fixed_capacity_bound() {
+        for length in [8192, MAX_CACHED_SPILL_WORDS * 8 + 8] {
+            let mut message = capnp::message::Builder::new_default();
+            message
+                .initn_root::<capnp::data::Builder>(length as u32)
+                .fill(0x5a);
+            let bytes = capnp::serialize::write_message_to_words(&message);
+            let mut input = BufferedRead::with_buffer_size(
+                futures::io::Cursor::new(bytes.clone()),
+                Default::default(),
+                MIN_BUFFER_WORDS,
+            )
+            .unwrap();
+            let mut cx = Context::from_waker(std::task::Waker::noop());
+            let Poll::Ready(Ok(Some(frame))) = input.poll_borrowed_frame(&mut cx) else {
+                panic!("complete frame")
+            };
+            assert_eq!(frame, bytes);
+            input.finish_borrowed_frame();
+            assert!(input.spare.capacity() <= MAX_CACHED_SPILL_WORDS);
+            assert_eq!(input.spare.is_empty(), length > MAX_CACHED_SPILL_WORDS * 8);
         }
     }
 }

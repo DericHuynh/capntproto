@@ -285,6 +285,12 @@ pub fn run(protocol: Option<&str>) -> Result<()> {
             std::path::Path::new(&args[2]),
         );
     }
+    if args.first().map(String::as_str) == Some("compare-portable") && args.len() == 3 {
+        return driver::portable::compare(
+            std::path::Path::new(&args[1]),
+            std::path::Path::new(&args[2]),
+        );
+    }
     if matches!(
         args.first().map(String::as_str),
         Some("workflow-host" | "workflow-client")

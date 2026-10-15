@@ -127,6 +127,13 @@ fn borrowed_frames_preserve_fragmentation_ownership_and_receive_mode_switches() 
             let Poll::Ready(Ok(Some(bytes))) = reader.poll_borrowed_frame(&mut cx) else {
                 panic!("read third frame after dropping shared message");
             };
+            if size == 8192 {
+                assert_eq!(
+                    bytes.as_ptr(),
+                    address,
+                    "reuse the released large-frame storage"
+                );
+            }
             assert_eq!(bytes, first);
             reader.finish_borrowed_frame();
             assert_eq!(
@@ -142,6 +149,42 @@ fn borrowed_frames_preserve_fragmentation_ownership_and_receive_mode_switches() 
             assert_eq!(input.0.borrow().calls, calls);
         }
     }
+}
+
+#[test]
+fn reused_borrowed_spill_hides_partial_and_stale_bytes() {
+    let frames = [data(16384, 0xa5), data(8192, 0x39), data(16384, 0x71)];
+    let input = source(frames.concat());
+    input.0.borrow_mut().chunk = 7;
+    input.0.borrow_mut().closed = false;
+    let mut reader =
+        BufferedRead::with_buffer_size(input.clone(), Default::default(), 256).unwrap();
+    let mut cx = Context::from_waker(std::task::Waker::noop());
+    let mut consumed = 0;
+    let mut storage = None;
+    for frame in frames {
+        input.0.borrow_mut().available = consumed + frame.len() - 1;
+        assert!(reader.poll_borrowed_frame(&mut cx).is_pending());
+        assert!(reader.borrowed_frame().is_none());
+        reader.finish_borrowed_frame(); // Cancellation preserves the partial overwrite.
+        input.0.borrow_mut().available += 1;
+        let Poll::Ready(Ok(Some(bytes))) = reader.poll_borrowed_frame(&mut cx) else {
+            panic!("complete frame")
+        };
+        assert_eq!(bytes, frame);
+        if let Some(storage) = storage {
+            assert_eq!(bytes.as_ptr(), storage);
+        }
+        storage = Some(bytes.as_ptr());
+        consumed += frame.len();
+        reader.finish_borrowed_frame();
+    }
+    input.0.borrow_mut().closed = true;
+    assert!(matches!(
+        reader.poll_borrowed_frame(&mut cx),
+        Poll::Ready(Ok(None))
+    ));
+    assert_eq!(reader.consumed_bytes(), consumed as u64);
 }
 
 #[test]

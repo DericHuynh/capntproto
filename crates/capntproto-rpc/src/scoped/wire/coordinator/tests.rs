@@ -64,10 +64,17 @@ struct Policy {
     wake_during_poll: bool,
     publish_on_poll: bool,
     preserve_plain: bool,
+    direct_returns: bool,
     notify_receive: bool,
     idle_transitions: Vec<bool>,
 }
 impl<'p, 'id, 's> Control<'p, 'id, 's, (), u8, 8, 8> for Policy {
+    fn accepts_direct_plain_return(&self) -> bool {
+        self.direct_returns
+    }
+    fn plain_return_preserves_idle(&self) -> bool {
+        self.direct_returns
+    }
     fn plain_call_preserves_idle(&self) -> bool {
         self.preserve_plain
     }

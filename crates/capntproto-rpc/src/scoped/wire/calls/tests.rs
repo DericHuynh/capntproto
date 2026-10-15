@@ -848,119 +848,214 @@ fn direct_remote_cancellation_reclaims_queued_and_late_return_owners() {
 }
 
 #[test]
-fn immediate_reply_index_survives_bursts_cancellation_and_question_reuse() {
+fn burst_admission_keeps_older_cancellation_fair_when_capacity_fills() {
     with_peer(|mut driver, messages| {
         let mut hooks = ClientHooks::new(24, 24);
         let client = remote(&mut driver, &mut hooks);
         let mut calls = Calls::new(16, None).unwrap();
         let mut queue = messages::Queue::new_growing(0, 1).unwrap();
-        let mut previous = Vec::new();
-        for round in 0..3 {
-            let mut responses = Vec::new();
-            for _ in 0..12 {
-                let mut request = request(&client, 1);
-                request.hook.set_hints(CallHints {
-                    no_promise_pipelining: true,
-                    ..Default::default()
-                });
-                responses.push(Some(request.send()));
-                let mut published = false;
-                for _ in 0..256 {
-                    if let Poll::Ready(result) = tick(
-                        &mut calls,
-                        &mut hooks,
-                        &mut driver,
-                        messages,
-                        &mut queue,
-                        &mut Context::from_waker(Waker::noop()),
-                    ) {
-                        if result.unwrap() == Progress::Published {
-                            published = true;
-                            break;
+        let mut responses = Vec::new();
+        for index in 0..24 {
+            let mut request = request(&client, 1);
+            request.hook.set_hints(CallHints {
+                no_promise_pipelining: true,
+                ..Default::default()
+            });
+            responses.push(Some(request.send()));
+            if index < 9 {
+                drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+                drain(&mut queue, messages);
+            }
+        }
+        let Some(DirectStage::Sent(first)) = calls.entries[0].as_ref().unwrap().wire.direct else {
+            panic!("direct call")
+        };
+        drop(responses[0].take());
+        let mut retired = false;
+        for _ in 0..64 {
+            if let Poll::Ready(result) = calls.poll(
+                &mut hooks,
+                &mut driver,
+                messages,
+                &mut queue,
+                128,
+                Default::default(),
+                &mut [0; 24],
+                &mut Context::from_waker(Waker::noop()),
+                NonZeroUsize::new(8).unwrap(),
+                import,
+            ) {
+                result.unwrap();
+            }
+            drain(&mut queue, messages);
+            if calls.immediate_receiver(first).is_none() {
+                retired = true;
+                break;
+            }
+        }
+        assert!(
+            retired,
+            "new admissions must not starve an older cancellation"
+        );
+        assert!(
+            !hooks.inbox.queue.borrow().is_empty(),
+            "exercise cancellation while newer requests still wait"
+        );
+        drop((responses, client));
+        teardown(calls, hooks, driver, messages, &mut queue);
+    });
+}
+
+#[test]
+fn immediate_reply_index_survives_bursts_cancellation_and_question_reuse() {
+    for budget in [1, 8] {
+        with_peer(|mut driver, messages| {
+            let mut hooks = ClientHooks::new(24, 24);
+            let client = remote(&mut driver, &mut hooks);
+            let mut calls = Calls::new(16, None).unwrap();
+            let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+            let mut previous = Vec::new();
+            for round in 0..3 {
+                let mut responses = Vec::new();
+                for _ in 0..12 {
+                    let mut request = request(&client, 1);
+                    request.hook.set_hints(CallHints {
+                        no_promise_pipelining: true,
+                        ..Default::default()
+                    });
+                    responses.push(Some(request.send()));
+                    let mut published = false;
+                    for _ in 0..256 {
+                        if let Poll::Ready(result) = calls.poll(
+                            &mut hooks,
+                            &mut driver,
+                            messages,
+                            &mut queue,
+                            128,
+                            Default::default(),
+                            &mut [0; 24],
+                            &mut Context::from_waker(Waker::noop()),
+                            NonZeroUsize::new(budget).unwrap(),
+                            import,
+                        ) {
+                            if result.unwrap() == Progress::Published {
+                                published = true;
+                                break;
+                            }
+                        }
+                    }
+                    assert!(published);
+                    drain(&mut queue, messages);
+                }
+                let questions: Vec<_> = calls
+                    .entries
+                    .iter()
+                    .flatten()
+                    .map(|entry| {
+                        let Some(DirectStage::Sent(key)) = entry.wire.direct else {
+                            panic!("immediate call")
+                        };
+                        key
+                    })
+                    .collect();
+                assert_eq!(calls.reply_owners.len(), 12);
+                for old in &previous {
+                    assert!(
+                        calls.plain_receiver(*old).is_none(),
+                        "stale generation selected a new owner"
+                    );
+                    assert!(calls.immediate_receiver(*old).is_none());
+                }
+                if round != 0 {
+                    assert!(
+                        previous
+                            .iter()
+                            .any(|old| questions.iter().any(|key| old.id() == key.id())),
+                        "exercise question ID reuse"
+                    );
+                    drop(responses[1].take());
+                    assert!(calls.plain_receiver(questions[1]).is_none());
+                }
+                // Replies arrive in reverse order, with a canceled reply mixed in.
+                for index in (0..12).rev() {
+                    let key = questions[index];
+                    let reply = Frame::build(messages, 128, Default::default(), |builder| {
+                        use rpc_capnp::api::{Message, Return};
+                        let root = builder.try_init_root::<Message>()?;
+                        let mut result = root.into_field(Message::RETURN).init()?;
+                        result.scalar(Return::ANSWER_ID).set(key.id().to_wire());
+                        result.scalar(Return::RELEASE_PARAM_CAPS).set(false);
+                        result.scalar(Return::NO_FINISH_NEEDED).set(true);
+                        result.into_field(Return::RESULTS).init()?;
+                        Ok(())
+                    })
+                    .unwrap();
+                    if round == 0 && index % 2 == 0 {
+                        // An owned return admitted through the general reader uses
+                        // the same indexed owner and full generation check.
+                        match driver.receive(reply, messages, &mut [0; 24], |_| (), || ()) {
+                            Ok(connection::Received::Returned(returned)) => {
+                                assert_eq!(returned, key)
+                            }
+                            _ => panic!("ordinary return admission"),
+                        }
+                        assert_eq!(
+                            calls
+                                .returned(
+                                    key,
+                                    &mut hooks,
+                                    &mut driver,
+                                    messages,
+                                    &mut Context::from_waker(Waker::noop()),
+                                    |hooks, driver| { hooks.collect(&mut driver.runtime) }
+                                )
+                                .unwrap(),
+                            Some(true)
+                        );
+                        let mut response = responses[index].take().unwrap();
+                        ready(&mut response.promise).unwrap();
+                        continue;
+                    }
+                    let received = match driver
+                        .try_receive_plain_owned(reply, messages, |key| calls.plain_receiver(key))
+                    {
+                        Ok(received) => received,
+                        Err((error, _)) => panic!("plain return: {error:?}"),
+                    };
+                    match received {
+                        connection::PlainReceived::Delivered(owner, message) => {
+                            assert!(responses[index].is_some());
+                            calls.deliver_plain(owner, message);
+                            assert!(calls.plain_receiver(key).is_none());
+                            let mut response = responses[index].take().unwrap();
+                            ready(&mut response.promise).unwrap();
+                        }
+                        connection::PlainReceived::Deferred(frame) => {
+                            assert!(
+                                responses[index].is_none(),
+                                "live immediate reply missed its index"
+                            );
+                            if let Err(rejected) =
+                                driver.receive(frame, messages, &mut [0; 24], |_| (), || ())
+                            {
+                                panic!("canceled return: {:?}", rejected.error);
+                            }
+                            drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
                         }
                     }
                 }
-                assert!(published);
-                drain(&mut queue, messages);
-            }
-            let questions: Vec<_> = calls
-                .entries
-                .iter()
-                .flatten()
-                .map(|entry| {
-                    let Some(DirectStage::Sent(key)) = entry.wire.direct else {
-                        panic!("immediate call")
-                    };
-                    key
-                })
-                .collect();
-            assert_eq!(calls.reply_owners.len(), 12);
-            for old in &previous {
+                assert!(calls.is_empty());
                 assert!(
-                    calls.plain_receiver(*old).is_none(),
-                    "stale generation selected a new owner"
+                    calls.reply_owners.is_empty(),
+                    "retirement must release every index entry"
                 );
+                previous = questions;
+                drop(responses);
             }
-            if round != 0 {
-                assert!(
-                    previous
-                        .iter()
-                        .any(|old| questions.iter().any(|key| old.id() == key.id())),
-                    "exercise question ID reuse"
-                );
-                drop(responses[1].take());
-                assert!(calls.plain_receiver(questions[1]).is_none());
-            }
-            // Replies arrive in reverse order, with a canceled reply mixed in.
-            for index in (0..12).rev() {
-                let key = questions[index];
-                let reply = Frame::build(messages, 128, Default::default(), |builder| {
-                    use rpc_capnp::api::{Message, Return};
-                    let root = builder.try_init_root::<Message>()?;
-                    let mut result = root.into_field(Message::RETURN).init()?;
-                    result.scalar(Return::ANSWER_ID).set(key.id().to_wire());
-                    result.scalar(Return::RELEASE_PARAM_CAPS).set(false);
-                    result.scalar(Return::NO_FINISH_NEEDED).set(true);
-                    result.into_field(Return::RESULTS).init()?;
-                    Ok(())
-                })
-                .unwrap();
-                match driver
-                    .try_receive_plain_owned(reply, messages, |key| calls.plain_receiver(key))
-                    .unwrap_or_else(|(error, _)| panic!("plain return: {error:?}"))
-                {
-                    connection::PlainReceived::Delivered(owner, message) => {
-                        assert!(responses[index].is_some());
-                        calls.deliver_plain(owner, message);
-                        assert!(calls.plain_receiver(key).is_none());
-                        let mut response = responses[index].take().unwrap();
-                        ready(&mut response.promise).unwrap();
-                    }
-                    connection::PlainReceived::Deferred(frame) => {
-                        assert!(
-                            responses[index].is_none(),
-                            "live immediate reply missed its index"
-                        );
-                        driver
-                            .receive(frame, messages, &mut [0; 24], |_| (), || ())
-                            .unwrap_or_else(|rejected| {
-                                panic!("canceled return: {:?}", rejected.error)
-                            });
-                        drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
-                    }
-                }
-            }
-            assert!(calls.is_empty());
-            assert!(
-                calls.reply_owners.is_empty(),
-                "retirement must release every index entry"
-            );
-            previous = questions;
-            drop(responses);
-        }
-        drop(client);
-        teardown(calls, hooks, driver, messages, &mut queue);
-    });
+            drop(client);
+            teardown(calls, hooks, driver, messages, &mut queue);
+        });
+    }
 }
 
 #[test]

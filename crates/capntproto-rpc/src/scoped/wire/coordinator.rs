@@ -816,7 +816,9 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 advanced = true;
                 // Publish promptly and give a completed application's waker a
                 // chance to run before scanning unrelated maintenance lanes.
-                if completed || queue.len() > queued {
+                let batch_calls =
+                    published && queue.len() < 8 && !self.hooks.inbox.queue.borrow().is_empty();
+                if completed || (queue.len() > queued && !batch_calls) {
                     return Poll::Ready(Ok(()));
                 }
                 continue;
@@ -1335,7 +1337,9 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     }
                 }
                 let frame = pending.take().expect("pending admission");
-                let frame = if controls.accepts_direct_plain_return() && !self.calls.is_empty() {
+                let frame = if controls.accepts_direct_plain_return()
+                    && self.calls.has_plain_receivers()
+                {
                     match self.driver.try_receive_plain_owned(frame, messages, |key| {
                         self.calls.plain_receiver(key)
                     }) {
@@ -1343,6 +1347,12 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                             reader.finish_frame();
                             pump.blocked = false;
                             self.delivered_plain(index, message, controls);
+                            if self.calls.has_indexed_replies()
+                                && pump.frames < self.options.budget.get().min(8)
+                            {
+                                continue;
+                            }
+                            pump.frames = 0;
                             cx.waker().wake_by_ref();
                             return Poll::Pending;
                         }
@@ -1498,7 +1508,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     capnp::ErrorKind::BufferNotLargeEnough,
                 )))));
             }
-            if controls.accepts_direct_plain_return() && !self.calls.is_empty() {
+            if controls.accepts_direct_plain_return() && self.calls.has_plain_receivers() {
                 if let Poll::Ready(result) = self.poll_stop(stop.as_mut(), cx) {
                     return Poll::Ready(
                         result
@@ -1521,6 +1531,13 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     {
                         reader.consume_buffered_frame();
                         self.delivered_plain(index, message, controls);
+                        pump.frames += 1;
+                        if self.calls.has_indexed_replies()
+                            && pump.frames < self.options.budget.get().min(8)
+                        {
+                            continue;
+                        }
+                        pump.frames = 0;
                         cx.waker().wake_by_ref();
                         return Poll::Pending;
                     }

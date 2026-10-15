@@ -871,6 +871,12 @@ application segments independently of live messages and the wire-buffer budget;
 zero disables retention. Regression tests retain responses across reuse, check
 zeroed segments, and exercise output exhaustion before call admission.
 
+The borrowed-frame TCP receive path additionally retains one completed spill
+allocation up to 8 MiB per connection. This transport cache is separate from
+application segments and the portable wire-buffer budget. It never retains a
+larger spill, exposes only completely received frames, and is freed with the
+stream. Owning receive APIs continue transferring their frame allocation.
+
 The allocation-free engine retains caller-owned storage and the same protocol
 transitions. The library's default remains legacy while bilateral Join and
 remaining tail/pipeline-only integration are completed. Performance qualification
@@ -2799,7 +2805,7 @@ investigate per-reply executor yielding and remaining scans under fan-out before
 qualifying the owner-index change. All samples, including regressions, remain in
 the local evidence bundle.
 
-Final executable SHA-256:
+First-slice executable SHA-256:
 `f7737934a089a190bf3ad1f58609bd62cb32079fed94bc5a571a110b73a206cc`.
 Raw local trials, profiles, executable identities and experiment scripts are
 retained under `target/portable-performance-20261015/`. Validation passed 253
@@ -2808,6 +2814,71 @@ interoperability smoke cases across portable/legacy combinations and both
 portable/C++ directions, including 4-MiB payloads. Clippy, formatting and wiki
 checks passed. Full workspace/Miri/formal campaigns and a new dedicated latency
 campaign are still required for broader qualification.
+
+The follow-up candidates batch up to eight ready outgoing Calls before flushing
+and up to eight incoming frames before yielding. Admission still rotates through
+older cancellation/local/pipeline work; controls and shutdown run between reply
+frames. Two-segment prepared Calls preserve their validated far pointers while
+copying the frame directly, and borrowed receive spills reuse one allocation
+within the 8-MiB transport-cache bound described above. Capability-only pending
+calls no longer attempt the ineligible direct-return copy path.
+
+Local diagnostics with the same pinned processes show these incremental gains;
+each row compares implementations within its own rotating campaign. The burst
+campaign used five repetitions and the cache campaign used three, each with 250
+warmups and 1,000 retained workflows per trial. They remain separate from remote
+qualification, and all trial samples are retained.
+
+| Candidate / workflow | Previous portable p50 (µs) | Candidate p50 (µs) | Faster reference p50 (µs) | Candidate/reference |
+| --- | ---: | ---: | ---: | ---: |
+| Batching / fanout-32 | 206.915 | 146.897 | 144.934 | 1.014× |
+| Spill reuse / bulk-256k | 250.729 | 142.460 | 168.669 | 0.845× |
+| Spill reuse / bulk-1m | 895.421 | 535.510 | 685.371 | 0.781× |
+| Spill reuse / bulk-4m | 6,346.351 | 4,684.619 | 4,317.088 | 1.085× |
+
+The 4-MiB and capability-workflow gaps remain open pending the complete follow-up
+campaign. Regression tests exercise mixed direct/general reply batches, stopping
+between frames, cancellation while newer calls wait, changed reader limits,
+dirty two-segment destination storage, partial receive reuse and the cache bound.
+
+A full intermediate run exposed an empty-call instruction regression when every
+output frame waited for a later flush: portable/legacy rose to approximately
+1.146× client and 1.145× server. That prototype was rejected. The current output
+stream sends the first frame eagerly and defers only subsequent frames until
+flush. The same executable now measures **17,824,838 / 17,136,792 client
+(1.040150×)** and **16,423,553 / 16,043,307 server (1.023701×)**. A larger call-lane
+quantum was also removed after unfavorable capability-workflow latency results.
+The complete intermediate trials remain diagnostic evidence, including misses.
+
+The new comparison harness was exercised locally with an explicit CLI adapter
+around the release driver (not the CI bundle). Its four portable/faster-reference
+ratios are **1.010×, 1.012×, 1.015× and 1.134×** for 0, 64, 1,024 and 65,536 bytes.
+The 64-KiB target is still open. The current executable SHA-256 is
+`5d3bbd5f0a5164e4b097d6c9214eff00fd5eb01407cc9b287086668b09919f35`.
+Validation passes 256 RPC, 120 wire, 42 futures, nine remote-run/report and
+15 benchmark unit tests, all 24 buffered-input integration tests (including the
+pinned C++ and TLC checks), and 72 mixed-driver workflow checks. These checks do
+not substitute for latency qualification.
+
+The full follow-up local workflow run retains all 240 trials (five rotating
+repetitions, 250 warmups and 1,000 samples). Six of twelve cells meet the target.
+Fan-out is 0.966× the faster reference, bulk-256k 0.727× and bulk-1m 0.794×.
+Misses remain: unary-small 1.340×, dependent-read 1.281×, pipelined-read 1.246×,
+callback 1.393×, bulk-64k 1.314× and bulk-4m 1.127×. The small unary cell shows
+the host's large timing shifts: individual portable medians alternate between
+about 20 and 30 µs, while the independent loopback campaign above measures 1.012×.
+Both campaigns remain visible; neither qualifies the dedicated-host target.
+Raw evidence and the combined report are retained in
+`target/portable-performance-followup-20261015/`.
+
+Dedicated campaigns also run `compare-portable` on the client host after the
+existing controls. It rotates portable, legacy and C++ across all four loopback
+payloads, explicitly selects the Rust driver for both peers, verifies executable
+hashes, and retains five repetitions of 10,000 warmups plus 1,000 samples. Its
+separate `portable-loopback/README.md` and `summary.json` apply the same 1.05×
+faster-reference target to every payload, including 64 KiB; invalid/missing or
+duplicate trials fail validation. Valid misses remain advisory evidence while
+the gap is open. Partial results are salvaged before host cleanup on failure.
 
 ### Portable and legacy instruction qualification
 

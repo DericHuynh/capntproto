@@ -260,6 +260,12 @@ fn pair_lifecycle_cleans_up_after_second_creation_and_measurement_failures() {
             assert_eq!(loopback_host, topology["client"]);
             assert_ne!(loopback_host, topology["server"]);
             let calls = commands.0.borrow();
+            assert!(
+                calls
+                    .iter()
+                    .any(|c| c.contains(":/root/results/portable-loopback/trials.json")),
+                "partial portable controls must be salvaged before cleanup"
+            );
             assert!(calls
                 .iter()
                 .any(|c| c.contains("workflow-client /root/bench 10.0.0.1")));

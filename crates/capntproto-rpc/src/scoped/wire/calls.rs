@@ -74,6 +74,7 @@ pub struct Calls<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> {
     cursor: usize,
     remaining: usize,
     scan_size: usize,
+    admission_streak: u8,
     executor: Option<Rc<dyn capability::CallExecutor>>,
 }
 impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p, 'id, I, C, H> {
@@ -90,6 +91,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             cursor: 0,
             remaining: 0,
             scan_size: 0,
+            admission_streak: 0,
             executor,
         })
     }
@@ -100,6 +102,19 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
     }
     pub(super) fn invalidate_scan(&mut self) {
         self.remaining = 0;
+    }
+    pub(super) fn has_indexed_replies(&self) -> bool {
+        !self.reply_owners.is_empty()
+    }
+    pub(super) fn has_plain_receivers(&self) -> bool {
+        if self.entries.len() > 8 {
+            !self.reply_owners.is_empty()
+        } else {
+            self.entries
+                .iter()
+                .flatten()
+                .any(|entry| entry.reply_id.is_some())
+        }
     }
     /// Immediately after publication, a lone direct call can only progress on
     /// input or an application wake (including cancellation). Do not apply this
@@ -501,6 +516,27 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             Publication<'_, 'id>,
         ) -> capnp::Result<Option<Published<'id>>>,
     ) -> Poll<Result<Progress, Box<Error>>> {
+        // A burst need not rescan every outstanding question before publishing
+        // its next request. At most eight admissions precede an ordinary scan
+        // quantum; that scan retains its cursor, including cancellation and
+        // older local/pipelined work. Reserve a step for it on blocked admission.
+        if !advanced
+            && remaining_budget > 1
+            && self.entries.len() > 8
+            && self.admission_streak < 8
+            && !hooks.inbox.queue.borrow().is_empty()
+        {
+            self.admission_streak += 1;
+            remaining_budget -= 1;
+            refresh(hooks, driver);
+            match self.admit(hooks, driver, messages, options, cx, &mut import, &mut send)? {
+                Some(Progress::Published) => return Poll::Ready(Ok(Progress::Published)),
+                Some(_) => advanced = true,
+                None => (),
+            }
+        } else {
+            self.admission_streak = 0;
+        }
         // Immediate settled calls have no queued dispatch, projection, local
         // execution or internal completion channel. Visit only their actual
         // owners and admission, retaining a rotating cursor and the caller's

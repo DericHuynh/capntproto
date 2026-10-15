@@ -23,6 +23,197 @@ impl transport::Input<()> for BufferedInput {
     fn finish_frame(&mut self) {}
 }
 
+#[derive(Default)]
+struct Replies {
+    frames: std::collections::VecDeque<Vec<capnp::Word>>,
+    consumed: usize,
+    stop: Option<Rc<Signal>>,
+}
+impl io::Read for Replies {
+    type Error = ();
+    fn poll_read(
+        &mut self,
+        _: &mut Context<'_>,
+        _: &mut [u8],
+    ) -> Poll<Result<usize, io::IoError<()>>> {
+        panic!("complete buffered replies")
+    }
+}
+impl ImportReceiver<()> for Replies {
+    fn make_import(&mut self, _: ImportId) {}
+}
+impl transport::Input<()> for Replies {
+    fn take_buffered_frame<'p>(
+        &mut self,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        options: capnp::message::ReaderOptions,
+    ) -> Result<Option<Frame<'p>>, capntproto_rpc_wire::owned::Error> {
+        Frame::copy_from(messages, self.buffered_frame().unwrap(), options).map(Some)
+    }
+    fn poll_frame_size(&mut self, _: &mut Context<'_>) -> Poll<Result<Option<usize>, ()>> {
+        match self.frames.front() {
+            Some(frame) => Poll::Ready(Ok(Some(frame.len() * 8))),
+            None => Poll::Pending,
+        }
+    }
+    fn buffered_frame(&self) -> Option<&[u8]> {
+        self.frames
+            .front()
+            .map(|words| capnp::Word::words_to_bytes(words))
+    }
+    fn finish_frame(&mut self) {
+        self.frames.pop_front().unwrap();
+        self.consumed += 1;
+        if let Some(stop) = &self.stop {
+            stop.stop();
+        }
+    }
+}
+
+#[test]
+fn indexed_reply_batches_respect_frame_budget_and_stop_between_frames() {
+    for budget in [1, 4, 8, 64] {
+        for stop_after_first in [false, true] {
+            with_peer(|mut driver, messages| {
+                let mut hooks = ClientHooks::new(16, 16);
+                let client = remote(&mut driver, &mut hooks, ImportId::from_wire(7));
+                let mut opts = options();
+                opts.budget = NonZeroUsize::new(budget).unwrap();
+                let mut coordinator =
+                    Coordinator::new(driver, hooks, NonZeroUsize::new(16).unwrap(), None, opts)
+                        .unwrap();
+                let responses: Vec<_> = (0..12)
+                    .map(|_| {
+                        client
+                            .new_call_with_hints::<any_pointer::Owned, any_pointer::Owned>(
+                                7,
+                                0,
+                                None,
+                                capability::CallHints {
+                                    no_promise_pipelining: true,
+                                    ..Default::default()
+                                },
+                            )
+                            .send()
+                    })
+                    .collect();
+                let mut queue = messages::Queue::new_growing(0, 4).unwrap();
+                let pipe = Rc::new(RefCell::new(Pipe::default()));
+                let mut bytes = Writer(pipe.clone());
+                let mut writer = transport::Writer(&mut bytes);
+                let mut control = Policy {
+                    direct_returns: true,
+                    ..Default::default()
+                };
+                let mut cx = Context::from_waker(Waker::noop());
+                let application_waker = Waker::from(coordinator.wake.clone());
+                let mut scratch = [0; 32];
+                let mut sent = Vec::new();
+                for _ in 0..4096 {
+                    coordinator
+                        .poll_io_work::<(), _, _>(
+                            messages,
+                            &mut queue,
+                            &mut writer,
+                            &mut scratch,
+                            &NoResources,
+                            &mut control,
+                            &mut cx,
+                        )
+                        .unwrap();
+                    sent.extend(pipe.borrow_mut().bytes.drain(..));
+                    if let Some(wake) = pipe.borrow_mut().write_wake.take() {
+                        wake.wake();
+                    }
+                    if coordinator.active == 0 && queue.is_empty() && coordinator.output.is_clean()
+                    {
+                        break;
+                    }
+                }
+                let signal = Rc::new(Signal::default());
+                let mut reader = Replies {
+                    stop: stop_after_first.then(|| signal.clone()),
+                    ..Default::default()
+                };
+                let mut sent = sent.as_slice();
+                while !sent.is_empty() {
+                    let message = capnp::serialize::read_message(&mut sent, opts.reader).unwrap();
+                    let crate::rpc_capnp::message::Call(call) = message
+                        .get_root::<crate::rpc_capnp::message::Reader>()
+                        .unwrap()
+                        .which()
+                        .unwrap()
+                    else {
+                        panic!("Call")
+                    };
+                    let id = call.unwrap().get_question_id();
+                    let mut reply = capnp::message::Builder::new_default();
+                    let mut result = reply
+                        .init_root::<crate::rpc_capnp::message::Builder>()
+                        .init_return();
+                    result.set_answer_id(id);
+                    result.set_release_param_caps(false);
+                    result.set_no_finish_needed(id != 6 && id != 10);
+                    result.init_results();
+                    let encoded = capnp::serialize::write_message_to_words(&reply);
+                    let mut words = capnp::Word::allocate_zeroed_vec(encoded.len() / 8);
+                    capnp::Word::words_to_bytes_mut(&mut words).copy_from_slice(&encoded);
+                    reader.frames.push_back(words);
+                }
+                assert_eq!(reader.frames.len(), 12);
+                let mut pending = None;
+                let mut pump = Pump::default();
+                let mut stop = std::pin::pin!(signal.wait());
+                let mut stopped = false;
+                for _ in 0..4096 {
+                    let before = reader.consumed;
+                    let result = coordinator.poll_prepared(
+                        messages,
+                        &mut queue,
+                        &mut reader,
+                        &mut writer,
+                        &mut scratch,
+                        &NoResources,
+                        &mut control,
+                        stop.as_mut(),
+                        &mut pending,
+                        &mut pump,
+                        &mut cx,
+                        &application_waker,
+                    );
+                    assert!(reader.consumed - before <= budget.min(8));
+                    if let Poll::Ready(result) = result {
+                        assert_eq!(result.unwrap(), None);
+                        stopped = true;
+                        break;
+                    }
+                    if reader.frames.is_empty() {
+                        break;
+                    }
+                }
+                if stop_after_first {
+                    assert!(stopped);
+                    assert_eq!(reader.consumed, 1);
+                } else {
+                    assert_eq!(reader.consumed, 12);
+                    assert!(coordinator.calls.is_empty());
+                }
+                drop((responses, client));
+                futures::executor::block_on(
+                    coordinator.terminate::<NoResources, (), &'static str>(
+                        messages,
+                        &mut queue,
+                        &mut control,
+                        Ok(()),
+                    ),
+                )
+                .unwrap();
+                reclaimed(messages);
+            });
+        }
+    }
+}
+
 #[test]
 fn plain_calls_preserve_control_wakes_fairness_and_output_backpressure() {
     for budget in [1, 4, 8, 64] {
