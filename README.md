@@ -11,19 +11,15 @@ Generated automatically from CI evidence. Each lane keeps its own measured commi
 
 ### Cargo tests
 
-Latest Cargo run: [2026-10-14T19:11:29Z · run 38621565282 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/38621565282) · commit `e5c87b41c58f` · **failure**
+Latest Cargo run: [2026-10-15T00:22:55Z · run 38659698222 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/38659698222) · commit `eab71cc5af4b` · **cancelled**
 
 ![Cargo test results](docs/reports/cargo-history.svg)
-
-| Total | Passed | Failed | Errors | Skipped |
-| ---: | ---: | ---: | ---: | ---: |
-| 2156 | 2136 | [0](docs/reports/failed-tests.md) | 0 | 20 |
 
 [Show all failed tests and diagnostics](docs/reports/failed-tests.md). Cargo tests and doctests exclude the dedicated TLA+, fuzz, Miri and mutation campaigns. Filtered tests are not counted as passes or skips. [Reporting contract](https://github.com/DericHuynh/capntproto/blob/main/docs/wiki/README-Reports.md).
 
 ### TLA+ models and Rust trace replays
 
-[2026-10-14T19:11:29Z · run 38621565282 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/38621565282) · commit `e5c87b41c58f` · **failure**
+[2026-10-15T00:22:55Z · run 38659698222 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/38659698222) · commit `eab71cc5af4b` · **cancelled**
 
 ![TLA+ Rust replay results](docs/reports/tla-history.svg)
 
@@ -31,7 +27,7 @@ Latest Cargo run: [2026-10-14T19:11:29Z · run 38621565282 / attempt 1](https://
 
 ### Fuzzing: libFuzzer and AFL++
 
-[2026-10-14T19:11:29Z · run 38621565282 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/38621565282) · commit `e5c87b41c58f` · **failure**
+[2026-10-15T00:22:55Z · run 38659698222 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/38659698222) · commit `eab71cc5af4b` · **cancelled**
 
 AFL++ guides the RPC lifecycle oracle with IJON state and progress annotations. Corpus inputs, crashes, hangs, logs and engine statistics are retained in the linked run. Fuzzer counters are not source coverage percentages.
 
@@ -41,7 +37,7 @@ No validated coverage/baseline comparison is available for the latest run. Missi
 
 ### Linux loopback benchmark comparisons
 
-Latest benchmark run: [2026-10-14T19:11:29Z · run 38621565282 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/38621565282) · commit `e5c87b41c58f` · **failure**
+Latest benchmark run: [2026-10-15T00:22:55Z · run 38659698222 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/38659698222) · commit `eab71cc5af4b` · **cancelled**
 
 Measurement evidence: **unavailable**. This workflow attempt produced no public measurement artifact&#46;
 
