@@ -1,5 +1,14 @@
 # 0.1.0 developer preview (unpublished)
 
+- Require Rustls 0.23.46 and update every affected lockfile for the October 14
+  security advisories. Audit all eleven owned lockfiles and retain diagnostics
+  from every failed audit instead of stopping at the first one.
+- Requalify the coverage reference after reviewing the portable optimization
+  batch, preserving raw counters and the existing regression thresholds. Add
+  framed-write failure, response ownership and admission regression tests.
+- Reject overflowing generated-schema bounds requests without arithmetic
+  overflow, with cached/generated reader regressions checked under 32-bit Miri.
+
 - Replace the four Kani CI shards with source-bound Verus contracts and
   verus-tla induction, including full-width arithmetic, ownership rejection
   contracts, temporal fairness assumptions and deliberate-fault controls.

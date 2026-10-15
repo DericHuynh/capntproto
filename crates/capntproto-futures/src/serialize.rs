@@ -679,6 +679,25 @@ pub mod test {
     }
 
     #[test]
+    fn complete_frame_reference_writes_exactly_one_standard_frame() {
+        struct Frame([u8; 16]);
+        impl AsOutputSegments for Frame {
+            fn as_output_segments(&self) -> OutputSegments<'_> {
+                OutputSegments::SingleSegment([&self.0[8..]])
+            }
+            fn framed_bytes(&self) -> Option<&[u8]> {
+                Some(&self.0)
+            }
+        }
+        let frame = Frame([0, 0, 0, 0, 1, 0, 0, 0, 8, 7, 6, 5, 4, 3, 2, 1]);
+        let reference = &frame;
+        assert_eq!(AsOutputSegments::size_in_bytes(&reference), 8);
+        let mut output = Vec::new();
+        futures::executor::block_on(write_message(&mut output, &reference)).unwrap();
+        assert_eq!(output, frame.0);
+    }
+
+    #[test]
     fn test_read_invalid_segment_table() {
         let mut exec = futures::executor::LocalPool::new();
         let mut buf = vec![];

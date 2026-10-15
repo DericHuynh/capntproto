@@ -46,3 +46,34 @@ impl Drop for Credit {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repeated_admission_and_receipt_share_one_credit_until_the_last_owner() {
+        let admission = Admission::new(1);
+        let credit = Credit::new(admission.clone());
+        credit.ensure().unwrap();
+        let permit = credit.acquire().unwrap();
+        assert!(Rc::ptr_eq(&permit, &credit.acquire().unwrap()));
+        credit.ensure().unwrap();
+        assert_eq!(admission.used(), 1);
+        let blocked = Credit::new(admission.clone());
+        assert!(blocked.ensure().is_err());
+        for _ in 0..3 {
+            credit.received();
+        }
+        assert_eq!(admission.held_responses.get(), 1);
+        drop(credit);
+        assert_eq!(admission.held_responses.get(), 0);
+        assert_eq!(admission.used(), 1);
+        drop(permit);
+        assert_eq!(admission.used(), 0);
+        blocked.ensure().unwrap();
+        drop(blocked);
+        assert_eq!(admission.used(), 0);
+        assert_eq!(admission.held_responses.get(), 0);
+    }
+}

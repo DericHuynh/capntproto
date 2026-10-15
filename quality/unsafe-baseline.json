@@ -24,7 +24,7 @@
       "diagnostics": {
         "clippy::undocumented_unsafe_blocks": 12
       },
-      "sha256": "cb55ec7db7d235569ef2a389c05d9b6f46ed9842c848f6950780890064296e7e"
+      "sha256": "92325cb27dc8753478b27d7d643a3ee9389cd29bd78c1ff0d5cc23f0f7cc2e06"
     },
     "crates/capntproto-core/src/private/layout.rs": {
       "diagnostics": {

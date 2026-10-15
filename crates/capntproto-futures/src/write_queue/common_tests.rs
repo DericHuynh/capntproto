@@ -228,3 +228,75 @@ fn contiguous_frame_retains_its_owner_until_partial_write_and_flush_finish() {
         OutputSnapshot::default()
     );
 }
+
+#[test]
+fn contiguous_frame_io_failures_release_owners_and_fail_all_receipts() {
+    use std::{pin::Pin, sync::atomic::AtomicUsize, task::Context};
+    struct Frame {
+        bytes: [u8; 16],
+        drops: Arc<AtomicUsize>,
+    }
+    impl AsOutputSegments for Frame {
+        fn as_output_segments(&self) -> capnp::OutputSegments<'_> {
+            capnp::OutputSegments::SingleSegment([&self.bytes[8..]])
+        }
+        fn framed_bytes(&self) -> Option<&[u8]> {
+            Some(&self.bytes)
+        }
+    }
+    impl Drop for Frame {
+        fn drop(&mut self) {
+            self.drops.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    #[derive(Clone, Copy)]
+    enum Fault {
+        Write,
+        Zero,
+        Flush,
+    }
+    struct Writer(Fault);
+    impl AsyncWrite for Writer {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+            bytes: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            Poll::Ready(match self.0 {
+                Fault::Write => Err(std::io::ErrorKind::BrokenPipe.into()),
+                Fault::Zero => Ok(0),
+                Fault::Flush => Ok(bytes.len()),
+            })
+        }
+        fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Err(std::io::ErrorKind::BrokenPipe.into()))
+        }
+        fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            self.poll_flush(cx)
+        }
+    }
+    for fault in [Fault::Write, Fault::Zero, Fault::Flush] {
+        for count in [1, 2] {
+            let drops = Arc::new(AtomicUsize::new(0));
+            let (sender, driver) = write_queue(Writer(fault));
+            let receipts: Vec<_> = (0..count)
+                .map(|_| {
+                    sender.send(Frame {
+                        bytes: [0, 0, 0, 0, 1, 0, 0, 0, 8, 7, 6, 5, 4, 3, 2, 1],
+                        drops: drops.clone(),
+                    })
+                })
+                .collect();
+            assert!(driver.now_or_never().unwrap().is_err());
+            for receipt in receipts {
+                assert!(receipt.now_or_never().unwrap().is_err());
+            }
+            assert_eq!(drops.load(Ordering::SeqCst), count);
+            assert_eq!(
+                sender.outgoing_queue().output_snapshot(),
+                OutputSnapshot::default()
+            );
+            assert!(sender.is_empty());
+        }
+    }
+}

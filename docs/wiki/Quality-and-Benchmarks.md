@@ -229,6 +229,12 @@ through the wrapper; Miri explicitly ignores compiler wrapping. Dependency
 inventories complement the existing advisory scan; embedding metadata is not a
 security audit.
 
+The security lane audits all eleven owned lockfiles, including independent
+benchmark, fuzz, downstream-example, Miri and portable workspaces. It collects
+every audit failure before failing the lane; `--deny warnings` remains required.
+Rustls has a minimum version of 0.23.46, and all four lockfiles that contain it
+were updated for the October 14 advisories.
+
 ## Focused checks and tool versions
 
 All maintained Rust implementations live in owned workspace crates. Workspace
@@ -442,6 +448,78 @@ raw LLVM JSON SHA-256 is
 `481a66442a0c5cd962c25d2ecd545ff16906b4ce73ced2da07ca51fd673e5cd4`.
 The report validator independently checks those raw counters and source hashes.
 This local requalification does not certify the other CI lanes or a release.
+
+### October 14 portable-driver coverage review
+
+Follow-up validation includes nine focused nextest cases and both new arena
+tests under 32-bit Miri. The generated-schema extent fix changes no unsafe
+operations; its reviewed unsafe-debt source hash changes while the twelve
+existing undocumented-unsafe diagnostics remain unchanged.
+
+[CI run 38621565282](https://github.com/DericHuynh/capntproto/actions/runs/38621565282) passed the instrumented tests and doctests but failed the coverage comparison and security audit. That failed run remains failed evidence. The baseline replacement is the complete, unmodified measured summary from its [Cargo report artifact](https://github.com/DericHuynh/capntproto/actions/runs/38621565282/artifacts/11927571631), after checking all source hashes against commit `e5c87b41c58f1e405e08fc3a83fd510b91bd5d51`, every mapped metric against the raw LLVM export, and the group totals. It inventories 975 files: 837 mapped and 138 explicitly unmapped. No previously mapped source lost instrumentation.
+
+The review includes all 42 files / 72 metric decreases rejected by the previous gate. These are not all false positives: new defensive and scheduling paths still have gaps. The follow-up adds focused regression tests without deleting uncovered mappings, excluding tests, broadening tolerances, or treating formal proofs as executed coverage. The same per-file and per-group 0.5 percentage-point gates must pass on a fresh follow-up run.
+
+| Source group | Lines, before → reviewed | Regions | Functions | Branches |
+| --- | ---: | ---: | ---: | ---: |
+| async-framing | 2548/2666 → 2599/2725 | 3879/4072 → 3964/4171 | 256/279 → 262/287 | 266/276 → 271/284 |
+| capability-rpc | 58237/65490 → 60623/68116 | 94707/106284 → 98394/110344 | 5362/6288 → 5588/6551 | 4971/6610 → 5344/7120 |
+| optional-compatibility | 5222/5802 → 5222/5802 | 8194/9431 → 8194/9431 | 449/542 → 449/542 | 545/742 → 545/742 |
+| runtime | 30524/36441 → 30710/36423 | 45029/53726 → 45425/53725 | 2830/3137 → 2846/3141 | 3262/4444 → 3284/4446 |
+| rust-codegen | 3874/4270 → 3874/4270 | 6514/7509 → 6514/7509 | 140/160 → 140/160 | 549/638 → 549/638 |
+| schema-compiler | 9531/9814 → 9531/9814 | 16222/16842 → 16222/16842 | 654/690 → 654/690 | 1101/1322 → 1101/1322 |
+| tests-and-verification | 69728/88975 → 69943/89110 | 101223/130610 → 101679/130904 | 4290/5494 → 4306/5500 | 2388/4224 → 2423/4262 |
+| tools-fuzz-examples-benchmarks | 11243/16863 → 11243/16919 | 20645/31572 → 20712/31684 | 891/1307 → 893/1310 | 1515/2455 → 1515/2457 |
+| wire-runtime | 19813/23031 → 20493/23752 | 30228/36054 → 31235/37162 | 2314/2771 → 2372/2840 | 1761/2251 → 1846/2353 |
+
+Only async-framing branches exceed the aggregate tolerance (266/276 → 271/284). The new framed-write and queue-failure tests target that gap. Other aggregate changes remain within the existing tolerance; the per-file review below retains the actual lower measurements.
+
+| File | Rejected metrics | Review and remaining limitations |
+| --- | --- | --- |
+| `crates/capntproto-core/src/capability.rs` | branches | New promise regression tests contain untaken assertion/panic arms; these stay in the denominator. |
+| `crates/capntproto-core/src/private/arena.rs` | regions, functions, branches | Cached-reader validation adds extent and segment checks. Follow-up tests cover invalid cached ranges and shared traversal budgets; generated-arena overflow is fixed separately. Unsupported arena operations remain gaps. |
+| `crates/capntproto-core/src/private/arena/fixed.rs` | branches | Moving bounds policy into the shared proof-checked helper removes covered branches from this file; remaining paths keep their actual counters. |
+| `crates/capntproto-core/src/private/layout.rs` | functions, branches | Checked-view rebasing and near-pointer validation add cold error paths and generic instantiations; not all fallback functions are executed. |
+| `crates/capntproto-core/src/private/layout/bounded.rs` | regions | Fast validation and its reference oracle add regions. Multi-pointer/list oracle arms, fixed-list resizing and rejection paths remain partly unmeasured. |
+| `crates/capntproto-core/src/serialize/no_alloc_buffer_segments.rs` | functions | New ownership/conversion instantiations change function mappings; impossible checked framing arms and overflow paths are not counted as covered. |
+| `crates/capntproto-futures/src/serialize.rs` | branches | Unchanged source lost the contiguous write fast-path hit. A new direct framed-reference test explicitly exercises it. |
+| `crates/capntproto-futures/src/write_queue/common_tests.rs` | lines, regions, functions | Partial-write fixtures add intentionally unused segment reconstruction, poll_close, and failing assertions. New fault tests cover write errors, zero writes, and flush errors in contiguous and batched output. |
+| `crates/capntproto-futures/src/write_queue/engine.rs` | branches | Contiguous-frame selection adds branches; the stopped/terminal polling combination remains partly unmeasured. Failure ownership is tested in both queue implementations. |
+| `crates/capntproto-rpc-engine/src/answers.rs` | branches | Extracted validation and new rejection tests change mappings; defensive answer-state arms remain visible. |
+| `crates/capntproto-rpc-engine/src/flow_control/incoming.rs` | branches | The file now delegates branch decisions to shared policy: 4/4 becomes 0/0 (N/A), not zero percent. The policy source is inventoried separately. |
+| `crates/capntproto-rpc-engine/src/flow_control/outgoing.rs` | branches | The file now delegates branch decisions to shared policy: 2/2 becomes 0/0 (N/A), not zero percent. The policy source is inventoried separately. |
+| `crates/capntproto-rpc-engine/src/local_table/tests.rs` | functions | Factory rollback tests add callbacks that must not execute after capacity/identity failure. |
+| `crates/capntproto-rpc-engine/src/messages/tests.rs` | functions | Ownership and frame-publication tests add deliberately uncalled/error callbacks. |
+| `crates/capntproto-rpc-wire/src/owned.rs` | functions | Additional owned framing helpers and generic paths are mapped but not all are exercised. |
+| `crates/capntproto-rpc-wire/src/owned/answer.rs` | functions | Prepared response and forwarding helpers add generic function mappings and cold fallbacks. |
+| `crates/capntproto-rpc-wire/src/owned/connection/awaiting.rs` | regions, branches | Plain result extraction and handoff guards add real gaps: unauthorized/pending exchanges, method mismatch and some forwarded-result failures. |
+| `crates/capntproto-rpc-wire/src/owned/connection/growing/tests.rs` | functions | Growing-storage regression fixtures add deliberately uncalled hooks and failure callbacks. |
+| `crates/capntproto-rpc-wire/src/owned/connection/prepared_return.rs` | functions | Additional prepared-return helpers and assertion closures change function coverage. Private-header impossible variants and some copy/publication failures remain unmeasured. |
+| `crates/capntproto-rpc-wire/src/owned/connection/server_output/tests.rs` | branches | New returned-frame assertions add untaken failure branches. |
+| `crates/capntproto-rpc-wire/src/owned/question.rs` | branches | New owned-only and receipt-free response paths add cancellation/fallback/error combinations. Wrong-message and missing-capability rejection paths remain partly unmeasured. |
+| `crates/capntproto-rpc-wire/src/owned/tests.rs` | functions | New zero-copy frame fixtures include uncalled failure functions. |
+| `crates/capntproto-rpc/src/local.rs` | lines | Direct request dispatch adds a generic ClientHook fallback, private envelope rejection, and other still-unmeasured local/cancellation paths. |
+| `crates/capntproto-rpc/src/queued.rs` | lines, regions, functions | Resolved-client forwarding and reentrancy tests add hook methods that the selected scenario does not invoke; queue exhaustion and busy diagnostics remain gaps. |
+| `crates/capntproto-rpc/src/scoped.rs` | branches | Additional idle/notification paths and tests change branch mappings; cold rejection combinations remain visible. |
+| `crates/capntproto-rpc/src/scoped/admission.rs` | lines, regions, branches | Repeated receipt protection was not exercised. A new test repeats receipt/admission and checks final-owner release and capacity exhaustion. |
+| `crates/capntproto-rpc/src/scoped/response.rs` | lines, regions, functions, branches | Lazy results, cache ownership, and fused plain completion introduce actual fallback/cancellation gaps. New tests exercise hook materialization, duplicate completion, and late cancellation observation; mismatched plain completion and reentrant-waker cases remain explicit gaps. |
+| `crates/capntproto-rpc/src/scoped/shutdown.rs` | branches | Weak response registration and reentrant-waker fixtures add branches. Duplicate-close and some reentrant outcomes remain unmeasured. |
+| `crates/capntproto-rpc/src/scoped/wire.rs` | lines, regions, branches | New plain completion and read-only payload handoff paths add fallbacks and impossible private-state assertions; some error paths remain unmeasured. |
+| `crates/capntproto-rpc/src/scoped/wire/coordinator.rs` | lines, regions, functions, branches | Idle certificates and fused dispatch expand the state space. Pending-output, retired-work, custom-control, cancellation, and error combinations remain partly unmeasured; this snapshot does not claim exhaustive scheduler coverage. |
+| `crates/capntproto-rpc/src/scoped/wire/coordinator/bootstrap.rs` | lines, regions, functions | New control-idle hook and pending-capacity/invalid-network fallbacks are not all exercised. |
+| `crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty.rs` | branches | Additional control-idle and handoff combinations leave unmeasured fallback branches. |
+| `crates/capntproto-rpc/src/scoped/wire/coordinator/transport.rs` | lines, regions, functions | Unchanged adapter loses default trait-method hits after optimized dispatch; default metadata and unsupported admission retention remain unexecuted. |
+| `crates/capntproto-rpc/src/scoped/wire/server/worker.rs` | lines | Fused ready dispatch adds capacity/cancellation fallbacks and cold worker errors; some remain unmeasured. |
+| `dev/src/checks.rs` | functions, branches | Tooling/refactoring changes denominators and removes old executed checks. OS/tool errors are not all exercised. |
+| `dev/src/cloud/remote.rs` | functions | Unchanged source loses a cleanup/child-drop instantiation as subprocess execution changes; live remote smoke and retrieval paths remain outside the measured Cargo lane. |
+| `quality/src/coverage.rs` | lines, regions, functions | Fresh-inventory reuse changes collector paths. The instrumented test binary does not execute the full outer collector; its orchestration/error paths remain measured gaps. |
+| `quality/tests/ignored_inventory.rs` | lines, regions | CI now uses its authenticated compiled inventory instead of a nested rebuild. The standalone rebuild fallback is consequently unexecuted in this lane. |
+| `src/transport/tcp.rs` | branches | Unchanged async transport loses a scheduler-dependent branch hit; ALPN mismatch, IPv6, malformed-frame and receipt-fence failures remain partly unmeasured. |
+| `test-support/src/verification/nextest.rs` | lines, regions, branches | Inventory reuse and replay add validation/environment branches. Additional malformed-metadata tests cover missing fields, build metadata and suites; environment/error fallbacks remain visible. |
+| `tests/runtime_simulation.rs` | lines, regions | Compiled-binary replay replaces nested compilation in CI; standalone-build fallback remains unexecuted here. |
+| `tests/schedules.rs` | lines, regions | Compiled-binary replay replaces nested compilation in CI; standalone-build fallback remains unexecuted here. |
+
+Source identity: `9cdafd57ba6ef83abd88489da492ff3b790bfe0ad5a3d69fd358010c44ea08c6`. Raw LLVM JSON SHA-256: `187291d216a007e609040ae1b79a684c360ce46947cf3dff78cfecfa16e4a396`. Previous baseline SHA-256: `d924fa9f85b9b5830d88ff7eeebf3a43f546c4a6dca04ada7397bd9c3da251f7`; replacement summary SHA-256: `713cdf57840f7cd96acaa2357d110443e675c08b23dddb5ba40ef4d6cc1f8e99`. Local comparison and source/raw-counter validation are retained in `target/ci-coverage-20261014/hosted-review.json`. A snapshot comparison is not a claim of complete protocol coverage or a release qualification.
 
 The Fuzzing job packages its reports, logs, queues, crashes and hangs in
 `fuzz-report.tar.gz` before artifact upload. This preserves AFL's colon-containing

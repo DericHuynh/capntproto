@@ -150,6 +150,26 @@ mod tests {
             .remove("duplicate");
         inventory["rust-suites"]["owned"]["status"] = "skipped".into();
         assert!(select_replay_metadata(&inventory, &["capntproto"]).is_err());
+        inventory["rust-suites"]["owned"]["status"] = "listed".into();
+        for field in [
+            "binary-id",
+            "binary-name",
+            "package-id",
+            "kind",
+            "binary-path",
+            "build-platform",
+        ] {
+            let mut malformed = inventory.clone();
+            malformed["rust-suites"]["owned"]
+                .as_object_mut()
+                .unwrap()
+                .remove(field);
+            assert!(select_replay_metadata(&malformed, &["capntproto"]).is_err());
+        }
+        inventory["rust-build-meta"] = serde_json::Value::Null;
+        assert!(select_replay_metadata(&inventory, &["capntproto"]).is_err());
+        inventory["rust-suites"] = serde_json::Value::Null;
+        assert!(select_replay_metadata(&inventory, &["capntproto"]).is_err());
     }
 
     #[test]

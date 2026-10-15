@@ -38,11 +38,17 @@ fn main() -> Result<()> {
             )
             .map(|_| ()),
         "fuzz" => capntproto_quality::lanes::fuzz(&mut r),
-        "security" => (|| {
+        "security" => {
+            let mut failures = Vec::new();
             for (name, manifest) in [
                 ("root", "Cargo.lock"),
                 ("fuzz", "fuzz/Cargo.lock"),
+                ("downstream-example", "examples/downstream/Cargo.lock"),
                 ("rpc-benchmark", "benchmarks/rpc/Cargo.lock"),
+                ("storage-benchmark", "benchmarks/storage/Cargo.lock"),
+                ("concurrency-benchmark", "benchmarks/concurrency/Cargo.lock"),
+                ("miri", "verification/miri/Cargo.lock"),
+                ("portable", "verification/portable/Cargo.lock"),
                 (
                     "upstream-rpc-interop",
                     "verification/upstream-rpc/Cargo.lock",
@@ -56,10 +62,18 @@ fn main() -> Result<()> {
                     "benchmarks/instructions/Cargo.lock",
                 ),
             ] {
-                r.cargo(name, &["audit", "--file", manifest, "--deny", "warnings"])?;
+                if let Err(error) =
+                    r.cargo(name, &["audit", "--file", manifest, "--deny", "warnings"])
+                {
+                    failures.push(format!("{name}: {error}"));
+                }
             }
-            Ok(())
-        })(),
+            if failures.is_empty() {
+                Ok(())
+            } else {
+                Err(failures.join("\n").into())
+            }
+        }
         _ => Err("unknown quality lane".into()),
     };
     r.finish(result)

@@ -51,7 +51,7 @@ futures = "0.3"
 tokio = { version = "1", features = ["rt", "macros", "net", "time", "io-util", "sync"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 socket2 = "0.6"
-rustls = { version = "0.23.40", optional = true, default-features = false, features = ["ring", "std"] }
+rustls = { version = "0.23.46", optional = true, default-features = false, features = ["ring", "std"] }
 tokio-rustls = { version = "0.26.4", optional = true, default-features = false, features = ["ring"] }
 ring = "0.17"
 memmap2 = { version = "0.9", optional = true }

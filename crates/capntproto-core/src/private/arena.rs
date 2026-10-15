@@ -29,6 +29,8 @@ use crate::OutputSegments;
 use crate::{Error, ErrorKind, Result};
 
 pub(crate) mod fixed;
+#[cfg(test)]
+mod tests;
 
 pub type SegmentId = u32;
 
@@ -860,12 +862,13 @@ unsafe impl ReaderArena for GeneratedCodeArena {
 
     fn contains_interval(&self, id: u32, start: *const u8, size_in_words: usize) -> Result<()> {
         let (segment_start, segment_len) = self.get_segment(id)?;
-        let this_start: usize = segment_start as usize;
-        let this_size: usize = segment_len as usize * BYTES_PER_WORD;
-        let start = start as usize;
-        let size = size_in_words * BYTES_PER_WORD;
-
-        if !(start >= this_start && start - this_start + size <= this_size) {
+        let offset = (start as usize)
+            .checked_sub(segment_start as usize)
+            .ok_or_else(|| Error::from_kind(ErrorKind::MessageContainsOutOfBoundsPointer))?;
+        let bytes = segment_len as usize * BYTES_PER_WORD;
+        // The requested extent is untrusted even for generated schema data.
+        // Avoid overflowing either its word-to-byte conversion or end address.
+        if offset > bytes || size_in_words > (bytes - offset) / BYTES_PER_WORD {
             Err(Error::from_kind(
                 ErrorKind::MessageContainsOutOfBoundsPointer,
             ))

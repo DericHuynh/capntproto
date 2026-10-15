@@ -711,4 +711,46 @@ mod tests {
         assert!(completion.is_observed());
         assert!(weak.upgrade().is_none());
     }
+
+    #[test]
+    fn materialized_direct_results_keep_context_and_first_completion() {
+        let (completion, sender, mut response) = pair();
+        let context = Rc::new(());
+        let weak = Rc::downgrade(&context);
+        let mut hook = Results::direct(sender, Some(context)).into_hook();
+        hook.get().unwrap().set_as("materialized").unwrap();
+        completion.complete(Ok(()));
+        completion.complete(Err(Error::failed("late duplicate".into())));
+        drop(hook);
+        let result = Pin::new(&mut response)
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .map(|result| result.unwrap());
+        assert!(result.is_ready());
+        assert!(weak.upgrade().is_some());
+        drop(result);
+        assert!(weak.upgrade().is_none());
+        completion.complete(Err(Error::failed("already observed".into())));
+        assert!(completion.0.borrow().status.is_none());
+    }
+
+    #[test]
+    fn observation_wakes_a_cancellation_waiter_registered_after_completion() {
+        let (completion, sender, mut response) = pair();
+        sender.send(results("complete"));
+        completion.complete(Ok(()));
+        let count = Arc::new(WakeCount(AtomicUsize::new(0)));
+        let wake = Waker::from(count.clone());
+        assert!(completion
+            .poll_observed(&mut Context::from_waker(&wake))
+            .is_pending());
+        assert!(Pin::new(&mut response)
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_ready());
+        assert_eq!(count.0.load(Ordering::SeqCst), 1);
+        assert!(completion
+            .poll_observed(&mut Context::from_waker(&wake))
+            .is_ready());
+        drop(response);
+        assert_eq!(count.0.load(Ordering::SeqCst), 1);
+    }
 }

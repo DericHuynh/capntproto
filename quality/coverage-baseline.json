@@ -518,7 +518,7 @@
       }
     },
     "crates/capntproto-codegen/src/codegen/field_api.rs": {
-      "sha256": "a3a8c805ab7ee9d8d67c483926595a6ed6b839044fbbb4bf5b4eaed498eaa9cf",
+      "sha256": "5ee6d3f7bd0a80163fce95e4003d5d429907705a472fab91f0b2a1159d66b676",
       "group": "rust-codegen",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -2111,25 +2111,25 @@
       }
     },
     "crates/capntproto-core/src/capability.rs": {
-      "sha256": "4262358b70c7a282730f17b37343d8771215f0831d649ed20d27ec1f16fa09ef",
+      "sha256": "49c841fcab6213c0e2ba3a22ec986d92aa944ee34f37788aac61688930f38f95",
       "group": "wire-runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 335,
-          "covered": 310
+          "count": 379,
+          "covered": 352
         },
         "regions": {
-          "count": 384,
-          "covered": 322
+          "count": 466,
+          "covered": 402
         },
         "functions": {
-          "count": 67,
-          "covered": 62
+          "count": 71,
+          "covered": 66
         },
         "branches": {
-          "count": 4,
-          "covered": 4
+          "count": 14,
+          "covered": 12
         }
       }
     },
@@ -2203,7 +2203,7 @@
       }
     },
     "crates/capntproto-core/src/data.rs": {
-      "sha256": "134359b11a600dec0905660e498f9f835af06d12dda373164119a22ff1a35119",
+      "sha256": "29de8f55e162ce36a53733c0e6e94bd6c0b3da490dd0df0ed3d0dd30839b78f9",
       "group": "wire-runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -2502,7 +2502,7 @@
       }
     },
     "crates/capntproto-core/src/field_api.rs": {
-      "sha256": "97cbd1547e0bc6031184ce821c35b6493745d96f0fd4183317363452bcde8b2c",
+      "sha256": "adf36060abc916c582d445d3480b45ba8a8421704ed5fb9b84483adf8d4e0dc5",
       "group": "wire-runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -2548,7 +2548,7 @@
       }
     },
     "crates/capntproto-core/src/field_api/diagnostics.rs": {
-      "sha256": "479434b6fd00e32be06e2d6e5cb12560dce93a8b91bbfd7d54c91807ea8b0e28",
+      "sha256": "5f6f54f6383e1d3285b25fa69a4d6f41dada5011f31714bc24777c0d86af4892",
       "group": "wire-runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -2801,25 +2801,25 @@
       }
     },
     "crates/capntproto-core/src/message.rs": {
-      "sha256": "96f4981b13214dbd4ea560c8a5c021a449b9bd2154a4e7191f3d46950cd02b31",
+      "sha256": "ff36414573360dfdeb56af96395a61a0b27deea2ec38ab0fbf5dedd139dc25d4",
       "group": "wire-runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 757,
-          "covered": 618
+          "count": 800,
+          "covered": 661
         },
         "regions": {
-          "count": 1031,
-          "covered": 855
+          "count": 1107,
+          "covered": 923
         },
         "functions": {
-          "count": 133,
-          "covered": 95
+          "count": 137,
+          "covered": 99
         },
         "branches": {
-          "count": 52,
-          "covered": 36
+          "count": 54,
+          "covered": 38
         }
       }
     },
@@ -2893,48 +2893,71 @@
       }
     },
     "crates/capntproto-core/src/private/arena.rs": {
-      "sha256": "dcf8e4171d17190c22a746a1c3441f97bed4d0dee73b3768e304e67452aa3d4a",
+      "sha256": "cb55ec7db7d235569ef2a389c05d9b6f46ed9842c848f6950780890064296e7e",
       "group": "wire-runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 404,
-          "covered": 360
+          "count": 476,
+          "covered": 422
         },
         "regions": {
-          "count": 566,
-          "covered": 509
+          "count": 669,
+          "covered": 596
         },
         "functions": {
-          "count": 66,
-          "covered": 55
+          "count": 77,
+          "covered": 63
         },
         "branches": {
-          "count": 48,
-          "covered": 39
+          "count": 60,
+          "covered": 48
         }
       }
     },
     "crates/capntproto-core/src/private/arena/fixed.rs": {
-      "sha256": "157e4922e80c84500343b5f2e54d6e1ddf88f792142a7792be9ae80f1c18bdaa",
+      "sha256": "9dfa944b718e7c809c3cf3a32129c3e937179393edeb613937f48be22640c087",
       "group": "wire-runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 162,
-          "covered": 147
+          "count": 159,
+          "covered": 144
         },
         "regions": {
-          "count": 200,
-          "covered": 181
+          "count": 202,
+          "covered": 183
         },
         "functions": {
           "count": 31,
           "covered": 27
         },
         "branches": {
-          "count": 15,
+          "count": 11,
+          "covered": 9
+        }
+      }
+    },
+    "crates/capntproto-core/src/private/arena/fixed/limits.rs": {
+      "sha256": "3d34a7178968fe76e9aa89d6e91d3e8100c41a560808559d48ece54799d720db",
+      "group": "wire-runtime",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 10,
+          "covered": 9
+        },
+        "regions": {
+          "count": 14,
           "covered": 13
+        },
+        "functions": {
+          "count": 2,
+          "covered": 2
+        },
+        "branches": {
+          "count": 8,
+          "covered": 6
         }
       }
     },
@@ -2968,25 +2991,25 @@
       }
     },
     "crates/capntproto-core/src/private/layout.rs": {
-      "sha256": "e153f05d64830a4922a3f39a7ab1a047db07a34da30e7b5472a7176fdd1e8254",
+      "sha256": "9476ac9909afed58b5c2fed8cca8bda107cfcdf550e9da9f8b10d2a6b794cb50",
       "group": "wire-runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 4213,
-          "covered": 3829
+          "count": 4329,
+          "covered": 3927
         },
         "regions": {
-          "count": 5431,
-          "covered": 4928
+          "count": 5588,
+          "covered": 5053
         },
         "functions": {
-          "count": 258,
-          "covered": 242
+          "count": 272,
+          "covered": 249
         },
         "branches": {
-          "count": 576,
-          "covered": 445
+          "count": 606,
+          "covered": 465
         }
       }
     },
@@ -3014,25 +3037,25 @@
       }
     },
     "crates/capntproto-core/src/private/layout/bounded.rs": {
-      "sha256": "4681dc803d1cb253d69ebbebc32f01b014dfafd7a83cdc916df2adc2f0bd2795",
+      "sha256": "ac3bb780928b47384f7b7ba1fa66b0f9e056a34f90e4a2dd542403a7333f8d39",
       "group": "wire-runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 177,
-          "covered": 160
+          "count": 304,
+          "covered": 277
         },
         "regions": {
-          "count": 276,
-          "covered": 245
+          "count": 509,
+          "covered": 442
         },
         "functions": {
-          "count": 7,
-          "covered": 7
+          "count": 14,
+          "covered": 14
         },
         "branches": {
-          "count": 24,
-          "covered": 13
+          "count": 40,
+          "covered": 30
         }
       }
     },
@@ -3664,25 +3687,25 @@
       }
     },
     "crates/capntproto-core/src/serialize/no_alloc_buffer_segments.rs": {
-      "sha256": "87418209eae9f24cefb6d9a4a80838ab25f4f2a9ef0beebe3834605bf3cddff2",
+      "sha256": "809c1e7256412a76b536d814910db48b099329edc23238ea7ea7efae87238a76",
       "group": "wire-runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 235,
-          "covered": 228
+          "count": 297,
+          "covered": 290
         },
         "regions": {
-          "count": 404,
-          "covered": 384
+          "count": 483,
+          "covered": 461
         },
         "functions": {
-          "count": 31,
-          "covered": 27
+          "count": 37,
+          "covered": 32
         },
         "branches": {
-          "count": 24,
-          "covered": 23
+          "count": 32,
+          "covered": 32
         }
       }
     },
@@ -3802,7 +3825,7 @@
       }
     },
     "crates/capntproto-core/src/text.rs": {
-      "sha256": "ea8f1389a01e1c94fb830c35fe4ae5c32bf188f6b528ee5faea2966d3af61f1e",
+      "sha256": "47d6b345d9aa1fc968a0bf4c42e7354a9bdec721121880a26120b960e2469ef1",
       "group": "wire-runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -3894,21 +3917,44 @@
       }
     },
     "crates/capntproto-core/src/wire_capability/map.rs": {
-      "sha256": "af3da7d902eb547db17fed370b99cee30cd71cc057e708549599d76cfae0fdd7",
+      "sha256": "ee8e80d754557fc2b2fff188a70cb670a4bb678b0ad89200d52e5fd164e43b3a",
       "group": "wire-runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 33,
-          "covered": 33
+          "count": 31,
+          "covered": 31
         },
         "regions": {
-          "count": 30,
-          "covered": 30
+          "count": 33,
+          "covered": 33
         },
         "functions": {
           "count": 6,
           "covered": 6
+        },
+        "branches": {
+          "count": 4,
+          "covered": 4
+        }
+      }
+    },
+    "crates/capntproto-core/src/wire_capability/map/policy.rs": {
+      "sha256": "e657e00a5e1a141735ff2ee3d056a1124a7cc8d2f87366bee7934e7ac24154c1",
+      "group": "wire-runtime",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 14,
+          "covered": 14
+        },
+        "regions": {
+          "count": 16,
+          "covered": 16
+        },
+        "functions": {
+          "count": 2,
+          "covered": 2
         },
         "branches": {
           "count": 6,
@@ -4285,25 +4331,25 @@
       }
     },
     "crates/capntproto-core/tests/selected_struct.rs": {
-      "sha256": "ce4d08d2b1ff752fc9770972c5c4796fd7ffba3ff19a73304c31c690935fd0f8",
+      "sha256": "a23c7faf74e815bb9bf9e330e4871a11ad37f463dcc26b3be6c1995813f9f9f6",
       "group": "wire-runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 280,
-          "covered": 274
+          "count": 518,
+          "covered": 512
         },
         "regions": {
-          "count": 493,
-          "covered": 473
+          "count": 836,
+          "covered": 812
         },
         "functions": {
-          "count": 21,
-          "covered": 21
+          "count": 40,
+          "covered": 40
         },
         "branches": {
-          "count": 18,
-          "covered": 12
+          "count": 34,
+          "covered": 26
         }
       }
     },
@@ -4504,11 +4550,11 @@
       "metrics": {
         "lines": {
           "count": 687,
-          "covered": 671
+          "covered": 669
         },
         "regions": {
           "count": 1076,
-          "covered": 1032
+          "covered": 1027
         },
         "functions": {
           "count": 75,
@@ -4516,7 +4562,7 @@
         },
         "branches": {
           "count": 62,
-          "covered": 58
+          "covered": 57
         }
       }
     },
@@ -4636,25 +4682,25 @@
       }
     },
     "crates/capntproto-futures/src/write_queue/common_tests.rs": {
-      "sha256": "555c514804ff5136b4b29fe86ba2724cc93b150e49739f86d8f3b9b55bb3702b",
+      "sha256": "749678f8fb3a204404d40c779c61a4bb6228471ae5528b8e4dcda07e0f24f589",
       "group": "async-framing",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 116,
-          "covered": 116
+          "count": 171,
+          "covered": 165
         },
         "regions": {
-          "count": 290,
-          "covered": 286
+          "count": 378,
+          "covered": 366
         },
         "functions": {
-          "count": 13,
-          "covered": 13
+          "count": 20,
+          "covered": 18
         },
         "branches": {
-          "count": 0,
-          "covered": 0
+          "count": 6,
+          "covered": 5
         }
       }
     },
@@ -4682,25 +4728,25 @@
       }
     },
     "crates/capntproto-futures/src/write_queue/engine.rs": {
-      "sha256": "a3c24ab2876189d105e9067782d0dce75ff48cc136727255228dd97d4c1264ad",
+      "sha256": "30a1931cfa5b3c457d4317344780183a1eab6ce18ce6f3a60c46a661560e3eb6",
       "group": "async-framing",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 244,
-          "covered": 242
+          "count": 248,
+          "covered": 246
         },
         "regions": {
-          "count": 339,
-          "covered": 335
+          "count": 350,
+          "covered": 345
         },
         "functions": {
-          "count": 30,
-          "covered": 30
+          "count": 31,
+          "covered": 31
         },
         "branches": {
-          "count": 36,
-          "covered": 35
+          "count": 38,
+          "covered": 36
         }
       }
     },
@@ -4728,25 +4774,25 @@
       }
     },
     "crates/capntproto-rpc-engine/src/answers.rs": {
-      "sha256": "5687547055269ff66f517f577983e7884c54785d3c427fd10e2f4a3539bb8f04",
+      "sha256": "4b8f4265f8e6d46c88d7447d01b6a4aeaffa1847d8ce318c98dc982e20c95633",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 292,
-          "covered": 284
+          "count": 330,
+          "covered": 323
         },
         "regions": {
-          "count": 387,
-          "covered": 364
+          "count": 449,
+          "covered": 425
         },
         "functions": {
-          "count": 58,
-          "covered": 56
+          "count": 69,
+          "covered": 67
         },
         "branches": {
-          "count": 44,
-          "covered": 42
+          "count": 46,
+          "covered": 43
         }
       }
     },
@@ -4774,17 +4820,17 @@
       }
     },
     "crates/capntproto-rpc-engine/src/answers/adoption.rs": {
-      "sha256": "69fb158f1742c87501913a5c6a088f1bf1be1bba3a809aaba9a6e09f5d3061a7",
+      "sha256": "762b22bff50696bfb45c7d5df83fa226f0511628aff3dc5d6f4109014a28cce6",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 104,
-          "covered": 104
+          "count": 96,
+          "covered": 96
         },
         "regions": {
-          "count": 201,
-          "covered": 196
+          "count": 196,
+          "covered": 192
         },
         "functions": {
           "count": 11,
@@ -4940,6 +4986,12 @@
         }
       }
     },
+    "crates/capntproto-rpc-engine/src/answers/verified.rs": {
+      "sha256": "877b51713b965278b5ff964f2a4a2dae62126afefc7b02861a92fc55c23e3b75",
+      "group": "capability-rpc",
+      "status": "no executable LLVM mapping in these platform/feature/test builds; not counted as covered",
+      "metrics": null
+    },
     "crates/capntproto-rpc-engine/src/async_scopes.rs": {
       "sha256": "b3489cddc2951fadfd76bdfe330908ed0e7903efa6140f297d33c4d1005e6c17",
       "group": "capability-rpc",
@@ -4987,21 +5039,21 @@
       }
     },
     "crates/capntproto-rpc-engine/src/clients/dispatch.rs": {
-      "sha256": "0d23d67b889cc44c352edb5b51e107e7e79cd6fb62e02b4f66cd5c7915cdce41",
+      "sha256": "f9564802cb8c4509fa84286345a2348d5d675cd37afbcb91099880246de5df6c",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 391,
-          "covered": 371
+          "count": 403,
+          "covered": 383
         },
         "regions": {
-          "count": 459,
-          "covered": 427
+          "count": 467,
+          "covered": 435
         },
         "functions": {
-          "count": 66,
-          "covered": 62
+          "count": 68,
+          "covered": 64
         },
         "branches": {
           "count": 44,
@@ -5108,25 +5160,25 @@
       }
     },
     "crates/capntproto-rpc-engine/src/completion.rs": {
-      "sha256": "2c54707e877117dc15a77d893e50cc56b530f36d954f25f3f735d4bbf66b8e92",
+      "sha256": "7ac1d70d963fcbad4df4ebce7c2d52f003e4c86cc2b0dd3942232ef1f8fbfe86",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 278,
-          "covered": 249
+          "count": 252,
+          "covered": 225
         },
         "regions": {
-          "count": 427,
-          "covered": 379
+          "count": 390,
+          "covered": 347
         },
         "functions": {
-          "count": 31,
-          "covered": 29
+          "count": 30,
+          "covered": 28
         },
         "branches": {
-          "count": 42,
-          "covered": 35
+          "count": 30,
+          "covered": 26
         }
       }
     },
@@ -5156,6 +5208,29 @@
         "branches": {
           "count": 8,
           "covered": 6
+        }
+      }
+    },
+    "crates/capntproto-rpc-engine/src/completion/state.rs": {
+      "sha256": "4db3a4a1473cefb34a364e439b82708adbc3ed1bec2e7479e9630d5f7d4a0b67",
+      "group": "capability-rpc",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 53,
+          "covered": 50
+        },
+        "regions": {
+          "count": 72,
+          "covered": 66
+        },
+        "functions": {
+          "count": 8,
+          "covered": 8
+        },
+        "branches": {
+          "count": 12,
+          "covered": 9
         }
       }
     },
@@ -5275,25 +5350,25 @@
       }
     },
     "crates/capntproto-rpc-engine/src/exports.rs": {
-      "sha256": "7950321a1387d6b0dc9b31ade2d7afde3211ebbdede358ea957b57e93e01433c",
+      "sha256": "6bbff60ac276ec726f6f9b5c65aaa6a4578c2d9d33cf0777ab15c2178ee335d6",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 377,
-          "covered": 354
+          "count": 384,
+          "covered": 361
         },
         "regions": {
-          "count": 525,
-          "covered": 486
+          "count": 535,
+          "covered": 495
         },
         "functions": {
-          "count": 54,
-          "covered": 53
+          "count": 56,
+          "covered": 55
         },
         "branches": {
-          "count": 46,
-          "covered": 38
+          "count": 44,
+          "covered": 37
         }
       }
     },
@@ -5447,26 +5522,32 @@
         }
       }
     },
+    "crates/capntproto-rpc-engine/src/exports/verified.rs": {
+      "sha256": "cc51b5bcd65dbaf57483626a4e8ebd4a8df849df8b610f17666e93a3f4c9518b",
+      "group": "capability-rpc",
+      "status": "no executable LLVM mapping in these platform/feature/test builds; not counted as covered",
+      "metrics": null
+    },
     "crates/capntproto-rpc-engine/src/flow_control.rs": {
-      "sha256": "97cdeeac5e15a94056497e1ef2fbcc13d5c6593be1c885d7dfbed087fc7a5ea4",
+      "sha256": "706f10deea8cc320393da67f5682a0af096db2b8c04a54d98ee722db6c0bfb59",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 125,
-          "covered": 123
+          "count": 123,
+          "covered": 121
         },
         "regions": {
-          "count": 223,
-          "covered": 218
+          "count": 225,
+          "covered": 220
         },
         "functions": {
           "count": 18,
           "covered": 18
         },
         "branches": {
-          "count": 14,
-          "covered": 14
+          "count": 8,
+          "covered": 8
         }
       }
     },
@@ -5494,48 +5575,71 @@
       }
     },
     "crates/capntproto-rpc-engine/src/flow_control/incoming.rs": {
-      "sha256": "392dceb76b2daa973e88c4895638e1e41e84b6a6a3243c1d9b63edba51abea22",
+      "sha256": "dd287bdc40d770363bdee69d06fd314d8c4ba80bb2dee4fc19637636febd8e35",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 95,
-          "covered": 92
+          "count": 90,
+          "covered": 87
         },
         "regions": {
-          "count": 176,
-          "covered": 170
+          "count": 181,
+          "covered": 175
         },
         "functions": {
           "count": 14,
           "covered": 13
         },
         "branches": {
-          "count": 4,
-          "covered": 4
+          "count": 0,
+          "covered": 0
         }
       }
     },
     "crates/capntproto-rpc-engine/src/flow_control/outgoing.rs": {
-      "sha256": "6b7dc7e99cdb1b06df0d5d762a2de8849fb70457157f0cbfccc81a36351455b7",
+      "sha256": "d2f2cc59107b2d8b48513788fc0cf56398633bd65ced1011698078ece41c58cd",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 67,
-          "covered": 67
+          "count": 64,
+          "covered": 64
         },
         "regions": {
-          "count": 121,
-          "covered": 121
+          "count": 125,
+          "covered": 125
         },
         "functions": {
           "count": 12,
           "covered": 12
         },
         "branches": {
-          "count": 2,
-          "covered": 2
+          "count": 0,
+          "covered": 0
+        }
+      }
+    },
+    "crates/capntproto-rpc-engine/src/flow_control/policy.rs": {
+      "sha256": "7091ed1930ce6fffc8911e959b3abf7b34c06f2ee1ce4894abf6cb61405f4a40",
+      "group": "capability-rpc",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 31,
+          "covered": 31
+        },
+        "regions": {
+          "count": 43,
+          "covered": 43
+        },
+        "functions": {
+          "count": 7,
+          "covered": 7
+        },
+        "branches": {
+          "count": 12,
+          "covered": 11
         }
       }
     },
@@ -5598,7 +5702,7 @@
       "metrics": null
     },
     "crates/capntproto-rpc-engine/src/ids.rs": {
-      "sha256": "a9ccee9f8d2b4f71d8722cd4327a4fbbb4646f788517f128e8fe20d72b29c34a",
+      "sha256": "e7b7a7935a38891907099cce862088e3629999bf795dc776445586225e2ef940",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -5621,25 +5725,25 @@
       }
     },
     "crates/capntproto-rpc-engine/src/imports.rs": {
-      "sha256": "99bdd26128b6dd03da36422d905e31d15e3b49a9fe6e3fa7de3fc7833dd0f1d6",
+      "sha256": "98c1ae4eebb9e13dde0559360d95ea8358d810abb764c0a5b079d9d36f15ec8d",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 270,
-          "covered": 259
+          "count": 278,
+          "covered": 267
         },
         "regions": {
-          "count": 347,
-          "covered": 326
+          "count": 359,
+          "covered": 338
         },
         "functions": {
-          "count": 41,
-          "covered": 40
+          "count": 43,
+          "covered": 42
         },
         "branches": {
-          "count": 22,
-          "covered": 22
+          "count": 26,
+          "covered": 26
         }
       }
     },
@@ -5747,6 +5851,12 @@
         }
       }
     },
+    "crates/capntproto-rpc-engine/src/imports/verified.rs": {
+      "sha256": "89fa9c1af4c9ae5e4e85d5fcb1387b229002fca1835eaac0cdad58db2d9fb041",
+      "group": "capability-rpc",
+      "status": "no executable LLVM mapping in these platform/feature/test builds; not counted as covered",
+      "metrics": null
+    },
     "crates/capntproto-rpc-engine/src/io.rs": {
       "sha256": "6eed8b3e590ea5734d9cfc831db190c5dbecfb541c1fe34576f1395aa579188c",
       "group": "capability-rpc",
@@ -5771,21 +5881,21 @@
       }
     },
     "crates/capntproto-rpc-engine/src/io/output.rs": {
-      "sha256": "561cf5d4a0937b4872055c9a2d694c395cc74a38b8ff6491099bc1b2320672c0",
+      "sha256": "753418f436d3f335d2a78ce4e9e1bc3b307c750093fce5270a348b1435c850b5",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 92,
-          "covered": 84
+          "count": 95,
+          "covered": 87
         },
         "regions": {
-          "count": 109,
-          "covered": 97
+          "count": 112,
+          "covered": 100
         },
         "functions": {
-          "count": 7,
-          "covered": 6
+          "count": 8,
+          "covered": 7
         },
         "branches": {
           "count": 22,
@@ -5829,25 +5939,25 @@
       "metrics": null
     },
     "crates/capntproto-rpc-engine/src/local_table.rs": {
-      "sha256": "14c00d10aaf9255393c99db9acb7e52b283f6fd2c78f99bfdc1b3f70e5ba2ee2",
+      "sha256": "a8b3bbe7472036cecc4a87f895d9addbacac295ee140681bdfed525fcac3fdd6",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 255,
-          "covered": 243
+          "count": 271,
+          "covered": 259
         },
         "regions": {
-          "count": 358,
-          "covered": 348
+          "count": 377,
+          "covered": 367
         },
         "functions": {
-          "count": 34,
-          "covered": 33
+          "count": 35,
+          "covered": 34
         },
         "branches": {
-          "count": 58,
-          "covered": 55
+          "count": 62,
+          "covered": 59
         }
       }
     },
@@ -5858,21 +5968,21 @@
       "metrics": null
     },
     "crates/capntproto-rpc-engine/src/local_table/tests.rs": {
-      "sha256": "2c98943cd5df2b3f296921ac92a2b5d09baf97a66967ee0afed5b5c034d4d8ca",
+      "sha256": "80001050bd0c3c3dc5410b56782dd0773c9e1e3a1c6e9c2dbcb569ab73b237e4",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 321,
-          "covered": 319
+          "count": 354,
+          "covered": 351
         },
         "regions": {
-          "count": 700,
-          "covered": 699
+          "count": 779,
+          "covered": 777
         },
         "functions": {
-          "count": 21,
-          "covered": 21
+          "count": 26,
+          "covered": 25
         },
         "branches": {
           "count": 16,
@@ -5881,25 +5991,25 @@
       }
     },
     "crates/capntproto-rpc-engine/src/messages.rs": {
-      "sha256": "a48da2ec1568919d6b373950dc8a61c91a305ec52dfcb8cdd8e7e6331322847f",
+      "sha256": "328c9d0cab6b8728d241b272b991b46f2a255d52826f2eeffed6aa23e9aceed7",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 430,
-          "covered": 404
+          "count": 474,
+          "covered": 446
         },
         "regions": {
-          "count": 544,
-          "covered": 517
+          "count": 650,
+          "covered": 620
         },
         "functions": {
-          "count": 53,
-          "covered": 52
+          "count": 61,
+          "covered": 60
         },
         "branches": {
-          "count": 56,
-          "covered": 47
+          "count": 60,
+          "covered": 53
         }
       }
     },
@@ -5972,6 +6082,29 @@
         }
       }
     },
+    "crates/capntproto-rpc-engine/src/messages/policy.rs": {
+      "sha256": "5b18cf1fd46abdfd5952f05fa83940e9ae5493d20fed8df8da4bdffcfd7f269e",
+      "group": "capability-rpc",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 55,
+          "covered": 53
+        },
+        "regions": {
+          "count": 56,
+          "covered": 54
+        },
+        "functions": {
+          "count": 5,
+          "covered": 5
+        },
+        "branches": {
+          "count": 16,
+          "covered": 14
+        }
+      }
+    },
     "crates/capntproto-rpc-engine/src/messages/proofs.rs": {
       "sha256": "64f5684a740ebc0016ee42c96b7a89d4c02c40935beea98f3c60d346bea98601",
       "group": "capability-rpc",
@@ -5979,7 +6112,7 @@
       "metrics": null
     },
     "crates/capntproto-rpc-engine/src/messages/queue.rs": {
-      "sha256": "a3a26b8b9f3e48f3785b3c910b9cfc8b6f889a2891ab78c4491107045cf5a64f",
+      "sha256": "343261cb64741c25932f9b1c47af9607aaeb3b819a280812e856ed4e61a44089",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -5988,8 +6121,8 @@
           "covered": 148
         },
         "regions": {
-          "count": 170,
-          "covered": 166
+          "count": 173,
+          "covered": 169
         },
         "functions": {
           "count": 22,
@@ -6031,25 +6164,25 @@
       }
     },
     "crates/capntproto-rpc-engine/src/messages/tests.rs": {
-      "sha256": "eedc478cd80d392492a4ab922890f8c1066cf52f2e35490593eef2db6b9e3f8f",
+      "sha256": "29fa9f691206736147975e5417f2ccc11d6d3ac1b7e6390f27bde79828952116",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 459,
-          "covered": 459
+          "count": 618,
+          "covered": 617
         },
         "regions": {
-          "count": 1220,
-          "covered": 1216
+          "count": 1603,
+          "covered": 1598
         },
         "functions": {
-          "count": 40,
-          "covered": 40
+          "count": 59,
+          "covered": 58
         },
         "branches": {
-          "count": 2,
-          "covered": 2
+          "count": 4,
+          "covered": 4
         }
       }
     },
@@ -6123,7 +6256,7 @@
       }
     },
     "crates/capntproto-rpc-engine/src/promise.rs": {
-      "sha256": "9625311269d11ae5ca4fcd62bbceef38c96cdfa9cbeb8b72d5f06dc29677687b",
+      "sha256": "869eb8cfa9ecfb9e34b6473104f92879e67db70faa049bbb2619aed840844aa1",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -6146,27 +6279,27 @@
       }
     },
     "crates/capntproto-rpc-engine/src/proofs.rs": {
-      "sha256": "7b115c071b9cf9b0f0be72a43d9bfbaf0a9e39a2e7a6fccfb42b5373943dee2a",
+      "sha256": "bd15333d32d180906ca9800982e83c5caa21e343f1dcf26548557a053aefd8b8",
       "group": "capability-rpc",
       "status": "no executable LLVM mapping in these platform/feature/test builds; not counted as covered",
       "metrics": null
     },
     "crates/capntproto-rpc-engine/src/provision.rs": {
-      "sha256": "d4b9f2b33f874664e70b49fb508848318450c002c012705a7d2b74a01173f0a5",
+      "sha256": "b7aa733f55dfdb82dd19aa3d0902468844cafceeba56c0e86be896075ba7fa69",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 171,
-          "covered": 163
+          "count": 174,
+          "covered": 166
         },
         "regions": {
-          "count": 264,
-          "covered": 255
+          "count": 267,
+          "covered": 258
         },
         "functions": {
-          "count": 23,
-          "covered": 22
+          "count": 24,
+          "covered": 23
         },
         "branches": {
           "count": 30,
@@ -6180,8 +6313,14 @@
       "status": "no executable LLVM mapping in these platform/feature/test builds; not counted as covered",
       "metrics": null
     },
+    "crates/capntproto-rpc-engine/src/provision/verified.rs": {
+      "sha256": "623a03a3c43a10eba1c4c59c6a01e5347df724065ece9c070318e24f99a1f9bc",
+      "group": "capability-rpc",
+      "status": "no executable LLVM mapping in these platform/feature/test builds; not counted as covered",
+      "metrics": null
+    },
     "crates/capntproto-rpc-engine/src/question.rs": {
-      "sha256": "c4d692f8def46b61813b13838a8391a56d33565284c75ff82edca1126a73563f",
+      "sha256": "9e18ea86b154780ceb29e369dff52c067087719fe7b5a5fd819799ed77e88cda",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -6190,39 +6329,45 @@
           "covered": 94
         },
         "regions": {
-          "count": 113,
-          "covered": 105
+          "count": 119,
+          "covered": 111
         },
         "functions": {
-          "count": 12,
-          "covered": 10
+          "count": 13,
+          "covered": 11
         },
         "branches": {
-          "count": 0,
-          "covered": 0
+          "count": 4,
+          "covered": 4
         }
       }
     },
+    "crates/capntproto-rpc-engine/src/question/verified.rs": {
+      "sha256": "18db6796a60457adceac7e1be9e1e288b20fbe8adcb752c92c71527f15240575",
+      "group": "capability-rpc",
+      "status": "no executable LLVM mapping in these platform/feature/test builds; not counted as covered",
+      "metrics": null
+    },
     "crates/capntproto-rpc-engine/src/questions.rs": {
-      "sha256": "e82970dfe46f8c47aba5e488a2961d54aa8a6791a6a6641e48caa2c7856645ba",
+      "sha256": "9b66d966847c27f4344323d62989ef9bde8ce57d5609c23b09b7efb08ac99b82",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 370,
-          "covered": 359
+          "count": 423,
+          "covered": 409
         },
         "regions": {
-          "count": 433,
-          "covered": 411
+          "count": 510,
+          "covered": 485
         },
         "functions": {
-          "count": 58,
-          "covered": 55
+          "count": 66,
+          "covered": 63
         },
         "branches": {
-          "count": 34,
-          "covered": 26
+          "count": 50,
+          "covered": 41
         }
       }
     },
@@ -6302,48 +6447,54 @@
       }
     },
     "crates/capntproto-rpc-engine/src/questions/tests.rs": {
-      "sha256": "d4555e499bbf8f78e68533ea5f73821c73f660161968790d35f459af72c3aef8",
+      "sha256": "0783903e240ce3eec7094119eab4608ed06c8b0d867ca20bae64712e52b85053",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 166,
-          "covered": 166
+          "count": 242,
+          "covered": 242
         },
         "regions": {
-          "count": 446,
-          "covered": 441
+          "count": 609,
+          "covered": 602
         },
         "functions": {
-          "count": 13,
-          "covered": 13
+          "count": 17,
+          "covered": 17
         },
         "branches": {
-          "count": 10,
-          "covered": 10
+          "count": 14,
+          "covered": 14
         }
       }
     },
+    "crates/capntproto-rpc-engine/src/questions/verified.rs": {
+      "sha256": "4181ea8e57980458a51eb9b0af7d7e514f54ad587c31ba8fda59404a87e3779f",
+      "group": "capability-rpc",
+      "status": "no executable LLVM mapping in these platform/feature/test builds; not counted as covered",
+      "metrics": null
+    },
     "crates/capntproto-rpc-engine/src/references.rs": {
-      "sha256": "290f3e124060ec0d96f085aa546a0eda8e50df873e4cc104a24b85d96ef18f4d",
+      "sha256": "a9940451e1b90ad2eec3c399d22195fa3945c7ef3e7db690fc2a48305e32f9a6",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 48,
-          "covered": 43
+          "count": 59,
+          "covered": 54
         },
         "regions": {
-          "count": 67,
-          "covered": 62
+          "count": 76,
+          "covered": 71
         },
         "functions": {
-          "count": 12,
-          "covered": 11
+          "count": 15,
+          "covered": 14
         },
         "branches": {
-          "count": 4,
-          "covered": 4
+          "count": 6,
+          "covered": 6
         }
       }
     },
@@ -6376,26 +6527,55 @@
         }
       }
     },
+    "crates/capntproto-rpc-engine/src/references/verified.rs": {
+      "sha256": "4bc90ec54747d924a2d6258c5f60bd413cc8f5d68100b6bb67d0d3b8f235f333",
+      "group": "capability-rpc",
+      "status": "no executable LLVM mapping in these platform/feature/test builds; not counted as covered",
+      "metrics": null
+    },
     "crates/capntproto-rpc-engine/src/storage.rs": {
-      "sha256": "4d431e07618953f0c73c3922c7a71abd8aa1df8521b4ae57f7b6995f4c098b3d",
+      "sha256": "8786035a55875634b9431f24e27b23497ce59c703d77dccf8f7cc5b929f61812",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 72,
-          "covered": 71
+          "count": 67,
+          "covered": 66
         },
         "regions": {
-          "count": 108,
-          "covered": 107
+          "count": 93,
+          "covered": 92
         },
         "functions": {
-          "count": 11,
-          "covered": 11
+          "count": 9,
+          "covered": 9
         },
         "branches": {
           "count": 8,
           "covered": 7
+        }
+      }
+    },
+    "crates/capntproto-rpc-engine/src/storage/limits.rs": {
+      "sha256": "676b2743ac3cb42f8b704a80984c3c2bbfe5bf8cef94cb227e77e188cb1364fb",
+      "group": "capability-rpc",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 7,
+          "covered": 7
+        },
+        "regions": {
+          "count": 15,
+          "covered": 14
+        },
+        "functions": {
+          "count": 1,
+          "covered": 1
+        },
+        "branches": {
+          "count": 2,
+          "covered": 2
         }
       }
     },
@@ -6584,7 +6764,7 @@
       }
     },
     "crates/capntproto-rpc-wire/src/buffer.rs": {
-      "sha256": "ea90cf970502abfda7a1d8a5b1f7e538d640c23de687d595288dd8644423fe4e",
+      "sha256": "135d4a7f6cdb846ce0bf54b9a9f2dd70f27002c6db9b8d4d40409d9c9db63ea4",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -6814,7 +6994,7 @@
       }
     },
     "crates/capntproto-rpc-wire/src/inbound.rs": {
-      "sha256": "bfc6d18cd5d4f4165ba58a786b384f0ec7107d8f24978b18d578254fb2fa0cfb",
+      "sha256": "a9fbe1f2b555d1652c7a0e234775df32181ee93832d04c9d445c420fbddfaaf7",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -6837,21 +7017,21 @@
       }
     },
     "crates/capntproto-rpc-wire/src/inbound/controls.rs": {
-      "sha256": "3e1475391cc41380275dbf5903527c1522fa49f082a38167aced6125740f5cc8",
+      "sha256": "24c09cf3e2e848cc6746f8ec5c1e6c68572187b87f25d6bc01f1496105e91578",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 63,
-          "covered": 61
+          "count": 76,
+          "covered": 74
         },
         "regions": {
-          "count": 95,
-          "covered": 86
+          "count": 104,
+          "covered": 95
         },
         "functions": {
-          "count": 5,
-          "covered": 5
+          "count": 6,
+          "covered": 6
         },
         "branches": {
           "count": 14,
@@ -7188,44 +7368,44 @@
       }
     },
     "crates/capntproto-rpc-wire/src/owned.rs": {
-      "sha256": "46f9b831c38cb9519e21dc5f61ff009c4def0cea32842e1174f2df1fa5271713",
+      "sha256": "f0a15876d1478f717c835b90be1217908fa0dc4eb5b304e6df2a2126d456c1bb",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 675,
-          "covered": 593
+          "count": 852,
+          "covered": 757
         },
         "regions": {
-          "count": 915,
-          "covered": 766
+          "count": 1100,
+          "covered": 935
         },
         "functions": {
-          "count": 56,
-          "covered": 50
+          "count": 73,
+          "covered": 64
         },
         "branches": {
-          "count": 44,
-          "covered": 31
+          "count": 70,
+          "covered": 55
         }
       }
     },
     "crates/capntproto-rpc-wire/src/owned/answer.rs": {
-      "sha256": "f79bfdf3ea497efcce1028535ba456bb2f54c3f2691bc2431a6def3472d12865",
+      "sha256": "d703892f60ef497e20d5171279539215b8eddb79f694798cb6d66cec8cc94091",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 302,
-          "covered": 209
+          "count": 325,
+          "covered": 229
         },
         "regions": {
-          "count": 390,
-          "covered": 277
+          "count": 407,
+          "covered": 291
         },
         "functions": {
-          "count": 34,
-          "covered": 27
+          "count": 36,
+          "covered": 28
         },
         "branches": {
           "count": 16,
@@ -7234,7 +7414,7 @@
       }
     },
     "crates/capntproto-rpc-wire/src/owned/answer/tail.rs": {
-      "sha256": "825b612428f687d33a8074c6dab1b2a38f27355a83e85a1347de9c3b4497f2be",
+      "sha256": "aa431781635ee29ca72d3fde5d9d4623d51bb2cbfaee72691355a24b35b265d0",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -7303,48 +7483,48 @@
       }
     },
     "crates/capntproto-rpc-wire/src/owned/connection.rs": {
-      "sha256": "91e114af3037a04f876f618a7fff2165d9f6d8ee462d80095d23015cc8cc05f3",
+      "sha256": "6dc68e421a3fa8b84e69db65b72839d668831a42bae1780c76ad3bb57dba9fd0",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 1127,
-          "covered": 780
+          "count": 1309,
+          "covered": 914
         },
         "regions": {
-          "count": 1284,
-          "covered": 933
+          "count": 1551,
+          "covered": 1133
         },
         "functions": {
-          "count": 77,
-          "covered": 63
+          "count": 90,
+          "covered": 74
         },
         "branches": {
-          "count": 172,
-          "covered": 108
+          "count": 218,
+          "covered": 141
         }
       }
     },
     "crates/capntproto-rpc-wire/src/owned/connection/awaiting.rs": {
-      "sha256": "d87d5f85905535694318904f7afe0281857b9dd94d8c58330b355099036cc37d",
+      "sha256": "523681963ccd5f1155811311759c36494ddcf5116a8c8372f3bdca40ce1a8b7b",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 242,
-          "covered": 189
+          "count": 279,
+          "covered": 218
         },
         "regions": {
-          "count": 313,
-          "covered": 234
+          "count": 359,
+          "covered": 262
         },
         "functions": {
-          "count": 25,
-          "covered": 19
+          "count": 29,
+          "covered": 22
         },
         "branches": {
-          "count": 62,
-          "covered": 38
+          "count": 74,
+          "covered": 43
         }
       }
     },
@@ -7441,25 +7621,25 @@
       }
     },
     "crates/capntproto-rpc-wire/src/owned/connection/growing/tests.rs": {
-      "sha256": "2b7400cae95240b31920da666293bf0ebc1cb7dd6f5512096c22e2ef903accdc",
+      "sha256": "6bb3fbe663bc9ad121cf984abeb3f42ae6619e6eb77af061e1491a5d8d088e21",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 875,
-          "covered": 838
+          "count": 973,
+          "covered": 929
         },
         "regions": {
-          "count": 1508,
-          "covered": 1436
+          "count": 1686,
+          "covered": 1603
         },
         "functions": {
-          "count": 64,
-          "covered": 50
+          "count": 73,
+          "covered": 56
         },
         "branches": {
-          "count": 36,
-          "covered": 20
+          "count": 44,
+          "covered": 25
         }
       }
     },
@@ -7487,21 +7667,21 @@
       }
     },
     "crates/capntproto-rpc-wire/src/owned/connection/invocation/immediate.rs": {
-      "sha256": "539d24a4a8739aada2b6177430b054bec999d0c333b230cd07780c766a280b64",
+      "sha256": "c5e306470eea8d1dde448d0bc9cfe3345d978f3983b8589198d0899271d5a63a",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 142,
-          "covered": 114
+          "count": 156,
+          "covered": 149
         },
         "regions": {
-          "count": 191,
-          "covered": 154
+          "count": 203,
+          "covered": 178
         },
         "functions": {
-          "count": 11,
-          "covered": 9
+          "count": 12,
+          "covered": 11
         },
         "branches": {
           "count": 20,
@@ -7510,25 +7690,25 @@
       }
     },
     "crates/capntproto-rpc-wire/src/owned/connection/invocation/template.rs": {
-      "sha256": "b25bd58a058ece3fce01e80da1797577147f724d3b7fa0ca787be70700588d35",
+      "sha256": "e1939e289fe410f42ca1437149af710051d49b6c128e65b7bb8ef56ca747e781",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 717,
-          "covered": 688
+          "count": 700,
+          "covered": 676
         },
         "regions": {
-          "count": 1010,
-          "covered": 945
+          "count": 976,
+          "covered": 923
         },
         "functions": {
           "count": 47,
           "covered": 46
         },
         "branches": {
-          "count": 78,
-          "covered": 53
+          "count": 76,
+          "covered": 52
         }
       }
     },
@@ -7648,25 +7828,25 @@
       }
     },
     "crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs": {
-      "sha256": "f9f6823d0c21e2774083d01d583ec422b7655f34678d0566952ff1c82cc48780",
+      "sha256": "dccdf86f6ee97d009b9a136b449ebc74fae6bcdb63725d28560b3212dc4bbec6",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 318,
-          "covered": 274
+          "count": 321,
+          "covered": 277
         },
         "regions": {
-          "count": 437,
-          "covered": 333
+          "count": 443,
+          "covered": 339
         },
         "functions": {
-          "count": 21,
-          "covered": 14
+          "count": 22,
+          "covered": 15
         },
         "branches": {
-          "count": 60,
-          "covered": 47
+          "count": 62,
+          "covered": 49
         }
       }
     },
@@ -7693,26 +7873,49 @@
         }
       }
     },
-    "crates/capntproto-rpc-wire/src/owned/connection/prepared_return.rs": {
-      "sha256": "cc95c374f511d30b3fe15f15be3ca71adcd6b95598e167f0c874e887b8b30f36",
+    "crates/capntproto-rpc-wire/src/owned/connection/plain_return.rs": {
+      "sha256": "564bc876e20961525977af23531c8130ab7c5eda1f4672028354e7a2cc5924d0",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 299,
-          "covered": 278
+          "count": 79,
+          "covered": 71
         },
         "regions": {
-          "count": 466,
-          "covered": 426
+          "count": 143,
+          "covered": 125
         },
         "functions": {
-          "count": 23,
-          "covered": 20
+          "count": 8,
+          "covered": 6
         },
         "branches": {
-          "count": 30,
-          "covered": 19
+          "count": 36,
+          "covered": 25
+        }
+      }
+    },
+    "crates/capntproto-rpc-wire/src/owned/connection/prepared_return.rs": {
+      "sha256": "c090bb91f8b65846067c3247cebb31a0f41e3f3bd748269a3a6f4df91cc5efd6",
+      "group": "capability-rpc",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 355,
+          "covered": 335
+        },
+        "regions": {
+          "count": 555,
+          "covered": 513
+        },
+        "functions": {
+          "count": 28,
+          "covered": 24
+        },
+        "branches": {
+          "count": 36,
+          "covered": 24
         }
       }
     },
@@ -7809,25 +8012,25 @@
       }
     },
     "crates/capntproto-rpc-wire/src/owned/connection/server_output/tests.rs": {
-      "sha256": "5c20ec105d72562d29ce23ebbf51071a76ecb502c896242f16fce0779cd9cb69",
+      "sha256": "e9020aedf3dd9d41b7d03d65ddd47e69372d018c3259cb1afef650baebff7df3",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 942,
-          "covered": 903
+          "count": 1042,
+          "covered": 1001
         },
         "regions": {
-          "count": 1557,
-          "covered": 1505
+          "count": 1717,
+          "covered": 1663
         },
         "functions": {
-          "count": 90,
-          "covered": 69
+          "count": 94,
+          "covered": 73
         },
         "branches": {
-          "count": 74,
-          "covered": 54
+          "count": 78,
+          "covered": 56
         }
       }
     },
@@ -8131,25 +8334,25 @@
       }
     },
     "crates/capntproto-rpc-wire/src/owned/question.rs": {
-      "sha256": "ee9de5de0126278fe981273e47658890aa7380e3260cd788911b6cfb1acd0b88",
+      "sha256": "ce6ff9c85a5486aafe8d74533966bc78b3e5da2b07cbec36f8c85fa6ccac5fb9",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 486,
-          "covered": 450
+          "count": 575,
+          "covered": 533
         },
         "regions": {
-          "count": 578,
-          "covered": 498
+          "count": 654,
+          "covered": 568
         },
         "functions": {
-          "count": 43,
-          "covered": 42
+          "count": 49,
+          "covered": 48
         },
         "branches": {
-          "count": 44,
-          "covered": 31
+          "count": 66,
+          "covered": 43
         }
       }
     },
@@ -8177,21 +8380,21 @@
       }
     },
     "crates/capntproto-rpc-wire/src/owned/question/tests.rs": {
-      "sha256": "0752a409297d93f51ae6506a1f84b79d846a84985f499110d56aa4dc58bb1e68",
+      "sha256": "7f8de2125729dbb740b9b6d5210adedec63e290ef9466caaf83352efd34d4e09",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 564,
-          "covered": 552
+          "count": 572,
+          "covered": 560
         },
         "regions": {
-          "count": 1030,
-          "covered": 1015
+          "count": 1050,
+          "covered": 1035
         },
         "functions": {
-          "count": 51,
-          "covered": 44
+          "count": 52,
+          "covered": 45
         },
         "branches": {
           "count": 36,
@@ -8223,17 +8426,17 @@
       }
     },
     "crates/capntproto-rpc-wire/src/owned/resolution.rs": {
-      "sha256": "010d8ba18e1e2370a93df7a850f46a071ac91fb7774eafd0ff3dc75110177d69",
+      "sha256": "fafc77e90354c410d8f4830499be522fa518ebd806a3962564381c4cd762a1d1",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 206,
-          "covered": 165
+          "count": 207,
+          "covered": 166
         },
         "regions": {
-          "count": 277,
-          "covered": 224
+          "count": 278,
+          "covered": 225
         },
         "functions": {
           "count": 20,
@@ -8292,25 +8495,25 @@
       }
     },
     "crates/capntproto-rpc-wire/src/owned/tests.rs": {
-      "sha256": "56316c9fc53dfdd2a6b6722fcdec72813d2f32a2f35c7446f76151629ae0c56d",
+      "sha256": "9dd71c50f1406423697ed9951339bb26129165f7b7574ba6fd48c22de656a2fa",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 408,
-          "covered": 401
+          "count": 496,
+          "covered": 486
         },
         "regions": {
-          "count": 795,
-          "covered": 784
+          "count": 948,
+          "covered": 935
         },
         "functions": {
-          "count": 27,
-          "covered": 24
+          "count": 34,
+          "covered": 28
         },
         "branches": {
-          "count": 38,
-          "covered": 28
+          "count": 40,
+          "covered": 31
         }
       }
     },
@@ -8913,21 +9116,21 @@
       }
     },
     "crates/capntproto-rpc/src/local.rs": {
-      "sha256": "6529d46a4e45761ef6f259223cf4d4da4722359de05d9953948b62be7e4378f8",
+      "sha256": "3237d53e7042a05d7f1387ffb33c825e1b9e0bc9cdbc4c362eef048c48bc60a6",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 1091,
-          "covered": 1024
+          "count": 1104,
+          "covered": 1030
         },
         "regions": {
-          "count": 1524,
-          "covered": 1399
+          "count": 1546,
+          "covered": 1413
         },
         "functions": {
-          "count": 118,
-          "covered": 116
+          "count": 119,
+          "covered": 117
         },
         "branches": {
           "count": 174,
@@ -9195,25 +9398,25 @@
       }
     },
     "crates/capntproto-rpc/src/queued.rs": {
-      "sha256": "b21f9f11d5617b214aa07a42af718905334d1063cf1618a1730088bdaae7b7eb",
+      "sha256": "27ee1c13319be62c731be7d756769953a102dcec7c9769382de5a239a3619674",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 303,
-          "covered": 283
+          "count": 387,
+          "covered": 342
         },
         "regions": {
-          "count": 439,
-          "covered": 418
+          "count": 574,
+          "covered": 531
         },
         "functions": {
-          "count": 34,
-          "covered": 33
+          "count": 47,
+          "covered": 40
         },
         "branches": {
-          "count": 30,
-          "covered": 27
+          "count": 32,
+          "covered": 29
         }
       }
     },
@@ -9402,94 +9605,94 @@
       }
     },
     "crates/capntproto-rpc/src/scoped.rs": {
-      "sha256": "85b71471103da5790aae277861b6b763a90593e94859f8a87be4a112b8d2a1b0",
+      "sha256": "9a58a0c8c0765a1c8c6d52431889823661dbfd1e05aab028aedd30944fd59413",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 765,
-          "covered": 688
+          "count": 795,
+          "covered": 714
         },
         "regions": {
-          "count": 1098,
-          "covered": 954
+          "count": 1143,
+          "covered": 994
         },
         "functions": {
-          "count": 102,
-          "covered": 90
+          "count": 105,
+          "covered": 93
         },
         "branches": {
-          "count": 128,
-          "covered": 99
+          "count": 132,
+          "covered": 101
         }
       }
     },
     "crates/capntproto-rpc/src/scoped/admission.rs": {
-      "sha256": "6f6357934366bfd2dde84dc9798c605aea05bd4209978ce48046a22c6517f68c",
+      "sha256": "93a60735b9ee534710b79d53c88156d9f0294fb7f392304fb95b31233d2e1aa6",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 27,
-          "covered": 27
+          "count": 33,
+          "covered": 32
         },
         "regions": {
-          "count": 37,
-          "covered": 36
+          "count": 45,
+          "covered": 42
         },
         "functions": {
-          "count": 4,
-          "covered": 4
+          "count": 5,
+          "covered": 5
         },
         "branches": {
-          "count": 6,
-          "covered": 5
+          "count": 8,
+          "covered": 6
         }
       }
     },
     "crates/capntproto-rpc/src/scoped/response.rs": {
-      "sha256": "a235768c124d8fdd496925e9139417e31551790b838a699551ce82202fa91459",
+      "sha256": "d67310fe6a028db851e27b3d5118420308b71dde420bf050f2c8141a29437968",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 421,
-          "covered": 406
+          "count": 561,
+          "covered": 523
         },
         "regions": {
-          "count": 740,
-          "covered": 718
+          "count": 1009,
+          "covered": 958
         },
         "functions": {
-          "count": 39,
-          "covered": 38
+          "count": 48,
+          "covered": 43
         },
         "branches": {
-          "count": 66,
-          "covered": 58
+          "count": 102,
+          "covered": 80
         }
       }
     },
     "crates/capntproto-rpc/src/scoped/shutdown.rs": {
-      "sha256": "4b62e3d4655ce70befad274cbd40bf6e63ed4c2fff35b8babe8bd460d10fb428",
+      "sha256": "2f8872a700d8c97d72ab04af913c24458149ddf8deb6a4049068130b977a4a9b",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 176,
-          "covered": 172
+          "count": 208,
+          "covered": 203
         },
         "regions": {
-          "count": 308,
-          "covered": 301
+          "count": 354,
+          "covered": 345
         },
         "functions": {
-          "count": 21,
-          "covered": 20
+          "count": 24,
+          "covered": 23
         },
         "branches": {
-          "count": 18,
-          "covered": 14
+          "count": 26,
+          "covered": 20
         }
       }
     },
@@ -9517,48 +9720,48 @@
       }
     },
     "crates/capntproto-rpc/src/scoped/wire.rs": {
-      "sha256": "d57f651d8fb1f0f8aa681774cc1f11de612f619502782c54f0e155e09358d6a1",
+      "sha256": "f23b7008272a533c928d676ebd979864ce0406aec3c37a237957011b730cad75",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 946,
-          "covered": 812
+          "count": 1004,
+          "covered": 854
         },
         "regions": {
-          "count": 1361,
-          "covered": 1134
+          "count": 1455,
+          "covered": 1189
         },
         "functions": {
-          "count": 95,
-          "covered": 78
+          "count": 100,
+          "covered": 83
         },
         "branches": {
-          "count": 136,
-          "covered": 93
+          "count": 164,
+          "covered": 109
         }
       }
     },
     "crates/capntproto-rpc/src/scoped/wire/calls.rs": {
-      "sha256": "344b6be6c64d99db9fbc4d57871cc012d4fb258d647aa01c43cde6f8c148c6ff",
+      "sha256": "edeaa6b91ca0a17b8bcc4e20a224499d237305ba121af30a2108481d906a44c4",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 775,
-          "covered": 684
+          "count": 864,
+          "covered": 770
         },
         "regions": {
-          "count": 958,
-          "covered": 823
+          "count": 1036,
+          "covered": 893
         },
         "functions": {
-          "count": 49,
-          "covered": 43
+          "count": 58,
+          "covered": 52
         },
         "branches": {
-          "count": 162,
-          "covered": 123
+          "count": 168,
+          "covered": 127
         }
       }
     },
@@ -9586,44 +9789,44 @@
       }
     },
     "crates/capntproto-rpc/src/scoped/wire/coordinator.rs": {
-      "sha256": "42f4c55cd0c1390a5a36f6487bdc06a9102abec3bfa6238be750cc8d0b7813be",
+      "sha256": "e6f26745348281e3efa97ad7479675430781ec9c5f469c6e6f225ac867537962",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 873,
-          "covered": 810
+          "count": 1177,
+          "covered": 1047
         },
         "regions": {
-          "count": 1216,
-          "covered": 1127
+          "count": 1585,
+          "covered": 1398
         },
         "functions": {
-          "count": 66,
-          "covered": 59
+          "count": 90,
+          "covered": 76
         },
         "branches": {
-          "count": 170,
-          "covered": 151
+          "count": 294,
+          "covered": 233
         }
       }
     },
     "crates/capntproto-rpc/src/scoped/wire/coordinator/bootstrap.rs": {
-      "sha256": "35d11b1a9d3f01aa288668bb8c4740055e8fb13f8e5c9f885fcc049a298e3dba",
+      "sha256": "51c530151abf5045901a2f6795b8952d7c91eeba727f363e1c3805048a63a482",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 127,
-          "covered": 119
+          "count": 140,
+          "covered": 129
         },
         "regions": {
-          "count": 164,
-          "covered": 146
+          "count": 179,
+          "covered": 157
         },
         "functions": {
-          "count": 9,
-          "covered": 9
+          "count": 13,
+          "covered": 12
         },
         "branches": {
           "count": 10,
@@ -9655,25 +9858,25 @@
       }
     },
     "crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty.rs": {
-      "sha256": "697b760026fcba2c9274a411fb4e2fa0f74dfe7a6e552096c839c145000bcfe8",
+      "sha256": "ef051da1a4526fa1c9308f3c2e7080297b9df12d2628fbdb6e99ebd4a2fd3ea8",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 942,
-          "covered": 749
+          "count": 967,
+          "covered": 774
         },
         "regions": {
-          "count": 1417,
-          "covered": 1124
+          "count": 1451,
+          "covered": 1158
         },
         "functions": {
-          "count": 71,
-          "covered": 62
+          "count": 75,
+          "covered": 66
         },
         "branches": {
-          "count": 164,
-          "covered": 113
+          "count": 188,
+          "covered": 126
         }
       }
     },
@@ -9730,11 +9933,11 @@
       "metrics": {
         "lines": {
           "count": 315,
-          "covered": 283
+          "covered": 284
         },
         "regions": {
           "count": 427,
-          "covered": 347
+          "covered": 348
         },
         "functions": {
           "count": 21,
@@ -9742,7 +9945,7 @@
         },
         "branches": {
           "count": 60,
-          "covered": 38
+          "covered": 39
         }
       }
     },
@@ -9793,21 +9996,21 @@
       }
     },
     "crates/capntproto-rpc/src/scoped/wire/coordinator/notified.rs": {
-      "sha256": "10b3ddda5f789d0b8ee9437ad522984606604758d7847a41e812c27dca53c0fc",
+      "sha256": "0b9568496629ebd33ad54aa754c5ef6078db4e8578f18160481d7f8be0ca9ccc",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 83,
-          "covered": 83
+          "count": 87,
+          "covered": 87
         },
         "regions": {
-          "count": 142,
-          "covered": 142
+          "count": 149,
+          "covered": 149
         },
         "functions": {
-          "count": 9,
-          "covered": 9
+          "count": 10,
+          "covered": 10
         },
         "branches": {
           "count": 8,
@@ -9839,25 +10042,25 @@
       }
     },
     "crates/capntproto-rpc/src/scoped/wire/coordinator/tests.rs": {
-      "sha256": "d24244ea09ce5b450a5fdbacab0a762783121e2018f0b9de4da9be364963c4d8",
+      "sha256": "82c52fc32a4c758e329623636cbce7118d970ac546a672ddd854e143665dfb5c",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 1482,
-          "covered": 1457
+          "count": 1517,
+          "covered": 1492
         },
         "regions": {
-          "count": 2454,
-          "covered": 2418
+          "count": 2536,
+          "covered": 2500
         },
         "functions": {
-          "count": 84,
-          "covered": 79
+          "count": 86,
+          "covered": 81
         },
         "branches": {
-          "count": 180,
-          "covered": 156
+          "count": 186,
+          "covered": 162
         }
       }
     },
@@ -9937,15 +10140,15 @@
       "metrics": {
         "lines": {
           "count": 88,
-          "covered": 69
+          "covered": 62
         },
         "regions": {
           "count": 80,
-          "covered": 63
+          "covered": 56
         },
         "functions": {
           "count": 19,
-          "covered": 15
+          "covered": 14
         },
         "branches": {
           "count": 0,
@@ -9954,44 +10157,44 @@
       }
     },
     "crates/capntproto-rpc/src/scoped/wire/coordinator/transport/vat.rs": {
-      "sha256": "dc04b79df4bcfaac655b75faaac754676030179caf45ab9b945d24f2c1d7fceb",
+      "sha256": "29466ea320233767d7346e66cb549a030f7dab8f6b50b321183b5962f0cc401f",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 553,
-          "covered": 463
+          "count": 569,
+          "covered": 482
         },
         "regions": {
-          "count": 825,
-          "covered": 649
+          "count": 850,
+          "covered": 674
         },
         "functions": {
-          "count": 50,
-          "covered": 43
+          "count": 54,
+          "covered": 47
         },
         "branches": {
-          "count": 138,
-          "covered": 90
+          "count": 140,
+          "covered": 94
         }
       }
     },
     "crates/capntproto-rpc/src/scoped/wire/coordinator/transport/vat/tests.rs": {
-      "sha256": "8268e69523ff4482916241d9a1a682c9abc25534c38f44445fa2c6bd08dc3476",
+      "sha256": "7513a95f0bba18b95d01c754420028276eae73ef48e36b55d79a2b18060a6fda",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 416,
-          "covered": 404
+          "count": 442,
+          "covered": 430
         },
         "regions": {
-          "count": 866,
-          "covered": 848
+          "count": 932,
+          "covered": 914
         },
         "functions": {
-          "count": 39,
-          "covered": 36
+          "count": 41,
+          "covered": 38
         },
         "branches": {
           "count": 20,
@@ -10046,7 +10249,7 @@
       }
     },
     "crates/capntproto-rpc/src/scoped/wire/resources.rs": {
-      "sha256": "379412bcea50d4f80a63ce44bc0df87cb346673196a7c2c03af42df055690bb5",
+      "sha256": "1cfb5e743d47c0f5eb5b3a733c88ad51e9420a75bca1fa1fb7c6e144721b2846",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -10069,53 +10272,53 @@
       }
     },
     "crates/capntproto-rpc/src/scoped/wire/server.rs": {
-      "sha256": "b78e4b3eaf16af5376ef6d5bc2c5b2b63b1adfcd36b1eafce19b2a0a938a5565",
+      "sha256": "5b827e9cbeba94b6ca00680a49179e95238975cd473517e3ba579a458e8df724",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 119,
-          "covered": 118
+          "count": 126,
+          "covered": 125
         },
         "regions": {
-          "count": 140,
-          "covered": 131
+          "count": 151,
+          "covered": 141
         },
         "functions": {
           "count": 12,
           "covered": 12
         },
         "branches": {
-          "count": 0,
-          "covered": 0
+          "count": 2,
+          "covered": 2
         }
       }
     },
     "crates/capntproto-rpc/src/scoped/wire/server/results.rs": {
-      "sha256": "76982962ba62c2471d4ca5900416680c81f5d0f73cea5619f50a174c099461b2",
+      "sha256": "26cc425bdb51e799c12cb818fd0f419b70672c4f48f7fffc33b7178c78af0173",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 604,
-          "covered": 554
+          "count": 662,
+          "covered": 612
         },
         "regions": {
-          "count": 837,
-          "covered": 740
+          "count": 900,
+          "covered": 800
         },
         "functions": {
-          "count": 75,
-          "covered": 67
+          "count": 80,
+          "covered": 72
         },
         "branches": {
-          "count": 62,
-          "covered": 50
+          "count": 72,
+          "covered": 59
         }
       }
     },
     "crates/capntproto-rpc/src/scoped/wire/server/results/tests.rs": {
-      "sha256": "1c682ef462f59061e39cc6616612971c080428f8b3e809defac70eb5663cc9bf",
+      "sha256": "5b0f94d6211ffab742fc15a4cdb5df1f80c66cb98b54c4a5c154a00988dc6bb4",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -10124,8 +10327,8 @@
           "covered": 632
         },
         "regions": {
-          "count": 1176,
-          "covered": 1147
+          "count": 1177,
+          "covered": 1148
         },
         "functions": {
           "count": 55,
@@ -10138,30 +10341,30 @@
       }
     },
     "crates/capntproto-rpc/src/scoped/wire/server/worker.rs": {
-      "sha256": "37c9031b717ed7856fa64f3cd0abbc1ad6f03a6da66a3f0285b4b8f5559a30ff",
+      "sha256": "edbcf89429d4470e082facd398d81044f8c383a9b7c1d5041ee5994e55c4e19d",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 441,
-          "covered": 417
+          "count": 503,
+          "covered": 473
         },
         "regions": {
-          "count": 495,
-          "covered": 443
+          "count": 589,
+          "covered": 527
         },
         "functions": {
-          "count": 26,
-          "covered": 26
+          "count": 27,
+          "covered": 27
         },
         "branches": {
-          "count": 86,
-          "covered": 72
+          "count": 118,
+          "covered": 100
         }
       }
     },
     "crates/capntproto-rpc/src/scoped/wire/server/worker/tests.rs": {
-      "sha256": "93c88c91c58c012b2dca1b4a4d39810d4caff5cdc3d2a7b9c099fdce176c70b1",
+      "sha256": "b0e835ab5357b11a7aa38ca8a565c1dd2ff051c979557b039e586e70a96c1d59",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -10184,25 +10387,25 @@
       }
     },
     "crates/capntproto-rpc/src/scoped/wire/tests.rs": {
-      "sha256": "a31a9451e9c2f3932d52c92c8c5e53cdd7f8eae166ebf58e45f8c3974be2dbfd",
+      "sha256": "3d09e291fe39e56920eef7125c6237faff55a0a58b18acb6aed857c67732f82e",
       "group": "capability-rpc",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 1138,
-          "covered": 1104
+          "count": 1251,
+          "covered": 1216
         },
         "regions": {
-          "count": 1863,
-          "covered": 1811
+          "count": 2048,
+          "covered": 1995
         },
         "functions": {
-          "count": 95,
-          "covered": 75
+          "count": 102,
+          "covered": 81
         },
         "branches": {
-          "count": 14,
-          "covered": 9
+          "count": 18,
+          "covered": 13
         }
       }
     },
@@ -10470,7 +10673,7 @@
         },
         "regions": {
           "count": 1460,
-          "covered": 1385
+          "covered": 1386
         },
         "functions": {
           "count": 128,
@@ -10575,40 +10778,40 @@
       }
     },
     "dev/src/checks.rs": {
-      "sha256": "985e524472e27c32bbe2febded78bb1464cae1dbaa00ab91adda71192a3b33d0",
+      "sha256": "bd8bdfabd0e0790c2c835c75aa6e01553f2d07de7dccffae4614fc277b7e0231",
       "group": "tools-fuzz-examples-benchmarks",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 563,
-          "covered": 480
+          "count": 546,
+          "covered": 463
         },
         "regions": {
-          "count": 869,
-          "covered": 676
+          "count": 846,
+          "covered": 654
         },
         "functions": {
-          "count": 42,
-          "covered": 36
+          "count": 38,
+          "covered": 32
         },
         "branches": {
-          "count": 82,
-          "covered": 54
+          "count": 76,
+          "covered": 48
         }
       }
     },
     "dev/src/checks/tests.rs": {
-      "sha256": "2b41227413f038ce8dd4a29447531266c75577eef91e224007455a26f6023ec8",
+      "sha256": "4b08174f556c0d03e52b7b6e3bd58b7352e5588c61482a651d5e63285fb920fb",
       "group": "tools-fuzz-examples-benchmarks",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 190,
-          "covered": 190
+          "count": 185,
+          "covered": 185
         },
         "regions": {
-          "count": 325,
-          "covered": 324
+          "count": 324,
+          "covered": 323
         },
         "functions": {
           "count": 13,
@@ -10673,15 +10876,15 @@
       "metrics": {
         "lines": {
           "count": 445,
-          "covered": 311
+          "covered": 310
         },
         "regions": {
           "count": 872,
-          "covered": 603
+          "covered": 601
         },
         "functions": {
           "count": 18,
-          "covered": 16
+          "covered": 15
         },
         "branches": {
           "count": 44,
@@ -10913,7 +11116,7 @@
         },
         "regions": {
           "count": 1092,
-          "covered": 916
+          "covered": 927
         },
         "functions": {
           "count": 47,
@@ -11018,67 +11221,67 @@
       }
     },
     "dev/src/rpc_instructions.rs": {
-      "sha256": "608b6e060b6c59e739cfceb8e8fa7816c2e56e791237ee619583fa0c413c04b9",
+      "sha256": "0ed55950753eadef8305efa0e0facd3f11e3c9447b236b92204eef5fb94c7c74",
       "group": "tools-fuzz-examples-benchmarks",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 282,
-          "covered": 36
+          "count": 296,
+          "covered": 47
         },
         "regions": {
-          "count": 493,
-          "covered": 44
+          "count": 526,
+          "covered": 70
         },
         "functions": {
-          "count": 22,
-          "covered": 5
+          "count": 24,
+          "covered": 8
         },
         "branches": {
-          "count": 36,
-          "covered": 2
+          "count": 38,
+          "covered": 4
         }
       }
     },
     "dev/src/verus.rs": {
-      "sha256": "c0dc7cf07529eb7b63d62c3f476bd5e41f0d8b8779a64da73d7ff80fc89e175c",
+      "sha256": "4d2633f64e2d4dd9f41656f0af9d731fe6c24804f7443dcf913d658fcc4476cf",
       "group": "tools-fuzz-examples-benchmarks",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 362,
-          "covered": 92
+          "count": 381,
+          "covered": 111
         },
         "regions": {
-          "count": 750,
-          "covered": 172
+          "count": 794,
+          "covered": 209
         },
         "functions": {
-          "count": 20,
-          "covered": 9
+          "count": 23,
+          "covered": 12
         },
         "branches": {
-          "count": 60,
-          "covered": 25
+          "count": 64,
+          "covered": 28
         }
       }
     },
     "dev/src/verus/tests.rs": {
-      "sha256": "b6573656029cff1ba39acf4c23d6cc579fa45600ede7def41d759363b0edfdf9",
+      "sha256": "bd87646bfc23d232cda0c9d89e378ae35f2610cce8e4b118a7a0ee1ea4d0d9ad",
       "group": "tools-fuzz-examples-benchmarks",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 56,
-          "covered": 56
+          "count": 64,
+          "covered": 64
         },
         "regions": {
-          "count": 125,
-          "covered": 125
+          "count": 146,
+          "covered": 146
         },
         "functions": {
-          "count": 5,
-          "covered": 5
+          "count": 6,
+          "covered": 6
         },
         "branches": {
           "count": 0,
@@ -11694,21 +11897,21 @@
       }
     },
     "quality/src/coverage.rs": {
-      "sha256": "8194ee41d2ef0feb79b5914163144ddae1dcddee8a402b7e0b25946db6f89388",
+      "sha256": "f54ac062a9f3a988a6cf80659d92922ff3550b9c225d8223fdcae32b760fd058",
       "group": "tools-fuzz-examples-benchmarks",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 729,
-          "covered": 483
+          "count": 755,
+          "covered": 482
         },
         "regions": {
-          "count": 1133,
-          "covered": 725
+          "count": 1151,
+          "covered": 723
         },
         "functions": {
           "count": 45,
-          "covered": 34
+          "covered": 33
         },
         "branches": {
           "count": 106,
@@ -11901,25 +12104,25 @@
       }
     },
     "quality/tests/ignored_inventory.rs": {
-      "sha256": "05a76b0d2efbac0622234d6f33867f908ac5a3dd4c2f3996e1ffd94c77825e07",
+      "sha256": "4a3d4d78ee307bcd2fe64369aa1c2f432bf8915f825e5fb2080f50de51665a14",
       "group": "tools-fuzz-examples-benchmarks",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 32,
-          "covered": 32
+          "count": 43,
+          "covered": 18
         },
         "regions": {
-          "count": 39,
-          "covered": 39
+          "count": 59,
+          "covered": 38
         },
         "functions": {
-          "count": 2,
-          "covered": 2
+          "count": 3,
+          "covered": 3
         },
         "branches": {
-          "count": 0,
-          "covered": 0
+          "count": 2,
+          "covered": 1
         }
       }
     },
@@ -12528,17 +12731,17 @@
       }
     },
     "src/native_rpc/generation.rs": {
-      "sha256": "a0af7749af16999d8905c2de20a64e047b6c58350114fd78f793b0cfe062b1de",
+      "sha256": "de22537e5ca62c797d2f502a862bae72e1662642e4cf8856fab6f26713900c0e",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 28,
-          "covered": 28
+          "count": 24,
+          "covered": 24
         },
         "regions": {
-          "count": 34,
-          "covered": 34
+          "count": 35,
+          "covered": 35
         },
         "functions": {
           "count": 6,
@@ -12551,25 +12754,25 @@
       }
     },
     "src/native_rpc/generation/tests.rs": {
-      "sha256": "362ca792a4325fc006002792022160249121e0bb3f73efdb5a30c28a623e380e",
+      "sha256": "3b1f554fd41f22fea4883cac248ed9dda9eefe12593f4a285de7d3a465343c82",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 155,
-          "covered": 98
+          "count": 142,
+          "covered": 141
         },
         "regions": {
-          "count": 217,
-          "covered": 126
+          "count": 205,
+          "covered": 204
         },
         "functions": {
-          "count": 9,
-          "covered": 6
+          "count": 10,
+          "covered": 10
         },
         "branches": {
           "count": 8,
-          "covered": 5
+          "covered": 7
         }
       }
     },
@@ -12626,11 +12829,11 @@
       "metrics": {
         "lines": {
           "count": 496,
-          "covered": 409
+          "covered": 411
         },
         "regions": {
           "count": 863,
-          "covered": 721
+          "covered": 723
         },
         "functions": {
           "count": 37,
@@ -12638,7 +12841,7 @@
         },
         "branches": {
           "count": 76,
-          "covered": 62
+          "covered": 64
         }
       }
     },
@@ -12649,11 +12852,11 @@
       "metrics": {
         "lines": {
           "count": 461,
-          "covered": 362
+          "covered": 363
         },
         "regions": {
           "count": 640,
-          "covered": 464
+          "covered": 465
         },
         "functions": {
           "count": 32,
@@ -12661,7 +12864,7 @@
         },
         "branches": {
           "count": 22,
-          "covered": 17
+          "covered": 18
         }
       }
     },
@@ -12672,19 +12875,19 @@
       "metrics": {
         "lines": {
           "count": 509,
-          "covered": 416
+          "covered": 426
         },
         "regions": {
           "count": 748,
-          "covered": 606
+          "covered": 620
         },
         "functions": {
           "count": 45,
-          "covered": 39
+          "covered": 41
         },
         "branches": {
           "count": 74,
-          "covered": 61
+          "covered": 64
         }
       }
     },
@@ -12764,19 +12967,19 @@
       "metrics": {
         "lines": {
           "count": 339,
-          "covered": 217
+          "covered": 252
         },
         "regions": {
           "count": 622,
-          "covered": 418
+          "covered": 476
         },
         "functions": {
           "count": 35,
-          "covered": 25
+          "covered": 30
         },
         "branches": {
           "count": 24,
-          "covered": 14
+          "covered": 18
         }
       }
     },
@@ -13563,13 +13766,59 @@
       }
     },
     "src/semantics.rs": {
-      "sha256": "7f2c21bdd3b366e82ca6ac1bc3bf515eb48375bc1a9c851dccd7ff2c18199e32",
+      "sha256": "c0d2cac5b8d1704bbaf8e6129096e9b3e1b18156f9d489126e1fa9ece4eaa2f2",
       "group": "runtime",
       "status": "no executable LLVM mapping in these platform/feature/test builds; not counted as covered",
       "metrics": null
     },
     "src/semantics/revisions.rs": {
-      "sha256": "9713cd77905fa46285a7e35d66cd6b6feb206aacf5c1fba0c6098ad68d518816",
+      "sha256": "35f9a5bf82d7f27aa91876b49e3ca21e3c798d3d929f04d991dfb34a490a3ca1",
+      "group": "runtime",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 47,
+          "covered": 47
+        },
+        "regions": {
+          "count": 51,
+          "covered": 51
+        },
+        "functions": {
+          "count": 11,
+          "covered": 11
+        },
+        "branches": {
+          "count": 10,
+          "covered": 10
+        }
+      }
+    },
+    "src/semantics/sequence.rs": {
+      "sha256": "92d6545682f581d84392cea1dd81e6dfb7d2bafeefe38c0a7099bf2881fe07f7",
+      "group": "runtime",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 5,
+          "covered": 5
+        },
+        "regions": {
+          "count": 7,
+          "covered": 7
+        },
+        "functions": {
+          "count": 1,
+          "covered": 1
+        },
+        "branches": {
+          "count": 0,
+          "covered": 0
+        }
+      }
+    },
+    "src/semantics/stream.rs": {
+      "sha256": "67e209b5e4e4f5958f417c0f8d80ccf5644bb11080379aed8eb6bedec6f0fbc2",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -13582,37 +13831,32 @@
           "covered": 46
         },
         "functions": {
-          "count": 10,
-          "covered": 10
-        },
-        "branches": {
-          "count": 8,
-          "covered": 8
-        }
-      }
-    },
-    "src/semantics/stream.rs": {
-      "sha256": "8747c9b6ab02722580cde57e9601527a9d3102ec391a6295a29df748e94ff829",
-      "group": "runtime",
-      "status": "measured (including zero-hit code)",
-      "metrics": {
-        "lines": {
-          "count": 39,
-          "covered": 39
-        },
-        "regions": {
-          "count": 39,
-          "covered": 39
-        },
-        "functions": {
-          "count": 8,
-          "covered": 8
+          "count": 9,
+          "covered": 9
         },
         "branches": {
           "count": 6,
           "covered": 6
         }
       }
+    },
+    "src/semantics/verified/revisions.rs": {
+      "sha256": "d7cbce9cfe0638ac6e70f78ece5af3b11788155778d08ad8c0386d549b62ba9d",
+      "group": "runtime",
+      "status": "no executable LLVM mapping in these platform/feature/test builds; not counted as covered",
+      "metrics": null
+    },
+    "src/semantics/verified/sequence.rs": {
+      "sha256": "189a1d56a5c0c0289e4724dfeb5b10e9aee30ebd60c866feee763adee8f1039a",
+      "group": "runtime",
+      "status": "no executable LLVM mapping in these platform/feature/test builds; not counted as covered",
+      "metrics": null
+    },
+    "src/semantics/verified/stream.rs": {
+      "sha256": "efdbd7f1563102b4735ffa79d8b5a356954b95b5d31b8166443997917a40b217",
+      "group": "runtime",
+      "status": "no executable LLVM mapping in these platform/feature/test builds; not counted as covered",
+      "metrics": null
     },
     "src/storage.rs": {
       "sha256": "9a16bb4c73b64ee39f6536d4427a71a485adfa29914c2757fb7557dd5a8d6166",
@@ -13625,7 +13869,7 @@
         },
         "regions": {
           "count": 1683,
-          "covered": 1577
+          "covered": 1578
         },
         "functions": {
           "count": 56,
@@ -13845,25 +14089,25 @@
       }
     },
     "src/storage/revision_tests.rs": {
-      "sha256": "c8a302f1e7e18d7e846319378a9e33abeb2d1dc53d920fa47d66b4bf13b2ad6e",
+      "sha256": "1cd1ea2afa9b9a1d5c14fb172a9fc916546ee455b049916dd0a141aa05266c72",
       "group": "runtime",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 191,
-          "covered": 98
+          "count": 177,
+          "covered": 176
         },
         "regions": {
-          "count": 448,
-          "covered": 231
+          "count": 439,
+          "covered": 431
         },
         "functions": {
           "count": 4,
-          "covered": 3
+          "covered": 4
         },
         "branches": {
           "count": 10,
-          "covered": 4
+          "covered": 10
         }
       }
     },
@@ -14403,19 +14647,19 @@
       "metrics": {
         "lines": {
           "count": 688,
-          "covered": 595
+          "covered": 604
         },
         "regions": {
           "count": 935,
-          "covered": 806
+          "covered": 829
         },
         "functions": {
           "count": 46,
-          "covered": 41
+          "covered": 42
         },
         "branches": {
           "count": 62,
-          "covered": 50
+          "covered": 53
         }
       }
     },
@@ -14679,11 +14923,11 @@
       "metrics": {
         "lines": {
           "count": 229,
-          "covered": 215
+          "covered": 214
         },
         "regions": {
           "count": 384,
-          "covered": 347
+          "covered": 346
         },
         "functions": {
           "count": 19,
@@ -14691,7 +14935,7 @@
         },
         "branches": {
           "count": 46,
-          "covered": 38
+          "covered": 37
         }
       }
     },
@@ -14984,11 +15228,11 @@
       "metrics": {
         "lines": {
           "count": 131,
-          "covered": 117
+          "covered": 129
         },
         "regions": {
           "count": 164,
-          "covered": 141
+          "covered": 161
         },
         "functions": {
           "count": 12,
@@ -14996,7 +15240,7 @@
         },
         "branches": {
           "count": 8,
-          "covered": 4
+          "covered": 6
         }
       }
     },
@@ -15116,7 +15360,7 @@
       }
     },
     "test-support/src/verification/mod.rs": {
-      "sha256": "834bf8a523001b1869d84a6d028577ba2faca4ba7fa352afe8ebebf3f4fe7f05",
+      "sha256": "38c06ea09b6b9971b20f15984f35f865d23126059c1d82d4c0f47cfb1f05cd27",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -15139,25 +15383,48 @@
       }
     },
     "test-support/src/verification/nextest.rs": {
-      "sha256": "d4f03ed2b84a6d8261523a06c625c31364cfc830f2340818d75453a8b73775f3",
+      "sha256": "d6186065ba6775c6d29d21fcf407ba72ae352ab319e3798a1efaf3f4303dab16",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 68,
-          "covered": 67
+          "count": 149,
+          "covered": 145
         },
         "regions": {
-          "count": 111,
-          "covered": 110
+          "count": 261,
+          "covered": 249
         },
         "functions": {
-          "count": 12,
-          "covered": 12
+          "count": 17,
+          "covered": 17
+        },
+        "branches": {
+          "count": 30,
+          "covered": 24
+        }
+      }
+    },
+    "test-support/src/verification/regressions.rs": {
+      "sha256": "d7570710a2c58841ad38c409a11c55a9806bc3e7cbf6d53d2ea019a308f3da4b",
+      "group": "tests-and-verification",
+      "status": "measured (including zero-hit code)",
+      "metrics": {
+        "lines": {
+          "count": 43,
+          "covered": 40
+        },
+        "regions": {
+          "count": 93,
+          "covered": 87
+        },
+        "functions": {
+          "count": 2,
+          "covered": 2
         },
         "branches": {
           "count": 10,
-          "covered": 9
+          "covered": 5
         }
       }
     },
@@ -15398,11 +15665,11 @@
       "metrics": {
         "lines": {
           "count": 111,
-          "covered": 110
+          "covered": 111
         },
         "regions": {
           "count": 221,
-          "covered": 220
+          "covered": 221
         },
         "functions": {
           "count": 13,
@@ -15410,7 +15677,7 @@
         },
         "branches": {
           "count": 10,
-          "covered": 8
+          "covered": 9
         }
       }
     },
@@ -16433,39 +16700,39 @@
       }
     },
     "tests/generic_parameters.rs": {
-      "sha256": "422575468f966456d591279801f412bf49fa64f19511b5f2c16a4a1d27b614cc",
+      "sha256": "05bd8de11047fd6b8a5d0f3e68ba75351f6da4b2898e70e5ad2b7173832b8d99",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 156,
-          "covered": 87
+          "count": 164,
+          "covered": 162
         },
         "regions": {
-          "count": 333,
-          "covered": 175
+          "count": 351,
+          "covered": 335
         },
         "functions": {
-          "count": 15,
-          "covered": 10
+          "count": 17,
+          "covered": 17
         },
         "branches": {
-          "count": 4,
-          "covered": 2
+          "count": 6,
+          "covered": 6
         }
       }
     },
     "tests/guard_quality.rs": {
-      "sha256": "98228c2566daf39e7fcec7c670c00be0fe57bc088fd418307d4d3270cf507a1b",
+      "sha256": "7cc24a09065c48d54c740c51f4d82fd3f13c002f1c0f89eb3cae294b9e228439",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 314,
+          "count": 315,
           "covered": 0
         },
         "regions": {
-          "count": 524,
+          "count": 527,
           "covered": 0
         },
         "functions": {
@@ -16922,7 +17189,7 @@
       }
     },
     "tests/memory_safety.rs": {
-      "sha256": "5044ce2a6167ce61b9a08c58da0b015043c7d8f1ff7ff60f15a6a6e0a5d6232e",
+      "sha256": "61909e6cdf4b03370319256f2aef5e5f29a4776d2a9710afcad2569c84a2fef1",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
@@ -17267,17 +17534,17 @@
       }
     },
     "tests/native_multiparty.rs": {
-      "sha256": "3d8ea8a956f957ee8f77201b9c917c65571cc56326dd4ec030b5c9f69a6cd29f",
+      "sha256": "95af8a14a3174eb42aea95c565438b7f069defc588170ab3541647935f73048b",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 1963,
-          "covered": 1323
+          "count": 1976,
+          "covered": 1336
         },
         "regions": {
-          "count": 2391,
-          "covered": 1548
+          "count": 2402,
+          "covered": 1559
         },
         "functions": {
           "count": 118,
@@ -17727,20 +17994,20 @@
       }
     },
     "tests/protocol_models.rs": {
-      "sha256": "36115446d2f77d6c729d026629936dee90118db7218a2bb7629aae1218c3c48b",
+      "sha256": "0820d90bbe0c570c82bdcf6157355a65687846a3dcaa2a051d87cccaf8d274ec",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 740,
+          "count": 720,
           "covered": 0
         },
         "regions": {
-          "count": 666,
+          "count": 648,
           "covered": 0
         },
         "functions": {
-          "count": 148,
+          "count": 144,
           "covered": 0
         },
         "branches": {
@@ -18279,17 +18546,17 @@
       }
     },
     "tests/runtime_simulation.rs": {
-      "sha256": "6d84ac50f8b1c9cf808c0798cc3e62ff733f785f8f0d8931c4d3ca361e49fe07",
+      "sha256": "00e0f415df8d2c7f2097180646a06e5f45deb3e922ae343dc93d37a6eb9c66bf",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 119,
-          "covered": 119
+          "count": 122,
+          "covered": 108
         },
         "regions": {
-          "count": 215,
-          "covered": 215
+          "count": 226,
+          "covered": 214
         },
         "functions": {
           "count": 2,
@@ -18302,17 +18569,17 @@
       }
     },
     "tests/schedules.rs": {
-      "sha256": "aec23888f3766ee8d9f3cf745c790c72883f43a600bdd7fa6776dd93d1ff3dad",
+      "sha256": "ccc49e1c94edd5beb7f0ca5000921bb078ffe36e6ac7a436bc950aafcea03e6b",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 162,
-          "covered": 161
+          "count": 166,
+          "covered": 149
         },
         "regions": {
-          "count": 308,
-          "covered": 306
+          "count": 317,
+          "covered": 301
         },
         "functions": {
           "count": 5,
@@ -18693,25 +18960,25 @@
       }
     },
     "tests/schema_hints.rs": {
-      "sha256": "66de0e1815b2191b9dbd7b12cee2cc95015310cefdedd50b57f482564f37a8bb",
+      "sha256": "fcd444648ea223084c7f1e49063133d33ef10a04d2c83f6cf52536d37788c838",
       "group": "tests-and-verification",
       "status": "measured (including zero-hit code)",
       "metrics": {
         "lines": {
-          "count": 61,
-          "covered": 48
+          "count": 63,
+          "covered": 63
         },
         "regions": {
-          "count": 109,
-          "covered": 86
+          "count": 126,
+          "covered": 125
         },
         "functions": {
-          "count": 4,
-          "covered": 3
+          "count": 5,
+          "covered": 5
         },
         "branches": {
-          "count": 2,
-          "covered": 2
+          "count": 8,
+          "covered": 8
         }
       }
     },
@@ -19418,11 +19685,11 @@
       "metrics": {
         "lines": {
           "count": 279,
-          "covered": 251
+          "covered": 255
         },
         "regions": {
           "count": 449,
-          "covered": 391
+          "covered": 396
         },
         "functions": {
           "count": 24,
@@ -19430,7 +19697,7 @@
         },
         "branches": {
           "count": 34,
-          "covered": 21
+          "covered": 23
         }
       }
     },
@@ -19816,38 +20083,38 @@
   "totals": {
     "async-framing": {
       "lines": {
-        "count": 2666,
-        "covered": 2548
+        "count": 2725,
+        "covered": 2599
       },
       "regions": {
-        "count": 4072,
-        "covered": 3879
+        "count": 4171,
+        "covered": 3964
       },
       "functions": {
-        "count": 279,
-        "covered": 256
+        "count": 287,
+        "covered": 262
       },
       "branches": {
-        "count": 276,
-        "covered": 266
+        "count": 284,
+        "covered": 271
       }
     },
     "capability-rpc": {
       "lines": {
-        "count": 65490,
-        "covered": 58237
+        "count": 68116,
+        "covered": 60623
       },
       "regions": {
-        "count": 106284,
-        "covered": 94707
+        "count": 110344,
+        "covered": 98394
       },
       "functions": {
-        "count": 6288,
-        "covered": 5362
+        "count": 6551,
+        "covered": 5588
       },
       "branches": {
-        "count": 6610,
-        "covered": 4971
+        "count": 7120,
+        "covered": 5344
       }
     },
     "optional-compatibility": {
@@ -19870,20 +20137,20 @@
     },
     "runtime": {
       "lines": {
-        "count": 36441,
-        "covered": 30524
+        "count": 36423,
+        "covered": 30710
       },
       "regions": {
-        "count": 53726,
-        "covered": 45029
+        "count": 53725,
+        "covered": 45425
       },
       "functions": {
-        "count": 3137,
-        "covered": 2830
+        "count": 3141,
+        "covered": 2846
       },
       "branches": {
-        "count": 4444,
-        "covered": 3262
+        "count": 4446,
+        "covered": 3284
       }
     },
     "rust-codegen": {
@@ -19924,56 +20191,56 @@
     },
     "tests-and-verification": {
       "lines": {
-        "count": 88975,
-        "covered": 69728
+        "count": 89110,
+        "covered": 69943
       },
       "regions": {
-        "count": 130610,
-        "covered": 101223
+        "count": 130904,
+        "covered": 101679
       },
       "functions": {
-        "count": 5494,
-        "covered": 4290
+        "count": 5500,
+        "covered": 4306
       },
       "branches": {
-        "count": 4224,
-        "covered": 2388
+        "count": 4262,
+        "covered": 2423
       }
     },
     "tools-fuzz-examples-benchmarks": {
       "lines": {
-        "count": 16863,
+        "count": 16919,
         "covered": 11243
       },
       "regions": {
-        "count": 31572,
-        "covered": 20645
+        "count": 31684,
+        "covered": 20712
       },
       "functions": {
-        "count": 1307,
-        "covered": 891
+        "count": 1310,
+        "covered": 893
       },
       "branches": {
-        "count": 2455,
+        "count": 2457,
         "covered": 1515
       }
     },
     "wire-runtime": {
       "lines": {
-        "count": 23031,
-        "covered": 19813
+        "count": 23752,
+        "covered": 20493
       },
       "regions": {
-        "count": 36054,
-        "covered": 30228
+        "count": 37162,
+        "covered": 31235
       },
       "functions": {
-        "count": 2771,
-        "covered": 2314
+        "count": 2840,
+        "covered": 2372
       },
       "branches": {
-        "count": 2251,
-        "covered": 1761
+        "count": 2353,
+        "covered": 1846
       }
     }
   },
