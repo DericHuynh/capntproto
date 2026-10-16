@@ -2,6 +2,33 @@
 //! fixed buffers, cancellation and pipeline observers retain the ordinary path.
 use super::*;
 
+// Decline only the common single-segment envelope when it cannot be a plain
+// reply. This is a storage hint, never an admission certificate: accepted and
+// noncanonical frames still pass through the complete existing validation.
+// Avoid copying a callback or a capability-bearing parent Return into a shared
+// reply owner only to discard it and copy it again for ordinary admission.
+#[cfg(feature = "alloc")]
+#[inline]
+fn canonical_nonplain(bytes: &[u8]) -> bool {
+    let Some(prefix) = bytes.get(..56) else {
+        return false;
+    };
+    if prefix[..4] != [0; 4]
+        || (u32::from_le_bytes(prefix[4..8].try_into().unwrap()) as usize)
+            .checked_mul(8)
+            != Some(bytes.len() - 8)
+        // Root at segment word zero, followed by Message's one data word and
+        // one pointer. Unknown layouts retain the general decoding path.
+        || prefix[8..16] != 0x0001_0001_0000_0000u64.to_le_bytes()
+    {
+        return false;
+    }
+    // Message.return has tag 3. Return's canonical body has two data words and
+    // one pointer; noFinishNeeded is bit 33 of its data section (default false).
+    prefix[16..18] != 3u16.to_le_bytes()
+        || (prefix[24..32] == 0x0001_0002_0000_0000u64.to_le_bytes() && prefix[36] & 2 == 0)
+}
+
 #[cfg(feature = "alloc")]
 impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
     Driver<'pool, 'id, 's, I, A, P, S, CAPS, PATH>
@@ -63,6 +90,9 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                         && (self.outgoing.pending_for(response.key()) || self.invocation_pipelines.iter().any(|slot| slot.pending_for(response.key()))))
             })
         { return Ok(None); }
+        if canonical_nonplain(bytes) {
+            return Ok(None);
+        }
         let Some(bytes) = messages
             .copy_shared(bytes)
             .map_err(|error| Error::Input(super::super::Error::Storage(error)))?

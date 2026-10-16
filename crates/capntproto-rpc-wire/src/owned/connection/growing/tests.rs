@@ -2687,6 +2687,84 @@ fn buffered_plain_return_is_transactional_and_pins_the_original_result() {
 }
 
 #[test]
+fn buffered_plain_prefilter_preserves_callbacks_and_finish_obligations_without_copying() {
+    for callback in [false, true] {
+        with_driver(|mut driver, messages| {
+            let target = remote(&mut driver);
+            let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+            let request = capnp::message::Builder::new_default();
+            let key = driver
+                .try_send_immediate(
+                    &target,
+                    DynamicCall {
+                        no_promise_pipelining: true,
+                        ..Default::default()
+                    },
+                    request.get_root_as_reader().unwrap(),
+                    messages,
+                    &mut queue,
+                    128,
+                    Default::default(),
+                    (),
+                )
+                .unwrap()
+                .unwrap();
+            drain(&mut queue, messages, |_| {});
+            let frame = Frame::build(messages, 256, Default::default(), |b| {
+                let root = b.try_init_root::<Message>()?;
+                let payload = if callback {
+                    root.into_field(Message::CALL)
+                        .init()?
+                        .into_field(WireCall::PARAMS)
+                        .init()?
+                } else {
+                    let mut result = root.into_field(Message::RETURN).init()?;
+                    result.scalar(Return::ANSWER_ID).set(key.id().to_wire());
+                    result.scalar(Return::NO_FINISH_NEEDED).set(false);
+                    result.into_field(Return::RESULTS).init()?
+                };
+                payload
+                    .into_field(Payload::CONTENT)
+                    .cast::<capnp::field_api::Data>()
+                    .copy_from(b"retained for ordinary admission")
+            })
+            .unwrap();
+            let bytes = messages.read(&frame.lease).to_vec();
+            frame.release(messages);
+            let receive = || {
+                assert!(driver
+                    .try_receive_plain_buffered::<()>(
+                        &bytes,
+                        Default::default(),
+                        messages,
+                        |_| panic!("ineligible frame cannot select a sink"),
+                    )
+                    .unwrap()
+                    .is_none());
+            };
+            #[cfg(not(miri))]
+            {
+                let usage = allocation_counter::measure(receive);
+                assert_eq!(usage.count_total, 0, "ineligible frame must not be copied");
+            }
+            #[cfg(miri)]
+            {
+                let mut receive = receive;
+                receive();
+            }
+            assert!(driver.ledgers.questions.contains(key));
+            assert!(!driver.ledgers.questions.has_pending_finish());
+            // The original bytes remain available for ordinary admission.
+            let restored = Frame::copy_from(messages, &bytes, Default::default()).unwrap();
+            assert_eq!(&*messages.read(&restored.lease), bytes.as_slice());
+            restored.release(messages);
+            driver.runtime.release(target);
+            close(driver, messages, &mut queue);
+        });
+    }
+}
+
+#[test]
 fn buffered_plain_return_rejects_invalid_framing_and_defers_unknown_questions() {
     with_driver(|mut driver, messages| {
         let target = remote(&mut driver);

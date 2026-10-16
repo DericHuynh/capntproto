@@ -9,6 +9,12 @@ use std::num::NonZeroUsize;
 type Peer<'p, 'id, 's, I, A, P, const C: usize, const H: usize> =
     Driver<'p, 'id, 's, I, A, P, Rc<dyn ClientHook>, C, H>;
 type Local<'p, 'id, I, const C: usize, const H: usize> = connection::LocalCall<'p, 'id, I, C, H>;
+
+// Use one callback type for immediate, scanned and locally executed returns.
+// Their wire completion logic is identical and should share generated code.
+fn retain_local_hook(hook: &Rc<dyn ClientHook>) -> Option<Box<dyn ClientHook>> {
+    Some(hook.add_ref())
+}
 enum Stage {
     Prepare,
     Execute(server::Execution),
@@ -141,7 +147,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         driver: &mut Peer<'p, 'id, '_, I, A, P, C, H>,
         messages: &mut messages::Messages<'p, '_, '_>,
         cx: &mut Context<'_>,
-        refresh: impl FnMut(&mut ClientHooks<'id>, &mut Peer<'p, 'id, '_, I, A, P, C, H>),
+        mut refresh: impl FnMut(&mut ClientHooks<'id>, &mut Peer<'p, 'id, '_, I, A, P, C, H>),
     ) -> capnp::Result<Option<bool>> {
         let Some(index) = self.immediate_receiver(key) else {
             return Ok(None);
@@ -161,8 +167,8 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             messages,
             cx,
             true,
-            refresh,
-            |hook| Some(hook.add_ref()),
+            &mut refresh,
+            retain_local_hook,
         ) {
             Poll::Pending => Ok(None),
             Poll::Ready(result) => {
@@ -652,7 +658,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         cx,
                         true,
                         &mut refresh,
-                        |hook| Some(hook.add_ref()),
+                        retain_local_hook,
                     ) {
                         result?;
                         self.retire_entry(index - 1);
@@ -1248,18 +1254,21 @@ fn step<'p, 'id, I, A, P: Copy + Eq, const C: usize, const H: usize>(
         |hooks, _, path, runtime| resolve(hooks, results.as_ref(), path, runtime, import),
         &mut *refresh,
     )?;
-    let completed =
-        match entry
-            .wire
-            .poll_using(hooks, driver, messages, cx, true, &mut *refresh, |hook| {
-                Some(hook.add_ref())
-            }) {
-            Poll::Pending => false,
-            Poll::Ready(result) => {
-                result?;
-                true
-            }
-        };
+    let completed = match entry.wire.poll_using(
+        hooks,
+        driver,
+        messages,
+        cx,
+        true,
+        &mut *refresh,
+        retain_local_hook,
+    ) {
+        Poll::Pending => false,
+        Poll::Ready(result) => {
+            result?;
+            true
+        }
+    };
     let Some(local) = entry.local.as_mut() else {
         return Ok(completed.then_some(Progress::Completed));
     };

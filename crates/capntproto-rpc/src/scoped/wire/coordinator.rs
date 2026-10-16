@@ -1224,6 +1224,21 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         );
     }
 
+    // A shared closure type lets all hosted completion lanes use the same wire
+    // poller. The first-refresh certificate still applies only at its original
+    // call site; every subsequent invocation observes current ownership.
+    fn hook_refresh<'output, 'domain, O: Output<I>>(
+        output: &'output O,
+        mut refresh: bool,
+    ) -> impl FnMut(&mut ClientHooks<'domain>, &mut Peer<'_, 'domain, '_, I, P, C, H>) + 'output
+    {
+        move |hooks, driver| {
+            if std::mem::replace(&mut refresh, true) {
+                Self::collect_hooks(hooks, driver, output);
+            }
+        }
+    }
+
     // Inline the small lane adapter into the scheduler so its concrete closures
     // share borrows and eliminate intermediate publication moves.
     #[allow(clippy::too_many_arguments)]
@@ -1236,7 +1251,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         output: &O,
         cx: &mut Context<'_>,
         quantum: NonZeroUsize,
-        mut refresh: bool,
+        refresh: bool,
     ) -> Poll<Result<Progress, Box<Error>>> {
         let options = self.options;
         self.calls.poll_using(
@@ -1247,14 +1262,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             cx,
             quantum,
             |runtime, hook| self.foreign.import(runtime, hook),
-            |hooks, driver| {
-                // Enqueue-only work after a certified idle scan has no new
-                // routing/descriptor information. Skip only that first refresh;
-                // queued, local or reentrant progress still refreshes normally.
-                if std::mem::replace(&mut refresh, true) {
-                    Self::collect_hooks(hooks, driver, output);
-                }
-            },
+            Self::hook_refresh(output, refresh),
             |invocations, driver, messages, credit, publication| {
                 let mut bundle = output.bundle();
                 if let Some(credit) = credit {
@@ -1359,7 +1367,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             cx,
             quantum,
             |runtime, hook| self.foreign.import(runtime, hook),
-            |hooks, driver| Self::collect_hooks(hooks, driver, output),
+            Self::hook_refresh(output, true),
             |driver, messages, key, bytes| {
                 driver
                     .send_answer_using(
@@ -1611,7 +1619,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         &mut self.driver,
                         messages,
                         cx,
-                        |hooks, driver| Self::collect_hooks(hooks, driver, output),
+                        Self::hook_refresh(output, true),
                     )
                     .map_err(|error| Box::new(Cause::Protocol(error)))?;
                 if completed == Some(true) && controls.plain_return_preserves_idle() {

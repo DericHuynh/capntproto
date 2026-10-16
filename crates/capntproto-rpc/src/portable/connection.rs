@@ -139,6 +139,8 @@ async fn run<V: 'static>(
                     .map_err(error)?;
                 // Const sizes are inline optimizations only; all per-message
                 // maxima come from Options and grow through the same engine.
+                // Keep the common one-field promised-answer transform inline.
+                // Longer paths still grow, and zero limits still reject it.
                 let mut driver: wire::Driver<
                     '_,
                     '_,
@@ -148,7 +150,7 @@ async fn run<V: 'static>(
                     (),
                     Rc<dyn ClientHook>,
                     0,
-                    0,
+                    1,
                 > = wire::Driver::new_growing(
                     graph,
                     wire::GrowingStorage::uniform(0, options.table_entries.get())
