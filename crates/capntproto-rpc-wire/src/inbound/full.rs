@@ -5,7 +5,7 @@ mod returns;
 use crate::reception::full::{self as capabilities, Slots};
 pub use resolution::{resolve, Resolution, Resolved};
 pub use returns::{returned, Reply, Returned};
-pub(crate) use returns::{returned_prepared, Original};
+pub(crate) use returns::{returned_prepared, Original, PreparedReturn};
 
 /// Imported receipts have one entry per payload descriptor. Export/answer
 /// receipts add one final entry for the call target. All wire identities must
@@ -31,7 +31,7 @@ pub fn call<'b, 'r, 'p, 'm, 'i, 'e, 'a, 'is, 'es, 'as_, I, E, A>(
     call_parts(
         call,
         call.get_target()?,
-        call.get_params()?,
+        capabilities::PayloadView::Unchecked(call.get_params()?),
         imports,
         exports,
         answers,
@@ -47,7 +47,7 @@ pub fn call<'b, 'r, 'p, 'm, 'i, 'e, 'a, 'is, 'es, 'as_, I, E, A>(
 pub(crate) fn call_parts<'b, 'r, 'p, 'm, 'i, 'e, 'a, 'is, 'es, 'as_, I, E, A>(
     call: rpc_capnp::call::Reader<'m>,
     target: rpc_capnp::message_target::Reader<'m>,
-    payload: rpc_capnp::payload::Reader<'m>,
+    payload: capabilities::PayloadView<'m>,
     imports: &'b mut imports::Imports<'i, 'is, I>,
     exports: &'b mut exports::Exports<'e, 'es, E>,
     answers: &'b mut answers::Answers<'a, 'as_, A>,
@@ -68,15 +68,14 @@ pub(crate) fn call_parts<'b, 'r, 'p, 'm, 'i, 'e, 'a, 'is, 'es, 'as_, I, E, A>(
     };
     let (last_export, payload_exports) = slots.exports.split_last_mut().ok_or(Error::Mismatch)?;
     let (last_answer, payload_answers) = slots.answers.split_last_mut().ok_or(Error::Mismatch)?;
-    capabilities::validate(
-        payload,
-        &Slots {
+    payload
+        .validate(&Slots {
             imports: slots.imports,
             exports: payload_exports,
             answers: payload_answers,
-        },
-    )
-    .map_err(Error::Reception)?;
+        })
+        .map_err(Error::Reception)?;
+    let payload = payload.payload();
     let (export, answer, path) = match target.which().map_err(|_| Error::Unsupported)? {
         rpc_capnp::message_target::ImportedCap(id) => (Some(ExportId::from_wire(id)), None, None),
         rpc_capnp::message_target::PromisedAnswer(answer) => {

@@ -165,3 +165,6 @@ impl OutgoingFrame {
         std::mem::take(&mut self.fds)
     }
 }
+
+#[cfg(test)]
+mod tests;

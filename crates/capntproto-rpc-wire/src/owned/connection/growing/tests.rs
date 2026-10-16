@@ -1461,6 +1461,90 @@ fn zero_inline_driver_sends_large_cap_tables_paths_and_admits_returns() {
 
 #[test]
 fn incoming_growth_rejection_preserves_frame_and_does_not_make_import_owners() {
+    for count in [1, 7] {
+        with_driver(|mut driver, messages| {
+            driver.message_capabilities = Capacity::Growing { maximum: count };
+            let target = driver
+                .runtime
+                .endpoint(binding::Route::local(9), clients::Location::Local)
+                .unwrap();
+            let export = {
+                let mut batch = driver.ledgers.exports.batch();
+                let grant =
+                    crate::clients::stage(&mut driver.runtime, &mut batch, &target).unwrap();
+                batch.commit();
+                grant.id()
+            };
+            let frame = Frame::build(messages, 1024, Default::default(), |builder| {
+                calls::dynamic_call(
+                    builder,
+                    QuestionId::from_wire(9),
+                    calls::Target::Imported(ImportId::from_wire(export.to_wire())),
+                    DynamicCall::default(),
+                    |p| p.set_capability_index((count - 1) as u32),
+                )?;
+                let mut root = builder.try_get_root::<Message>()?;
+                let mut call = root.field(Message::CALL).edit()?;
+                let mut payload = call.field(WireCall::PARAMS).edit()?;
+                let mut table = payload.field(Payload::CAP_TABLE).init(count)?;
+                for index in 0..count {
+                    table
+                        .get_mut(index)
+                        .unwrap()
+                        .scalar(CapDescriptor::SENDER_HOSTED)
+                        .set(99);
+                }
+                Ok(())
+            })
+            .unwrap();
+            let mut made = 0;
+            let rejected = driver
+                .receive(
+                    frame,
+                    messages,
+                    &mut [0; 8],
+                    |_| {
+                        made += 1;
+                    },
+                    || (),
+                )
+                .err()
+                .unwrap();
+            assert_eq!(made, 0, "the target receipt also needs capacity");
+            assert_eq!(
+                rejected.error,
+                Error::Input(super::super::super::Error::Capacity)
+            );
+            let call = Request::<_, 0, 0>::admit_with_capacity(
+                rejected.frame,
+                messages,
+                &mut driver.ledgers.imports,
+                &mut driver.ledgers.exports,
+                &mut driver.ledgers.answers,
+                Answer::new(pipelines::Results::new(())),
+                |_| {
+                    made += 1;
+                },
+                Capacity::Growing { maximum: count + 1 },
+                Capacity::Growing { maximum: 8 },
+            )
+            .unwrap_or_else(|r| panic!("{}", r.error));
+            assert_eq!(made, 1);
+            call.with(messages, |view| assert_eq!(view.capability_count(), count))
+                .unwrap();
+            driver.release_call(call, messages);
+            driver.runtime.release(target);
+            close(
+                driver,
+                messages,
+                &mut messages::Queue::new_growing(0, 8).unwrap(),
+            );
+        });
+    }
+}
+
+#[test]
+fn checked_call_payload_rejects_invalid_indices_before_import_factories() {
     with_driver(|mut driver, messages| {
         let target = driver
             .runtime
@@ -1472,64 +1556,44 @@ fn incoming_growth_rejection_preserves_frame_and_does_not_make_import_owners() {
             batch.commit();
             grant.id()
         };
-        let frame = Frame::build(messages, 1024, Default::default(), |builder| {
+        let frame = Frame::build(messages, 256, Default::default(), |builder| {
             calls::dynamic_call(
                 builder,
                 QuestionId::from_wire(9),
                 calls::Target::Imported(ImportId::from_wire(export.to_wire())),
                 DynamicCall::default(),
-                |p| p.set_capability_index(6),
+                |p| p.set_capability_index(1),
             )?;
             let mut root = builder.try_get_root::<Message>()?;
             let mut call = root.field(Message::CALL).edit()?;
-            let mut payload = call.field(WireCall::PARAMS).edit()?;
-            let mut table = payload.field(Payload::CAP_TABLE).init(7)?;
-            for index in 0..7 {
-                table
-                    .get_mut(index)
-                    .unwrap()
-                    .scalar(CapDescriptor::SENDER_HOSTED)
-                    .set(99);
-            }
+            call.field(WireCall::PARAMS)
+                .edit()?
+                .field(Payload::CAP_TABLE)
+                .init(1)?
+                .get_mut(0)
+                .unwrap()
+                .scalar(CapDescriptor::SENDER_HOSTED)
+                .set(73);
             Ok(())
         })
         .unwrap();
-        let mut made = 0;
-        let rejected = driver
-            .receive(
-                frame,
-                messages,
-                &mut [0; 8],
-                |_| {
-                    made += 1;
-                },
-                || (),
-            )
-            .err()
-            .unwrap();
-        assert_eq!(made, 0, "the target receipt also needs capacity");
-        assert_eq!(
-            rejected.error,
-            Error::Input(super::super::super::Error::Capacity)
-        );
-        let call = Request::<_, 0, 0>::admit_with_capacity(
-            rejected.frame,
+        let bytes = messages.read(&frame.lease).to_vec();
+        let imports_before = driver.ledgers.imports.len();
+        let answers_before = driver.ledgers.answers.len();
+        let rejected = match driver.receive(
+            frame,
             messages,
-            &mut driver.ledgers.imports,
-            &mut driver.ledgers.exports,
-            &mut driver.ledgers.answers,
-            Answer::new(pipelines::Results::new(())),
-            |_| {
-                made += 1;
-            },
-            Capacity::Growing { maximum: 8 },
-            Capacity::Growing { maximum: 8 },
-        )
-        .unwrap_or_else(|r| panic!("{}", r.error));
-        assert_eq!(made, 1);
-        call.with(messages, |view| assert_eq!(view.capability_count(), 7))
-            .unwrap();
-        driver.release_call(call, messages);
+            &mut [0; 8],
+            |_| panic!("invalid payload called import factory"),
+            || (),
+        ) {
+            Err(rejected) => rejected,
+            Ok(_) => panic!("out-of-table capability accepted"),
+        };
+        assert_eq!(&*messages.read(&rejected.frame.lease), bytes);
+        assert_eq!(driver.ledgers.imports.len(), imports_before);
+        assert_eq!(driver.ledgers.answers.len(), answers_before);
+        rejected.frame.release(messages);
         driver.runtime.release(target);
         close(
             driver,
@@ -2418,6 +2482,83 @@ fn direct_plain_return_is_transactional_and_pins_the_original_result() {
                 .unwrap(),
             b"exact result"
         );
+    });
+}
+
+#[test]
+fn checked_capability_return_rejects_content_before_import_factories_and_can_retry() {
+    with_driver(|mut driver, messages| {
+        let target = remote(&mut driver);
+        let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+        let request = capnp::message::Builder::new_default();
+        let key = driver
+            .try_send_immediate(
+                &target,
+                DynamicCall {
+                    no_promise_pipelining: true,
+                    ..Default::default()
+                },
+                request.get_root_as_reader().unwrap(),
+                messages,
+                &mut queue,
+                128,
+                Default::default(),
+                (),
+            )
+            .unwrap()
+            .unwrap();
+        drain(&mut queue, messages, |_| {});
+        let imports_before = driver.ledgers.imports.len();
+        for malformed in [true, false] {
+            let frame = Frame::build(messages, 256, Default::default(), |builder| {
+                let root = builder.try_init_root::<Message>()?;
+                let mut result = root.into_field(Message::RETURN).init()?;
+                result.scalar(Return::ANSWER_ID).set(key.id().to_wire());
+                let mut payload = result.into_field(Return::RESULTS).init()?;
+                payload
+                    .field(Payload::CONTENT)
+                    .set_capability_index(u32::from(malformed))?;
+                payload
+                    .field(Payload::CAP_TABLE)
+                    .init(1)?
+                    .get_mut(0)
+                    .unwrap()
+                    .scalar(CapDescriptor::SENDER_HOSTED)
+                    .set(73);
+                Ok(())
+            })
+            .unwrap();
+            let original = messages.read(&frame.lease).to_vec();
+            let mut factories = 0;
+            let result = driver.receive(
+                frame,
+                messages,
+                &mut [0; 8],
+                |_| {
+                    factories += 1;
+                },
+                || (),
+            );
+            if malformed {
+                let rejected = match result {
+                    Err(rejected) => rejected,
+                    Ok(_) => panic!("out-of-table capability accepted"),
+                };
+                assert_eq!(&*messages.read(&rejected.frame.lease), original);
+                rejected.frame.release(messages);
+                assert_eq!(factories, 0);
+                assert_eq!(driver.ledgers.imports.len(), imports_before);
+                assert!(driver.ledgers.questions.contains(key));
+            } else {
+                result.unwrap_or_else(|rejected| panic!("{}", rejected.error));
+                assert_eq!(factories, 1);
+                assert_eq!(driver.ledgers.imports.len(), imports_before + 1);
+                let response = driver.take_response(key).unwrap();
+                driver.release_response(response, messages);
+            }
+        }
+        driver.runtime.release(target);
+        close(driver, messages, &mut queue);
     });
 }
 

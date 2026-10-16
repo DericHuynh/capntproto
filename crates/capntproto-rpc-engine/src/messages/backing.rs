@@ -234,6 +234,18 @@ mod received_tests {
     use std::panic::{catch_unwind, AssertUnwindSafe};
 
     #[test]
+    fn segment_boundaries_and_maximum_index_never_wrap() {
+        assert_eq!(segment_position(usize::MAX), None);
+        for shift in 0..usize::BITS {
+            let width = 1usize << shift;
+            let start = width - 1;
+            assert_eq!(segment_position(start), Some((shift as usize, 0)));
+            let last = start + (width - 1);
+            assert_eq!(segment_position(last), Some((shift as usize, width - 1)));
+        }
+    }
+
+    #[test]
     fn growing_buffer_view_preserves_indices_and_rejects_exhaustion() {
         let storage = GrowingBuffers::new(2, 64, 2 * (64 + 7));
         let buffers = Buffers::Growing(&storage);

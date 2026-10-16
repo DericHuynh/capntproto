@@ -33,6 +33,34 @@ pub enum Reply<'r, 'm, 'i, 'e, 'a, I> {
     Discarded,
 }
 
+/// A checked result view can only be obtained from this exact Return. Owned
+/// reception uses it before import factories and then transfers it into the
+/// transactional admission, retaining the original message's traversal checks.
+pub(crate) struct PreparedReturn<'m> {
+    result: rpc_capnp::return_::Reader<'m>,
+    results: Option<capabilities::CheckedPayload<'m>>,
+}
+impl<'m> PreparedReturn<'m> {
+    pub(crate) fn new(result: rpc_capnp::return_::Reader<'m>) -> Self {
+        Self {
+            result,
+            results: None,
+        }
+    }
+    pub(crate) fn prepare_results(
+        &mut self,
+    ) -> Result<Option<capabilities::CheckedPayload<'m>>, Error> {
+        if self.results.is_none() {
+            if let rpc_capnp::return_::Results(payload) =
+                self.result.which().map_err(|_| Error::Unsupported)?
+            {
+                self.results = Some(capabilities::CheckedPayload::new(payload?)?);
+            }
+        }
+        Ok(self.results)
+    }
+}
+
 /// Metadata from the exact retained request. The data-only constructor is used
 /// only after private template publication has validated the complete payload
 /// and proved its descriptor table empty.
@@ -118,13 +146,20 @@ pub fn returned<'b, 's, 'r, 'm, 'q, 'i, 'e, 'a, 'qs, 'is, 'es, 'as_, I, E, A>(
 ) -> Result<Returned<'b, 's, 'r, 'm, 'q, 'i, 'e, 'a, 'qs, 'is, 'es, 'as_, I, E, A>, Error> {
     let original = Original::read(result.get_answer_id(), original)?;
     returned_prepared(
-        result, original, questions, imports, exports, answers, slots, scratch,
+        PreparedReturn::new(result),
+        original,
+        questions,
+        imports,
+        exports,
+        answers,
+        slots,
+        scratch,
     )
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub(crate) fn returned_prepared<'b, 's, 'r, 'm, 'q, 'i, 'e, 'a, 'qs, 'is, 'es, 'as_, I, E, A>(
-    result: rpc_capnp::return_::Reader<'m>,
+    prepared: PreparedReturn<'m>,
     original: Original<'_>,
     questions: &'b mut questions::Questions<'q, 'qs>,
     imports: &'b mut imports::Imports<'i, 'is, I>,
@@ -133,6 +168,7 @@ pub(crate) fn returned_prepared<'b, 's, 'r, 'm, 'q, 'i, 'e, 'a, 'qs, 'is, 'es, '
     slots: Slots<'r, 'i, 'e, 'a, I>,
     scratch: &'s mut [u32],
 ) -> Result<Returned<'b, 's, 'r, 'm, 'q, 'i, 'e, 'a, 'qs, 'is, 'es, 'as_, I, E, A>, Error> {
+    let result = prepared.result;
     let id = result.get_answer_id();
     let redirected = questions
         .is_redirected(QuestionId::from_wire(id))
@@ -165,8 +201,15 @@ pub(crate) fn returned_prepared<'b, 's, 'r, 'm, 'q, 'i, 'e, 'a, 'qs, 'is, 'es, '
                 Pending::Discarded(releases)
             } else {
                 Pending::Results(
-                    capabilities::prepare_with_releases(payload, imports, releases, answers, slots)
-                        .map_err(Error::Reception)?,
+                    match prepared.results {
+                        Some(checked) => capabilities::prepare_checked_with_releases(
+                            checked, imports, releases, answers, slots,
+                        ),
+                        None => capabilities::prepare_with_releases(
+                            payload, imports, releases, answers, slots,
+                        ),
+                    }
+                    .map_err(Error::Reception)?,
                 )
             }
         }

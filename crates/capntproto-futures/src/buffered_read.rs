@@ -1049,6 +1049,41 @@ mod tests {
         // Leave only the first word of a two-segment table at the end of a
         // full buffer. Disabling read-ahead must complete that table and body
         // without interpreting the full buffer as permission to grow it.
+        fn exercise<R: AsyncRead + Unpin>(reader: R, first: &[u8], second: &[u8]) {
+            let mut input =
+                BufferedRead::with_buffer_size(reader, Default::default(), MIN_BUFFER_WORDS)
+                    .unwrap();
+            assert_eq!(
+                futures::executor::block_on(futures::future::poll_fn(|cx| {
+                    input
+                        .poll_borrowed_frame(cx)
+                        .map_ok(|frame| frame.map(<[u8]>::len))
+                }))
+                .unwrap(),
+                Some(first.len())
+            );
+            assert_eq!(input.borrowed_frame(), Some(first));
+            input.finish_borrowed_frame();
+            input.set_read_ahead_policy(|_| false);
+            assert_eq!(
+                futures::executor::block_on(futures::future::poll_fn(
+                    |cx| input.poll_stream_frame_size(cx)
+                ))
+                .unwrap(),
+                Some(second.len())
+            );
+            assert_eq!(input.borrowed_frame(), Some(second));
+            assert_eq!(input.buffer.len(), MIN_BUFFER_WORDS);
+            input.finish_borrowed_frame();
+            assert_eq!(input.consumed_bytes(), (first.len() + second.len()) as u64);
+            assert_eq!(
+                futures::executor::block_on(futures::future::poll_fn(
+                    |cx| input.poll_stream_frame_size(cx)
+                ))
+                .unwrap(),
+                None
+            );
+        }
         let mut first = vec![0; MIN_BUFFER_WORDS * 8 - 8];
         let words = (first.len() / 8 - 1) as u32;
         first[4..8].copy_from_slice(&words.to_le_bytes());
@@ -1056,30 +1091,15 @@ mod tests {
         second[..4].copy_from_slice(&1u32.to_le_bytes());
         second[4..8].copy_from_slice(&1u32.to_le_bytes());
         let source = [first.as_slice(), second.as_slice()].concat();
-        let mut input = BufferedRead::with_buffer_size(
-            futures::io::Cursor::new(source),
-            Default::default(),
-            MIN_BUFFER_WORDS,
-        )
-        .unwrap();
-        let mut cx = Context::from_waker(std::task::Waker::noop());
-        assert_eq!(
-            input.poll_borrowed_frame(&mut cx).map(Result::unwrap),
-            Poll::Ready(Some(first.as_slice()))
-        );
-        input.finish_borrowed_frame();
-        input.set_read_ahead_policy(|_| false);
-        assert_eq!(
-            input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
-            Poll::Ready(Some(second.len()))
-        );
-        assert_eq!(input.borrowed_frame(), Some(second.as_slice()));
-        assert_eq!(input.buffer.len(), MIN_BUFFER_WORDS);
-        input.finish_borrowed_frame();
-        assert_eq!(input.consumed_bytes(), (first.len() + second.len()) as u64);
-        assert_eq!(
-            input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
-            Poll::Ready(None)
+        exercise(futures::io::Cursor::new(source.clone()), &first, &second);
+        exercise(
+            Fragmented {
+                input: futures::io::Cursor::new(source),
+                chunk: usize::MAX,
+                pending: false,
+            },
+            &first,
+            &second,
         );
     }
 
@@ -1285,6 +1305,149 @@ mod tests {
                 Poll::Ready(Ok(None))
             ));
             assert_eq!(input.consumed_bytes(), 2 * frame.len() as u64);
+        }
+    }
+
+    #[test]
+    fn fragmented_owned_reads_preserve_data_and_reject_truncated_headers_and_spills() {
+        for length in [31, MIN_BUFFER_WORDS * 16] {
+            let mut message = capnp::message::Builder::new_default();
+            message
+                .initn_root::<capnp::data::Builder>(length as u32)
+                .fill(0x5a);
+            let frame = capnp::serialize::write_message_to_words(&message);
+            for read_ahead in [false, true] {
+                for short_lived in [false, true] {
+                    let mut input = BufferedRead::with_buffer_size(
+                        Fragmented {
+                            input: futures::io::Cursor::new(frame.clone()),
+                            chunk: 7,
+                            pending: false,
+                        },
+                        Default::default(),
+                        MIN_BUFFER_WORDS,
+                    )
+                    .unwrap();
+                    if !read_ahead {
+                        input.set_read_ahead_policy(|_| false);
+                    }
+                    let result = futures::executor::block_on(futures::future::poll_fn(|cx| {
+                        input.poll_read_message(cx, |_| Ok(short_lived))
+                    }))
+                    .unwrap()
+                    .unwrap();
+                    assert_eq!(
+                        result.get_root::<capnp::data::Reader>().unwrap(),
+                        vec![0x5a; length]
+                    );
+                    assert_eq!(input.consumed_bytes(), frame.len() as u64);
+                    drop(result);
+                    assert!(futures::executor::block_on(futures::future::poll_fn(|cx| {
+                        input.poll_read_short_lived_message(cx)
+                    }))
+                    .unwrap()
+                    .is_none());
+                }
+                for cut in [3, frame.len() - 1] {
+                    let mut input = BufferedRead::with_buffer_size(
+                        Fragmented {
+                            input: futures::io::Cursor::new(frame[..cut].to_vec()),
+                            chunk: 7,
+                            pending: false,
+                        },
+                        Default::default(),
+                        MIN_BUFFER_WORDS,
+                    )
+                    .unwrap();
+                    if !read_ahead {
+                        input.set_read_ahead_policy(|_| false);
+                    }
+                    let error = futures::executor::block_on(futures::future::poll_fn(|cx| {
+                        input
+                            .poll_borrowed_frame(cx)
+                            .map_ok(|frame| frame.is_some())
+                    }))
+                    .unwrap_err();
+                    assert_eq!(error.kind, ErrorKind::PrematureEndOfFile);
+                    assert_eq!(input.consumed_bytes(), 0);
+                    let position = input.get_ref().input.position();
+                    assert!(futures::executor::block_on(futures::future::poll_fn(
+                        |cx| input.poll_stream_frame_size(cx)
+                    ))
+                    .is_err());
+                    assert_eq!(input.get_ref().input.position(), position);
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore = "exercises direct reads above the 128 KiB threshold")]
+    fn completed_streams_count_once_and_leave_the_successor_intact() {
+        let mut message = capnp::message::Builder::new_default();
+        message
+            .initn_root::<capnp::data::Builder>((MAX_PROMOTED_BUFFER_WORDS * 8 + 32) as u32)
+            .fill(0x5a);
+        let first = capnp::serialize::write_message_to_words(&message);
+        let mut message = capnp::message::Builder::new_default();
+        message.set_root("successor").unwrap();
+        let second = capnp::serialize::write_message_to_words(&message);
+        for chunk in [4093, first.len()] {
+            let mut input = BufferedRead::with_buffer_size(
+                futures::io::Cursor::new([first.as_slice(), second.as_slice()].concat()),
+                Default::default(),
+                MIN_BUFFER_WORDS,
+            )
+            .unwrap();
+            let mut cx = Context::from_waker(std::task::Waker::noop());
+            assert_eq!(
+                input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+                Poll::Ready(Some(first.len()))
+            );
+            let position = input.get_ref().position();
+            assert_eq!(
+                input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+                Poll::Ready(Some(first.len()))
+            );
+            assert_eq!(input.get_ref().position(), position);
+            assert_eq!(
+                input
+                    .poll_stream_frame(&mut cx, &mut [])
+                    .map(Result::unwrap),
+                Poll::Ready(0)
+            );
+            let mut output = vec![0; first.len()];
+            let mut written = 0;
+            while written < output.len() {
+                let end = (written + chunk).min(output.len());
+                let count = futures::executor::block_on(futures::future::poll_fn(|cx| {
+                    input.poll_stream_frame(cx, &mut output[written..end])
+                }))
+                .unwrap();
+                assert!(count > 0);
+                written += count;
+            }
+            assert_eq!(output, first);
+            assert_eq!(input.consumed_bytes(), first.len() as u64);
+            assert_eq!(
+                input
+                    .poll_stream_frame(&mut cx, &mut [0; 1])
+                    .map(Result::unwrap),
+                Poll::Ready(0)
+            );
+            assert_eq!(input.consumed_bytes(), first.len() as u64);
+            input.finish_borrowed_frame();
+            assert_eq!(
+                input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+                Poll::Ready(Some(second.len()))
+            );
+            assert_eq!(input.borrowed_frame(), Some(second.as_slice()));
+            input.finish_borrowed_frame();
+            assert_eq!(input.consumed_bytes(), (first.len() + second.len()) as u64);
+            assert_eq!(
+                input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+                Poll::Ready(None)
+            );
         }
     }
 

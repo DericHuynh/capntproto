@@ -77,6 +77,42 @@ impl<'i, 'e, 'a, I, const N: usize> ReceiptStorage<'i, 'e, 'a, I, N> {
             answers,
         }
     }
+    /// Join payload receipts and the temporary target in one preflight batch.
+    /// The closure cannot return a view borrowed from these temporary slots.
+    pub(super) fn with_call_slots<R>(
+        &mut self,
+        count: usize,
+        f: impl FnOnce(reception::full::Slots<'_, 'i, 'e, 'a, I>) -> R,
+    ) -> R {
+        if count == 0 {
+            return f(reception::full::Slots {
+                imports: &mut [],
+                exports: &mut [exports::LeaseSlot::none()],
+                answers: &mut [answers::PipelineSlot::none()],
+            });
+        }
+        let slots = self.slots();
+        if count != 1 {
+            return f(slots);
+        }
+        let mut pair = TargetPair {
+            exports: [
+                core::mem::replace(&mut slots.exports[0], exports::LeaseSlot::none()),
+                exports::LeaseSlot::none(),
+            ],
+            answers: [
+                core::mem::replace(&mut slots.answers[0], answers::PipelineSlot::none()),
+                answers::PipelineSlot::none(),
+            ],
+            saved_export: &mut slots.exports[0],
+            saved_answer: &mut slots.answers[0],
+        };
+        f(reception::full::Slots {
+            imports: &mut slots.imports[..1],
+            exports: &mut pair.exports,
+            answers: &mut pair.answers,
+        })
+    }
     pub(super) fn reserve(&mut self, capacity: Capacity, count: usize) -> Result<(), Error> {
         if count > capacity.maximum::<N>() {
             return Err(Error::Capacity);
@@ -113,6 +149,21 @@ impl<'i, 'e, 'a, I, const N: usize> ReceiptStorage<'i, 'e, 'a, I, N> {
         }
         #[cfg(not(feature = "alloc"))]
         Err(Error::Capacity)
+    }
+}
+
+// Restore persistent payload receipts after success, rejection, or unwinding.
+// Admission moves the target out before returning from with_call_slots.
+struct TargetPair<'r, 'e, 'a> {
+    exports: [exports::LeaseSlot<'e>; 2],
+    answers: [answers::PipelineSlot<'a>; 2],
+    saved_export: &'r mut exports::LeaseSlot<'e>,
+    saved_answer: &'r mut answers::PipelineSlot<'a>,
+}
+impl Drop for TargetPair<'_, '_, '_> {
+    fn drop(&mut self) {
+        core::mem::swap(self.saved_export, &mut self.exports[0]);
+        core::mem::swap(self.saved_answer, &mut self.answers[0]);
     }
 }
 #[cfg(feature = "alloc")]
@@ -226,6 +277,93 @@ impl<'i, 'e, 'a, I> Heap<'i, 'e, 'a, I> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn temporary_call_target_restores_payload_receipts_and_keeps_joint_admission() {
+        for accept in [false, true] {
+            let mut table = [const { exports::Slot::EMPTY }; 1];
+            exports::with_exports(&mut table, |exports| {
+                let mut batch = exports.batch();
+                let grant = batch.export(31).unwrap();
+                batch.commit();
+                let mut storage = ReceiptStorage::<(), 1>::new();
+                storage.slots().exports[0] = exports::LeaseSlot::new(grant.id());
+                storage.slots().answers[0] = answers::PipelineSlot::new(AnswerId::from_wire(9));
+                let target = storage.with_call_slots(1, |slots| {
+                    assert_eq!(slots.imports.len(), 1);
+                    assert_eq!(slots.exports.len(), 2);
+                    assert_eq!(slots.answers.len(), 2);
+                    slots.exports[1] = exports::LeaseSlot::new(grant.id());
+                    let pending = exports.prepare_leases(slots.exports).unwrap();
+                    if accept {
+                        pending.accept()[1].take()
+                    } else {
+                        None
+                    }
+                });
+                assert_eq!(storage.answers()[0].id(), Some(AnswerId::from_wire(9)));
+                if let Some(target) = target {
+                    assert!(storage.exports()[0].lease().is_some());
+                    assert_eq!(exports.release(grant.id(), 1), Ok(None));
+                    assert_eq!(exports.release_local(target), None);
+                    assert_eq!(
+                        exports.release_local(storage.slots().exports[0].take().unwrap()),
+                        Some(31)
+                    );
+                } else {
+                    assert!(storage.exports()[0].lease().is_none());
+                    assert_eq!(storage.exports()[0].id(), Some(grant.id()));
+                    assert_eq!(exports.release(grant.id(), 1), Ok(Some(31)));
+                }
+                assert!(exports.is_empty());
+            })
+            .unwrap();
+        }
+    }
+
+    #[cfg(panic = "unwind")]
+    #[test]
+    fn temporary_call_target_restores_payload_receipts_on_unwind() {
+        extern crate std;
+        let mut storage = ReceiptStorage::<(), 1>::new();
+        storage.slots().exports[0] = exports::LeaseSlot::new(ExportId::from_wire(7));
+        storage.slots().answers[0] = answers::PipelineSlot::new(AnswerId::from_wire(9));
+        let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            storage.with_call_slots(1, |slots| {
+                slots.answers[0] = answers::PipelineSlot::new(AnswerId::from_wire(11));
+                panic!("rejected admission unwinds")
+            });
+        }));
+        assert!(panic.is_err());
+        assert_eq!(storage.exports()[0].id(), Some(ExportId::from_wire(7)));
+        assert_eq!(storage.answers()[0].id(), Some(AnswerId::from_wire(11)));
+    }
+
+    #[cfg(all(feature = "alloc", not(miri)))]
+    #[test]
+    fn temporary_call_target_keeps_one_payload_allocation() {
+        let allocations = allocation_counter::measure(|| {
+            let mut storage = ReceiptStorage::<(), 0>::new();
+            storage
+                .reserve(Capacity::Growing { maximum: 2 }, 1)
+                .unwrap();
+            storage.with_call_slots(1, |slots| {
+                assert_eq!(slots.exports.len(), 2);
+                assert_eq!(slots.answers.len(), 2);
+            });
+            assert_eq!(storage.imports().len(), 1);
+        });
+        assert_eq!(allocations.count_total, 1);
+        let mut empty = ReceiptStorage::<(), 0>::new();
+        let allocations = allocation_counter::measure(|| {
+            empty.with_call_slots(0, |slots| {
+                assert!(slots.imports.is_empty());
+                assert_eq!(slots.exports.len(), 1);
+                assert_eq!(slots.answers.len(), 1);
+            });
+        });
+        assert_eq!(allocations.count_total, 0);
+    }
 
     #[cfg(all(feature = "alloc", not(miri)))]
     #[test]

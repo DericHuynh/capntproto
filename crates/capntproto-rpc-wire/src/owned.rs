@@ -382,27 +382,35 @@ impl<'i, 'e, 'a, I, const N: usize> Receipts<'i, 'e, 'a, I, N> {
             count: 0,
         }
     }
-    fn initialize(
+    fn initialize<'m>(
         &mut self,
-        payload: rpc_capnp::payload::Reader<'_>,
+        payload: rpc_capnp::payload::Reader<'m>,
         imports: &imports::Imports<'i, '_, I>,
         spare: usize,
         receiver: &mut impl ImportReceiver<I>,
         capacity: Capacity,
-    ) -> Result<(), Error> {
+    ) -> Result<reception::full::CheckedPayload<'m>, Error> {
         let descriptors = payload.get_cap_table()?;
         let count = usize::try_from(descriptors.len()).map_err(|_| Error::Capacity)?;
-        self.storage
-            .reserve(capacity, count.checked_add(spare).ok_or(Error::Capacity)?)?;
-        // Owner factories may have side effects, so validate before calling
-        // one. With no descriptors there are no factories: inbound admission
-        // validates the content before committing any ledger state instead.
-        if count != 0 {
-            payload
-                .get_content()
-                .validate_capability_indices(descriptors.len())?;
+        let required = count.checked_add(spare).ok_or(Error::Capacity)?;
+        if required > capacity.maximum::<N>() {
+            return Err(Error::Capacity);
         }
-        self.initialize_descriptors(descriptors, count, imports, receiver, capacity)
+        // A single parameter capability uses the one-receipt box. Its call
+        // target is temporary and joins admission on the stack instead.
+        self.storage.reserve(
+            capacity,
+            if count == 1 && spare == 1 {
+                1
+            } else {
+                required
+            },
+        )?;
+        // Validate before side-effecting factories, then carry that exact
+        // immutable payload into admission instead of traversing it again.
+        let checked = reception::full::CheckedPayload::new(payload)?;
+        self.initialize_descriptors(checked.descriptors(), count, imports, receiver, capacity)?;
+        Ok(checked)
     }
     fn initialize_descriptors<'m>(
         &mut self,
@@ -863,70 +871,65 @@ impl<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> Call<'pool, 'i, 'e, '
                 }
             }
             prepare_target_path(target, &mut path, path_capacity)?;
-            if plain {
+            let prepared_payload = if plain {
                 if capacity.maximum::<N>() == 0 {
                     return Err(Error::Capacity);
                 }
+                reception::full::PayloadView::Unchecked(payload)
             } else {
-                receipts.initialize(payload, imports, 1, receiver, capacity)?;
-            }
+                reception::full::PayloadView::Checked(
+                    receipts.initialize(payload, imports, 1, receiver, capacity)?,
+                )
+            };
             let count = receipts.count;
-            let mut target_export = [exports::LeaseSlot::none()];
-            let mut target_answer = [answers::PipelineSlot::none()];
-            let slots = if plain {
-                reception::full::Slots {
-                    imports: &mut [],
-                    exports: &mut target_export,
-                    answers: &mut target_answer,
+            let admitted = receipts.storage.with_call_slots(count, |slots| {
+                match target.which().map_err(|_| Error::WrongMessage)? {
+                    rpc_capnp::message_target::ImportedCap(id) => {
+                        slots.exports[count] = exports::LeaseSlot::new(ExportId::from_wire(id))
+                    }
+                    rpc_capnp::message_target::PromisedAnswer(answer) => {
+                        slots.answers[count] = answers::PipelineSlot::new(AnswerId::from_wire(
+                            answer?.get_question_id(),
+                        ))
+                    }
                 }
-            } else {
-                receipts.storage.slots()
-            };
-            match target.which().map_err(|_| Error::WrongMessage)? {
-                rpc_capnp::message_target::ImportedCap(id) => {
-                    slots.exports[count] = exports::LeaseSlot::new(ExportId::from_wire(id))
+                let pending = inbound::full::call_parts(
+                    call,
+                    target,
+                    prepared_payload,
+                    imports,
+                    exports,
+                    answers,
+                    reception::full::Slots {
+                        imports: &mut slots.imports[..count],
+                        exports: &mut slots.exports[..count + 1],
+                        answers: &mut slots.answers[..count + 1],
+                    },
+                    &mut path,
+                )
+                .map_err(Error::Admission)?;
+                // Retain the checked payload while its admission reader is live.
+                // Fixed storage returns None and never allocates. All fallible
+                // retention is before committing answer/receipt ownership.
+                #[cfg(feature = "alloc")]
+                if plain {
+                    plain_params = _frame.retain_plain_payload(_messages, payload)?;
                 }
-                rpc_capnp::message_target::PromisedAnswer(answer) => {
-                    slots.answers[count] =
-                        answers::PipelineSlot::new(AnswerId::from_wire(answer?.get_question_id()))
-                }
-            }
-            let pending = inbound::full::call_parts(
-                call,
-                target,
-                payload,
-                imports,
-                exports,
-                answers,
-                reception::full::Slots {
-                    imports: &mut slots.imports[..count],
-                    exports: &mut slots.exports[..count + 1],
-                    answers: &mut slots.answers[..count + 1],
-                },
-                &mut path,
-            )
-            .map_err(Error::Admission)?;
-            // Retain the checked payload while its admission reader is live.
-            // Fixed storage returns None and never allocates. All fallible
-            // retention is before committing answer/receipt ownership.
-            #[cfg(feature = "alloc")]
-            if plain {
-                plain_params = _frame.retain_plain_payload(_messages, payload)?;
-            }
-            let admitted = pending.accept(owner.take().unwrap());
-            let (target, length) = match admitted.target {
-                pipeline::Target::Hosted(lease) => (Target::Hosted(lease), 0),
-                pipeline::Target::Promised { answer, path } => {
-                    (Target::Promised(answer), path.fields().len())
-                }
-            };
-            let answer = admitted.answer;
+                let admitted = pending.accept(owner.take().unwrap());
+                let (target, length) = match admitted.target {
+                    pipeline::Target::Hosted(lease) => (Target::Hosted(lease), 0),
+                    pipeline::Target::Promised { answer, path } => {
+                        (Target::Promised(answer), path.fields().len())
+                    }
+                };
+                Ok::<_, Error>((admitted.answer, target, length))
+            })?;
             receipts.deliver(imports, receiver, descriptors);
             let incoming = calls::Incoming::new(call);
             Ok((
-                answer,
-                target,
-                length,
+                admitted.0,
+                admitted.1,
+                admitted.2,
                 incoming.hints(),
                 incoming.allows_third_party_tail_call(),
             ))

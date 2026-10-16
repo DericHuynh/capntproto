@@ -419,19 +419,23 @@ impl<'pool, 'q> Question<'pool, 'q> {
         capacity: Capacity,
     ) -> Result<AdmittedReturn<'i, 'e, 'a, I, N>, Error> {
         let mut descriptors = None;
-        if let rpc_capnp::return_::Results(payload) =
-            result.which().map_err(|_| Error::WrongMessage)?
-        {
-            if questions.is_live(self.key) {
-                let payload = payload?;
-                descriptors = Some(payload.get_cap_table()?);
-                receipts.initialize(payload, imports, 0, receiver, capacity)?;
+        let mut prepared = inbound::full::PreparedReturn::new(result);
+        if questions.is_live(self.key) {
+            if let Some(payload) = prepared.prepare_results().map_err(|error| match error {
+                inbound::Error::Unsupported => Error::WrongMessage,
+                inbound::Error::Wire(kind) => Error::Wire(kind),
+                error => Error::Admission(error),
+            })? {
+                let table = payload.descriptors();
+                descriptors = Some(table);
+                let count = usize::try_from(table.len()).map_err(|_| Error::Capacity)?;
+                receipts.initialize_descriptors(table, count, imports, receiver, capacity)?;
             }
         }
-        let mut admit = |original: inbound::full::Original<'_>| -> Result<_, Error> {
+        let admit = |original: inbound::full::Original<'_>| -> Result<_, Error> {
             let method = original.method;
             let pending = inbound::full::returned_prepared(
-                result,
+                prepared,
                 original,
                 questions,
                 imports,

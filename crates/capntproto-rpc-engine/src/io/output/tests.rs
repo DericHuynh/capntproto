@@ -257,3 +257,156 @@ fn interrupted_flush_and_close_obey_the_poll_budget() {
     })
     .unwrap();
 }
+
+#[test]
+fn empty_frames_release_receipts_without_writing_or_flushing() {
+    let mut bytes = [0; 1];
+    let mut buffers = [messages::Buffer::new(&mut bytes)];
+    messages::with_messages(&mut buffers, &mut [], |messages| {
+        let released = Cell::new(0);
+        let mut entries = [None];
+        let mut queue = Queue::with_resources(&mut entries).unwrap();
+        let lease = messages.copy_from(b"").unwrap();
+        queue
+            .reserve_with(Resource(1, &released))
+            .unwrap()
+            .accept_owned(lease);
+        let mut sink = Sink::default();
+        let mut output = Output::new();
+        let mut cx = Context::from_waker(Waker::noop());
+        assert_eq!(
+            output.poll(
+                &mut sink,
+                &mut queue,
+                messages,
+                &mut cx,
+                NonZeroUsize::new(1).unwrap()
+            ),
+            Poll::Ready(Ok(()))
+        );
+        assert!(queue.is_empty() && output.is_clean());
+        assert_eq!((sink.writes, sink.flushes), (0, 0));
+        assert_eq!(released.get(), 1);
+        assert!(messages.can_reserve(1));
+    })
+    .unwrap();
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn zero_progress_from_borrowed_and_shared_adapters_preserves_owners_until_abort() {
+    use crate::connection::Growth;
+    use alloc::rc::Rc;
+    struct Parts;
+    impl messages::Parts for Parts {
+        fn count(&self) -> usize {
+            2
+        }
+        fn part(&self, index: usize) -> &[u8] {
+            [b"a".as_slice(), b"bc".as_slice()][index]
+        }
+        fn retained_capacity(&self) -> usize {
+            3
+        }
+    }
+    struct ZeroWriter {
+        mode: u8,
+        writes: usize,
+        flushes: usize,
+    }
+    impl Flush for ZeroWriter {
+        type Error = u8;
+        fn poll_flush(&mut self, _: &mut Context<'_>) -> Poll<Result<(), IoError<u8>>> {
+            self.flushes += 1;
+            Poll::Ready(Ok(()))
+        }
+    }
+    impl WriteResources<Resource<'_>> for ZeroWriter {
+        fn accepts_shared(&self) -> bool {
+            self.mode == 1
+        }
+        fn accepts_parts(&self) -> bool {
+            self.mode == 2
+        }
+        // The default owning methods must release their temporary aliases and
+        // preserve the first borrowed slice and attachment on rejection.
+        fn poll_write_resources(
+            &mut self,
+            _: &mut Context<'_>,
+            bytes: &[u8],
+            resource: Option<&Resource<'_>>,
+        ) -> Poll<Result<usize, IoError<u8>>> {
+            self.writes += 1;
+            assert_eq!(
+                bytes,
+                if self.mode == 2 {
+                    b"a".as_slice()
+                } else {
+                    b"abc".as_slice()
+                }
+            );
+            assert_eq!(resource.unwrap().0, 1);
+            Poll::Ready(Ok(0))
+        }
+    }
+    for mode in 0..3 {
+        let source = Rc::new(Parts);
+        let mut pool = messages::GrowingBuffers::new(1, 32, 32);
+        messages::with_growing_messages(
+            &mut pool,
+            Growth {
+                initial: 0,
+                maximum: 0,
+            },
+            |messages| {
+                let released = Cell::new(0);
+                let mut entries = [None];
+                let mut queue = Queue::with_resources(&mut entries).unwrap();
+                if mode == 2 {
+                    let parts = messages.retain_parts(source.clone()).unwrap().unwrap();
+                    queue
+                        .reserve_with(Resource(1, &released))
+                        .unwrap()
+                        .accept_parts(parts);
+                } else {
+                    let lease = messages.copy_from(b"abc").unwrap();
+                    queue
+                        .reserve_with(Resource(1, &released))
+                        .unwrap()
+                        .accept_owned(lease);
+                    // A byte owner cannot authorize scatter/gather progress.
+                    assert_eq!(
+                        queue.window(messages).unwrap().unwrap().advance_parts(1),
+                        Err(messages::Error::InvalidWriteCount)
+                    );
+                }
+                let mut writer = ZeroWriter {
+                    mode,
+                    writes: 0,
+                    flushes: 0,
+                };
+                let mut output = Output::new();
+                let mut cx = Context::from_waker(Waker::noop());
+                let budget = NonZeroUsize::new(1).unwrap();
+                assert_eq!(
+                    output.poll(&mut writer, &mut queue, messages, &mut cx, budget),
+                    Poll::Ready(Err(SendError::State(messages::Error::WriteZero)))
+                );
+                assert!(queue.is_failed() && output.is_clean());
+                assert_eq!(released.get(), 0);
+                assert!(!messages.can_reserve(1));
+                assert_eq!(
+                    output.poll(&mut writer, &mut queue, messages, &mut cx, budget),
+                    Poll::Ready(Err(SendError::State(messages::Error::QueueFailed)))
+                );
+                assert_eq!((writer.writes, writer.flushes), (1, 0));
+                assert!(queue.discard_one(messages).unwrap());
+                assert!(!queue.discard_one(messages).unwrap());
+                assert_eq!(released.get(), 1);
+                assert!(messages.can_reserve(1));
+            },
+        )
+        .unwrap();
+        assert_eq!(Rc::strong_count(&source), 1);
+    }
+}

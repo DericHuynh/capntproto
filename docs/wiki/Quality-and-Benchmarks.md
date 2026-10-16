@@ -4360,7 +4360,198 @@ invalid records and cross-thread/socket pairing. Native timeout/TERM lifecycle
 checks pass for portable, legacy and C++, and analysis of all 90 local journals
 agrees with the independent local analyzer. Use the retained `analyze.py` with
 its socket-timing directory and `--manifest` pointing to the exact bundle
-manifest. Remote timing results for this new diagnostic remain pending.
+manifest. The subsequent remote timing results are recorded below.
+
+Dedicated run `38940986481` at `a2822536` subsequently completed with **11/16
+targets met** (9 remote, 2 loopback). All 350 remote and 60 loopback trials,
+pooled percentiles and inclusive gates are independently verified. Its misses are:
+
+| Case | Portable p50 ns | Faster reference p50 ns | Reference | Ratio |
+| --- | ---: | ---: | --- | ---: |
+| dependent-read | 614,627 | 575,725 | C++ | 1.067570× |
+| pipelined-read | 335,690 | 318,029 | C++ | 1.055533× |
+| callback | 603,193 | 563,858 | legacy | 1.069760× |
+| loopback 0 bytes | 34,754 | 32,776 | legacy | 1.060349× |
+| loopback 64 bytes | 34,384 | 32,713 | legacy | 1.051081× |
+
+The four manifests, build/runtime evidence, recorded binary hashes and checkout
+commit agree. Source fingerprint is
+`e0042d96501f400519f7dcf15c927abb8cfd3247b2b9f51b8de03be5016c950b`;
+driver SHA-256 is
+`95588ad1fd290b1114f13ab26e4c6947feb180f8af194adf672beee601b25d10`.
+Artifact `12065879162` has ZIP SHA-256
+`074e71ffc6cc31a2fe4c7a1970fd43760c4bbf0a0d5c340a958fa11b18621f15`.
+Complete evidence is in `target/portable-performance-small-one-dedicated-20261016/`
+(1,824 files plus checksums). The workflow and host cleanup passed; the separate
+sixteen-target goal remains open. The empty reference median is 280.153 µs,
+versus 89.349 µs in the preceding campaign, so pass-count changes cannot be
+attributed to code alone.
+
+All 21 steady pipeline writes still match C++ Finish/Release/Call/Call and
+1,368-byte size; both Returns share a 1,216-byte server write. The new journals
+independently verify each peer's executable and probe hashes. Pooled pipeline
+read-to-write CPU medians are 29,829/31,927.5 ns portable client/server, versus
+18,348/31,449 ns C++. Callback medians are 12,868.5/15,611.5 ns portable versus
+6,451/8,419 ns legacy. These instrumented intervals identify processing work;
+they are not acceptance samples or evidence of a latency improvement.
+
+The next prototypes carry an immutable checked payload and its descriptor table
+from receipt initialization into transactional Call/Return admission. They avoid
+repeating content traversal while retaining descriptor identity, resource, and
+ledger checks. Invalid indices are rejected before import factories. The combined
+prototype passes 141 wire tests, Clippy, allocation-free builds and three focused
+Miri checks, including mixed receipt rollback. Pipeline client instructions fall
+0.62% to 79,764,963; server instructions are 67,936,013. Callback server work falls
+0.66% to 59,647,171. Simulated pipeline instruction-cache misses fall 1.37% client
+and 0.34% server. Elapsed-time qualification has not yet run for this intermediate
+prototype. Evidence is in `target/portable-performance-checked-return-prototype-20261016/`
+(275 files plus checksums) and `target/portable-performance-checked-payload-prototype-20261016/`
+(51 files plus checksums). The latter executable SHA-256 is
+`078a0b5bb422d1928721e433f4bb0f41b225f83e626140b2c8115b002ff4cfb4`.
+
+A subsequent existing-hook reuse experiment passed 294 RPC tests, four-crate
+Clippy and focused Miri. It lowered pipeline instructions slightly to
+79,600,382/67,961,276 but increased client instruction-cache misses 1.26% relative
+to checked-payload. It was rejected and reverted before elapsed-time testing.
+Its source, regression, executable identity and raw profiles remain in
+`target/portable-performance-existing-hook-rejected-20261016/` (46 files plus
+checksums). Executable SHA-256 is
+`e008af75e9517e665d9e20c7230666a67646b70d3b0cbb193906af8c4dd0a335`.
+
+The paired-receipt box experiment reduced callback server instructions a further
+1.03%, but increased pipeline client instructions 0.21% and simulated
+instruction-cache misses 1.22% relative to checked-payload. It was rejected and
+reverted after 141 wire tests, five allocation tests and alloc-only Clippy passed.
+The larger box affected ordinary single-capability replies as well as calls.
+Evidence is in `target/portable-performance-paired-receipts-rejected-20261016/`
+(52 files plus checksums); executable SHA-256 is
+`61d4d8faf601ef7bb089180595123f2e4c3f47cbba798b74f5442004ada8cce9`.
+
+The next prototype keeps the one-receipt box and temporarily pairs its payload
+receipt with the call target on the stack. A scope guard restores persistent
+receipts on success, rejection and unwinding. Capacity still includes the target,
+and duplicate export references pass through one atomic admission batch. All 144
+wire tests, allocation-only Clippy, allocation-free builds and focused Miri checks
+pass, including one-capability capacity rejection and retry. Callback server
+instructions fall another 1.10% to 58,992,090; pipeline instructions are
+79,759,282/67,994,320. Simulated instruction-cache misses rise to
+5,530,163/4,918,476, so elapsed-time evaluation remains necessary. Initial evidence
+is in `target/portable-performance-stack-target-prototype-20261016/` (49 files
+plus checksums); executable SHA-256 is
+`5e855833343d02ef730074cad09c17ba4b16a5cc5356c59b9e98956459f3af5b`.
+
+A bounded scheduler check for retained vacant call slots passed 293 RPC tests,
+four-crate Clippy and out-of-order/cancellation Miri. It did not reduce work in
+the matched fixtures: pipeline instructions rose to 79,821,084/68,004,549.
+It was rejected and reverted. Evidence is in
+`target/portable-performance-vacant-call-rejected-20261016/` (49 files plus
+checksums), executable SHA-256
+`7b0f9ccfab3b341c8373ab2dc5459307d704e14ca17a6d3bde31227cf9ad88cb`.
+
+The complete stack-target local campaign validates 180 workflow and 60 loopback
+trials, all pooled percentiles and gates, and 72 mixed-peer cases. It meets 11/16
+local targets (8 remote, 3 loopback), with empty, dependent, pipeline, callback
+and zero-byte loopback still missing. No latency improvement or dedicated
+qualification is established. Forty-five rotated CPU/wall trace trials give
+pipeline CPU p50 of 13,369/9,594 ns portable client/server versus 5,779/6,660 ns
+C++; callback gives 5,473/4,972.5 ns portable versus 2,073/1,832 ns legacy.
+Decoded steady pipeline writes remain Finish/Release/Call/Call (1,368 bytes),
+with both Returns in one 1,216-byte write. Callback Return/Release batching
+continues to match C++.
+
+A diagnostic-only Callgrind probe collects 800 windows from the first successful
+socket read to the following write entry after skipping 210 completed windows.
+It counts additional reads in each window and rejects foreign sockets/threads,
+failed selected writes and unfinished selected windows. The initial probe's
+rejection of multiple legacy reads is retained. Portable and C++ pipeline
+windows transfer identical byte totals. Portable client simulated instruction
+cache misses are 4,402.24/window versus 1,577.89 C++; conditional branch misses
+are 1,018.02 versus 213.69. These are simulated counters, not measured hardware
+events. Legacy batching differs, so its per-window values are not per-workflow
+ratios. The complete campaign, traces, probe sources, frozen identities and
+rejected diagnostic are in `target/portable-performance-stack-target-20261016/`
+(1,311 files plus checksums). The empty instruction gate remains client MISS
+(18,672,387 versus 17,389,291) and server PASS (17,237,616 versus 16,381,648).
+
+An intermediate shared ownership-refresh loop reduced generated code from
+68,729 to 64,453 bytes for the connection driver, 27,589 to 20,574 for active
+work, and 12,116 to 8,725 for budgeted work. It passed 293 RPC tests, Clippy and
+resolution-observer Miri. The dynamic metadata callback added 0.91% pipeline
+client instructions (80,484,145), while simulated client instruction-cache misses
+fell 1.53% to 5,445,517. The 45 CPU/wall trials remain bimodal and establish no
+latency gain. Its 18 gated cache profiles and exact implementation are archived
+in `target/portable-performance-shared-collection-prototype-20261016/`
+(346 files plus checksums), executable SHA-256
+`351fc2a6dc2a8d23df7389212dae05b44a25127d1190f0caa13b7e033dba477c`.
+The dynamic variant was restored before testing a common concrete helper at
+the six coordinator refresh sites, preserving their original observation points.
+
+The concrete refresh candidate keeps static metadata dispatch and shares only
+the six identical coordinator walks. It reduces connection-driver code to
+64,373 bytes and active-work code to 23,748 bytes, with a 3,361-byte common
+helper. Pipeline instructions are 79,858,900/68,070,929, versus
+79,759,282/67,994,320 for stack-target; simulated instruction-cache misses are
+5,514,955/4,867,661, versus 5,530,163/4,918,476. The change preserves all refresh
+points, receipt checks and notification ordering; it does not cache absent
+metadata or skip later aliases.
+
+All 180 workflow and 60 loopback trials have independently verified pooled
+percentiles and gates, and all 72 mixed-peer cases pass. The candidate meets
+11/16 local targets (8 remote, 3 loopback); empty, 1 KiB unary, pipeline,
+callback and 64-byte loopback miss. Different cells pass between local campaigns
+because the shared-VM controls vary substantially; the pass count establishes
+neither a latency gain nor dedicated qualification. Forty-five rotated CPU/wall
+trials give pipeline read-to-write CPU p50 of 13,230/9,074 ns portable versus
+5,868/6,760 ns C++. The 18 gated cache profiles give portable pipeline client
+61,095.11 instructions and 4,396.78 simulated instruction-cache misses per
+selected window. The empty instruction gate remains client MISS
+(18,645,544 versus 17,388,575) and server PASS (17,259,199 versus 16,380,933).
+The frozen executable SHA-256 is
+`e8fe90c1752af11d68a540152844555d035d863f7d495358560e4c6bf833fbda`.
+Native RPC tests (293), RPC Clippy and the capability-control Miri test pass.
+The metadata Miri filter selected zero tests because that test excludes Miri;
+it is not counted as a successful Miri test. The unsafe documentation gate and
+formatting pass after removing three redundant casts in a regression test.
+The release executable's eight runtime source hashes remain unchanged.
+All 92 integration tests and the four-crate hosted Clippy check pass. Decoded
+steady pipeline writes retain the C++ grouping of Finish/Release/Call/Call
+(1,368 bytes) and both Returns (1,216 bytes); callback Return/Release writes
+also match. Bootstrap and final cleanup differences remain in the raw traces.
+The complete local campaign, probe sources, failed preliminary checks and
+frozen source identities are retained in
+`target/portable-performance-concrete-refresh-20261016/` (1,254 files plus
+checksums). Full dedicated performance and CI coverage qualification remain open.
+
+The subsequent `outlined-immediate20261016` experiment replaced forced inlining
+of the immediate sender with an out-of-line call. All 139 wire tests passed, but
+pipeline instructions rose to 80,292,202/67,901,865 and simulated instruction-cache
+misses rose to 5,551,529/4,915,140 from 5,521,074/4,866,707. It was rejected and
+reverted before elapsed-time qualification. Its exact patch, frozen executable
+identity and four workflow profiles are retained in
+`target/portable-performance-outlined-immediate-rejected-20261016/` (38 files
+plus checksums). The measured executable SHA-256 is
+`421a55c0d237b0d80f09f584416a0584440cbcad5f659539191f50b8d8b36117`.
+
+Coverage follow-up adds malformed and retained-frame ownership cases, zero-progress
+output failures, scalar transport backpressure, external arena allocation, and
+fragmented/truncated/large-stream reads. The focused checks pass, including
+32-bit Miri for retained frames and Miri for external-arena ownership. A narrow
+coverage run uses CI's exact LLVM 22 toolchain (`nightly-2026-03-05`); it does not
+replace the full Cargo coverage gate. Generic-function coverage must be assessed
+using LLVM's instantiation-group summaries: combining branch hits across
+different monomorphizations can incorrectly suggest that a required floor has
+passed. No coverage floor has been changed, and full coverage remains open.
+The follow-up sources, logs, raw profiles, exports and reproduction are retained
+in `target/portable-performance-coverage-followup-20261016/` (45 files plus
+checksums); generated coverage objects are excluded.
+
+Full CI `38940989997` for `a2822536` subsequently finished with 2,264 tests
+passed, 20 skipped and no failed or incomplete test cases. All other executed
+jobs passed, including Miri, native unsafe checks, Verus and TLA+. The unchanged
+coverage regression gate failed 55 metric floors; the required CI result failed
+and its dependent benchmark job was skipped. The local coverage follow-up above
+is not part of that commit. The complete Cargo artifact and job log are retained
+in `target/portable-performance-small-one-ci-20261016/` (8 files plus checksums).
 
 ### Portable and legacy instruction qualification
 

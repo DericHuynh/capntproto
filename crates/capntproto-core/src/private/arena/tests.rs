@@ -89,3 +89,38 @@ fn generated_schema_intervals_cannot_overflow_length_or_end_address() {
         .contains_interval(0, start.wrapping_add(16), 0)
         .unwrap();
 }
+
+#[cfg(feature = "alloc")]
+#[test]
+fn external_segments_reject_mutation_and_survive_allocator_recovery() {
+    use alloc::sync::Arc;
+    let owner: Arc<[crate::Word]> = Arc::from([ZERO; 2]);
+    let external = crate::dynamic_orphan::ExternalData::new(owner.clone(), 16).unwrap();
+    let mut arena = BuilderArenaImpl::new(message::HeapAllocator::new().first_segment_words(4));
+    assert_eq!(arena.segment_for_output(0), None);
+    arena.allocate_segment(4).unwrap();
+    assert_eq!(arena.allocate(0, 2), Some(0));
+    assert!(arena.try_resize_allocation(0, 0, 2, 3));
+    assert_eq!(arena.retained_segment_bytes(), Some(32));
+    let id = arena.add_external_segment(external).unwrap();
+    assert_eq!(id, 1);
+    assert!(!arena.is_writable(id));
+    assert!(!arena.try_resize_allocation(id, 0, 2, 1));
+    assert_eq!(arena.allocate(id, 0), None);
+    assert_eq!(
+        arena.segment_for_output(id).unwrap(),
+        crate::Word::words_to_bytes(&owner)
+    );
+    assert_eq!(arena.segment_for_output(2), None);
+    assert_eq!(arena.segment_for_output(u32::MAX), None);
+    assert_eq!(arena.retained_segment_bytes(), None);
+    assert_eq!(Arc::strong_count(&owner), 2);
+    // Recovering the allocator deallocates its own segments exactly once and
+    // drops external owners through their original allocation mechanism.
+    let allocator = arena.into_allocator();
+    assert_eq!(Arc::strong_count(&owner), 1);
+    assert_eq!(crate::Word::words_to_bytes(&owner), &[0; 16]);
+    let mut reused = BuilderArenaImpl::new(allocator);
+    reused.allocate_segment(1).unwrap();
+    assert_eq!(reused.allocate(0, 1), Some(0));
+}

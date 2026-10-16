@@ -399,11 +399,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 // Consume the preference once: repeated wakes or a blocked
                 // cleanup must not keep resetting the rotating cursor.
                 self.cleanup_on_enqueue = false;
-                self.hooks.collect_wire_optional(
-                    &mut self.driver,
-                    |owner| output.metadata_if_present(owner),
-                    foreign::local_metadata,
-                );
+                Self::collect_hooks(&mut self.hooks, &mut self.driver, output);
                 if self.driver.runtime.has_retired()
                     || self.driver.ledgers.questions.has_pending_finish()
                     || self.driver.ledgers.imports.has_pending_release()
@@ -706,11 +702,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             } else {
                 match index {
                     0 => {
-                        self.hooks.collect_wire_optional(
-                            &mut self.driver,
-                            |owner| output.metadata_if_present(owner),
-                            foreign::local_metadata,
-                        );
+                        Self::collect_hooks(&mut self.hooks, &mut self.driver, output);
                         match self.foreign.poll(
                             &mut self.hooks,
                             &mut self.driver.runtime,
@@ -1216,6 +1208,22 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         }
     }
 
+    // Every wire refresh uses the same concrete metadata projection. Share its
+    // ownership/settlement walk across lanes instead of cloning that code into
+    // each caller, while retaining static dispatch inside the walk.
+    #[inline(never)]
+    fn collect_hooks<'domain, O: Output<I>>(
+        hooks: &mut ClientHooks<'domain>,
+        driver: &mut Peer<'_, 'domain, '_, I, P, C, H>,
+        output: &O,
+    ) {
+        hooks.collect_wire_optional(
+            driver,
+            |owner| output.metadata_if_present(owner),
+            foreign::local_metadata,
+        );
+    }
+
     // Inline the small lane adapter into the scheduler so its concrete closures
     // share borrows and eliminate intermediate publication moves.
     #[allow(clippy::too_many_arguments)]
@@ -1244,11 +1252,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 // routing/descriptor information. Skip only that first refresh;
                 // queued, local or reentrant progress still refreshes normally.
                 if std::mem::replace(&mut refresh, true) {
-                    hooks.collect_wire_optional(
-                        driver,
-                        |owner| output.metadata_if_present(owner),
-                        foreign::local_metadata,
-                    );
+                    Self::collect_hooks(hooks, driver, output);
                 }
             },
             |invocations, driver, messages, credit, publication| {
@@ -1355,13 +1359,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             cx,
             quantum,
             |runtime, hook| self.foreign.import(runtime, hook),
-            |hooks, driver| {
-                hooks.collect_wire_optional(
-                    driver,
-                    |owner| output.metadata_if_present(owner),
-                    foreign::local_metadata,
-                )
-            },
+            |hooks, driver| Self::collect_hooks(hooks, driver, output),
             |driver, messages, key, bytes| {
                 driver
                     .send_answer_using(
@@ -1532,11 +1530,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     return Poll::Ready(Err(Box::new(Cause::Protocol(Error::from_kind(kind)))));
                 }
                 if controls.observes_hooks(&event) {
-                    self.hooks.collect_wire_optional(
-                        &mut self.driver,
-                        |owner| output.metadata_if_present(owner),
-                        foreign::local_metadata,
-                    );
+                    Self::collect_hooks(&mut self.hooks, &mut self.driver, output);
                 }
                 let first = if matches!(
                     event,
@@ -1617,13 +1611,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         &mut self.driver,
                         messages,
                         cx,
-                        |hooks, driver| {
-                            hooks.collect_wire_optional(
-                                driver,
-                                |owner| output.metadata_if_present(owner),
-                                foreign::local_metadata,
-                            )
-                        },
+                        |hooks, driver| Self::collect_hooks(hooks, driver, output),
                     )
                     .map_err(|error| Box::new(Cause::Protocol(error)))?;
                 if completed == Some(true) && controls.plain_return_preserves_idle() {
