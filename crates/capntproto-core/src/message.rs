@@ -1249,14 +1249,18 @@ unsafe impl Allocator for HeapAllocator {
         }
         let layout =
             alloc::alloc::Layout::from_size_align(size as usize * BYTES_PER_WORD, 8).unwrap();
-        #[cfg(feature = "std")]
-        let cached = self.pool.as_ref().and_then(|pool| pool.take(size));
-        #[cfg(not(feature = "std"))]
-        let cached: Option<*mut u8> = None;
-        let ptr = cached.unwrap_or_else(|| {
+        let allocate = || {
             // SAFETY: size is nonzero and the checked layout has alignment 8.
             unsafe { alloc::alloc::alloc_zeroed(layout) }
-        });
+        };
+        #[cfg(feature = "std")]
+        let ptr = self
+            .pool
+            .as_ref()
+            .and_then(|pool| pool.take(size))
+            .unwrap_or_else(allocate);
+        #[cfg(not(feature = "std"))]
+        let ptr = allocate();
         if ptr.is_null() {
             alloc::alloc::handle_alloc_error(layout);
         }

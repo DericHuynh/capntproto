@@ -27,7 +27,7 @@ pub enum Action {
 #[derive(Parser)]
 pub struct Args {
     pub action: Action,
-    /// Collect syscall diagnostics on both peers after all untraced measurements.
+    /// Collect syscall and paired CPU/wall diagnostics after untraced measurements.
     #[arg(long)]
     pub trace_io: bool,
     #[arg(long)]

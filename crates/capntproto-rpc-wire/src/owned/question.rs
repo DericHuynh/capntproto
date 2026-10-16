@@ -635,16 +635,24 @@ impl<'m, 'r, 'i, 'e, 'a, I, const N: usize> Payload<'m, 'r, 'i, 'e, 'a, I, N> {
         &self,
         index: u32,
     ) -> Result<Option<reception::full::Capability<'r, 'm, 'i, 'e, 'a>>, reception::Error> {
-        if index as usize >= self.receipts.count {
+        let i = index as usize;
+        if i >= self.receipts.count {
             return Err(reception::Error::MissingCapability);
         }
-        if matches!(
-            self.payload.get_cap_table()?.get(index).which(),
-            Ok(rpc_capnp::cap_descriptor::None(()))
-        ) {
+        // Keep the checked descriptor from the null-slot test. Enumerating a
+        // result table must not decode and charge that same list a second time
+        // merely to borrow the receipt already assigned to this exact slot.
+        let descriptor = self.payload.get_cap_table()?.get(index);
+        if matches!(descriptor.which(), Ok(rpc_capnp::cap_descriptor::None(()))) {
             Ok(None)
         } else {
-            self.at(index).map(Some)
+            reception::full::descriptor_capability(
+                descriptor,
+                &self.receipts.storage.imports()[i],
+                &self.receipts.storage.exports()[i],
+                &self.receipts.storage.answers()[i],
+            )
+            .map(Some)
         }
     }
     pub fn content(&self) -> capnp::any_pointer::Reader<'m> {

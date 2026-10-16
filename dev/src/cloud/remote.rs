@@ -2,6 +2,7 @@
 use super::*;
 use std::{fs, net::Ipv4Addr};
 mod report;
+mod timing;
 mod trace;
 
 fn workflow_run_id(configured: Option<String>) -> String {
@@ -469,6 +470,13 @@ pub(super) fn run(
                 server,
                 client,
                 &output.join("diagnostics"),
+                cancel,
+            )?;
+            timing::run(
+                commands,
+                server,
+                client,
+                &output.join("socket-timing"),
                 cancel,
             )?;
         }

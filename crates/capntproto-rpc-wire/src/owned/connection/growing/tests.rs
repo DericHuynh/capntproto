@@ -1395,6 +1395,14 @@ fn zero_inline_driver_sends_large_cap_tables_paths_and_admits_returns() {
             let mut payload = result.field(Return::RESULTS).edit()?;
             let mut table = payload.field(Payload::CAP_TABLE).init(6)?;
             for index in 0..6 {
+                if index == 1 {
+                    table
+                        .get_mut(index)
+                        .unwrap()
+                        .void(CapDescriptor::NONE)
+                        .set();
+                    continue;
+                }
                 table
                     .get_mut(index)
                     .unwrap()
@@ -1424,7 +1432,22 @@ fn zero_inline_driver_sends_large_cap_tables_paths_and_admits_returns() {
                     panic!("results")
                 };
                 assert_eq!(payload.capability_count(), 6);
-                assert!(payload.capability_at(5).unwrap().is_some());
+                assert!(payload.capability_at(1).unwrap().is_none());
+                let mut original = None;
+                for index in [0, 2, 3, 4, 5] {
+                    let Some(reception::full::Capability::Remote(cap)) =
+                        payload.capability_at(index).unwrap()
+                    else {
+                        panic!("original remote receipt")
+                    };
+                    assert_eq!(*original.get_or_insert(cap.key()), cap.key());
+                }
+                for index in [6, u32::MAX] {
+                    assert!(matches!(
+                        payload.capability_at(index),
+                        Err(reception::Error::MissingCapability)
+                    ));
+                }
             })
             .unwrap();
         driver.release_response(response, messages);

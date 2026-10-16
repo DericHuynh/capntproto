@@ -347,6 +347,7 @@ fn complete_remote_campaign_runs_both_controls_and_salvages_failed_portable_cont
         "compare-portable",
         "compare /root/bench",
         "workflow-measure",
+        "CAPNTPROTO_IO_TRACE=/root/results/timing/0-unary-empty-portable-client.bin",
     ] {
         let dir = tempfile::tempdir().unwrap();
         let bundle = dir.path().join("bundle");
@@ -421,12 +422,46 @@ fn complete_remote_campaign_runs_both_controls_and_salvages_failed_portable_cont
                     .iter()
                     .filter(|call| call.contains("workflow-measure"))
                     .count(),
-                15
+                60
             );
             assert!(output
                 .join("diagnostics/client/io-trace/pipelined-read-cpp-client.strace")
                 .is_file());
+            let timing = calls
+                .iter()
+                .position(|call| call.contains("gcc --version"))
+                .unwrap();
+            assert!(
+                trace < timing,
+                "CPU timing must also follow untraced measurements"
+            );
+            let uploaded_probe = calls[timing]
+                .split("<<'CAPNTPROTO_SOCKET_PROBE'\n")
+                .nth(1)
+                .unwrap()
+                .split("CAPNTPROTO_SOCKET_PROBE\n")
+                .next()
+                .unwrap();
+            assert_eq!(uploaded_probe, include_str!("timing/probe.c"));
+
+            assert!(output
+                .join("socket-timing/client/timing/4-callback-cpp-client.bin")
+                .is_file());
+            assert!(output.join("socket-timing/scope.json").is_file());
             assert!(output.join("trials.json").is_file());
+        }
+        if fail_at.contains("CAPNTPROTO_IO_TRACE") {
+            let calls = commands.commands.0.borrow();
+            assert!(calls.iter().any(|call| call.contains("kill -TERM")
+                && call.contains("timing/0-unary-empty-portable-server.pid")));
+            for peer in ["server", "client"] {
+                assert!(output
+                    .join(format!(
+                        "socket-timing/{peer}/timing/0-unary-empty-portable-{peer}.bin"
+                    ))
+                    .is_file());
+            }
+            assert!(output.join("portable-loopback/trials.json").is_file());
         }
         if fail_at == "workflow-measure" {
             let calls = commands.commands.0.borrow();

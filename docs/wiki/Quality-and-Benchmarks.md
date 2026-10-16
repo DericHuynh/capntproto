@@ -4219,6 +4219,149 @@ replay tests incomplete. The job allowance is now 90 minutes with all checks
 retained. Coverage requirements and performance limits are unchanged; both
 coverage qualification and the full performance target remain open.
 
+The `pending-direct-calls20261016` experiment tried a bounded live-state idle
+certificate for groups of direct calls. Native validation passed 137 wire,
+292 RPC and 92 integration tests; two focused Miri checks covered cancellation
+and late pipeline projections under backpressure. Pipeline client instructions
+nevertheless increased 0.39% to 81,430,993, and instruction-cache misses rose
+0.45%. It was rejected and all six changed files restored. Profiles, 45 paired
+CPU/wall trials, 75 wall-only trials and the source patch are retained in
+`target/portable-performance-pending-direct-calls-rejected-20261016/`.
+Executable SHA-256 is
+`d15c5cdfaa9a419572cb2d9014a7e21df433cce2623ec5bdf4310d676d96598f`;
+patch SHA-256 is
+`ef3f3ae5b9a7c66202828a717fe299b8128b2bf3c01688c77ad19435462d6b0f`.
+
+New traces compare elapsed and thread CPU time between socket reads and writes
+for the committed selected-content baseline. Across five rotated repetitions,
+pipeline CPU medians are 13190/9103 ns for portable, 3616/4707 ns for legacy,
+and 6079/6940 ns for C++ (client/server). Wall and CPU intervals track closely,
+supporting investigation of processing work rather than attributing the entire
+gap to descheduling. Repetition values remain bimodal. Clock instrumentation
+adds overhead; these 45 trials never enter qualification.
+
+SIGPROF instruction-pointer sampling over 100000 iterations complements those
+intervals. Coordinator polling, hook/ledger maintenance, decoding and copying
+contribute across the portable path. Samples at syscall-return sites include
+charged kernel CPU and do not identify user-space cancellation as a bottleneck.
+The first mapping snapshot and nearest-symbol analysis were incomplete; both
+are retained alongside a repeat with final library mappings, executable ELF
+address translation and DWARF resolution. Use the mapped campaign's
+`dwarf-summary.json`. The complete diagnostic archive is
+`target/portable-performance-cpu-tracing-20261016/` (313 files plus checksums).
+
+The `buffered-return-pair20261016` experiment then admitted one buffered successor
+after a Return before ordinary scheduler work. All 291 RPC tests passed,
+including stronger independent-control wake coverage, but pipeline instructions
+increased to 88,650,786/71,339,646 (9.29%/5.08%). Decoded traces identify the
+consequence: portable wrote Finish separately, followed by Call/Call/Release,
+instead of the committed baseline and C++ Finish/Release/Call/Call group.
+The extra write and delayed cleanup added scheduler and maintenance work.
+The server still grouped Return/Return. This experiment was rejected and both
+files restored; no full timing campaign or Miri run was justified after rejection.
+The 321-file archive plus checksums is
+`target/portable-performance-buffered-return-pair-rejected-20261016/`.
+Executable SHA-256 is
+`ff5f8973d6fb2ca5aa9f4108b746f27ebcaccdcdcef13d6225f389324a1e17e0`;
+patch SHA-256 is
+`38a2d47a497148776a64187180c67fbb958c1fe15eed91c78eac1865c8cb750b`.
+These findings favor reducing work inside the existing ordering. They do not
+close the dedicated performance gap.
+
+The selected-descriptor experiment reuses the descriptor already decoded by
+`Payload::capability_at`, avoiding a second cap-table decode while preserving
+the same receipt and index checks. Native validation passed 137 wire, 291 RPC
+and 92 integration tests, plus focused Miri, hosted Clippy, no-allocation checks
+and 72 mixed-peer cases. Pipeline client instructions decreased 0.2924% to
+80,877,817; cache misses did not improve. All 240 local timing trials validate,
+but only 8/16 targets pass. The empty instruction gate remains client MISS,
+server PASS. The 1357-file archive plus checksums is
+`target/portable-performance-selected-descriptor-20261016/`, with executable
+SHA-256 `469480307b58731117b2846bf08657c575c27e78c01c8f6de62b72c85da69254`
+and runtime patch SHA-256
+`38e2ccd1cd79e205da83ce13f012e10c5a9e1d802407825cd42b05f1bb9e5a19`.
+
+Dedicated run `38931617998`, commit `57f873f`, subsequently completed at
+**13/16**: 10/12 remote and 3/4 loopback targets pass. The remaining ratios
+against the faster matched reference are pipeline 1.173179 (132886 ns versus
+C++ 113270), callback 1.087431 (202832 versus legacy 186524), and empty loopback
+1.053022 (28122 versus legacy 26706). All 350 remote and 60 loopback trials,
+percentiles, repetitions and inclusive gates were independently recomputed.
+All four embedded manifests, recorded executable hashes, build provenance and
+checkout commit agree. Source fingerprint is
+`54d2e70d96625fcbb87f11044d6f21821f9840e495f5f22feec32a64c01755e8`;
+driver SHA-256 is
+`05588ff52299e7ad1786a5cc4bdda43240dd28e308d18fea7e3a2397f7444c00`.
+The report artifact `12061517121` has SHA-256
+`1937ac3709c79538beb61da95e54b1efffa8161ff37f4ce21e8d2a5224c701f9`.
+Complete evidence is in
+`target/portable-performance-selected-dedicated-20261016/`
+(1541 files plus checksums).
+
+Decoded steady pipeline writes still match C++: 21 client groups of
+Finish/Release/Call/Call, 1368 bytes, with both server Returns grouped into
+1216 bytes. Instrumented timing does not enter qualification. Network conditions
+differ from the previous dedicated campaign, so the score change alone does
+not establish a causal speedup. This campaign excludes the subsequent
+selected-descriptor experiment. No 16/16 campaign has passed.
+
+Full CI `38928495060` at `d917300` also completed: 2262 Cargo tests passed,
+20 skipped, zero failed or incomplete. Full Miri and TLA+ passed. The Cargo job
+failed 53 unchanged coverage metric floors across 32 files plus the
+async-framing aggregate. Coverage qualification remains open; no floor was
+relaxed. The Cargo artifact `12061691233`, SHA-256
+`dd462c7972c692f6b9cf66943c930fb41a6d0a3953f1d681d4071427769098be`,
+full job log and summaries are retained in
+`target/portable-performance-waiting-ci-20261016/`.
+
+The next checkpoint stores one capability's parallel receipts inside the
+existing heap box, reducing four allocations to one while keeping empty
+zero-inline storage one pointer wide. Growth reserves all arrays before moving
+owners, and capacity policy still applies after allocation. A two-slot prototype
+passed native tests but failed the large-enum lint; the one-slot refinement
+passes without suppression. The alloc-only HeapAllocator path also avoids a
+literal-None unwrap, with identical allocation semantics and unchanged reviewed
+unsafe-debt counts.
+
+This checkpoint passes 139 wire, 74 core, 291 RPC and 92 focused integration
+tests, allocation-only and hosted Clippy, allocation-free checks, formatting,
+unsafe review and focused receipt-ownership Miri. All 72 mixed-peer cases pass.
+Pipeline instructions are 80,261,486/67,901,389 (client/server), a further 0.7621%
+client reduction from selected-descriptor; dependent client work decreases
+0.8618%. Client instruction-cache misses do not improve. All 240 local trials
+validate, but only 8/16 targets pass (6 remote, 2 loopback). Empty instructions
+remain client MISS/server PASS. No latency improvement is established.
+
+Decoded writes preserve C++ Finish/Release/Call/Call and Return/Return grouping.
+Across five rotated CPU-timing repetitions, portable pipeline client medians
+are 31136, 14001, 12979, 30105 and 12258 ns; server medians are 25718.5, 9439,
+9084, 25898 and 8633 ns. Event counts and write groups agree across these runs,
+but processing intervals remain bimodal. These diagnostics never enter timing
+qualification. Evidence, including the rejected two-slot prototype, is in
+`target/portable-performance-small-one-receipts-20261016/`. Executable SHA-256:
+`a38599981d8dc8755966f98be72d20573a8202fa7dbc1259b779f4f626d5197c`;
+runtime patch SHA-256 against `57f873f`:
+`169c32c49336e330fca88ff39e92250b36a7db80e070a57030354ab75fa5dd44`.
+
+Dedicated `--trace-io` runs now also collect separate wall/thread-CPU socket
+journals after every uninstrumented measurement and syscall trace. Five rotated
+repetitions cover empty, pipeline and callback workflows, with 100 warmups and
+1000 iterations each. The Linux probe keeps a fixed in-memory journal; it
+captures no payload and writes no logs on the measured path. Two CPU clock
+syscalls per intercepted operation add overhead. The analyzer pairs successful
+reads and writes only on the same thread and socket, rejects corrupt or
+nonmonotonic journals, and verifies the probe source, shared library and both
+benchmark executables against recorded hashes. Raw samples and both clocks are
+retained independently from acceptance results.
+
+The 62 development-tool tests pass, including injected diagnostic failure with
+server shutdown and artifact recovery. Parser tests reject truncation, overflow,
+invalid records and cross-thread/socket pairing. Native timeout/TERM lifecycle
+checks pass for portable, legacy and C++, and analysis of all 90 local journals
+agrees with the independent local analyzer. Use the retained `analyze.py` with
+its socket-timing directory and `--manifest` pointing to the exact bundle
+manifest. Remote timing results for this new diagnostic remain pending.
+
 ### Portable and legacy instruction qualification
 
 The October 15 optimization batch meets a **1.05× portable/legacy instruction
