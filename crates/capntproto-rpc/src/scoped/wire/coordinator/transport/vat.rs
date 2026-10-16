@@ -246,16 +246,16 @@ impl<V> Reader<V> {
             return Poll::Ready(Ok(true));
         }
         if let Some(stream) = &mut self.input_frames {
-            let Some(bytes) = ready!(stream.poll_frame(cx))? else {
+            let Some(length) = ready!(stream.poll_frame_size(cx))? else {
                 self.ended = true;
                 return Poll::Ready(Ok(false));
             };
-            if bytes.len() > self.maximum {
+            if length > self.maximum {
                 return Poll::Ready(Err(Error::from_kind(
                     capnp::ErrorKind::BufferNotLargeEnough,
                 )));
             }
-            self.remaining = bytes.len();
+            self.remaining = length;
             self.position = 0;
             self.borrowed_frame = true;
             return Poll::Ready(Ok(true));
@@ -303,6 +303,21 @@ impl<V> Reader<V> {
         if let Some(frame) = frame {
             let count = bytes.len().min(frame.len() - self.position);
             bytes[..count].copy_from_slice(&frame[self.position..self.position + count]);
+            self.position += count;
+            self.remaining -= count;
+            return Poll::Ready(Ok(count));
+        }
+        if self.borrowed_frame {
+            let count = ready!(self
+                .input_frames
+                .as_mut()
+                .unwrap()
+                .poll_read_frame(cx, bytes))?;
+            if count > self.remaining || count > bytes.len() {
+                return Poll::Ready(Err(Error::failed(
+                    "stream exceeded its prepared frame".into(),
+                )));
+            }
             self.position += count;
             self.remaining -= count;
             return Poll::Ready(Ok(count));
@@ -387,6 +402,14 @@ impl<V> ImportReceiver<resources::Import> for Reader<V> {
     }
 }
 impl<V> Input<resources::Import> for Reader<V> {
+    fn has_buffered_next_frame(&self) -> bool {
+        !self.borrowed_frame
+            && !self.ended
+            && self
+                .input_frames
+                .as_ref()
+                .is_some_and(|stream| stream.has_buffered_next_frame())
+    }
     fn buffered_frame(&self) -> Option<&[u8]> {
         if self.borrowed_frame && self.position == 0 {
             self.input_frames.as_ref().and_then(|stream| stream.frame())
@@ -406,11 +429,9 @@ impl<V> Input<resources::Import> for Reader<V> {
         options: capnp::message::ReaderOptions,
     ) -> Result<Option<Frame<'p>>, capntproto_rpc_wire::owned::Error> {
         if self.borrowed_frame && self.position == 0 {
-            let bytes = self
-                .input_frames
-                .as_ref()
-                .and_then(|stream| stream.frame())
-                .ok_or(capntproto_rpc_wire::owned::Error::WrongMessage)?;
+            let Some(bytes) = self.input_frames.as_ref().and_then(|stream| stream.frame()) else {
+                return Ok(None);
+            };
             let frame = Frame::copy_from(messages, bytes, options)?;
             self.position = bytes.len();
             self.remaining = 0;

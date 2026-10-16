@@ -195,6 +195,175 @@ impl Commands for PairCommands {
         Ok(())
     }
 }
+
+struct CompletedCommands {
+    commands: PairCommands,
+    manifest: Value,
+    fail_at: &'static str,
+}
+impl Commands for CompletedCommands {
+    fn ready(&self, _: &[String], _: &Cancellation) -> bool {
+        true
+    }
+    fn command(
+        &self,
+        program: &str,
+        args: &[String],
+        timeout: u64,
+        cancel: &Cancellation,
+    ) -> Result<()> {
+        if !self.fail_at.is_empty() && args.iter().any(|arg| arg.contains(self.fail_at)) {
+            bail!("injected {} failure", self.fail_at);
+        }
+        if args.iter().any(|arg| arg.contains("workflow-client")) {
+            self.commands.0.borrow_mut().push(args.join(" "));
+            return Ok(());
+        }
+        self.commands.command(program, args, timeout, cancel)
+    }
+    fn download(
+        &self,
+        _: &[String],
+        address: &str,
+        output: &Path,
+        file: &str,
+        _: u64,
+        _: &Cancellation,
+    ) -> Result<()> {
+        self.commands
+            .0
+            .borrow_mut()
+            .push(format!("download {address} {file}"));
+        let path = output.join(file);
+        fs::create_dir_all(path.parent().unwrap())?;
+        if file != "remote.tar.gz" {
+            return crate::write(path, "synthetic lifecycle fixture\n");
+        }
+        let server = address == "192.0.2.1";
+        let role = if server { "server" } else { "client" };
+        let mut environment = json!({
+            "role": role, "workflow_version": report::tests::VERSION,
+            "smoke": false, "boot_id": role, "manifest": self.manifest,
+            "server_address": "10.0.0.1", "bind_address": "10.0.0.1"
+        });
+        environment["server_resources"] = report::tests::resources();
+        let mut files = vec![(
+            format!("{role}-environment.json"),
+            serde_json::to_vec(&environment)?,
+        )];
+        if server {
+            files.push(("server-stopped".into(), b"ok\n".to_vec()));
+        } else {
+            files.push((
+                "workflow-trials.json".into(),
+                serde_json::to_vec(&report::tests::trials())?,
+            ));
+        }
+        let mut archive = tar::Builder::new(flate2::write::GzEncoder::new(
+            fs::File::create(path)?,
+            flate2::Compression::default(),
+        ));
+        for (name, bytes) in files {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(bytes.len() as u64);
+            header.set_mode(0o600);
+            header.set_cksum();
+            archive.append_data(&mut header, name, bytes.as_slice())?;
+        }
+        archive.into_inner()?.finish()?;
+        Ok(())
+    }
+}
+
+fn fixture_bundle(path: &Path) -> Value {
+    fs::create_dir(path).unwrap();
+    let mut binaries = serde_json::Map::new();
+    for name in [
+        "driver",
+        "capnp-reference",
+        "capnp-rust",
+        "tcp",
+        "native",
+        "grpc",
+        "websocket",
+        "capnp_cpp",
+        "hot_paths",
+        "gungraun-runner",
+    ] {
+        crate::write(path.join(name), "fake binary").unwrap();
+        binaries.insert(name.into(), json!(crate::hash("fake binary")));
+    }
+    let manifest = json!({"binaries": binaries});
+    crate::write_json(path.join("manifest.json"), &manifest).unwrap();
+    manifest
+}
+
+#[test]
+fn complete_remote_campaign_runs_both_controls_and_salvages_failed_portable_control() {
+    // Synthetic archives exercise orchestration only. These are never timing
+    // evidence and no process, provider API or paid host is contacted.
+    for fail_at in ["", "compare-portable", "compare /root/bench"] {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = dir.path().join("bundle");
+        let commands = CompletedCommands {
+            commands: PairCommands::default(),
+            manifest: fixture_bundle(&bundle),
+            fail_at,
+        };
+        let api = PairApi::default();
+        let output = dir.path().join("output");
+        let state = dir.path().join("state");
+        let result = run(
+            &api,
+            &bundle,
+            &output,
+            &state,
+            &tag("test/complete-pair"),
+            &Cancellation::default(),
+            &commands,
+        );
+        assert_eq!(result.is_ok(), fail_at.is_empty(), "{fail_at}: {result:?}");
+        assert!(api.hosts.borrow().is_empty());
+        assert!(api.keys.borrow().is_empty());
+        assert!(!state.join("client/host").exists());
+        assert!(output.join("remote/summary.json").is_file());
+        for file in [
+            "portable-loopback/trials.json",
+            "portable-loopback/environment.json",
+            "portable-loopback/summary.json",
+            "portable-loopback/README.md",
+            "portable-loopback.log",
+        ] {
+            assert_eq!(
+                fs::read_to_string(output.join(file)).unwrap(),
+                "synthetic lifecycle fixture\n"
+            );
+            assert!(commands
+                .commands
+                .0
+                .borrow()
+                .iter()
+                .any(|call| call == &format!("download 192.0.2.2 {file}")));
+        }
+        if fail_at.is_empty() {
+            let calls = commands.commands.0.borrow();
+            let legacy = calls
+                .iter()
+                .position(|call| {
+                    call.contains("CAPNTPROTO_BENCH_PORTABLE=0")
+                        && call.contains("compare /root/bench")
+                })
+                .unwrap();
+            let portable = calls
+                .iter()
+                .position(|call| call.contains("compare-portable /root/bench"))
+                .unwrap();
+            assert!(legacy < portable);
+            assert!(output.join("trials.json").is_file());
+        }
+    }
+}
+
 #[test]
 fn pair_lifecycle_cleans_up_after_second_creation_and_measurement_failures() {
     // No API, SSH, paid resource or real key is used by this fault campaign.

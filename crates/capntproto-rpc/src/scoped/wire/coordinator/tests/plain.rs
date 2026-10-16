@@ -43,6 +43,9 @@ impl ImportReceiver<()> for Replies {
     fn make_import(&mut self, _: ImportId) {}
 }
 impl transport::Input<()> for Replies {
+    fn has_buffered_next_frame(&self) -> bool {
+        !self.frames.is_empty()
+    }
     fn take_buffered_frame<'p>(
         &mut self,
         messages: &mut messages::Messages<'p, '_, '_>,
@@ -66,6 +69,161 @@ impl transport::Input<()> for Replies {
         self.consumed += 1;
         if let Some(stop) = &self.stop {
             stop.stop();
+        }
+    }
+}
+
+#[test]
+fn buffered_server_bursts_flush_at_budget_end_and_when_input_runs_out() {
+    #[derive(Default)]
+    struct OutputBytes {
+        bytes: Vec<u8>,
+        flushes: usize,
+    }
+    impl io::Flush for OutputBytes {
+        type Error = ();
+        fn poll_flush(&mut self, _: &mut Context<'_>) -> Poll<Result<(), io::IoError<()>>> {
+            self.flushes += 1;
+            Poll::Ready(Ok(()))
+        }
+    }
+    impl io::Write for OutputBytes {
+        fn poll_write(
+            &mut self,
+            _: &mut Context<'_>,
+            bytes: &[u8],
+        ) -> Poll<Result<usize, io::IoError<()>>> {
+            self.bytes.extend_from_slice(bytes);
+            Poll::Ready(Ok(bytes.len()))
+        }
+    }
+    for budget in [1, 8, 64] {
+        for capacity in [1, 8] {
+            with_peer(|mut driver, messages| {
+                let seen = Rc::new(Cell::new(0));
+                let target = expose(
+                    &mut driver,
+                    Rc::new(crate::local::Client::new(Echo(seen.clone()))),
+                );
+                let mut opts = options();
+                opts.budget = NonZeroUsize::new(budget).unwrap();
+                let mut coordinator = Coordinator::new(
+                    driver,
+                    ClientHooks::new(16, 16),
+                    NonZeroUsize::new(16).unwrap(),
+                    None,
+                    opts,
+                )
+                .unwrap();
+                let mut queue = messages::Queue::new_growing(0, capacity).unwrap();
+                let mut bytes = OutputBytes::default();
+                let mut reader = Replies::default();
+                let mut control = Policy {
+                    preserve_plain: true,
+                    ..Default::default()
+                };
+                let mut pending = None;
+                let mut pump = Pump::default();
+                let mut cx = Context::from_waker(Waker::noop());
+                let application_waker = Waker::from(coordinator.wake.clone());
+                let mut stop = std::pin::pin!(std::future::pending());
+                // Certify idle before the first arrival, just as a live server
+                // waiting for its next peer burst does.
+                for _ in 0..256 {
+                    coordinator
+                        .poll_io_work::<(), _, _>(
+                            messages,
+                            &mut queue,
+                            &mut transport::Writer(&mut bytes),
+                            &mut [0; 32],
+                            &NoResources,
+                            &mut control,
+                            &mut cx,
+                        )
+                        .unwrap();
+                    if coordinator.active == 0 {
+                        break;
+                    }
+                }
+                for id in 0..12 {
+                    let mut message = capnp::message::Builder::new_default();
+                    let mut call = message
+                        .init_root::<crate::rpc_capnp::message::Builder>()
+                        .init_call();
+                    call.set_question_id(id);
+                    call.set_interface_id(7);
+                    call.set_no_promise_pipelining(true);
+                    call.reborrow()
+                        .init_target()
+                        .set_imported_cap(target.to_wire());
+                    call.init_params()
+                        .init_content()
+                        .set_as::<capnp::text::Owned>("batched")
+                        .unwrap();
+                    let encoded = capnp::serialize::write_message_to_words(&message);
+                    let mut words = capnp::Word::allocate_zeroed_vec(encoded.len() / 8);
+                    capnp::Word::words_to_bytes_mut(&mut words).copy_from_slice(&encoded);
+                    reader.frames.push_back(words);
+                }
+                for _ in 0..4096 {
+                    if let Poll::Ready(result) = coordinator.poll_prepared(
+                        messages,
+                        &mut queue,
+                        &mut reader,
+                        &mut transport::Writer(&mut bytes),
+                        &mut [0; 32],
+                        &NoResources,
+                        &mut control,
+                        stop.as_mut(),
+                        &mut pending,
+                        &mut pump,
+                        &mut cx,
+                        &application_waker,
+                    ) {
+                        result.unwrap();
+                    }
+                    if reader.frames.is_empty()
+                        && pending.is_none()
+                        && queue.is_empty()
+                        && coordinator.active == 0
+                        && coordinator.output.is_clean()
+                    {
+                        break;
+                    }
+                }
+                assert_eq!(seen.get(), 12, "budget {budget}, capacity {capacity}");
+                assert!(queue.is_empty() && coordinator.output.is_clean());
+                if budget == 64 && capacity == 8 {
+                    assert!(
+                        bytes.flushes < 12,
+                        "buffered burst was not coalesced: {}",
+                        bytes.flushes
+                    );
+                }
+                let mut source = bytes.bytes.as_slice();
+                for id in 0..12 {
+                    let reply =
+                        capnp::serialize::read_message(&mut source, Default::default()).unwrap();
+                    let crate::rpc_capnp::message::Return(ret) = reply
+                        .get_root::<crate::rpc_capnp::message::Reader>()
+                        .unwrap()
+                        .which()
+                        .unwrap()
+                    else {
+                        panic!("Return")
+                    };
+                    assert_eq!(ret.unwrap().get_answer_id(), id);
+                }
+                assert!(source.is_empty());
+                futures::executor::block_on(coordinator.terminate::<NoResources, (), ()>(
+                    messages,
+                    &mut queue,
+                    &mut control,
+                    Ok(()),
+                ))
+                .unwrap();
+                reclaimed(messages);
+            });
         }
     }
 }
@@ -167,6 +325,14 @@ fn indexed_reply_batches_respect_frame_budget_and_stop_between_frames() {
                 let mut stopped = false;
                 for _ in 0..4096 {
                     let before = reader.consumed;
+                    let control_polls = control.polls;
+                    if budget == 1 && before == 1 && !stop_after_first {
+                        // A reply that only retires its own question preserves
+                        // idle scans, but an independent control wake still
+                        // invalidates that certificate before the next frame.
+                        assert_eq!(coordinator.active, 0);
+                        control.wake.as_ref().unwrap().wake_by_ref();
+                    }
                     let result = coordinator.poll_prepared(
                         messages,
                         &mut queue,
@@ -181,6 +347,9 @@ fn indexed_reply_batches_respect_frame_budget_and_stop_between_frames() {
                         &mut cx,
                         &application_waker,
                     );
+                    if budget == 1 && before == 1 && !stop_after_first {
+                        assert!(control.polls > control_polls);
+                    }
                     assert!(reader.consumed - before <= budget.min(8));
                     if let Poll::Ready(result) = result {
                         assert_eq!(result.unwrap(), None);

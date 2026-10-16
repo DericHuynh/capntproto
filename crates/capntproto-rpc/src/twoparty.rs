@@ -85,6 +85,22 @@ impl<T: AsyncRead + Unpin> crate::IncomingMessageStream for OwnedIncomingStream<
     }
 }
 impl<T: AsyncRead + Unpin> crate::IncomingFrameStream for IncomingStream<T> {
+    fn has_buffered_next_frame(&self) -> bool {
+        self.input.has_buffered_next_frame()
+    }
+    fn poll_frame_size(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<capnp::Result<Option<usize>>> {
+        self.input.poll_stream_frame_size(cx)
+    }
+    fn poll_read_frame(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+        bytes: &mut [u8],
+    ) -> std::task::Poll<capnp::Result<usize>> {
+        self.input.poll_stream_frame(cx, bytes)
+    }
     fn poll_frame(
         &mut self,
         cx: &mut std::task::Context<'_>,

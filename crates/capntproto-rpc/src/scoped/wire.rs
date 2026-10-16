@@ -296,23 +296,11 @@ impl<'id> ClientHooks<'id> {
         let mut direct_stage = None;
         let outcome = (|| {
             let target = self.target(call)?;
-            // A settled imported endpoint cannot become a local producer. Its
-            // hosted owner can consume the driver's result directly, without
-            // another completion channel and polling ledger. Projections use
-            // the same queued task and question identities as Invocations.
-            let direct = direct
-                && call.third_party.is_none()
-                && driver.runtime.is_settled(target).map_err(wire_error)?
-                && matches!(
-                    driver.runtime.inspect(target).map_err(wire_error)?,
-                    capntproto_rpc_engine::clients::Destination::Endpoint {
-                        owner: capntproto_rpc_wire::clients::Route::Capability(
-                            capntproto_rpc_wire::clients::Endpoint::Imported(_)
-                        ),
-                        location: capntproto_rpc_engine::clients::Location::Remote(_),
-                        ..
-                    }
-                );
+            // Remote completion needs no second channel or polling ledger.
+            // Keep unresolved calls direct too: Calls binds a completion owner
+            // before accepting one locally. Both paths retain the same queued
+            // task, cancellation and pipeline identities.
+            let direct = direct && call.third_party.is_none();
             let params = call.params()?;
             let size = params.target_size()?;
             // A private one-slot table with a reachable capability already has

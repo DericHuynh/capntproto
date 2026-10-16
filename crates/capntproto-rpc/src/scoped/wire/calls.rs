@@ -622,7 +622,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                     self.admit(hooks, driver, messages, options, cx, &mut import, &mut send)
                         .map_err(|error| *error)
                 }
-                1 => self.accept_local(driver),
+                1 => self.accept_local(driver, messages),
                 2 => self.send_next(driver, messages, &mut send),
                 // Resolve wire completions before polling their hosted
                 // receivers. Otherwise every reply takes an extra full scan
@@ -808,6 +808,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
     fn accept_local<A, P: Copy + Eq>(
         &mut self,
         driver: &mut Peer<'p, 'id, '_, I, A, P, C, H>,
+        messages: &messages::Messages<'p, '_, '_>,
     ) -> capnp::Result<Option<Progress>> {
         let Some(ready) = driver.runtime.next_ready().map_err(wire_error)? else {
             return Ok(None);
@@ -834,6 +835,14 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         else {
             return Ok(None);
         };
+        if matches!(entry.wire.direct, Some(DirectStage::Queued)) {
+            let (sender, receiver) = shared::channel();
+            self.invocations
+                .bind_queued(driver, messages, task, sender.into())
+                .map_err(|rejected| wire_error(rejected.error))?;
+            entry.wire.receiver = Some(receiver);
+            entry.wire.direct = None;
+        }
         let Some(call) = self.invocations.accept_local(driver).map_err(wire_error)? else {
             return Ok(None);
         };
@@ -930,10 +939,8 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 only_promise_pipeline: false,
             };
             let encoded = call
-                .hints
-                .no_promise_pipelining
-                .then(|| call.params.prepared_call())
-                .flatten()
+                .params
+                .prepared_call()
                 .map(|builder| builder.encoded(method, options))
                 .transpose()
                 .map_err(wire_error)?

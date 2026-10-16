@@ -1271,26 +1271,17 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         message: Box<capntproto_rpc_wire::owned::PlainResults>,
         controls: &impl Control<'p, 'id, 's, I, P, C, H, O>,
     ) {
-        let was_idle = self.active == 0 && self.control_idle && !self.output_blocked;
         self.calls.deliver_plain(index, message);
         if controls.plain_return_preserves_idle() {
-            if self.active == 0 {
-                self.cursor = 2;
-            }
-            // This fused transition admits no grants and
-            // requires noFinishNeeded. It only removes the
-            // original question and pins immutable bytes.
-            // Endpoint/cancellation/control side effects
-            // independently notify WorkWake; preserve an
-            // existing cleanup certificate in their absence.
-            self.active |= if was_idle {
-                1 << 2
-            } else {
-                (1 << 2) | (1 << 4)
-            };
-            self.calls.invalidate_scan();
-            if !was_idle {
+            // This fused transition removes an original data-only question,
+            // requires no Finish, and admits no grants or pipeline work. It
+            // cannot enable another call or invalidate a partial idle scan.
+            // Completion, endpoint retirement and newly enqueued work retain
+            // their independent registered wakeups. Restarting the call scan
+            // here would revisit every outstanding owner after every reply.
+            if self.driver.runtime.has_retired() {
                 self.driver.invalidate_maintenance();
+                self.active |= 1 << 4;
             }
         } else {
             self.resume_at(2);
@@ -1489,8 +1480,28 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     return Poll::Pending;
                 }
             }
-            match self.poll_io_work_using(
-                messages, queue, writer, scratch, output, controls, cx, waker,
+            // An already buffered successor lets a plain server reply join a
+            // bounded burst. Never wait for input to flush output, and retain
+            // ordinary flush behavior at the frame budget or under pressure.
+            let defer_output = self.driver.has_plain_pending_call()
+                && self.calls.is_empty()
+                && self.worker.is_empty()
+                && self.foreign.is_empty()
+                && self.commands.is_empty()
+                && pump.frames != 0
+                && pump.frames < self.options.budget.get().min(8)
+                && reader.has_buffered_next_frame()
+                && self.policy.poll_ready(cx).is_ready();
+            match self.poll_io_work_batch(
+                messages,
+                queue,
+                writer,
+                scratch,
+                output,
+                controls,
+                cx,
+                waker,
+                defer_output,
             ) {
                 Err(error) => return Poll::Ready(Err(error)),
                 Ok(true) => return Poll::Pending,
@@ -1735,6 +1746,25 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         cx: &mut Context<'_>,
         waker: &Waker,
     ) -> Result<bool, Box<Cause<R, W::Error>>> {
+        self.poll_io_work_batch(
+            messages, queue, writer, scratch, output, controls, cx, waker, false,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
+    fn poll_io_work_batch<R, O: Output<I>, W: io::WriteResources<O::Bundle>>(
+        &mut self,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        queue: &mut messages::Queue<'p, '_, O::Bundle>,
+        writer: &mut W,
+        scratch: &mut [u32],
+        output: &O,
+        controls: &mut impl Control<'p, 'id, 's, I, P, C, H, O>,
+        cx: &mut Context<'_>,
+        waker: &Waker,
+        defer_output: bool,
+    ) -> Result<bool, Box<Cause<R, W::Error>>> {
         // IO readiness alone changes no protocol state. Preserve a completed
         // scan while waiting for the next frame, including the parent waker
         // registration. Pending flushes and newly queued output still run.
@@ -1762,7 +1792,10 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 self.idle = false;
                 controls.set_idle(false);
             }
-            let mut output_ready =
+            let mut output_ready = if defer_output && self.output.is_clean() && !self.output_blocked
+            {
+                false
+            } else {
                 match self
                     .output
                     .poll(writer, queue, messages, cx, self.options.budget)
@@ -1770,7 +1803,8 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     Poll::Ready(Err(e)) => return Err(Box::new(Cause::Output(e))),
                     Poll::Ready(Ok(())) => true,
                     Poll::Pending => false,
-                };
+                }
+            };
             // Publication already committed protocol state and invalidated scans.
             // Draining bytes only reactivates lanes which waited for FIFO capacity;
             // resource/application notifications still arrive through WorkWake.
@@ -1815,9 +1849,25 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             if preserves_control {
                 self.control_idle = true;
             }
+            if preserves_control
+                && self.active == 1 << 4
+                && remaining != 0
+                && self.driver.maintenance_is_idle()
+            {
+                // An unflushed plain publication adds no cleanup obligation.
+                // Certify that before deciding whether its buffered successor
+                // permits a reply batch. Later IO notifications remain live.
+                remaining -= 1;
+                self.active = 0;
+            }
             // Publish bytes produced by this turn without an executor round trip.
             // Physical flush remains owned by Output, including a Pending receipt.
-            if !queue.is_empty() {
+            if !queue.is_empty()
+                && !(defer_output
+                    && !self.delivered
+                    && !self.output_blocked
+                    && self.policy.poll_ready(cx).is_ready())
+            {
                 // This turn may have published while the transport was idle.
                 // Wake it before handing over any frame, including network controls.
                 if self.idle {
@@ -1845,16 +1895,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         self.changed();
                     }
                 }
-            }
-            if preserves_control
-                && self.active == 1 << 4
-                && remaining != 0
-                && self.driver.maintenance_is_idle()
-            {
-                // The new plain question adds no immediate cleanup. Spend the
-                // same empty-lane quantum here without rebuilding poll adapters.
-                remaining -= 1;
-                self.active = 0;
             }
             let idle = self.active == 0
                 && output_ready

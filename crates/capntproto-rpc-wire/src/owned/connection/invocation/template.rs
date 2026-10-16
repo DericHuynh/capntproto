@@ -150,13 +150,17 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
     /// Return a data-only certificate for one or two segments, or let the general
     /// codec handle more segments. Any capability pointer in the content fails
     /// validation; callers with a capability table must use the general codec.
+    /// The caller may select the ordinary no-pipelining hint at publication;
+    /// the copied private header receives that hint without editing the source.
     #[inline(always)]
     pub fn encoded(
         &self,
         method: calls::DynamicCall,
         options: capnp::message::ReaderOptions,
     ) -> Result<Option<EncodedCall<'_>>, super::super::super::Error> {
-        if self.method != method {
+        if (self.method.interface, self.method.method) != (method.interface, method.method)
+            || method.only_promise_pipeline
+        {
             return Err(super::super::super::Error::WrongMessage);
         }
         let Some((call, target)) = self.offsets else {
@@ -209,6 +213,7 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
             options,
             template: PlainTemplate {
                 method: (method.interface, method.method),
+                no_promise_pipelining: method.no_promise_pipelining,
                 call,
                 target,
                 length: segment.len(),
@@ -270,7 +275,7 @@ impl<'a> EncodedCall<'a> {
         options: capnp::message::ReaderOptions,
     ) -> Result<PlainTemplate, super::super::super::Error> {
         if self.template.method != (method.interface, method.method)
-            || !method.no_promise_pipelining
+            || self.template.no_promise_pipelining != method.no_promise_pipelining
             || method.only_promise_pipeline
         {
             return Err(super::super::super::Error::WrongMessage);
@@ -279,12 +284,13 @@ impl<'a> EncodedCall<'a> {
             && options.nesting_limit == self.options.nesting_limit
         {
             Ok(self.template)
-        } else if let Some(second) = self.second {
+        } else {
             // The private certificate already proves the immutable envelope's
             // method, target layout and empty capability table. Recheck only
             // the ordinary envelope/payload traversal under the new limits.
-            let segments = [self.segment, second];
-            let words = self.segment.len() / 8 + second.len() / 8;
+            let segments = [self.segment, self.second.unwrap_or(&[])];
+            let segments = &segments[..if self.second.is_some() { 2 } else { 1 }];
+            let words = self.segment.len() / 8 + self.second.map_or(0, |second| second.len() / 8);
             if options
                 .traversal_limit_in_words
                 .is_some_and(|limit| words > limit)
@@ -294,7 +300,7 @@ impl<'a> EncodedCall<'a> {
                 );
             }
             let reader =
-                capnp::message::Reader::new(capnp::message::SegmentArray::new(&segments), options);
+                capnp::message::Reader::new(capnp::message::SegmentArray::new(segments), options);
             let root = reader.get_root::<rpc_capnp::message::Reader>()?;
             let rpc_capnp::message::Call(call) = root
                 .which()
@@ -307,8 +313,6 @@ impl<'a> EncodedCall<'a> {
                 .get_content()
                 .validate_capability_indices(0)?;
             Ok(self.template)
-        } else {
-            PlainTemplate::read_segment(self.segment, method, options)
         }
     }
     #[inline(always)]
@@ -348,8 +352,9 @@ impl<'a> EncodedCall<'a> {
                     .copy_from_slice(&question.to_wire().to_le_bytes());
                 body[template.target..template.target + 4]
                     .copy_from_slice(&target.to_wire().to_le_bytes());
-                body[template.call + 16] =
-                    (body[template.call + 16] & !0b101) | u8::from(allow_handoff);
+                body[template.call + 16] = (body[template.call + 16] & !0b111)
+                    | u8::from(allow_handoff)
+                    | (u8::from(template.no_promise_pipelining) << 1);
             })
             .map_err(super::super::super::Error::Storage)?;
         Ok(Frame::new(lease, options))
@@ -359,6 +364,7 @@ impl<'a> EncodedCall<'a> {
 #[derive(Clone, Copy)]
 pub(super) struct PlainTemplate {
     pub(super) method: (u64, u16),
+    no_promise_pipelining: bool,
     call: usize,
     target: usize,
     length: usize,
@@ -390,9 +396,8 @@ impl PlainTemplate {
         let call = call?;
         if call.get_interface_id() != method.interface
             || call.get_method_id() != method.method
-            || !call.get_no_promise_pipelining()
+            || call.get_no_promise_pipelining() != method.no_promise_pipelining
             || call.get_only_promise_pipeline()
-            || !method.no_promise_pipelining
             || method.only_promise_pipeline
         {
             return Err(super::super::super::Error::WrongMessage);
@@ -422,7 +427,9 @@ impl PlainTemplate {
                 let body = &mut output[8..];
                 body[self.call..self.call + 4].copy_from_slice(&question.to_wire().to_le_bytes());
                 body[self.target..self.target + 4].copy_from_slice(&target.to_wire().to_le_bytes());
-                body[self.call + 16] = (body[self.call + 16] & !0b101) | u8::from(allow_handoff);
+                body[self.call + 16] = (body[self.call + 16] & !0b111)
+                    | u8::from(allow_handoff)
+                    | (u8::from(self.no_promise_pipelining) << 1);
             })
             .map_err(super::super::super::Error::Storage)?;
         Ok(Frame::new(lease, options))
@@ -449,6 +456,7 @@ impl PlainTemplate {
         };
         Some(Self {
             method: (call.get_interface_id(), call.get_method_id()),
+            no_promise_pipelining: call.get_no_promise_pipelining(),
             call: offset(
                 call.into_internal_struct_reader()
                     .get_data_section_as_blob(),
@@ -487,7 +495,9 @@ impl PlainTemplate {
             // No pointer, discriminant, schema payload or capability is changed.
             output[self.call..self.call + 4].copy_from_slice(&question.to_wire().to_le_bytes());
             output[self.target..self.target + 4].copy_from_slice(&target.to_wire().to_le_bytes());
-            output[self.call + 16] = (output[self.call + 16] & !0b101) | u8::from(allow_handoff);
+            output[self.call + 16] = (output[self.call + 16] & !0b111)
+                | u8::from(allow_handoff)
+                | (u8::from(self.no_promise_pipelining) << 1);
             Ok(())
         })();
         if let Err(error) = result {
@@ -508,6 +518,87 @@ impl PlainTemplate {
 mod tests {
     use super::*;
     use capnp::{field_api::Data, word, Word};
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn prepared_pipeline_hints_preserve_source_and_reader_limits() {
+        for length in [16, 4096] {
+            let mut call = PreparedCall::new(
+                capnp::message::Builder::new(
+                    capnp::message::HeapAllocator::new().first_segment_words(32),
+                ),
+                17,
+                3,
+            )
+            .unwrap();
+            let data = alloc::vec![0xa5; length];
+            call.params()
+                .set_as::<capnp::data::Owned>(&data[..])
+                .unwrap();
+            for no_promise_pipelining in [false, true] {
+                let method = calls::DynamicCall {
+                    no_promise_pipelining,
+                    ..call.method
+                };
+                let encoded = call.encoded(method, Default::default()).unwrap().unwrap();
+                let mut changed = capnp::message::ReaderOptions::new();
+                changed.nesting_limit -= 1;
+                assert!(encoded.for_policy(method, changed).is_ok());
+                changed.nesting_limit = 0;
+                assert!(encoded.for_policy(method, changed).is_err());
+                let wrong = calls::DynamicCall {
+                    no_promise_pipelining: !no_promise_pipelining,
+                    ..method
+                };
+                assert!(encoded.for_policy(wrong, Default::default()).is_err());
+                let mut words = Word::allocate_zeroed_vec(1024);
+                let mut buffers = [messages::Buffer::new(Word::words_to_bytes_mut(&mut words))];
+                messages::with_messages(&mut buffers, &mut [], |messages| {
+                    let frame = encoded
+                        .copy(
+                            encoded.template,
+                            messages,
+                            QuestionId::from_wire(5),
+                            ImportId::from_wire(7),
+                            true,
+                            Default::default(),
+                        )
+                        .unwrap();
+                    frame
+                        .with(messages, |root| {
+                            let rpc_capnp::message::Call(value) = root.which().unwrap() else {
+                                panic!()
+                            };
+                            let value = value.unwrap();
+                            assert_eq!(value.get_no_promise_pipelining(), no_promise_pipelining);
+                            assert!(!value.get_only_promise_pipeline());
+                            assert_eq!(value.get_question_id(), 5);
+                            assert!(value.get_allow_third_party_tail_call());
+                            assert_eq!(
+                                value
+                                    .get_params()
+                                    .unwrap()
+                                    .get_content()
+                                    .get_as::<capnp::data::Reader>()
+                                    .unwrap(),
+                                data
+                            );
+                        })
+                        .unwrap();
+                    frame.release(messages);
+                })
+                .unwrap();
+            }
+            let root = call
+                .message()
+                .get_root_as_reader::<rpc_capnp::message::Reader>()
+                .unwrap();
+            let rpc_capnp::message::Call(value) = root.which().unwrap() else {
+                panic!()
+            };
+            assert!(value.unwrap().get_no_promise_pipelining());
+        }
+    }
 
     #[cfg(feature = "alloc")]
     #[test]

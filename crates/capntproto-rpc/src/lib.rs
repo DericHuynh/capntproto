@@ -414,8 +414,26 @@ pub trait IncomingMessageStream {
 /// Dropping the stream ends reception. Partial progress survives Pending.
 #[cfg(feature = "std")]
 pub trait IncomingFrameStream {
+    /// A complete next frame is available without IO or transferring ownership.
+    /// This hint permits bounded reply batching; false always remains valid.
+    fn has_buffered_next_frame(&self) -> bool {
+        false
+    }
     fn poll_frame(&mut self, cx: &mut Context<'_>) -> Poll<capnp::Result<Option<&[u8]>>>;
     fn frame(&self) -> Option<&[u8]>;
+    /// Prepare a complete frame or a validated streaming length. The default
+    /// retains complete-frame behavior. Streaming implementations expose no
+    /// frame slice until complete and implement `poll_read_frame` below.
+    fn poll_frame_size(&mut self, cx: &mut Context<'_>) -> Poll<capnp::Result<Option<usize>>> {
+        self.poll_frame(cx).map_ok(|frame| frame.map(<[u8]>::len))
+    }
+    /// Read an incomplete prepared frame into caller-owned storage, without
+    /// crossing its boundary. Pending must retain progress and register a wake.
+    fn poll_read_frame(&mut self, _: &mut Context<'_>, _: &mut [u8]) -> Poll<capnp::Result<usize>> {
+        Poll::Ready(Err(Error::unimplemented(
+            "stream does not support partial frames".into(),
+        )))
+    }
     /// Release the current frame. An adapter abandoning incomplete input must
     /// stop polling this stream and retain it until output drain has finished.
     fn finish_frame(&mut self);

@@ -2971,6 +2971,67 @@ The most recent complete local twelve-workflow run belongs to the earlier
 allocation changes. Every intermediate trial, profile, patch and protocol trace
 is retained in `target/portable-performance-scheduling-20261015/`.
 
+### Dedicated checkpoint and direct receive follow-up (October 16, 2026)
+
+[Run 38827168630](https://github.com/DericHuynh/capntproto/actions/runs/38827168630)
+measured `89b9d4ee1f33bc24ac3d57ee97bc39a890ae60f2` and completed cleanup.
+Artifact `12017182524` retains all raw trials and environments. Ten of twelve
+remote workflows and two of four loopback payloads pass: **12 of 16**, so the
+gap remains open. Different host/network timing makes cross-campaign absolute
+latency comparisons inappropriate; each ratio uses that campaign's own peers.
+
+| Remaining workload | Portable p50 (µs) | Faster reference p50 (µs) | Ratio |
+| --- | ---: | ---: | ---: |
+| Remote fanout-32 | 998.017 | C++ 855.475 | 1.167× |
+| Remote callback | 574.565 | Legacy 528.118 | 1.088× |
+| Loopback empty | 40.673 | Legacy 36.353 | 1.119× |
+| Loopback 64 KiB | 93.711 | Legacy 83.485 | 1.122× |
+
+The next experiments preserve idle call scans after receipt-free data replies,
+stream incomplete large frames directly into the bounded message pool, and
+defer an internal completion binding until a queued call is accepted locally.
+Task generations, cancellation, pipeline projections and local early results
+retain their ordinary owners. Prepared data-only Call certificates also support
+the requested pipeline hint without mutating their source envelope.
+
+The direct receive prototype reduces local 4 MiB pooled p50 from 5.35 ms to
+4.23 ms, below both references in that run. It removes about 15 million
+instructions on each peer in the 10-warmup/50-workflow diagnostic. Preserving
+idle reply scans cuts the fanout client's instructions from 56,564,584 to
+36,636,892, but its first timing campaign regresses fanout. Deferring completion
+bindings reduces pipeline client instructions from 144,189,791 to 135,070,318.
+These instruction results do not qualify latency. The complete rotating local
+`lazybind` campaign passes seven of twelve cells and retains every miss.
+
+A further candidate batches replies only when a complete successor is already
+buffered. It retains the eight-frame cooperative limit and flushes when input
+runs out, output capacity blocks progress, or that limit is reached. Its large
+receive path preserves reusable buffers through 128 KiB and streams larger
+incomplete frames. The batching candidate's local fanout
+p50 falls from 185.103 µs to 138.785 µs (0.777× the faster reference), while
+64 KiB still misses at 1.314×. Tests cover partial
+stream reads, truncation, abandoned frames, sticky IO/counter failures, exact
+frame boundaries, retryable binding rejection, local pipelines, and bounded
+reply bursts. Synthetic benchmark lifecycle tests exercise both controls and
+artifact salvage; they are never measurement evidence. Coverage baselines and
+the 1.05× acceptance rule remain unchanged.
+
+The adaptive-prefix experiment is excluded: its 64 KiB client/server instruction
+counts rise from 21,691,798 / 19,702,169 to 21,751,863 / 19,737,810, and its
+five-repetition timing campaign still misses that cell at 1.152×. All trials,
+including this rejected experiment, remain under
+`target/portable-performance-receive-20261016/`. The retained `batchreply` binary
+SHA-256 is `dd2700cda19a8e21e0889b78da6bd22c52658ba1b84cc6c2cd07cc17dd35d4ff`.
+Validation passes 261 RPC, 124 allocating wire, 48 futures, 24 buffered-input,
+86 fixed and 89 growing portable tests, plus 72 mixed-peer workflow checks.
+These checks include C++ framing and the buffered-input TLA+ model; they do not
+establish the latency target.
+
+Updates to the explicit `codex/portable-qualification` branch run the same
+dedicated workflow as manual dispatch. PR correctness, coverage and formal
+verification remain independent required checks; a timing campaign does not
+replace them.
+
 ### Portable and legacy instruction qualification
 
 The October 15 optimization batch meets a **1.05× portable/legacy instruction

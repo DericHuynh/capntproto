@@ -79,6 +79,68 @@ fn remote<'p, 'id>(driver: &mut Peer<'p, 'id, '_>) -> clients::Client<'id> {
 }
 
 #[test]
+fn late_completion_binding_preserves_task_and_sender_on_rejection() {
+    use capntproto_rpc_engine::completion::shared;
+    with_driver(|mut driver, messages| {
+        let target = driver
+            .runtime
+            .endpoint(binding::Route::local(17), clients::Location::Local)
+            .unwrap();
+        let task = driver
+            .enqueue_dynamic(
+                &target,
+                DynamicCall::default(),
+                &[],
+                messages,
+                256,
+                Default::default(),
+                |_| Ok(()),
+            )
+            .unwrap();
+        let mut full = Invocations::new_growing(0, 0).unwrap();
+        let (sender, receiver) = shared::channel();
+        let rejected = full
+            .bind_queued(&driver, messages, task, sender.into())
+            .err()
+            .expect("zero capacity");
+        assert_eq!(rejected.error, Error::Busy);
+        assert_eq!(driver.runtime.queued(), 1);
+        let mut invocations = Invocations::new_growing(0, 1).unwrap();
+        invocations
+            .bind_queued(&driver, messages, task, rejected.sender)
+            .unwrap_or_else(|_| panic!("retry keeps sender"));
+        let (duplicate, duplicate_receiver) = shared::channel();
+        let rejected = invocations
+            .bind_queued(&driver, messages, task, duplicate.into())
+            .err()
+            .expect("duplicate binding");
+        assert_eq!(rejected.error, Error::UnknownInvocation);
+        let local = invocations.accept_local(&mut driver).unwrap().unwrap();
+        assert_eq!(local.task(), task);
+        assert_eq!(driver.runtime.queued(), 0);
+        // A running or retired generation cannot be rebound, even in another
+        // registry with free capacity.
+        let mut other = Invocations::new_growing(0, 1).unwrap();
+        let rejected = other
+            .bind_queued(&driver, messages, task, rejected.sender)
+            .err()
+            .expect("running task is no longer queued");
+        assert_eq!(rejected.error, Error::UnknownInvocation);
+        assert_eq!(invocations.terminate(&mut driver, messages), 1);
+        local.release(&mut driver, messages);
+        let rejected = other
+            .bind_queued(&driver, messages, task, rejected.sender)
+            .err()
+            .expect("retired task");
+        assert_eq!(rejected.error, Error::UnknownInvocation);
+        drop((rejected, receiver, duplicate_receiver));
+        driver.runtime.release(target);
+        let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+        close(driver, messages, &mut queue);
+    });
+}
+
+#[test]
 fn idle_certificate_observes_new_retirement_without_invalidation() {
     with_driver(|mut driver, messages| {
         let mut queue = messages::Queue::new_growing(0, 8).unwrap();
@@ -1046,6 +1108,109 @@ fn invocation_and_resolve_publish_resources_with_exact_descriptors_and_retry_bac
         }
         panic!("cleanup");
     });
+}
+
+#[test]
+fn plain_return_shortcuts_preserve_cancellation_pipeline_and_control_owners() {
+    use super::super::PlainReceived;
+    for buffered in [false, true] {
+        for reason in [
+            "no-question",
+            "canceled",
+            "pipeline",
+            "control",
+            "disconnected",
+        ] {
+            with_driver(|mut driver, messages| {
+                let target = remote(&mut driver);
+                let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+                let params = capnp::message::Builder::new_default();
+                let key = if reason == "no-question" {
+                    None
+                } else {
+                    let key = driver
+                        .try_send_immediate(
+                            &target,
+                            DynamicCall {
+                                no_promise_pipelining: reason != "pipeline",
+                                ..Default::default()
+                            },
+                            params.get_root_as_reader().unwrap(),
+                            messages,
+                            &mut queue,
+                            128,
+                            Default::default(),
+                            (),
+                        )
+                        .unwrap()
+                        .unwrap();
+                    drain(&mut queue, messages, |_| {});
+                    Some(key)
+                };
+                let projection = if reason == "pipeline" {
+                    Some(
+                        driver
+                            .pipeline(key.unwrap(), pipeline::Path::new(&[]))
+                            .unwrap(),
+                    )
+                } else {
+                    None
+                };
+                if reason == "canceled" {
+                    driver.cancel(key.unwrap()).unwrap();
+                }
+                if reason == "disconnected" {
+                    driver.disconnect(capnp::ErrorKind::Disconnected);
+                }
+                let frame = Frame::build(messages, 128, Default::default(), |builder| {
+                    if reason == "control" {
+                        return crate::calls::bootstrap(builder, QuestionId::from_wire(42));
+                    }
+                    let root = builder.try_init_root::<Message>()?;
+                    let mut ret = root.into_field(Message::RETURN).init()?;
+                    ret.scalar(Return::ANSWER_ID)
+                        .set(key.map_or(0, |key| key.id().to_wire()));
+                    ret.scalar(Return::NO_FINISH_NEEDED).set(true);
+                    ret.into_field(Return::RESULTS).init()?;
+                    Ok(())
+                })
+                .unwrap();
+                let bytes = messages.read(&frame.lease).to_vec();
+                let frame = if buffered {
+                    assert!(driver
+                        .try_receive_plain_buffered::<()>(
+                            &bytes,
+                            Default::default(),
+                            messages,
+                            |_| panic!("{reason} cannot select a direct sink")
+                        )
+                        .unwrap()
+                        .is_none());
+                    frame
+                } else {
+                    let PlainReceived::Deferred(frame) = driver
+                        .try_receive_plain_owned::<()>(frame, messages, |_| {
+                            panic!("{reason} cannot select a direct sink")
+                        })
+                        .unwrap_or_else(|(error, _)| panic!("{error:?}"))
+                    else {
+                        panic!("ineligible reply was consumed")
+                    };
+                    frame
+                };
+                assert_eq!(&*messages.read(&frame.lease), bytes.as_slice());
+                if let Some(key) = key {
+                    assert!(driver.ledgers.questions.contains(key));
+                }
+                frame.release(messages);
+                if let Some(projection) = projection {
+                    driver.runtime.release(projection);
+                }
+                driver.runtime.release(target);
+                close(driver, messages, &mut queue);
+            });
+        }
+    }
 }
 
 #[test]

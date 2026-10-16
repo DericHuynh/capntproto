@@ -1,5 +1,9 @@
 name: Performance / Dedicated benchmarks
 on:
+  # Explicit qualification updates run the same dedicated campaign without
+  # waiting for the PR's longer coverage/formal verification dependency chain.
+  push:
+    branches: [codex/portable-qualification]
   workflow_call:
     secrets:
       DIGITALOCEAN_ACCESS_TOKEN:

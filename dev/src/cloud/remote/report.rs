@@ -279,12 +279,13 @@ pub(super) fn generate(output: &Path, bundle: &Path) -> Result<()> {
     crate::write(output.join("p50-ratios.svg"), svg)
 }
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
+    pub(crate) use super::support::VERSION;
     use super::*;
-    fn resources() -> Value {
+    pub(crate) fn resources() -> Value {
         json!(IMPLEMENTATIONS.map(|implementation| json!({"implementation":implementation})))
     }
-    fn trials() -> Vec<Value> {
+    pub(crate) fn trials() -> Vec<Value> {
         let mut trials = Vec::new();
         for case in cases() {
             for implementation in IMPLEMENTATIONS {

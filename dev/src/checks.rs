@@ -288,6 +288,16 @@ pub fn workflows() -> Result<()> {
 fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
     let mut automatic = Vec::new();
     for (name, w) in all {
+        if name == "performance" && w["on"].get("push").is_some() {
+            // An explicit qualification branch can run the same campaign as
+            // manual dispatch. It must never duplicate main/PR CI triggers.
+            ensure!(
+                w["on"]["push"] == json!({"branches": ["codex/portable-qualification"]})
+                    && w["on"].get("pull_request").is_none(),
+                "performance qualification must use only its explicit branch"
+            );
+            continue;
+        }
         if w["on"].get("push").is_some() || w["on"].get("pull_request").is_some() {
             automatic.push(name.as_str());
         }
@@ -528,8 +538,12 @@ fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
     }
     ensure!(
         keys(&all["performance"]["on"])?
-            == BTreeSet::from(["workflow_dispatch".into(), "workflow_call".into()]),
-        "benchmarks must be called by CI or explicitly dispatched"
+            == BTreeSet::from([
+                "workflow_dispatch".into(),
+                "workflow_call".into(),
+                "push".into()
+            ]),
+        "benchmarks must be called by CI, explicitly dispatched, or use the qualification branch"
     );
     let mut groups = BTreeSet::new();
     for name in ["performance", "maintenance-benchmarks", "reports"] {
