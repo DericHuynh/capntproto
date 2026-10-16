@@ -13,6 +13,16 @@ use capntproto_rpc_wire::{attachments::Sender, clients::Endpoint, Capacity};
 /// after admission, EOF, failure or cancellation, before any following frame.
 /// A discarded run future requires dropping this input along with its pool.
 pub trait Input<I>: io::Read + ImportReceiver<I> {
+    /// Optionally transfer a complete immutable allocation into the bounded
+    /// message pool. Rejection leaves bytes and attachments unconsumed. Success
+    /// retains attachments until finish_frame, like take_buffered_frame.
+    fn take_shared_frame<'p>(
+        &mut self,
+        _: &mut messages::Messages<'p, '_, '_>,
+        _: capnp::message::ReaderOptions,
+    ) -> Result<Option<Frame<'p>>, capntproto_rpc_wire::owned::Error> {
+        Ok(None)
+    }
     /// A complete next frame is buffered after finishing the previous one.
     /// Inspect only; do not read bytes or consume ancillary resources here.
     fn has_buffered_next_frame(&self) -> bool {

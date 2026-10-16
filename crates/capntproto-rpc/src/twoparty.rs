@@ -110,6 +110,9 @@ impl<T: AsyncRead + Unpin> crate::IncomingFrameStream for IncomingStream<T> {
     fn frame(&self) -> Option<&[u8]> {
         self.input.borrowed_frame()
     }
+    fn share_frame(&mut self) -> Option<(std::sync::Arc<Vec<u8>>, core::ops::Range<usize>)> {
+        self.input.share_borrowed_frame()
+    }
     fn finish_frame(&mut self) {
         self.input.finish_borrowed_frame();
     }

@@ -421,6 +421,13 @@ pub trait IncomingFrameStream {
     }
     fn poll_frame(&mut self, cx: &mut Context<'_>) -> Poll<capnp::Result<Option<&[u8]>>>;
     fn frame(&self) -> Option<&[u8]>;
+    /// Retain the current frame's immutable byte allocation and exact range.
+    /// The allocation may contain other bytes; consumers must charge its full
+    /// capacity. No input is consumed. After finish_frame the stream must keep
+    /// this owner immutable and detach before any conflicting read or edit.
+    fn share_frame(&mut self) -> Option<(std::sync::Arc<Vec<u8>>, core::ops::Range<usize>)> {
+        None
+    }
     /// Prepare a complete frame or a validated streaming length. The default
     /// retains complete-frame behavior. Streaming implementations expose no
     /// frame slice until complete and implement `poll_read_frame` below.

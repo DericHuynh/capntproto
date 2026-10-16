@@ -553,7 +553,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                             // Publish before retiring the ordinary owner.
                             *remaining_budget -= 2;
                             entry.results.returned();
-                            *completed_plain = entry.request().capability_count() == 0;
+                            *completed_plain = true;
                             return Poll::Ready(Ok(Progress::Replied));
                         }
                     }
@@ -591,6 +591,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                             // is needed when the answer can retire immediately.
                             *remaining_budget -= 1;
                             entry.results.returned();
+                            *completed_plain = true;
                             return Poll::Ready(Ok(Progress::Replied));
                         }
                     }

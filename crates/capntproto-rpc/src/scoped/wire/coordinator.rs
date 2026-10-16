@@ -772,8 +772,9 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     && self.hooks.inbox.queue.borrow().is_empty()
                     && self.wake.changed.load(Ordering::Acquire) == 0
                 {
-                    // A descriptor-free request just published a descriptor-free
-                    // Return and retired its answer. Dispatch refreshed hooks;
+                    // A descriptor-free Return just retired its answer. Any
+                    // parameter receipts still release through maintenance.
+                    // Dispatch refreshed hooks;
                     // there are no other application owners to rescan. Keep
                     // ledger cleanup active when releasing the request made it
                     // necessary. Reentrant callbacks and application wakeups
@@ -1540,6 +1541,24 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 return Poll::Ready(Err(Box::new(Cause::Protocol(Error::from_kind(
                     capnp::ErrorKind::BufferNotLargeEnough,
                 )))));
+            }
+            // Small frames amortize copying better than another retained owner.
+            // Large complete frames can transfer their immutable allocation;
+            // the ordinary admission path still validates every protocol field.
+            if size > 32 * 1024 {
+                if let Some(frame) = reader
+                    .take_shared_frame(messages, self.options.reader)
+                    .map_err(|error| Cause::Protocol(wire_error(error)))?
+                {
+                    *pending = Some(frame);
+                    pump.frames += 1;
+                    if pump.frames < self.options.budget.get().min(8) {
+                        continue;
+                    }
+                    pump.frames = 0;
+                    cx.waker().wake_by_ref();
+                    return Poll::Pending;
+                }
             }
             if controls.accepts_direct_plain_return() && self.calls.has_plain_receivers() {
                 if let Poll::Ready(result) = self.poll_stop(stop.as_mut(), cx) {

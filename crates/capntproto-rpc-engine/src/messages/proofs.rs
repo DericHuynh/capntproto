@@ -183,6 +183,8 @@ fn partial_send_completion_preserves_ownership() {
         bytes: RefCell::new(Bytes::Borrowed(&mut bytes)),
         capacity: Cell::new(4),
         generation: Cell::new(1),
+        #[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+        received: Cell::new(false),
         state: Cell::new(State::Sealed {
             length,
             readers,

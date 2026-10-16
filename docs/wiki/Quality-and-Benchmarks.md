@@ -3066,6 +3066,44 @@ the previous PR coverage failure remains outstanding until the new tree passes.
 Profiles, executable identities, trials and patches are retained in
 `target/portable-performance-capabilities-20261016/`.
 
+### Shared receive-buffer follow-up (October 16, 2026)
+
+The latest completed dedicated campaign, [38834035472](https://github.com/DericHuynh/capntproto/actions/runs/38834035472)
+at `a1b8d38a590f`, passes nine remote and three loopback cells. The remaining
+ratios are fanout 1.191482×, pipelined read 1.102962×, remote 64 KiB 1.070215×,
+and loopback 64 KiB 1.076264×. The following campaign stopped during provisioning
+without timing results. Its active second host lacked a private address;
+both hosts were cleaned up. Provisioning now retries incomplete network metadata
+within the existing deadline and cancellation policy, while rejecting populated
+invalid addresses. A complete mocked campaign exercises that delayed readiness.
+
+Large complete input frames can now retain immutable receive allocations through
+the ordinary message pool. Full allocator capacity is charged until the final
+protocol owner drops, including across scopes; buffer count, generations and
+per-frame limits remain enforced. Fixed storage and oversized prefetch allocations
+retain the copying path. Ordinary buffered readers preserve pointer-stable spill
+promotion. Only the explicit sharing path permits detaching a receive allocation
+while an earlier frame is retained. No unsafe code is introduced.
+
+The `unified` diagnostic reduces 64-KiB client/server instructions from
+321,925,631 / 309,983,912 to 251,352,463 / 238,483,864 by removing one full receive
+copy per peer. Its five-repetition workflow campaign passes six of twelve cells.
+The misses are empty unary 1.078758×, small unary 1.507409×, dependent read
+1.181579×, pipelined read 2.690098×, write/read 1.236035× and callback 1.648067×.
+Controls show distinct timing regimes; no samples are discarded. All four local
+loopback cells pass at 1.013132×, 1.024642×, 1.012916× and 1.046033×. These are
+shared-VM diagnostics and do not qualify the dedicated target. Empty-call
+instructions are 18,218,919 / 17,318,003 client and 16,885,721 / 16,229,143 server;
+the client also misses the separate instruction target at 1.052022×.
+
+Validation passes 187 engine, 265 RPC, 49 futures, 24 buffered-input, 86 fixed
+and 89 growing portable tests, 72 mixed-peer workflows, and Clippy for the changed
+runtime packages and development tools. Focused ownership checks cover retained
+input, exact range validation, byte accounting, bounded fallback, successor
+preservation and parameter-grant cleanup after a resumed service completes.
+All prototype profiles, timing samples and patches are retained under
+`target/portable-performance-shared-input-20261016/`. The gap stays open.
+
 ### Portable and legacy instruction qualification
 
 The October 15 optimization batch meets a **1.05× portable/legacy instruction

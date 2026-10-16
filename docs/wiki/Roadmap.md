@@ -64,10 +64,12 @@ admission, cancellation, FIFO, partial-write and shutdown guarantees intact.
 Local experiments guide changes; closing this gap requires a fresh dedicated
 campaign with every applicable cell passing, not an empty-call result alone.
 
-The October 16 checkpoint at `89b9d4ee1f33` passes 12 of 16 cells. Remote fanout
-and callback, plus empty and 64-KiB loopback, remain above the limit. Subsequent
-direct receive, reply batching, completion-binding and single-capability publication experiments remain local
-diagnostics until a new dedicated campaign qualifies all sixteen cells.
+The latest completed October 16 campaign at `a1b8d38a590f` passes 12 of 16 cells.
+Remote fanout, pipelined reads and 64 KiB, plus 64-KiB loopback, remain above the
+limit. Single-capability publication and shared receive-buffer experiments remain
+local diagnostics until a new dedicated campaign qualifies all sixteen cells.
+The shared-buffer candidate passes all four local loopback cells but only six
+of twelve local workflow cells; every miss remains in the evidence.
 
 The first optimization slice indexes immediate reply owners beyond eight calls,
 checking the full question generation before delivery, and copies two-segment

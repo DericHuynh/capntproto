@@ -282,6 +282,7 @@ impl<R> QueueWindow<'_, '_, '_, '_, '_, R> {
             } else {
                 state
             });
+            self.buffer.release_received();
             if let Some(send) = self.tracked {
                 send.take();
             }

@@ -6,10 +6,17 @@ pub(super) enum Bytes<'bytes> {
     Borrowed(&'bytes mut [u8]),
     #[cfg(feature = "alloc")]
     Owned {
-        allocation: alloc::rc::Rc<alloc::vec::Vec<u8>>,
+        allocation: alloc::rc::Rc<Allocation>,
         offset: usize,
         length: usize,
     },
+    #[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+    Received {
+        owner: alloc::rc::Rc<Allocation>,
+        range: core::ops::Range<usize>,
+    },
+    #[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+    Released(alloc::rc::Weak<Allocation>),
 }
 impl Bytes<'_> {
     pub(super) fn exclusive(&self) -> bool {
@@ -17,6 +24,10 @@ impl Bytes<'_> {
             Self::Borrowed(_) => true,
             #[cfg(feature = "alloc")]
             Self::Owned { allocation, .. } => alloc::rc::Rc::strong_count(allocation) == 1,
+            #[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+            Self::Received { .. } => false,
+            #[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+            Self::Released(owner) => owner.strong_count() == 0,
         }
     }
     #[cfg(feature = "alloc")]
@@ -34,6 +45,65 @@ impl Bytes<'_> {
                     range: offset + range.start..offset + range.end,
                 })
             }
+            #[cfg(target_has_atomic = "ptr")]
+            Self::Received {
+                owner,
+                range: source,
+            } => {
+                assert!(range.start <= range.end && range.end <= source.len());
+                Some(SharedBytes {
+                    allocation: owner.clone(),
+                    range: source.start + range.start..source.start + range.end,
+                })
+            }
+            #[cfg(target_has_atomic = "ptr")]
+            Self::Released(_) => None,
+        }
+    }
+}
+
+// Pool accounting follows immutable protocol owners, including owners which
+// outlive a message scope. The transport's independent reference is not a
+// protocol lease and cannot mutate these bytes while this owner exists.
+#[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+pub(super) struct Received {
+    pub(super) allocation: alloc::sync::Arc<alloc::vec::Vec<u8>>,
+    pub(super) charged: alloc::rc::Rc<Cell<usize>>,
+}
+#[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+impl Drop for Received {
+    fn drop(&mut self) {
+        self.charged
+            .set(self.charged.get() - self.allocation.capacity());
+    }
+}
+#[cfg(feature = "alloc")]
+pub(super) enum Allocation {
+    Local(alloc::vec::Vec<u8>),
+    #[cfg(target_has_atomic = "ptr")]
+    Received(Received),
+}
+#[cfg(feature = "alloc")]
+impl Allocation {
+    pub(super) fn bytes(&self) -> &[u8] {
+        match self {
+            Self::Local(bytes) => bytes,
+            #[cfg(target_has_atomic = "ptr")]
+            Self::Received(owner) => &owner.allocation,
+        }
+    }
+    pub(super) fn capacity(&self) -> usize {
+        match self {
+            Self::Local(bytes) => bytes.capacity(),
+            #[cfg(target_has_atomic = "ptr")]
+            Self::Received(owner) => owner.allocation.capacity(),
+        }
+    }
+    fn local_mut(&mut self) -> &mut alloc::vec::Vec<u8> {
+        match self {
+            Self::Local(bytes) => bytes,
+            #[cfg(target_has_atomic = "ptr")]
+            Self::Received(_) => unreachable!("received storage is immutable"),
         }
     }
 }
@@ -45,14 +115,14 @@ impl Bytes<'_> {
 #[cfg(feature = "alloc")]
 #[derive(Clone)]
 pub struct SharedBytes {
-    allocation: alloc::rc::Rc<alloc::vec::Vec<u8>>,
+    allocation: alloc::rc::Rc<Allocation>,
     range: core::ops::Range<usize>,
 }
 #[cfg(feature = "alloc")]
 impl Deref for SharedBytes {
     type Target = [u8];
     fn deref(&self) -> &[u8] {
-        &self.allocation[self.range.clone()]
+        &self.allocation.bytes()[self.range.clone()]
     }
 }
 #[cfg(feature = "alloc")]
@@ -76,7 +146,11 @@ impl Deref for Bytes<'_> {
                 allocation,
                 offset,
                 length,
-            } => &allocation[*offset..*offset + *length],
+            } => &allocation.bytes()[*offset..*offset + *length],
+            #[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+            Self::Received { owner, range } => &owner.bytes()[range.clone()],
+            #[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+            Self::Released(_) => &[],
         }
     }
 }
@@ -91,7 +165,13 @@ impl DerefMut for Bytes<'_> {
                 length,
             } => &mut alloc::rc::Rc::get_mut(allocation)
                 .expect("a writing buffer has no shared immutable owners")
-                [*offset..*offset + *length],
+                .local_mut()[*offset..*offset + *length],
+            #[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+            Self::Received { .. } => {
+                unreachable!("received storage is immutable")
+            }
+            #[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+            Self::Released(_) => &mut [],
         }
     }
 }

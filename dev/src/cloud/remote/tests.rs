@@ -1,5 +1,5 @@
 use super::*;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 #[test]
 fn workflow_identity_uses_the_override_or_current_process_without_global_env_changes() {
@@ -86,6 +86,38 @@ fn requires_real_private_addresses_and_vpc_identity() {
     assert!(addresses(&injection).is_err());
 }
 #[test]
+fn active_hosts_wait_for_network_metadata_but_reject_invalid_addresses() {
+    let complete = json!({"status":"active","vpc_uuid":"01234567-89ab-cdef-0123-456789abcdef","networks":{"v4":[{"type":"public","ip_address":"192.0.2.1"},{"type":"private","ip_address":"10.0.0.1"}]}});
+    for path in [
+        "/networks",
+        "/networks/v4/0/ip_address",
+        "/networks/v4/1/ip_address",
+        "/vpc_uuid",
+    ] {
+        for missing in [Value::Null, json!("")] {
+            let mut host = complete.clone();
+            *host.pointer_mut(path).unwrap() = missing;
+            assert_eq!(ready_addresses(&host).unwrap(), None);
+        }
+    }
+    let mut pending = complete.clone();
+    pending["status"] = json!("new");
+    assert_eq!(ready_addresses(&pending).unwrap(), None);
+    assert_eq!(
+        ready_addresses(&complete).unwrap(),
+        Some(addresses(&complete).unwrap())
+    );
+    for (path, invalid) in [
+        ("/networks/v4/0/ip_address", json!("invalid")),
+        ("/networks/v4/1/ip_address", json!("127.0.0.1")),
+        ("/vpc_uuid", json!(17)),
+    ] {
+        let mut host = complete.clone();
+        *host.pointer_mut(path).unwrap() = invalid;
+        assert!(ready_addresses(&host).is_err());
+    }
+}
+#[test]
 fn artifact_unpack_rejects_symlinks() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("input.gz");
@@ -112,6 +144,7 @@ struct PairApi {
     keys: RefCell<Vec<Value>>,
     creates: RefCell<Vec<Value>>,
     mode: &'static str,
+    delayed_metadata: Cell<bool>,
 }
 impl Api for PairApi {
     fn pages(&self, _: &str, key: &str) -> Result<Vec<Value>> {
@@ -157,7 +190,14 @@ impl Api for PairApi {
                 .borrow()
                 .iter()
                 .find(|d| format!("/droplets/{}", d["id"]) == p)
-                .map(|d| json!({"droplet":d}))),
+                .map(|d| {
+                    let mut host = d.clone();
+                    if p == "/droplets/2" && self.delayed_metadata.replace(false) {
+                        host["networks"]["v4"] =
+                            json!([{"type":"public","ip_address":"192.0.2.2"}]);
+                    }
+                    json!({"droplet":host})
+                })),
             ("DELETE", p) if p.starts_with("/droplets/") => {
                 self.hosts
                     .borrow_mut()
@@ -310,7 +350,10 @@ fn complete_remote_campaign_runs_both_controls_and_salvages_failed_portable_cont
             manifest: fixture_bundle(&bundle),
             fail_at,
         };
-        let api = PairApi::default();
+        let api = PairApi {
+            delayed_metadata: Cell::new(fail_at.is_empty()),
+            ..Default::default()
+        };
         let output = dir.path().join("output");
         let state = dir.path().join("state");
         let result = run(

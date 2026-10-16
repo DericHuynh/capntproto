@@ -2,8 +2,10 @@ use super::*;
 use capntproto_rpc_engine::ids::QuestionId;
 use capntproto_rpc_wire::{calls, rpc_capnp};
 
-type Application =
-    dyn Fn(capability::Results<any_pointer::Owned>) -> capability::DispatchCallResult;
+type Application = dyn Fn(
+    capability::Params<any_pointer::Owned>,
+    capability::Results<any_pointer::Owned>,
+) -> capability::DispatchCallResult;
 #[derive(Clone)]
 struct Service(Rc<Application>);
 impl capability::Server for Service {
@@ -14,16 +16,163 @@ impl capability::Server for Service {
         self,
         _: u64,
         _: u16,
-        _: capability::Params<any_pointer::Owned>,
+        params: capability::Params<any_pointer::Owned>,
         results: capability::Results<any_pointer::Owned>,
     ) -> capability::DispatchCallResult {
-        (self.0)(results)
+        (self.0)(params, results)
     }
 }
 fn service(
     f: impl Fn(capability::Results<any_pointer::Owned>) -> capability::DispatchCallResult + 'static,
 ) -> Rc<dyn ClientHook> {
-    Rc::new(crate::local::Client::new(Service(Rc::new(f))))
+    Rc::new(crate::local::Client::new(Service(Rc::new(
+        move |_, results| f(results),
+    ))))
+}
+
+#[test]
+fn resumed_plain_results_release_parameter_grants_without_another_input() {
+    use capntproto_rpc_wire::rpc_capnp::api::{Call as WireCall, CapDescriptor, Message, Payload};
+    for budget in [1, 7, 64] {
+        with_peer(|mut driver, messages| {
+            let (finish, receiver) = shared::channel::<()>();
+            let receiver = RefCell::new(Some(receiver));
+            let target = expose(
+                &mut driver,
+                Rc::new(crate::local::Client::new(Service(Rc::new(
+                    move |params, mut results| {
+                        let receiver = receiver.borrow_mut().take().unwrap();
+                        capability::DispatchCallResult::new(
+                            capability::Promise::from_future(async move {
+                                receiver.await.map_err(crate::canceled_to_error)?;
+                                // Keep the received capability table alive through suspension.
+                                drop(params);
+                                results.get().set_as::<capnp::text::Owned>("resumed")?;
+                                Ok(())
+                            }),
+                            false,
+                        )
+                    },
+                )))),
+            );
+            let frame = Frame::build(messages, 512, Default::default(), |builder| {
+                calls::dynamic_call(
+                    builder,
+                    QuestionId::from_wire(4),
+                    calls::Target::Imported(target),
+                    DynamicCall {
+                        interface: 7,
+                        no_promise_pipelining: true,
+                        ..Default::default()
+                    },
+                    |content| content.set_capability_index(0),
+                )?;
+                let mut root = builder.try_get_root::<Message>()?;
+                let mut call = root.field(Message::CALL).edit()?;
+                let mut params = call.field(WireCall::PARAMS).edit()?;
+                let mut table = params.field(Payload::CAP_TABLE).init(1)?;
+                table
+                    .get_mut(0)
+                    .unwrap()
+                    .scalar(CapDescriptor::SENDER_HOSTED)
+                    .set(17);
+                Ok(())
+            })
+            .unwrap();
+            driver
+                .receive(frame, messages, &mut [0; 16], |_| (), server::Results::new)
+                .unwrap_or_else(|rejected| panic!("{}", rejected.error));
+            let mut opts = options();
+            opts.budget = NonZeroUsize::new(budget).unwrap();
+            let mut coordinator = Coordinator::new(
+                driver,
+                ClientHooks::new(64, 16),
+                NonZeroUsize::new(1).unwrap(),
+                None,
+                opts,
+            )
+            .unwrap();
+            let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+            let mut cx = Context::from_waker(Waker::noop());
+            let mut scratch = [0; 32];
+            for _ in 0..512 {
+                if let Poll::Ready(result) =
+                    coordinator.poll_work(messages, &mut queue, &mut scratch, &NoResources, &mut cx)
+                {
+                    result.unwrap();
+                }
+                if coordinator.active == 0 && coordinator.wake.changed.load(Ordering::Acquire) == 0
+                {
+                    break;
+                }
+            }
+            assert!(queue.is_empty());
+            assert!(!coordinator.worker.is_empty());
+            finish.send(()).unwrap();
+            let mut replies = 0;
+            let mut releases = 0;
+            for _ in 0..2048 {
+                if let Poll::Ready(result) =
+                    coordinator.poll_work(messages, &mut queue, &mut scratch, &NoResources, &mut cx)
+                {
+                    result.unwrap();
+                }
+                if let Some(window) = queue.window(messages).unwrap() {
+                    let mut bytes = window.bytes();
+                    let reader = capnp::serialize::read_message_from_flat_slice_no_alloc(
+                        &mut bytes,
+                        Default::default(),
+                    )
+                    .unwrap();
+                    let message = reader.get_root::<rpc_capnp::message::Reader>().unwrap();
+                    match message.which().unwrap() {
+                        rpc_capnp::message::Return(result) => {
+                            let result = result.unwrap();
+                            assert_eq!(result.get_answer_id(), 4);
+                            assert!(result.get_no_finish_needed());
+                            let rpc_capnp::return_::Results(payload) = result.which().unwrap()
+                            else {
+                                panic!("results");
+                            };
+                            assert_eq!(
+                                payload
+                                    .unwrap()
+                                    .get_content()
+                                    .get_as::<capnp::text::Reader>()
+                                    .unwrap(),
+                                "resumed"
+                            );
+                            replies += 1;
+                        }
+                        rpc_capnp::message::Release(release) => {
+                            let release = release.unwrap();
+                            assert_eq!(release.get_id(), 17);
+                            assert_eq!(release.get_reference_count(), 1);
+                            releases += 1;
+                        }
+                        _ => panic!("unexpected control"),
+                    }
+                    let count = window.bytes().len();
+                    window.advance(count).unwrap();
+                    // Completion of blocked FIFO output wakes every blocked lane.
+                    coordinator.changed();
+                }
+                if replies == 1 && releases == 1 && coordinator.active == 0 {
+                    break;
+                }
+            }
+            assert_eq!((replies, releases), (1, 1));
+            assert!(coordinator.worker.is_empty());
+            futures::executor::block_on(coordinator.terminate::<NoResources, (), ()>(
+                messages,
+                &mut queue,
+                &mut Policy::default(),
+                Ok(()),
+            ))
+            .unwrap();
+            reclaimed(messages);
+        });
+    }
 }
 
 #[test]

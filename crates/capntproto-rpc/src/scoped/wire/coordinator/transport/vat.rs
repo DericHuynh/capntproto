@@ -456,6 +456,43 @@ impl<V> Input<resources::Import> for Reader<V> {
         Ok(Some(frame))
     }
 
+    fn take_shared_frame<'p>(
+        &mut self,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        options: capnp::message::ReaderOptions,
+    ) -> Result<Option<Frame<'p>>, capntproto_rpc_wire::owned::Error> {
+        if !self.borrowed_frame || self.position != 0 {
+            return Ok(None);
+        }
+        let Some((allocation, range)) = self
+            .input_frames
+            .as_mut()
+            .and_then(|stream| stream.share_frame())
+        else {
+            return Ok(None);
+        };
+        if range.len() != self.remaining {
+            return Err(capntproto_rpc_wire::owned::Error::WrongMessage);
+        }
+        let lease = match messages.adopt_received(allocation, range) {
+            Ok(Some(lease)) => lease,
+            // A larger prefetched allocation may not fit even when copying its
+            // single used frame would. Leave the ordinary path available.
+            Ok(None) | Err(messages::Error::NoBuffer | messages::Error::GenerationExhausted) => {
+                return Ok(None)
+            }
+            Err(error) => return Err(capntproto_rpc_wire::owned::Error::Storage(error)),
+        };
+        let frame = Frame::new(lease, options);
+        if let Err(error) = frame.size_in_words(messages) {
+            frame.release(messages);
+            return Err(error);
+        }
+        self.position = self.remaining;
+        self.remaining = 0;
+        Ok(Some(frame))
+    }
+
     fn poll_frame_size(&mut self, cx: &mut Context<'_>) -> Poll<capnp::Result<Option<usize>>> {
         let result = self
             .poll_message(cx)

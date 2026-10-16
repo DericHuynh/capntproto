@@ -40,6 +40,26 @@ fn addresses(d: &Value) -> Result<(Ipv4Addr, Ipv4Addr, String)> {
     );
     Ok((public, private, vpc.to_owned()))
 }
+fn ready_addresses(d: &Value) -> Result<Option<(Ipv4Addr, Ipv4Addr, String)>> {
+    // The provider can publish `active` before assigning both network addresses.
+    // Keep polling incomplete metadata, but still reject populated invalid data.
+    let populated = |value: &Value| !value.is_null() && value.as_str() != Some("");
+    let has_address = |kind| {
+        d["networks"]["v4"].as_array().is_some_and(|networks| {
+            networks
+                .iter()
+                .any(|n| n["type"] == kind && populated(&n["ip_address"]))
+        })
+    };
+    if d["status"] != "active"
+        || !has_address("public")
+        || !has_address("private")
+        || !populated(&d["vpc_uuid"])
+    {
+        return Ok(None);
+    }
+    addresses(d).map(Some)
+}
 fn provision(
     api: &impl Api,
     commands: &impl Commands,
@@ -109,8 +129,8 @@ fn provision(
         let d = api
             .request("GET", &format!("/droplets/{id}"), None)?
             .context("droplet disappeared")?;
-        if d["droplet"]["status"] == "active" {
-            break addresses(&d["droplet"])?;
+        if let Some(addresses) = ready_addresses(&d["droplet"])? {
+            break addresses;
         }
         pause(cancel)?;
     };

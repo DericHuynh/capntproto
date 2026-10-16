@@ -42,6 +42,7 @@ pub struct GrowingBuffers<'bytes> {
     segments: [OnceCell<Vec<OnceCell<Buffer<'bytes>>>>; usize::BITS as usize],
     count: Cell<usize>,
     retained_bytes: Cell<usize>,
+    received_bytes: OnceCell<alloc::rc::Rc<Cell<usize>>>,
     maximum_buffers: usize,
     maximum_buffer_bytes: usize,
     maximum_bytes: usize,
@@ -58,6 +59,7 @@ impl<'bytes> GrowingBuffers<'bytes> {
             segments: [const { OnceCell::new() }; usize::BITS as usize],
             count: Cell::new(0),
             retained_bytes: Cell::new(0),
+            received_bytes: OnceCell::new(),
             maximum_buffers,
             maximum_buffer_bytes,
             maximum_bytes,
@@ -70,7 +72,7 @@ impl<'bytes> GrowingBuffers<'bytes> {
         self.len() == 0
     }
     pub fn retained_bytes(&self) -> usize {
-        self.retained_bytes.get()
+        self.retained_bytes.get() + self.received_bytes.get().map_or(0, |bytes| bytes.get())
     }
 
     #[inline(always)]
@@ -103,16 +105,18 @@ impl<'bytes> GrowingBuffers<'bytes> {
             if !bytes.exclusive() {
                 continue;
             }
-            let Bytes::Owned { allocation, .. } = &*bytes else {
-                unreachable!()
+            let previous = match &*bytes {
+                Bytes::Owned { allocation, .. } => allocation.capacity(),
+                #[cfg(target_has_atomic = "ptr")]
+                Bytes::Released(_) => 0,
+                _ => unreachable!(),
             };
-            let previous = allocation.capacity();
             let available = self.maximum_bytes - (self.retained_bytes() - previous);
             if let Some((replacement, charged)) = Self::allocate(minimum, available) {
                 *bytes = replacement;
                 buffer.capacity.set(minimum);
                 self.retained_bytes
-                    .set(self.retained_bytes() - previous + charged);
+                    .set(self.retained_bytes.get() - previous + charged);
                 return Some(index);
             }
         }
@@ -141,15 +145,114 @@ impl<'bytes> GrowingBuffers<'bytes> {
             capacity: Cell::new(minimum),
             generation: Cell::new(0),
             state: Cell::new(State::Free),
+            #[cfg(target_has_atomic = "ptr")]
+            received: Cell::new(false),
         };
         if index < self.inline.len() {
             self.inline[index].set(buffer).ok()?;
         } else {
             self.segments[segment].get()?[offset].set(buffer).ok()?;
         }
-        self.retained_bytes.set(self.retained_bytes() + charged);
+        self.retained_bytes.set(self.retained_bytes.get() + charged);
         self.count.set(index + 1);
         Some(index)
+    }
+
+    #[cfg(target_has_atomic = "ptr")]
+    pub(super) fn adopt(
+        &self,
+        allocation: alloc::sync::Arc<Vec<u8>>,
+        range: core::ops::Range<usize>,
+    ) -> Result<usize, Error> {
+        if range.start > range.end || range.end > allocation.len() {
+            return Err(Error::InvalidLength);
+        }
+        if range.len() > self.maximum_buffer_bytes {
+            return Err(Error::NoBuffer);
+        }
+        let mut exhausted = false;
+        let reusable = (0..self.len()).find(|&index| {
+            let buffer = self.at(index);
+            if buffer.state.get() != State::Free {
+                return false;
+            }
+            let Ok(bytes) = buffer.bytes.try_borrow() else {
+                return false;
+            };
+            if !bytes.exclusive() {
+                return false;
+            }
+            if buffer.generation.get() == u64::MAX {
+                exhausted = true;
+                return false;
+            }
+            true
+        });
+        let index = reusable.unwrap_or(self.len());
+        if index >= self.maximum_buffers {
+            return Err(if exhausted {
+                Error::GenerationExhausted
+            } else {
+                Error::NoBuffer
+            });
+        }
+        let previous = reusable.map_or(0, |index| match &*self.at(index).bytes.borrow() {
+            Bytes::Owned { allocation, .. } => allocation.capacity(),
+            Bytes::Released(_) => 0,
+            _ => unreachable!(),
+        });
+        let charged = allocation.capacity();
+        if charged > self.maximum_bytes - (self.retained_bytes() - previous) {
+            return Err(Error::NoBuffer);
+        }
+        if reusable.is_none() {
+            let (segment, offset) = backing::segment_position(index).expect("live buffer index");
+            if index >= self.inline.len() && self.segments[segment].get().is_none() {
+                let first = (1usize << segment) - 1;
+                let length = (1usize << segment).min(self.maximum_buffers - first);
+                let mut records = Vec::new();
+                records
+                    .try_reserve_exact(length)
+                    .map_err(|_| Error::NoBuffer)?;
+                records.resize_with(length, OnceCell::new);
+                self.segments[segment]
+                    .set(records)
+                    .map_err(|_| Error::NoBuffer)?;
+            }
+            let buffer = Buffer::new(&mut []);
+            if index < self.inline.len() {
+                self.inline[index]
+                    .set(buffer)
+                    .map_err(|_| Error::NoBuffer)?;
+            } else {
+                self.segments[segment].get().unwrap()[offset]
+                    .set(buffer)
+                    .map_err(|_| Error::NoBuffer)?;
+            }
+            self.count.set(index + 1);
+        }
+        let counter = self
+            .received_bytes
+            .get_or_init(|| alloc::rc::Rc::new(Cell::new(0)));
+        counter.set(counter.get() + charged);
+        let owner = alloc::rc::Rc::new(backing::Allocation::Received(backing::Received {
+            allocation,
+            charged: counter.clone(),
+        }));
+        let buffer = self.at(index);
+        let length = range.len();
+        *buffer.bytes.borrow_mut() = Bytes::Received { owner, range };
+        buffer.received.set(true);
+        buffer.capacity.set(length);
+        buffer.generation.set(buffer.generation.get() + 1);
+        buffer.state.set(State::Sealed {
+            length,
+            readers: 1,
+            sends: 0,
+        });
+        self.retained_bytes
+            .set(self.retained_bytes.get() - previous);
+        Ok(index)
     }
     fn allocate(minimum: usize, available: usize) -> Option<(Bytes<'bytes>, usize)> {
         let allocation_len = minimum.checked_add(7).filter(|n| *n <= available)?;
@@ -165,7 +268,7 @@ impl<'bytes> GrowingBuffers<'bytes> {
         debug_assert!(offset <= 7);
         Some((
             Bytes::Owned {
-                allocation: alloc::rc::Rc::new(allocation),
+                allocation: alloc::rc::Rc::new(backing::Allocation::Local(allocation)),
                 offset,
                 length: minimum,
             },
@@ -194,6 +297,7 @@ impl<'bytes> GrowingBuffers<'bytes> {
             // borrow flags left by deliberately forgotten views.
             let bytes = core::mem::take(buffer.bytes.get_mut());
             buffer.bytes = RefCell::new(bytes);
+            buffer.release_received();
         }
         Ok(())
     }

@@ -97,8 +97,27 @@ pub struct Buffer<'bytes> {
     capacity: Cell<usize>,
     generation: Cell<u64>,
     state: Cell<State>,
+    #[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+    received: Cell<bool>,
 }
 impl<'bytes> Buffer<'bytes> {
+    // A free receive record keeps only a weak owner, so a transport may reuse
+    // its allocation immediately after the final protocol owner goes away.
+    // Escaping shared bytes still pin this record and its independent charge.
+    #[inline]
+    fn release_received(&self) {
+        #[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+        if self.received.get() && self.state.get() == State::Free {
+            if let Ok(mut bytes) = self.bytes.try_borrow_mut() {
+                if let Bytes::Received { owner, .. } = &*bytes {
+                    let owner = alloc::rc::Rc::downgrade(owner);
+                    *bytes = Bytes::Released(owner);
+                    self.capacity.set(0);
+                    self.received.set(false);
+                }
+            }
+        }
+    }
     /// Usable bytes, excluding any alignment padding in allocating storage.
     pub fn capacity(&self) -> usize {
         self.capacity.get()
@@ -109,6 +128,8 @@ impl<'bytes> Buffer<'bytes> {
             bytes: RefCell::new(Bytes::Borrowed(bytes)),
             generation: Cell::new(0),
             state: Cell::new(State::Free),
+            #[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+            received: Cell::new(false),
         }
     }
 }
@@ -255,6 +276,30 @@ fn new_scope<'id, 'storage, 'bytes>(
 }
 
 impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
+    /// Retain an immutable receive allocation without copying its used range.
+    /// Its entire allocator capacity counts against the growing provider's byte
+    /// limit until the last protocol/shared owner is dropped, including across
+    /// scopes. Each adoption consumes a buffer slot; aliases are conservatively
+    /// charged separately. Fixed storage returns None without changing state.
+    /// Neither alignment nor framing is implied. The Arc excludes mutation.
+    #[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+    pub fn adopt_received(
+        &mut self,
+        allocation: alloc::sync::Arc<alloc::vec::Vec<u8>>,
+        range: core::ops::Range<usize>,
+    ) -> Result<Option<Lease<'id>>, Error> {
+        let Buffers::Growing(buffers) = &self.buffers else {
+            return Ok(None);
+        };
+        let index = buffers.adopt(allocation, range)?;
+        Ok(Some(Lease {
+            key: BufferKey {
+                index,
+                generation: buffers.at(index).generation.get(),
+            },
+            brand: PhantomData,
+        }))
+    }
     /// Reserve the first reusable buffer which fits, clearing its whole capacity
     /// before exposing it. Exhausted generations are never reused.
     pub fn reserve(&mut self, minimum: usize) -> Result<Writer<'id>, Error> {
@@ -578,6 +623,7 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
         } else {
             next
         });
+        self.buffers[lease.key.index].release_received();
     }
 
     /// Reserve send storage and its message reference before queue acceptance.
@@ -698,6 +744,7 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
         } else {
             next
         });
+        self.buffers[send.buffer.index].release_received();
     }
 }
 
@@ -708,6 +755,7 @@ impl Drop for Messages<'_, '_, '_> {
         }
         for buffer in self.buffers.iter() {
             buffer.state.set(State::Free);
+            buffer.release_received();
         }
     }
 }
@@ -758,6 +806,7 @@ impl SendWindow<'_, '_, '_, '_> {
             } else {
                 next
             });
+            self.buffer.release_received();
             Ok(true)
         } else {
             self.send.as_mut().unwrap().position = next;

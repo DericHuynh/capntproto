@@ -142,15 +142,126 @@ pub struct BufferedSegments {
     frame: Frame,
 }
 enum Storage {
-    Shared(Arc<Vec<Word>>),
+    SharedWords(Arc<Vec<Word>>),
+    SharedBytes(Arc<Vec<u8>>),
     Owned(Box<[Word]>),
 }
-impl core::ops::Deref for Storage {
-    type Target = [Word];
-    fn deref(&self) -> &[Word] {
+impl Storage {
+    fn bytes(&self) -> &[u8] {
         match self {
-            Self::Shared(words) => words,
-            Self::Owned(words) => words,
+            Self::SharedWords(words) => Word::words_to_bytes(words),
+            Self::SharedBytes(bytes) => bytes,
+            Self::Owned(words) => Word::words_to_bytes(words),
+        }
+    }
+}
+
+// A concrete immutable byte allocation can cross the framing/pool boundary
+// without pointer casts. Padding supplies word alignment even when Vec<u8>'s
+// allocator promises only byte alignment.
+#[derive(Clone)]
+struct AlignedBuffer {
+    allocation: Arc<Vec<u8>>,
+    offset: usize,
+    length: usize,
+}
+impl AlignedBuffer {
+    fn new(words: usize) -> Self {
+        let length = words * 8;
+        let allocation = vec![0; length + 7];
+        let offset = allocation.as_ptr().align_offset(8);
+        Self {
+            allocation: Arc::new(allocation),
+            offset,
+            length,
+        }
+    }
+    fn len(&self) -> usize {
+        self.length / 8
+    }
+    fn bytes(&self) -> &[u8] {
+        &self.allocation[self.offset..self.offset + self.length]
+    }
+    fn bytes_mut(&mut self) -> &mut [u8] {
+        &mut Arc::get_mut(&mut self.allocation).expect("exclusive receive buffer")
+            [self.offset..self.offset + self.length]
+    }
+    fn exclusive(&self) -> bool {
+        Arc::strong_count(&self.allocation) == 1
+    }
+}
+// Ordinary owning/borrowed reads keep their existing word allocation and
+// spill promotion. Only explicit immutable byte sharing changes representation.
+enum ReceiveBuffer {
+    Words(Arc<Vec<Word>>),
+    Bytes(AlignedBuffer),
+}
+impl ReceiveBuffer {
+    fn len(&self) -> usize {
+        match self {
+            Self::Words(words) => words.len(),
+            Self::Bytes(bytes) => bytes.len(),
+        }
+    }
+    #[cfg(test)]
+    fn capacity(&self) -> usize {
+        match self {
+            Self::Words(words) => words.capacity(),
+            Self::Bytes(bytes) => (bytes.allocation.capacity() - 7) / 8,
+        }
+    }
+    fn bytes(&self) -> &[u8] {
+        match self {
+            Self::Words(words) => Word::words_to_bytes(words),
+            Self::Bytes(bytes) => bytes.bytes(),
+        }
+    }
+    fn bytes_mut(&mut self) -> &mut [u8] {
+        match self {
+            Self::Words(words) => {
+                Word::words_to_bytes_mut(Arc::get_mut(words).expect("exclusive receive buffer"))
+            }
+            Self::Bytes(bytes) => bytes.bytes_mut(),
+        }
+    }
+    fn exclusive(&self) -> bool {
+        match self {
+            Self::Words(words) => Arc::strong_count(words) == 1,
+            Self::Bytes(bytes) => bytes.exclusive(),
+        }
+    }
+    fn segments(&self, start: usize) -> (Storage, usize) {
+        match self {
+            Self::Words(words) => (Storage::SharedWords(words.clone()), start),
+            Self::Bytes(bytes) => (
+                Storage::SharedBytes(bytes.allocation.clone()),
+                bytes.offset + start,
+            ),
+        }
+    }
+    fn shared_bytes(&mut self) -> &AlignedBuffer {
+        if let Self::Words(words) = self {
+            let mut bytes = AlignedBuffer::new(words.len());
+            bytes
+                .bytes_mut()
+                .copy_from_slice(Word::words_to_bytes(words));
+            *self = Self::Bytes(bytes);
+        }
+        let Self::Bytes(bytes) = self else {
+            unreachable!()
+        };
+        bytes
+    }
+    fn promote(&mut self, spill: &mut Vec<Word>) {
+        match self {
+            Self::Words(words) => core::mem::swap(Arc::get_mut(words).unwrap(), spill),
+            Self::Bytes(bytes) => {
+                let mut promoted = AlignedBuffer::new(spill.len());
+                promoted
+                    .bytes_mut()
+                    .copy_from_slice(Word::words_to_bytes(spill));
+                *bytes = promoted;
+            }
         }
     }
 }
@@ -158,19 +269,21 @@ impl BufferedSegments {
     /// The complete immutable stream frame, including its original segment
     /// table. It remains valid for exactly the same lifetime as these segments.
     pub fn framed_bytes(&self) -> &[u8] {
-        &Word::words_to_bytes(&self.storage)[self.start..self.start + self.frame.bytes]
+        &self.storage.bytes()[self.start..self.start + self.frame.bytes]
     }
 
     /// True when this message holds the stream's reusable receive buffer.
     pub fn is_shared_buffer(&self) -> bool {
-        matches!(self.storage, Storage::Shared(_))
+        matches!(
+            self.storage,
+            Storage::SharedWords(_) | Storage::SharedBytes(_)
+        )
     }
 
     fn detach(mut self) -> Self {
         let mut storage = Word::allocate_zeroed_vec(self.frame.bytes / 8);
-        Word::words_to_bytes_mut(&mut storage).copy_from_slice(
-            &Word::words_to_bytes(&self.storage)[self.start..self.start + self.frame.bytes],
-        );
+        Word::words_to_bytes_mut(&mut storage)
+            .copy_from_slice(&self.storage.bytes()[self.start..self.start + self.frame.bytes]);
         // Detached frames have one owner. Only views into the stream's receive
         // buffer need reference counting and a separate Arc allocation.
         self.storage = Storage::Owned(storage.into_boxed_slice());
@@ -186,9 +299,10 @@ impl ReaderSegments for BufferedSegments {
             // Owned frames always start at zero (detach, spill or scratch
             // conversion). Only shared receive views need an additional offset.
             Storage::Owned(words) => &Word::words_to_bytes(words)[start..end],
-            Storage::Shared(words) => {
+            Storage::SharedWords(words) => {
                 &Word::words_to_bytes(words)[self.start + start..self.start + end]
             }
+            Storage::SharedBytes(bytes) => &bytes[self.start + start..self.start + end],
         })
     }
     fn len(&self) -> usize {
@@ -248,9 +362,8 @@ impl BufferedSegments {
     fn retain(self, scratch: Option<&mut [Word]>) -> BufferedScratchSegments<'_> {
         if let Some(words) = scratch.filter(|words| words.len() >= self.frame.bytes / 8) {
             let words = &mut words[..self.frame.bytes / 8];
-            Word::words_to_bytes_mut(words).copy_from_slice(
-                &Word::words_to_bytes(&self.storage)[self.start..self.start + self.frame.bytes],
-            );
+            Word::words_to_bytes_mut(words)
+                .copy_from_slice(&self.storage.bytes()[self.start..self.start + self.frame.bytes]);
             BufferedScratchSegments(ScratchStorage::Borrowed {
                 words,
                 frame: self.frame,
@@ -283,7 +396,8 @@ struct Streaming {
 pub struct BufferedRead<R> {
     input: R,
     options: ReaderOptions,
-    buffer: Arc<Vec<Word>>,
+    buffer: ReceiveBuffer,
+    shared_borrowed: bool,
     begin: usize,
     end: usize,
     frame: Option<Frame>,
@@ -308,7 +422,12 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
     /// 128 KiB; owning reads do not grow it. Larger borrowed frames use a separate
     /// reusable spill allocation, bounded as documented by `finish_borrowed_frame`.
     pub fn with_buffer_size(input: R, options: ReaderOptions, words: usize) -> Result<Self> {
-        if words < MIN_BUFFER_WORDS || words.checked_mul(8).is_none() {
+        if words < MIN_BUFFER_WORDS
+            || words
+                .checked_mul(8)
+                .and_then(|bytes| bytes.checked_add(7))
+                .is_none()
+        {
             return Err(Error::failed(
                 "receive buffer must hold at least 256 words and fit in usize".into(),
             ));
@@ -316,7 +435,8 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
         Ok(Self {
             input,
             options,
-            buffer: Arc::new(Word::allocate_zeroed_vec(words)),
+            buffer: ReceiveBuffer::Words(Arc::new(Word::allocate_zeroed_vec(words))),
+            shared_borrowed: false,
             begin: 0,
             end: 0,
             frame: None,
@@ -352,7 +472,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
     /// Whether a returned message still owns a view into the receive buffer.
     /// Such a view must be dropped before another read can begin.
     pub fn has_outstanding_short_lived_message(&self) -> bool {
-        self.borrowed || self.streaming.is_some() || Arc::strong_count(&self.buffer) != 1
+        self.borrowed || self.streaming.is_some() || !self.buffer.exclusive()
     }
 
     /// Whether the next complete frame is already buffered, without reading or
@@ -361,7 +481,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
         if self.terminal.is_some() || self.has_outstanding_short_lived_message() {
             return false;
         }
-        let bytes = &Word::words_to_bytes(&self.buffer)[self.begin..self.end];
+        let bytes = &self.buffer.bytes()[self.begin..self.end];
         matches!(Frame::parse(bytes, self.options), Ok(Some(frame)) if frame.bytes <= bytes.len())
     }
 
@@ -450,6 +570,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
         scratch: &mut Option<&'a mut [Word]>,
         classify: &mut Option<impl FnOnce(&Reader<BufferedSegments>) -> Result<bool>>,
     ) -> Poll<Result<Option<Reader<BufferedScratchSegments<'a>>>>> {
+        self.prepare_shared_buffer();
         if self.has_outstanding_short_lived_message() {
             return Poll::Ready(Err(Error::failed(
                 "previous short-lived message is still alive".into(),
@@ -493,10 +614,11 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
         }
         let frame = self.frame.take().expect("prepared buffered frame");
         let bytes = frame.bytes;
+        let (storage, start) = self.buffer.segments(self.begin);
         let view = Reader::new(
             BufferedSegments {
-                storage: Storage::Shared(self.buffer.clone()),
-                start: self.begin,
+                storage,
+                start,
                 frame,
             },
             self.options,
@@ -528,6 +650,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
     /// receive APIs reject an outstanding borrowed frame without consuming it.
     pub fn poll_borrowed_frame(&mut self, cx: &mut Context<'_>) -> Poll<Result<Option<&[u8]>>> {
         if !self.borrowed {
+            self.prepare_shared_buffer();
             if self.has_outstanding_short_lived_message() {
                 return Poll::Ready(Err(Error::failed(
                     "previous short-lived message is still alive".into(),
@@ -572,9 +695,40 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
             Some(spill) => &Word::words_to_bytes(&spill.storage)[..spill.frame.bytes],
             None => {
                 let bytes = self.frame.as_ref().expect("borrowed frame").bytes;
-                &Word::words_to_bytes(&self.buffer)[self.begin..self.begin + bytes]
+                &self.buffer.bytes()[self.begin..self.begin + bytes]
             }
         })
+    }
+
+    /// Retain an immutable complete frame without consuming it. This owning
+    /// API permits later reads after finish_borrowed_frame: a still-retained
+    /// allocation is detached before more bytes are read. Unconsumed successor
+    /// bytes are preserved. Ordinary short-lived readers retain their stricter
+    /// no-overlap contract. Incomplete and spill frames return None.
+    pub fn share_borrowed_frame(&mut self) -> Option<(Arc<Vec<u8>>, core::ops::Range<usize>)> {
+        if !self.borrowed || self.spill.is_some() {
+            return None;
+        }
+        let length = self.frame.as_ref()?.bytes;
+        let bytes = self.buffer.shared_bytes();
+        let start = bytes.offset + self.begin;
+        self.shared_borrowed = true;
+        Some((bytes.allocation.clone(), start..start + length))
+    }
+
+    fn prepare_shared_buffer(&mut self) {
+        if !self.borrowed && self.streaming.is_none() && self.shared_borrowed {
+            self.shared_borrowed = false;
+            if !self.buffer.exclusive() {
+                let mut replacement = AlignedBuffer::new(self.buffer.len());
+                let remaining = self.end - self.begin;
+                replacement.bytes_mut()[..remaining]
+                    .copy_from_slice(&self.buffer.bytes()[self.begin..self.end]);
+                self.buffer = ReceiveBuffer::Bytes(replacement);
+                self.begin = 0;
+                self.end = remaining;
+            }
+        }
     }
 
     /// Prepare one frame for caller-owned storage. Complete small frames remain
@@ -592,6 +746,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
         if self.borrowed {
             return Poll::Ready(Ok(self.borrowed_frame().map(<[u8]>::len)));
         }
+        self.prepare_shared_buffer();
         if self.has_outstanding_short_lived_message() {
             return Poll::Ready(Err(Error::failed(
                 "previous short-lived message is still alive".into(),
@@ -655,8 +810,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
         let count = if streaming.position < prefix {
             let count = output.len().min(prefix - streaming.position);
             let start = self.begin + streaming.position;
-            output[..count]
-                .copy_from_slice(&Word::words_to_bytes(&self.buffer)[start..start + count]);
+            output[..count].copy_from_slice(&self.buffer.bytes()[start..start + count]);
             count
         } else {
             match ready!(Pin::new(&mut self.input).poll_read(cx, output)) {
@@ -711,7 +865,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
                     // owner can escape the borrowed-frame API. The consumed
                     // spill starts at zero; its old bytes stay hidden until a
                     // later complete frame has overwritten its exposed prefix.
-                    core::mem::swap(Arc::get_mut(&mut self.buffer).unwrap(), &mut spill.storage);
+                    self.buffer.promote(&mut spill.storage);
                 }
                 if spill.storage.capacity() <= MAX_CACHED_SPILL_WORDS {
                     self.spare = spill.storage;
@@ -748,10 +902,8 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
                 return Poll::Ready(Ok(true));
             }
             if self.frame.is_none() {
-                self.frame = Frame::parse(
-                    &Word::words_to_bytes(&self.buffer)[self.begin..self.end],
-                    self.options,
-                )?;
+                self.frame =
+                    Frame::parse(&self.buffer.bytes()[self.begin..self.end], self.options)?;
             }
             if let Some(frame) = &self.frame {
                 if self.end - self.begin >= frame.bytes {
@@ -771,7 +923,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
                     }
                     let filled = self.end - self.begin;
                     Word::words_to_bytes_mut(&mut storage)[..filled]
-                        .copy_from_slice(&Word::words_to_bytes(&self.buffer)[self.begin..self.end]);
+                        .copy_from_slice(&self.buffer.bytes()[self.begin..self.end]);
                     self.spill = Some(Spill {
                         storage,
                         filled,
@@ -782,7 +934,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
                     continue;
                 }
             }
-            let buffer = Word::words_to_bytes_mut(Arc::get_mut(&mut self.buffer).unwrap());
+            let buffer = self.buffer.bytes_mut();
             if buffer.len() - self.end < buffer.len() / 2 {
                 buffer.copy_within(self.begin..self.end, 0);
                 self.end -= self.begin;
@@ -819,6 +971,50 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_frame_owners_preserve_successors_and_allow_exclusive_reuse() {
+        let mut message = capnp::message::Builder::new_default();
+        message.set_root("shared input").unwrap();
+        let frame = capnp::serialize::write_message_to_words(&message);
+        for retained in [false, true] {
+            let source = [frame.as_slice(), frame.as_slice()].concat();
+            let mut input = BufferedRead::new(futures::io::Cursor::new(source), Default::default());
+            let mut cx = Context::from_waker(std::task::Waker::noop());
+            assert!(input.share_borrowed_frame().is_none());
+            assert!(matches!(
+                input.poll_stream_frame_size(&mut cx),
+                Poll::Ready(Ok(Some(_)))
+            ));
+            let (owner, range) = input.share_borrowed_frame().unwrap();
+            assert_eq!(&owner[range.clone()], frame);
+            assert_eq!(
+                owner[range.clone()].as_ptr(),
+                input.borrowed_frame().unwrap().as_ptr()
+            );
+            assert_eq!(owner[range.clone()].as_ptr().align_offset(8), 0);
+            let address = input.buffer.bytes().as_ptr();
+            let owner = retained.then_some((owner, range));
+            input.finish_borrowed_frame();
+            assert!(matches!(
+                input.poll_stream_frame_size(&mut cx),
+                Poll::Ready(Ok(Some(_)))
+            ));
+            assert_eq!(input.borrowed_frame().unwrap(), frame);
+            if let Some((owner, range)) = &owner {
+                assert_eq!(&owner[range.clone()], frame);
+                assert_ne!(input.buffer.bytes().as_ptr(), address);
+            } else {
+                assert_eq!(input.buffer.bytes().as_ptr(), address);
+            }
+            input.finish_borrowed_frame();
+            assert!(matches!(
+                input.poll_stream_frame_size(&mut cx),
+                Poll::Ready(Ok(None))
+            ));
+            assert_eq!(input.consumed_bytes(), 2 * frame.len() as u64);
+        }
+    }
 
     struct Fragmented {
         input: futures::io::Cursor<Vec<u8>>,
