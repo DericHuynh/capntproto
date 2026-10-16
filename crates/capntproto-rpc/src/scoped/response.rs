@@ -550,10 +550,13 @@ pub(super) fn request_pipelined_prepared(
     let state = inbox
         .as_ref()
         .map_or_else(Rc::default, |inbox| inbox.completion_cache.acquire());
-    let (sender, mut pipeline) = crate::queued::Pipeline::new();
+    // Publish the eventual wire queue now, avoiding an intermediate queued
+    // pipeline and a second projection transfer when the call is admitted.
+    let pipeline = wire::PipelineState::prepared(inbox.as_ref());
+    let sender = crate::queued::PipelineInnerSender::wire(&pipeline);
     call.results = Results::Hook(Box::new(crate::local::Results::direct_pipelined(
         ResultsSender(state.clone()),
-        sender.weak_clone(),
+        sender,
     )));
     call.completion = CallCompletion::Response(Completion(state.clone()));
     let promise = match call.enqueue_owned(inbox) {
@@ -565,25 +568,38 @@ pub(super) fn request_pipelined_prepared(
     // second shared future around the pipeline's unit result.
     let result = Rc::new(Cell::new(None));
     let output = result.clone();
+    let pending = Rc::downgrade(&pipeline);
     let driver = Promise::from_future(async move {
-        let mut response = Some(promise.await?);
-        sender.complete_with(|| {
-            let (shared, pipeline) =
-                crate::local::Pipeline::share_response(response.take().unwrap());
-            response = Some(shared);
-            pipeline
-        });
+        let response = match promise.await {
+            Ok(response) => response,
+            Err(error) => {
+                if let Some(pending) = pending.upgrade() {
+                    pending
+                        .finish_pending(|| Box::new(crate::broken::Pipeline::new(error.clone())));
+                }
+                return Err(error);
+            }
+        };
+        let mut response = Some(response);
+        if let Some(pending) = pending.upgrade() {
+            pending.finish_pending(|| {
+                let (shared, pipeline) =
+                    crate::local::Pipeline::share_response(response.take().unwrap());
+                response = Some(shared);
+                pipeline
+            });
+        }
         output.set(response);
         Ok(())
     })
     .shared();
-    pipeline.drive_shared(driver.clone());
+    let pipeline = pipeline.driven(driver.clone());
     capability::RemotePromise {
         promise: Promise::from_future(async move {
             driver.await?;
             Ok(result.take().expect("completed pipelined response"))
         }),
-        pipeline: any_pointer::Pipeline::new(Box::new(pipeline)),
+        pipeline: any_pointer::Pipeline::new(pipeline),
     }
 }
 

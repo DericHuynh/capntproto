@@ -244,6 +244,14 @@ impl Results {
         results
     }
 
+    pub(crate) fn take_wire_pipeline(
+        &mut self,
+    ) -> Option<Option<Rc<crate::scoped::wire::PipelineState>>> {
+        let pipeline = self.pipeline_sender.as_mut()?.take_wire()?;
+        self.pipeline_sender.take();
+        Some(pipeline)
+    }
+
     pub(crate) fn adopt_pipeline_clients(
         &mut self,
         pipeline: Box<dyn PipelineHook>,

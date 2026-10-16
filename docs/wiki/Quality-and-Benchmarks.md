@@ -3623,6 +3623,93 @@ legacy 17,370,093 / 16,281,103). Raw samples, traces, source and executable
 identities are retained in `target/portable-performance-finished-pipeline-20261016/`.
 The full dedicated 16-cell target remains open.
 
+The completed dedicated `6b31ee0` campaign (run `38886103592`) passes
+**9/16 targets: 9/12 remote workflows and 0/4 loopback payloads**. This earlier
+result and the preceding 14/16 campaign remain historical. All 350
+remote and 60 loopback trials, five repetitions per cell, p50/p95/p99 and the
+inclusive 5% decisions are independently verified. The misses are:
+
+| Case | Portable p50 ns | Faster reference p50 ns | Ratio |
+| --- | ---: | ---: | ---: |
+| dependent-read | 389,433 | C++ 356,475 | 1.092455 |
+| pipelined-read | 240,688 | legacy 201,538 | 1.194256 |
+| callback | 372,673 | legacy 345,281 | 1.079332 |
+| loopback 0 B | 37,976 | legacy 33,969 | 1.117960 |
+| loopback 64 B | 36,160 | legacy 33,516 | 1.078888 |
+| loopback 1 KiB | 46,520 | legacy 35,664 | 1.304397 |
+| loopback 64 KiB | 99,329 | legacy 81,305 | 1.221684 |
+
+All 21 steady pipeline write groups match C++'s Finish/Release/Call/Call
+ordering, both server Returns share one write, and there is one steady epoll
+wait per round trip. Legacy makes more socket calls but has less processing
+between IO. Traced intervals include instrumentation overhead and are excluded
+from qualification. Ordering alone has not closed the gap. Artifact
+`12041701268` has ZIP SHA-256
+`b4b96caf7d0998342466113d8d0757ae0ab5ca92d0daef169500a748495cda20`;
+all raw evidence and recomputation are archived under
+`target/portable-performance-idle-retirement-dedicated-20261016/`
+(1,205 files plus checksums).
+
+The subsequent dedicated `d9d1f7f` run `38890319120` is the latest completed
+comparison: **9/16 targets, with 8/12 remote workflows and 1/4 loopback**.
+All 350 remote and 60 loopback trials, five repetitions per cell, p50/p95/p99
+and inclusive 5% decisions are independently verified. The seven misses are:
+
+| Case | Portable p50 ns | Faster reference p50 ns | Ratio |
+| --- | ---: | ---: | ---: |
+| dependent-read | 244,913 | C++ 222,531 | 1.100579 |
+| pipelined-read | 160,056 | C++ 127,925 | 1.251171 |
+| callback | 234,512 | legacy 204,029 | 1.149405 |
+| bulk-64k | 543,131 | legacy 505,572 | 1.074290 |
+| loopback 0 B | 32,846 | legacy 28,554 | 1.150312 |
+| loopback 64 B | 32,197 | legacy 30,068 | 1.070806 |
+| loopback 64 KiB | 97,631 | legacy 78,305 | 1.246804 |
+
+All 21 steady pipeline writes retain C++ Finish/Release/Call/Call ordering and
+both Returns remain batched. The workflow failed a separate report quality
+requirement: legacy TCP/C++ at 64 bytes was 1.2053×, above its unchanged 1.15×
+limit. Sampling validation and infrastructure cleanup succeeded. The measurement
+lane's passed status does not imply overall quality acceptance. Artifact
+`12043337184` has ZIP SHA-256
+`fd8430ba3d5821d280664eff28f6da70858bec4f52776c225e8056f6fbe16db1`.
+Raw samples, recomputation, job log and paired traces are archived under
+`target/portable-performance-finished-pipeline-dedicated-20261016/`
+(1,206 files plus checksums). PR CI is still running; the performance gap remains open.
+
+The subsequent local prototype publishes the wire projection queue when a
+prepared pipelined request is sent. Pending child clients retain that queue
+until their target is published; they no longer pass through a second queued
+pipeline or an extra request wrapper. Public response/child interests retain
+the completion driver independently. Failed admission releases its credit even
+if the caller keeps the failed pipeline, and ordinary no-pipeline calls retain
+the lazy ResultsHook path. Call admission is outlined to limit duplicated code;
+three private wire export sites also omit a redundant metadata refresh.
+
+The frozen executable SHA-256 is
+`454050eb580912886ae8d160154e094f3e9f7f101741d62b282ccebbb0124fd2`.
+It passes 281 RPC tests, 92 integration tests, 72 mixed-peer workflows, Clippy,
+formatting, and six focused Miri executions, including the cleanup matrix with
+budgets 1/8/64 and output capacities 1/4. Pipeline client/server instructions
+are 85,133,110 / 72,284,012; dependent reads 73,223,988 / 63,622,057;
+callbacks 60,462,175 / 60,150,267. All 11 steady traced pipeline writes retain
+C++ Finish/Release/Call/Call ordering and both Returns share one write.
+All 240 local trials are independently checked: **8/12 workflows and 3/4
+loopback targets pass**. Alternating five-repetition comparisons with the prior
+prototype show only a 0.3% pipelined median difference, with substantial host
+variation. These diagnostics do not establish dedicated latency qualification.
+
+Callgrind cache/branch simulation identified a larger remaining footprint:
+the export-scan client had 5,747,521 instruction-cache misses versus C++
+1,895,628 for 100 warmups and 1,000 pipelined operations. The current prototype
+reduces client instructions 1.38% and simulated instruction-cache misses 1.07%
+relative to that portable baseline, while conditional branch misses rise 6.32%.
+These are simulation counts, not hardware counters. Matched legacy instruction
+counts move by +0.074%/+0.492% on the two peers; controls are retained.
+Empty-call instructions remain client MISS/server PASS (18,510,707 / 17,003,489
+versus legacy 17,367,049 / 16,359,460). Raw samples, controls, traces, source
+patches and exact executable identities are retained in
+`target/portable-performance-direct-wire-interest-20261016/`.
+
 The earlier `ef9f4c8` Cargo CI completed 2,230 tests with zero failures and
 20 skips, but its coverage regression gate failed. The Miri job reached its
 45-minute limit after the 228-test 32-bit RPC matrix passed, leaving later

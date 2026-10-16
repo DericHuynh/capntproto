@@ -925,7 +925,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         Ok(Some(Progress::Advanced))
     }
     #[allow(clippy::too_many_arguments)]
-    #[inline(always)]
+    #[inline(never)]
     fn admit<A, P: Copy + Eq>(
         &mut self,
         hooks: &mut ClientHooks<'id>,

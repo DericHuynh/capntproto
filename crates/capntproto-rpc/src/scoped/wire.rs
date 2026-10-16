@@ -455,12 +455,30 @@ impl<'id> ClientHooks<'id> {
         })
     }
     fn attach_pipeline(&self, call: &mut Call) -> capnp::Result<Option<Rc<PipelineState>>> {
+        if call.hints.no_promise_pipelining {
+            return Ok(None);
+        }
+        if let Some(local) = call
+            .results
+            .hook()
+            .as_any_mut()
+            .and_then(|hook| hook.downcast_mut::<crate::local::Results>())
+        {
+            // Reuse projections queued before admission. A dropped public
+            // pipeline needs no replacement state.
+            if let Some(pipeline) = local.take_wire_pipeline() {
+                if let Some(pipeline) = &pipeline {
+                    pipeline._credit.set(call.credit.clone());
+                }
+                return Ok(pipeline);
+            }
+        }
         let pipeline = (!call.hints.no_promise_pipelining).then(|| {
             Rc::new(PipelineState {
                 used: Cell::new(false),
                 adopted: RefCell::default(),
                 cached: RefCell::default(),
-                _credit: call.credit.clone(),
+                _credit: Cell::new(call.credit.clone()),
                 waiting: RefCell::new(VecDeque::new()),
                 finished: RefCell::new(None),
                 inbox: Rc::downgrade(&self.inbox),
@@ -468,7 +486,7 @@ impl<'id> ClientHooks<'id> {
             })
         });
         if let Some(pipeline) = &pipeline {
-            let published = Box::new(WirePipeline(PipelineRef(Some(pipeline.clone()))));
+            let published = Box::new(WirePipeline(PipelineRef(Some(pipeline.clone()), None)));
             let results = call.results.hook();
             if let Some(local) = results
                 .as_any_mut()
@@ -639,7 +657,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                 }
             };
             let result = {
-                let result = hooks.export_client(&mut driver.runtime, &cap);
+                let result = hooks.export_before_wire_refresh(&mut driver.runtime, &cap);
                 driver.runtime.release(cap);
                 result.map(|client| client.hook)
             };
@@ -651,7 +669,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                 if projection.retain_pipeline {
                     Box::new(Projected {
                         inner,
-                        pipeline: PipelineRef(Some(pipeline.clone())),
+                        pipeline: PipelineRef(Some(pipeline.clone()), None),
                     }) as Box<dyn ClientHook>
                 } else {
                     inner
@@ -999,7 +1017,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                                         }
                                     }
                                     hooks
-                                        .export_client(&mut driver.runtime, cap)
+                                        .export_before_wire_refresh(&mut driver.runtime, cap)
                                         .map(|c| c.hook)
                                 })
                                 .transpose()
@@ -1037,7 +1055,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                                         )
                                         .map_err(wire_error)?
                                         .into_client();
-                                    let result = hooks.export_client(&mut driver.runtime, &cap);
+                                    let result = hooks.export_before_wire_refresh(&mut driver.runtime, &cap);
                                     driver.runtime.release(cap);
                                     Some(result?.hook)
                                 }
@@ -1172,17 +1190,67 @@ impl ProjectionCache {
         Ok(())
     }
 }
-struct PipelineState {
+pub(crate) struct PipelineState {
     used: Cell<bool>,
     adopted: RefCell<Option<Box<dyn PipelineHook>>>,
     cached: RefCell<ProjectionCache>,
-    _credit: Option<Rc<admission::Credit>>,
+    _credit: Cell<Option<Rc<admission::Credit>>>,
     waiting: RefCell<VecDeque<Projection>>,
     finished: RefCell<Option<Box<dyn PipelineHook>>>,
     inbox: Weak<Inbox>,
     maximum: usize,
 }
 impl PipelineState {
+    pub(super) fn prepared(inbox: Option<&Rc<Inbox>>) -> Rc<Self> {
+        Rc::new(Self {
+            used: Cell::new(false),
+            adopted: RefCell::default(),
+            cached: RefCell::default(),
+            // Admission owns the credit until the wire call takes this state.
+            // Rejected requests must release it even if their pipeline lives.
+            _credit: Cell::new(None),
+            waiting: RefCell::default(),
+            finished: RefCell::default(),
+            inbox: inbox.map_or_else(Weak::new, Rc::downgrade),
+            maximum: inbox.map_or(0, |inbox| inbox.maximum_clients),
+        })
+    }
+    pub(super) fn driven(
+        self: &Rc<Self>,
+        driver: futures::future::Shared<Promise<(), Error>>,
+    ) -> Box<dyn PipelineHook> {
+        Box::new(WirePipeline(PipelineRef(Some(self.clone()), Some(driver))))
+    }
+    pub(crate) fn unresolved(&self) -> bool {
+        self.adopted.borrow().is_none() && self.finished.borrow().is_none()
+    }
+    // Local forwarding may publish a pipeline before its operation completes.
+    // That publication remains valid even if the later operation fails.
+    pub(crate) fn publish(&self, pipeline: Box<dyn PipelineHook>) {
+        if !self.unresolved() {
+            return;
+        }
+        let published = pipeline.add_ref();
+        if !self.unresolved() {
+            return;
+        }
+        let old = self.adopted.replace(Some(published));
+        drop(old);
+        let waiting = std::mem::take(&mut *self.waiting.borrow_mut());
+        for projection in waiting {
+            if let Some(client) = projection.client.upgrade() {
+                crate::queued::ClientInner::resolve(
+                    &client,
+                    Ok(pipeline.get_pipelined_cap(&projection.path)),
+                );
+            }
+        }
+    }
+    pub(super) fn finish_pending(&self, pipeline: impl FnOnce() -> Box<dyn PipelineHook>) {
+        if self.unresolved() {
+            self.finish(pipeline());
+        }
+    }
     fn remember(&self, path: Vec<PipelineOp>, hook: &dyn ClientHook) -> capnp::Result<()> {
         self.cached.borrow_mut().remember(path, hook, self.maximum)
     }
@@ -1205,7 +1273,12 @@ impl PipelineState {
     }
 }
 #[derive(Clone)]
-struct PipelineRef(Option<Rc<PipelineState>>);
+struct PipelineRef(
+    Option<Rc<PipelineState>>,
+    // Only public interests retain the response driver. The wire owner holds
+    // a plain Rc<PipelineState>, so it cannot keep its own call alive.
+    Option<futures::future::Shared<Promise<(), Error>>>,
+);
 impl std::ops::Deref for PipelineRef {
     type Target = Rc<PipelineState>;
     fn deref(&self) -> &Self::Target {
@@ -1260,7 +1333,10 @@ impl PipelineHook for WirePipeline {
         if let Some(pipeline) = finished {
             return pipeline.get_pipelined_cap(path);
         }
-        let client = crate::queued::Client::new(None);
+        // Retain the originating state inside the unresolved client, as queued
+        // pipelines do. Its ordinary request can then forward directly; only
+        // the published wire target needs a Projected lifetime wrapper.
+        let client = crate::queued::Client::wire(Rc::clone(&self.0), self.0 .1.clone());
         let mut waiting = self.0.waiting.borrow_mut();
         waiting.retain(|entry| entry.client.strong_count() != 0);
         if waiting.len().saturating_add(self.0.cached.borrow().len()) >= self.0.maximum
@@ -1273,16 +1349,13 @@ impl PipelineHook for WirePipeline {
         waiting.push_back(Projection {
             path: path.to_vec(),
             client: Rc::downgrade(&client.inner),
-            retain_pipeline: false,
+            retain_pipeline: true,
         });
         drop(waiting);
         if let Some(inbox) = self.0.inbox.upgrade() {
             inbox.notify();
         }
-        Box::new(Projected {
-            inner: Box::new(client),
-            pipeline: self.0.clone(),
-        })
+        Box::new(client)
     }
 }
 struct Projected {

@@ -611,6 +611,66 @@ fn prepared_pipeline_interest_survives_response_drop_before_admission() {
 }
 
 #[test]
+fn prepared_pipeline_rejection_releases_credit_while_pipeline_is_retained() {
+    clients::with_growing_graph::<u32, u8, _>(0, 1, |graph| {
+        let route = graph.endpoint(7, Location::Remote(1)).unwrap();
+        let admission = crate::admission::Admission::new(1);
+        let mut hooks = ClientHooks::new(1, 0).with_admission(admission.clone());
+        let client = hooks.export_snapshot(graph, &route).unwrap();
+        let unsent = client.new_call::<any_pointer::Owned, any_pointer::Owned>(47, 1, None);
+        assert_eq!(admission.used(), 1);
+        let mut rejected = unsent.send();
+        assert_eq!(admission.used(), 0);
+        assert_eq!(
+            error(ready(&mut rejected.promise)).kind,
+            capnp::ErrorKind::Overloaded
+        );
+        drop((rejected, client));
+        hooks.close(graph, Error::disconnected("done".into()));
+        graph.release(route);
+        while graph.take_retired().is_some() {}
+        assert!(graph.is_empty());
+    })
+    .unwrap();
+}
+
+#[test]
+fn prepared_pipeline_supports_late_projection_after_response_is_consumed() {
+    clients::with_growing_graph::<u32, u8, _>(0, 2, |graph| {
+        let route = graph.endpoint(7, Location::Local).unwrap();
+        let target = graph.endpoint(8, Location::Local).unwrap();
+        let mut hooks = ClientHooks::new(2, 3);
+        let client = hooks.export_snapshot(graph, &route).unwrap();
+        let cap = hooks.export_snapshot(graph, &target).unwrap();
+        let mut parent = request(&client, 1);
+        let mut call = next(&mut hooks);
+        call.results()
+            .get()
+            .unwrap()
+            .set_as_capability(cap.hook.add_ref());
+        call.complete(Ok(()));
+        drop(ready(&mut parent.promise).unwrap());
+        drop(parent.promise);
+        let projected = capability::Client::new(parent.pipeline.as_cap());
+        drop(parent.pipeline);
+        let mut child = request(&projected, 2);
+        let child_call = next(&mut hooks);
+        assert_eq!(hooks.target(&child_call).unwrap().key(), target.key());
+        child_call.complete(Ok(()));
+        ready(&mut child.promise).unwrap();
+        drop((child, projected, cap, client));
+        assert_eq!(hooks.inbox.live_calls.get(), 0);
+        hooks.collect(graph);
+        hooks.close(graph, Error::disconnected("done".into()));
+        graph.release(route);
+        graph.release(target);
+        while graph.take_retired().is_some() {}
+        assert!(graph.is_empty());
+    })
+    .unwrap();
+}
+
+#[test]
 fn prepared_pipeline_wakes_each_interest_and_cancels_after_the_last_drop() {
     for keep_response in [false, true] {
         clients::with_growing_graph::<u32, u8, _>(0, 2, |graph| {

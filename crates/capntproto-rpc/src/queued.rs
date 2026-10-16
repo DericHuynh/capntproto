@@ -104,15 +104,29 @@ impl PipelineInner {
 pub(crate) struct PipelineInnerSender {
     inner: Option<Weak<RefCell<PipelineInner>>>,
     resolve_on_drop: bool,
+    // A prepared hosted request already owns the wire projection queue.
+    // This weak sender never keeps a canceled public pipeline alive.
+    wire: Option<Weak<crate::scoped::wire::PipelineState>>,
 }
 
 impl PipelineInnerSender {
+    pub(crate) fn wire(pipeline: &Rc<crate::scoped::wire::PipelineState>) -> Self {
+        Self {
+            inner: None,
+            resolve_on_drop: false,
+            wire: Some(Rc::downgrade(pipeline)),
+        }
+    }
+    pub(crate) fn take_wire(&mut self) -> Option<Option<Rc<crate::scoped::wire::PipelineState>>> {
+        self.wire.take().map(|pipeline| pipeline.upgrade())
+    }
     // Preserve the single-use set_pipeline contract even when the caller
     // explicitly promises not to pipeline on this answer.
     pub(crate) fn disabled() -> Self {
         Self {
             inner: None,
             resolve_on_drop: false,
+            wire: None,
         }
     }
 
@@ -120,6 +134,7 @@ impl PipelineInnerSender {
         Self {
             inner: self.inner.clone(),
             resolve_on_drop: false,
+            wire: self.wire.clone(),
         }
     }
 }
@@ -150,6 +165,12 @@ impl PipelineInnerSender {
         pipeline: Box<dyn PipelineHook>,
         mut adopt: impl FnMut(&Rc<RefCell<ClientInner>>, Vec<PipelineOp>),
     ) {
+        if let Some(wire) = self.wire.take() {
+            if let Some(wire) = wire.upgrade() {
+                wire.publish(pipeline);
+            }
+            return;
+        }
         if let Some(inner) = self.inner.take().and_then(|weak| weak.upgrade()) {
             PipelineInner::resolve_with(&inner, Ok(pipeline), |_, client, ops| adopt(client, ops));
         }
@@ -160,6 +181,12 @@ impl PipelineInnerSender {
     }
 
     pub(crate) fn complete_with(mut self, pipeline: impl FnOnce() -> Box<dyn PipelineHook>) {
+        if let Some(wire) = self.wire.take() {
+            if let Some(wire) = wire.upgrade().filter(|wire| wire.unresolved()) {
+                wire.publish(pipeline());
+            }
+            return;
+        }
         if let Some(weak_queued) = self.inner.take() {
             if let Some(pipeline_inner) = weak_queued.upgrade() {
                 let resolved = pipeline_inner.borrow().redirect.is_some();
@@ -187,17 +214,10 @@ impl Pipeline {
             PipelineInnerSender {
                 inner: Some(Rc::downgrade(&inner)),
                 resolve_on_drop: true,
+                wire: None,
             },
             Self { inner },
         )
-    }
-
-    // A request with a shared unit completion already has the exact driver
-    // needed by queued projections. Retain it without another shared future.
-    pub(crate) fn drive_shared(&mut self, promise: futures::future::Shared<Promise<(), Error>>) {
-        let mut inner = self.inner.borrow_mut();
-        assert!(inner.promise_to_drive.is_none());
-        inner.promise_to_drive = Some(promise);
     }
 
     pub(crate) fn drive<F>(&mut self, promise: F)
@@ -259,15 +279,24 @@ impl PipelineHook for Pipeline {
     }
 }
 
+enum PipelineOwner {
+    Queued {
+        _pipeline: Rc<RefCell<PipelineInner>>,
+    },
+    Wire {
+        _pipeline: Rc<crate::scoped::wire::PipelineState>,
+    },
+}
+
 pub(crate) struct ClientInner {
     // Once the promise resolves, this will become non-null and point to the underlying object.
     // A resolved target is immutable. Clone its owner without allocating a new
     // hook or retaining a cell borrow across application callbacks.
     redirect: Option<Rc<dyn ClientHook>>,
 
-    // The queued::PipelineInner that this client is derived from, if any. We need to hold on
-    // to a reference to it so that it doesn't get canceled before the client is resolved.
-    pipeline_inner: Option<Rc<RefCell<PipelineInner>>>,
+    // Keep the originating pipeline alive until forwarding publishes a target.
+    // Wire projections already have a queue and need no queued PipelineInner.
+    pipeline_owner: Option<PipelineOwner>,
 
     promise_to_drive: Option<futures::future::Shared<Promise<(), Error>>>,
 
@@ -316,7 +345,7 @@ impl ClientInner {
         }
         let (driver, pipeline) = {
             let mut state = state.borrow_mut();
-            (state.promise_to_drive.take(), state.pipeline_inner.take())
+            (state.promise_to_drive.take(), state.pipeline_owner.take())
         };
         drop((driver, pipeline));
     }
@@ -327,10 +356,24 @@ pub(crate) struct Client {
 }
 
 impl Client {
+    pub(crate) fn wire(
+        pipeline: Rc<crate::scoped::wire::PipelineState>,
+        driver: Option<futures::future::Shared<Promise<(), Error>>>,
+    ) -> Self {
+        let client = Self::new(None);
+        {
+            let mut inner = client.inner.borrow_mut();
+            inner.pipeline_owner = Some(PipelineOwner::Wire {
+                _pipeline: pipeline,
+            });
+            inner.promise_to_drive = driver;
+        }
+        client
+    }
     pub(crate) fn new(pipeline_inner: Option<Rc<RefCell<PipelineInner>>>) -> Self {
         let inner = Rc::new(RefCell::new(ClientInner {
             promise_to_drive: None,
-            pipeline_inner,
+            pipeline_owner: pipeline_inner.map(|_pipeline| PipelineOwner::Queued { _pipeline }),
             redirect: None,
             call_forwarding_queue: SenderQueue::new(),
             client_resolution_queue: SenderQueue::new(),

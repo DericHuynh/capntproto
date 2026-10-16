@@ -66,6 +66,7 @@ struct Inbox {
     closed: Cell<bool>,
     live_calls: Cell<usize>,
     maximum_calls: usize,
+    maximum_clients: usize,
 }
 impl Inbox {
     fn notify_enqueue(&self) {
@@ -150,6 +151,7 @@ impl<'id> ClientHooks<'id> {
                 closed: Cell::new(false),
                 live_calls: Cell::new(0),
                 maximum_calls,
+                maximum_clients,
             }),
             entries: Vec::new(),
             maximum_clients,
@@ -207,18 +209,35 @@ impl<'id> ClientHooks<'id> {
         mut metadata: impl FnMut(&G::Owner) -> EndpointMetadata,
     ) -> capnp::Result<capability::Client> {
         self.collect_with_metadata(graph, &mut metadata);
+        let exported = self.export_after_collect(graph, client)?;
+        self.collect_with_metadata(graph, metadata);
+        Ok(exported)
+    }
+
+    // Wire completion refreshes metadata before publishing capabilities to
+    // application observers. Reclaim dead entries once before reserving the
+    // endpoint; its caller performs the following metadata-aware refresh.
+    fn export_before_wire_refresh(
+        &mut self,
+        graph: &mut impl Capabilities<'id>,
+        client: &Client<'id>,
+    ) -> capnp::Result<capability::Client> {
+        self.collect(graph);
+        self.export_after_collect(graph, client)
+    }
+
+    fn export_after_collect(
+        &mut self,
+        graph: &mut impl Capabilities<'id>,
+        client: &Client<'id>,
+    ) -> capnp::Result<capability::Client> {
         let pending = !graph
             .is_settled(client)
             .map_err(|e| Error::failed(e.to_string()))?;
         let client = graph
             .retain_key(client.key())
             .map_err(|e| Error::failed(e.to_string()))?;
-        // The metadata-aware pass above already reclaimed dead hooks and
-        // published settled routes. Do not repeat the same scan without
-        // metadata while exporting this retained owner.
-        let exported = self.export_retained(graph, client, pending, false)?;
-        self.collect_with_metadata(graph, metadata);
-        Ok(exported)
+        self.export_retained(graph, client, pending, false)
     }
 
     fn export_retained(

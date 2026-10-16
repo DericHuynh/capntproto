@@ -1026,7 +1026,7 @@ fn pipeline_drop_releases_interest_before_synchronous_wake() {
         used: Cell::new(false),
         adopted: RefCell::default(),
         cached: RefCell::default(),
-        _credit: None,
+        _credit: Cell::new(None),
         waiting: RefCell::new(VecDeque::new()),
         finished: RefCell::new(None),
         inbox: Rc::downgrade(&hooks.inbox),
@@ -1038,8 +1038,8 @@ fn pipeline_drop_releases_interest_before_synchronous_wake() {
     assert!(hooks
         .poll_next(&mut Context::from_waker(&waker))
         .is_pending());
-    let last = WirePipeline(PipelineRef(Some(pipeline.clone())));
-    drop(WirePipeline(PipelineRef(Some(pipeline.clone()))));
+    let last = WirePipeline(PipelineRef(Some(pipeline.clone()), None));
+    drop(WirePipeline(PipelineRef(Some(pipeline.clone()), None)));
     assert_eq!(observe.0.load(Ordering::SeqCst), usize::MAX);
     drop(last);
     assert_eq!(observe.0.load(Ordering::SeqCst), 1);
@@ -1050,12 +1050,12 @@ fn pipeline_drop_releases_interest_before_synchronous_wake() {
     assert!(hooks
         .poll_next(&mut Context::from_waker(&waker))
         .is_pending());
-    drop(WirePipeline(PipelineRef(Some(pipeline.clone()))));
+    drop(WirePipeline(PipelineRef(Some(pipeline.clone()), None)));
     assert_eq!(observe.0.load(Ordering::SeqCst), usize::MAX);
     // Custom hooks can release a pipeline during publication. A borrowed
     // completion cell must preserve the conservative wake without panicking.
     let borrowed = pipeline.finished.borrow_mut();
-    drop(WirePipeline(PipelineRef(Some(pipeline.clone()))));
+    drop(WirePipeline(PipelineRef(Some(pipeline.clone()), None)));
     assert_eq!(observe.0.load(Ordering::SeqCst), 1);
     drop(borrowed);
     OBSERVED.with(|slot| slot.borrow_mut().take());
