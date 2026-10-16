@@ -2961,3 +2961,146 @@ fn direct_deferred_admission_matches_general_validation_and_ownership() {
         assert_eq!(run(true), run(false), "fault {fault}");
     }
 }
+
+#[test]
+fn direct_retirement_matches_general_validation_ownership_and_callbacks() {
+    for release in [false, true] {
+        for fault in 0..8 {
+            let run = |direct: bool| {
+                with_driver(|mut driver, messages| {
+                    driver.defer_call_dispatch(true);
+                    let target = driver
+                        .runtime
+                        .endpoint(binding::Route::local(9), clients::Location::Local)
+                        .unwrap();
+                    let export = {
+                        let mut batch = driver.ledgers.exports.batch();
+                        let grant = crate::clients::stage(&mut driver.runtime, &mut batch, &target)
+                            .unwrap();
+                        batch.commit();
+                        grant.id()
+                    };
+                    driver
+                        .ledgers
+                        .answers
+                        .admit(
+                            AnswerId::from_wire(9),
+                            Answer::new(pipelines::Results::new(())),
+                        )
+                        .unwrap_or_else(|_| panic!("answer"));
+                    if fault == 5 {
+                        let frame = Frame::build(messages, 1024, Default::default(), |builder| {
+                            calls::dynamic_call(
+                                builder,
+                                QuestionId::from_wire(8),
+                                calls::Target::Imported(ImportId::from_wire(export.to_wire())),
+                                DynamicCall::default(),
+                                |_| Ok(()),
+                            )
+                        })
+                        .unwrap();
+                        assert!(matches!(
+                            driver.receive_general(
+                                frame,
+                                messages,
+                                &mut [0; 8],
+                                &mut |_| (),
+                                |_| Ok(()),
+                            ),
+                            Ok(Received::DeferredCall(_))
+                        ));
+                    }
+                    if fault == 6 {
+                        driver.disconnect(capnp::ErrorKind::Disconnected);
+                    }
+                    let mut outcomes = alloc::vec::Vec::new();
+                    // A second control exercises duplicate Finish and repeated
+                    // Release without granting a new reference between them.
+                    for _ in 0..2 {
+                        let options = capnp::message::ReaderOptions {
+                            traversal_limit_in_words: if fault == 4 { Some(1) } else { Some(1024) },
+                            ..Default::default()
+                        };
+                        let frame = Frame::build(messages, 256, options, |builder| {
+                            if release {
+                                calls::release(
+                                    builder,
+                                    ImportId::from_wire(if fault == 3 {
+                                        u32::MAX
+                                    } else {
+                                        export.to_wire()
+                                    }),
+                                    match fault {
+                                        1 => 0,
+                                        2 => 2,
+                                        _ => 1,
+                                    },
+                                )
+                            } else {
+                                calls::finish(
+                                    builder,
+                                    QuestionId::from_wire(if fault == 3 { u32::MAX } else { 9 }),
+                                    fault != 1,
+                                )
+                            }
+                        })
+                        .unwrap();
+                        let original = messages.read(&frame.lease).to_vec();
+                        let mut scratch = [0; 8];
+                        let scratch = if fault == 7 {
+                            &mut scratch[..0]
+                        } else {
+                            &mut scratch[..]
+                        };
+                        let mut receiver = |_| panic!("retirement must not create an import");
+                        let producer = |_| panic!("retirement must not create a producer");
+                        let result = if direct {
+                            driver.receive_with_policy(
+                                frame,
+                                messages,
+                                scratch,
+                                &mut receiver,
+                                producer,
+                            )
+                        } else {
+                            driver.receive_general(
+                                frame,
+                                messages,
+                                scratch,
+                                &mut receiver,
+                                producer,
+                            )
+                        };
+                        outcomes.push(match result {
+                            Ok(Received::Finished(retired)) => Ok((0, retired.is_some())),
+                            Ok(Received::Released) => Ok((1, false)),
+                            Ok(_) => panic!("unexpected retirement event"),
+                            Err(rejected) => {
+                                assert_eq!(&*messages.read(&rejected.frame.lease), original);
+                                let result = Err((rejected.error, rejected.producer.is_some()));
+                                rejected.frame.release(messages);
+                                result
+                            }
+                        });
+                    }
+                    let snapshot = (
+                        outcomes,
+                        driver.ledgers.answers.len(),
+                        driver.ledgers.imports.len(),
+                        driver.ledgers.exports.len(),
+                        driver.ledgers.exports.retirement_is_idle(32),
+                        driver.has_pending_call(),
+                    );
+                    driver.runtime.release(target);
+                    close(
+                        driver,
+                        messages,
+                        &mut messages::Queue::new_growing(0, 8).unwrap(),
+                    );
+                    snapshot
+                })
+            };
+            assert_eq!(run(true), run(false), "release {release}, fault {fault}");
+        }
+    }
+}

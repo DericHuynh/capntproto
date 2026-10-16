@@ -38,6 +38,20 @@ impl Output {
         if !self.flushing && queue.is_empty() {
             return Poll::Ready(Ok(()));
         }
+        self.poll_pending(writer, queue, messages, cx, budget)
+    }
+
+    // Keep the clean-output checks inline, while sharing the write/flush state
+    // machine between the coordinator's polls before and after publication.
+    #[inline(never)]
+    fn poll_pending<'pool, R, W: WriteResources<R>>(
+        &mut self,
+        writer: &mut W,
+        queue: &mut Queue<'pool, '_, R>,
+        messages: &mut Messages<'pool, '_, '_>,
+        cx: &mut Context<'_>,
+        budget: NonZeroUsize,
+    ) -> Poll<Result<(), SendError<W::Error>>> {
         if !self.flushing {
             writer.start_batch(queue.len().min(budget.get()));
             let mut tracked = Tracking {

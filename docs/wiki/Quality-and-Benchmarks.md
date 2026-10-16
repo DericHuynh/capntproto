@@ -4785,6 +4785,37 @@ checksums); executable SHA-256 is
 `9beefa2a5f4ae9ad62f2149a1e1f426d0c6c54d9a42b63160d2eecefd238f79c`.
 Different misses across campaigns do not establish a causal code effect.
 
+The subsequent dedicated run at `12458b91` passes **14/16** cells (11 remote,
+3 loopback). Independent recomputation verifies all 350 remote and 60 loopback
+trials, pooled p50/p95/p99 and inclusive 1.05 gates. Pipeline remains a miss:
+328,372 ns portable versus 298,303 ns C++ (1.100800×). The 64-byte loopback
+also misses: 39,195 ns versus 34,983 ns legacy (1.120401×). Dependent-read passes
+narrowly at 1.049499×; the other thirteen cells also pass. This campaign does
+not qualify the complete target or establish a causal improvement over earlier
+campaigns with different controls.
+
+All four runtime manifests match the build, and the completed workflow log
+records the expected checkout and cleanup. All 90 socket journals validate
+executable and probe identities. Pipeline CPU p50 is 36,172/21,578 ns portable
+versus 25,819/15,986.5 ns C++ (client/server). Decoded steady writes match:
+21 client Finish/Release/Call/Call groups of 1,368 bytes and 22 server paired
+Return groups of 1,216 bytes. Startup and cleanup differences remain retained;
+instrumented timings remain excluded from acceptance. Evidence is in
+`target/portable-performance-outlined-admission-dedicated-20261016/`;
+measured executable SHA-256 is
+`adce6815439184f2ce80eb914b3569d7aecd32122767bf4bcee09a05ea7fe89c`.
+Subsequent buffered notifications and unpublished receive changes are absent.
+
+Full CI at that same `12458b91` checkpoint passed 2,281 tests, with 20 skipped,
+zero failed and zero incomplete tests. All other executed jobs passed, including
+full Miri, platform builds, fuzzing, mutation controls and formal checks. Required
+CI failed 50 unchanged per-file coverage metric floors; release benchmarks were
+skipped. The new direct getter adds two core coverage misses to the preceding
+48-floor set. The complete 908-entry Cargo artifact, validated GitHub digest,
+job log and exact metric differences are retained in
+`target/portable-performance-outlined-admission-ci-20261016/` (10 files plus
+checksums). No coverage baseline was lowered.
+
 The buffered-notification candidate queues bounded output batches without
 waking their driver for every frame. Polling the flush barrier notifies any
 unconsumed output; dropping the existing Sender field also notifies it during
@@ -4809,6 +4840,96 @@ SHA-256 is `f9ff1489832b52f3d27da4d26196631bc099ca4bb348ced3b035b6513e68750c`.
 The preceding notification prototype is separately retained in
 `target/portable-performance-deferred-batch-notification-prototype-20261016/`.
 Neither experiment changes fixtures, controls, coverage floors or acceptance.
+
+A separate buffered-reply outlining experiment was rejected. Moving that
+admission out of the driver loop reduced the loop from 40,559 to 37,961 bytes,
+but added a 2,586-byte helper. Pipeline client instructions rose to 76,280,276
+and simulated instruction-cache misses rose to 5,275,543. Server changes were
+small (65,800,303 instructions; 4,831,383 simulated misses). Twenty paired
+pipeline trials remained bimodal and established no client CPU gain; pooled
+current/baseline CPU p50 was 14,116/12,468 ns client and 10,656/9,034 ns server.
+All 145 wire tests and Clippy passed. No full latency campaign was run for this
+rejected intermediate. Exact source, all repetitions, profiles and executable
+identity are retained in
+`target/portable-performance-outlined-buffered-receive-rejected-20261016/`
+(156 files plus checksums). The inlining change was reverted before testing
+direct checked Finish/Release admission.
+
+The checked-retirement candidate handles eligible Finish and Release frames
+inside the hosted admission path's first checked root traversal. It uses the
+same failure-atomic ledger transactions and a shared Finish commit helper.
+The initial four-way admission result increased ordinary Call work; preserving
+the original Option<Request> layout did not remove that small instruction
+increase, though its pipeline cache profile improved. Both exact variants remain
+retained, with no claim that representation size caused a latency improvement.
+
+The final local representation passes 146 hosted and 96 allocation-free wire
+tests, both Clippy profiles, differential retirement Miri and 72 mixed-peer cases.
+The preceding representation separately passed 295 RPC and 92 integration tests.
+Differential tests compare both receive paths for duplicate controls, invalid
+releases, retained rejected bytes, scratch exhaustion, reader limits, pending
+Calls and disconnection, and forbid producer/import callbacks during retirement.
+Pipeline instructions are 76,308,856/65,093,829 and simulated instruction-cache
+misses are 5,240,055/4,723,228. Eighty paired CPU/wall trials give pipeline
+client/server p50 12,358/8,362 ns versus 12,418/8,603 ns for buffered notification;
+one slow current pipeline repetition remains included. Unary server CPU rises
+from 1,542 to 1,603 ns. Eighteen gated profiles preserve all matched C++ byte
+totals, and decoded steady pipeline writes preserve both message groups.
+All 240 local trials independently validate, but only 9/16 targets pass
+(7 remote, 2 loopback), and both empty instruction peers miss 1.05. This is not
+dedicated qualification or proof of a general latency gain. Complete evidence is
+in `target/portable-performance-checked-retirement-receive-20261016/`; executable
+SHA-256 is `81975acbb4f596c445742a831052408db51598e0b343429d636c38bcd4853de5`.
+The 67-file preceding prototype archive is
+`target/portable-performance-direct-retirement-receive-prototype-20261016/`.
+
+Removing the additional speculative plain-Return probe lets general admission
+select its existing plain or capability-bearing transaction once. The buffered
+and owned direct plain receivers remain. All 146 hosted and 96 allocation-free
+wire tests, both Clippy profiles, two focused Return Miri tests and 72 mixed-peer
+cases pass. Pipeline instructions become 75,597,739/65,087,165; simulated
+instruction-cache misses are 5,243,523/4,689,635. Matched gated pipeline windows
+use 57,801.1/52,809 instructions, retaining the same C++ read/write byte totals.
+
+Eighty paired trials give pipeline CPU p50 12,158/8,443 ns versus the preceding
+receive binary's 11,967/8,522 ns. Dependent-read improves in that diagnostic;
+unary and callback repetitions remain variable. All 240 local trials and pooled
+gates independently validate, but only 10/16 pass (7 remote, 3 loopback), and
+both empty instruction peers still miss. No general latency gain or dedicated
+qualification is established. Exact source, checks, trials and profiles are in
+`target/portable-performance-single-plain-probe-20261016/`; executable SHA-256
+is `d1a27f0e5eae54ff2e3ce76fadeafe46e92efcb9908711515a8098a258bd1e4d`.
+Native processing samples have a separate complete pipeline-only run. Earlier
+sampling attempts with too few unary server observations and an iteration
+request rejected by the fixture budget remain retained as incomplete evidence.
+The fixture budget and all acceptance gates are unchanged.
+
+Sharing the output write/flush routine preserves inline failed/empty checks
+and all original flush ordering, while shrinking the driver loop from 40,559
+to 39,087 bytes. Its cumulative candidate passes 155 allocation-free and 197
+allocation-enabled engine tests, both engine Clippy profiles, five output Miri
+tests, 295 RPC tests, 92 integration tests and 72 mixed-peer cases. Hosted RPC
+Clippy, formatting, documentation and the unsafe gate also pass. The unchanged
+receive sources retain the separate wire and Return-Miri evidence above.
+
+Pipeline instructions are 75,625,363/65,078,321; simulated instruction-cache
+misses rise to 5,301,146/4,764,042 while conditional branch misses fall. Forty
+paired unary/pipeline trials give pipeline CPU p50 11,892.5/8,042 ns versus
+16,474.5/13,169.5 ns for the frozen preceding executable, whose repetitions
+are strongly bimodal. Those pooled values do not establish a causal speedup.
+Eighteen gated profiles retain matched C++ byte totals. Decoded steady pipeline
+writes retain 11 client Finish/Release/Call/Call groups of 1,368 bytes and
+12 server paired Return groups of 1,216 bytes; startup/cleanup differences remain.
+Allocator counts are unchanged by this refactor.
+
+All 240 local trials and pooled gates independently validate, but only 10/16
+pass (7 remote, 3 loopback). Small unary, dependent-read, pipeline, write-read,
+callback and 1 KiB loopback miss; both empty instruction peers also miss 1.05.
+This is provisional pending dedicated qualification. Complete evidence is in
+`target/portable-performance-shared-output-poll-20261016/`; executable SHA-256
+is `37f84b1d2b9cb0c3efeac22d16e0807b396f845d192811caf959c671f7bff2cc`.
+The earlier 263-file prototype archive contains only profiles and forty paired
+trials, not a complete campaign. No fixture, reference or threshold changed.
 
 The dependent-read fixtures retain different ownership lifetimes. Rust's parent
 response and borrowed child capability survive across the child await. C++'s

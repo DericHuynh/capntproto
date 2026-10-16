@@ -1039,76 +1039,9 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         receiver: &mut impl ImportReceiver<I>,
         make_producer: impl FnOnce(usize) -> capnp::Result<A>,
     ) -> Result<Received<'id, A>, Rejected<'pool, A>> {
-        if self.disconnected.is_none() && !self.ledgers.questions.is_empty() {
-            let blocked = self.resolution.is_some() || self.exchanges.iter().any(|slot| {
-                matches!(&slot.exchange, Some(Exchange::Returned(response))
-                    if (response.requires_ordered_propagation() || slot.handoff.is_some())
-                        && (self.outgoing.pending_for(response.key()) || self.invocation_pipelines.iter().any(|slot| slot.pending_for(response.key()))))
-            });
-            if !blocked {
-                let admitted = frame
-                    .with(messages, |root| -> Result<_, super::Error> {
-                        use capnp::traits::IntoInternalStructReader;
-                        let fields =
-                            rpc_capnp::api::MessageRef::from(root.into_internal_struct_reader());
-                        if fields.tag() != rpc_capnp::api::MessageUnionTag::Return {
-                            return Ok(None);
-                        }
-                        let result = rpc_capnp::return_::Reader::from(
-                            fields.r#return()?.into_internal_struct_reader(),
-                        );
-                        let id = result.get_answer_id();
-                        let Some((index, question)) =
-                            self.exchanges
-                                .iter()
-                                .enumerate()
-                                .find_map(|(index, slot)| match &slot.exchange {
-                                    Some(Exchange::Pending(question))
-                                        if question.key().id().to_wire() == id =>
-                                    {
-                                        Some((index, question))
-                                    }
-                                    _ => None,
-                                })
-                        else {
-                            return Ok(None);
-                        };
-                        question
-                            .try_admit_plain_return(
-                                result,
-                                &frame,
-                                messages,
-                                &mut self.ledgers.questions,
-                                false,
-                            )
-                            .map(|admitted| admitted.map(|admitted| (index, admitted)))
-                    })
-                    .and_then(core::convert::identity);
-                match admitted {
-                    Ok(Some((index, admitted))) => {
-                        // The exclusive receive operation has not exposed a callback
-                        // between locating the owner and committing its admission.
-                        let slot = &mut self.exchanges[index];
-                        let Some(Exchange::Pending(question)) = slot.exchange.take() else {
-                            unreachable!("admitted plain reply owner")
-                        };
-                        let response =
-                            question.finish_return(frame, messages, admitted.into_general());
-                        let key = response.key();
-                        slot.exchange = Some(Exchange::Returned(response));
-                        return Ok(Received::Returned(key));
-                    }
-                    Ok(None) => (),
-                    Err(error) => {
-                        return Err(Rejected {
-                            error: Error::Input(error),
-                            frame,
-                            producer: None,
-                        })
-                    }
-                }
-            }
-        }
+        // General Return admission already tries the plain transaction before
+        // its complex fallback. A separate probe here repeats checked decoding
+        // for capability-bearing results without changing their ownership.
         let mut make_producer = Some(make_producer);
         if self.defer_calls
             && self.disconnected.is_none()
@@ -1118,15 +1051,50 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             // The hosted worker owns dispatch. Ordinary Call admission can
             // commit directly to its pending slot without constructing the
             // general control/Return classification and its optional owners.
-            // The same decoder and two-ledger transaction enforce every limit.
+            // Finish and Release use that same checked root rather than decoding
+            // it again through the general classifier and control handler.
+            // The same ledger transactions enforce every ownership limit.
+            enum Retirement {
+                Finish(AnswerId, bool),
+                Released,
+            }
+            // Preserve the ordinary Call's compact Option<Request> layout.
+            // Retirement metadata carries no request or producer ownership.
+            let mut retirement = None;
             let mut owner = None;
             let admitted = frame
                 .with_size(messages, |root, words| {
                     use capnp::traits::IntoInternalStructReader;
                     let fields =
                         rpc_capnp::api::MessageRef::from(root.into_internal_struct_reader());
-                    if fields.tag() != rpc_capnp::api::MessageUnionTag::Call {
-                        return Ok(None);
+                    match fields.tag() {
+                        rpc_capnp::api::MessageUnionTag::Finish => {
+                            let rpc_capnp::message::Finish(finish) =
+                                root.which().map_err(|_| super::Error::WrongMessage)?
+                            else {
+                                unreachable!("classified Finish")
+                            };
+                            let finish = finish?;
+                            retirement = Some(Retirement::Finish(
+                                AnswerId::from_wire(finish.get_question_id()),
+                                finish.get_release_result_caps(),
+                            ));
+                            return Ok(None);
+                        }
+                        rpc_capnp::api::MessageUnionTag::Release => {
+                            let rpc_capnp::message::Release(release) =
+                                root.which().map_err(|_| super::Error::WrongMessage)?
+                            else {
+                                unreachable!("classified Release")
+                            };
+                            inbound::released(release?, &mut self.ledgers.exports, scratch)
+                                .map_err(super::Error::Admission)?
+                                .accept();
+                            retirement = Some(Retirement::Released);
+                            return Ok(None);
+                        }
+                        rpc_capnp::api::MessageUnionTag::Call => (),
+                        _ => return Ok(None),
                     }
                     let producer = make_producer.take().unwrap()(words)?;
                     owner = Some(answer::State::new(pipelines::Results::new(producer)));
@@ -1166,7 +1134,22 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                         }),
                     })
                 }
-                Ok(None) => (),
+                Ok(None) => match retirement {
+                    Some(Retirement::Finish(id, release_result_caps)) => {
+                        return self.receive_finish(
+                            id,
+                            release_result_caps,
+                            frame,
+                            messages,
+                            scratch,
+                        );
+                    }
+                    Some(Retirement::Released) => {
+                        frame.release(messages);
+                        return Ok(Received::Released);
+                    }
+                    None => (),
+                },
             }
         }
         self.receive_general(frame, messages, scratch, receiver, make_producer.unwrap())
@@ -1703,29 +1686,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 }
             }
             Kind::Finish(id, release_result_caps) => {
-                let outcome = answer::finished_parts(
-                    id,
-                    release_result_caps,
-                    messages,
-                    &mut self.ledgers.answers,
-                    &mut self.ledgers.exports,
-                    scratch,
-                );
-                match outcome {
-                    Ok(finished) => {
-                        frame.release(messages);
-                        Ok(Received::Finished(
-                            finished.and_then(|value| value.retired).map(|state| {
-                                state.release(messages).release(messages, &mut self.runtime)
-                            }),
-                        ))
-                    }
-                    Err(error) => Err(Rejected {
-                        error: Error::Input(error),
-                        frame,
-                        producer: None,
-                    }),
-                }
+                self.receive_finish(id, release_result_caps, frame, messages, scratch)
             }
             Kind::Release => {
                 let outcome = frame
@@ -1798,6 +1759,43 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     }),
                 }
             }
+        }
+    }
+
+    // Both checked admission paths commit Finish through the same ledger
+    // transition, retaining its exact Return, grants and cancellation policy.
+    #[allow(clippy::result_large_err)]
+    #[inline(never)]
+    fn receive_finish(
+        &mut self,
+        id: AnswerId,
+        release_result_caps: bool,
+        frame: Frame<'pool>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        scratch: &mut [u32],
+    ) -> Result<Received<'id, A>, Rejected<'pool, A>> {
+        let outcome = answer::finished_parts(
+            id,
+            release_result_caps,
+            messages,
+            &mut self.ledgers.answers,
+            &mut self.ledgers.exports,
+            scratch,
+        );
+        match outcome {
+            Ok(finished) => {
+                frame.release(messages);
+                Ok(Received::Finished(
+                    finished
+                        .and_then(|value| value.retired)
+                        .map(|state| state.release(messages).release(messages, &mut self.runtime)),
+                ))
+            }
+            Err(error) => Err(Rejected {
+                error: Error::Input(error),
+                frame,
+                producer: None,
+            }),
         }
     }
 
