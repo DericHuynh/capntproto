@@ -215,9 +215,19 @@ mod tests {
         );
         let usage = allocation_counter::measure(|| {
             let policy = Capacity::Growing { maximum: 1 };
-            let mut value = policy.buffer::<usize, 0>(1, || 37).unwrap();
-            assert!(value.ensure(policy, 1, || panic!("existing owner")));
-            assert!(!value.ensure(policy, 2, || panic!("over budget")));
+            let fills = core::cell::Cell::new(0);
+            let mut fill = || {
+                fills.set(fills.get() + 1);
+                37usize
+            };
+            let mut value = policy.buffer::<usize, 0>(1, &mut fill).unwrap();
+            assert!(value.ensure(policy, 1, &mut fill));
+            assert!(!value.ensure(policy, 2, &mut fill));
+            assert_eq!(
+                fills.get(),
+                1,
+                "reuse and rejected growth must not initialize owners"
+            );
             assert_eq!(&*value, &[37]);
             let mut owned = value.into_iter();
             assert_eq!(owned.next(), Some(37));

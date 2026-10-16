@@ -586,6 +586,9 @@ impl ParamsHook for Request {
 }
 
 impl Request {
+    pub(crate) fn single_capability_table(&self) -> Option<&[Option<Box<dyn ClientHook>>]> {
+        matches!(self.cap_table.as_slice(), [Some(_)]).then_some(&self.cap_table)
+    }
     pub(crate) fn prepared_call(
         &self,
     ) -> Option<&capntproto_rpc_wire::owned::connection::PreparedCall<message::HeapAllocator>> {

@@ -571,7 +571,16 @@ impl CallParams {
     fn single_capability_table(&self) -> Option<&[Option<Box<dyn ClientHook>>]> {
         match self {
             Self::Request(request) => request.single_capability_table(),
-            Self::Hook(_) => None,
+            Self::Hook(hook) => hook.as_any().and_then(|params| {
+                params
+                    .downcast_ref::<crate::local::Request>()
+                    .and_then(crate::local::Request::single_capability_table)
+                    .or_else(|| {
+                        params
+                            .downcast_ref::<crate::local::Params>()
+                            .and_then(crate::local::Params::single_capability_table)
+                    })
+            }),
         }
     }
 

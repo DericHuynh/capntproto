@@ -3032,6 +3032,40 @@ dedicated workflow as manual dispatch. PR correctness, coverage and formal
 verification remain independent required checks; a timing campaign does not
 replace them.
 
+### Single-capability publication follow-up (October 16, 2026)
+
+Single-capability Calls can now publish directly through the ordinary descriptor
+transaction after exclusive dispatch preflight. Only reachable capability-table
+entries are retained. The path preserves resource attachments, frozen routes,
+question generations, grant validation, cancellation and rollback; unsupported
+calls keep queued dispatch. Capability publication still invalidates ordinary
+control and maintenance scans. Private generated request identity is used only
+to inspect its own parameter table, without treating public hook pointers or
+brands as authority. The invocation completion stage now contains local results
+only; remote results already transfer directly from their sent state.
+
+The `immediatecap-final` local campaign passes eight of twelve workflow cells.
+Callback p50 changes from 54.651 to 52.167 µs and callback-client instructions
+from 83,764,623 to 76,961,074. Dependent read (1.282×), pipeline read (1.205×),
+callback (1.280×) and 64 KiB (1.159×) still miss the faster same-campaign peer.
+All samples are retained, including noisy controls and regressions. Narrowing
+worker wakeups was rejected because it did not reduce meaningful work and
+increased pipeline-server instructions; its early-pipeline wake regression
+remains as a correctness fixture.
+
+The subsequent `localstage` binary has SHA-256
+`92a20f420bd83ad573d4748249925ad8d839a3a3a54347b373f4e126fc859afd`.
+Its four local loopback ratios are 1.019×, 1.012×, 1.011× and 1.106×: 64 KiB
+still misses. Empty-call instructions are 17,998,014 / 17,158,581 client and
+16,602,062 / 16,068,910 server against legacy. These local checks do not close
+the dedicated latency gap. Validation passes 263 RPC, 125 allocating wire,
+86 fixed and 89 growing portable tests, 72 mixed-peer workflows and Clippy.
+A buffer regression now counts its initializer invocations directly instead
+of introducing never-called panic closures. Coverage thresholds are unchanged;
+the previous PR coverage failure remains outstanding until the new tree passes.
+Profiles, executable identities, trials and patches are retained in
+`target/portable-performance-capabilities-20261016/`.
+
 ### Portable and legacy instruction qualification
 
 The October 15 optimization batch meets a **1.05× portable/legacy instruction

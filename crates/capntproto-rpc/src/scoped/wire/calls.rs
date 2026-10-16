@@ -34,6 +34,7 @@ pub(super) enum Publication<'a, 'id> {
         target: &'a Client<'id>,
         method: DynamicCall,
         params: &'a connection::ImmediateParams<'a>,
+        capability: Option<&'a Client<'id>>,
     },
 }
 pub(super) enum Published<'id> {
@@ -316,7 +317,29 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         target,
                         method,
                         params,
+                        capability,
                     } => {
+                        if let Some(capability) = capability {
+                            let connection::ImmediateParams::Content(params) = params else {
+                                unreachable!("capability-bearing content")
+                            };
+                            return driver
+                                .try_send_immediate_with_capability(
+                                    target,
+                                    method,
+                                    *params,
+                                    capability,
+                                    messages,
+                                    queue,
+                                    minimum,
+                                    options,
+                                    scratch,
+                                    R::default(),
+                                    |_, _, _| u8::MAX,
+                                )
+                                .map(|key| key.map(Published::Immediate))
+                                .map_err(wire_error);
+                        }
                         return driver
                             .try_send_immediate_borrowed(
                                 target,
@@ -329,7 +352,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                                 R::default(),
                             )
                             .map(|key| key.map(Published::Immediate))
-                            .map_err(wire_error)
+                            .map_err(wire_error);
                     }
                     Publication::Queued { direct } => direct,
                 };
@@ -383,7 +406,13 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         target,
                         method,
                         params,
+                        capability,
                     } => {
+                        // The fixed attachment adapter retains its ordinary
+                        // queued descriptor transaction for capability tables.
+                        if capability.is_some() {
+                            return Ok(None);
+                        }
                         return driver
                             .try_send_immediate_borrowed(
                                 target,
@@ -396,7 +425,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                                 capntproto_rpc_wire::attachments::Sender::new(capacity),
                             )
                             .map(|key| key.map(Published::Immediate))
-                            .map_err(wire_error)
+                            .map_err(wire_error);
                     }
                     Publication::Queued { direct } => direct,
                 };
@@ -949,18 +978,42 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 Some(encoded) => connection::ImmediateParams::EncodedCall(encoded),
                 None => connection::ImmediateParams::Content(call.params()?),
             };
+            // A private one-slot table preserves its exact capability mapping.
+            // Import through the ordinary authority/membrane path, then retain
+            // that branded owner until transactional publication has finished.
+            let retained = match (&params, call.params.single_capability_table()) {
+                (connection::ImmediateParams::Content(content), Some([Some(hook)]))
+                    if content.target_size()?.cap_count != 0 =>
+                {
+                    Some(match hooks.try_retain(&mut driver.runtime, &**hook)? {
+                        Some(client) => client,
+                        None => import(&mut driver.runtime, &**hook)?,
+                    })
+                }
+                _ => None,
+            };
+            let progress = if retained.is_some() {
+                Progress::Advanced
+            } else {
+                Progress::Published
+            };
             let publication = Publication::Immediate {
                 target,
                 method,
                 params: &params,
+                capability: retained.as_ref(),
             };
-            if let Some(published) = send(
+            let published = send(
                 &mut self.invocations,
                 driver,
                 messages,
                 credit.clone(),
                 publication,
-            )? {
+            );
+            if let Some(capability) = retained {
+                driver.runtime.release(capability);
+            }
+            if let Some(published) = published? {
                 let Published::Immediate(question) = published else {
                     unreachable!("immediate publication")
                 };
@@ -979,7 +1032,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         call.complete_boxed(Err(error));
                         // The accepted Call still needs its FIFO flush, and its
                         // canceled question retains ordinary late-Return cleanup.
-                        return Ok(Some(Progress::Published));
+                        return Ok(Some(progress));
                     }
                 };
                 let entry = Some(Entry {
@@ -1003,7 +1056,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 if indexed {
                     self.reply_owners.insert(question.id().to_wire(), index);
                 }
-                return Ok(Some(Progress::Published));
+                return Ok(Some(progress));
             }
         }
         self.admit_queued(index, hooks, driver, messages, options, import)

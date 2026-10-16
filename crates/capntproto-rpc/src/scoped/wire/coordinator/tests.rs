@@ -3,6 +3,7 @@ mod lifecycle;
 mod network;
 mod plain;
 mod policy;
+mod worker;
 use capntproto_rpc_engine::{connection as storage, ids::WireId, imports};
 use capntproto_rpc_wire::clients::Route;
 use std::sync::{

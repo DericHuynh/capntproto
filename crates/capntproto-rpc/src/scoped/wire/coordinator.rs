@@ -1153,7 +1153,29 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         target,
                         method,
                         params,
+                        capability,
                     } => {
+                        if let Some(capability) = capability {
+                            let connection::ImmediateParams::Content(params) = params else {
+                                unreachable!("capability-bearing content")
+                            };
+                            return driver
+                                .try_send_immediate_with_capability(
+                                    target,
+                                    method,
+                                    *params,
+                                    capability,
+                                    messages,
+                                    queue,
+                                    options.output_bytes.get(),
+                                    options.reader,
+                                    scratch,
+                                    bundle,
+                                    |owner, imports, bundle| output.attach(owner, imports, bundle),
+                                )
+                                .map(|key| key.map(super::calls::Published::Immediate))
+                                .map_err(wire_error);
+                        }
                         return driver
                             .try_send_immediate_borrowed(
                                 target,

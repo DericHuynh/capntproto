@@ -1462,6 +1462,69 @@ fn disconnect_prevents_admission_and_termination_recovers_running_requests() {
 }
 
 #[test]
+fn immediate_single_capability_calls_keep_only_reachable_grants() {
+    for reachable in [false, true] {
+        with_peer(|mut driver, messages| {
+            let mut hooks = ClientHooks::new(24, 24);
+            let client = remote(&mut driver, &mut hooks);
+            let cap = capability::Client::new(server(|_, _, _| ok()).add_ref());
+            let mut req = request(&client, 1);
+            req.get().set_as_capability(cap.hook.add_ref());
+            if !reachable {
+                req.get().set_as::<capnp::text::Owned>("data only").unwrap();
+            }
+            let response = req.send();
+            let mut calls = Calls::new(8, None).unwrap();
+            let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+            for _ in 0..128 {
+                if let Poll::Ready(result) = tick(
+                    &mut calls,
+                    &mut hooks,
+                    &mut driver,
+                    messages,
+                    &mut queue,
+                    &mut Context::from_waker(Waker::noop()),
+                ) {
+                    result.unwrap();
+                }
+                if !queue.is_empty() {
+                    break;
+                }
+            }
+            assert_eq!(queue.len(), 1);
+            let entry = calls.entries.iter().flatten().next().unwrap();
+            assert!(
+                entry.wire.task.is_none(),
+                "settled publication creates no temporary queued task"
+            );
+            assert!(matches!(entry.wire.direct, Some(DirectStage::Sent(_))));
+            let bytes = drain(&mut queue, messages);
+            let reader =
+                capnp::serialize::read_message(bytes.as_slice(), Default::default()).unwrap();
+            let root = reader.get_root::<rpc_capnp::message::Reader>().unwrap();
+            let rpc_capnp::message::Call(call) = root.which().unwrap() else {
+                panic!("Call")
+            };
+            let params = call.unwrap().get_params().unwrap();
+            assert_eq!(params.get_cap_table().unwrap().len(), u32::from(reachable));
+            if reachable {
+                assert_eq!(params.get_content().capability_index().unwrap(), 0);
+            } else {
+                assert_eq!(
+                    params
+                        .get_content()
+                        .get_as::<capnp::text::Reader>()
+                        .unwrap(),
+                    "data only"
+                );
+            }
+            drop((response, client, cap));
+            teardown(calls, hooks, driver, messages, &mut queue);
+        });
+    }
+}
+
+#[test]
 fn resource_output_retries_publication_and_attaches_only_to_first_write() {
     with_peer(|mut driver, messages| {
         let mut hooks = ClientHooks::new(24, 24);

@@ -66,7 +66,7 @@ campaign with every applicable cell passing, not an empty-call result alone.
 
 The October 16 checkpoint at `89b9d4ee1f33` passes 12 of 16 cells. Remote fanout
 and callback, plus empty and 64-KiB loopback, remain above the limit. Subsequent
-direct receive, reply batching and completion-binding experiments remain local
+direct receive, reply batching, completion-binding and single-capability publication experiments remain local
 diagnostics until a new dedicated campaign qualifies all sixteen cells.
 
 The first optimization slice indexes immediate reply owners beyond eight calls,
@@ -84,10 +84,10 @@ the serialization decode fixture includes a full byte-validation scan; storage
 research points to durability amortization and ORM worker integration. These do
 not change the portable plaintext target or justify removing fixture validation.
 
-[The October 16 dedicated checkpoint](Quality-and-Benchmarks.md#dedicated-checkpoint-and-scheduling-follow-up-october-16-2026)
-passes seven of twelve remote workflows and three of four loopback payloads.
-Fan-out, dependent and pipelined reads, callbacks, remote 4-MiB echo and loopback
-64-KiB echo remain above the target. The gap remains open.
+[The earlier October 16 dedicated checkpoint](Quality-and-Benchmarks.md#dedicated-checkpoint-and-scheduling-follow-up-october-16-2026)
+passed seven of twelve remote workflows and three of four loopback payloads.
+The later twelve-cell checkpoint above supersedes its status; all earlier misses
+and samples remain retained. The gap remains open.
 
 ## Storage and ORM
 

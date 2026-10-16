@@ -79,6 +79,188 @@ fn remote<'p, 'id>(driver: &mut Peer<'p, 'id, '_>) -> clients::Client<'id> {
 }
 
 #[test]
+fn immediate_capability_publication_preserves_retries_and_descriptor_authority() {
+    for failure in ["queue", "storage", "reader", "index", "scratch", "older"] {
+        with_driver(|mut driver, messages| {
+            let target = remote(&mut driver);
+            let value = driver
+                .runtime
+                .endpoint(binding::Route::local(73), clients::Location::Local)
+                .unwrap();
+            let source = [capnp::word(3, 0, 0, 0, 0, 0, 0, 0)];
+            let bad_source = [capnp::word(3, 0, 0, 0, 1, 0, 0, 0)];
+            let segments = [capnp::Word::words_to_bytes(&source)];
+            let bad_segments = [capnp::Word::words_to_bytes(&bad_source)];
+            let reader = capnp::message::Reader::new(
+                capnp::message::SegmentArray::new(&segments),
+                Default::default(),
+            );
+            let bad_reader = capnp::message::Reader::new(
+                capnp::message::SegmentArray::new(&bad_segments),
+                Default::default(),
+            );
+            let params = reader.get_root::<capnp::any_pointer::Reader>().unwrap();
+            let invalid = bad_reader.get_root::<capnp::any_pointer::Reader>().unwrap();
+            let method = DynamicCall {
+                interface: 91,
+                method: 17,
+                no_promise_pipelining: true,
+                only_promise_pipeline: false,
+            };
+            let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+            let mut full = messages::Queue::new_growing(0, 0).unwrap();
+            let reservations: alloc::vec::Vec<_> = if failure == "storage" {
+                (0..32)
+                    .map(|_| messages.reserve_exact(512).unwrap())
+                    .collect()
+            } else {
+                alloc::vec::Vec::new()
+            };
+            let older = if failure == "older" {
+                Some(
+                    driver
+                        .enqueue_dynamic(
+                            &target,
+                            DynamicCall::default(),
+                            &[],
+                            messages,
+                            128,
+                            Default::default(),
+                            |_| Ok(()),
+                        )
+                        .unwrap(),
+                )
+            } else {
+                None
+            };
+            let options = if failure == "reader" {
+                capnp::message::ReaderOptions {
+                    traversal_limit_in_words: Some(0),
+                    ..Default::default()
+                }
+            } else {
+                Default::default()
+            };
+            let mut scratch = [0; 16];
+            let rejected = driver.try_send_immediate_with_capability(
+                &target,
+                method,
+                if failure == "index" { invalid } else { params },
+                &value,
+                messages,
+                if failure == "queue" {
+                    &mut full
+                } else {
+                    &mut queue
+                },
+                128,
+                options,
+                if failure == "scratch" {
+                    &mut []
+                } else {
+                    &mut scratch
+                },
+                (),
+                |_, _, _| u8::MAX,
+            );
+            if failure == "older" {
+                assert!(matches!(rejected, Ok(None)));
+            } else {
+                assert!(rejected.is_err(), "{failure}");
+            }
+            assert!(queue.is_empty());
+            assert_eq!(driver.ledgers.questions.len(), 0);
+            // An aborted staged owner may await ordinary maintenance, but
+            // it must confer no peer authority or published reference.
+            for id in 0..driver.ledgers.exports.capacity() {
+                assert!(driver
+                    .ledgers
+                    .exports
+                    .lookup(capntproto_rpc_engine::ids::ExportId::from_wire(id as u32))
+                    .is_none());
+            }
+            for writer in reservations {
+                messages.discard(writer);
+            }
+            if let Some(task) = older {
+                assert!(driver.cancel_invocation(task, messages));
+            }
+            let key = driver
+                .try_send_immediate_with_capability(
+                    &target,
+                    method,
+                    params,
+                    &value,
+                    messages,
+                    &mut queue,
+                    128,
+                    Default::default(),
+                    &mut scratch,
+                    (),
+                    |owner, _, _| {
+                        assert!(matches!(
+                            owner,
+                            binding::Route::Capability(binding::Endpoint::Local(73))
+                        ));
+                        3
+                    },
+                )
+                .unwrap()
+                .unwrap();
+            assert_eq!(driver.runtime.queued(), 0);
+            assert_eq!(driver.ledgers.questions.len(), 1);
+            assert_eq!(
+                (0..driver.ledgers.exports.capacity())
+                    .filter(|id| driver
+                        .ledgers
+                        .exports
+                        .lookup(capntproto_rpc_engine::ids::ExportId::from_wire(*id as u32))
+                        .is_some())
+                    .count(),
+                1
+            );
+            drain(&mut queue, messages, |root| {
+                let rpc_capnp::message::Call(call) = root.which().unwrap() else {
+                    panic!("Call")
+                };
+                let call = call.unwrap();
+                assert_eq!(call.get_question_id(), key.id().to_wire());
+                assert_eq!(call.get_interface_id(), 91);
+                assert_eq!(call.get_method_id(), 17);
+                assert!(call.get_no_promise_pipelining());
+                assert!(!call.get_only_promise_pipeline());
+                let rpc_capnp::message_target::ImportedCap(id) =
+                    call.get_target().unwrap().which().unwrap()
+                else {
+                    panic!("imported target")
+                };
+                assert_eq!(id, 41);
+                let params = call.get_params().unwrap();
+                params.get_content().validate_capability_indices(1).unwrap();
+                let table = params.get_cap_table().unwrap();
+                assert_eq!(table.len(), 1);
+                let descriptor = table.get(0);
+                assert_eq!(descriptor.get_attached_fd(), 3);
+                assert!(matches!(
+                    descriptor.which().unwrap(),
+                    rpc_capnp::cap_descriptor::SenderHosted(_)
+                ));
+            });
+            driver.cancel(key).unwrap();
+            driver.runtime.release(value);
+            driver.runtime.release(target);
+            close(driver, messages, &mut queue);
+            let all: alloc::vec::Vec<_> = (0..32)
+                .map(|_| messages.reserve_exact(512).unwrap())
+                .collect();
+            for writer in all {
+                messages.discard(writer);
+            }
+        });
+    }
+}
+
+#[test]
 fn late_completion_binding_preserves_task_and_sender_on_rejection() {
     use capntproto_rpc_engine::completion::shared;
     with_driver(|mut driver, messages| {
