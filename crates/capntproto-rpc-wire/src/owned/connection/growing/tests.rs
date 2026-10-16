@@ -844,6 +844,283 @@ fn drain<'p>(
 }
 
 #[test]
+fn return_before_pipeline_attachment_preserves_late_observers_and_cleanup() {
+    for abandon in [false, true] {
+        with_driver(|mut driver, messages| {
+            let target = remote(&mut driver);
+            let task = driver
+                .enqueue_dynamic(
+                    &target,
+                    DynamicCall::default(),
+                    &[],
+                    messages,
+                    256,
+                    Default::default(),
+                    |_| Ok(()),
+                )
+                .unwrap();
+            let projection = driver
+                .invocation_pipeline(task, pipeline::Path::new(&[]), messages)
+                .unwrap();
+            let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+            let sent = driver
+                .send_invocation(messages, &mut queue, 256, Default::default(), &mut [0; 8])
+                .unwrap()
+                .unwrap();
+            drain(&mut queue, messages, |_| {});
+            let frame = Frame::build(messages, 256, Default::default(), |builder| {
+                calls::dynamic_results(
+                    builder,
+                    AnswerId::from_wire(sent.question.id().to_wire()),
+                    |content| content.set_capability_index(0),
+                )?;
+                let mut root = builder.try_get_root::<Message>()?;
+                let mut result = root.field(Message::RETURN).edit()?;
+                let mut payload = result.field(Return::RESULTS).edit()?;
+                payload
+                    .field(Payload::CAP_TABLE)
+                    .init(1)?
+                    .get_mut(0)
+                    .unwrap()
+                    .scalar(CapDescriptor::SENDER_HOSTED)
+                    .set(73);
+                Ok(())
+            })
+            .unwrap();
+            driver
+                .receive(frame, messages, &mut [0; 8], |_| (), || ())
+                .unwrap_or_else(|rejected| panic!("{}", rejected.error));
+            assert!(matches!(
+                driver.take_response(sent.question),
+                Err(Error::PendingResponse)
+            ));
+            // Attach after Return, before its original result owner can retire.
+            // This observer never advertised a promised-answer route.
+            assert_eq!(
+                driver.poll_invocation_pipeline(0).unwrap(),
+                Propagation::Resolved
+            );
+            let late = driver
+                .pipeline(sent.question, pipeline::Path::new(&[]))
+                .unwrap();
+            assert!(driver
+                .pipeline(sent.question, pipeline::Path::new(&[0; 9]))
+                .is_err());
+            if abandon {
+                driver.runtime.release(late);
+            } else {
+                assert_eq!(
+                    driver.poll_outgoing(1, messages).unwrap(),
+                    Propagation::Resolved
+                );
+                let clients::Destination::Endpoint { owner, .. } =
+                    driver.runtime.inspect(&late).unwrap()
+                else {
+                    panic!("late observer must settle to the returned capability");
+                };
+                let Some(calls::Target::Imported(id)) =
+                    owner.target(&driver.ledgers.questions).unwrap()
+                else {
+                    panic!("returned sender-hosted capability must be imported");
+                };
+                assert_eq!(id, ImportId::from_wire(73));
+                driver.runtime.release(late);
+            }
+            assert_eq!(
+                driver.poll_outgoing(0, messages).unwrap(),
+                Propagation::Resolved
+            );
+            if abandon {
+                assert_eq!(
+                    driver.poll_outgoing(1, messages).unwrap(),
+                    Propagation::Abandoned
+                );
+            }
+            assert!(driver.runtime.is_settled(&projection).unwrap());
+            let response = driver.take_response(sent.question).unwrap();
+            driver.release_response(response, messages);
+            driver.runtime.release(projection);
+            driver.runtime.release(target);
+            close(driver, messages, &mut queue);
+            let writers: alloc::vec::Vec<_> =
+                (0..32).map(|_| messages.reserve(128).unwrap()).collect();
+            for writer in writers {
+                messages.discard(writer);
+            }
+        });
+    }
+}
+
+#[test]
+fn authenticated_handoff_keeps_advertised_routes_and_settles_late_observers() {
+    use core::{
+        future::Future,
+        task::{Context, Poll, Waker},
+    };
+    for outcome in ["success", "abandoned", "failure", "bad-path"] {
+        with_driver(|mut driver, messages| {
+            driver.allow_answer_handoff(true);
+            let target = remote(&mut driver);
+            driver
+                .enqueue_dynamic(
+                    &target,
+                    DynamicCall::default(),
+                    &[],
+                    messages,
+                    256,
+                    Default::default(),
+                    |_| Ok(()),
+                )
+                .unwrap();
+            let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+            let sent = driver
+                .send_invocation(messages, &mut queue, 256, Default::default(), &mut [0; 8])
+                .unwrap()
+                .unwrap();
+            drain(&mut queue, messages, |_| {});
+            let early = driver
+                .pipeline(sent.question, pipeline::Path::new(&[]))
+                .unwrap();
+            let frame = Frame::build(messages, 256, Default::default(), |builder| {
+                crate::network::await_from_third_party(
+                    builder,
+                    AnswerId::from_wire(sent.question.id().to_wire()),
+                    |metadata| {
+                        metadata
+                            .cast::<capnp::field_api::Data>()
+                            .copy_from(b"rendezvous")
+                    },
+                )
+            })
+            .unwrap();
+            driver
+                .receive(frame, messages, &mut [0; 8], |_| (), || ())
+                .unwrap_or_else(|rejected| panic!("{}", rejected.error));
+            let NetworkRequest::Await(awaiting) = driver.take_network().unwrap() else {
+                panic!("authenticated handoff request");
+            };
+            let path = if outcome == "bad-path" {
+                &[0][..]
+            } else {
+                &[][..]
+            };
+            let late = driver
+                .pipeline(sent.question, pipeline::Path::new(path))
+                .unwrap();
+            let value = driver
+                .runtime
+                .endpoint(binding::Route::local(73), clients::Location::Local)
+                .unwrap();
+            let result = if outcome == "failure" {
+                Err(capnp::ErrorKind::Overloaded)
+            } else {
+                let mut draft = LocalResultDraft::<0>::reserve(
+                    messages,
+                    256,
+                    Default::default(),
+                    0,
+                    0,
+                    Capacity::Growing { maximum: 1 },
+                )
+                .unwrap();
+                {
+                    let mut write =
+                        core::pin::pin!(draft.write_async(messages, async |field, caps| {
+                            caps.set(
+                                field.cast::<capnp::field_api::WireCapability<()>>(),
+                                driver.runtime.retain(&value).unwrap(),
+                            )
+                            .unwrap_or_else(|_| panic!("result capability"));
+                            Ok(())
+                        }));
+                    assert!(matches!(
+                        write.as_mut().poll(&mut Context::from_waker(Waker::noop())),
+                        Poll::Ready(Ok(()))
+                    ));
+                }
+                Ok(draft.finish(messages, &mut driver.runtime).unwrap())
+            };
+            driver
+                .complete_await_retaining_routes(awaiting, result, messages, |metadata| {
+                    assert_eq!(
+                        metadata.get_as::<capnp::data::Reader>().unwrap(),
+                        b"rendezvous"
+                    );
+                    Ok::<_, ()>(())
+                })
+                .unwrap_or_else(|_| panic!("matched handoff"));
+            assert_eq!(
+                driver.poll_outgoing(0, messages).unwrap(),
+                Propagation::Resolved
+            );
+            if outcome == "failure" {
+                assert!(matches!(
+                    driver.runtime.inspect(&early).unwrap(),
+                    clients::Destination::Endpoint {
+                        location: clients::Location::Broken,
+                        ..
+                    }
+                ));
+            } else {
+                assert!(
+                    matches!(
+                        driver.runtime.inspect(&early).unwrap(),
+                        clients::Destination::Endpoint {
+                            owner: binding::Route::Question(_),
+                            ..
+                        }
+                    ),
+                    "advertised routes must retain relay ordering"
+                );
+            }
+            if outcome == "abandoned" {
+                driver.runtime.release(late);
+                assert_eq!(
+                    driver.poll_outgoing(1, messages).unwrap(),
+                    Propagation::Abandoned
+                );
+            } else {
+                assert_eq!(
+                    driver.poll_outgoing(1, messages).unwrap(),
+                    Propagation::Resolved
+                );
+                if outcome == "success" {
+                    assert!(
+                        matches!(
+                            driver.runtime.inspect(&late).unwrap(),
+                            clients::Destination::Endpoint {
+                                owner: binding::Route::Capability(binding::Endpoint::Local(73)),
+                                ..
+                            }
+                        ),
+                        "an unadvertised observer adopts the authenticated answer directly"
+                    );
+                } else {
+                    assert!(matches!(
+                        driver.runtime.inspect(&late).unwrap(),
+                        clients::Destination::Endpoint {
+                            location: clients::Location::Broken,
+                            ..
+                        }
+                    ));
+                }
+                driver.runtime.release(late);
+            }
+            let output = driver.take_output(sent.question, messages).unwrap();
+            if outcome == "failure" {
+                assert_eq!(output.err(), Some(capnp::ErrorKind::Overloaded));
+            } else {
+                driver.release_output(output.unwrap(), messages);
+            }
+            driver.runtime.release(early);
+            driver.runtime.release(value);
+            driver.runtime.release(target);
+            close(driver, messages, &mut queue);
+        });
+    }
+}
+
+#[test]
 fn data_template_revalidates_changed_reader_limits_and_preserves_retry() {
     with_driver(|mut driver, messages| {
         let target = remote(&mut driver);
@@ -1602,6 +1879,181 @@ fn invocation_and_resolve_publish_resources_with_exact_descriptors_and_retry_bac
             }
         }
         panic!("cleanup");
+    });
+}
+
+#[test]
+fn plain_results_preserve_parameter_grants_until_the_peer_releases_them() {
+    use super::super::PlainReceived;
+    use capnp::private::capability::ResponseHook;
+    for release_params in [false, true] {
+        with_driver(|mut driver, messages| {
+            let target = remote(&mut driver);
+            let value = driver
+                .runtime
+                .endpoint(binding::Route::local(73), clients::Location::Local)
+                .unwrap();
+            let source = [capnp::word(3, 0, 0, 0, 0, 0, 0, 0)];
+            let segments = [capnp::Word::words_to_bytes(&source)];
+            let reader = capnp::message::Reader::new(
+                capnp::message::SegmentArray::new(&segments),
+                Default::default(),
+            );
+            let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+            let key = driver
+                .try_send_immediate_with_capability(
+                    &target,
+                    DynamicCall {
+                        no_promise_pipelining: true,
+                        ..Default::default()
+                    },
+                    reader.get_root().unwrap(),
+                    &value,
+                    messages,
+                    &mut queue,
+                    256,
+                    Default::default(),
+                    &mut [0; 8],
+                    (),
+                    |_, _, _| u8::MAX,
+                )
+                .unwrap()
+                .unwrap();
+            let mut exported = None;
+            drain(&mut queue, messages, |root| {
+                let rpc_capnp::message::Call(call) = root.which().unwrap() else {
+                    panic!("Call");
+                };
+                let descriptors = call.unwrap().get_params().unwrap().get_cap_table().unwrap();
+                let rpc_capnp::cap_descriptor::SenderHosted(id) =
+                    descriptors.get(0).which().unwrap()
+                else {
+                    panic!("sender hosted");
+                };
+                exported = Some(capntproto_rpc_engine::ids::ExportId::from_wire(id));
+            });
+            let exported = exported.unwrap();
+            assert!(driver.ledgers.exports.lookup(exported).is_some());
+            let frame = Frame::build(messages, 256, Default::default(), |builder| {
+                calls::dynamic_results(
+                    builder,
+                    AnswerId::from_wire(key.id().to_wire()),
+                    |content| {
+                        content
+                            .cast::<capnp::field_api::Data>()
+                            .copy_from(b"callback completed")
+                    },
+                )?;
+                let mut root = builder.try_get_root::<Message>()?;
+                let mut result = root.field(Message::RETURN).edit()?;
+                result.scalar(Return::NO_FINISH_NEEDED).set(true);
+                result
+                    .scalar(Return::RELEASE_PARAM_CAPS)
+                    .set(release_params);
+                Ok(())
+            })
+            .unwrap();
+            let received = driver
+                .try_receive_plain_owned(frame, messages, |_| Some(()))
+                .unwrap_or_else(|(error, _)| panic!("{error:?}"));
+            if release_params {
+                let PlainReceived::Deferred(frame) = received else {
+                    panic!("parameter releases require the descriptor transaction");
+                };
+                driver
+                    .receive(frame, messages, &mut [0; 8], |_| (), || ())
+                    .unwrap_or_else(|rejected| panic!("{}", rejected.error));
+                let response = driver.take_response(key).unwrap();
+                driver.release_response(response, messages);
+                assert!(driver.ledgers.exports.lookup(exported).is_none());
+            } else {
+                let PlainReceived::Delivered((), response) = received else {
+                    panic!("a grant-preserving plain reply can complete directly");
+                };
+                assert_eq!(
+                    response
+                        .get()
+                        .unwrap()
+                        .get_as::<capnp::data::Reader>()
+                        .unwrap(),
+                    b"callback completed"
+                );
+                assert!(
+                    driver.ledgers.exports.lookup(exported).is_some(),
+                    "Return must not revoke peer authority"
+                );
+                drop(response);
+                let frame = Frame::build(messages, 128, Default::default(), |builder| {
+                    calls::release(builder, ImportId::from_wire(exported.to_wire()), 1)
+                })
+                .unwrap();
+                driver
+                    .receive(frame, messages, &mut [0; 8], |_| (), || ())
+                    .unwrap_or_else(|rejected| panic!("{}", rejected.error));
+                assert!(driver.ledgers.exports.lookup(exported).is_none());
+            }
+            assert!(driver.ledgers.questions.is_empty());
+            driver.runtime.release(value);
+            driver.runtime.release(target);
+            close(driver, messages, &mut queue);
+        });
+    }
+}
+
+#[test]
+fn plain_results_cannot_complete_a_redirected_question() {
+    use super::super::PlainReceived;
+    with_driver(|mut driver, messages| {
+        let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+        let key = driver
+            .send_redirected(
+                messages,
+                &mut queue,
+                256,
+                Default::default(),
+                |builder, id| {
+                    calls::dynamic_call(
+                        builder,
+                        id,
+                        calls::Target::Imported(ImportId::from_wire(41)),
+                        DynamicCall::default(),
+                        |_| Ok(()),
+                    )?;
+                    builder
+                        .try_get_root::<Message>()?
+                        .field(Message::CALL)
+                        .edit()?
+                        .group(WireCall::SEND_RESULTS_TO)
+                        .select()
+                        .void(rpc_capnp::api::call::SendResultsTo::YOURSELF)
+                        .set();
+                    Ok(())
+                },
+            )
+            .unwrap();
+        drain(&mut queue, messages, |_| {});
+        let frame = Frame::build(messages, 128, Default::default(), |builder| {
+            calls::dynamic_results(builder, AnswerId::from_wire(key.id().to_wire()), |_| Ok(()))?;
+            let mut root = builder.try_get_root::<Message>()?;
+            let mut returned = root.field(Message::RETURN).edit()?;
+            returned.scalar(Return::RELEASE_PARAM_CAPS).set(false);
+            returned.scalar(Return::NO_FINISH_NEEDED).set(true);
+            Ok(())
+        })
+        .unwrap();
+        let PlainReceived::Deferred(frame) = driver
+            .try_receive_plain_owned(frame, messages, |_| Some(()))
+            .unwrap_or_else(|(error, _)| panic!("{error:?}"))
+        else {
+            panic!("redirected call cannot receive direct Results");
+        };
+        let rejected = driver
+            .receive(frame, messages, &mut [0; 8], |_| (), || ())
+            .err()
+            .expect("wrong result destination");
+        rejected.frame.release(messages);
+        assert!(driver.ledgers.questions.contains(key));
+        close(driver, messages, &mut queue);
     });
 }
 

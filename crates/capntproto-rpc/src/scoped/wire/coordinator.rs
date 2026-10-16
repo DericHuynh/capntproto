@@ -233,6 +233,10 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         driver.defer_call_dispatch(true);
         let wake = Arc::<WorkWake>::default();
         let enqueue_waker = Rc::new(EnqueueWake(wake.clone()));
+        // Commands have one coordinator owner and retain this stable notifier.
+        // Parent-task replacement is handled by WorkWake's registration, so
+        // ordinary calls need not register the command inbox again.
+        commands.register(Waker::from(wake.clone()));
         Ok(Self {
             driver,
             hooks,
@@ -410,7 +414,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 }
                 return Poll::Ready(Err(wire_error(error)));
             }
-            self.commands.register(waker);
             let result = self.poll_calls(
                 messages,
                 queue,
@@ -490,7 +493,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 }
                 return Poll::Ready(Err(wire_error(error)));
             }
-            self.commands.register(waker);
             let result = self.poll_worker(
                 messages,
                 queue,
@@ -508,7 +510,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 Poll::Ready(Ok(server::Progress::Replied))
                     if self.worker.completed_plain()
                         && self.worker.is_empty()
-                        && self.calls.is_empty()
+                        && self.active & (1 << 2) == 0
                         && self.foreign.is_empty()
                         && self.commands.is_empty()
                         && self.driver.runtime.queued() == 0
@@ -557,7 +559,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         remaining: &mut usize,
         waker: &Waker,
     ) -> Poll<capnp::Result<()>> {
-        self.commands.register(waker);
         let mut application_cx = Context::from_waker(waker);
         let mut advanced = false;
         let queued = queue.len();
@@ -775,7 +776,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 if index == 3
                     && self.worker.completed_plain()
                     && self.worker.is_empty()
-                    && self.calls.is_empty()
+                    && self.active & (1 << 2) == 0
                     && self.foreign.is_empty()
                     && self.commands.is_empty()
                     && self.driver.runtime.queued() == 0
@@ -786,7 +787,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     // A descriptor-free Return just retired its answer. Any
                     // parameter receipts still release through maintenance.
                     // Dispatch refreshed hooks;
-                    // there are no other application owners to rescan. Keep
+                    // other application lanes remain certified idle. Keep
                     // ledger cleanup active when releasing the request made it
                     // necessary. Reentrant callbacks and application wakeups
                     // invalidate this certificate through WorkWake above.
@@ -1451,11 +1452,14 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 if let connection::Received::Returned(key) = &event {
                     pump.returned = Some(*key);
                 }
+                // Pending outgoing calls were already certified idle before
+                // this descriptor-free request arrived. It does not settle
+                // their questions. Application work still invalidates the
+                // certificate through the registered notifier during dispatch.
                 let plain_call = was_idle
                     && matches!(event, connection::Received::DeferredCall(_))
                     && self.driver.has_plain_pending_call()
                     && self.driver.runtime.queued() == 0
-                    && self.calls.is_empty()
                     && self.worker.is_empty()
                     && self.foreign.is_empty()
                     && self.commands.is_empty();

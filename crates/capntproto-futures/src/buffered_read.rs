@@ -1237,6 +1237,78 @@ mod tests {
     }
 
     #[test]
+    fn buffered_successor_hint_requires_a_complete_body() {
+        let mut message = capnp::message::Builder::new_default();
+        message.initn_root::<capnp::data::Builder>(16).fill(0x5a);
+        let frame = capnp::serialize::write_message_to_words(&message);
+        let mut bytes = frame.clone();
+        bytes.extend_from_slice(&frame[..8]);
+        let mut input = BufferedRead::new(futures::io::Cursor::new(bytes), Default::default());
+        let mut cx = Context::from_waker(std::task::Waker::noop());
+        assert_eq!(
+            input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+            Poll::Ready(Some(frame.len()))
+        );
+        input.finish_borrowed_frame();
+        assert!(!input.has_buffered_next_frame());
+        let position = input.get_ref().position();
+        assert!(!input.has_buffered_next_frame());
+        assert_eq!(input.get_ref().position(), position);
+        for _ in 0..2 {
+            assert!(matches!(
+                input.poll_stream_frame_size(&mut cx),
+                Poll::Ready(Err(_))
+            ));
+        }
+        assert_eq!(input.consumed_bytes(), frame.len() as u64);
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore = "exercises direct reads above the 128 KiB threshold")]
+    fn streamed_completion_counter_overflow_is_terminal() {
+        let mut message = capnp::message::Builder::new_default();
+        message
+            .initn_root::<capnp::data::Builder>((MAX_PROMOTED_BUFFER_WORDS * 8) as u32)
+            .fill(0x5a);
+        let bytes = capnp::serialize::write_message_to_words(&message);
+        let mut input = BufferedRead::with_buffer_size(
+            futures::io::Cursor::new(bytes.clone()),
+            Default::default(),
+            MIN_BUFFER_WORDS,
+        )
+        .unwrap();
+        let mut cx = Context::from_waker(std::task::Waker::noop());
+        assert_eq!(
+            input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+            Poll::Ready(Some(bytes.len()))
+        );
+        input.consumed = u64::MAX;
+        let mut output = vec![0; bytes.len()];
+        assert_eq!(
+            input
+                .poll_stream_frame(&mut cx, &mut output)
+                .map(Result::unwrap),
+            Poll::Ready(MIN_BUFFER_WORDS * 8)
+        );
+        assert!(matches!(
+            input.poll_stream_frame(&mut cx, &mut output),
+            Poll::Ready(Err(_))
+        ));
+        let position = input.get_ref().position();
+        assert_eq!(position, bytes.len() as u64);
+        assert!(matches!(
+            input.poll_stream_frame(&mut cx, &mut output),
+            Poll::Ready(Err(_))
+        ));
+        assert!(matches!(
+            input.poll_stream_frame_size(&mut cx),
+            Poll::Ready(Err(_))
+        ));
+        assert_eq!(input.get_ref().position(), position);
+        assert_eq!(input.consumed_bytes(), u64::MAX);
+    }
+
+    #[test]
     #[cfg_attr(miri, ignore = "exercises direct reads above the 128 KiB threshold")]
     fn streamed_frames_retain_partial_progress_and_stop_at_the_next_header() {
         let mut message = capnp::message::Builder::new_default();
@@ -1274,8 +1346,9 @@ mod tests {
                 input.poll_borrowed_frame(&mut cx),
                 Poll::Ready(Err(_))
             ));
-            assert!(
-                matches!(input.poll_stream_frame_size(&mut cx), Poll::Ready(Ok(Some(n))) if n == length)
+            assert_eq!(
+                input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+                Poll::Ready(Some(length))
             );
             assert_eq!(input.consumed_bytes(), 0);
             let mut output = vec![0xa5; length + 8];
@@ -1404,11 +1477,13 @@ mod tests {
         ));
         let mut input =
             BufferedRead::new(futures::io::Cursor::new(bytes.clone()), Default::default());
-        assert!(
-            matches!(input.poll_stream_frame_size(&mut cx), Poll::Ready(Ok(Some(n))) if n == bytes.len())
+        assert_eq!(
+            input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+            Poll::Ready(Some(bytes.len()))
         );
-        assert!(
-            matches!(input.poll_stream_frame_size(&mut cx), Poll::Ready(Ok(Some(n))) if n == bytes.len())
+        assert_eq!(
+            input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+            Poll::Ready(Some(bytes.len()))
         );
         assert_eq!(input.borrowed_frame().unwrap(), bytes);
         assert_eq!(input.consumed_bytes(), bytes.len() as u64);
@@ -1467,9 +1542,11 @@ mod tests {
             Poll::Ready(Ok(0))
         ));
         let mut output = vec![0; MAX_PROMOTED_BUFFER_WORDS * 8 + 4096];
-        assert!(
-            matches!(input.poll_stream_frame(&mut cx, &mut output), Poll::Ready(Ok(n)) if n > 0)
-        );
+        let count = futures::executor::block_on(core::future::poll_fn(|cx| {
+            input.poll_stream_frame(cx, &mut output)
+        }))
+        .unwrap();
+        assert!(count > 0);
         assert!(matches!(
             input.poll_stream_frame(&mut cx, &mut output),
             Poll::Ready(Err(_))
@@ -1523,7 +1600,7 @@ mod tests {
                         .poll_borrowed_frame(&mut cx)
                         .map_ok(|frame| frame.map(<[u8]>::len))
                 };
-                assert!(matches!(result, Poll::Ready(Ok(Some(n))) if n == bytes.len()));
+                assert_eq!(result.map(Result::unwrap), Poll::Ready(Some(bytes.len())));
                 let frame = input.borrowed_frame().unwrap();
                 assert_eq!(frame, bytes);
                 if iteration == 0 {
@@ -1561,10 +1638,10 @@ mod tests {
             )
             .unwrap();
             let mut cx = Context::from_waker(std::task::Waker::noop());
-            let Poll::Ready(Ok(Some(frame))) = input.poll_borrowed_frame(&mut cx) else {
-                panic!("complete frame")
-            };
-            assert_eq!(frame, bytes);
+            assert_eq!(
+                input.poll_borrowed_frame(&mut cx).map(Result::unwrap),
+                Poll::Ready(Some(bytes.as_slice()))
+            );
             input.finish_borrowed_frame();
             assert!(input.spare.capacity() <= MAX_CACHED_SPILL_WORDS);
             assert_eq!(input.spare.is_empty(), length > MAX_CACHED_SPILL_WORDS * 8);

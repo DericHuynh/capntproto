@@ -289,7 +289,19 @@ impl<'pool, 'q> Question<'pool, 'q> {
             return Err(Error::WrongMessage);
         }
         if !matches!(self.original, Original::DataOnly { .. }) {
-            return Ok(None);
+            // Ordinary publication already checked the original frame against
+            // this question's result destination. A descriptor-free Results
+            // which releases no parameter grants needs only that lifecycle:
+            // the peer retains every exported capability until a later Release.
+            // Redirected results and releaseParamCaps still require the complete
+            // descriptor transaction against the retained original frame.
+            if result.get_release_param_caps()
+                || questions
+                    .is_redirected(self.key.id())
+                    .map_err(|error| Error::Admission(inbound::Error::Question(error)))?
+            {
+                return Ok(None);
+            }
         }
         let pending = questions
             .prepare_receive_owned(self.key, result.get_no_finish_needed())

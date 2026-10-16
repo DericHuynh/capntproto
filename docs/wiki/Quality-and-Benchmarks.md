@@ -3229,6 +3229,44 @@ remain rejected. All 62 developer-tool tests and the warning-denying audit pass.
 Coverage repair adds retained-buffer immutability and optional transport fallback
 checks; the existing coverage baselines remain unchanged.
 
+### Coalescing qualification and callback follow-up (October 16, 2026)
+
+The dedicated campaign for `508c030` (`38847075747`, artifact `12024921004`)
+passes **13/16 cells: 10/12 workflows and 3/4 loopback payloads**. Fanout now
+passes at 0.980409× C++. The remaining misses are pipelined read at 1.094809×
+C++, callback at 1.082528× legacy, and 1 KiB loopback at 1.105815× legacy.
+Every pooled p50/p95/p99 and inclusive 1.05 gate was independently recomputed
+from all 350 remote and 60 loopback trials. The artifact ZIP SHA-256 is
+`5f6050346300188a3950bf59cedf3fd9006d26221fd78c5b91d7069ca660253c`.
+Gap #11 remains open; the prepared-pipeline campaign is still running.
+
+The next candidate preserves idle outgoing-call lanes while serving a plain
+callback. Application notifications, cancellation, output pressure and the
+existing cooperative budgets still invalidate or limit that work. Bootstrap
+commands retain one stable coordinator notifier, and hook refresh upgrades each
+weak endpoint once. A data-only Return can also complete a capability-bearing
+request directly when `releaseParamCaps` is false and the question is not
+redirected. Its exported grants remain live until the peer's Release; replies
+which release parameter capabilities retain the full descriptor transaction.
+
+Callback client instructions fall from **78,430,660 to 67,062,093** for the same
+100 warmups and 1,000 measured operations. Server instructions are 61,012,549;
+the matched legacy diagnostic is 36,255,957 client and 44,765,923 server.
+The separate empty-call comparison remains a miss on the client:
+18,279,234 / 17,363,836 (1.052719×), with 16,900,980 / 16,273,076 on the server
+(1.038585×). These instruction results do not establish latency parity.
+The four-case rotating local diagnostic and full four-payload loopback campaign
+retain all samples and controls; loopback passes only 1/4 on this shared VM.
+
+Validation passes 647 runtime library tests (270 RPC, 132 wire, 191 engine,
+54 futures), all 72 mixed-peer workflows, Clippy for the four runtime crates,
+and both portable verification profiles. Focused Miri checks pass for parameter
+grant retention, redirected replies, retained plain results, late pipeline
+observers and authenticated handoff. Coverage additions exercise incomplete
+successor bodies, streamed counter overflow, late observers and callback idle
+state; no coverage baseline or benchmark acceptance limit is reduced.
+Candidate evidence is retained in `target/portable-performance-callback-20261016/`.
+
 ### Portable and legacy instruction qualification
 
 The October 15 optimization batch meets a **1.05× portable/legacy instruction

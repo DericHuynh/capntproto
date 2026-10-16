@@ -550,6 +550,12 @@ fn plain_calls_preserve_control_wakes_fairness_and_output_backpressure() {
                     opts,
                 )
                 .unwrap();
+                let remote = remote(
+                    &mut coordinator.driver,
+                    &mut coordinator.hooks,
+                    ImportId::from_wire(88),
+                );
+                let mut outstanding = None;
                 let mut queue = messages::Queue::new_growing(0, 1).unwrap();
                 let output = Rc::new(RefCell::new(Pipe::default()));
                 let mut bytes = Writer(output.clone());
@@ -599,6 +605,45 @@ fn plain_calls_preserve_control_wakes_fairness_and_output_backpressure() {
                 let mut payload = capnp::message::Builder::new_default();
                 payload.set_root("plain result").unwrap();
                 for id in 0..3 {
+                    if id == 2 {
+                        outstanding = Some(
+                            remote
+                                .new_call_with_hints::<any_pointer::Owned, any_pointer::Owned>(
+                                    7,
+                                    0,
+                                    None,
+                                    capability::CallHints {
+                                        no_promise_pipelining: true,
+                                        ..Default::default()
+                                    },
+                                )
+                                .send(),
+                        );
+                        for _ in 0..4096 {
+                            poll!();
+                            if coordinator.active == 0
+                                && coordinator.output.is_clean()
+                                && queue.is_empty()
+                            {
+                                break;
+                            }
+                        }
+                        assert_eq!(coordinator.active, 0);
+                        assert!(!coordinator.calls.is_empty());
+                        let bytes: Vec<_> = output.borrow_mut().bytes.drain(..).collect();
+                        let mut source = bytes.as_slice();
+                        let message =
+                            capnp::serialize::read_message(&mut source, opts.reader).unwrap();
+                        assert!(matches!(
+                            message
+                                .get_root::<crate::rpc_capnp::message::Reader>()
+                                .unwrap()
+                                .which()
+                                .unwrap(),
+                            crate::rpc_capnp::message::Call(_)
+                        ));
+                        assert!(source.is_empty());
+                    }
                     let before = control.polls;
                     let calls_before = seen.get();
                     // Insert an older ordered dispatcher task without an inbox
@@ -678,6 +723,15 @@ fn plain_calls_preserve_control_wakes_fairness_and_output_backpressure() {
                         "budget {budget}"
                     );
                     assert!(pending.is_none() && coordinator.worker.is_empty());
+                    if id == 2 {
+                        assert!(
+                            !coordinator.calls.is_empty(),
+                            "a callback reply cannot consume the outstanding request"
+                        );
+                        assert!(Pin::new(&mut outstanding.as_mut().unwrap().promise)
+                            .poll(&mut cx)
+                            .is_pending());
+                    }
                     let mut frame = received.as_slice();
                     for expected in if id == 1 { vec![3, 1] } else { vec![id] } {
                         // The fragmented writer accumulates bytes, not aligned
@@ -716,6 +770,7 @@ fn plain_calls_preserve_control_wakes_fairness_and_output_backpressure() {
                         );
                     }
                 }
+                drop((outstanding, remote));
                 futures::executor::block_on(
                     coordinator.terminate::<NoResources, (), &'static str>(
                         messages,

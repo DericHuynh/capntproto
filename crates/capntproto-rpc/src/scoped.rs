@@ -312,47 +312,41 @@ impl<'id> ClientHooks<'id> {
         mut metadata: impl FnMut(&G::Owner) -> Option<EndpointMetadata>,
     ) {
         for slot in &mut self.entries {
-            if slot
-                .as_ref()
-                .is_some_and(|entry| entry.endpoint.strong_count() == 0)
-            {
+            let Some(entry) = slot.as_mut() else {
+                continue;
+            };
+            // One retained hook covers metadata and resolution publication.
+            // A dead weak owner releases its graph reference immediately.
+            let Some(endpoint) = entry.endpoint.upgrade() else {
                 graph.release(slot.take().unwrap().client);
                 continue;
-            }
-            if let Some(entry) = slot.as_ref() {
-                if let Some(endpoint) = entry.endpoint.upgrade() {
-                    let destination = graph.inspect(&entry.client);
-                    endpoint.remote.set(matches!(
-                        destination,
-                        Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
-                            location: capntproto_rpc_engine::clients::Location::Remote(_),
-                            ..
-                        })
-                    ));
-                    if let Some(metadata) =
-                        destination.ok().and_then(|destination| match destination {
-                            capntproto_rpc_engine::clients::Destination::Endpoint {
-                                owner, ..
-                            } => metadata(owner),
-                            _ => None,
-                        })
-                    {
-                        if metadata.introduction.is_some()
-                            && endpoint.introduction.borrow().is_none()
-                        {
-                            *endpoint.introduction.borrow_mut() = metadata.introduction;
-                        }
-                        if let Some(failure) = metadata.failure {
-                            *endpoint.failure.borrow_mut() = Some(failure);
-                        }
-                        #[cfg(unix)]
-                        if metadata.fd.is_some() && endpoint.fd.borrow().is_none() {
-                            *endpoint.fd.borrow_mut() = metadata.fd;
-                        }
-                    }
+            };
+            let destination = graph.inspect(&entry.client);
+            endpoint.remote.set(matches!(
+                destination,
+                Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
+                    location: capntproto_rpc_engine::clients::Location::Remote(_),
+                    ..
+                })
+            ));
+            if let Some(metadata) = destination.ok().and_then(|destination| match destination {
+                capntproto_rpc_engine::clients::Destination::Endpoint { owner, .. } => {
+                    metadata(owner)
+                }
+                _ => None,
+            }) {
+                if metadata.introduction.is_some() && endpoint.introduction.borrow().is_none() {
+                    *endpoint.introduction.borrow_mut() = metadata.introduction;
+                }
+                if let Some(failure) = metadata.failure {
+                    *endpoint.failure.borrow_mut() = Some(failure);
+                }
+                #[cfg(unix)]
+                if metadata.fd.is_some() && endpoint.fd.borrow().is_none() {
+                    *endpoint.fd.borrow_mut() = metadata.fd;
                 }
             }
-            if let Some(entry) = slot.as_mut().filter(|entry| entry.resolution.is_some()) {
+            if entry.resolution.is_some() {
                 // Export inspection does not accept a call or mark the promise
                 // used. In particular, a reflected resolution remains pending
                 // until its original-route loopback has completed.
@@ -374,19 +368,13 @@ impl<'id> ClientHooks<'id> {
                         Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
                             location: capntproto_rpc_engine::clients::Location::Broken,
                             ..
-                        }) => Err(entry
-                            .endpoint
-                            .upgrade()
-                            .and_then(|endpoint| endpoint.failure.borrow().clone())
-                            .unwrap_or_else(|| {
-                                Error::failed("capability resolved to a broken endpoint".into())
-                            })),
+                        }) => Err(endpoint.failure.borrow().clone().unwrap_or_else(|| {
+                            Error::failed("capability resolved to a broken endpoint".into())
+                        })),
                         _ => Ok(()),
                     };
-                    if let Some(endpoint) = entry.endpoint.upgrade() {
-                        *endpoint.failure.borrow_mut() = result.as_ref().err().cloned();
-                        endpoint.settled.set(true);
-                    }
+                    *endpoint.failure.borrow_mut() = result.as_ref().err().cloned();
+                    endpoint.settled.set(true);
                     if let Some(sender) = entry.resolution.take() {
                         let _ = sender.send(result);
                     }

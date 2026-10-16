@@ -6,7 +6,7 @@ use super::*;
 impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
     Driver<'pool, 'id, 's, I, A, P, S, CAPS, PATH>
 {
-    /// Try a complete owned data-only Return for an original data-only Call.
+    /// Try a complete owned data-only Return with no parameter-grant releases.
     /// The selector runs before admission and must identify its direct sink;
     /// returning None preserves the entire frame and question for normal receive.
     /// Selection is tentative: malformed or ineligible replies can still defer
