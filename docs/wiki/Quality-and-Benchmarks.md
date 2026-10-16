@@ -4757,6 +4757,59 @@ separate evidence. Complete source, raw trials, traces and exclusions are in
 `target/portable-performance-outlined-admission-20261016/`; executable SHA-256 is
 `6c0d2cd83e4e7f84f575ef787582816b86a7b6635bb3e851f3ab4514da37c472`.
 
+A separate inline projection-path experiment was rejected. It removed one
+client allocation per pipeline workflow and lowered client instructions 0.23%
+(to 76,741,926), but simulated instruction-cache misses rose 1.24% to 5,351,316.
+The 20-trial paired diagnostic showed no client CPU gain (12,583.5 ns versus
+12,579 ns), with variable repetitions retained. Server instructions were nearly
+unchanged and its simulated cache misses rose. All 295 RPC tests, Clippy and
+focused projection-cache Miri passed; six gated pipeline profiles retained equal
+portable/C++ byte totals. No complete latency qualification was run for this
+rejected intermediate. Exact source, raw trials, profiles and executable identity
+are in `target/portable-performance-inline-projection-path-rejected-20261016/`.
+The change was reverted before testing deferred batch notification.
+
+The completed dedicated campaign at `04aa4963` independently validates all
+350 remote and 60 loopback trials, pooled p50/p95/p99 and inclusive 1.05 gates.
+It passes 12/16 cells (11 remote, 1 loopback). Remaining ratios are pipeline
+1.136115× against C++, and 0/64/1,024-byte loopback 1.092387×/1.065037×/1.054854×
+against legacy. All four runtime manifests agree with build provenance;
+workflow and cleanup succeeded. Ninety socket CPU/wall journals verify both
+peer executables and probe identities. Pipeline CPU p50 is 37,036/21,986.5 ns
+portable versus 25,779/14,229 ns C++ (client/server). Steady writes retain the
+same 1,368-byte Finish/Release/Call/Call and 1,216-byte paired Return groups.
+Instrumented timings remain excluded from acceptance. Later `12458b91` and
+buffered-notification changes are absent. Complete evidence is retained in
+`target/portable-performance-nonplain-dedicated-20261016/` (1,823 files plus
+checksums); executable SHA-256 is
+`9beefa2a5f4ae9ad62f2149a1e1f426d0c6c54d9a42b63160d2eecefd238f79c`.
+Different misses across campaigns do not establish a causal code effect.
+
+The buffered-notification candidate queues bounded output batches without
+waking their driver for every frame. Polling the flush barrier notifies any
+unconsumed output; dropping the existing Sender field also notifies it during
+unwinding. Accepted output retains FIFO order and flush ownership. Regression
+tests cover cooperative consumption, pending flush, drop, unwind, stopped
+queues and a caller-owned flush waker whose destructor panics. That last test
+also passes on the prototype: the suspected missing notification was disproved,
+and no additional drop-time guard is needed.
+
+All 64 futures tests, 295 RPC tests, 92 integration tests, 72 mixed-peer cases,
+four focused Miri executions and Clippy pass. Pipeline total instructions fall
+from 76,920,579/67,754,546 to 76,198,720/65,813,526; simulated instruction-cache
+misses become 5,253,589/4,834,678. Dependent-read client instructions fall 5.47%
+to 65,902,075. Eighty paired CPU/wall trials remain strongly bimodal and establish
+no general latency gain. Eighteen gated profiles retain matched portable/C++
+read/write byte totals. All 240 local trials independently validate, but only
+7/16 targets pass (4 remote, 3 loopback); both empty instruction peers still miss
+the inclusive 1.05 gate. No complete performance qualification is established.
+Source, raw trials, trace probes, profiles and checks are retained in
+`target/portable-performance-buffered-notification-20261016/`; executable
+SHA-256 is `f9ff1489832b52f3d27da4d26196631bc099ca4bb348ced3b035b6513e68750c`.
+The preceding notification prototype is separately retained in
+`target/portable-performance-deferred-batch-notification-prototype-20261016/`.
+Neither experiment changes fixtures, controls, coverage floors or acceptance.
+
 The dependent-read fixtures retain different ownership lifetimes. Rust's parent
 response and borrowed child capability survive across the child await. C++'s
 continuation releases them after constructing the child promise. Their steady

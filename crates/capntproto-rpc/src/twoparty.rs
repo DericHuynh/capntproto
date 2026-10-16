@@ -534,7 +534,7 @@ impl crate::OutgoingMessageStream for OutgoingStream {
         };
         self.sent = true;
         self.deferred = true;
-        self.sender.send(QueuedMessage::Frame(frame))
+        self.sender.send_buffered(QueuedMessage::Frame(frame))
     }
     fn send(&mut self, frame: crate::OutgoingFrame) -> capnp::Result<()> {
         #[cfg(unix)]
@@ -545,7 +545,7 @@ impl crate::OutgoingMessageStream for OutgoingStream {
         };
         if self.sent {
             self.deferred = true;
-            return self.sender.send(QueuedMessage::Frame(frame));
+            return self.sender.send_buffered(QueuedMessage::Frame(frame));
         }
         self.sent = true;
         let driver = &self.driver;
