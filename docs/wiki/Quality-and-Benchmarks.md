@@ -4083,6 +4083,36 @@ runtime patch SHA-256
 The binary and source were frozen before measurement; the following queue
 representation experiment is excluded. The complete 16-target goal remains open.
 
+The committed ownership checkpoint `d396af2` completed dedicated run
+[`38924362921`](https://github.com/DericHuynh/capntproto/actions/runs/38924362921)
+with **11/16 targets met** (8/12 remote, 3/4 loopback). All 350 remote and 60
+loopback trials independently validate, including pooled p50/p95/p99, five
+repetitions and the inclusive 1.05 gate. The remaining misses are:
+
+| Case | Portable p50 ns | Faster matched reference p50 ns | Ratio |
+| --- | ---: | ---: | ---: |
+| dependent-read | 595912 | C++ 563782 | 1.056990 |
+| pipelined-read | 335524 | C++ 303371 | 1.105986 |
+| callback | 596899 | legacy 565241 | 1.056008 |
+| bulk-64k | 603005 | C++ 573686 | 1.051106 |
+| loopback-0 | 34017 | legacy 32251 | 1.054758 |
+
+The workflow passed its report-quality checks; the separate performance goal
+remains open. Network latency differs from the preceding campaign, so only this
+run's matched references determine these ratios. Traces preserve all 21 steady
+C++ Finish/Release/Call/Call groups and all 23 paired server Returns, with the
+same steady 1368/1216-byte sizes. Four environment manifests equal the build
+manifest, recorded binary digests agree, and the checkout log names `d396af2`.
+Source fingerprint is
+`73b702e839c90e708fea6813e8775288c7f76ada3a698c90dd664dee83cbd815`;
+driver SHA-256 is
+`1238f6b7cf1bbe0300863589aaba15862201b4d2ad78e106e252a4fa94933adc`.
+Artifact `12059030615` has SHA-256
+`ccb68487437d99b9ad621766a6a95760fc4711bb7bba2e83cc5ed96f825680cf`.
+Evidence is in `target/portable-performance-retained-dedicated-20261016/`
+(1541 files plus checksums). Later queue, observer and selected-reader changes
+are excluded from this campaign.
+
 The subsequent `compact-output-window20261016` experiment replaces mutually
 exclusive queue-window options with an enum. FIFO progress, borrowed-buffer
 release order and shared-payload ownership are unchanged. All 240 local trials
@@ -4136,6 +4166,44 @@ the final marker matches exactly once in both committed and candidate code.
 Evidence is in `target/portable-performance-queue-mutation-marker-20261016/`;
 Kani execution remains pending full CI. No benchmark fixtures, limits, coverage
 floors, mutation controls or unsafe-debt allowances were relaxed.
+
+Outlining the call-lane adapter (`outlined-calls20261016`) was rejected and
+reverted: pipeline client instructions increased 0.191%, and instruction-cache
+misses increased 0.115%. Four long workload profiles and pipeline cache profiles
+are preserved in `target/portable-performance-outlined-calls-rejected-20261016/`
+(33 files plus checksums); no full timing campaign was run for that experiment.
+
+The next `selected-payload20261016` experiment retains the already admitted
+content pointer with `CheckedPointerReader`, avoiding another Call/Return/Payload
+ancestor decode. The existing checked owner verifies every immutable segment's
+identity and extent. Capability slots retain their exact admitted hooks, and
+fixed storage retains its copy fallback. No new unsafe code is introduced.
+The retained-frame test additionally rejects equal bytes from a foreign message.
+
+Pipeline client instructions decrease 0.72% to 81,114,999, dependent client
+instructions decrease 0.81% to 72,036,646, and callback server instructions
+decrease 0.94% to 59,912,000. Pipeline simulated instruction-cache misses are
+5,499,867/4,846,761 client/server. Validation passes 291 RPC tests, 92 integrations,
+72 mixed-peer cases, two focused Miri tests, Clippy and formatting. Both initial
+test compilation errors are preserved with the corrected passing runs.
+
+All 240 full local timing trials independently validate, but only **10/16 targets
+pass** (8 remote, 2 loopback). Pipeline ratio is 3.101199, and rotating socket
+medians regress to 28492/17641 ns versus C++ 5519/6279 and legacy 3395/4256.
+This triggered 40 alternating previous/new/reference trials, all independently
+validated. Their pipeline pooled medians are previous 57575 ns, selected 44606,
+legacy 28633 and C++ 43024. Multiple variants show large variation between
+repetitions. Both the original regression and the follow-up are retained; these
+results establish no broad latency improvement. Dedicated qualification is
+required. The separate empty instruction gate remains client MISS/server PASS.
+
+Evidence is in `target/portable-performance-selected-payload-20261016/`
+(1523 files plus checksums), executable SHA-256
+`690e9773bb8fcb40c89ad6ab9746bca3f51deadc5c0d3da0470096f361523ba0`,
+runtime patch SHA-256
+`aeb70797bbd2a2949acbe4a49bb7cbd85eebb9be95f2acb38d875b99987efd45`
+against `d917300`. The latest completed dedicated result remains `d396af2`
+at 11/16; the full target remains open.
 
 The earlier `5891490` PR CI run `38909630783` passed 2251 Cargo tests with 20
 skips and no incomplete or failed tests. Its unchanged coverage floors failed;

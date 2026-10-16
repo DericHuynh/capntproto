@@ -162,7 +162,6 @@ impl<'id> ClientHooks<'id> {
                 params: Payload::retain_admitted_or_copy(
                     params.incoming().payload()?.get_content(),
                     call.share_frame(messages),
-                    PayloadKind::Params,
                     caps,
                 )?
                 .into_params(),

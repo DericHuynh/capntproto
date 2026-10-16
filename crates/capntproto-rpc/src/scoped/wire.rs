@@ -44,22 +44,14 @@ enum PayloadBody {
     Shared { message: Box<SharedPayload> },
 }
 struct SharedPayload {
-    message: capnp::message::CheckedStructReader<
+    message: capnp::message::CheckedPointerReader<
         capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
     >,
 }
 impl capnp::private::capability::ResponseHook for SharedPayload {
     fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
-        Ok(
-            capntproto_rpc_wire::rpc_capnp::payload::Reader::from(self.message.root())
-                .get_content(),
-        )
+        Ok(self.message.root())
     }
-}
-#[derive(Clone, Copy)]
-enum PayloadKind {
-    Params,
-    Results,
 }
 impl Payload {
     pub(crate) fn retain_plain_context(
@@ -109,7 +101,6 @@ impl Payload {
     fn retain_admitted_or_copy(
         reader: any_pointer::Reader<'_>,
         bytes: Option<messages::SharedBytes>,
-        kind: PayloadKind,
         caps: Vec<Option<Box<dyn ClientHook>>>,
     ) -> capnp::Result<Self> {
         // Both callers use the content and receipts of an admitted immutable
@@ -119,65 +110,56 @@ impl Payload {
         // Retain those hooks in the original slot order alongside the immutable
         // frame; no payload copy or capability-index remapping is required.
         if let Some(bytes) = bytes {
-            let mut payload = Self::from_admitted_bytes(bytes, kind)?;
-            payload.caps = caps;
-            return Ok(payload);
+            let options = Self::admitted_reader_options();
+            let segments = capnp::serialize::NoAllocBufferSegments::from_buffer(bytes, options)?;
+            // Retain the already selected content pointer instead of decoding
+            // Call/Return and Payload ancestors again. The checked owner verifies
+            // every segment's identity and extent before keeping these offsets.
+            let message = capnp::message::CheckedPointerReader::retain(reader, segments, options)?;
+            return Ok(Self {
+                body: PayloadBody::Shared {
+                    message: Box::new(SharedPayload { message }),
+                },
+                caps,
+            });
         }
         let mut reader = reader;
         reader.imbue(&caps);
         Self::copy(reader)
     }
-    #[inline(always)]
-    fn from_admitted_bytes(bytes: messages::SharedBytes, kind: PayloadKind) -> capnp::Result<Self> {
-        let options = capnp::message::ReaderOptions {
+    fn admitted_reader_options() -> capnp::message::ReaderOptions {
+        capnp::message::ReaderOptions {
             traversal_limit_in_words: None,
-            // Match owned builder readers after validation with the
-            // source's nesting limit; no unvalidated graph is exposed.
+            // Admission traversed the full immutable graph under its original
+            // limits. Match owned builder readers for subsequent application reads.
             nesting_limit: i32::MAX,
-        };
+        }
+    }
+    #[inline(always)]
+    fn from_admitted_result_bytes(bytes: messages::SharedBytes) -> capnp::Result<Self> {
+        let options = Self::admitted_reader_options();
         let segments = capnp::serialize::NoAllocBufferSegments::from_buffer(bytes, options)?;
+        let (message, ()) = capnp::message::Reader::new(segments, options)
+            .try_select_pointer(options, |root| {
+                let root = root.get_as::<capntproto_rpc_wire::rpc_capnp::message::Reader>()?;
+                let capntproto_rpc_wire::rpc_capnp::message::Return(result) = root
+                    .which()
+                    .map_err(|_| Error::from_kind(capnp::ErrorKind::Failed))?
+                else {
+                    return Err(Error::failed("shared response is not a Return".into()));
+                };
+                let capntproto_rpc_wire::rpc_capnp::return_::Results(payload) = result?
+                    .which()
+                    .map_err(|_| Error::from_kind(capnp::ErrorKind::Failed))?
+                else {
+                    return Err(Error::failed("shared response is not results".into()));
+                };
+                Ok::<_, Error>(Some((payload?.get_content(), ())))
+            })?
+            .expect("result selector returns a pointer or an error");
         Ok(Self {
             body: PayloadBody::Shared {
-                message: Box::new(SharedPayload {
-                    message: capnp::message::CheckedStructReader::select(
-                        capnp::message::Reader::new(segments, options),
-                        |root| {
-                            use capnp::traits::IntoInternalStructReader;
-                            let root = capntproto_rpc_wire::rpc_capnp::message::Reader::from(root);
-                            let payload = match (
-                                kind,
-                                root.which()
-                                    .map_err(|_| Error::from_kind(capnp::ErrorKind::Failed))?,
-                            ) {
-                                (
-                                    PayloadKind::Params,
-                                    capntproto_rpc_wire::rpc_capnp::message::Call(call),
-                                ) => call?.get_params()?,
-                                (
-                                    PayloadKind::Results,
-                                    capntproto_rpc_wire::rpc_capnp::message::Return(result),
-                                ) => {
-                                    let capntproto_rpc_wire::rpc_capnp::return_::Results(payload) =
-                                        result?.which().map_err(|_| {
-                                            Error::from_kind(capnp::ErrorKind::Failed)
-                                        })?
-                                    else {
-                                        return Err(Error::failed(
-                                            "shared response is not results".into(),
-                                        ));
-                                    };
-                                    payload?
-                                }
-                                _ => {
-                                    return Err(Error::failed(
-                                        "shared payload message kind mismatch".into(),
-                                    ))
-                                }
-                            };
-                            Ok(payload.into_internal_struct_reader())
-                        },
-                    )?,
-                }),
+                message: Box::new(SharedPayload { message }),
             },
             caps: Vec::new(),
         })
@@ -1033,7 +1015,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                 if let Some(message) = remote.take_plain_results() {
                     Ok(Payload { body: PayloadBody::Admitted(message), caps: Vec::new() })
                 } else if let Some(bytes) = remote.share_plain_results(messages) {
-                    Payload::from_admitted_bytes(bytes, PayloadKind::Results)
+                    Payload::from_admitted_result_bytes(bytes)
                 } else { remote
                 .with(messages, |reply| match reply {
                     owned::Reply::Results(payload) => {
@@ -1062,7 +1044,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                             };
                             caps.push(cap);
                         }
-                        Payload::retain_admitted_or_copy(payload.content(), remote.share_results(messages), PayloadKind::Results, caps)
+                        Payload::retain_admitted_or_copy(payload.content(), remote.share_results(messages), caps)
                     }
                     owned::Reply::Exception(error) => {
                         Err(crate::rpc::remote_exception_to_error(error))

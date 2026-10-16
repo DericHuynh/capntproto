@@ -6,6 +6,12 @@ use capntproto_rpc_engine::{
 };
 use capntproto_rpc_wire::{clients::Route, owned::Frame, rpc_capnp};
 
+#[derive(Clone, Copy)]
+enum PayloadKind {
+    Params,
+    Results,
+}
+
 type Peer<'p, 'id, 's> = Driver<'p, 'id, 's, (), (), u8, u32, 4, 4>;
 
 #[test]
@@ -59,10 +65,21 @@ fn data_payloads_share_validated_frames_and_outlive_the_driver_scope() {
                         };
                         let pointer = content.get_as::<capnp::data::Reader>().unwrap().as_ptr();
                         content.validate_capability_indices(0).unwrap();
+                        let mut foreign = capnp::message::Builder::new_default();
+                        foreign
+                            .set_root::<capnp::data::Owned>(&b"shared payload"[..])
+                            .unwrap();
+                        let error = Payload::retain_admitted_or_copy(
+                            foreign.get_root_as_reader().unwrap(),
+                            frame.share(messages),
+                            Vec::new(),
+                        )
+                        .err()
+                        .expect("foreign content cannot acquire this frame");
+                        assert_eq!(error.kind, capnp::ErrorKind::TypeMismatch);
                         let payload = Payload::retain_admitted_or_copy(
                             content,
                             frame.share(messages),
-                            kind,
                             Vec::new(),
                         )
                         .unwrap();
@@ -186,7 +203,6 @@ fn admitted_capability_payloads_keep_slot_identity_and_outlive_their_frame() {
                             Payload::retain_admitted_or_copy(
                                 content,
                                 shared.then(|| frame.share(messages).unwrap()),
-                                kind,
                                 vec![
                                     None,
                                     Some(crate::broken::new_cap(Error::failed(
