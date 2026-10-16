@@ -37,21 +37,19 @@ use crate::{broken, local};
 // A published pipeline can resolve a queued client before the call which drives
 // it completes. Stop driving that call once forwarding/resolution is delivered:
 // its later failure must not replace the independently published capability.
-fn drive_until_ready<T: 'static>(
-    promise: Promise<T, Error>,
+async fn drive_until_ready<T>(
+    promise: impl Future<Output = Result<T, Error>> + Unpin,
     driver: futures::future::Shared<Promise<(), Error>>,
-) -> Promise<T, Error> {
-    Promise::from_future(async move {
-        match futures::future::select(promise, driver).await {
-            futures::future::Either::Left((result, _)) => result,
-            futures::future::Either::Right((Ok(()), promise)) => promise.await,
-            futures::future::Either::Right((Err(error), mut promise)) => {
-                // Polling the driver may itself have published the pipeline
-                // before failing. Give that publication precedence as well.
-                (&mut promise).now_or_never().unwrap_or(Err(error))
-            }
+) -> Result<T, Error> {
+    match futures::future::select(promise, driver).await {
+        futures::future::Either::Left((result, _)) => result,
+        futures::future::Either::Right((Ok(()), promise)) => promise.await,
+        futures::future::Either::Right((Err(error), mut promise)) => {
+            // Polling the driver may itself have published the pipeline
+            // before failing. Give that publication precedence as well.
+            (&mut promise).now_or_never().unwrap_or(Err(error))
         }
-    })
+    }
 }
 
 pub(crate) struct PipelineInner {
@@ -210,10 +208,11 @@ impl PipelineHook for Pipeline {
             return p.get_pipelined_cap_move(ops);
         }
 
-        let mut queued_client = Client::new(Some(self.inner.clone()));
-        if let Some(driver) = self.inner.borrow().promise_to_drive.clone() {
-            queued_client.drive(driver);
-        }
+        let queued_client = Client::new(Some(self.inner.clone()));
+        // This driver is already shared. Retain its fork directly instead of
+        // allocating another boxed future and shared state around that fork.
+        queued_client.inner.borrow_mut().promise_to_drive =
+            self.inner.borrow().promise_to_drive.clone();
         let weak_queued = Rc::downgrade(&queued_client.inner);
         let admitted = self
             .inner
@@ -413,12 +412,14 @@ impl ClientHook for Client {
 
         // Drive until the call is forwarded, not until the forwarded call
         // finishes. The latter may depend on a different, still-pending promise.
-        let forwarded = Promise::from_future(forwarded);
-        let forwarded = match &self.inner.borrow().promise_to_drive {
-            Some(driver) => drive_until_ready(forwarded, driver.clone()),
-            None => forwarded,
-        };
-        Promise::from_future(forwarded.and_then(|call| call))
+        let driver = self.inner.borrow().promise_to_drive.clone();
+        Promise::from_future(async move {
+            let call = match driver {
+                Some(driver) => drive_until_ready(forwarded, driver).await?,
+                None => forwarded.await?,
+            };
+            call.await
+        })
     }
 
     fn get_ptr(&self) -> usize {
@@ -446,17 +447,19 @@ impl ClientHook for Client {
             return Some(Promise::ok(client.add_ref()));
         }
 
-        let promise = Promise::from_future(
-            self.inner
-                .borrow_mut()
-                .client_resolution_queue
-                .push(())
-                .attach(self.inner.clone()),
-        );
-        match &self.inner.borrow().promise_to_drive {
-            Some(p) => Some(drive_until_ready(promise, p.clone())),
-            None => Some(promise),
-        }
+        let promise = self
+            .inner
+            .borrow_mut()
+            .client_resolution_queue
+            .push(())
+            .attach(self.inner.clone());
+        let driver = self.inner.borrow().promise_to_drive.clone();
+        Some(Promise::from_future(async move {
+            match driver {
+                Some(driver) => drive_until_ready(promise, driver).await,
+                None => promise.await,
+            }
+        }))
     }
 
     fn when_resolved(&self) -> Promise<(), Error> {

@@ -1396,6 +1396,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     }) {
                         Ok(connection::PlainReceived::Delivered(index, message)) => {
                             reader.finish_frame();
+                            pump.frames += 1;
                             pump.output_frames += usize::from(!queue.is_empty());
                             pump.blocked = false;
                             self.delivered_plain(index, message, controls);
@@ -1432,6 +1433,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 ) {
                     Ok(event) => {
                         reader.finish_frame();
+                        pump.frames += 1;
                         pump.output_frames += usize::from(!queue.is_empty());
                         pump.blocked = false;
                         event
@@ -1538,18 +1540,31 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 } else {
                     self.resume_at(2);
                 }
-                if completed.is_some() && self.worker.is_empty() {
+                if completed.is_some()
+                    && self.worker.is_empty()
+                    && (!reader.has_buffered_next_frame()
+                        || pump.frames >= self.options.budget.get().min(8))
+                {
                     // Let the application enqueue its next call before
-                    // scanning cleanup, coalescing both in the next turn.
+                    // scanning cleanup when no bounded buffered successor is
+                    // ready. Parent and child replies often share one read;
+                    // consume them without an intervening executor turn.
+                    pump.frames = 0;
                     cx.waker().wake_by_ref();
                     return Poll::Pending;
                 }
+            }
+            if pump.frames >= self.options.budget.get().min(8) {
+                pump.frames = 0;
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
             }
             // Batch replies to already-buffered input across the ordinary
             // fairness yields. Both output and admitted-input counts bound the
             // batch, so control-only traffic cannot indefinitely postpone it.
             // Never wait for new input or hold output across pool pressure.
-            let defer_output = pump.output_frames < 32
+            let defer_output = (pump.frames != 0 || pump.output_frames != 0 || !queue.is_empty())
+                && pump.output_frames < 32
                 && queue.len() < 32
                 && messages.can_reserve(
                     self.options
@@ -1571,6 +1586,10 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 defer_output,
             ) {
                 Err(error) => return Poll::Ready(Err(error)),
+                // A completed parent need not suspend before an already
+                // buffered child reply. The frame budget above and readiness
+                // gate below still bound and authorize the next admission.
+                Ok(true) if defer_output => (),
                 Ok(true) => return Poll::Pending,
                 Ok(false) => (),
             }
@@ -1595,13 +1614,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     .map_err(|error| Cause::Protocol(wire_error(error)))?
                 {
                     *pending = Some(frame);
-                    pump.frames += 1;
-                    if pump.frames < self.options.budget.get().min(8) {
-                        continue;
-                    }
-                    pump.frames = 0;
-                    cx.waker().wake_by_ref();
-                    return Poll::Pending;
+                    continue;
                 }
             }
             if controls.accepts_direct_plain_return() && self.calls.has_plain_receivers() {
@@ -1645,13 +1658,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 .map_err(|error| Cause::Protocol(wire_error(error)))?
             {
                 *pending = Some(frame);
-                pump.frames += 1;
-                if pump.frames < self.options.budget.get().min(8) {
-                    continue;
-                }
-                pump.frames = 0;
-                cx.waker().wake_by_ref();
-                return Poll::Pending;
+                continue;
             }
             return Poll::Ready(Ok(Some(size)));
         }
@@ -1777,27 +1784,9 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             };
             let Some(frame) = frame else { return Ok(()) };
             *pending = Some(frame);
-            // Receiving bytes does not change protocol work. Invalidate idle
-            // scans after admission above, when the frame changes the ledgers.
-            // Otherwise every input causes a full scan of the old state first.
-            // Bound an always-readable peer without putting an executor round
-            // trip in front of each already-received call or reply.
-            pump.frames += 1;
-            if pump.frames < self.options.budget.get().min(8) {
-                continue;
-            }
-            pump.frames = 0;
-            let mut yielded = false;
-            std::future::poll_fn(|cx| {
-                if yielded {
-                    Poll::Ready(())
-                } else {
-                    yielded = true;
-                    cx.waker().wake_by_ref();
-                    Poll::Pending
-                }
-            })
-            .await;
+            // Admission charges the frame budget and invalidates protocol
+            // scans. Preparing bytes alone must not reset that budget before
+            // the frame is consumed, including across a mixed reply batch.
         }
     }
 

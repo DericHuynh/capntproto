@@ -100,7 +100,7 @@ struct Endpoint {
     index: usize,
     settled: Cell<bool>,
     failure: RefCell<Option<Error>>,
-    resolution: Shared<shared::Receiver<capnp::Result<()>>>,
+    resolution: Option<Shared<shared::Receiver<capnp::Result<()>>>>,
     #[cfg(unix)]
     fd: RefCell<Option<Rc<std::os::fd::OwnedFd>>>,
 }
@@ -251,7 +251,14 @@ impl<'id> ClientHooks<'id> {
             }
             self.entries.push(None);
         }
-        let (resolution, resolved) = shared::channel();
+        // An already-settled endpoint never waits for resolution. Keep the
+        // completion channel and shared future only for an unresolved route.
+        let (resolution, resolved) = if pending {
+            let (sender, receiver) = shared::channel();
+            (Some(sender), Some(receiver.shared()))
+        } else {
+            (None, None)
+        };
         let endpoint = Rc::new(Endpoint {
             introduction: RefCell::default(),
             introduced: RefCell::default(),
@@ -274,14 +281,14 @@ impl<'id> ClientHooks<'id> {
                 )),
                 _ => None,
             }),
-            resolution: resolved.shared(),
+            resolution: resolved,
             #[cfg(unix)]
             fd: RefCell::new(None),
         });
         self.entries[index] = Some(Entry {
             endpoint: Rc::downgrade(&endpoint),
             client,
-            resolution: pending.then_some(resolution),
+            resolution,
         });
         Ok(capability::Client::new(Box::new(Hook(endpoint, None))))
     }
@@ -1156,7 +1163,12 @@ impl ClientHook for Hook {
         let endpoint = self.0.clone();
         let shutdown = inbox.shutdown.clone();
         Promise::from_future(async move {
-            match futures::future::select(shutdown, endpoint.resolution.clone()).await {
+            let resolved = endpoint
+                .resolution
+                .as_ref()
+                .expect("unsettled endpoint owns its resolution")
+                .clone();
+            match futures::future::select(shutdown, resolved).await {
                 futures::future::Either::Right((result, _)) => result
                     .map_err(crate::canceled_to_error)
                     .and_then(core::convert::identity),

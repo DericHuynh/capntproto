@@ -3334,6 +3334,60 @@ future fixes the reproduced failure. All 16 runtime integration tests pass,
 including TLC trace replay with the cached model-checker JAR. Fresh coverage
 and full parity qualification remain required; baselines are unchanged.
 
+Dedicated run `38860047520` for `ef9f4c8` subsequently completed with **11/16
+passing cells**: 9/12 remote workflows and 2/4 loopback payloads. Independent
+validation checks all 350 remote and 60 loopback trials, five repetitions per
+cell, pooled p50/p95/p99 and the inclusive 1.05 limit. Fanout improves to
+0.931282× C++. The remaining misses are:
+
+| Case | Portable p50 | Faster reference p50 | Ratio |
+| --- | ---: | ---: | ---: |
+| dependent-read | 548.198 µs | C++ 517.253 µs | 1.059826× |
+| pipelined-read | 315.533 µs | C++ 268.362 µs | 1.175774× |
+| callback | 538.057 µs | legacy 502.716 µs | 1.070300× |
+| loopback 1 KiB | 28.499 µs | legacy 27.138 µs | 1.050151× |
+| loopback 64 KiB | 73.505 µs | legacy 63.866 µs | 1.150925× |
+
+The successful workflow status does not close the parity gap. Artifact
+`12030357582` has ZIP SHA-256
+`54d5eee2a0ba6076f529209f47b5e4cbe490360a922326ca6401c20cf71b2f40`.
+The complete report, raw trials and independent validation are retained in
+`target/portable-performance-io-dedicated-20261016/`.
+
+The read-side follow-up charges the frame budget when a frame is admitted,
+and consumes bounded already-buffered replies before yielding to the application.
+The fairness/stop regression covers both plain and pipelined replies across four
+budgets. It passes Miri, all 272 RPC unit tests, 16 runtime integration tests and
+Clippy. Pipeline client instructions decrease from 102,030,159 to 97,422,810;
+server instructions are 74,801,968. Steady writes still match the C++ grouping.
+This shared-VM diagnostic does not establish latency acceptance.
+
+A separate indexed pipeline-completion experiment preserved observer propagation
+and passed correctness checks, but increased client instructions to 99,476,958.
+It was discarded. Its full local workflow sweep passed 5/12; no loopback sweep
+was run for that discarded prototype. Both experiments, including initial failed
+assertions and corrected validation, are retained with exact source patches and
+SHA-256 manifests in `target/portable-performance-readside-20261016/`.
+
+The next candidate keeps that bounded read-side change, reuses an already-shared
+pipeline driver directly and removes intermediate boxed futures during queued
+forwarding. Already-settled exported endpoints omit unused resolution channels.
+Pipeline client/server instructions are 95,534,645 / 74,797,415; callback is
+62,181,104 / 60,969,272. Matched legacy pipeline totals are 56,352,420 / 56,823,453
+after the shared queued-future change, so the control's improvement is retained.
+The portable pipeline client uses 6.4% fewer instructions than `ef9f4c8`, but
+still exceeds both controls. Empty-call instruction ratios are 1.059037 client
+and 1.043918 server; the client gate remains a miss.
+
+The complete local comparison passes **7/12 workflows and 1/4 loopback payloads**.
+All five repetitions, raw samples and misses are retained. All 72 mixed-peer
+workflows pass. Validation includes 272 RPC unit tests, 87 focused integration
+tests for queued forwarding, 32 integration tests after the endpoint change,
+three queued and 25 scoped Miri checks, and Clippy with warnings denied. Fresh
+traces retain the C++ steady write grouping. Evidence is retained under
+`target/portable-performance-shared-driver-20261016/`; dedicated qualification
+is required before claiming progress against the latency gate.
+
 ### Portable and legacy instruction qualification
 
 The October 15 optimization batch meets a **1.05× portable/legacy instruction
