@@ -1,4 +1,4 @@
-//! Publish settled calls without a temporary queued Call envelope.
+//! Publish routable calls without a temporary queued Call envelope.
 use super::*;
 
 /// Parameters for immediate publication. An encoded Call has one or two unframed
@@ -169,10 +169,12 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         Ok(Some(key))
     }
 
-    /// Try immediate publication of a settled imported call without parameter
+    /// Try immediate publication of a routable remote call without parameter
     /// capabilities. `None` leaves the caller's request untouched and
-    /// requires ordinary queued invocation. Older tasks, pending promises and
-    /// deferred wire input are never overtaken. All storage is caller supplied.
+    /// requires ordinary queued invocation. Older tasks, waiting promises and
+    /// deferred wire input are never overtaken. An unresolved remote promise
+    /// uses its authenticated original route and preserves resolution barriers.
+    /// All storage is caller supplied.
     ///
     /// The returned question has the ordinary response/cancel/Finish lifecycle.
     /// Output failure rolls back the reservation without consuming a question,
@@ -241,13 +243,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         }
         let Some(ticket) = self
             .runtime
-            .prepare_immediate(target)
+            .prepare_immediate_routed(target)
             .map_err(Error::Dispatch)?
         else {
             return Ok(None);
         };
         let clients::Destination::Endpoint {
-            owner: binding::Route::Capability(binding::Endpoint::Imported(remote)),
+            owner,
             location: clients::Location::Remote(peer),
             ..
         } = ticket.destination()
@@ -257,7 +259,19 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         if peer != self.imports.peer() {
             return Err(Error::InvalidInvocationTarget);
         }
-        let target = remote.id();
+        let Some(target) = owner
+            .target(&self.ledgers.questions)
+            .map_err(Error::Question)?
+        else {
+            return Ok(None);
+        };
+        let path_words = match target {
+            calls::Target::Imported(_) => 0,
+            calls::Target::Promised { path, .. } => (path.fields().len() as u64)
+                .checked_mul(2)
+                .and_then(|words| words.checked_add(2))
+                .ok_or(Error::Input(super::super::super::Error::Capacity))?,
+        };
         let (template, minimum) = match params {
             ImmediateParams::Content(params) => {
                 let size = params.target_size().map_err(|e| Error::Input(e.into()))?;
@@ -267,6 +281,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 let minimum = size
                     .word_count
                     .checked_add(16)
+                    .and_then(|words| words.checked_add(path_words))
                     .and_then(|words| words.checked_mul(8))
                     .and_then(|bytes| usize::try_from(bytes).ok())
                     .ok_or(Error::Input(super::super::super::Error::Capacity))?
@@ -287,22 +302,36 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .map_err(|e| Error::Input(super::super::super::Error::Storage(e)))?;
         let reservation = self.ledgers.questions.reserve().map_err(Error::Question)?;
         let frame = match params {
-            ImmediateParams::EncodedCall(encoded) => encoded
-                .copy(
-                    template.expect("validated encoded Call"),
-                    messages,
-                    reservation.id(),
-                    target,
-                    self.allow_answer_handoff,
-                    options,
-                )
-                .map_err(Error::Input)?,
+            ImmediateParams::EncodedCall(encoded) => match target {
+                calls::Target::Imported(target) => encoded
+                    .copy(
+                        template.expect("validated encoded Call"),
+                        messages,
+                        reservation.id(),
+                        target,
+                        self.allow_answer_handoff,
+                        options,
+                    )
+                    .map_err(Error::Input)?,
+                calls::Target::Promised { question, path } => encoded
+                    .copy_promised(
+                        messages,
+                        reservation.id(),
+                        question,
+                        path,
+                        method,
+                        minimum,
+                        self.allow_answer_handoff,
+                        options,
+                    )
+                    .map_err(Error::Input)?,
+            },
             ImmediateParams::Content(params) => {
                 let frame = Frame::build(messages, minimum, options, |builder| {
                     calls::dynamic_call_with_handoff(
                         builder,
                         reservation.id(),
-                        calls::Target::Imported(target),
+                        target,
                         method,
                         self.allow_answer_handoff,
                         |field| {

@@ -26,8 +26,11 @@ fn exported_promise_freezes_once_before_retrying_resolve_output() {
                         let source = graph.promise(&mut None).unwrap();
                         let mut slots = [Slot::EMPTY];
                         let mut bindings = Bindings::new(&mut slots).unwrap();
+                        assert!(bindings.vacant_within(1));
+                        assert!(!bindings.vacant_within(0));
                         let mut batch = exports.batch();
                         let grant = bindings.stage(graph, &mut batch, &source).unwrap();
+                        assert!(!bindings.vacant_within(1));
                         assert!(grant.is_promise());
                         assert_ne!(batch.pending_owner(grant.id()).unwrap().key(), source.key());
                         batch.commit();

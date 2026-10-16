@@ -233,6 +233,75 @@ pub struct EncodedCall<'a> {
     options: capnp::message::ReaderOptions,
 }
 impl<'a> EncodedCall<'a> {
+    /// A promised-answer target needs a transform list, so rebuild its envelope
+    /// from the certified parameters rather than rewriting the imported target.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn copy_promised<'pool>(
+        &self,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        question: QuestionId,
+        parent: QuestionId,
+        path: pipeline::Path<'_>,
+        method: calls::DynamicCall,
+        minimum: usize,
+        allow_handoff: bool,
+        options: capnp::message::ReaderOptions,
+    ) -> Result<Frame<'pool>, super::super::super::Error> {
+        let segments = [self.segment, self.second.unwrap_or(&[])];
+        let segments = &segments[..if self.second.is_some() { 2 } else { 1 }];
+        let reader =
+            capnp::message::Reader::new(capnp::message::SegmentArray::new(segments), options);
+        let rpc_capnp::message::Call(call) = reader
+            .get_root::<rpc_capnp::message::Reader>()?
+            .which()
+            .map_err(|_| super::super::super::Error::WrongMessage)?
+        else {
+            return Err(super::super::super::Error::WrongMessage);
+        };
+        let content = call?.get_params()?.get_content();
+        let sized = content
+            .target_size()?
+            .word_count
+            .checked_add(18)
+            .and_then(|words| words.checked_add((path.fields().len() as u64).checked_mul(2)?))
+            .and_then(|words| words.checked_mul(8))
+            .and_then(|bytes| usize::try_from(bytes).ok())
+            .ok_or(super::super::super::Error::Capacity)?;
+        let frame = Frame::build(messages, minimum.max(sized), options, |builder| {
+            calls::dynamic_call_with_handoff(
+                builder,
+                question,
+                calls::Target::Promised {
+                    question: parent,
+                    path,
+                },
+                method,
+                allow_handoff,
+                |field| {
+                    field.copy_with_capabilities(
+                        content,
+                        capnp::wire_capability::IndexMap::identity(0),
+                    )
+                },
+            )
+        })?;
+        let validation = frame
+            .with(messages, |root| -> capnp::Result<()> {
+                let rpc_capnp::message::Call(call) = root.which()? else {
+                    unreachable!("built Call")
+                };
+                call?
+                    .get_params()?
+                    .get_content()
+                    .validate_capability_indices(0)
+            })
+            .and_then(|result| result.map_err(super::super::super::Error::from));
+        if let Err(error) = validation {
+            frame.release(messages);
+            return Err(error);
+        }
+        Ok(frame)
+    }
     #[cfg(feature = "alloc")]
     pub fn from_builder<A: capnp::message::Allocator>(
         builder: &'a capnp::message::Builder<A>,

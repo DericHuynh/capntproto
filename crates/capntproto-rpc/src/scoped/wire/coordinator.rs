@@ -799,7 +799,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     && self.hooks.inbox.queue.borrow().is_empty()
                     && self.wake.changed.load(Ordering::Acquire) == 0
                 {
-                    // This publication used the direct, settled, data-only
+                    // This publication used the direct, routable, data-only
                     // path. Hook collection already ran in admission; it did
                     // not create another task, foreign promise or worker.
                     // Preserve those lanes' idle scans while restarting the

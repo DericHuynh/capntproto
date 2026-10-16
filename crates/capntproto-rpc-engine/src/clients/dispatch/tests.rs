@@ -1,6 +1,77 @@
 use super::*;
 
 #[test]
+fn immediate_original_routes_preserve_rejection_and_reflected_ordering() {
+    let measured = allocation_counter::measure(|| {
+        for accepted in [false, true] {
+            let mut clients = [const { Slot::<u32, u8>::EMPTY }; 5];
+            let mut tasks = [TaskSlot::EMPTY];
+            with_runtime(
+                Storage {
+                    clients: &mut clients,
+                    tasks: &mut tasks,
+                },
+                |runtime| {
+                    let original = runtime.endpoint(41, Location::Remote(1)).unwrap();
+                    let route = runtime.promise(&mut Some(original)).unwrap();
+                    let waiting = runtime.promise(&mut None).unwrap();
+                    assert!(runtime
+                        .prepare_immediate_routed(&waiting)
+                        .unwrap()
+                        .is_none());
+                    assert!(runtime.prepare_immediate(&route).unwrap().is_none());
+                    let older = runtime
+                        .prepare_call(&waiting, &mut Some(17))
+                        .unwrap()
+                        .accept();
+                    assert!(runtime.prepare_immediate_routed(&route).unwrap().is_none());
+                    assert_eq!(runtime.cancel(older), Ok(17));
+                    let sequence = runtime.graph.dispatch_sequence;
+                    drop(runtime.prepare_immediate_routed(&route).unwrap().unwrap());
+                    assert_eq!(runtime.graph.dispatch_sequence, sequence);
+                    if accepted {
+                        runtime
+                            .prepare_immediate_routed(&route)
+                            .unwrap()
+                            .unwrap()
+                            .accept_published();
+                        assert_eq!(runtime.graph.dispatch_sequence, sequence + 1);
+                    }
+                    let local = runtime.endpoint(73, Location::Local).unwrap();
+                    let barrier = runtime
+                        .prepare_resolution(route.key(), &mut Some(local), Source::Direct)
+                        .unwrap()
+                        .accept();
+                    assert_eq!(barrier.is_some(), accepted);
+                    if let Some(barrier) = barrier {
+                        assert!(runtime.prepare_immediate_routed(&route).unwrap().is_none());
+                        assert_eq!(*runtime.barrier_route(&barrier), 41);
+                        runtime.open(barrier);
+                    }
+                    let ticket = runtime.prepare_immediate_routed(&route).unwrap().unwrap();
+                    assert!(matches!(
+                        ticket.destination(),
+                        Destination::Endpoint {
+                            owner: &73,
+                            location: Location::Local,
+                            ..
+                        }
+                    ));
+                    drop(ticket);
+                    runtime.release(waiting);
+                    runtime.release(route);
+                    assert_eq!(runtime.take_retired(), Some(41));
+                    assert_eq!(runtime.take_retired(), Some(73));
+                    assert!(runtime.is_empty());
+                },
+            )
+            .unwrap();
+        }
+    });
+    assert_eq!(measured.count_total, 0);
+}
+
+#[test]
 fn immediate_dispatch_is_transactional_and_never_overtakes_queued_work() {
     let measured = allocation_counter::measure(|| {
         let mut clients = [const { Slot::<u32, u8>::EMPTY }; 3];

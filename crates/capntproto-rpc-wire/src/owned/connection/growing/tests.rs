@@ -79,6 +79,226 @@ fn remote<'p, 'id>(driver: &mut Peer<'p, 'id, '_>) -> clients::Client<'id> {
 }
 
 #[test]
+fn retained_vacant_pipeline_capacity_does_not_require_maintenance() {
+    with_driver(|mut driver, messages| {
+        driver
+            .tails
+            .vacant_mut(|_, _| true, || TailSlot::EMPTY)
+            .unwrap();
+        driver
+            .invocation_pipelines
+            .vacant_mut(|_, _| true, || InvocationPipelineSlot::EMPTY)
+            .unwrap();
+        assert_eq!(driver.tails.len(), 1);
+        assert_eq!(driver.invocation_pipelines.len(), 1);
+        assert!(driver.maintenance_is_idle());
+        let mut slots = [None];
+        let mut queue = messages::Queue::new(&mut slots).unwrap();
+        assert!(matches!(
+            driver.poll_maintenance(
+                messages,
+                &mut queue,
+                256,
+                Default::default(),
+                &mut [],
+                NonZeroUsize::new(1).unwrap()
+            ),
+            Ok(Progress::Idle)
+        ));
+        assert!(queue.is_empty());
+        close(driver, messages, &mut queue);
+    });
+}
+
+#[test]
+fn immediate_promised_targets_preserve_retry_paths_and_segmented_parameters() {
+    for encoded in [false, true] {
+        for first_words in [32, 1024] {
+            with_driver(|mut driver, messages| {
+                let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+                let parent = driver
+                    .send(
+                        messages,
+                        &mut queue,
+                        512,
+                        Default::default(),
+                        |builder, id| {
+                            calls::dynamic_call(
+                                builder,
+                                id,
+                                calls::Target::Imported(ImportId::from_wire(41)),
+                                DynamicCall::default(),
+                                |_| Ok(()),
+                            )
+                        },
+                    )
+                    .unwrap();
+                drain(&mut queue, messages, |_| {});
+                let fields = [0, 2, 1];
+                let projected = driver
+                    .pipeline(parent, pipeline::Path::new(&fields))
+                    .unwrap();
+                let method = DynamicCall {
+                    interface: 71,
+                    method: 5,
+                    no_promise_pipelining: true,
+                    only_promise_pipeline: false,
+                };
+                let mut prepared = PreparedCall::new(
+                    capnp::message::Builder::new(
+                        capnp::message::HeapAllocator::new().first_segment_words(first_words),
+                    ),
+                    71,
+                    5,
+                )
+                .unwrap();
+                let payload = [0xa5; 1500];
+                prepared
+                    .params()
+                    .set_as::<capnp::data::Owned>(&payload[..])
+                    .unwrap();
+                let rpc_capnp::message::Call(source) = prepared
+                    .message()
+                    .get_root_as_reader::<rpc_capnp::message::Reader>()
+                    .unwrap()
+                    .which()
+                    .unwrap()
+                else {
+                    panic!("source Call")
+                };
+                let params = if encoded {
+                    ImmediateParams::EncodedCall(
+                        prepared
+                            .encoded(method, Default::default())
+                            .unwrap()
+                            .unwrap(),
+                    )
+                } else {
+                    ImmediateParams::Content(source.unwrap().get_params().unwrap().get_content())
+                };
+                let count = driver.ledgers.questions.len();
+                let mut full = messages::Queue::new_growing(0, 0).unwrap();
+                assert!(driver
+                    .try_send_immediate_borrowed(
+                        &projected,
+                        method,
+                        &params,
+                        messages,
+                        &mut full,
+                        512,
+                        Default::default(),
+                        ()
+                    )
+                    .is_err());
+                assert!(driver
+                    .try_send_immediate_borrowed(
+                        &projected,
+                        method,
+                        &params,
+                        messages,
+                        &mut queue,
+                        8192,
+                        Default::default(),
+                        ()
+                    )
+                    .is_err());
+                assert!(driver
+                    .try_send_immediate_borrowed(
+                        &projected,
+                        method,
+                        &params,
+                        messages,
+                        &mut queue,
+                        512,
+                        capnp::message::ReaderOptions {
+                            nesting_limit: 0,
+                            ..Default::default()
+                        },
+                        ()
+                    )
+                    .is_err());
+                assert_eq!(driver.ledgers.questions.len(), count);
+                assert!(queue.is_empty());
+                let waiting = driver.runtime.promise(&mut None).unwrap();
+                let older = driver
+                    .enqueue_dynamic(
+                        &waiting,
+                        DynamicCall::default(),
+                        &[],
+                        messages,
+                        256,
+                        Default::default(),
+                        |_| Ok(()),
+                    )
+                    .unwrap();
+                assert!(driver
+                    .try_send_immediate_borrowed(
+                        &projected,
+                        method,
+                        &params,
+                        messages,
+                        &mut queue,
+                        512,
+                        Default::default(),
+                        ()
+                    )
+                    .unwrap()
+                    .is_none());
+                assert!(driver.cancel_invocation(older, messages));
+                driver.runtime.release(waiting);
+                let child = driver
+                    .try_send_immediate_borrowed(
+                        &projected,
+                        method,
+                        &params,
+                        messages,
+                        &mut queue,
+                        512,
+                        Default::default(),
+                        (),
+                    )
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(driver.runtime.queued(), 0);
+                drain(&mut queue, messages, |root| {
+                    let rpc_capnp::message::Call(call) = root.which().unwrap() else {
+                        panic!("child Call")
+                    };
+                    let call = call.unwrap();
+                    assert_eq!(call.get_question_id(), child.id().to_wire());
+                    assert_eq!(call.get_interface_id(), 71);
+                    assert_eq!(call.get_method_id(), 5);
+                    assert!(call.get_no_promise_pipelining());
+                    let rpc_capnp::message_target::PromisedAnswer(target) =
+                        call.get_target().unwrap().which().unwrap()
+                    else {
+                        panic!("promised target")
+                    };
+                    let target = target.unwrap();
+                    assert_eq!(target.get_question_id(), parent.id().to_wire());
+                    assert_eq!(
+                        pipeline::Path::decode(target, &mut [0; 8])
+                            .unwrap()
+                            .fields(),
+                        &fields
+                    );
+                    assert_eq!(
+                        call.get_params()
+                            .unwrap()
+                            .get_content()
+                            .get_as::<capnp::data::Reader>()
+                            .unwrap(),
+                        &payload
+                    );
+                });
+                driver.runtime.release(projected);
+                close(driver, messages, &mut queue);
+            });
+        }
+    }
+}
+
+#[test]
 fn immediate_capability_publication_preserves_retries_and_descriptor_authority() {
     for failure in ["queue", "storage", "reader", "index", "scratch", "older"] {
         with_driver(|mut driver, messages| {
@@ -455,9 +675,9 @@ fn server_idle_certificate_observes_deferred_answer_and_export_cleanup() {
 fn maintenance_idle_scan_keeps_its_budget_after_empty_tables_grow() {
     for quantum in [1, 2, 7, 32] {
         with_driver(|mut driver, messages| {
-            // Exercise the general scanner even when the hosted simple-client
-            // certificate could otherwise prove quiescence without a scan.
-            assert!(driver.tails.grow(1, || TailSlot::EMPTY));
+            // Exceed the bounded vacancy certificate so this still exercises
+            // the general scanner and exact quantum accounting.
+            assert!(driver.tails.grow(9, || TailSlot::EMPTY));
             let mut queue = messages::Queue::new_growing(0, 8).unwrap();
             macro_rules! poll {
                 () => {
@@ -473,7 +693,8 @@ fn maintenance_idle_scan_keeps_its_budget_after_empty_tables_grow() {
                         .unwrap()
                 };
             }
-            for _ in 1..18usize.div_ceil(quantum) {
+            let initial = 17 + driver.tails.len();
+            for _ in 1..initial.div_ceil(quantum) {
                 assert!(matches!(poll!(), Progress::Yield));
             }
             assert!(matches!(poll!(), Progress::Idle));
@@ -487,7 +708,7 @@ fn maintenance_idle_scan_keeps_its_budget_after_empty_tables_grow() {
                 .unwrap()
                 .commit();
             driver.invalidate_maintenance();
-            let total = 17 + driver.ledgers.imports.capacity();
+            let total = 16 + driver.tails.len() + driver.ledgers.imports.capacity();
             for _ in 1..total.div_ceil(quantum) {
                 assert!(matches!(poll!(), Progress::Yield));
             }

@@ -13,11 +13,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             // A retained bootstrap may coexist with an ordinary call. Keep
             // this shortcut bounded independently of configured concurrency.
             && self.exchanges.len() <= 8 && !self.exchanges.iter().any(|slot| slot.canceled)
-            && self.exported.capacity() == 0
+            && self.exported.vacant_within(8)
             && !self.ledgers.questions.has_pending_finish()
             && !self.ledgers.imports.has_pending_release()
             && self.runtime.queued() == 0 && self.barrier.is_none() && self.echo.is_none()
-            && self.tails.is_empty() && self.invocation_pipelines.is_empty()
+            && self.tails.len() <= 8 && self.tails.iter().all(|slot| !slot.is_occupied())
+            && self.invocation_pipelines.len() <= 8
+            && self.invocation_pipelines.iter().all(|slot| !slot.is_occupied())
     }
     /// Poll caller-budgeted promise propagation, deferred admission, cleanup and
     /// cancellation. The cursor advances even on resource errors so one blocked
@@ -152,21 +154,27 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             let empty = match phase {
                 0 => self.call.is_none(),
                 1 => self.resolution.is_none(),
-                2 => self.pipelines.capacity() == 0,
+                2 => self.pipelines.vacant_within(8),
                 3 => self.outgoing.is_empty(),
-                4 => self.ledgers.exports.capacity() == 0,
+                4 => self.ledgers.exports.retirement_is_idle(8),
                 5 => !self.runtime.has_retired(),
-                6 => self.ledgers.answers.capacity() == 0,
+                6 => self.ledgers.answers.reclamation_is_idle(8),
                 7 => self.exchanges.is_empty(),
-                8 => self.exported.capacity() == 0,
+                8 => self.exported.vacant_within(8),
                 9 => !self.ledgers.questions.has_pending_finish(),
                 10 => !self.ledgers.imports.has_pending_release(),
                 11 => self.call.is_none() && self.runtime.queued() == 0,
                 12 | 17 => self.runtime.queued() == 0,
                 13 => self.barrier.is_none(),
                 14 => self.echo.is_none(),
-                15 => self.tails.is_empty(),
-                16 => self.invocation_pipelines.is_empty(),
+                15 => self.tails.len() <= 8 && self.tails.iter().all(|slot| !slot.is_occupied()),
+                16 => {
+                    self.invocation_pipelines.len() <= 8
+                        && self
+                            .invocation_pipelines
+                            .iter()
+                            .all(|slot| !slot.is_occupied())
+                }
                 _ => false,
             };
             // An empty lane cannot change until a transition/callback runs.

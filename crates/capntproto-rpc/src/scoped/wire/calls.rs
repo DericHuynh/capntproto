@@ -947,8 +947,8 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             let indexed = self.prepare_reply_index(index)?;
             let call = self.pending.as_ref().expect("pending call");
             // This is only a refreshed routing hint. The driver's exclusive
-            // immediate ticket validates settlement, ordering, exact import
-            // authority and peer identity before publishing any bytes.
+            // immediate ticket validates routability, ordering, exact import
+            // or question authority and peer identity before publishing bytes.
             let credit = match call
                 .credit
                 .as_ref()

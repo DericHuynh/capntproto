@@ -840,6 +840,13 @@ fn direct_remote_projections_keep_the_parent_question_before_and_after_publicati
             }
             let child_reply = request(&child, 2).send();
             drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+            if !project_before_send {
+                assert!(calls
+                    .entries
+                    .iter()
+                    .flatten()
+                    .all(|entry| entry.wire.task.is_none()));
+            }
             let bytes = drain(&mut queue, messages);
             let mut remaining = bytes.as_slice();
             let decoded =

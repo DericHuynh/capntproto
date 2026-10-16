@@ -3104,6 +3104,33 @@ preservation and parameter-grant cleanup after a resumed service completes.
 All prototype profiles, timing samples and patches are retained under
 `target/portable-performance-shared-input-20261016/`. The gap stays open.
 
+### Direct original-route publication (October 16, 2026)
+
+Routable remote promises can publish data-only Calls without an intermediate
+queued envelope when no older task exists. The exclusive graph ticket freezes
+the authenticated import or parent-question route through FIFO acceptance and
+marks promise ancestors used only on commit. Waiting promises and reflected
+barriers still defer. Promised-answer envelopes retain their exact transform,
+parameter graph, reader limits and ordinary question lifecycle.
+
+The `routed` profile reduces pipelined-read client/server instructions from
+136,685,037 / 85,918,608 (`unified`) to 121,741,844 / 82,093,143. The paired
+four-workflow local campaign passes only fanout at 0.985541×; callback 1.256677×,
+dependent read 1.244141× and pipelined read 1.708362× still miss. Empty-call
+instructions remain above the separate client limit: 18,226,930 / 17,318,282
+client and 16,907,729 / 16,229,427 server against matched legacy. All trials,
+including unfavorable control shifts, remain recorded.
+
+An independent syscall trace of 100 fanout batches finds 1,105 portable client
+and 2,097 server send/write calls, versus 101 / 102 C++ vectored writes. The
+trace validates complete workflows but its perturbed latency is not timing
+evidence. This identifies output coalescing as the next fanout investigation.
+Validation passes 127 allocating wire and 265 RPC tests, 86 fixed/89 growing
+portable fixtures, 72 mixed-peer workflows, runtime Clippy and two focused Miri
+tests. The maintenance vacancy optimization examines at most eight slots;
+general-scan fixtures now exceed that bound and retain exact budget/cleanup
+assertions. Evidence is in `target/portable-performance-routed-20261016/`.
+
 ### Portable and legacy instruction qualification
 
 The October 15 optimization batch meets a **1.05× portable/legacy instruction
