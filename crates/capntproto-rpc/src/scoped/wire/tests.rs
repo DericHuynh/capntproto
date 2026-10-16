@@ -941,6 +941,50 @@ fn pipeline_only_interest_retains_parent_until_final_pipeline_drop() {
 }
 
 #[test]
+fn projection_cache_normalizes_noops_and_preserves_capacity_across_inline_spill() {
+    let mut cache = ProjectionCache::default();
+    let first = crate::broken::new_cap(Error::failed("first".into()));
+    let second = crate::broken::new_cap(Error::disconnected("second".into()));
+    cache
+        .remember(vec![PipelineOp::GetPointerField(3)], &*first, 2)
+        .unwrap();
+    cache
+        .remember(
+            vec![
+                PipelineOp::Noop,
+                PipelineOp::GetPointerField(3),
+                PipelineOp::Noop,
+            ],
+            &*second,
+            2,
+        )
+        .unwrap();
+    assert_eq!(cache.len(), 1);
+    assert_eq!(
+        cache
+            .get(&[PipelineOp::GetPointerField(3)])
+            .unwrap()
+            .get_failure()
+            .unwrap()
+            .kind,
+        capnp::ErrorKind::Failed
+    );
+    let long: Vec<_> = (0..12).map(PipelineOp::GetPointerField).collect();
+    cache.remember(long.clone(), &*second, 2).unwrap();
+    assert_eq!(cache.len(), 2);
+    assert_eq!(
+        cache.get(&long).unwrap().get_failure().unwrap().kind,
+        capnp::ErrorKind::Disconnected
+    );
+    assert!(cache
+        .remember(vec![PipelineOp::GetPointerField(7)], &*first, 2)
+        .is_err());
+    assert!(cache.get(&[PipelineOp::GetPointerField(7)]).is_none());
+    cache.remember(long, &*first, 2).unwrap();
+    assert_eq!(cache.len(), 2);
+}
+
+#[test]
 fn pipeline_drop_releases_interest_before_synchronous_wake() {
     use std::sync::{
         atomic::{AtomicUsize, Ordering},

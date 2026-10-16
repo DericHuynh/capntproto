@@ -844,6 +844,105 @@ fn drain<'p>(
 }
 
 #[test]
+fn outgoing_observers_use_only_their_authorized_question_after_slot_reuse() {
+    with_driver(|mut driver, messages| {
+        let target = remote(&mut driver);
+        let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+        let mut questions = alloc::vec::Vec::new();
+        let mut projections = alloc::vec::Vec::new();
+        for _ in 0..2 {
+            driver
+                .enqueue_dynamic(
+                    &target,
+                    DynamicCall::default(),
+                    &[],
+                    messages,
+                    256,
+                    Default::default(),
+                    |_| Ok(()),
+                )
+                .unwrap();
+            let sent = driver
+                .send_invocation(messages, &mut queue, 256, Default::default(), &mut [0; 8])
+                .unwrap()
+                .unwrap();
+            drain(&mut queue, messages, |_| {});
+            projections.push(
+                driver
+                    .pipeline(sent.question, pipeline::Path::new(&[]))
+                    .unwrap(),
+            );
+            questions.push(sent.question);
+        }
+        for index in [1, 0] {
+            let frame = Frame::build(messages, 256, Default::default(), |builder| {
+                calls::exception(
+                    builder,
+                    AnswerId::from_wire(questions[index].id().to_wire()),
+                    capnp::ErrorKind::Overloaded,
+                    "selected question",
+                )
+            })
+            .unwrap();
+            driver
+                .receive(frame, messages, &mut [0; 8], |_| (), || ())
+                .unwrap_or_else(|rejected| panic!("{}", rejected.error));
+            let exchange = driver.exchanges.iter().position(|slot| {
+                matches!(&slot.exchange, Some(Exchange::Returned(response)) if response.key() == questions[index])
+            }).unwrap();
+            driver.exchanges[exchange].authorized = false;
+            assert_eq!(
+                driver.poll_outgoing(index, messages).unwrap(),
+                Propagation::Unrelated
+            );
+            assert!(!driver.runtime.is_settled(&projections[index]).unwrap());
+            driver.exchanges[exchange].authorized = true;
+            if index == 1 {
+                assert_eq!(
+                    driver.poll_outgoing(0, messages).unwrap(),
+                    Propagation::Unrelated
+                );
+            }
+            assert_eq!(
+                driver.poll_outgoing(index, messages).unwrap(),
+                Propagation::Resolved
+            );
+            assert!(driver.runtime.is_settled(&projections[index]).unwrap());
+            assert_eq!(
+                driver.poll_outgoing(index, messages).unwrap(),
+                Propagation::Unrelated
+            );
+            if index == 1 {
+                // Reuse the retired observer while its old Return is still
+                // retained. The new observer must wait for question zero.
+                let reused = driver
+                    .pipeline(questions[0], pipeline::Path::new(&[0]))
+                    .unwrap();
+                assert_eq!(driver.outgoing.question(1), Some(questions[0]));
+                assert_eq!(
+                    driver.poll_outgoing(1, messages).unwrap(),
+                    Propagation::Unrelated
+                );
+                projections.push(reused);
+            }
+        }
+        assert_eq!(
+            driver.poll_outgoing(1, messages).unwrap(),
+            Propagation::Resolved
+        );
+        for question in questions {
+            let response = driver.take_response(question).unwrap();
+            driver.release_response(response, messages);
+        }
+        for projection in projections {
+            driver.runtime.release(projection);
+        }
+        driver.runtime.release(target);
+        close(driver, messages, &mut queue);
+    });
+}
+
+#[test]
 fn return_before_pipeline_attachment_preserves_late_observers_and_cleanup() {
     for abandon in [false, true] {
         with_driver(|mut driver, messages| {

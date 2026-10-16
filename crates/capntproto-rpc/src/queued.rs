@@ -63,6 +63,16 @@ pub(crate) struct PipelineInner {
 
 impl PipelineInner {
     fn resolve(this: &Rc<RefCell<Self>>, result: Result<Box<dyn PipelineHook>, Error>) {
+        Self::resolve_with(this, result, |pipeline, client, ops| {
+            ClientInner::resolve(client, Ok(pipeline.get_pipelined_cap_move(ops)));
+        });
+    }
+
+    fn resolve_with(
+        this: &Rc<RefCell<Self>>,
+        result: Result<Box<dyn PipelineHook>, Error>,
+        mut resolve: impl FnMut(&dyn PipelineHook, &Rc<RefCell<ClientInner>>, Vec<PipelineOp>),
+    ) {
         if this.borrow().redirect.is_some() {
             // Already resolved, probably by set_pipeline().
             return;
@@ -78,8 +88,7 @@ impl PipelineInner {
         let pending = this.borrow_mut().clients_to_resolve.drain();
         for ((weak_client, ops), waiter) in pending {
             if let Some(client) = weak_client.upgrade() {
-                let clienthook = pipeline.get_pipelined_cap_move(ops);
-                ClientInner::resolve(&client, Ok(clienthook));
+                resolve(&*pipeline, &client, ops);
             }
             let _ = waiter.send(());
         }
@@ -133,6 +142,19 @@ impl Drop for PipelineInnerSender {
 }
 
 impl PipelineInnerSender {
+    // The hosted wire adapter can adopt existing unresolved clients instead of
+    // manufacturing another queued client for each projection. Publication of
+    // the redirect and detachment of the driver retain the ordinary ordering.
+    pub(crate) fn complete_with_clients(
+        mut self,
+        pipeline: Box<dyn PipelineHook>,
+        mut adopt: impl FnMut(&Rc<RefCell<ClientInner>>, Vec<PipelineOp>),
+    ) {
+        if let Some(inner) = self.inner.take().and_then(|weak| weak.upgrade()) {
+            PipelineInner::resolve_with(&inner, Ok(pipeline), |_, client, ops| adopt(client, ops));
+        }
+    }
+
     pub(crate) fn complete(self, pipeline: Box<dyn PipelineHook>) {
         self.complete_with(|| pipeline);
     }
@@ -485,6 +507,50 @@ mod tests {
                 callback()
             }
         }
+    }
+    #[test]
+    fn adopting_pipeline_clients_preserves_identity_and_ignores_canceled_projections() {
+        let (sender, pipeline) = Pipeline::new();
+        let first = pipeline.get_pipelined_cap(&[PipelineOp::GetPointerField(1)]);
+        let canceled = pipeline.get_pipelined_cap(&[PipelineOp::GetPointerField(2)]);
+        let last = pipeline.get_pipelined_cap(&[PipelineOp::GetPointerField(3)]);
+        drop(canceled);
+        let mut adopted = Vec::new();
+        sender.complete_with_clients(
+            Box::new(broken::Pipeline::new(Error::failed(
+                "published redirect".into(),
+            ))),
+            |client, path| {
+                assert!(pipeline.inner.try_borrow_mut().unwrap().redirect.is_some());
+                adopted.push((client.clone(), path));
+            },
+        );
+        assert_eq!(adopted.len(), 2);
+        assert_eq!(adopted[0].0.as_ptr() as usize, first.get_ptr());
+        assert_eq!(adopted[1].0.as_ptr() as usize, last.get_ptr());
+        assert!(matches!(
+            adopted[0].1.as_slice(),
+            [PipelineOp::GetPointerField(1)]
+        ));
+        assert!(matches!(
+            adopted[1].1.as_slice(),
+            [PipelineOp::GetPointerField(3)]
+        ));
+        assert_eq!(
+            pipeline.get_pipelined_cap(&[]).get_failure().unwrap().extra,
+            "published redirect"
+        );
+        for (client, _) in adopted {
+            ClientInner::resolve(&client, Err(Error::failed("adopted result".into())));
+        }
+        assert_eq!(
+            first.get_resolved().unwrap().get_failure().unwrap().extra,
+            "adopted result"
+        );
+        assert_eq!(
+            last.get_resolved().unwrap().get_failure().unwrap().extra,
+            "adopted result"
+        );
     }
     #[test]
     fn optional_pipeline_drivers_keep_dependencies_and_reentrant_cleanup() {

@@ -783,8 +783,18 @@ fn publication_resolves_waiting_children_before_the_parent_flushes() {
                 1,
                 "publication must route the already-waiting child"
             );
+            drop(parent);
             drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
             assert_eq!(queue.len(), 2, "both calls can share one transport batch");
+            assert!(
+                calls.entries[0]
+                    .as_mut()
+                    .unwrap()
+                    .wire
+                    .poll_canceled(&mut Context::from_waker(Waker::noop()))
+                    .is_pending(),
+                "the adopted child retains the parent after its public promise is dropped"
+            );
             let bytes = drain(&mut queue, messages);
             let mut remaining = bytes.as_slice();
             let first = capnp::serialize::read_message(&mut remaining, Default::default()).unwrap();
@@ -817,7 +827,7 @@ fn publication_resolves_waiting_children_before_the_parent_flushes() {
             };
             assert_eq!(target.unwrap().get_question_id(), first.get_question_id());
             assert!(remaining.is_empty());
-            drop((child_reply, child, parent, client));
+            drop((child_reply, child, client));
             teardown(calls, hooks, driver, messages, &mut queue);
         });
     }

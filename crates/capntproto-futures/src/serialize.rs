@@ -1136,6 +1136,63 @@ pub mod test {
     }
 
     #[test]
+    fn batched_writer_reports_transport_failure_after_a_partial_frame() {
+        struct FailingWrite {
+            bytes: Vec<u8>,
+            zero: bool,
+        }
+        impl AsyncWrite for FailingWrite {
+            fn poll_write(
+                mut self: Pin<&mut Self>,
+                _: &mut Context<'_>,
+                bytes: &[u8],
+            ) -> Poll<io::Result<usize>> {
+                if self.bytes.is_empty() {
+                    let count = bytes.len().min(3);
+                    self.bytes.extend_from_slice(&bytes[..count]);
+                    Poll::Ready(Ok(count))
+                } else if self.zero {
+                    Poll::Ready(Ok(0))
+                } else {
+                    Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()))
+                }
+            }
+            fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+                Poll::Ready(Ok(()))
+            }
+            fn poll_close(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+                Poll::Ready(Ok(()))
+            }
+        }
+        futures::executor::block_on(async {
+            let messages = [
+                vec![vec![capnp::word(1, 2, 3, 4, 5, 6, 7, 8)]],
+                vec![vec![]],
+            ];
+            let mut expected = Vec::new();
+            super::write_messages(&mut expected, &messages)
+                .await
+                .unwrap();
+            for zero in [false, true] {
+                let mut output = FailingWrite {
+                    bytes: Vec::new(),
+                    zero,
+                };
+                let error = super::write_messages(&mut output, &messages)
+                    .await
+                    .unwrap_err();
+                let expected_error = capnp::Error::from(io::Error::from(if zero {
+                    io::ErrorKind::WriteZero
+                } else {
+                    io::ErrorKind::BrokenPipe
+                }));
+                assert_eq!(error.kind, expected_error.kind);
+                assert_eq!(output.bytes, expected[..3]);
+            }
+        });
+    }
+
+    #[test]
     fn batched_multisegment_fallback_matches_individual_frames_under_partial_io() {
         futures::executor::block_on(async {
             for segment_count in [1, 2, 3, 5] {

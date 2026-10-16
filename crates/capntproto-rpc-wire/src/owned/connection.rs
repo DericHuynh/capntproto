@@ -730,63 +730,66 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         messages: &messages::Messages<'pool, '_, '_>,
     ) -> Result<Propagation, Error> {
         self.check_live()?;
-        if self.exchanges.iter().any(|slot| {
-            matches!(&slot.exchange,
-            Some(Exchange::Returned(response)) if self.outgoing.pending_for(response.key()))
-        }) {
-            self.reserve_barrier()?;
-        }
-        for slot in &*self.exchanges {
-            if !slot.authorized {
-                continue;
-            }
-            if let Some(Exchange::Returned(response)) = &slot.exchange {
-                let progress =
-                    if slot.canceled && slot.handoff.is_none() && response.await_method().is_some()
-                    {
-                        self.outgoing.poll_handoff::<S, _, CAPS>(
-                            index,
-                            response.key(),
-                            Err(capnp::ErrorKind::Disconnected),
-                            messages,
-                            &mut self.runtime,
-                            slot.retain_handoff_routes,
-                        )
-                    } else if let Some(result) = &slot.handoff {
-                        self.outgoing.poll_handoff(
-                            index,
-                            response.key(),
-                            result.as_ref().map_err(|e| *e),
-                            messages,
-                            &mut self.runtime,
-                            slot.retain_handoff_routes,
-                        )
-                    } else {
-                        self.outgoing.poll_one(
-                            index,
-                            response,
-                            messages,
-                            &mut self.runtime,
-                            &mut self.imports,
-                            &mut self.ledgers.imports,
-                            &self.ledgers.exports,
-                            &mut self.ledgers.answers,
-                            &mut self.pipelines,
-                        )
-                    }
-                    .map_err(Error::Outgoing)?;
-                if !matches!(progress, outgoing::Progress::Unrelated) {
-                    return Ok(match progress {
-                        outgoing::Progress::Resolved(Some(barrier)) => {
-                            self.hold_barrier(barrier);
-                            Propagation::Resolved
-                        }
-                        outgoing::Progress::Resolved(None) => Propagation::Resolved,
-                        outgoing::Progress::Pending => Propagation::Pending,
-                        outgoing::Progress::Abandoned => Propagation::Abandoned,
-                        outgoing::Progress::Unrelated => unreachable!(),
-                    });
+        // Follow this observer's exact generational question owner. Looking
+        // for any returned question first used to scan the observer table for
+        // every response, even when this observer had no matching input.
+        let Some(question) = self.outgoing.question(index) else {
+            return Ok(Propagation::Unrelated);
+        };
+        let Some(exchange) = self.exchanges.iter().position(|slot| {
+            slot.authorized
+                && matches!(&slot.exchange,
+                Some(Exchange::Returned(response)) if response.key() == question)
+        }) else {
+            return Ok(Propagation::Unrelated);
+        };
+        self.reserve_barrier()?;
+        let slot = &self.exchanges[exchange];
+        if let Some(Exchange::Returned(response)) = &slot.exchange {
+            let progress =
+                if slot.canceled && slot.handoff.is_none() && response.await_method().is_some() {
+                    self.outgoing.poll_handoff::<S, _, CAPS>(
+                        index,
+                        response.key(),
+                        Err(capnp::ErrorKind::Disconnected),
+                        messages,
+                        &mut self.runtime,
+                        slot.retain_handoff_routes,
+                    )
+                } else if let Some(result) = &slot.handoff {
+                    self.outgoing.poll_handoff(
+                        index,
+                        response.key(),
+                        result.as_ref().map_err(|e| *e),
+                        messages,
+                        &mut self.runtime,
+                        slot.retain_handoff_routes,
+                    )
+                } else {
+                    self.outgoing.poll_one(
+                        index,
+                        response,
+                        messages,
+                        &mut self.runtime,
+                        &mut self.imports,
+                        &mut self.ledgers.imports,
+                        &self.ledgers.exports,
+                        &mut self.ledgers.answers,
+                        &mut self.pipelines,
+                    )
                 }
+                .map_err(Error::Outgoing)?;
+            if !matches!(progress, outgoing::Progress::Unrelated) {
+                return Ok(match progress {
+                    outgoing::Progress::Resolved(Some(barrier)) => {
+                        self.hold_barrier(barrier);
+                        Propagation::Resolved
+                    }
+                    outgoing::Progress::Resolved(None) => Propagation::Resolved,
+                    outgoing::Progress::Pending => Propagation::Pending,
+                    outgoing::Progress::Abandoned => Propagation::Abandoned,
+                    outgoing::Progress::Unrelated => unreachable!(),
+                });
             }
         }
         Ok(Propagation::Unrelated)

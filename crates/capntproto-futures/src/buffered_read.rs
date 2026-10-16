@@ -187,7 +187,7 @@ impl AlignedBuffer {
             [self.offset..self.offset + self.length]
     }
     fn exclusive(&self) -> bool {
-        Arc::strong_count(&self.allocation) == 1
+        Arc::strong_count(&self.allocation) == 1 && Arc::weak_count(&self.allocation) == 0
     }
 }
 // Ordinary owning/borrowed reads keep their existing word allocation and
@@ -994,6 +994,96 @@ mod tests {
     use super::*;
 
     #[test]
+    fn interrupted_spill_reads_keep_the_error_and_discard_partial_storage() {
+        struct BrokenBody(futures::io::Cursor<Vec<u8>>);
+        impl AsyncRead for BrokenBody {
+            fn poll_read(
+                mut self: Pin<&mut Self>,
+                cx: &mut Context<'_>,
+                bytes: &mut [u8],
+            ) -> Poll<std::io::Result<usize>> {
+                if self.0.position() >= 8 {
+                    return Poll::Ready(Err(std::io::ErrorKind::ConnectionReset.into()));
+                }
+                let length = bytes.len().min(8);
+                Pin::new(&mut self.0).poll_read(cx, &mut bytes[..length])
+            }
+        }
+        let mut message = capnp::message::Builder::new_default();
+        message.initn_root::<capnp::data::Builder>(4096).fill(0x5a);
+        let frame = capnp::serialize::write_message_to_words(&message);
+        for borrowed in [false, true] {
+            let mut input = BufferedRead::with_buffer_size(
+                BrokenBody(futures::io::Cursor::new(frame.clone())),
+                Default::default(),
+                MIN_BUFFER_WORDS,
+            )
+            .unwrap();
+            let mut cx = Context::from_waker(std::task::Waker::noop());
+            let first = if borrowed {
+                input.poll_borrowed_frame(&mut cx).map(|r| r.map(|_| ()))
+            } else {
+                input
+                    .poll_read_message(&mut cx, |_| Ok(true))
+                    .map(|r| r.map(|_| ()))
+            };
+            let Poll::Ready(Err(error)) = first else {
+                panic!("partial spill must report the transport error")
+            };
+            assert!(input.spill.is_none());
+            assert!(input.frame.is_none());
+            assert_eq!(input.consumed_bytes(), 0);
+            assert_eq!(input.get_ref().0.position(), 8);
+            assert_eq!(
+                input
+                    .poll_stream_frame_size(&mut cx)
+                    .map(|r| r.unwrap_err().kind),
+                Poll::Ready(error.kind)
+            );
+            assert_eq!(input.get_ref().0.position(), 8);
+        }
+    }
+
+    #[test]
+    fn read_ahead_can_be_disabled_between_prefetched_frames() {
+        // Leave only the first word of a two-segment table at the end of a
+        // full buffer. Disabling read-ahead must complete that table and body
+        // without interpreting the full buffer as permission to grow it.
+        let mut first = vec![0; MIN_BUFFER_WORDS * 8 - 8];
+        let words = (first.len() / 8 - 1) as u32;
+        first[4..8].copy_from_slice(&words.to_le_bytes());
+        let mut second = vec![0; 24];
+        second[..4].copy_from_slice(&1u32.to_le_bytes());
+        second[4..8].copy_from_slice(&1u32.to_le_bytes());
+        let source = [first.as_slice(), second.as_slice()].concat();
+        let mut input = BufferedRead::with_buffer_size(
+            futures::io::Cursor::new(source),
+            Default::default(),
+            MIN_BUFFER_WORDS,
+        )
+        .unwrap();
+        let mut cx = Context::from_waker(std::task::Waker::noop());
+        assert_eq!(
+            input.poll_borrowed_frame(&mut cx).map(Result::unwrap),
+            Poll::Ready(Some(first.as_slice()))
+        );
+        input.finish_borrowed_frame();
+        input.set_read_ahead_policy(|_| false);
+        assert_eq!(
+            input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+            Poll::Ready(Some(second.len()))
+        );
+        assert_eq!(input.borrowed_frame(), Some(second.as_slice()));
+        assert_eq!(input.buffer.len(), MIN_BUFFER_WORDS);
+        input.finish_borrowed_frame();
+        assert_eq!(input.consumed_bytes(), (first.len() + second.len()) as u64);
+        assert_eq!(
+            input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+            Poll::Ready(None)
+        );
+    }
+
+    #[test]
     #[cfg_attr(miri, ignore = "fills the 128 KiB burst retention bound")]
     fn streaming_bursts_grow_bounded_storage_and_preserve_retained_frames() {
         let frames: Vec<_> = (0..300u16)
@@ -1126,6 +1216,32 @@ mod tests {
             input.poll_stream_frame_size(&mut cx).map(|r| r.unwrap()),
             Poll::Ready(None)
         );
+    }
+
+    #[test]
+    fn weak_shared_frame_owner_cannot_prevent_safe_next_read() {
+        let mut message = capnp::message::Builder::new_default();
+        message.set_root("immutable").unwrap();
+        let frame = capnp::serialize::write_message_to_words(&message);
+        let mut input = BufferedRead::new(
+            futures::io::Cursor::new([frame.as_slice(), frame.as_slice()].concat()),
+            Default::default(),
+        );
+        let mut cx = Context::from_waker(std::task::Waker::noop());
+        assert!(matches!(
+            input.poll_stream_frame_size(&mut cx),
+            Poll::Ready(Ok(Some(_)))
+        ));
+        let (owner, _) = input.share_borrowed_frame().unwrap();
+        let weak = Arc::downgrade(&owner);
+        drop(owner);
+        input.finish_borrowed_frame();
+        assert!(matches!(
+            input.poll_stream_frame_size(&mut cx),
+            Poll::Ready(Ok(Some(_)))
+        ));
+        assert_eq!(input.borrowed_frame(), Some(frame.as_slice()));
+        assert!(weak.upgrade().is_none());
     }
 
     #[test]

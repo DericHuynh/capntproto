@@ -304,7 +304,7 @@ pub(super) fn project<'p, 'id, const C: usize, const H: usize>(
                 result.map(|cap| cap.hook)
             });
         if let Ok(hook) = &result {
-            pipeline.remember(fields, &**hook)?;
+            pipeline.remember(projection.path, &**hook)?;
         }
         crate::queued::ClientInner::resolve(&client, result);
     }

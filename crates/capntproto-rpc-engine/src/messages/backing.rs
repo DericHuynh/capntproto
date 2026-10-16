@@ -234,6 +234,22 @@ mod received_tests {
     use std::panic::{catch_unwind, AssertUnwindSafe};
 
     #[test]
+    fn growing_buffer_view_preserves_indices_and_rejects_exhaustion() {
+        let storage = GrowingBuffers::new(2, 64, 2 * (64 + 7));
+        let buffers = Buffers::Growing(&storage);
+        assert_eq!(buffers.append(64), Some(0));
+        let first = buffers[0].bytes.borrow();
+        assert_eq!(buffers.append(64), Some(1));
+        let second = buffers[1].bytes.borrow();
+        assert_eq!(buffers.append(64), None);
+        assert_eq!(buffers.iter().count(), 2);
+        assert!(core::ptr::eq(&buffers[0], storage.at(0)));
+        assert!(core::ptr::eq(&buffers[1], storage.at(1)));
+        assert_eq!(first.len(), 64);
+        assert_eq!(second.len(), 64);
+    }
+
+    #[test]
     fn received_ranges_stay_immutable_and_release_their_charge_once() {
         let transport = Arc::new((0..32).collect::<Vec<u8>>());
         let charged = Rc::new(Cell::new(transport.capacity()));

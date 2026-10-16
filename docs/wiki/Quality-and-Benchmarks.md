@@ -3418,14 +3418,73 @@ batch; pipelined-read client/server totals are 93,974,372 / 74,794,034. Matched
 legacy pipeline totals also improve, to 55,282,988 / 55,648,078. Empty-call
 instruction ratios remain a client miss and server pass.
 
-The complete local campaign passes **8/12 workflows and 3/4 loopback payloads**;
-all 72 mixed-peer workflows pass. Validation includes 274 RPC unit tests,
+The complete local workflow campaign passes **8/12 workflows**;
+all 72 mixed-peer workflows pass. The accompanying loopback report's 3/4
+result was incorrectly attributed to this candidate: its copied `tcp` wrapper
+still executed `settled-channel20261016`, despite the `driver` symlink naming
+the new binary. It is an additional older-binary diagnostic, not qualification
+for this candidate. The original samples and hashes are retained; subsequent
+local bundles record and check the executable behind the wrapper explicitly.
+Validation includes 274 RPC unit tests,
 81 integration tests, four queue Miri tests and the direct-completion Miri
 regression. Developer-tool tests cover diagnostic failure cleanup and ensure
 tracing follows both untraced control campaigns. Evidence is retained under
 `target/portable-performance-compact-sender-20261016/`. The dedicated workflow
 now collects paired portable/legacy/C++ syscall traces after all untraced
 measurements; traced latencies never enter acceptance reports.
+
+The following local candidate adopts existing queued pipeline clients directly
+and selects an outgoing observer's exact question before searching authorized
+responses. Parent cancellation interest and recycled observer identity remain
+covered by regressions and Miri. Pipelined-read client instructions fall to
+90,846,884, from 93,974,372; dependent-read and callback instruction totals are
+essentially unchanged. The verified fresh local bundle passes **4/4 loopback
+payloads**, while the separate workflow sweep passes **5/12**. The empty-call
+instruction client still misses (18,490,977 versus legacy 17,362,388); the server
+passes (16,987,967 versus 16,273,319). None of these local results establishes
+dedicated qualification. All 240 timing trials were independently recomputed;
+all 72 mixed-peer workflows pass. Evidence, rejected cleanup-order experiments,
+source patches, traces, and the older bundle attribution correction are retained
+under `target/portable-performance-observer-question-20261016/`.
+
+Dedicated run [38869439794](https://github.com/DericHuynh/capntproto/actions/runs/38869439794)
+at `5692624` completes **9/12 remote and 1/4 loopback cells (10/16)**.
+All 410 trials and their p50/p95/p99 were independently checked. Remote misses
+are pipelined read (1.133091× C++), callback (1.055468× legacy), and 256 KiB
+(1.072719× C++). Loopback misses are empty (1.513130× legacy), 64 bytes
+(1.108635× legacy), and 64 KiB (1.076115× legacy). Artifact `12034344823`
+has ZIP SHA-256 `b780775c937552417c01d875877835b9f3381622bdee875ac8b622c061752092`.
+The post-measurement paired traces confirm one steady pipeline write per peer
+and callback Return/Release batching matching C++. Portable still interleaves
+the previous operation's cleanup between its next two Calls. A separate local
+timestamp journal records socket entry/exit without ptrace or writes during the
+operation; its first pipeline diagnostic shows roughly 14.1/9.5 µs client/server
+read-to-write intervals versus C++'s 5.4/6.2 µs. These traced intervals are
+diagnostics only and are excluded from every acceptance comparison.
+
+The next candidate reuses the original projection path and keeps the first
+cached projection inline. Bounded maintenance retires up to eight adjacent
+endpoints without rebuilding application lanes between them; every owner is
+charged to the existing budget, and returned application owners and output
+still stop the scan. Pipeline client/server instructions reach
+89,923,653 / 73,793,334; dependent read reaches 76,159,701 / 64,847,122;
+callback reaches 60,470,369 / 60,270,134. A receive-buffer reuse prototype showed
+no material gain and was discarded. Its weak-owner regression exposed a real
+reuse panic: a lone strong `Arc` with outstanding weak references is not mutable
+through `Arc::get_mut`; the reader now detaches safely in that case.
+
+The complete new local campaign passes **6/12 workflows and 2/4 loopback
+payloads**, with all 72 mixed-peer checks passing. The empty instruction gate
+still misses on the client and passes on the server. Validation includes 135
+wire, 276 RPC and 58 framing unit tests, 92 integration tests, Clippy, and
+focused Miri checks for retirement fairness, projection caching and weak receive
+owners. Five rotating timestamp repetitions are retained for both the prior
+and new candidate; their large timing variation prevents treating a single
+interval comparison as a measured improvement. Raw samples, journals, source,
+rejected experiments and verification logs are archived under
+`target/portable-performance-retirement-burst-20261016/`. The full target remains
+open pending dedicated qualification. PR CI for the previous candidate now
+passes the complete Miri job; its Cargo coverage job is still running.
 
 The earlier `ef9f4c8` Cargo CI completed 2,230 tests with zero failures and
 20 skips, but its coverage regression gate failed. The Miri job reached its

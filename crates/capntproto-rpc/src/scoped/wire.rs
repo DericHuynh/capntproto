@@ -461,9 +461,32 @@ impl<'id> ClientHooks<'id> {
             })
         });
         if let Some(pipeline) = &pipeline {
-            call.results
-                .hook()
-                .set_pipeline_from(Box::new(WirePipeline(PipelineRef(Some(pipeline.clone())))))?;
+            let published = Box::new(WirePipeline(PipelineRef(Some(pipeline.clone()))));
+            let results = call.results.hook();
+            if let Some(local) = results
+                .as_any_mut()
+                .and_then(|hook| hook.downcast_mut::<crate::local::Results>())
+            {
+                local.adopt_pipeline_clients(published, |client, path| {
+                    pipeline.used.set(true);
+                    let mut waiting = pipeline.waiting.borrow_mut();
+                    if waiting.len() >= pipeline.maximum || waiting.try_reserve(1).is_err() {
+                        drop(waiting);
+                        crate::queued::ClientInner::resolve(
+                            client,
+                            Err(Error::overloaded("wire pipeline capacity exhausted".into())),
+                        );
+                    } else {
+                        waiting.push_back(Projection {
+                            path,
+                            client: Rc::downgrade(client),
+                            retain_pipeline: true,
+                        });
+                    }
+                })?;
+            } else {
+                results.set_pipeline_from(published)?;
+            }
         }
         Ok(pipeline)
     }
@@ -549,15 +572,8 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
             let Some(client) = projection.client.upgrade() else {
                 continue;
             };
-            let fields = projection
-                .path
-                .iter()
-                .filter_map(|op| match op {
-                    PipelineOp::Noop => None,
-                    PipelineOp::GetPointerField(field) => Some(*field),
-                })
-                .collect::<Vec<_>>();
-            if fields.len() > driver.path_capacity() {
+            let field_count = pipeline_fields(&projection.path).count();
+            if field_count > driver.path_capacity() {
                 crate::queued::ClientInner::resolve(
                     &client,
                     Err(Error::overloaded(
@@ -566,7 +582,24 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                 );
                 continue;
             }
-            let path = pipeline::Path::new(&fields);
+            // Keep short paths on the stack. The original operation vector
+            // moves into the cache after routing instead of allocating a second
+            // owned path for every projected capability.
+            let mut inline_fields = [0; 8];
+            let mut long_fields = Vec::new();
+            let fields = if field_count <= inline_fields.len() {
+                for (slot, field) in inline_fields
+                    .iter_mut()
+                    .zip(pipeline_fields(&projection.path))
+                {
+                    *slot = field;
+                }
+                &inline_fields[..field_count]
+            } else {
+                long_fields.extend(pipeline_fields(&projection.path));
+                &long_fields
+            };
+            let path = pipeline::Path::new(fields);
             let routed = if let Some(response) = &self.tail_response {
                 driver.tail_pipeline(response, path, messages)
             } else if let Some(stage) = self.direct {
@@ -605,8 +638,18 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
             };
             refresh(hooks, driver);
             if let Ok(hook) = &result {
-                pipeline.remember(fields, &**hook)?;
+                pipeline.remember(projection.path, &**hook)?;
             }
+            let result = result.map(|inner| {
+                if projection.retain_pipeline {
+                    Box::new(Projected {
+                        inner,
+                        pipeline: PipelineRef(Some(pipeline.clone())),
+                    }) as Box<dyn ClientHook>
+                } else {
+                    inner
+                }
+            });
             crate::queued::ClientInner::resolve(&client, result);
         }
         Ok(())
@@ -1075,11 +1118,58 @@ impl<I, const CAPS: usize> Drop for WireCall<'_, '_, I, CAPS> {
 struct Projection {
     path: Vec<PipelineOp>,
     client: Weak<RefCell<crate::queued::ClientInner>>,
+    // Adopted outer queued clients have no Projected wrapper yet. Install one
+    // at resolution to retain the same parent cancellation interest.
+    retain_pipeline: bool,
+}
+fn pipeline_fields(path: &[PipelineOp]) -> impl Iterator<Item = u16> + '_ {
+    path.iter().filter_map(|op| match op {
+        PipelineOp::Noop => None,
+        PipelineOp::GetPointerField(field) => Some(*field),
+    })
+}
+type CachedProjection = (Vec<PipelineOp>, Box<dyn ClientHook>);
+#[derive(Default)]
+struct ProjectionCache {
+    first: Option<CachedProjection>,
+    rest: Vec<CachedProjection>,
+}
+impl ProjectionCache {
+    fn len(&self) -> usize {
+        usize::from(self.first.is_some()) + self.rest.len()
+    }
+    fn get(&self, path: &[PipelineOp]) -> Option<&dyn ClientHook> {
+        self.first
+            .iter()
+            .chain(self.rest.iter())
+            .find(|(key, _)| pipeline_fields(key).eq(pipeline_fields(path)))
+            .map(|(_, hook)| &**hook)
+    }
+    fn remember(
+        &mut self,
+        path: Vec<PipelineOp>,
+        hook: &dyn ClientHook,
+        maximum: usize,
+    ) -> capnp::Result<()> {
+        if self.get(&path).is_some() {
+            return Ok(());
+        }
+        if self.len() >= maximum {
+            return Err(Error::overloaded("wire pipeline cache exhausted".into()));
+        }
+        if self.first.is_none() {
+            self.first = Some((path, hook.add_ref()));
+        } else {
+            self.rest.try_reserve(1).map_err(wire_error)?;
+            self.rest.push((path, hook.add_ref()));
+        }
+        Ok(())
+    }
 }
 struct PipelineState {
     used: Cell<bool>,
     adopted: RefCell<Option<Box<dyn PipelineHook>>>,
-    cached: RefCell<Vec<(Vec<u16>, Rc<dyn ClientHook>)>>,
+    cached: RefCell<ProjectionCache>,
     _credit: Option<Rc<admission::Credit>>,
     waiting: RefCell<VecDeque<Projection>>,
     finished: RefCell<Option<Box<dyn PipelineHook>>>,
@@ -1087,17 +1177,8 @@ struct PipelineState {
     maximum: usize,
 }
 impl PipelineState {
-    fn remember(&self, path: Vec<u16>, hook: &dyn ClientHook) -> capnp::Result<()> {
-        let mut cache = self.cached.borrow_mut();
-        if cache.iter().any(|(fields, _)| *fields == path) {
-            return Ok(());
-        }
-        if cache.len() >= self.maximum {
-            return Err(Error::overloaded("wire pipeline cache exhausted".into()));
-        }
-        cache.try_reserve(1).map_err(wire_error)?;
-        cache.push((path, Rc::from(hook.add_ref())));
-        Ok(())
+    fn remember(&self, path: Vec<PipelineOp>, hook: &dyn ClientHook) -> capnp::Result<()> {
+        self.cached.borrow_mut().remember(path, hook, self.maximum)
     }
     fn finish(&self, pipeline: Box<dyn PipelineHook>) {
         let pipeline_ref = pipeline.add_ref();
@@ -1146,20 +1227,7 @@ impl PipelineHook for WirePipeline {
         Box::new(Self(self.0.clone()))
     }
     fn get_pipelined_cap(&self, path: &[PipelineOp]) -> Box<dyn ClientHook> {
-        let fields: Vec<_> = path
-            .iter()
-            .filter_map(|op| match op {
-                PipelineOp::Noop => None,
-                PipelineOp::GetPointerField(field) => Some(*field),
-            })
-            .collect();
-        let cached = self
-            .0
-            .cached
-            .borrow()
-            .iter()
-            .find(|(key, _)| *key == fields)
-            .map(|(_, hook)| hook.add_ref());
+        let cached = self.0.cached.borrow().get(path).map(|hook| hook.add_ref());
         if let Some(inner) = cached {
             return Box::new(Projected {
                 inner,
@@ -1188,6 +1256,7 @@ impl PipelineHook for WirePipeline {
         waiting.push_back(Projection {
             path: path.to_vec(),
             client: Rc::downgrade(&client.inner),
+            retain_pipeline: false,
         });
         drop(waiting);
         if let Some(inbox) = self.0.inbox.upgrade() {

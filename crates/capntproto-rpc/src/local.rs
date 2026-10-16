@@ -243,6 +243,18 @@ impl Results {
         results.pipeline_sender = Some(pipeline);
         results
     }
+
+    pub(crate) fn adopt_pipeline_clients(
+        &mut self,
+        pipeline: Box<dyn PipelineHook>,
+        adopt: impl FnMut(&Rc<RefCell<crate::queued::ClientInner>>, Vec<PipelineOp>),
+    ) -> capnp::Result<()> {
+        let Some(sender) = self.pipeline_sender.take() else {
+            return Err(Error::failed("set_pipeline() called twice".into()));
+        };
+        sender.complete_with_clients(pipeline, adopt);
+        Ok(())
+    }
     /// The portable payload is constructed only by validated admission or a
     /// successful owning copy. Preserve that proof instead of traversing the
     /// same graph again at the exact local sink. Arbitrary hooks still use the

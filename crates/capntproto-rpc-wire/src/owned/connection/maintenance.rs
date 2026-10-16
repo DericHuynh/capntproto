@@ -196,6 +196,8 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             self.maintenance_total = total;
             self.scan_remaining = total;
         }
+        let mut advanced = false;
+        let mut retired_burst = 0;
         while *budget != 0 {
             let phase = self.maintenance_phase;
             let index = self.maintenance_index;
@@ -258,11 +260,31 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 )
             };
             match result {
+                Ok(Some(Progress::Advanced)) if matches!(phase, 4 | 5) => {
+                    // Export/endpoint retirement publishes no frame and returns
+                    // no application owner. Complete its bounded reference-drop
+                    // cascade here, rather than rebuilding every application
+                    // lane between adjacent cleanup steps. Other progress,
+                    // including returned owners and output, still stops here.
+                    advanced = true;
+                    self.scan_remaining = self.maintenance_total;
+                    if phase == 5 {
+                        retired_burst += 1;
+                        if retired_burst < 8 && *budget != 0 && self.runtime.has_retired() {
+                            self.maintenance_phase = 5;
+                            self.maintenance_index = 0;
+                        }
+                    }
+                }
                 Ok(None) => {
                     self.scan_remaining -= visited;
                     if self.scan_remaining == 0 {
                         self.scan_remaining = self.maintenance_total;
-                        return Ok(Progress::Idle);
+                        return Ok(if advanced {
+                            Progress::Advanced
+                        } else {
+                            Progress::Idle
+                        });
                     }
                 }
                 outcome => {
@@ -271,7 +293,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 }
             }
         }
-        Ok(Progress::Yield)
+        Ok(if advanced {
+            Progress::Advanced
+        } else {
+            Progress::Yield
+        })
     }
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     fn maintenance_step<R: Default>(
