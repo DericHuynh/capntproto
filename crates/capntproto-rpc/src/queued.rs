@@ -142,7 +142,10 @@ impl PipelineInnerSender {
     pub(crate) fn complete_with(mut self, pipeline: impl FnOnce() -> Box<dyn PipelineHook>) {
         if let Some(weak_queued) = self.inner.take() {
             if let Some(pipeline_inner) = weak_queued.upgrade() {
-                crate::queued::PipelineInner::resolve(&pipeline_inner, Ok(pipeline()));
+                let resolved = pipeline_inner.borrow().redirect.is_some();
+                if !resolved {
+                    crate::queued::PipelineInner::resolve(&pipeline_inner, Ok(pipeline()));
+                }
             }
         }
     }

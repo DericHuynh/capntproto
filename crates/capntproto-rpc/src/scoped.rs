@@ -652,17 +652,17 @@ impl capnp::private::capability::RequestHook for Call {
         Ok(())
     }
     fn send(self: Box<Self>) -> capability::RemotePromise<any_pointer::Owned> {
-        if self.hints.no_promise_pipelining
-            && !self.hints.only_promise_pipeline
-            && self.third_party.is_none()
-            && {
-                let unintroduced = self.endpoint.introduced.borrow().is_none()
-                    && self.endpoint.introduction.borrow().is_none();
-                unintroduced
-                    || Hook(self.endpoint.clone(), self.credit.clone()).direct_response_available()
-            }
-        {
-            return response::request_prepared(self);
+        if !self.hints.only_promise_pipeline && self.third_party.is_none() && {
+            let unintroduced = self.endpoint.introduced.borrow().is_none()
+                && self.endpoint.introduction.borrow().is_none();
+            unintroduced
+                || Hook(self.endpoint.clone(), self.credit.clone()).direct_response_available()
+        } {
+            return if self.hints.no_promise_pipelining {
+                response::request_prepared(self)
+            } else {
+                response::request_pipelined_prepared(self)
+            };
         }
         self.into_request().send()
     }

@@ -3198,6 +3198,37 @@ preserved in `target/portable-performance-coalescing-20261016/`. This candidate
 requires a dedicated campaign; neither the local results nor a green workflow
 status close the 16-cell gap.
 
+### Prepared pipeline completion candidate (October 16, 2026)
+
+Prepared requests now keep their wire envelope when promise pipelining is
+enabled. Operation status and result ownership share one completion, while the
+existing split promise retains response and pipeline interests independently.
+Early pipeline publication still wins over later parent failure. Final response
+sharing is lazy when an early pipeline has already been supplied.
+
+The local pipelined-read profile falls from **120,118,665 to 112,288,824 client
+instructions**; server instructions are 82,320,244. All 72 mixed-peer workflows
+pass. A focused regression test drops the response before admission and checks
+that a projected child keeps its parent alive, including early publication and
+parent failure. It and the optional-pipeline-driver test pass under Miri, as does
+the shared-buffer owning-read/spill test.
+
+The full five-repetition local sweep passes **6/12 remote-style and 3/4 loopback
+cells**. The separate four-case diagnostic and all repetitions are retained in
+`target/portable-performance-completion-pipeline-20261016/`; neither campaign is
+dedicated qualification. Empty-call instructions are 18,312,695 / 17,361,573 on
+the client (1.054783×, still a miss), and 16,965,608 / 16,270,687 on the server
+(1.042710×). No latency or instruction limit has been relaxed.
+
+The preceding CI run `38839513626` passed platform, Miri, native, mutation,
+fuzz, Verus and TLA+ checks, but failed coverage ratchets and the dependency
+audit. Its complete cargo report is artifact `12022794784`, ZIP SHA-256
+`c3717dc15e358a3429d2cd0684d78ac3f485608c9d884498058ed068b1d86667`.
+The yanked `zip` 2.4.2 dependency is replaced with 9.0.3; archive filename errors
+remain rejected. All 62 developer-tool tests and the warning-denying audit pass.
+Coverage repair adds retained-buffer immutability and optional transport fallback
+checks; the existing coverage baselines remain unchanged.
+
 ### Portable and legacy instruction qualification
 
 The October 15 optimization batch meets a **1.05× portable/legacy instruction

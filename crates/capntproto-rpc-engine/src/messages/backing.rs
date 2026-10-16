@@ -226,6 +226,59 @@ pub(super) fn segment_position(index: usize) -> Option<(usize, usize)> {
     Some((segment, index - ((1usize << segment) - 1)))
 }
 
+#[cfg(all(test, feature = "alloc", target_has_atomic = "ptr"))]
+mod received_tests {
+    extern crate std;
+    use super::*;
+    use alloc::{rc::Rc, sync::Arc, vec::Vec};
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    #[test]
+    fn received_ranges_stay_immutable_and_release_their_charge_once() {
+        let transport = Arc::new((0..32).collect::<Vec<u8>>());
+        let charged = Rc::new(Cell::new(transport.capacity()));
+        let mut allocation = Allocation::Received(Received {
+            allocation: transport.clone(),
+            charged: charged.clone(),
+        });
+        assert_eq!(allocation.capacity(), transport.capacity());
+        assert!(catch_unwind(AssertUnwindSafe(|| {
+            allocation.local_mut();
+        }))
+        .is_err());
+        let owner = Rc::new(allocation);
+        let mut bytes = Bytes::Received {
+            owner: owner.clone(),
+            range: 8..24,
+        };
+        assert!(!bytes.exclusive());
+        let view = bytes.share(2..6).unwrap();
+        assert_eq!(view.as_ref(), &[10, 11, 12, 13]);
+        assert!(catch_unwind(AssertUnwindSafe(|| {
+            bytes.deref_mut();
+        }))
+        .is_err());
+        assert!(catch_unwind(AssertUnwindSafe(
+            || bytes.share(core::ops::Range { start: 4, end: 3 })
+        ))
+        .is_err());
+        assert!(catch_unwind(AssertUnwindSafe(|| bytes.share(0..17))).is_err());
+        let mut released = Bytes::Released(Rc::downgrade(&owner));
+        assert!(!released.exclusive());
+        assert!(released.share(0..0).is_none());
+        assert!(released.is_empty());
+        assert!(released.deref_mut().is_empty());
+        drop((bytes, owner));
+        assert!(!released.exclusive());
+        assert_eq!(charged.get(), transport.capacity());
+        assert_eq!(view.as_ref(), &[10, 11, 12, 13]);
+        drop(view);
+        assert!(released.exclusive());
+        assert_eq!(charged.get(), 0);
+        assert_eq!(&transport[8..12], &[8, 9, 10, 11]);
+    }
+}
+
 #[cfg(kani)]
 mod proofs {
     #[kani::proof]

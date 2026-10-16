@@ -1,6 +1,6 @@
 //! One completion for both operation status and result ownership. A successful
 //! operation can finish before its ResultsHook is dropped; both are required.
-//! This is the hosted no-pipeline request adapter, not a second wire ledger.
+//! This is the hosted request adapter, not a second wire ledger.
 use super::*;
 use crate::local::ResultsDoneHook;
 
@@ -516,6 +516,45 @@ pub(super) fn request_prepared(
     capability::RemotePromise {
         promise,
         pipeline: any_pointer::Pipeline::new(Box::new(crate::broken::DisabledPipeline)),
+    }
+}
+
+// Keep the ordinary split/pipeline interests and early set_pipeline semantics,
+// but join operation status and result ownership in the same direct completion
+// as non-pipelined requests. The prepared request also keeps its wire envelope.
+pub(super) fn request_pipelined_prepared(
+    mut call: Box<Call>,
+) -> capability::RemotePromise<any_pointer::Owned> {
+    use futures::TryFutureExt;
+    let inbox = call.endpoint.inbox.upgrade();
+    let state = inbox
+        .as_ref()
+        .map_or_else(Rc::default, |inbox| inbox.completion_cache.acquire());
+    let (sender, mut pipeline) = crate::queued::Pipeline::new();
+    call.results = Results::Hook(Box::new(crate::local::Results::direct_pipelined(
+        ResultsSender(state.clone()),
+        sender.weak_clone(),
+    )));
+    call.completion = CallCompletion::Response(Completion(state.clone()));
+    let promise = match call.enqueue_owned(inbox) {
+        Ok(inbox) => state.promise(inbox),
+        Err(error) => Promise::err(*error),
+    };
+    let completed = promise.map_ok(move |response| {
+        let mut response = Some(response);
+        sender.complete_with(|| {
+            let (shared, pipeline) =
+                crate::local::Pipeline::share_response(response.take().unwrap());
+            response = Some(shared);
+            pipeline
+        });
+        (response.unwrap(), ())
+    });
+    let (response, driver) = crate::split::split(completed);
+    pipeline.drive(driver);
+    capability::RemotePromise {
+        promise: Promise::from_future(response),
+        pipeline: any_pointer::Pipeline::new(Box::new(pipeline)),
     }
 }
 

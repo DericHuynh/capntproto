@@ -225,6 +225,14 @@ impl Results {
             pipeline_sender: Some(crate::queued::PipelineInnerSender::disabled()),
         }
     }
+    pub(crate) fn direct_pipelined(
+        fulfiller: crate::scoped::response::ResultsSender,
+        pipeline: crate::queued::PipelineInnerSender,
+    ) -> Self {
+        let mut results = Self::direct(fulfiller, None);
+        results.pipeline_sender = Some(pipeline);
+        results
+    }
     /// The portable payload is constructed only by validated admission or a
     /// successful owning copy. Preserve that proof instead of traversing the
     /// same graph again at the exact local sink. Arbitrary hooks still use the
@@ -835,6 +843,21 @@ pub(crate) struct Pipeline {
 }
 
 impl Pipeline {
+    pub(crate) fn share_response(
+        response: capability::Response<any_pointer::Owned>,
+    ) -> (
+        capability::Response<any_pointer::Owned>,
+        Box<dyn PipelineHook>,
+    ) {
+        let results = SharedResponse {
+            response: Rc::from(response.hook),
+            context: None,
+        };
+        let pipeline = Box::new(Self::new(results.add_ref()));
+        let response = capability::Response::new(Box::new(Response::new(Box::new(results))));
+        (response, pipeline)
+    }
+
     pub(crate) fn new(results: Box<dyn ResultsDoneHook>) -> Self {
         Self {
             inner: Rc::new(RefCell::new(PipelineInner { results })),

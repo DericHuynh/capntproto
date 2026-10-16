@@ -53,6 +53,77 @@ fn frame(text: &str) -> (crate::OutgoingFrame, Vec<u8>) {
 }
 
 #[test]
+fn optional_stream_methods_preserve_legacy_transport_behavior() {
+    use crate::{IncomingFrameStream as _, IncomingMessage as _, OutgoingMessageStream as _};
+    struct Input(Vec<u8>);
+    impl crate::IncomingFrameStream for Input {
+        fn poll_frame(&mut self, _: &mut Context<'_>) -> Poll<capnp::Result<Option<&[u8]>>> {
+            Poll::Ready(Ok(self.frame()))
+        }
+        fn frame(&self) -> Option<&[u8]> {
+            (!self.0.is_empty()).then_some(self.0.as_slice())
+        }
+        fn finish_frame(&mut self) {
+            self.0.clear();
+        }
+    }
+    struct Message(capnp::message::Reader<capnp::serialize::OwnedSegments>);
+    impl crate::IncomingMessage for Message {
+        fn size_in_words(&self) -> usize {
+            self.0.get_segments().as_ref().len() / 8
+        }
+        fn get_body(&self) -> capnp::Result<capnp::any_pointer::Reader<'_>> {
+            self.0.get_root()
+        }
+    }
+    #[derive(Default)]
+    struct Sink(Vec<crate::OutgoingFrame>);
+    impl crate::OutgoingMessageStream for Sink {
+        fn send(&mut self, frame: crate::OutgoingFrame) -> capnp::Result<()> {
+            self.0.push(frame);
+            Ok(())
+        }
+        fn poll_flush(&mut self, _: &mut Context<'_>) -> Poll<capnp::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+    let (outgoing, bytes) = frame("legacy transport");
+    let mut input = Input(bytes.clone());
+    let mut cx = Context::from_waker(Waker::noop());
+    assert!(!input.has_buffered_next_frame());
+    assert!(input.share_frame().is_none());
+    assert_eq!(
+        input.poll_frame_size(&mut cx).map(|r| r.unwrap()),
+        Poll::Ready(Some(bytes.len()))
+    );
+    assert!(
+        matches!(input.poll_read_frame(&mut cx, &mut [0; 8]), Poll::Ready(Err(error)) if error.kind == capnp::ErrorKind::Unimplemented)
+    );
+    assert_eq!(input.frame(), Some(bytes.as_slice()));
+    input.finish_frame();
+    assert_eq!(
+        input.poll_frame_size(&mut cx).map(|r| r.unwrap()),
+        Poll::Ready(None)
+    );
+    let message =
+        Message(capnp::serialize::read_message(bytes.as_slice(), Default::default()).unwrap());
+    assert!(message.get_segments().is_none());
+    assert!(message.size_in_words() > 0);
+    assert_eq!(
+        message
+            .get_body()
+            .unwrap()
+            .get_as::<capnp::text::Reader>()
+            .unwrap(),
+        "legacy transport"
+    );
+    let mut sink = Sink::default();
+    sink.send_buffered(outgoing).unwrap();
+    assert_eq!(sink.0.len(), 1);
+    assert!(sink.poll_flush(&mut cx).is_ready());
+}
+
+#[test]
 fn tail_transfer_requires_explicit_peer_support_on_standard_streams() {
     let mut network = VatNetwork::new(
         futures::io::Cursor::new(Vec::<u8>::new()),

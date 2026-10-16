@@ -1066,6 +1066,69 @@ mod tests {
     }
 
     #[test]
+    fn shared_storage_supports_owning_reads_and_reuses_exact_spills() {
+        let mut small = capnp::message::Builder::new_default();
+        small.set_root("retained").unwrap();
+        let small = capnp::serialize::write_message_to_words(&small);
+        let mut large = capnp::message::Builder::new_default();
+        large.initn_root::<capnp::data::Builder>(4096).fill(0x5a);
+        let large = capnp::serialize::write_message_to_words(&large);
+        let mut input = BufferedRead::with_buffer_size(
+            futures::io::Cursor::new(
+                [
+                    small.as_slice(),
+                    large.as_slice(),
+                    large.as_slice(),
+                    small.as_slice(),
+                ]
+                .concat(),
+            ),
+            Default::default(),
+            MIN_BUFFER_WORDS,
+        )
+        .unwrap();
+        let mut cx = Context::from_waker(std::task::Waker::noop());
+        assert_eq!(
+            input.poll_stream_frame_size(&mut cx).map(|r| r.unwrap()),
+            Poll::Ready(Some(small.len()))
+        );
+        let (owner, range) = input.share_borrowed_frame().unwrap();
+        input.finish_borrowed_frame();
+        assert_eq!(
+            input.poll_borrowed_frame(&mut cx).map(|r| r.unwrap()),
+            Poll::Ready(Some(large.as_slice()))
+        );
+        assert!(
+            input.share_borrowed_frame().is_none(),
+            "spill remains private"
+        );
+        input.finish_borrowed_frame();
+        let capacity = input.spare.capacity();
+        input.set_read_ahead_policy(|_| false);
+        assert_eq!(
+            input.poll_borrowed_frame(&mut cx).map(|r| r.unwrap()),
+            Poll::Ready(Some(large.as_slice()))
+        );
+        input.finish_borrowed_frame();
+        assert_eq!(input.spare.capacity(), capacity);
+        input.set_read_ahead_policy(|_| true);
+        let message = futures::executor::block_on(input.try_read_message(|_| Ok(true)))
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            message.get_root::<capnp::text::Reader>().unwrap(),
+            "retained"
+        );
+        assert_eq!(message.get_segments().framed_bytes(), small);
+        assert_eq!(&owner[range], small);
+        drop(message);
+        assert_eq!(
+            input.poll_stream_frame_size(&mut cx).map(|r| r.unwrap()),
+            Poll::Ready(None)
+        );
+    }
+
+    #[test]
     fn shared_frame_owners_preserve_successors_and_allow_exclusive_reuse() {
         let mut message = capnp::message::Builder::new_default();
         message.set_root("shared input").unwrap();

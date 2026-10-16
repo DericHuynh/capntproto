@@ -502,6 +502,76 @@ fn early_pipeline_and_capability_params_survive_parent_failure() {
 }
 
 #[test]
+fn prepared_pipeline_interest_survives_response_drop_before_admission() {
+    for early in [false, true] {
+        for fail in [false, true] {
+            clients::with_growing_graph::<u32, u8, _>(0, 2, |graph| {
+                let route = graph.endpoint(7, Location::Local).unwrap();
+                let target = graph.endpoint(8, Location::Local).unwrap();
+                let mut hooks = ClientHooks::new(2, 3);
+                let client = hooks.export_snapshot(graph, &route).unwrap();
+                let cap = hooks.export_snapshot(graph, &target).unwrap();
+                let parent = request(&client, 1);
+                let projected = capability::Client::new(parent.pipeline.as_cap());
+                drop(parent);
+                let mut child = request(&projected, 2);
+                let mut call = next(&mut hooks);
+                assert!(!call.is_canceled());
+                call.results()
+                    .get()
+                    .unwrap()
+                    .set_as_capability(cap.hook.add_ref());
+                if early {
+                    call.results().set_pipeline().unwrap();
+                }
+                call.complete(if fail {
+                    Err(Error::failed("parent failure".into()))
+                } else {
+                    Ok(())
+                });
+                let result =
+                    Pin::new(&mut child.promise).poll(&mut Context::from_waker(Waker::noop()));
+                if fail && !early {
+                    assert!(matches!(result, Poll::Ready(Err(_))));
+                    assert!(hooks
+                        .poll_next(&mut Context::from_waker(Waker::noop()))
+                        .is_pending());
+                } else {
+                    assert!(result.is_pending());
+                    let mut child_call = next(&mut hooks);
+                    assert_eq!(hooks.target(&child_call).unwrap().key(), target.key());
+                    child_call
+                        .results()
+                        .get()
+                        .unwrap()
+                        .set_as("child result")
+                        .unwrap();
+                    child_call.complete(Ok(()));
+                    assert_eq!(
+                        ready(&mut child.promise)
+                            .unwrap()
+                            .get()
+                            .unwrap()
+                            .get_as::<capnp::text::Reader>()
+                            .unwrap(),
+                        "child result"
+                    );
+                }
+                drop((child, projected, cap, client));
+                assert_eq!(hooks.inbox.live_calls.get(), 0);
+                hooks.collect(graph);
+                hooks.close(graph, Error::disconnected("done".into()));
+                graph.release(route);
+                graph.release(target);
+                while graph.take_retired().is_some() {}
+                assert!(graph.is_empty());
+            })
+            .unwrap();
+        }
+    }
+}
+
+#[test]
 fn request_hints_and_pipeline_only_interest_reach_worker() {
     clients::with_growing_graph::<u32, u8, _>(0, 1, |graph| {
         let route = graph.endpoint(7, Location::Local).unwrap();
