@@ -498,7 +498,16 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             // publication or completion to scan. Admission is the only source
             // of work; it still registers the inbox waker before returning idle.
             refresh(hooks, driver);
-            match self.admit(hooks, driver, messages, options, cx, &mut import, &mut send)? {
+            match self.admit(
+                hooks,
+                driver,
+                messages,
+                options,
+                cx,
+                &mut import,
+                &mut send,
+                &mut refresh,
+            )? {
                 Some(Progress::Advanced) => {
                     // Queued/pipelined calls still need preparation and
                     // publication. Spend the rest of this same quantum on
@@ -563,7 +572,16 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             self.admission_streak += 1;
             remaining_budget -= 1;
             refresh(hooks, driver);
-            match self.admit(hooks, driver, messages, options, cx, &mut import, &mut send)? {
+            match self.admit(
+                hooks,
+                driver,
+                messages,
+                options,
+                cx,
+                &mut import,
+                &mut send,
+                &mut refresh,
+            )? {
                 Some(Progress::Published) => return Poll::Ready(Ok(Progress::Published)),
                 Some(_) => advanced = true,
                 None => (),
@@ -591,9 +609,16 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 self.cursor = (index + 1) % size;
                 if index == 0 {
                     refresh(hooks, driver);
-                    if let Some(progress) =
-                        self.admit(hooks, driver, messages, options, cx, &mut import, &mut send)?
-                    {
+                    if let Some(progress) = self.admit(
+                        hooks,
+                        driver,
+                        messages,
+                        options,
+                        cx,
+                        &mut import,
+                        &mut send,
+                        &mut refresh,
+                    )? {
                         if progress != Progress::Advanced {
                             return Poll::Ready(Ok(progress));
                         }
@@ -651,8 +676,17 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             let result = match index {
                 0 => {
                     refresh(hooks, driver);
-                    self.admit(hooks, driver, messages, options, cx, &mut import, &mut send)
-                        .map_err(|error| *error)
+                    self.admit(
+                        hooks,
+                        driver,
+                        messages,
+                        options,
+                        cx,
+                        &mut import,
+                        &mut send,
+                        &mut refresh,
+                    )
+                    .map_err(|error| *error)
                 }
                 1 => self.accept_local(driver, messages),
                 2 => self.send_next(driver, messages, &mut send),
@@ -905,6 +939,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             Option<Rc<crate::admission::Permit>>,
             Publication<'_, 'id>,
         ) -> capnp::Result<Option<Published<'id>>>,
+        refresh: &mut impl FnMut(&mut ClientHooks<'id>, &mut Peer<'p, 'id, '_, I, A, P, C, H>),
     ) -> Result<Option<Progress>, Box<Error>> {
         if self.pending.is_none() {
             self.pending = match hooks.poll_owned_next(cx) {
@@ -1058,6 +1093,30 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 }
                 if indexed {
                     self.reply_owners.insert(question.id().to_wire(), index);
+                }
+                // Publication committed this question and its authority. Resolve
+                // already-requested projections now, allowing their forwarded
+                // calls to join the parent's pending transport batch. Retain the
+                // owner above before callbacks, including on projection failure.
+                if self.entries[index]
+                    .as_ref()
+                    .unwrap()
+                    .wire
+                    .pipeline
+                    .is_some()
+                {
+                    self.entries[index]
+                        .as_mut()
+                        .unwrap()
+                        .wire
+                        .poll_pipelines_using(
+                            hooks,
+                            driver,
+                            &mut self.invocations,
+                            messages,
+                            |_, _, _, _| Ok(None),
+                            refresh,
+                        )?;
                 }
                 return Ok(Some(progress));
             }

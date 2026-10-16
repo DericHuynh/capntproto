@@ -792,7 +792,6 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
             && self.call.as_ref().is_some_and(|call| {
                 call.third_party.is_none()
                     && matches!(self.direct, Some(DirectStage::Sent(question)) if question == key)
-                    && matches!(call.results, response::Results::Direct(_))
                     && !call.is_canceled()
             })
     }
@@ -803,12 +802,11 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
             credit.received();
         }
         if let Err(message) = call.results.complete_plain(&call.completion, message) {
-            let result = call.results.finish_admitted(Payload {
+            let result = call.results.finish_plain(Payload {
                 body: PayloadBody::Admitted(message),
                 caps: Vec::new(),
             });
-            debug_assert!(result.is_ok());
-            call.complete_boxed(Ok(()));
+            call.complete_boxed(result);
         }
     }
     #[inline(always)]
@@ -824,7 +822,6 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
         if self.pipeline.is_some()
             || call.third_party.is_some()
             || !matches!(self.direct, Some(DirectStage::Sent(question)) if question == key)
-            || !matches!(call.results, response::Results::Direct(_))
             || call.is_canceled()
         {
             return Ok(false);
@@ -855,12 +852,13 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
         local_hook: impl FnMut(&S) -> Option<Box<dyn ClientHook>>,
     ) -> capnp::Result<()> {
         // The admitted reader already owns the immutable, capability-free
-        // payload. Transfer it straight to a direct result sink; preserve the
+        // payload. Transfer it straight to the result sink; preserve the
         // same credit, metadata refresh and wire cleanup as general completion.
         if self.pipeline.is_none()
-            && self.call.as_ref().is_some_and(|call| {
-                call.third_party.is_none() && matches!(call.results, response::Results::Direct(_))
-            })
+            && self
+                .call
+                .as_ref()
+                .is_some_and(|call| call.third_party.is_none())
         {
             if let Ok(CallOutput::Remote(remote)) = &mut output {
                 if let Some(message) = remote.take_plain_results() {
@@ -871,12 +869,11 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                     refresh(hooks, driver);
                     driver.release_output(output.expect("remote output"), messages);
                     let mut call = self.call.take().expect("wire completion once");
-                    let result = call.results.finish_admitted(Payload {
+                    let result = call.results.finish_plain(Payload {
                         body: PayloadBody::Admitted(message),
                         caps: Vec::new(),
                     });
-                    debug_assert!(result.is_ok());
-                    call.complete_boxed(Ok(()));
+                    call.complete_boxed(result);
                     return Ok(());
                 }
             }

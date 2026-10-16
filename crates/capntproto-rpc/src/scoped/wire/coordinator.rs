@@ -165,6 +165,8 @@ impl<R: std::fmt::Debug, W: std::fmt::Debug> std::error::Error for RunError<R, W
 #[derive(Default)]
 struct Pump<'id> {
     frames: usize,
+    // Input admitted while output waits, retained across executor yields.
+    output_frames: usize,
     returned: Option<capntproto_rpc_engine::questions::Key<'id>>,
     blocked: bool,
 }
@@ -186,6 +188,7 @@ pub struct Coordinator<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: us
     options: Options,
     active: u8,
     output_blocked: bool,
+    calls_waiting_for_output: bool,
     delivered: bool,
     cursor: usize,
     wake: Arc<WorkWake>,
@@ -246,6 +249,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             options,
             active: 0x3f,
             output_blocked: false,
+            calls_waiting_for_output: false,
             delivered: false,
             cursor: 0,
             wake,
@@ -576,8 +580,8 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             let index = candidates.trailing_zeros() as usize;
             self.cursor = if index == 5 { 0 } else { index + 1 };
             // Amortize each lane's scan setup while retaining a shared bound
-            // and a rotating cursor. Even a productive lane consumes its full
-            // allowance, so ready work cannot bypass the cooperative budget.
+            // and a rotating cursor. Application lanes charge their allowance;
+            // maintenance reports the exact number of visited steps.
             let empty = match index {
                 0 => self.foreign.is_empty(),
                 1 => self.driver.runtime.queued() == 0 && !self.driver.has_pending_call(),
@@ -633,7 +637,13 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     && (queued || !self.output.is_clean())
                     && !self.can_batch_request(messages)
                 {
-                    self.output_blocked = true;
+                    // Waiting questions must resume after the physical flush,
+                    // but need not force that flush ahead of ready cleanup.
+                    if self.hooks.inbox.queue.borrow().is_empty() && !self.calls.has_unpublished() {
+                        self.calls_waiting_for_output = true;
+                    } else {
+                        self.output_blocked = true;
+                    }
                     false
                 } else {
                     match queue.ensure_capacity() {
@@ -725,29 +735,36 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                             Poll::Ready(Ok(()))
                         }
                     },
-                    _ => match self.driver.poll_maintenance_with(
-                        messages,
-                        queue,
-                        options.output_bytes.get(),
-                        options.reader,
-                        scratch,
-                        quantum,
-                        &mut || output.bundle(),
-                        &mut |owner, imports, bundle| output.attach(owner, imports, bundle),
-                        &mut |results, path, runtime| {
-                            self.hooks
-                                .server_pipeline(results, path, runtime, |runtime, hook| {
-                                    self.foreign.import(runtime, hook)
-                                })
-                                .map(|client| client.map(Ok))
-                                .map_err(|e| pipelines::Error::Input(owned::Error::Wire(e.kind)))
-                        },
-                    ) {
-                        Ok(connection::Progress::Idle) => Poll::Pending,
-                        Ok(connection::Progress::Yield) => continue,
-                        Ok(_) => Poll::Ready(Ok(())),
-                        Err(e) => Poll::Ready(Err(wire_error(e))),
-                    },
+                    _ => {
+                        let mut unused = quantum.get();
+                        let result = self.driver.poll_maintenance_budget_with(
+                            messages,
+                            queue,
+                            options.output_bytes.get(),
+                            options.reader,
+                            scratch,
+                            &mut unused,
+                            &mut || output.bundle(),
+                            &mut |owner, imports, bundle| output.attach(owner, imports, bundle),
+                            &mut |results, path, runtime| {
+                                self.hooks
+                                    .server_pipeline(results, path, runtime, |runtime, hook| {
+                                        self.foreign.import(runtime, hook)
+                                    })
+                                    .map(|client| client.map(Ok))
+                                    .map_err(|e| {
+                                        pipelines::Error::Input(owned::Error::Wire(e.kind))
+                                    })
+                            },
+                        );
+                        *remaining += unused;
+                        match result {
+                            Ok(connection::Progress::Idle) => Poll::Pending,
+                            Ok(connection::Progress::Yield) => continue,
+                            Ok(_) => Poll::Ready(Ok(())),
+                            Err(e) => Poll::Ready(Err(wire_error(e))),
+                        }
+                    }
                 }
             };
             // Hook collection can retire the final graph reference even when
@@ -1348,6 +1365,9 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         waker: &Waker,
     ) -> Poll<Result<Option<usize>, Box<Cause<R::Error, W::Error>>>> {
         loop {
+            if queue.is_empty() && self.output.is_clean() {
+                pump.output_frames = 0;
+            }
             // A Busy envelope is retried intact before reading another one.
             // Its original producer is returned only on non-Busy rejections.
             if pending.is_some() {
@@ -1376,6 +1396,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     }) {
                         Ok(connection::PlainReceived::Delivered(index, message)) => {
                             reader.finish_frame();
+                            pump.output_frames += usize::from(!queue.is_empty());
                             pump.blocked = false;
                             self.delivered_plain(index, message, controls);
                             if pump.frames < self.options.budget.get().min(8)
@@ -1411,6 +1432,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 ) {
                     Ok(event) => {
                         reader.finish_frame();
+                        pump.output_frames += usize::from(!queue.is_empty());
                         pump.blocked = false;
                         event
                     }
@@ -1523,16 +1545,18 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     return Poll::Pending;
                 }
             }
-            // An already buffered successor lets a plain server reply join a
-            // bounded burst. Never wait for input to flush output, and retain
-            // ordinary flush behavior at the frame budget or under pressure.
-            let defer_output = self.driver.has_plain_pending_call()
-                && self.calls.is_empty()
-                && self.worker.is_empty()
-                && self.foreign.is_empty()
-                && self.commands.is_empty()
-                && pump.frames != 0
-                && pump.frames < self.options.budget.get().min(8)
+            // Batch replies to already-buffered input across the ordinary
+            // fairness yields. Both output and admitted-input counts bound the
+            // batch, so control-only traffic cannot indefinitely postpone it.
+            // Never wait for new input or hold output across pool pressure.
+            let defer_output = pump.output_frames < 32
+                && queue.len() < 32
+                && messages.can_reserve(
+                    self.options
+                        .input_bytes
+                        .get()
+                        .max(self.options.output_bytes.get()),
+                )
                 && reader.has_buffered_next_frame()
                 && self.policy.poll_ready(cx).is_ready();
             match self.poll_io_work_batch(
@@ -1602,6 +1626,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         .map_err(|error| Box::new(Cause::Protocol(wire_error(error))))?
                     {
                         reader.consume_buffered_frame();
+                        pump.output_frames += usize::from(!queue.is_empty());
                         self.delivered_plain(index, message, controls);
                         pump.frames += 1;
                         if pump.frames < self.options.budget.get().min(8)
@@ -1776,7 +1801,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         }
     }
 
-    // Only private, descriptor-free prepared requests qualify for lookahead.
+    // Only private, descriptor-free requests qualify for lookahead.
     // Inspecting an arbitrary ParamsHook while borrowing the inbox could invoke
     // application code. This estimate conservatively includes a maximum target
     // transform and avoids retaining output across configured pool pressure.
@@ -1794,19 +1819,9 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         {
             return false;
         }
-        if call.third_party.is_some()
-            || !call.hints.no_promise_pipelining
-            || call.hints.only_promise_pipeline
-            || !call.endpoint.remote.get()
-        {
+        if call.third_party.is_some() || call.hints.only_promise_pipeline {
             return false;
         }
-        let CallParams::Request(params) = &call.params else {
-            return false;
-        };
-        let Some(prepared) = params.prepared_call() else {
-            return false;
-        };
         let Some(overhead) = self
             .driver
             .path_capacity()
@@ -1815,10 +1830,18 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         else {
             return false;
         };
-        let segments = prepared.message().get_segments_for_output();
-        segments
-            .iter()
-            .try_fold(overhead, |n, segment| n.checked_add(segment.len()))
+        let bytes = match &call.params {
+            CallParams::Request(params) => params.prepared_call().and_then(|prepared| {
+                prepared
+                    .message()
+                    .get_segments_for_output()
+                    .iter()
+                    .try_fold(0usize, |total, segment| total.checked_add(segment.len()))
+            }),
+            CallParams::Hook(_, bytes) => *bytes,
+        };
+        bytes
+            .and_then(|bytes| bytes.checked_add(overhead))
             .is_some_and(|minimum| {
                 messages.can_reserve(minimum.max(self.options.output_bytes.get()))
             })
@@ -1903,7 +1926,12 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             }
             let deferred_request =
                 self.coalescing_output && queue.len() < 32 && self.can_batch_request(messages);
-            let mut output_ready = if (defer_output || deferred_request)
+            let ready_work = !queue.is_empty()
+                && remaining != 0
+                && (self.active != 0 || self.wake.changed.load(Ordering::Acquire) != 0)
+                && queue.len() < 32
+                && messages.can_reserve(self.options.output_bytes.get());
+            let mut output_ready = if (defer_output || deferred_request || ready_work)
                 && self.output.is_clean()
                 && !self.output_blocked
             {
@@ -1926,6 +1954,10 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 if std::mem::take(&mut self.output_blocked) {
                     self.changed();
                 }
+            }
+            if output_ready && std::mem::take(&mut self.calls_waiting_for_output) {
+                self.active |= 1 << 2;
+                self.calls.invalidate_scan();
             }
             // poll_work_budget registers the parent before consuming changed,
             // including on idle polls. A control callback can wake before that
@@ -1986,21 +2018,28 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 && controls.direct_publication_preserves_idle()
                 && self.policy.poll_ready(cx).is_ready()
                 && self.can_batch_request(messages);
-            // Publish bytes produced by this turn without an executor round trip.
+            if !queue.is_empty() && self.idle {
+                self.idle = false;
+                controls.set_idle(false);
+            }
+            // Drain immediately ready work before writing, within the same
+            // cooperative allowance. New notifications count as ready work.
             // Physical flush remains owned by Output, including a Pending receipt.
             if !queue.is_empty()
                 && !(self.coalescing_output
+                    || (remaining != 0
+                        && (self.active != 0 || self.wake.changed.load(Ordering::Acquire) != 0)
+                        && queue.len() < 32
+                        && self.output.is_clean()
+                        && !self.output_blocked
+                        && !self.delivered
+                        && messages.can_reserve(self.options.output_bytes.get()))
                     || (defer_output
+                        && queue.len() < 32
                         && !self.delivered
                         && !self.output_blocked
                         && self.policy.poll_ready(cx).is_ready()))
             {
-                // This turn may have published while the transport was idle.
-                // Wake it before handing over any frame, including network controls.
-                if self.idle {
-                    self.idle = false;
-                    controls.set_idle(false);
-                }
                 let queued = queue.len();
                 // New publication invalidates the earlier empty-output result.
                 // Queue acceptance can finish while a physical flush is Pending;
@@ -2023,6 +2062,10 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     }
                 }
             }
+            if output_ready && std::mem::take(&mut self.calls_waiting_for_output) {
+                self.active |= 1 << 2;
+                self.calls.invalidate_scan();
+            }
             let idle = self.active == 0
                 && output_ready
                 && queue.is_empty()
@@ -2039,7 +2082,11 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             if delivered {
                 cx.waker().wake_by_ref();
             }
-            if !delivered && (self.active != 0 || !self.control_idle) {
+            if !delivered
+                && (self.active != 0
+                    || !self.control_idle
+                    || self.wake.changed.load(Ordering::Acquire) != 0)
+            {
                 if remaining != 0 {
                     continue;
                 }

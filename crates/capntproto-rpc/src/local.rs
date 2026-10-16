@@ -76,6 +76,16 @@ pub(crate) struct Params {
 }
 
 impl Params {
+    pub(crate) fn batch_content_bytes(&self) -> Option<usize> {
+        if !self.cap_table.is_empty() {
+            return None;
+        }
+        let size = self.get().ok()?.target_size().ok()?;
+        if size.cap_count != 0 {
+            return None;
+        }
+        usize::try_from(size.word_count).ok()?.checked_mul(8)
+    }
     pub(crate) fn single_capability_table(&self) -> Option<&[Option<Box<dyn ClientHook>>]> {
         matches!(self.cap_table.as_slice(), [Some(_)]).then_some(&self.cap_table)
     }
@@ -594,6 +604,16 @@ impl ParamsHook for Request {
 }
 
 impl Request {
+    pub(crate) fn batch_content_bytes(&self) -> Option<usize> {
+        if !self.cap_table.is_empty() {
+            return None;
+        }
+        let size = self.get().ok()?.target_size().ok()?;
+        if size.cap_count != 0 {
+            return None;
+        }
+        usize::try_from(size.word_count).ok()?.checked_mul(8)
+    }
     pub(crate) fn single_capability_table(&self) -> Option<&[Option<Box<dyn ClientHook>>]> {
         matches!(self.cap_table.as_slice(), [Some(_)]).then_some(&self.cap_table)
     }

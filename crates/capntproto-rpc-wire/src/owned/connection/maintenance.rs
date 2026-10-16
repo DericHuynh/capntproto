@@ -93,7 +93,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     /// pipeline: every maintenance scan then observes it before the final result.
     /// The same caller task drives application futures, IO and these callbacks.
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-    #[inline(never)]
+    #[inline(always)]
     pub fn poll_maintenance_with<R: Default>(
         &mut self,
         messages: &mut messages::Messages<'pool, '_, '_>,
@@ -117,8 +117,53 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             pipelines::Error,
         >,
     ) -> Result<Progress<I, A, S>, Error> {
+        self.poll_maintenance_budget_with(
+            messages,
+            queue,
+            minimum,
+            options,
+            scratch,
+            &mut budget.get(),
+            resources,
+            attach,
+            resolve,
+        )
+    }
+    /// Poll maintenance and subtract only visited work from a shared budget.
+    /// A productive transition may stop before exhausting the allowance. The
+    /// caller can spend the remainder on more ready work before flushing output.
+    /// An idle certificate costs one step; a zero budget performs no work.
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    #[inline(never)]
+    pub fn poll_maintenance_budget_with<R: Default>(
+        &mut self,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        queue: &mut messages::Queue<'pool, '_, R>,
+        minimum: usize,
+        options: capnp::message::ReaderOptions,
+        scratch: &mut [u32],
+        budget: &mut usize,
+        resources: &mut impl FnMut() -> R,
+        attach: &mut impl FnMut(
+            &binding::Route<'id, P, S, PATH>,
+            &imports::Imports<'id, '_, I>,
+            &mut R,
+        ) -> u8,
+        resolve: &mut impl FnMut(
+            &A,
+            pipeline::Path<'_>,
+            &mut Runtime<'pool, 'id, 's, I, P, S, CAPS, PATH>,
+        ) -> Result<
+            Option<Result<clients::Client<'id>, capnp::ErrorKind>>,
+            pipelines::Error,
+        >,
+    ) -> Result<Progress<I, A, S>, Error> {
         self.check_live()?;
+        if *budget == 0 {
+            return Ok(Progress::Yield);
+        }
         if self.maintenance_is_idle() {
+            *budget -= 1;
             self.scan_remaining = self.maintenance_total;
             return Ok(Progress::Idle);
         }
@@ -151,8 +196,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             self.maintenance_total = total;
             self.scan_remaining = total;
         }
-        let mut remaining = budget.get();
-        while remaining != 0 {
+        while *budget != 0 {
             let phase = self.maintenance_phase;
             let index = self.maintenance_index;
             // Keep empty lanes out of the ownership-bearing transition call.
@@ -190,12 +234,12 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             // but skip its remaining vacant capacity with one cursor update.
             let visited = if empty {
                 (self.maintenance_sizes[phase] - index)
-                    .min(remaining)
+                    .min(*budget)
                     .min(self.scan_remaining)
             } else {
                 1
             };
-            remaining -= visited;
+            *budget -= visited;
             self.maintenance_index += visited;
             if self.maintenance_index == self.maintenance_sizes[phase] {
                 self.maintenance_index = 0;

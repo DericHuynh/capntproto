@@ -3238,7 +3238,9 @@ C++, callback at 1.082528× legacy, and 1 KiB loopback at 1.105815× legacy.
 Every pooled p50/p95/p99 and inclusive 1.05 gate was independently recomputed
 from all 350 remote and 60 loopback trials. The artifact ZIP SHA-256 is
 `5f6050346300188a3950bf59cedf3fd9006d26221fd78c5b91d7069ca660253c`.
-Gap #11 remains open; the prepared-pipeline campaign is still running.
+Gap #11 remains open. The prepared-pipeline campaign for `166c91b`
+(`38848920337`, artifact `12024953869`) subsequently passed 11/16 cells.
+Its separate legacy/C++ 1 KiB guard failed at 1.1510× against 1.15×.
 
 The next candidate preserves idle outgoing-call lanes while serving a plain
 callback. Application notifications, cancellation, output pressure and the
@@ -3266,6 +3268,71 @@ observers and authenticated handoff. Coverage additions exercise incomplete
 successor bodies, streamed counter overflow, late observers and callback idle
 state; no coverage baseline or benchmark acceptance limit is reduced.
 Candidate evidence is retained in `target/portable-performance-callback-20261016/`.
+
+The callback follow-up `ac6ed49` completed dedicated run `38852324003`
+(artifact `12026394729`) with **12/16 passing cells**. The four misses were
+fanout at 1.054226× C++, pipelined read at 1.089118× C++, callback at
+1.083644× legacy, and 64-byte loopback at 1.072378× legacy. All 350 remote
+and 60 loopback trials were independently checked, including pooled
+p50/p95/p99 and the inclusive 1.05 limit. Artifact ZIP SHA-256:
+`af7f88a399c40b788e832e732849553076cb7637087b22ced6c167b3a381f9c2`.
+A successful workflow status does not imply that all portable parity cells pass.
+
+### C++ read/write scheduling investigation (October 16, 2026)
+
+Timestamped syscall traces decode the actual RPC frames in each TCP write.
+C++ schedules its write queue with `kj::evalLast()` after immediately ready
+work, retaining message owners through the physical write. The portable
+coordinator flushed a parent request before forwarding its already requested
+pipeline child, then flushed each reply separately. For two warmups and ten
+measured pipelined reads, the initial portable trace contained 54 client and
+26 server writes; C++ used 13 and 14, respectively. These totals include
+bootstrap and final cleanup, and are diagnostics rather than latency evidence.
+
+The candidate resolves requested pipeline projections when their parent
+question is published, using the existing authority checks. It batches ready
+work within cooperative budgets and known pool capacity, and admits buffered
+successors without waiting for new input. The first revised trace combines the parent
+and child in one write and their replies in one write; a separate Release
+remains. Fanout replies reach the same one-write-per-32-replies pattern after
+the receive buffer grows. No benchmark fixtures or validation are changed.
+
+Temporary scheduler traces explain the remaining Release split: the coordinator
+charged the full remaining maintenance quantum even when maintenance returned
+after its first productive transition. Retiring an endpoint could therefore
+exhaust the outer budget before publishing its ready Release. The next change
+reports and reuses unspent maintenance budget while preserving the rotating scan
+and charging every visited slot. Waiting questions resume after physical output
+without forcing that output ahead of ready cleanup. The earlier isolated change
+to waiting-question scheduling did not improve the write pattern and is retained
+as a diagnostic result. All temporary logging is removed from production code.
+
+With actual maintenance accounting, the decoded trace now matches C++'s steady
+write pattern: each callback Return and Release share a 120-byte write, and each
+pipelined operation batches Finish, both Calls and Release, followed by one
+server write containing both Returns. Rust's pipeline frames total 1,376 bytes
+versus C++'s 1,368; their corresponding combined replies are 1,224 versus 1,216.
+Bootstrap and final cleanup still differ. The new budget regression, parent/child
+publication test and opaque-response ownership test all pass under Miri. Full
+five-repetition untraced comparisons pass 8/12 workflows and 2/4 loopback
+payloads on the shared VM; all 72 mixed-peer workflows validate. The pipeline
+cell still misses substantially locally, despite the matched write pattern.
+All controls, repetitions and misses are retained. Fresh dedicated
+qualification is still required.
+
+This checkpoint passes 405 RPC/wire unit checks, all 16 runtime integration
+tests (including broker-drop introduction and TLC replay), and warning-denying
+Clippy for the four runtime crates. Evidence is retained under
+`target/portable-performance-io-accounting-20261016/`.
+
+The preceding PR CI run `38848998858` passed platform, formal, Miri, native,
+fuzz and mutation jobs, but its cargo job stopped before coverage collection:
+`portable_automatic_introduction_survives_broker_drop` failed. A decoded protocol
+trace showed the forwarding vine released after local marker publication but
+before the remote Accept completed. Retaining that vine through the Accept
+future fixes the reproduced failure. All 16 runtime integration tests pass,
+including TLC trace replay with the cached model-checker JAR. Fresh coverage
+and full parity qualification remain required; baselines are unchanged.
 
 ### Portable and legacy instruction qualification
 

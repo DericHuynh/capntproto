@@ -751,6 +751,79 @@ fn large_remote_call_retries_output_and_preserves_exception_diagnostics() {
 }
 
 #[test]
+fn publication_resolves_waiting_children_before_the_parent_flushes() {
+    for no_pipeline in [false, true] {
+        with_peer(|mut driver, messages| {
+            driver.use_owned_output_queues(true);
+            let mut hooks = ClientHooks::new(24, 24);
+            let client = remote(&mut driver, &mut hooks);
+            let parent = request(&client, 1).send();
+            let child = capability::Client::new(parent.pipeline.hook.get_pipelined_cap(&[]));
+            let mut child_request = request(&child, 2);
+            child_request.hook.set_hints(capability::CallHints {
+                no_promise_pipelining: no_pipeline,
+                ..Default::default()
+            });
+            let child_reply = child_request.send();
+            let mut calls = Calls::new(8, None).unwrap();
+            let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+            assert_eq!(hooks.inbox.queue.borrow().len(), 1);
+            let progress = tick(
+                &mut calls,
+                &mut hooks,
+                &mut driver,
+                messages,
+                &mut queue,
+                &mut Context::from_waker(Waker::noop()),
+            );
+            assert!(matches!(progress, Poll::Ready(Ok(Progress::Published))));
+            assert_eq!(queue.len(), 1, "the parent has not been flushed");
+            assert_eq!(
+                hooks.inbox.queue.borrow().len(),
+                1,
+                "publication must route the already-waiting child"
+            );
+            drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+            assert_eq!(queue.len(), 2, "both calls can share one transport batch");
+            let bytes = drain(&mut queue, messages);
+            let mut remaining = bytes.as_slice();
+            let first = capnp::serialize::read_message(&mut remaining, Default::default()).unwrap();
+            let rpc_capnp::message::Call(first) = first
+                .get_root::<rpc_capnp::message::Reader>()
+                .unwrap()
+                .which()
+                .unwrap()
+            else {
+                panic!("parent Call")
+            };
+            let first = first.unwrap();
+            assert_eq!(first.get_method_id(), 1);
+            let second =
+                capnp::serialize::read_message(&mut remaining, Default::default()).unwrap();
+            let rpc_capnp::message::Call(second) = second
+                .get_root::<rpc_capnp::message::Reader>()
+                .unwrap()
+                .which()
+                .unwrap()
+            else {
+                panic!("child Call")
+            };
+            let second = second.unwrap();
+            assert_eq!(second.get_method_id(), 2);
+            let rpc_capnp::message_target::PromisedAnswer(target) =
+                second.get_target().unwrap().which().unwrap()
+            else {
+                panic!("promised answer")
+            };
+            assert_eq!(target.unwrap().get_question_id(), first.get_question_id());
+            assert!(remaining.is_empty());
+            drop((child_reply, child, parent, client));
+            teardown(calls, hooks, driver, messages, &mut queue);
+        });
+    }
+}
+
+#[test]
 fn direct_remote_projections_keep_the_parent_question_before_and_after_publication() {
     for project_before_send in [false, true] {
         with_peer(|mut driver, messages| {

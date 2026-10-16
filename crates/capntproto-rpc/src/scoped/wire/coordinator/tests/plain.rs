@@ -3,6 +3,208 @@ use capntproto_rpc_engine::ids::QuestionId;
 use capntproto_rpc_wire::{attachments::ImportReceiver, calls};
 
 #[test]
+fn plain_reply_to_an_opaque_sink_preserves_errors_owners_and_reentrant_work() {
+    struct Params(capnp::message::Builder<capnp::message::HeapAllocator>);
+    impl ParamsHook for Params {
+        fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+            self.0.get_root_as_reader()
+        }
+    }
+    struct Sink {
+        retained: Rc<RefCell<Option<Rc<dyn capnp::private::capability::ResponseHook>>>>,
+        client: capability::Client,
+        next: Rc<RefCell<Option<capability::RemotePromise<any_pointer::Owned>>>>,
+        reject: bool,
+        calls: Rc<Cell<usize>>,
+    }
+    impl ResultsHook for Sink {
+        fn set_pipeline(&mut self) -> capnp::Result<()> {
+            unreachable!("plain reply has no pipeline")
+        }
+        fn set_pipeline_from(
+            &mut self,
+            _: Box<dyn capnp::private::capability::PipelineHook>,
+        ) -> capnp::Result<()> {
+            unreachable!("plain reply has no pipeline")
+        }
+        fn allow_cancellation(&self) {}
+        fn tail_call(
+            self: Box<Self>,
+            _: Box<dyn capnp::private::capability::RequestHook>,
+        ) -> Promise<(), Error> {
+            unreachable!("plain reply has no tail call")
+        }
+        fn direct_tail_call(
+            self: Box<Self>,
+            _: Box<dyn capnp::private::capability::RequestHook>,
+        ) -> (
+            Promise<(), Error>,
+            Box<dyn capnp::private::capability::PipelineHook>,
+        ) {
+            unreachable!("plain reply has no tail call")
+        }
+        fn get_with_size_hint(
+            &mut self,
+            _: Option<capnp::MessageSize>,
+        ) -> capnp::Result<any_pointer::Builder<'_>> {
+            panic!("an owning response must reach the opaque result sink")
+        }
+        fn set_response(
+            &mut self,
+            response: Rc<dyn capnp::private::capability::ResponseHook>,
+        ) -> capnp::Result<()> {
+            assert_eq!(
+                response.get()?.get_as::<capnp::text::Reader>()?,
+                "retained reply"
+            );
+            self.calls.set(self.calls.get() + 1);
+            *self.retained.borrow_mut() = Some(response);
+            *self.next.borrow_mut() = Some(
+                self.client
+                    .new_call_with_hints::<any_pointer::Owned, any_pointer::Owned>(
+                        7,
+                        1,
+                        None,
+                        capability::CallHints {
+                            no_promise_pipelining: true,
+                            ..Default::default()
+                        },
+                    )
+                    .send(),
+            );
+            if self.reject {
+                Err(Error::failed("opaque result rejection".into()))
+            } else {
+                Ok(())
+            }
+        }
+    }
+    for reject in [false, true] {
+        with_peer(|mut driver, messages| {
+            let mut hooks = ClientHooks::new(8, 8);
+            let client = remote(&mut driver, &mut hooks, ImportId::from_wire(7));
+            let retained = Rc::new(RefCell::new(None));
+            let next = Rc::new(RefCell::new(None));
+            let calls = Rc::new(Cell::new(0));
+            let completion = client.hook.call_with_hints(
+                7,
+                0,
+                Box::new(Params(capnp::message::Builder::new_default())),
+                Box::new(Sink {
+                    retained: retained.clone(),
+                    client: client.clone(),
+                    next: next.clone(),
+                    reject,
+                    calls: calls.clone(),
+                }),
+                capability::CallHints {
+                    no_promise_pipelining: true,
+                    ..Default::default()
+                },
+            );
+            let mut coordinator = Coordinator::new(
+                driver,
+                hooks,
+                NonZeroUsize::new(8).unwrap(),
+                None,
+                options(),
+            )
+            .unwrap();
+            let mut queue = messages::Queue::new_growing(0, 4).unwrap();
+            let mut cx = Context::from_waker(Waker::noop());
+            for _ in 0..256 {
+                if let Poll::Ready(result) =
+                    coordinator.poll_work(messages, &mut queue, &mut [0; 32], &NoResources, &mut cx)
+                {
+                    result.unwrap();
+                }
+                if coordinator.active == 0 && !queue.is_empty() {
+                    break;
+                }
+            }
+            assert!(!queue.is_empty());
+            let bytes = queue.window(messages).unwrap().unwrap().bytes().to_vec();
+            let mut source = bytes.as_slice();
+            let sent = capnp::serialize::read_message(&mut source, Default::default()).unwrap();
+            let crate::rpc_capnp::message::Call(call) = sent
+                .get_root::<crate::rpc_capnp::message::Reader>()
+                .unwrap()
+                .which()
+                .unwrap()
+            else {
+                panic!("Call")
+            };
+            let id = call.unwrap().get_question_id();
+            let mut reply = capnp::message::Builder::new_default();
+            {
+                let mut result = reply
+                    .init_root::<crate::rpc_capnp::message::Builder>()
+                    .init_return();
+                result.set_answer_id(id);
+                result.set_no_finish_needed(true);
+                result.set_release_param_caps(false);
+                result
+                    .init_results()
+                    .init_content()
+                    .set_as::<capnp::text::Owned>("retained reply")
+                    .unwrap();
+            }
+            let frame = Frame::copy_from(
+                messages,
+                &capnp::serialize::write_message_to_words(&reply),
+                options().reader,
+            )
+            .unwrap();
+            let received = coordinator
+                .driver
+                .try_receive_plain_owned(frame, messages, |key| {
+                    coordinator.calls.plain_receiver(key)
+                })
+                .unwrap_or_else(|(error, _)| panic!("{error:?}"));
+            let connection::PlainReceived::Delivered(index, message) = received else {
+                panic!("the opaque sink must use plain admission")
+            };
+            let mut control = Policy {
+                direct_returns: true,
+                ..Default::default()
+            };
+            coordinator.delivered_plain::<NoResources>(index, message, &control);
+            assert_eq!(calls.get(), 1);
+            assert_eq!(coordinator.hooks.inbox.queue.borrow().len(), 1);
+            assert_ne!(coordinator.wake.changed.load(Ordering::Acquire), 0);
+            let result = futures::executor::block_on(completion);
+            if reject {
+                assert_eq!(result.unwrap_err().extra, "opaque result rejection");
+            } else {
+                result.unwrap();
+            }
+            drop(next.borrow_mut().take());
+            drop(client);
+            futures::executor::block_on(coordinator.terminate::<NoResources, (), ()>(
+                messages,
+                &mut queue,
+                &mut control,
+                Ok(()),
+            ))
+            .unwrap();
+            assert_eq!(
+                retained
+                    .borrow()
+                    .as_ref()
+                    .unwrap()
+                    .get()
+                    .unwrap()
+                    .get_as::<capnp::text::Reader>()
+                    .unwrap(),
+                "retained reply"
+            );
+            drop(retained.borrow_mut().take());
+            reclaimed(messages);
+        });
+    }
+}
+
+#[test]
 fn outgoing_bursts_flush_under_pool_pressure_and_pending_receipts() {
     #[derive(Default)]
     struct OutputBytes {
@@ -67,18 +269,24 @@ fn outgoing_bursts_flush_under_pool_pressure_and_pending_receipts() {
                         .map(|_| messages.reserve(1024).unwrap())
                         .collect();
                     let responses: Vec<_> = (0..24)
-                        .map(|_| {
-                            client
-                                .new_call_with_hints::<any_pointer::Owned, any_pointer::Owned>(
+                        .map(|index| {
+                            let hints = capability::CallHints {
+                                no_promise_pipelining: index % 2 == 0,
+                                ..Default::default()
+                            };
+                            let mut request = if index % 3 == 1 {
+                                capability::Request::new(Box::new(crate::local::Request::new(
                                     7,
                                     0,
                                     None,
-                                    capability::CallHints {
-                                        no_promise_pipelining: true,
-                                        ..Default::default()
-                                    },
-                                )
-                                .send()
+                                    client.hook.add_ref(),
+                                )))
+                            } else {
+                                client
+                                    .new_call::<any_pointer::Owned, any_pointer::Owned>(7, 0, None)
+                            };
+                            request.hook.set_hints(hints);
+                            request.send()
                         })
                         .collect();
                     let mut queue = messages::Queue::new_growing(0, capacity).unwrap();
@@ -174,6 +382,7 @@ impl transport::Input<()> for BufferedInput {
 struct Replies {
     frames: std::collections::VecDeque<Vec<capnp::Word>>,
     consumed: usize,
+    progress: Option<Rc<Cell<usize>>>,
     stop: Option<Rc<Signal>>,
 }
 impl io::Read for Replies {
@@ -214,6 +423,9 @@ impl transport::Input<()> for Replies {
     fn finish_frame(&mut self) {
         self.frames.pop_front().unwrap();
         self.consumed += 1;
+        if let Some(progress) = &self.progress {
+            progress.set(self.consumed);
+        }
         if let Some(stop) = &self.stop {
             stop.stop();
         }
@@ -226,11 +438,14 @@ fn buffered_server_bursts_flush_at_budget_end_and_when_input_runs_out() {
     struct OutputBytes {
         bytes: Vec<u8>,
         flushes: usize,
+        input: Rc<Cell<usize>>,
+        first_flush_input: Option<usize>,
     }
     impl io::Flush for OutputBytes {
         type Error = ();
         fn poll_flush(&mut self, _: &mut Context<'_>) -> Poll<Result<(), io::IoError<()>>> {
             self.flushes += 1;
+            self.first_flush_input.get_or_insert(self.input.get());
             Poll::Ready(Ok(()))
         }
     }
@@ -245,7 +460,7 @@ fn buffered_server_bursts_flush_at_budget_end_and_when_input_runs_out() {
         }
     }
     for budget in [1, 8, 64] {
-        for capacity in [1, 8] {
+        for capacity in [1, 8, 32] {
             with_peer(|mut driver, messages| {
                 let seen = Rc::new(Cell::new(0));
                 let target = expose(
@@ -264,7 +479,10 @@ fn buffered_server_bursts_flush_at_budget_end_and_when_input_runs_out() {
                 .unwrap();
                 let mut queue = messages::Queue::new_growing(0, capacity).unwrap();
                 let mut bytes = OutputBytes::default();
-                let mut reader = Replies::default();
+                let mut reader = Replies {
+                    progress: Some(bytes.input.clone()),
+                    ..Default::default()
+                };
                 let mut control = Policy {
                     preserve_plain: true,
                     ..Default::default()
@@ -299,7 +517,7 @@ fn buffered_server_bursts_flush_at_budget_end_and_when_input_runs_out() {
                         .init_call();
                     call.set_question_id(id);
                     call.set_interface_id(7);
-                    call.set_no_promise_pipelining(true);
+                    call.set_no_promise_pipelining(id % 2 == 0);
                     call.reborrow()
                         .init_target()
                         .set_imported_cap(target.to_wire());
@@ -312,6 +530,35 @@ fn buffered_server_bursts_flush_at_budget_end_and_when_input_runs_out() {
                     capnp::Word::words_to_bytes_mut(&mut words).copy_from_slice(&encoded);
                     reader.frames.push_back(words);
                 }
+                // Valid control messages produce no output. They must not
+                // extend the final reply batch until all input is consumed.
+                for _ in 0..128 {
+                    let mut message = capnp::message::Builder::new_default();
+                    message
+                        .init_root::<crate::rpc_capnp::message::Builder>()
+                        .init_unimplemented()
+                        .init_resolve()
+                        .init_cap()
+                        .set_none(());
+                    let encoded = capnp::serialize::write_message_to_words(&message);
+                    let mut words = capnp::Word::allocate_zeroed_vec(encoded.len() / 8);
+                    capnp::Word::words_to_bytes_mut(&mut words).copy_from_slice(&encoded);
+                    reader.frames.push_back(words);
+                }
+                let mut initial = capnp::message::Builder::new_default();
+                let mut reply = initial
+                    .init_root::<crate::rpc_capnp::message::Builder>()
+                    .init_return();
+                reply.set_answer_id(999);
+                reply.set_no_finish_needed(true);
+                reply.init_results().init_content();
+                let initial = capnp::serialize::write_message_to_words(&initial);
+                let writer = messages.reserve_exact(initial.len()).unwrap();
+                messages.try_write(&writer).unwrap()[..initial.len()].copy_from_slice(&initial);
+                let lease = messages.seal(writer, initial.len()).unwrap();
+                let offer = messages.offer(&lease).unwrap();
+                queue.reserve().unwrap().accept(messages, offer);
+                messages.release(lease);
                 for _ in 0..4096 {
                     if let Poll::Ready(result) = coordinator.poll_prepared(
                         messages,
@@ -340,6 +587,9 @@ fn buffered_server_bursts_flush_at_budget_end_and_when_input_runs_out() {
                 }
                 assert_eq!(seen.get(), 12, "budget {budget}, capacity {capacity}");
                 assert!(queue.is_empty() && coordinator.output.is_clean());
+                assert_eq!(reader.consumed, 140);
+                assert!(bytes.first_flush_input.unwrap() <= 32,
+                    "budget {budget}, capacity {capacity}: control input postponed an already queued reply until {}", bytes.first_flush_input.unwrap());
                 if budget == 64 && capacity == 8 {
                     assert!(
                         bytes.flushes < 12,
@@ -348,7 +598,8 @@ fn buffered_server_bursts_flush_at_budget_end_and_when_input_runs_out() {
                     );
                 }
                 let mut source = bytes.bytes.as_slice();
-                for id in 0..12 {
+                let mut answers = Vec::new();
+                for index in 0..13 {
                     let reply =
                         capnp::serialize::read_message(&mut source, Default::default()).unwrap();
                     let crate::rpc_capnp::message::Return(ret) = reply
@@ -359,8 +610,17 @@ fn buffered_server_bursts_flush_at_budget_end_and_when_input_runs_out() {
                     else {
                         panic!("Return")
                     };
-                    assert_eq!(ret.unwrap().get_answer_id(), id);
+                    let id = ret.unwrap().get_answer_id();
+                    if index == 0 {
+                        assert_eq!(id, 999);
+                    } else {
+                        answers.push(id);
+                    }
                 }
+                // Independent calls may finish in different worker rotations.
+                // Each must return exactly once after the prequeued frame.
+                answers.sort_unstable();
+                assert_eq!(answers, (0..12).collect::<Vec<_>>());
                 assert!(source.is_empty());
                 futures::executor::block_on(coordinator.terminate::<NoResources, (), ()>(
                     messages,

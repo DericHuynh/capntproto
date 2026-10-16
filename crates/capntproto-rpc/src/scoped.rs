@@ -553,13 +553,28 @@ pub struct Call {
 }
 enum CallParams {
     Request(crate::local::Params),
-    Hook(Box<dyn ParamsHook>),
+    Hook(Box<dyn ParamsHook>, Option<usize>),
 }
 impl CallParams {
+    fn hook(params: Box<dyn ParamsHook>) -> Self {
+        // Inspect hooks before entering the inbox. The scheduling lookahead
+        // below never invokes application code while borrowing that queue.
+        let bytes = params.as_any().and_then(|value| {
+            value
+                .downcast_ref::<crate::local::Params>()
+                .and_then(crate::local::Params::batch_content_bytes)
+                .or_else(|| {
+                    value
+                        .downcast_ref::<crate::local::Request>()
+                        .and_then(crate::local::Request::batch_content_bytes)
+                })
+        });
+        Self::Hook(params, bytes)
+    }
     fn single_capability_table(&self) -> Option<&[Option<Box<dyn ClientHook>>]> {
         match self {
             Self::Request(request) => request.single_capability_table(),
-            Self::Hook(hook) => hook.as_any().and_then(|params| {
+            Self::Hook(hook, _) => hook.as_any().and_then(|params| {
                 params
                     .downcast_ref::<crate::local::Request>()
                     .and_then(crate::local::Request::single_capability_table)
@@ -579,7 +594,7 @@ impl CallParams {
     {
         match self {
             Self::Request(request) => request.prepared_call(),
-            Self::Hook(hook) => hook.as_any().and_then(|params| {
+            Self::Hook(hook, _) => hook.as_any().and_then(|params| {
                 params
                     .downcast_ref::<crate::local::Request>()
                     .and_then(crate::local::Request::prepared_call)
@@ -594,7 +609,7 @@ impl CallParams {
     fn into_hook(self) -> Box<dyn ParamsHook> {
         match self {
             Self::Request(request) => Box::new(request),
-            Self::Hook(hook) => hook,
+            Self::Hook(hook, _) => hook,
         }
     }
     fn request_mut(&mut self) -> &mut crate::local::Params {
@@ -609,7 +624,7 @@ impl std::ops::Deref for CallParams {
     fn deref(&self) -> &Self::Target {
         match self {
             Self::Request(request) => request,
-            Self::Hook(hook) => &**hook,
+            Self::Hook(hook, _) => &**hook,
         }
     }
 }
@@ -718,7 +733,7 @@ impl Call {
         self.credit = credit;
         // Requests built by this hook already retain this exact shutdown state.
         // General incoming ParamsHook calls acquire it only at admission.
-        if matches!(self.params, CallParams::Hook(_)) {
+        if matches!(self.params, CallParams::Hook(_, _)) {
             self.shutdown = inbox.shutdown.clone();
         }
         self._permit = permit;
@@ -914,7 +929,7 @@ impl Hook {
             interface,
             method,
             hints,
-            params: CallParams::Hook(params),
+            params: CallParams::hook(params),
             results,
             completion,
             shutdown: Shutdown::new(),

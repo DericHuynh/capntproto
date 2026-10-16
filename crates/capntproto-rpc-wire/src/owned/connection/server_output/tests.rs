@@ -922,6 +922,68 @@ fn early_pipeline_retry_is_transactional_and_survives_final_failure() {
 }
 
 #[test]
+fn productive_maintenance_preserves_unused_budget_for_following_cleanup() {
+    with_driver(|mut driver, messages| {
+        let mut slots = [None];
+        let mut queue = messages::Queue::new(&mut slots).unwrap();
+        let mut remaining = 0;
+        macro_rules! poll {
+            () => {
+                driver
+                    .poll_maintenance_budget_with(
+                        messages,
+                        &mut queue,
+                        512,
+                        Default::default(),
+                        &mut [0; 8],
+                        &mut remaining,
+                        &mut || (),
+                        &mut |_, _, _| 255,
+                        &mut |_, _, _| Ok(None),
+                    )
+                    .unwrap()
+            };
+        }
+        assert!(matches!(poll!(), Progress::Yield));
+        assert_eq!(remaining, 0);
+        remaining = 1;
+        assert!(matches!(poll!(), Progress::Idle));
+        assert_eq!(remaining, 0);
+
+        for owner in [91, 92] {
+            let client = driver
+                .runtime
+                .endpoint(binding::Route::local(owner), clients::Location::Local)
+                .unwrap();
+            driver.runtime.release(client);
+        }
+        driver.maintenance_phase = 5;
+        driver.maintenance_index = 0;
+        remaining = 128;
+        let Progress::Server(first) = poll!() else {
+            panic!("first retired endpoint")
+        };
+        assert_eq!(
+            remaining, 127,
+            "a productive step must not consume the whole allowance"
+        );
+        let Progress::Server(second) = poll!() else {
+            panic!("second retired endpoint")
+        };
+        assert!(remaining > 0 && remaining < 127);
+        let mut owners = [first, second];
+        owners.sort_unstable();
+        assert_eq!(owners, [91, 92]);
+        let before_idle = remaining;
+        assert!(matches!(poll!(), Progress::Idle));
+        assert_eq!(remaining, before_idle - 1);
+        assert!(!driver.runtime.has_retired());
+        assert!(queue.is_empty());
+        close(driver, messages, &mut queue);
+    });
+}
+
+#[test]
 fn pending_pipeline_callback_exposes_new_cleanup_in_the_same_maintenance_poll() {
     with_driver(|mut driver, messages| {
         let (call, target) = request(&mut driver, messages, false);

@@ -223,6 +223,26 @@ impl Results {
             },
         }
     }
+
+    // A plain reply has no capability imports or pipeline publication to
+    // coordinate. Exact local sinks can retain its admission proof; opaque
+    // result hooks still receive their ordinary validating set_response call.
+    pub(super) fn finish_plain(&mut self, payload: wire::Payload) -> capnp::Result<()> {
+        let payload = match self.finish_admitted(payload) {
+            Ok(()) => return Ok(()),
+            Err(payload) => Rc::new(payload),
+        };
+        let results = self.hook();
+        if let Some(local) = results
+            .as_any_mut()
+            .and_then(|sink| sink.downcast_mut::<crate::local::Results>())
+        {
+            local.set_admitted_response(payload);
+            Ok(())
+        } else {
+            results.set_response(payload)
+        }
+    }
 }
 #[cfg(test)]
 struct Response {
