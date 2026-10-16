@@ -475,6 +475,7 @@ pub(crate) fn available(client: &dyn ClientHook) -> bool {
     client
         .as_any()
         .and_then(|client| client.downcast_ref::<Hook>())
+        .or_else(|| wire::direct_response_hook(client))
         .is_some_and(|hook| hook.introduced().is_none())
 }
 pub(crate) fn request(
@@ -482,14 +483,16 @@ pub(crate) fn request(
     interface: u64,
     method: u16,
     hints: CallHints,
-    params: Box<dyn ParamsHook>,
+    params: Box<crate::local::Request>,
     context: Option<Rc<dyn std::any::Any>>,
 ) -> capability::RemotePromise<any_pointer::Owned> {
     let hook = client
         .as_any()
-        .and_then(|client| client.downcast_ref::<Hook>())
-        .expect("private scoped request hook");
-    request_scoped(hook, interface, method, hints, params, context)
+        .and_then(|client| client.downcast_ref::<Hook>());
+    match hook {
+        Some(hook) => request_scoped(hook, interface, method, hints, params, context),
+        None => wire::request_projected(client, interface, method, hints, params, context),
+    }
 }
 
 pub(crate) fn request_scoped(
@@ -497,7 +500,7 @@ pub(crate) fn request_scoped(
     interface: u64,
     method: u16,
     hints: CallHints,
-    params: Box<dyn ParamsHook>,
+    params: Box<crate::local::Request>,
     context: Option<Rc<dyn std::any::Any>>,
 ) -> capability::RemotePromise<any_pointer::Owned> {
     let state = hook
@@ -507,7 +510,15 @@ pub(crate) fn request_scoped(
         .map_or_else(Rc::default, |inbox| inbox.completion_cache.acquire());
     let results = Results::direct(ResultsSender(state.clone()), context);
     let completion = CallCompletion::Response(Completion(state.clone()));
-    let admitted = hook.enqueue(interface, method, params, results, hints, None, completion);
+    let admitted = hook.enqueue(
+        interface,
+        method,
+        CallParams::owned_request(params),
+        results,
+        hints,
+        None,
+        completion,
+    );
     let promise = match admitted {
         Ok(inbox) => state.promise(inbox),
         Err(error) => Promise::err(*error),

@@ -3764,7 +3764,13 @@ Artifact `12046522376` has ZIP SHA-256
 `03464493b67e934f6014ca26b69fea80027de697addc140af4e1dcd82395e328`.
 Raw samples, recomputation, build provenance, job log and paired traces are
 retained in `target/portable-performance-direct-wire-interest-dedicated-20261016/`
-(1,537 files plus checksums). PR CI is still running.
+(1,537 files plus checksums). PR CI `38898845818` subsequently completed
+2,246 tests with zero failures or incomplete results and 20 skips. Miri, models,
+platform, portable, fuzz, mutation, native-careful and LLVM checks passed. The
+unchanged coverage-regression gate failed. Its diagnostics and coverage summary
+are retained in `target/portable-performance-direct-wire-interest-ci-20261016/`;
+artifact `12048991202` has ZIP SHA-256
+`bc44f57888bf506baa2e2a2f676cfd715dcc9f76d3a92ece3d81e01881ed014e`.
 
 Three subsequent local experiments retain that wire ordering. A bounded cache
 of four interface/method headers avoids rebuilding alternating request headers;
@@ -3796,6 +3802,54 @@ in `target/portable-performance-method-templates-20261016/`,
 `target/portable-performance-retirement-publication-20261016/` and
 `target/portable-performance-single-iovec-20261016/`, with per-file checksums.
 No fixture, performance threshold or coverage floor changed.
+
+The next `deferred-request20261016` experiment retains an intact no-pipeline
+request in the pending wire projection's ordered queue. Forwarding can then
+use the direct response completion instead of allocating a local-results
+channel and joining it with another completion. Opaque hooks retain their
+ordinary path; projected endpoints hold the parent interest through completion.
+Mixed hook/direct calls preserve order, and canceled requests disappear before
+forwarding. The parent-failure matrix also covers early pipeline publication.
+
+It passes 286 RPC tests, 92 integration tests, 72 mixed-peer workflows, Clippy,
+formatting and two focused Miri tests (including the eight-case lifetime matrix).
+Pipeline client instructions fall 2.13% to 82,527,571; server instructions are
+72,401,717. All 11 steady C++ write groups and batched Returns remain intact.
+Empty client instructions increase 0.61%, and that separate gate remains
+client MISS/server PASS. All 240 local trials validate, with **5/12 workflow
+and 3/4 loopback targets met**; these noisy local timings do not establish a
+latency improvement. Executable SHA-256 is
+`9815f8e7f41b551d3e7d374f5a10e40de792de8a27b81f830897eb8b2ae31ad6`.
+Raw evidence and exact source identity are retained in
+`target/portable-performance-deferred-request-20261016/` (937 files plus checksums).
+The committed earlier batch `600f649` is being measured in dedicated workflow
+`38904229528`; the latest completed dedicated result remains **11/16**.
+
+Outlining the shared plain-reply validation transition reduces pipeline
+instructions another 0.30% client and 0.14% server, with 1.45% fewer simulated
+client instruction-cache misses but more branch misses. Four existing wire
+plain-return tests and all 72 mixed-peer workflows pass. The 240 local trials
+validate, with **6/12 workflow and 3/4 loopback targets met**. Raw evidence is in
+`target/portable-performance-outlined-plain-reply-20261016/` (932 files plus checksums).
+
+Keeping forwarded request parameters concrete through admission and encoding
+then avoids repeated dynamic downcasts without moving their original allocation.
+The cumulative `owned-request-params20261016` candidate passes 286 RPC tests,
+92 integration tests, 72 mixed-peer workflows, Clippy, formatting and the two
+focused Miri cases. Pipeline instructions are 82,186,415 / 72,299,804, a 2.54%
+client reduction from the committed single-vector batch. Empty-call instructions
+are 18,384,025 / 16,995,718 versus matched legacy 17,362,399 / 16,354,788;
+that separate gate still misses on the client and passes on the server.
+
+All 240 local trials validate, with **7/12 workflow and 3/4 loopback targets
+met**. Portable pipeline repetition medians range from 43,324 to 93,788 ns;
+the pooled ratio is 3.208430 against the faster matched legacy control. These
+misses and variability are retained, and no latency improvement is claimed.
+The executable SHA-256 is
+`836075ea0dd1f37f0e15ea6520b1d878b1bbf0e202d69e5b9e4035580aecd989`.
+Evidence is in `target/portable-performance-owned-request-params-20261016/`
+(937 files plus checksums). All 11 steady C++ pipeline write groups and batched
+Returns remain intact in each candidate's paired syscall diagnostic.
 
 The earlier `ef9f4c8` Cargo CI completed 2,230 tests with zero failures and
 20 skips, but its coverage regression gate failed. The Miri job reached its

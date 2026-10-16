@@ -1926,7 +1926,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     .iter()
                     .try_fold(0usize, |total, segment| total.checked_add(segment.len()))
             }),
-            CallParams::Hook(_, bytes) => *bytes,
+            CallParams::OwnedRequest(_, bytes) | CallParams::Hook(_, bytes) => *bytes,
         };
         bytes
             .and_then(|bytes| bytes.checked_add(overhead))

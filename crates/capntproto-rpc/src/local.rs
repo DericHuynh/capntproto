@@ -624,6 +624,14 @@ impl ParamsHook for Request {
 }
 
 impl Request {
+    pub(crate) fn send_to(
+        mut self: Box<Self>,
+        client: Box<dyn ClientHook>,
+    ) -> capability::RemotePromise<any_pointer::Owned> {
+        debug_assert!(self.client.is_none());
+        self.client = Some(RequestClient::Hook(client));
+        self.send()
+    }
     pub(crate) fn batch_content_bytes(&self) -> Option<usize> {
         if !self.cap_table.is_empty() {
             return None;
@@ -706,6 +714,26 @@ impl RequestHook for Request {
         0
     }
     fn send(mut self: Box<Self>) -> capability::RemotePromise<any_pointer::Owned> {
+        if self.hints.no_promise_pipelining
+            && !self.hints.only_promise_pipeline
+            && !self.is_streaming
+            && self.third_party.is_none()
+        {
+            let queued = self
+                .client
+                .as_deref()
+                .expect("unsent request")
+                .as_any()
+                .and_then(|client| client.downcast_ref::<crate::queued::Client>())
+                .and_then(crate::queued::Client::pending_wire);
+            if let Some(queued) = queued {
+                // Keep the request intact until its wire projection resolves.
+                // The queue's waiter owns the client; storing it in the request
+                // too would form a cycle and delay cancellation.
+                self.client.take();
+                return queued.send_request(self);
+            }
+        }
         if self.hints.no_promise_pipelining
             && !self.hints.only_promise_pipeline
             && !self.is_streaming

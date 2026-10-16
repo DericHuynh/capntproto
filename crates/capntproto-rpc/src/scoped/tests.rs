@@ -657,70 +657,78 @@ fn early_pipeline_and_capability_params_survive_parent_failure() {
 
 #[test]
 fn prepared_pipeline_interest_survives_response_drop_before_admission() {
-    for early in [false, true] {
-        for fail in [false, true] {
-            clients::with_growing_graph::<u32, u8, _>(0, 2, |graph| {
-                let route = graph.endpoint(7, Location::Local).unwrap();
-                let target = graph.endpoint(8, Location::Local).unwrap();
-                let mut hooks = ClientHooks::new(2, 3);
-                let client = hooks.export_snapshot(graph, &route).unwrap();
-                let cap = hooks.export_snapshot(graph, &target).unwrap();
-                let parent = request(&client, 1);
-                let projected = capability::Client::new(parent.pipeline.as_cap());
-                drop(parent);
-                let mut child = request(&projected, 2);
-                let mut call = next(&mut hooks);
-                assert!(!call.is_canceled());
-                call.results()
-                    .get()
-                    .unwrap()
-                    .set_as_capability(cap.hook.add_ref());
-                if early {
-                    call.results().set_pipeline().unwrap();
-                }
-                call.complete(if fail {
-                    Err(Error::failed("parent failure".into()))
-                } else {
-                    Ok(())
-                });
-                let result =
-                    Pin::new(&mut child.promise).poll(&mut Context::from_waker(Waker::noop()));
-                if fail && !early {
-                    assert!(matches!(result, Poll::Ready(Err(_))));
-                    assert!(hooks
-                        .poll_next(&mut Context::from_waker(Waker::noop()))
-                        .is_pending());
-                } else {
-                    assert!(result.is_pending());
-                    let mut child_call = next(&mut hooks);
-                    assert_eq!(hooks.target(&child_call).unwrap().key(), target.key());
-                    child_call
-                        .results()
+    for plain in [false, true] {
+        for early in [false, true] {
+            for fail in [false, true] {
+                clients::with_growing_graph::<u32, u8, _>(0, 2, |graph| {
+                    let route = graph.endpoint(7, Location::Local).unwrap();
+                    let target = graph.endpoint(8, Location::Local).unwrap();
+                    let mut hooks = ClientHooks::new(2, 3);
+                    let client = hooks.export_snapshot(graph, &route).unwrap();
+                    let cap = hooks.export_snapshot(graph, &target).unwrap();
+                    let parent = request(&client, 1);
+                    let projected = capability::Client::new(parent.pipeline.as_cap());
+                    drop(parent);
+                    let mut request =
+                        projected.new_call::<any_pointer::Owned, any_pointer::Owned>(47, 2, None);
+                    request.hook.set_hints(CallHints {
+                        no_promise_pipelining: plain,
+                        only_promise_pipeline: false,
+                    });
+                    let mut child = request.send();
+                    let mut call = next(&mut hooks);
+                    assert!(!call.is_canceled());
+                    call.results()
                         .get()
                         .unwrap()
-                        .set_as("child result")
-                        .unwrap();
-                    child_call.complete(Ok(()));
-                    assert_eq!(
-                        ready(&mut child.promise)
-                            .unwrap()
+                        .set_as_capability(cap.hook.add_ref());
+                    if early {
+                        call.results().set_pipeline().unwrap();
+                    }
+                    call.complete(if fail {
+                        Err(Error::failed("parent failure".into()))
+                    } else {
+                        Ok(())
+                    });
+                    let result =
+                        Pin::new(&mut child.promise).poll(&mut Context::from_waker(Waker::noop()));
+                    if fail && !early {
+                        assert!(matches!(result, Poll::Ready(Err(_))));
+                        assert!(hooks
+                            .poll_next(&mut Context::from_waker(Waker::noop()))
+                            .is_pending());
+                    } else {
+                        assert!(result.is_pending());
+                        let mut child_call = next(&mut hooks);
+                        assert_eq!(hooks.target(&child_call).unwrap().key(), target.key());
+                        child_call
+                            .results()
                             .get()
                             .unwrap()
-                            .get_as::<capnp::text::Reader>()
-                            .unwrap(),
-                        "child result"
-                    );
-                }
-                drop((child, projected, cap, client));
-                assert_eq!(hooks.inbox.live_calls.get(), 0);
-                hooks.collect(graph);
-                hooks.close(graph, Error::disconnected("done".into()));
-                graph.release(route);
-                graph.release(target);
-                while graph.take_retired().is_some() {}
-                assert!(graph.is_empty());
-            })
-            .unwrap();
+                            .set_as("child result")
+                            .unwrap();
+                        child_call.complete(Ok(()));
+                        assert_eq!(
+                            ready(&mut child.promise)
+                                .unwrap()
+                                .get()
+                                .unwrap()
+                                .get_as::<capnp::text::Reader>()
+                                .unwrap(),
+                            "child result"
+                        );
+                    }
+                    drop((child, projected, cap, client));
+                    assert_eq!(hooks.inbox.live_calls.get(), 0);
+                    hooks.collect(graph);
+                    hooks.close(graph, Error::disconnected("done".into()));
+                    graph.release(route);
+                    graph.release(target);
+                    while graph.take_retired().is_some() {}
+                    assert!(graph.is_empty());
+                })
+                .unwrap();
+            }
         }
     }
 }
@@ -774,6 +782,88 @@ fn prepared_pipeline_supports_late_projection_after_response_is_consumed() {
         child_call.complete(Ok(()));
         ready(&mut child.promise).unwrap();
         drop((child, projected, cap, client));
+        assert_eq!(hooks.inbox.live_calls.get(), 0);
+        hooks.collect(graph);
+        hooks.close(graph, Error::disconnected("done".into()));
+        graph.release(route);
+        graph.release(target);
+        while graph.take_retired().is_some() {}
+        assert!(graph.is_empty());
+    })
+    .unwrap();
+}
+
+#[test]
+fn deferred_pipeline_requests_preserve_mixed_call_order_and_cancel_before_forwarding() {
+    clients::with_growing_graph::<u32, u8, _>(0, 2, |graph| {
+        let route = graph.endpoint(7, Location::Local).unwrap();
+        let target = graph.endpoint(8, Location::Local).unwrap();
+        let mut hooks = ClientHooks::new(2, 5);
+        let client = hooks.export_snapshot(graph, &route).unwrap();
+        let cap = hooks.export_snapshot(graph, &target).unwrap();
+        let parent = request(&client, 1);
+        let projected = capability::Client::new(parent.pipeline.as_cap());
+        let send = |method, plain| {
+            let mut call =
+                projected.new_call::<any_pointer::Owned, any_pointer::Owned>(47, method, None);
+            call.hook.set_hints(CallHints {
+                no_promise_pipelining: plain,
+                only_promise_pipeline: false,
+            });
+            call.get()
+                .set_as::<capnp::text::Owned>("retained parameter")
+                .unwrap();
+            call.send()
+        };
+        let mut first = send(2, false);
+        let mut second = send(3, true);
+        drop(send(4, true));
+        let mut last = send(5, true);
+        drop((parent, projected));
+        let mut call = next(&mut hooks);
+        call.results()
+            .get()
+            .unwrap()
+            .set_as_capability(cap.hook.add_ref());
+        call.complete(Ok(()));
+        assert!(Pin::new(&mut second.promise)
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending());
+        for method in [2, 3, 5] {
+            let mut call = next(&mut hooks);
+            assert_eq!(call.method_id(), method);
+            assert_eq!(
+                call.params()
+                    .unwrap()
+                    .get_as::<capnp::text::Reader>()
+                    .unwrap(),
+                "retained parameter"
+            );
+            if method != 2 {
+                assert!(matches!(call.completion, CallCompletion::Response(_)));
+            }
+            call.results()
+                .get()
+                .unwrap()
+                .set_as::<capnp::text::Owned>("reply")
+                .unwrap();
+            call.complete(Ok(()));
+        }
+        for promise in [&mut first.promise, &mut second.promise, &mut last.promise] {
+            assert_eq!(
+                ready(promise)
+                    .unwrap()
+                    .get()
+                    .unwrap()
+                    .get_as::<capnp::text::Reader>()
+                    .unwrap(),
+                "reply"
+            );
+        }
+        assert!(hooks
+            .poll_next(&mut Context::from_waker(Waker::noop()))
+            .is_pending());
+        drop((first, second, last, cap, client));
         assert_eq!(hooks.inbox.live_calls.get(), 0);
         hooks.collect(graph);
         hooks.close(graph, Error::disconnected("done".into()));

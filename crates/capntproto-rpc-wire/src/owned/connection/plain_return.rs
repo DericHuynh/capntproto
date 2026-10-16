@@ -74,7 +74,9 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         self.receive_plain_segments(segments, options, messages, select)
     }
 
-    #[inline(always)]
+    // Keep reply validation and ownership handoff out of each receive-pump
+    // expansion. Buffered and retained-frame inputs share this transition.
+    #[inline(never)]
     fn receive_plain_segments<T>(
         &mut self,
         segments: capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,

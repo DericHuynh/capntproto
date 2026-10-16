@@ -614,9 +614,16 @@ pub struct Call {
 }
 enum CallParams {
     Request(crate::local::Params),
+    OwnedRequest(Box<crate::local::Request>, Option<usize>),
     Hook(Box<dyn ParamsHook>, Option<usize>),
 }
 impl CallParams {
+    fn owned_request(request: Box<crate::local::Request>) -> Self {
+        // This private request keeps its original parameter allocation through
+        // forwarding. Retain its concrete type for admission and wire encoding.
+        let bytes = request.batch_content_bytes();
+        Self::OwnedRequest(request, bytes)
+    }
     fn hook(params: Box<dyn ParamsHook>) -> Self {
         // Inspect hooks before entering the inbox. The scheduling lookahead
         // below never invokes application code while borrowing that queue.
@@ -635,6 +642,7 @@ impl CallParams {
     fn single_capability_table(&self) -> Option<&[Option<Box<dyn ClientHook>>]> {
         match self {
             Self::Request(request) => request.single_capability_table(),
+            Self::OwnedRequest(request, _) => request.single_capability_table(),
             Self::Hook(hook, _) => hook.as_any().and_then(|params| {
                 params
                     .downcast_ref::<crate::local::Request>()
@@ -655,6 +663,7 @@ impl CallParams {
     {
         match self {
             Self::Request(request) => request.prepared_call(),
+            Self::OwnedRequest(request, _) => request.prepared_call(),
             Self::Hook(hook, _) => hook.as_any().and_then(|params| {
                 params
                     .downcast_ref::<crate::local::Request>()
@@ -670,6 +679,7 @@ impl CallParams {
     fn into_hook(self) -> Box<dyn ParamsHook> {
         match self {
             Self::Request(request) => Box::new(request),
+            Self::OwnedRequest(request, _) => request,
             Self::Hook(hook, _) => hook,
         }
     }
@@ -685,6 +695,7 @@ impl std::ops::Deref for CallParams {
     fn deref(&self) -> &Self::Target {
         match self {
             Self::Request(request) => request,
+            Self::OwnedRequest(request, _) => &**request,
             Self::Hook(hook, _) => &**hook,
         }
     }
@@ -794,7 +805,7 @@ impl Call {
         self.credit = credit;
         // Requests built by this hook already retain this exact shutdown state.
         // General incoming ParamsHook calls acquire it only at admission.
-        if matches!(self.params, CallParams::Hook(_, _)) {
+        if !matches!(self.params, CallParams::Request(_)) {
             self.shutdown = inbox.shutdown.clone();
         }
         self._permit = permit;
@@ -956,7 +967,7 @@ impl Hook {
         match self.enqueue(
             interface,
             method,
-            params,
+            CallParams::hook(params),
             response::Results::Hook(results),
             hints,
             third_party,
@@ -977,7 +988,7 @@ impl Hook {
         &self,
         interface: u64,
         method: u16,
-        params: Box<dyn ParamsHook>,
+        params: CallParams,
         results: response::Results,
         hints: CallHints,
         third_party: Option<Rc<capnp::message::Builder<capnp::message::HeapAllocator>>>,
@@ -990,7 +1001,7 @@ impl Hook {
             interface,
             method,
             hints,
-            params: CallParams::hook(params),
+            params,
             results,
             completion,
             shutdown: Shutdown::new(),

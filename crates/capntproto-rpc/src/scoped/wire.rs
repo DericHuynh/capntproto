@@ -1362,7 +1362,44 @@ struct Projected {
     inner: Box<dyn ClientHook>,
     pipeline: PipelineRef,
 }
+pub(super) fn direct_response_hook(client: &dyn ClientHook) -> Option<&Hook> {
+    client
+        .as_any()?
+        .downcast_ref::<Projected>()?
+        .inner
+        .as_any()?
+        .downcast_ref::<Hook>()
+}
+
+pub(super) fn request_projected(
+    client: &dyn ClientHook,
+    interface: u64,
+    method: u16,
+    hints: CallHints,
+    params: Box<crate::local::Request>,
+    context: Option<Rc<dyn std::any::Any>>,
+) -> capability::RemotePromise<any_pointer::Owned> {
+    use crate::attach::Attach;
+    let projected = client
+        .as_any()
+        .and_then(|client| client.downcast_ref::<Projected>())
+        .expect("private projected request");
+    let mut response = response::request_scoped(
+        direct_response_hook(client).expect("private projected endpoint"),
+        interface,
+        method,
+        hints,
+        params,
+        context,
+    );
+    // Preserve the same parent interest as call_with_hints until completion.
+    response.promise = Promise::from_future(response.promise.attach(projected.pipeline.clone()));
+    response
+}
 impl ClientHook for Projected {
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
     fn get_failure(&self) -> Option<Error> {
         self.inner.get_failure()
     }
