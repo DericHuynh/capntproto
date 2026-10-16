@@ -137,10 +137,7 @@ impl<'pool, 'storage, R> Queue<'pool, 'storage, R> {
             return Ok(Some(QueueWindow {
                 position: parts.position(),
                 queue: self,
-                tracked: None,
-                buffer: None,
-                bytes: None,
-                parts: Some(parts),
+                body: WindowBody::Parts(parts),
             }));
         }
         let (tracked, buffer, bytes, position) =
@@ -169,11 +166,11 @@ impl<'pool, 'storage, R> Queue<'pool, 'storage, R> {
             };
         Ok(Some(QueueWindow {
             queue: self,
-            tracked,
-            buffer: Some(buffer),
-            bytes: Some(bytes),
-            #[cfg(feature = "alloc")]
-            parts: None,
+            body: WindowBody::Buffer {
+                tracked,
+                buffer,
+                bytes,
+            },
             position,
         }))
     }
@@ -278,31 +275,42 @@ impl<'pool, R> QueueSlot<'_, 'pool, '_, R> {
 
 pub struct QueueWindow<'a, 'pool, 'queue, 'buffers, 'bytes, R = ()> {
     queue: &'a mut Queue<'pool, 'queue, R>,
-    tracked: Option<&'a mut Option<Send>>,
-    buffer: Option<&'buffers Buffer<'bytes>>,
-    bytes: Option<Ref<'buffers, [u8]>>,
-    #[cfg(feature = "alloc")]
-    parts: Option<SharedParts>,
+    body: WindowBody<'a, 'buffers, 'bytes>,
     position: usize,
+}
+enum WindowBody<'a, 'buffers, 'bytes> {
+    Buffer {
+        tracked: Option<&'a mut Option<Send>>,
+        buffer: &'buffers Buffer<'bytes>,
+        bytes: Ref<'buffers, [u8]>,
+    },
+    #[cfg(feature = "alloc")]
+    Parts(SharedParts),
 }
 impl<R> QueueWindow<'_, '_, '_, '_, '_, R> {
     pub fn bytes(&self) -> &[u8] {
-        #[cfg(feature = "alloc")]
-        if let Some(parts) = &self.parts {
-            return parts.first_remaining();
+        match &self.body {
+            WindowBody::Buffer { bytes, .. } => bytes,
+            #[cfg(feature = "alloc")]
+            WindowBody::Parts(parts) => parts.first_remaining(),
         }
-        self.bytes.as_deref().expect("pool window")
     }
     #[cfg(feature = "alloc")]
     pub fn share(&self) -> Option<SharedBytes> {
-        self.buffer?
-            .bytes
-            .borrow()
-            .share(self.position..self.position + self.bytes().len())
+        match &self.body {
+            WindowBody::Buffer { buffer, bytes, .. } => buffer
+                .bytes
+                .borrow()
+                .share(self.position..self.position + bytes.len()),
+            WindowBody::Parts(_) => None,
+        }
     }
     #[cfg(feature = "alloc")]
     pub fn share_parts(&self) -> Option<SharedParts> {
-        self.parts.clone()
+        match &self.body {
+            WindowBody::Parts(parts) => Some(parts.clone()),
+            WindowBody::Buffer { .. } => None,
+        }
     }
     /// Resources are offered only with the first byte. After any positive
     /// accepted write this returns None, even if the frame remains incomplete.
@@ -322,41 +330,47 @@ impl<R> QueueWindow<'_, '_, '_, '_, '_, R> {
     /// may span more bytes than the first borrowed slice exposed by bytes().
     #[cfg(feature = "alloc")]
     pub fn advance_parts(self, count: usize) -> Result<bool, Error> {
-        if self.parts.is_none() {
+        if !matches!(&self.body, WindowBody::Parts(_)) {
             return Err(Error::InvalidWriteCount);
         }
         self.advance_inner(count)
     }
     fn advance_inner(self, count: usize) -> Result<bool, Error> {
-        #[cfg(feature = "alloc")]
-        if self.parts.is_some() {
-            let QueuedMessage::Parts(parts) =
-                &mut self.queue.slots[self.queue.head].as_mut().unwrap().message
-            else {
-                unreachable!("parts window")
-            };
-            let complete = parts.advance(count)?;
-            if complete {
-                self.queue.pop();
+        let (tracked, buffer, bytes) = match self.body {
+            WindowBody::Buffer {
+                tracked,
+                buffer,
+                bytes,
+            } => (tracked, buffer, bytes),
+            #[cfg(feature = "alloc")]
+            WindowBody::Parts(_) => {
+                let QueuedMessage::Parts(parts) =
+                    &mut self.queue.slots[self.queue.head].as_mut().unwrap().message
+                else {
+                    unreachable!("parts window")
+                };
+                let complete = parts.advance(count)?;
+                if complete {
+                    self.queue.pop();
+                }
+                return Ok(complete);
             }
-            return Ok(complete);
-        }
-        let (next, complete) = policy::advance(self.position, self.bytes().len(), count)?;
-        drop(self.bytes);
-        let buffer = self.buffer.expect("pool window");
+        };
+        let (next, complete) = policy::advance(self.position, bytes.len(), count)?;
+        drop(bytes);
         if complete {
-            let state = policy::release(buffer.state.get(), self.tracked.is_some());
+            let state = policy::release(buffer.state.get(), tracked.is_some());
             buffer.state.set(if policy::reclaimable(state) {
                 State::Free
             } else {
                 state
             });
             buffer.release_received();
-            if let Some(send) = self.tracked {
+            if let Some(send) = tracked {
                 send.take();
             }
             self.queue.pop();
-        } else if let Some(send) = self.tracked {
+        } else if let Some(send) = tracked {
             send.as_mut().expect("live window").position = next;
         } else {
             let QueuedMessage::Owned { position, .. } =

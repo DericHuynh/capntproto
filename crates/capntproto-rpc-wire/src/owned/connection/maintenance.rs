@@ -16,7 +16,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             && self.call.is_none()
             && self.resolution.is_none()
             && self.pipelines.vacant_within(8)
-            && self.outgoing.is_empty()
+            && self.outgoing_maintenance_is_idle()
             && self.ledgers.exports.retirement_is_idle(8)
             && !self.runtime.has_retired()
             && self.ledgers.answers.reclamation_is_idle(8)
@@ -34,6 +34,18 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 .invocation_pipelines
                 .iter()
                 .all(|slot| !slot.is_occupied())
+    }
+    /// Outgoing observers can only progress against an authorized Return.
+    /// Pending questions alone do not require a scan of every observer slot.
+    /// This uses the same prerequisite as poll_outgoing, reads live state on
+    /// every check, and keeps the ordinary scan for larger exchange tables.
+    #[inline]
+    pub(super) fn outgoing_maintenance_is_idle(&self) -> bool {
+        self.outgoing.is_empty()
+            || (self.exchanges.len() <= 8
+                && !self.exchanges.iter().any(|slot| {
+                    slot.authorized && matches!(&slot.exchange, Some(Exchange::Returned(_)))
+                }))
     }
     /// Poll caller-budgeted promise propagation, deferred admission, cleanup and
     /// cancellation. The cursor advances even on resource errors so one blocked
@@ -216,7 +228,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 0 => self.call.is_none(),
                 1 => self.resolution.is_none(),
                 2 => self.pipelines.vacant_within(8),
-                3 => self.outgoing.is_empty(),
+                3 => self.outgoing_maintenance_is_idle(),
                 4 => self.ledgers.exports.retirement_is_idle(8),
                 5 => !self.runtime.has_retired(),
                 6 => self.ledgers.answers.reclamation_is_idle(8),

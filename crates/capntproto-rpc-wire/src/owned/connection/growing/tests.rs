@@ -879,6 +879,25 @@ fn outgoing_observers_use_only_their_authorized_question_after_slot_reuse() {
             );
             questions.push(sent.question);
         }
+        // Waiting observers have no admissible response to inspect. They may
+        // certify idle without spending a quantum walking unrelated slots.
+        assert!(driver.outgoing_maintenance_is_idle());
+        assert!(driver.maintenance_is_idle());
+        assert!(matches!(
+            driver
+                .poll_maintenance(
+                    messages,
+                    &mut queue,
+                    256,
+                    Default::default(),
+                    &mut [0; 8],
+                    NonZeroUsize::new(1).unwrap(),
+                )
+                .unwrap(),
+            Progress::Idle
+        ));
+        assert!(!driver.runtime.is_settled(&projections[0]).unwrap());
+        assert!(!driver.runtime.is_settled(&projections[1]).unwrap());
         for index in [1, 0] {
             let frame = Frame::build(messages, 256, Default::default(), |builder| {
                 calls::exception(
@@ -896,12 +915,17 @@ fn outgoing_observers_use_only_their_authorized_question_after_slot_reuse() {
                 matches!(&slot.exchange, Some(Exchange::Returned(response)) if response.key() == questions[index])
             }).unwrap();
             driver.exchanges[exchange].authorized = false;
+            if index == 1 {
+                assert!(driver.outgoing_maintenance_is_idle());
+            }
             assert_eq!(
                 driver.poll_outgoing(index, messages).unwrap(),
                 Propagation::Unrelated
             );
             assert!(!driver.runtime.is_settled(&projections[index]).unwrap());
             driver.exchanges[exchange].authorized = true;
+            assert!(!driver.outgoing_maintenance_is_idle());
+            assert!(!driver.maintenance_is_idle());
             if index == 1 {
                 assert_eq!(
                     driver.poll_outgoing(0, messages).unwrap(),

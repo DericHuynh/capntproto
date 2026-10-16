@@ -4083,6 +4083,60 @@ runtime patch SHA-256
 The binary and source were frozen before measurement; the following queue
 representation experiment is excluded. The complete 16-target goal remains open.
 
+The subsequent `compact-output-window20261016` experiment replaces mutually
+exclusive queue-window options with an enum. FIFO progress, borrowed-buffer
+release order and shared-payload ownership are unchanged. All 240 local trials
+and 72 mixed-peer cases validate, with **8/16 targets met**. Pipeline instructions
+decrease only 0.167%/0.101% client/server; simulated instruction-cache misses are
+essentially unchanged. Evidence is in
+`target/portable-performance-compact-output-window-20261016/` (1352 files plus
+checksums), executable SHA-256
+`2e031443ab4442f4f0438aa3dfe9eab5420fabdc4846907b2fa555ebda0b7028`.
+The 194 engine tests, 291 RPC tests, two engine Miri checks, Clippy and
+allocation-free checks pass; unchanged wire/core/integration checks are inherited.
+
+The cumulative `waiting-observers20261016` experiment also avoids scanning
+outgoing observers when no authorized Return exists. It checks live exchange
+state on every call, keeps the conservative path for tables larger than eight
+slots, and does not skip invocation-pipeline binding or abandoned-client cleanup.
+The exact-question/slot-reuse test now covers pending questions, unauthorized
+Returns and immediate invalidation when a Return becomes authorized.
+
+Pipeline instructions fall another **1.25% on the client**, from 82,735,526 to
+81,701,098; server instructions are 67,894,233. Other traced workloads are
+essentially unchanged. Pipeline simulated instruction-cache misses fall
+1.91%/1.69% client/server. All 240 local trials independently validate, with
+**10/16 targets met**, and all 72 mixed-peer cases pass. Pipeline socket
+read-to-write medians remain 13179/8723 ns, versus C++ 6380/7401 and legacy
+3385/4296. Matching steady-state message batches has not eliminated the CPU
+gap. Empty-call instruction qualification remains client MISS/server PASS.
+
+Validation passes 137 wire tests, 291 RPC tests, 92 integrations, the focused
+observer Miri test, Clippy, formatting and allocation-free checks. The initial
+helper-visibility compiler error is recorded in a note because its original log
+was overwritten. Evidence is in
+`target/portable-performance-waiting-observers-20261016/` (1359 files plus
+checksums), executable SHA-256
+`249c7dea54b52d1bccc3b18fa80023f23ab2abd085b10318f22bb0f3321efb61`,
+runtime patch SHA-256
+`ca3fb2955dd5b600d588490268e9b2c85408f8414a8ba2f8f96a0672ee4228ce`
+against `96c4219`. These local results do not replace dedicated qualification.
+
+Two verification fixtures required updates to follow the implementation.
+`bounded_generic_fields` now expects exact-fit success without the eliminated
+scratch pointer word, while retaining insufficient-capacity rollback checks.
+All five portable profiles (436 tests) and focused Miri on x86-64, i686 and
+big-endian s390x pass; evidence and the original CI failures are in
+`target/portable-performance-empty-stage-fixture-fix-20261016/`.
+The next CI run `38926087383` rejected an ambiguous `if complete` mutation
+marker after segmented output added a second completion branch. The marker now
+selects the original buffer-release branch, preserving the same FIFO-ordering
+fault, harness and expected assertion. All 62 development-tool tests pass and
+the final marker matches exactly once in both committed and candidate code.
+Evidence is in `target/portable-performance-queue-mutation-marker-20261016/`;
+Kani execution remains pending full CI. No benchmark fixtures, limits, coverage
+floors, mutation controls or unsafe-debt allowances were relaxed.
+
 The earlier `5891490` PR CI run `38909630783` passed 2251 Cargo tests with 20
 skips and no incomplete or failed tests. Its unchanged coverage floors failed;
 all other executed jobs passed. The coverage report and full job log are saved
