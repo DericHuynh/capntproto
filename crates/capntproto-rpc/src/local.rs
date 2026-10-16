@@ -673,10 +673,29 @@ impl Request {
     }
     pub(crate) fn send_to(
         mut self: Box<Self>,
-        client: Box<dyn ClientHook>,
+        client: &dyn ClientHook,
     ) -> capability::RemotePromise<any_pointer::Owned> {
         debug_assert!(self.client.is_none());
-        self.client = Some(RequestClient::Hook(client));
+        if self.hints.no_promise_pipelining
+            && !self.hints.only_promise_pipeline
+            && !self.is_streaming
+            && self.third_party.is_none()
+            && crate::scoped::response::available(client)
+        {
+            // The resolved queue already owns this hook. Admission retains its
+            // exact endpoint and projected parent interest before returning;
+            // cloning temporary boxed hooks adds no ownership protection.
+            let context = self.context.take();
+            return crate::scoped::response::request(
+                client,
+                self.interface_id,
+                self.method_id,
+                self.hints,
+                self,
+                context,
+            );
+        }
+        self.client = Some(RequestClient::Hook(client.add_ref()));
         self.send()
     }
     pub(crate) fn batch_content_bytes(&self) -> Option<usize> {

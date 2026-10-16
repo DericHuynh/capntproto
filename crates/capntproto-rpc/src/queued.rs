@@ -331,11 +331,18 @@ pub(crate) struct ClientInner {
 
 impl ClientInner {
     pub(crate) fn resolve(state: &Rc<RefCell<Self>>, result: Result<Box<dyn ClientHook>, Error>) {
+        Self::resolve_shared(state, result.map(Rc::from));
+    }
+
+    pub(crate) fn resolve_shared(
+        state: &Rc<RefCell<Self>>,
+        result: Result<Rc<dyn ClientHook>, Error>,
+    ) {
         assert!(state.borrow().redirect.is_none());
-        let client: Rc<dyn ClientHook> = Rc::from(match result {
+        let client = match result {
             Ok(clienthook) => clienthook,
-            Err(e) => broken::new_cap(e),
-        });
+            Err(e) => Rc::from(broken::new_cap(e)),
+        };
         state.borrow_mut().redirect = Some(client.clone());
         let pending = state.borrow_mut().call_forwarding_queue.drain();
         for (args, waiter) in pending {
@@ -346,7 +353,7 @@ impl ClientInner {
                     )
                 }
                 PendingCall::Request(request) => {
-                    ForwardedCall::Response(request.send_to(client.add_ref()).promise)
+                    ForwardedCall::Response(request.send_to(&*client).promise)
                 }
             };
             let _ = waiter.send(forwarded);

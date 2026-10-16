@@ -4471,7 +4471,7 @@ events. Legacy batching differs, so its per-window values are not per-workflow
 ratios. The complete campaign, traces, probe sources, frozen identities and
 rejected diagnostic are in `target/portable-performance-stack-target-20261016/`
 (1,311 files plus checksums). The empty instruction gate remains client MISS
-(18,672,387 versus 17,389,291) and server PASS (17,237,616 versus 16,381,648).
+(18,672,387 versus 17,389,291) and server MISS (17,237,616 versus 16,381,648; 1.052252×).
 
 An intermediate shared ownership-refresh loop reduced generated code from
 68,729 to 64,453 bytes for the connection driver, 27,589 to 20,574 for active
@@ -4505,7 +4505,7 @@ trials give pipeline read-to-write CPU p50 of 13,230/9,074 ns portable versus
 5,868/6,760 ns C++. The 18 gated cache profiles give portable pipeline client
 61,095.11 instructions and 4,396.78 simulated instruction-cache misses per
 selected window. The empty instruction gate remains client MISS
-(18,645,544 versus 17,388,575) and server PASS (17,259,199 versus 16,380,933).
+(18,645,544 versus 17,388,575) and server MISS (17,259,199 versus 16,380,933; 1.053615×).
 The frozen executable SHA-256 is
 `e8fe90c1752af11d68a540152844555d035d863f7d495358560e4c6bf833fbda`.
 Native RPC tests (293), RPC Clippy and the capability-control Miri test pass.
@@ -4521,6 +4521,56 @@ The complete local campaign, probe sources, failed preliminary checks and
 frozen source identities are retained in
 `target/portable-performance-concrete-refresh-20261016/` (1,254 files plus
 checksums). Full dedicated performance and CI coverage qualification remain open.
+
+Follow-up tracing found three temporary allocations per pipeline iteration:
+forwarding cloned a projected hook and its inner endpoint, then projected-target
+resolution boxed a hook before moving it into shared storage. Borrowed forwarding
+now admits through the queue's retained target and constructs the shared target
+directly. Opaque/introduced/streaming/pipeline-only requests keep their existing
+fallback, and the admitted call retains its endpoint and parent interest.
+All 293 RPC tests, hosted Clippy and two focused Miri checks pass, including
+cancellation after forwarding when public parent/projected owners have dropped.
+Pipeline instructions fall from 79,858,900 to 79,164,876 on the client; server
+work stays essentially unchanged. Full-process malloc/free counts each fall
+by exactly 3,300 across 100 warmups and 1,000 iterations. Client simulated
+instruction-cache misses fall to 5,424,665 and conditional branch misses to
+1,181,628. The 45 CPU/wall trials show no clear pipeline latency gain
+(13,260/9,344 ns portable client/server versus 5,909/6,770 ns C++). This
+intermediate's four workflow profiles, six gated pipeline profiles and raw
+timing journals are retained in
+`target/portable-performance-borrowed-forwarding-prototype-20261016/`
+(305 files plus checksums), executable SHA-256
+`f039e88d43be8540e03252da3ceb72b5f19039f0942dc5964a74dacaacb750eb`.
+It has no separate complete 240-trial or dedicated qualification campaign.
+
+The next candidate retains two exclusive empty completion states per inbox,
+covering overlapping parent/child requests without an unbounded cache. Retained
+owners still prevent reuse, overflow states are released, and each state retains
+its own shutdown subscription. All 294 RPC tests, Clippy and three focused Miri
+checks pass. Pipeline client malloc/free counts each fall another 2,198;
+instructions fall to 78,677,222, 1.48% below concrete-refresh. Simulated client
+instruction-cache misses are 5,404,086. The frozen executable SHA-256 is
+`9a7c21e4879ae8c1b780fe7a32c6a1c6e3de19aafd87fce93415a43e871899c8`.
+All 180 workflow and 60 loopback trials independently validate; 7/16 local
+targets pass (5 remote, 2 loopback), and all 72 mixed-peer cases pass. All
+92 integration tests, formatting, documentation and unsafe-documentation checks
+pass. No elapsed-time improvement or dedicated qualification is established.
+The 45 CPU/wall diagnostic trials give pipeline CPU p50 of 18,843/13,380 ns
+portable versus 5,979/6,730 ns C++, with strongly variable repetitions. The
+18 gated profiles preserve identical selected pipeline and callback byte totals
+for portable and C++. Pipeline client instructions are 60,016.10 per selected
+window. Both empty instruction peers miss: 18,644,408/17,259,128 portable versus
+17,388,609/16,380,973 legacy (1.072220×/1.053608×).
+Complete evidence is retained in
+`target/portable-performance-two-completion-cache-20261016/`.
+
+A subsequent exact-integer audit corrected the earlier stack-target and
+concrete-refresh empty-call server classifications: their ratios are 1.052252×
+and 1.053615×, so both miss the inclusive 1.05× instruction gate. The raw
+counters and latency classifications are unchanged. Original evidence remains
+immutable; the correction and source hashes are in
+`target/portable-performance-instruction-gate-correction-20261016/`.
+The preceding small-one receipt server result, 1.049440×, still passes.
 
 The subsequent `outlined-immediate20261016` experiment replaced forced inlining
 of the immediate sender with an out-of-line call. All 139 wire tests passed, but

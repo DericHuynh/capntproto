@@ -794,7 +794,7 @@ fn prepared_pipeline_supports_late_projection_after_response_is_consumed() {
 }
 
 #[test]
-fn deferred_pipeline_requests_preserve_mixed_call_order_and_cancel_before_forwarding() {
+fn deferred_pipeline_requests_preserve_order_and_cancel_before_or_after_forwarding() {
     clients::with_growing_graph::<u32, u8, _>(0, 2, |graph| {
         let route = graph.endpoint(7, Location::Local).unwrap();
         let target = graph.endpoint(8, Location::Local).unwrap();
@@ -819,6 +819,7 @@ fn deferred_pipeline_requests_preserve_mixed_call_order_and_cancel_before_forwar
         let mut second = send(3, true);
         drop(send(4, true));
         let mut last = send(5, true);
+        let mut canceled_after_forwarding = Some(send(6, true));
         drop((parent, projected));
         let mut call = next(&mut hooks);
         call.results()
@@ -829,9 +830,10 @@ fn deferred_pipeline_requests_preserve_mixed_call_order_and_cancel_before_forwar
         assert!(Pin::new(&mut second.promise)
             .poll(&mut Context::from_waker(Waker::noop()))
             .is_pending());
-        for method in [2, 3, 5] {
+        for method in [2, 3, 5, 6] {
             let mut call = next(&mut hooks);
             assert_eq!(call.method_id(), method);
+            assert_eq!(hooks.target(&call).unwrap().key(), target.key());
             assert_eq!(
                 call.params()
                     .unwrap()
@@ -841,6 +843,15 @@ fn deferred_pipeline_requests_preserve_mixed_call_order_and_cancel_before_forwar
             );
             if method != 2 {
                 assert!(matches!(call.completion, CallCompletion::Response(_)));
+            }
+            if method == 6 {
+                // The request has forwarded after all public parent/projected
+                // owners dropped. Its response still owns cancellation even
+                // though forwarding borrowed the resolved target hook.
+                drop(canceled_after_forwarding.take());
+                assert!(call.is_canceled());
+                call.complete(Err(Error::disconnected("canceled child".into())));
+                continue;
             }
             call.results()
                 .get()

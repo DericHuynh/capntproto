@@ -649,15 +649,17 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
             }
             let result = result.map(|inner| {
                 if projection.retain_pipeline {
-                    Box::new(Projected {
+                    // Queued resolution retains a shared owner. Build it in
+                    // that allocation instead of boxing and moving it again.
+                    Rc::new(Projected {
                         inner,
                         pipeline: PipelineRef(Some(pipeline.clone()), None),
-                    }) as Box<dyn ClientHook>
+                    }) as Rc<dyn ClientHook>
                 } else {
-                    inner
+                    Rc::from(inner)
                 }
             });
-            crate::queued::ClientInner::resolve(&client, result);
+            crate::queued::ClientInner::resolve_shared(&client, result);
         }
         Ok(())
     }

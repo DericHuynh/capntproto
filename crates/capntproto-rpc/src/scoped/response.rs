@@ -31,13 +31,13 @@ pub(super) fn notify_closed(state: &Rc<State>) {
     }
 }
 
-/// One empty completion allocation per hook inbox. Only the last owner may
-/// recycle it, so a canceled or retained operation can never observe reuse.
+/// Retain two empty completions for overlapping parent/child requests. Only the
+/// last owner may recycle a state, so retained operations cannot observe reuse.
 #[derive(Default)]
-pub(super) struct Cache(Cell<Option<Rc<State>>>);
+pub(super) struct Cache([Cell<Option<Rc<State>>>; 2]);
 impl Cache {
     fn acquire(&self) -> Rc<State> {
-        let cached = self.0.take();
+        let cached = self.0[0].take().or_else(|| self.0[1].take());
         match cached {
             Some(state) => {
                 debug_assert_eq!(Rc::strong_count(&state), 1, "exclusive cached completion");
@@ -58,8 +58,14 @@ impl Cache {
     fn recycle(&self, state: &Rc<State>) {
         if Rc::strong_count(state) == 1 {
             // No callbacks occur while the existing cache is temporarily out.
-            let cached = self.0.take();
-            self.0.set(Some(cached.unwrap_or_else(|| state.clone())));
+            for slot in &self.0 {
+                let cached = slot.take();
+                let occupied = cached.is_some();
+                slot.set(Some(cached.unwrap_or_else(|| state.clone())));
+                if !occupied {
+                    break;
+                }
+            }
         }
     }
 }
@@ -675,7 +681,12 @@ mod tests {
         );
         drop(promise);
         assert!(completion.is_observed());
-        assert!(!has_value(&hooks.inbox.completion_cache.0));
+        assert!(hooks
+            .inbox
+            .completion_cache
+            .0
+            .iter()
+            .all(|slot| !has_value(slot)));
     }
     #[test]
     fn completion_cache_reuses_only_exclusive_empty_state() {
@@ -685,7 +696,7 @@ mod tests {
         state.observed.set(true);
         let pending_owner = state.clone();
         cache.recycle(&state);
-        assert!(!has_value(&cache.0));
+        assert!(cache.0.iter().all(|slot| !has_value(slot)));
         drop(pending_owner);
         cache.recycle(&state);
         drop(state);
@@ -701,6 +712,35 @@ mod tests {
         let first = cache.acquire();
         assert_eq!(Rc::as_ptr(&first), address);
         assert!(!Rc::ptr_eq(&first, &other));
+    }
+
+    #[test]
+    fn completion_cache_reuses_two_states_and_releases_overflow() {
+        let cache = Cache::default();
+        let first = cache.acquire();
+        let second = cache.acquire();
+        let overflow = cache.acquire();
+        let addresses = [Rc::as_ptr(&first), Rc::as_ptr(&second)];
+        let overflow_owner = Rc::downgrade(&overflow);
+        cache.recycle(&first);
+        cache.recycle(&second);
+        cache.recycle(&overflow);
+        drop((first, second, overflow));
+        assert!(overflow_owner.upgrade().is_none());
+        for _ in 0..4 {
+            let first = cache.acquire();
+            let second = cache.acquire();
+            assert_eq!([Rc::as_ptr(&first), Rc::as_ptr(&second)], addresses);
+            assert!(!Rc::ptr_eq(&first, &second));
+            // A second interest prevents either slot from recycling this
+            // completion, including when the other slot remains available.
+            let retained = second.clone();
+            cache.recycle(&first);
+            cache.recycle(&second);
+            assert!(!has_value(&cache.0[1]));
+            drop(retained);
+            cache.recycle(&second);
+        }
     }
 
     #[test]
