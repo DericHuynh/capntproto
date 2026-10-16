@@ -58,6 +58,7 @@ pub struct Worker<'p, 'id, I, const C: usize, const H: usize> {
     cursor: usize,
     remaining: usize,
     completed_plain: bool,
+    completed_ordinary: bool,
     results_cache: results::Cache,
     executor: Option<Rc<dyn capability::CallExecutor>>,
 }
@@ -69,6 +70,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             cursor: 0,
             remaining: 0,
             completed_plain: false,
+            completed_ordinary: false,
             results_cache: results::Cache::default(),
             executor,
         }
@@ -85,6 +87,9 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
     }
     pub(crate) fn completed_plain(&self) -> bool {
         self.completed_plain
+    }
+    pub(crate) fn completed_ordinary(&self) -> bool {
+        self.completed_plain || self.completed_ordinary
     }
     pub(crate) fn invalidate_scan(&mut self) {
         self.remaining = 0;
@@ -352,6 +357,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         ) -> capnp::Result<bool>,
     ) -> Poll<capnp::Result<Progress>> {
         self.completed_plain = false;
+        self.completed_ordinary = false;
         if let Some(kind) = driver.disconnected() {
             return Poll::Ready(Err(Error::from_kind(kind)));
         }
@@ -390,6 +396,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     &mut remaining_budget,
                     exclusive,
                     &mut self.completed_plain,
+                    &mut self.completed_ordinary,
                 )
             } else {
                 Poll::Pending
@@ -459,6 +466,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         remaining_budget: &mut usize,
         exclusive: bool,
         completed_plain: &mut bool,
+        completed_ordinary: &mut bool,
     ) -> Poll<capnp::Result<Progress>> {
         let key = entry.request().answer();
         // AwaitFromThirdParty may retire on Finish before the child completes.
@@ -656,6 +664,8 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     minimum.max(entry.results.publication_bytes()?)
                 };
                 drop(publish(driver, messages, key, bytes)?);
+                *completed_ordinary =
+                    entry.results.redirect().is_none() && !entry.results.transfer_ready();
                 entry.results.returned();
                 return Poll::Ready(Ok(Progress::Replied));
             }

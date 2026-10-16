@@ -337,6 +337,148 @@ fn prepared_return_rejects_capability_content_before_reserving_storage() {
 }
 
 #[test]
+fn prepared_capability_results_preserve_indices_limits_and_retry_ownership() {
+    for first_segment_words in [8, 64] {
+        let mut source = connection::PreparedReturn::from_template(
+            &connection::PreparedReturnTemplate::default(),
+            capnp::message::HeapAllocator::new().first_segment_words(first_segment_words),
+        );
+        // Keep index zero unused; the copied capability must remain index one.
+        let mut caps = vec![None];
+        let mut root = source.results();
+        root.imbue_mut(&mut caps);
+        let mut values = root.initn_as::<capnp::any_pointer_list::Builder>(2);
+        values
+            .reborrow()
+            .get(0)
+            .set_as_capability(crate::broken::new_cap(Error::failed(
+                "source hook is never invoked by wire copying".into(),
+            )));
+        values
+            .get(1)
+            .set_as::<capnp::data::Owned>(&b"retained bytes"[..])
+            .unwrap();
+        with_driver(|mut driver, messages| {
+            let (call, target) = request(&mut driver, messages, Results::new());
+            let value = driver
+                .runtime
+                .endpoint(Route::local(73), clients::Location::Local)
+                .unwrap();
+            for references in [
+                &[Some(&value)][..],
+                &[None, Some(&value), None, None, None][..],
+            ] {
+                assert!(driver
+                    .local_answer_prepared_with_capabilities(
+                        call.answer(),
+                        7,
+                        9,
+                        &source,
+                        references,
+                        messages,
+                        Default::default(),
+                    )
+                    .is_err());
+            }
+            let references = [None, Some(&value)];
+            assert!(driver
+                .local_answer_prepared_with_capabilities(
+                    call.answer(),
+                    7,
+                    9,
+                    &source,
+                    &references,
+                    messages,
+                    capnp::message::ReaderOptions {
+                        nesting_limit: 0,
+                        ..Default::default()
+                    },
+                )
+                .is_err());
+            assert!(driver
+                .local_answer_prepared_with_capabilities(
+                    call.answer(),
+                    7,
+                    9,
+                    &source,
+                    &references,
+                    messages,
+                    capnp::message::ReaderOptions {
+                        traversal_limit_in_words: Some(1),
+                        ..Default::default()
+                    },
+                )
+                .unwrap()
+                .is_none());
+            let mut reserved = vec![];
+            while let Ok(writer) = messages.reserve(4096) {
+                reserved.push(writer);
+            }
+            assert!(driver
+                .local_answer_prepared_with_capabilities(
+                    call.answer(),
+                    7,
+                    9,
+                    &source,
+                    &references,
+                    messages,
+                    Default::default(),
+                )
+                .is_err());
+            for writer in reserved {
+                messages.discard(writer);
+            }
+            for _ in 0..3 {
+                let result = driver
+                    .local_answer_prepared_with_capabilities(
+                        call.answer(),
+                        7,
+                        9,
+                        &source,
+                        &references,
+                        messages,
+                        Default::default(),
+                    )
+                    .unwrap()
+                    .unwrap();
+                result
+                    .with(messages, |payload| {
+                        assert_eq!(payload.capabilities().len(), 2);
+                        assert!(payload.capabilities()[0].is_none());
+                        assert!(payload.capabilities()[1].is_some());
+                        let values = payload
+                            .content()
+                            .get_as::<capnp::any_pointer_list::Reader>()
+                            .unwrap();
+                        assert_eq!(values.get(0).capability_index().unwrap(), 1);
+                        assert_eq!(
+                            values.get(1).get_as::<capnp::data::Reader>().unwrap(),
+                            b"retained bytes"
+                        );
+                    })
+                    .unwrap();
+                result.release(messages, &mut driver.runtime);
+                assert!(driver.ledgers.answers.prepare_return(call.answer()).is_ok());
+            }
+            driver.runtime.release(value);
+            driver.runtime.release(target);
+            driver.release_call(call, messages);
+            let mut slots = [None];
+            let mut queue = messages::Queue::new(&mut slots).unwrap();
+            close(driver, messages, &mut queue);
+            let mut reserved = vec![];
+            while let Ok(writer) = messages.reserve(4096) {
+                reserved.push(writer);
+            }
+            assert_eq!(reserved.len(), 12, "every temporary frame was reclaimed");
+            for writer in reserved {
+                messages.discard(writer);
+            }
+        });
+    }
+}
+
+#[test]
 fn exception_trace_is_sized_once_and_reentrant_policy_changes_apply_to_next_result() {
     use rpc_capnp::api::{Message, Return};
     let policy = coordinator::policy::Policy::new();
@@ -480,6 +622,10 @@ fn close<'p>(
 
 #[test]
 fn hosted_reply_preserves_early_pipeline_and_retries_portable_publication() {
+    check_hosted_reply(false);
+    check_hosted_reply(true);
+}
+fn check_hosted_reply(use_prepared: bool) {
     with_driver(|mut driver, messages| {
         let results = Results::new();
         let (call, target) = request(&mut driver, messages, results.clone());
@@ -548,11 +694,12 @@ fn hosted_reply_preserves_early_pipeline_and_retries_portable_publication() {
             reserved.push(writer);
         }
         assert!(hooks
-            .collect_server_results(
+            .collect_server_output(
                 &results,
                 &mut driver,
                 messages,
                 Default::default(),
+                use_prepared.then_some(call.answer()),
                 |_, _| panic!("foreign")
             )
             .is_err());
@@ -560,11 +707,12 @@ fn hosted_reply_preserves_early_pipeline_and_retries_portable_publication() {
             messages.discard(writer);
         }
         let output = hooks
-            .collect_server_results(
+            .collect_server_output(
                 &results,
                 &mut driver,
                 messages,
                 Default::default(),
+                use_prepared.then_some(call.answer()),
                 |_, _| panic!("foreign"),
             )
             .unwrap();

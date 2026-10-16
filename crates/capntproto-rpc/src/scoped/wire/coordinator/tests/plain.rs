@@ -864,6 +864,164 @@ fn buffered_reply_batches_respect_frame_budget_and_stop_between_frames() {
 }
 
 #[test]
+fn capability_replies_rescan_controls_and_flush_under_small_budgets() {
+    #[derive(Clone)]
+    struct ReturnCap(Rc<dyn ClientHook>, Rc<Cell<usize>>);
+    impl capability::Server for ReturnCap {
+        fn as_ptr(&self) -> usize {
+            Rc::as_ptr(&self.1) as usize
+        }
+        fn dispatch_call(
+            self,
+            _: u64,
+            _: u16,
+            _: capability::Params<any_pointer::Owned>,
+            mut results: capability::Results<any_pointer::Owned>,
+        ) -> capability::DispatchCallResult {
+            self.1.set(self.1.get() + 1);
+            results.get().set_as_capability(self.0.add_ref());
+            capability::DispatchCallResult {
+                promise: Promise::ok(()),
+                is_streaming: false,
+                allow_cancellation: true,
+            }
+        }
+    }
+    for budget in [1, 8, 64] {
+        with_peer(|mut driver, messages| {
+            let calls = Rc::new(Cell::new(0));
+            let cap: Rc<dyn ClientHook> =
+                Rc::new(crate::local::Client::new(Echo(Rc::new(Cell::new(0)))));
+            let target = expose(
+                &mut driver,
+                Rc::new(crate::local::Client::new(ReturnCap(cap, calls.clone()))),
+            );
+            let mut opts = options();
+            opts.budget = NonZeroUsize::new(budget).unwrap();
+            let mut coordinator = Coordinator::new(
+                driver,
+                ClientHooks::new(16, 16),
+                NonZeroUsize::new(2).unwrap(),
+                None,
+                opts,
+            )
+            .unwrap();
+            let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+            let pipe = Rc::new(RefCell::new(Pipe::default()));
+            let mut bytes = Writer(pipe.clone());
+            let mut writer = transport::Writer(&mut bytes);
+            let mut reader = BufferedInput;
+            let mut control = Policy {
+                preserve_plain: true,
+                ..Default::default()
+            };
+            let mut pending = None;
+            let mut pump = Pump::default();
+            let mut scratch = [0; 32];
+            let mut stop = std::pin::pin!(std::future::pending());
+            let mut cx = Context::from_waker(Waker::noop());
+            let wake = Waker::from(coordinator.wake.clone());
+            macro_rules! poll {
+                () => {
+                    if let Poll::Ready(result) = coordinator.poll_prepared(
+                        messages,
+                        &mut queue,
+                        &mut reader,
+                        &mut writer,
+                        &mut scratch,
+                        &NoResources,
+                        &mut control,
+                        stop.as_mut(),
+                        &mut pending,
+                        &mut pump,
+                        &mut cx,
+                        &wake,
+                    ) {
+                        result.unwrap();
+                    }
+                };
+            }
+            for _ in 0..4096 {
+                poll!();
+                if coordinator.active == 0 && coordinator.control_idle {
+                    break;
+                }
+            }
+            assert!(coordinator.active == 0 && coordinator.control_idle);
+            let before = control.polls;
+            pending = Some(
+                Frame::build(messages, 512, opts.reader, |builder| {
+                    calls::dynamic_call(
+                        builder,
+                        QuestionId::from_wire(0),
+                        calls::Target::Imported(target),
+                        calls::DynamicCall {
+                            interface: 7,
+                            no_promise_pipelining: true,
+                            ..Default::default()
+                        },
+                        |_| Ok(()),
+                    )
+                })
+                .unwrap(),
+            );
+            pipe.borrow_mut().block_flush = true;
+            let mut received = Vec::new();
+            for step in 0..4096 {
+                if step == 4 {
+                    pipe.borrow_mut().block_flush = false;
+                    if let Some(wake) = pipe.borrow_mut().write_wake.take() {
+                        wake.wake();
+                    }
+                }
+                poll!();
+                received.extend(pipe.borrow_mut().bytes.drain(..));
+                if step >= 4
+                    && pending.is_none()
+                    && coordinator.active == 0
+                    && coordinator.output.is_clean()
+                    && coordinator.control_idle
+                {
+                    break;
+                }
+            }
+            assert_eq!(calls.get(), 1);
+            assert!(pending.is_none() && coordinator.worker.is_empty());
+            assert!(coordinator.output.is_clean());
+            assert!(
+                control.polls > before,
+                "capability output must remain visible to controls"
+            );
+            let mut bytes = received.as_slice();
+            let message = capnp::serialize::read_message(&mut bytes, opts.reader).unwrap();
+            let crate::rpc_capnp::message::Return(result) = message
+                .get_root::<crate::rpc_capnp::message::Reader>()
+                .unwrap()
+                .which()
+                .unwrap()
+            else {
+                panic!("Return")
+            };
+            let result = result.unwrap();
+            assert_eq!(result.get_answer_id(), 0);
+            let crate::rpc_capnp::return_::Results(payload) = result.which().unwrap() else {
+                panic!("results")
+            };
+            assert_eq!(payload.unwrap().get_cap_table().unwrap().len(), 1);
+            assert!(bytes.is_empty());
+            futures::executor::block_on(coordinator.terminate::<NoResources, (), &'static str>(
+                messages,
+                &mut queue,
+                &mut control,
+                Ok(()),
+            ))
+            .unwrap();
+            reclaimed(messages);
+        });
+    }
+}
+
+#[test]
 fn plain_calls_preserve_control_wakes_fairness_and_output_backpressure() {
     for budget in [1, 4, 8, 64] {
         for (preserve_plain, notify_receive) in [(false, false), (true, false), (true, true)] {

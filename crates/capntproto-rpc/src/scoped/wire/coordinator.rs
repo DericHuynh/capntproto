@@ -550,7 +550,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             return match result {
                 Poll::Ready(Err(error)) => Poll::Ready(Err(error)),
                 Poll::Ready(Ok(server::Progress::Replied))
-                    if self.worker.completed_plain()
+                    if self.worker.completed_ordinary()
                         && self.worker.is_empty()
                         && self.active & (1 << 2) == 0
                         && self.foreign.is_empty()
@@ -560,7 +560,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         && self.hooks.inbox.queue.borrow().is_empty()
                         && self.wake.changed.load(Ordering::Acquire) == 0 =>
                 {
-                    self.direct_publication = true;
+                    self.direct_publication = self.worker.completed_plain();
                     self.control_idle = false;
                     self.active = if self.driver.runtime.has_retired()
                         || !self.driver.maintenance_is_idle()
@@ -849,7 +849,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     continue;
                 }
                 if index == 3
-                    && self.worker.completed_plain()
+                    && self.worker.completed_ordinary()
                     && self.worker.is_empty()
                     && self.active & (1 << 2) == 0
                     && self.foreign.is_empty()
@@ -859,14 +859,13 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     && self.hooks.inbox.queue.borrow().is_empty()
                     && self.wake.changed.load(Ordering::Acquire) == 0
                 {
-                    // A descriptor-free Return just retired its answer. Any
-                    // parameter receipts still release through maintenance.
-                    // Dispatch refreshed hooks;
-                    // other application lanes remain certified idle. Keep
-                    // ledger cleanup active when releasing the request made it
-                    // necessary. Reentrant callbacks and application wakeups
-                    // invalidate this certificate through WorkWake above.
-                    self.direct_publication = true;
+                    // Ordinary completion updates answer/export ownership.
+                    // Dispatch refreshed hooks; revisit ledger and pipeline
+                    // cleanup while preserving unrelated application scans.
+                    // Capability-bearing Returns still invalidate controls;
+                    // only plain publication can reuse their idle certificate.
+                    // Reentrant callbacks and independent wakes use WorkWake.
+                    self.direct_publication = self.worker.completed_plain();
                     self.control_idle = false;
                     self.active = if self.driver.runtime.has_retired()
                         || !self.driver.maintenance_is_idle()

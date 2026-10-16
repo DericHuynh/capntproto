@@ -912,6 +912,23 @@ impl<'id> ClientHooks<'id> {
                 };
                 retained.push(client);
             }
+            let references = retained.iter().map(Option::as_ref).collect::<Vec<_>>();
+            if let (Some(answer), PayloadBody::Return(source)) = (answer, &payload.body) {
+                if let Some(result) = driver
+                    .local_answer_prepared_with_capabilities(
+                        answer,
+                        method.interface,
+                        method.method,
+                        source,
+                        &references,
+                        messages,
+                        options,
+                    )
+                    .map_err(wire_error)?
+                {
+                    return Ok(result);
+                }
+            }
             let content = payload.reader()?;
             let minimum = content
                 .target_size()?
@@ -920,7 +937,6 @@ impl<'id> ClientHooks<'id> {
                 .and_then(|words| words.checked_mul(8))
                 .and_then(|bytes| usize::try_from(bytes).ok())
                 .ok_or_else(|| Error::failed("server result size overflow".into()))?;
-            let references = retained.iter().map(Option::as_ref).collect::<Vec<_>>();
             let fill = |field: capnp::field_api::FixedField<
                 '_,
                 capnp::field_api::Generic<any_pointer::Owned>,

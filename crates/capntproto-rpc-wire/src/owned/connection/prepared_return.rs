@@ -90,6 +90,17 @@ impl<A: capnp::message::Allocator> PreparedReturn<A> {
         messages: &mut messages::Messages<'pool, '_, '_>,
         options: capnp::message::ReaderOptions,
     ) -> Result<Option<Frame<'pool>>, super::super::Error> {
+        self.copy_with_capabilities(answer, no_finish, 0, messages, options)
+    }
+    #[inline(always)]
+    fn copy_with_capabilities<'pool>(
+        &self,
+        answer: AnswerId,
+        no_finish: bool,
+        capabilities: u32,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        options: capnp::message::ReaderOptions,
+    ) -> Result<Option<Frame<'pool>>, super::super::Error> {
         let segments = self.message.message().get_segments_for_output();
         let Some((header, length)) = frame_layout(&segments) else {
             return Ok(None);
@@ -124,7 +135,8 @@ impl<A: capnp::message::Allocator> PreparedReturn<A> {
                 .checked_sub(prefix_words)
                 .ok_or_else(|| capnp::Error::from_kind(capnp::ErrorKind::ReadLimitExceeded))?;
         }
-        self.message.validate_capability_indices(0, selected)?;
+        self.message
+            .validate_capability_indices(capabilities, selected)?;
         if let [segment] = &*segments {
             let mut prefix = [0; 8];
             prefix[4..].copy_from_slice(&((segment.len() / 8) as u32).to_le_bytes());
@@ -304,6 +316,70 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             method,
             prepared_return: Some((answer.id(), no_finish)),
         }))
+    }
+
+    /// Retain a hosted result envelope with a separately owned capability table.
+    /// This is local answer storage, not publishable wire output: send_answer
+    /// still stages grants and constructs the descriptor table transactionally.
+    /// Every index is validated before retaining any supplied client, and an
+    /// error returns all temporary frame and graph ownership.
+    #[allow(clippy::too_many_arguments)]
+    pub fn local_answer_prepared_with_capabilities<B: capnp::message::Allocator>(
+        &mut self,
+        answer: answers::Key<'id>,
+        interface: u64,
+        method: u16,
+        source: &PreparedReturn<B>,
+        capabilities: &[Option<&clients::Client<'id>>],
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        options: capnp::message::ReaderOptions,
+    ) -> Result<Option<LocalResult<'pool, 'id, CAPS>>, Error> {
+        if capabilities.is_empty() {
+            return self
+                .local_answer_prepared(answer, interface, method, source, messages, options);
+        }
+        self.check_live()?;
+        let _ = self
+            .ledgers
+            .answers
+            .prepare_return(answer)
+            .map_err(|e| Error::Pipeline(pipelines::Error::Answer(e)))?;
+        let retained = self
+            .message_capabilities
+            .buffer::<_, CAPS>(capabilities.len(), || None)
+            .ok_or(Error::Input(super::super::Error::Capacity))?;
+        let count = u32::try_from(capabilities.len())
+            .map_err(|_| Error::Input(super::super::Error::Capacity))?;
+        let frame =
+            match source.copy_with_capabilities(answer.id(), false, count, messages, options) {
+                Ok(Some(frame)) => frame,
+                // The original builder can retain unreachable words. Let the
+                // ordinary codec compact them before applying the frame-size limit.
+                Ok(None) | Err(super::super::Error::Wire(capnp::ErrorKind::MessageTooLarge(_))) => {
+                    return Ok(None)
+                }
+                Err(error) => return Err(Error::Input(error)),
+            };
+        let mut result = LocalResult {
+            capacity: self.message_capabilities,
+            frame,
+            capabilities: retained,
+            count: capabilities.len(),
+            interface,
+            method,
+            prepared_return: None,
+        };
+        for (index, client) in capabilities.iter().enumerate() {
+            let Some(client) = client else { continue };
+            match self.runtime.retain(client) {
+                Ok(client) => result.capabilities[index] = Some(client),
+                Err(error) => {
+                    result.release(messages, &mut self.runtime);
+                    return Err(Error::Graph(error));
+                }
+            }
+        }
+        Ok(Some(result))
     }
 }
 

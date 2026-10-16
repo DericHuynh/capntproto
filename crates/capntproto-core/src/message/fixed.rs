@@ -107,8 +107,9 @@ impl<'buffer> FixedBuilder<'buffer> {
 
     /// Losslessly copy a reader's tree, including fields unknown to its schema.
     /// Traversal/nesting limits belong to the source reader. Capability pointers
-    /// are rejected without invoking hooks. Success consumes a staging word;
-    /// failure restores both the previous root and the allocation cursor.
+    /// are rejected without invoking hooks. Replacing a non-null root consumes
+    /// a staging word; an empty root needs only the copied tree's storage.
+    /// Failure restores both the previous root and the allocation cursor.
     pub fn try_copy_root(&mut self, source: crate::any_pointer::Reader<'_>) -> Result<()> {
         self.root().stage(|mut p| p.copy_from(source.reader, false))
     }

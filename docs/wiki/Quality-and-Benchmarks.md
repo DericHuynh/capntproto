@@ -3739,8 +3739,8 @@ MISS/server PASS: 18,406,791 / 17,010,769 versus legacy 17,367,714 / 16,360,118.
 Raw trials, controls, paired traces, cache simulation, tests, source patch and
 executable identities are retained in
 `target/portable-performance-lazy-resolution-20261016/` (936 files plus checksums).
-The next dedicated `d888c30` campaign, workflow `38897701997`, is the latest
-completed comparison: **11/16 targets, with 9/12 remote workflows and 2/4
+The next dedicated `d888c30` campaign, workflow `38897701997`, completed
+with **11/16 targets, with 9/12 remote workflows and 2/4
 loopback payloads**. All 350 remote and 60 loopback trials, five repetitions
 per cell, p50/p95/p99 and inclusive 5% decisions were independently verified.
 The five misses are:
@@ -3822,8 +3822,35 @@ latency improvement. Executable SHA-256 is
 `9815f8e7f41b551d3e7d374f5a10e40de792de8a27b81f830897eb8b2ae31ad6`.
 Raw evidence and exact source identity are retained in
 `target/portable-performance-deferred-request-20261016/` (937 files plus checksums).
-The committed earlier batch `600f649` is being measured in dedicated workflow
-`38904229528`; the latest completed dedicated result remains **11/16**.
+The committed earlier batch `600f649` subsequently completed dedicated workflow
+`38904229528` with **9/16 targets: 8/12 workflows and 1/4 loopback payloads**.
+All 350 remote and 60 loopback trials, five repetitions, p50/p95/p99, matched
+reference selection and inclusive decisions were independently verified.
+The seven misses are:
+
+| Case | Portable p50 ns | Faster reference p50 ns | Ratio |
+| --- | ---: | ---: | ---: |
+| dependent-read | 419,583 | legacy 380,180 | 1.103643 |
+| pipelined-read | 266,160 | legacy 215,372 | 1.235815 |
+| callback | 416,400 | legacy 387,987 | 1.073232 |
+| bulk-256k | 1,222,548 | C++ 1,110,273 | 1.101124 |
+| loopback 0 B | 44,256 | legacy 39,555 | 1.118847 |
+| loopback 1024 B | 46,208 | legacy 40,579 | 1.138717 |
+| loopback 65536 B | 94,531 | legacy 84,771 | 1.115134 |
+
+All 21 steady traced pipeline writes retain C++ Finish/Release/Call/Call
+ordering, and both server Returns remain batched. Build provenance, all four
+runtime manifests and recorded executable hashes agree. The source fingerprint
+is `b99a7605c4089d501be881aa2867217813929a0af646f474d4e59a2c23b39d5d`;
+driver SHA-256 is
+`95966ba76703d0d8021b30c9ef47c724da3298fa1f4044cb929d745c7cbd89a8`.
+Artifact `12049352687` has ZIP SHA-256
+`0173be04fad84f9b90cb688a2474114e1d3d4a7bec6a48e33db60a7972dfa56c`.
+The workflow and its existing quality checks passed; the separate sixteen-target
+goal remains open. Differing network latency between campaigns prevents
+attributing pass-count changes alone to the implementation. Raw evidence is in
+`target/portable-performance-single-iovec-dedicated-20261016/`
+(1,538 files plus checksums).
 
 Outlining the shared plain-reply validation transition reduces pipeline
 instructions another 0.30% client and 0.14% server, with 1.45% fewer simulated
@@ -3848,8 +3875,116 @@ misses and variability are retained, and no latency improvement is claimed.
 The executable SHA-256 is
 `836075ea0dd1f37f0e15ea6520b1d878b1bbf0e202d69e5b9e4035580aecd989`.
 Evidence is in `target/portable-performance-owned-request-params-20261016/`
-(937 files plus checksums). All 11 steady C++ pipeline write groups and batched
+(1,340 files plus checksums, including publication and socket-timing evidence).
+All 11 steady C++ pipeline write groups and batched
 Returns remain intact in each candidate's paired syscall diagnostic.
+
+The cumulative request changes are committed as `5891490`; dedicated workflow
+`38909792248` completed successfully; PR CI `38909630783` is still running.
+The dedicated campaign meets **11/16 targets**: 8/12 workflows and 3/4 loopback
+payloads. All 350 remote and 60 loopback trials, pooled p50/p95/p99 and inclusive
+1.05 gates are independently verified. The five misses are:
+
+| Case | Portable p50 ns | Faster reference p50 ns | Reference | Ratio |
+| --- | ---: | ---: | --- | ---: |
+| dependent-read | 261,023 | 241,526 | legacy | 1.080724× |
+| pipelined-read | 167,203 | 143,596 | legacy | 1.164399× |
+| callback | 244,064 | 224,844 | legacy | 1.085481× |
+| bulk-4m | 13,000,668 | 12,064,641 | C++ | 1.077584× |
+| loopback-0 | 41,924 | 37,121 | legacy | 1.129388× |
+
+All four runtime manifests agree with the build provenance and recorded binary
+hashes; the checkout log identifies `5891490`. Source fingerprint is
+`10bda1b461d11cb3f34b2ff7fa1c7cc87c10c2302fda65cef36f8c32782dec26`,
+and driver SHA-256 is
+`b996c82b41ef8018269e3b81d04a86b171cb3287e28327462bd7de32c7a8cfac`.
+Artifact `12052276550` has ZIP SHA-256
+`faedaaeb9fb13361a0dc8bb725bfe3382dddde3015666e6cf9e1d10256c20577`.
+Evidence is in `target/portable-performance-owned-request-dedicated-20261016/`
+(1,538 files plus checksums). All 21 steady pipeline client writes preserve
+C++ ordering and both server Returns remain batched. The workflow passing does
+not close the separate 16-target gap. Network conditions differ from earlier
+campaigns; each target uses its faster matched control.
+
+A separate lower-overhead
+socket diagnostic recorded five rotating repetitions of 1,000 pipeline calls.
+All 5,500 steady writes including warmup preserve the same batching, despite
+variable read-to-write intervals. Portable client/server batches are 1,376/1,224
+bytes versus C++ 1,368/1,216 bytes. These instrumented intervals do not enter
+qualification; the remaining application and scheduling work is under analysis.
+
+The `ordinary-reply20261016` experiment preserves certified idle application
+lanes after ordinary server completion. Capability-bearing Returns still rescan
+controls; maintenance, independent wakes and output pressure remain active.
+It passes 287 RPC tests, 92 integrations, 72 mixed-peer cases and four focused
+Miri checks. Pipeline server instructions fall 0.54% to 71,912,345 while client
+instructions remain 82,186,305. The 240 local trials validate, with **6/12
+workflows and 2/4 loopback targets met**. Pipeline remains a 1.862603 ratio miss.
+Evidence is in `target/portable-performance-ordinary-reply-20261016/`
+(951 files plus checksums); executable SHA-256 is
+`1f3f0087a9cfe7cc2c55123c9f512e260f4ec15cd9f1af8c23873daed4d3500e`.
+
+Word-level trace comparison identified an unnecessary staging pointer in the
+child Call and capability-bearing Return. The parent Call was already 1,144
+bytes. The `empty-stage20261016` candidate copies directly into an empty fixed
+arena destination, restoring null and reclaiming all reservations on failure or
+unwind. Replacing an existing value retains its separate transactional staging
+slot. Portable now matches C++ steady pipeline frame sizes and grouping exactly:
+**1,368 bytes client-side and 1,216 bytes server-side**, with all 11 steady
+Finish/Release/Call/Call groups and both Returns batched.
+
+The cumulative candidate passes 74 core, 135 wire, 287 RPC and 157 focused
+integration tests, 72 mixed-peer cases, Clippy, formatting and wiki validation.
+Four additional Miri checks cover exact capacity, partial-copy failure, nested
+invalid indices, unwind, far pointers and recursive capability remapping.
+Pipeline instructions fall another 0.43% client and 1.10% server to
+81,834,863 / 71,123,670. Simulated client instruction-cache misses increase 0.20%
+while server misses fall 0.50%. Empty-call instructions remain client MISS/server
+PASS: 18,383,330 / 16,997,411 versus legacy 17,362,113 / 16,354,657.
+
+All 240 local trials validate, but only **5/12 workflows and 0/4 loopback targets
+pass**; pipeline is a 2.872247 ratio miss. All misses remain in the evidence,
+and lower instruction counts do not establish a latency improvement. Executable
+SHA-256 is `59840c351d3f5e6ae417d9eaa1f3015dad9b5c46304086d73a04642ebd52f287`;
+runtime patch SHA-256 is
+`0e027e27f2d1ff4570fbead8d05b1dab2752d4ba88b0f76e405681a5c3d81892`.
+Evidence is in `target/portable-performance-empty-stage-20261016/`
+(955 files plus checksums). These local experiments remain unqualified; the
+latest completed dedicated campaign is the `5891490` 11/16 result above.
+
+The cumulative `prepared-cap-results20261016` experiment reuses the local
+prepared Return envelope when its payload contains capabilities. It validates
+indices and reader limits, retains the same graph clients, and leaves descriptor
+grant staging to the ordinary publication transaction. Oversized retained
+segments fall back to the existing compacting codec. Rejection and retry leave
+the original result and live answer usable.
+
+It passes 288 RPC tests, 135 wire tests, 92 integrations, 72 mixed-peer cases,
+Clippy, formatting, allocation-free core/wire builds and wiki validation. Four
+Miri checks cover policy rejection and retries, early pipeline publication,
+control rescans and cleanup. Initial test compilation and pool-count assertion
+errors are retained alongside the corrected passing results. Pipeline server
+instructions decrease **5.07% to 67,518,623** and dependent server instructions
+fall **5.80% to 58,796,084** from empty-stage; client instructions are essentially
+unchanged at 81,835,179 and 71,760,316. Empty-call instructions still miss on the
+client and pass on the server: 18,383,608 / 16,997,540 versus matched legacy
+17,362,618 / 16,354,936.
+
+All 240 local trials independently validate, with **6/12 workflows and 3/4
+loopback targets met**. Pipeline remains a 2.973518 ratio miss. Five rotating
+socket diagnostics retain raw events for five workflows and all three variants.
+The pooled pipeline read-to-write medians are 12,779 / 8,563 ns client/server
+for portable, 5,258 / 6,189 ns for C++, and 3,235 / 4,116 ns for legacy. Steady
+pipeline ordering, batching and 1,368 / 1,216 byte sizes match C++. These
+instrumented intervals are diagnostic and do not enter acceptance. Instruction
+savings do not establish a latency improvement.
+
+Evidence is in `target/portable-performance-prepared-cap-results-20261016/`
+(1,363 files plus checksums). Executable SHA-256 is
+`342c8e12f4bd97d0f3707ae7345ac9880b1f65da2d33a88c06d930aeeaecea07`;
+runtime patch SHA-256 is
+`92e2f395da5ba4a96fde118449bdfe89aeb14b0901042fa67ccc67f02d0fdf91`.
+The full 16-cell qualification remains open; fixtures and thresholds are unchanged.
 
 The earlier `ef9f4c8` Cargo CI completed 2,230 tests with zero failures and
 20 skips, but its coverage regression gate failed. The Miri job reached its
