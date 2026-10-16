@@ -137,14 +137,14 @@ where
         loop {
             match receiver.next(&mut batch).await {
                 Batch::Messages(through) => {
-                    // A complete contiguous frame needs no segment-table or
-                    // vectored-write future. Keep that larger state machine on
-                    // the segmented/batched branch, preserving the same flush
-                    // watermark and message lifetime on partial writes.
+                    // A complete contiguous frame needs one iovec, constructed
+                    // on the poll stack. Keep segmented/batched metadata out of
+                    // this future while retaining the same flush watermark and
+                    // message lifetime on partial writes.
                     if let Some(bytes) = (batch.len() == 1)
                         .then(|| batch.front().unwrap().0.framed_bytes()).flatten()
                     {
-                        writer.write_all(bytes).await?;
+                        crate::serialize::write_framed(&mut writer, bytes).await?;
                     } else {
                         crate::serialize::write_message_refs(
                             &mut writer,

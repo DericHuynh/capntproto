@@ -700,6 +700,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 true
             };
             let mut published = false;
+            let mut published_retirement = false;
             let outcome = if !writable {
                 Poll::Pending
             } else {
@@ -802,6 +803,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                             },
                         );
                         *remaining += unused;
+                        published_retirement = self.driver.maintenance_published_retirement();
                         if before_call
                             && queue.len() > before_cleanup
                             && self.driver.ledgers.imports.has_pending_release()
@@ -896,6 +898,22 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     if self.foreign.is_empty() {
                         self.active &= !1;
                     }
+                } else if published_retirement
+                    && self.foreign.is_empty()
+                    && self.worker.is_empty()
+                    && self.commands.is_empty()
+                    && self.driver.runtime.queued() == 0
+                    && !self.driver.has_pending_call()
+                    && self.wake.changed.load(Ordering::Acquire) == 0
+                {
+                    // Finish/Release only retire existing owners. Revisit
+                    // outgoing calls which may have waited for capacity and
+                    // continue cleanup, preserving unrelated idle scans.
+                    // Owner destructors and independent futures still wake the
+                    // ordinary lanes; controls observe every publication.
+                    self.control_idle = false;
+                    self.active |= (1 << 2) | (1 << 4);
+                    self.calls.invalidate_scan();
                 } else {
                     self.changed();
                 }

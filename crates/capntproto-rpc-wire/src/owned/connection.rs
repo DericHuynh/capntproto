@@ -159,6 +159,7 @@ pub struct Driver<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, cons
     maintenance_phase: usize,
     maintenance_index: usize,
     scan_remaining: usize,
+    maintenance_published_retirement: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -471,6 +472,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             maintenance_phase: 0,
             maintenance_index: 0,
             scan_remaining,
+            maintenance_published_retirement: false,
         })
     }
 

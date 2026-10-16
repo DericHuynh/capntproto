@@ -54,8 +54,7 @@ pub struct EndpointMetadata {
 type Shutdown = shutdown::Receiver;
 struct Inbox {
     completion_cache: response::Cache,
-    call_template:
-        std::cell::OnceCell<capntproto_rpc_wire::owned::connection::PreparedCallTemplate>,
+    call_templates: [std::cell::OnceCell<Box<CallTemplate>>; 4],
     message_pool: Option<capnp::message::SegmentPool>,
     admission: Option<Rc<crate::admission::Admission>>,
     joins: Option<wire::coordinator::multiparty::Handle>,
@@ -68,7 +67,39 @@ struct Inbox {
     maximum_calls: usize,
     maximum_clients: usize,
 }
+struct CallTemplate {
+    interface: u64,
+    method: u16,
+    template: capntproto_rpc_wire::owned::connection::PreparedCallTemplate,
+}
 impl Inbox {
+    fn call_template(
+        &self,
+        interface: u64,
+        method: u16,
+    ) -> &capntproto_rpc_wire::owned::connection::PreparedCallTemplate {
+        // A connection commonly alternates methods. Retain a small, bounded
+        // set of headers so those requests need no builder traversal merely
+        // to change their method. Further methods use the ordinary fallback.
+        for slot in &self.call_templates {
+            let entry = slot.get_or_init(|| {
+                Box::new(CallTemplate {
+                    interface,
+                    method,
+                    template: capntproto_rpc_wire::owned::connection::PreparedCallTemplate::new(
+                        interface, method,
+                    ),
+                })
+            });
+            if entry.interface == interface && entry.method == method {
+                return &entry.template;
+            }
+        }
+        &self.call_templates[0]
+            .get()
+            .expect("initialized template")
+            .template
+    }
     fn notify_enqueue(&self) {
         let wake = self.enqueue_wake.borrow().clone();
         match wake {
@@ -101,9 +132,13 @@ struct Endpoint {
     index: usize,
     settled: Cell<bool>,
     failure: RefCell<Option<Error>>,
-    resolution: Option<Shared<shared::Receiver<capnp::Result<()>>>>,
+    resolution: RefCell<Option<Resolution>>,
     #[cfg(unix)]
     fd: RefCell<Option<Rc<std::os::fd::OwnedFd>>>,
+}
+struct Resolution {
+    sender: shared::Sender<capnp::Result<()>>,
+    receiver: Shared<shared::Receiver<capnp::Result<()>>>,
 }
 impl Drop for Endpoint {
     fn drop(&mut self) {
@@ -115,7 +150,6 @@ impl Drop for Endpoint {
 struct Entry<'id> {
     endpoint: Weak<Endpoint>,
     client: Client<'id>,
-    resolution: Option<shared::Sender<capnp::Result<()>>>,
 }
 
 /// Scoped graph ownership paired with ordinary owned generated clients.
@@ -140,7 +174,7 @@ impl<'id> ClientHooks<'id> {
         Self {
             inbox: Rc::new(Inbox {
                 completion_cache: response::Cache::default(),
-                call_template: std::cell::OnceCell::new(),
+                call_templates: std::array::from_fn(|_| std::cell::OnceCell::new()),
                 message_pool: None,
                 admission: None,
                 joins: None,
@@ -276,14 +310,6 @@ impl<'id> ClientHooks<'id> {
             }
             self.entries.push(None);
         }
-        // An already-settled endpoint never waits for resolution. Keep the
-        // completion channel and shared future only for an unresolved route.
-        let (resolution, resolved) = if pending {
-            let (sender, receiver) = shared::channel();
-            (Some(sender), Some(receiver.shared()))
-        } else {
-            (None, None)
-        };
         let endpoint = Rc::new(Endpoint {
             introduction: RefCell::default(),
             introduced: RefCell::default(),
@@ -306,14 +332,13 @@ impl<'id> ClientHooks<'id> {
                 )),
                 _ => None,
             }),
-            resolution: resolved,
+            resolution: RefCell::default(),
             #[cfg(unix)]
             fd: RefCell::new(None),
         });
         self.entries[index] = Some(Entry {
             endpoint: Rc::downgrade(&endpoint),
             client,
-            resolution,
         });
         Ok(capability::Client::new(Box::new(Hook(endpoint, None))))
     }
@@ -378,7 +403,7 @@ impl<'id> ClientHooks<'id> {
                     *endpoint.fd.borrow_mut() = metadata.fd;
                 }
             }
-            if entry.resolution.is_some() {
+            if !endpoint.settled.get() {
                 // Export inspection does not accept a call or mark the promise
                 // used. In particular, a reflected resolution remains pending
                 // until its original-route loopback has completed.
@@ -407,8 +432,12 @@ impl<'id> ClientHooks<'id> {
                     };
                     *endpoint.failure.borrow_mut() = result.as_ref().err().cloned();
                     endpoint.settled.set(true);
-                    if let Some(sender) = entry.resolution.take() {
-                        let _ = sender.send(result);
+                    // Most promised-answer targets are called without anyone
+                    // waiting for their resolution. Allocate notification state
+                    // only for observers, and detach it before waking them.
+                    let resolution = endpoint.resolution.borrow_mut().take();
+                    if let Some(resolution) = resolution {
+                        let _ = resolution.sender.send(result);
                     }
                 }
             }
@@ -1079,13 +1108,9 @@ impl ClientHook for Hook {
             None => allocator,
         };
         let template = self.0.remote.get().then(|| {
-            inbox.as_ref().map(|inbox| {
-                inbox.call_template.get_or_init(|| {
-                    capntproto_rpc_wire::owned::connection::PreparedCallTemplate::new(
-                        interface, method,
-                    )
-                })
-            })
+            inbox
+                .as_ref()
+                .map(|inbox| inbox.call_template(interface, method))
         });
         // Allocate before constructing the arena, allowing the compiler to write
         // the large request directly into its final box without a second owner.
@@ -1187,12 +1212,22 @@ impl ClientHook for Hook {
         };
         let endpoint = self.0.clone();
         let shutdown = inbox.shutdown.clone();
+        let resolved = endpoint
+            .resolution
+            .borrow_mut()
+            .get_or_insert_with(|| {
+                let (sender, receiver) = shared::channel();
+                Resolution {
+                    sender,
+                    receiver: receiver.shared(),
+                }
+            })
+            .receiver
+            .clone();
         Promise::from_future(async move {
-            let resolved = endpoint
-                .resolution
-                .as_ref()
-                .expect("unsettled endpoint owns its resolution")
-                .clone();
+            // The waiter retains its graph route. Bridge close/drop wakes it
+            // through shutdown even though notification state is endpoint-owned.
+            let _endpoint = endpoint;
             match futures::future::select(shutdown, resolved).await {
                 futures::future::Either::Right((result, _)) => result
                     .map_err(crate::canceled_to_error)

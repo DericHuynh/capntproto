@@ -3650,7 +3650,7 @@ all raw evidence and recomputation are archived under
 `target/portable-performance-idle-retirement-dedicated-20261016/`
 (1,205 files plus checksums).
 
-The subsequent dedicated `d9d1f7f` run `38890319120` is the latest completed
+The subsequent dedicated `d9d1f7f` run `38890319120` is a completed
 comparison: **9/16 targets, with 8/12 remote workflows and 1/4 loopback**.
 All 350 remote and 60 loopback trials, five repetitions per cell, p50/p95/p99
 and inclusive 5% decisions are independently verified. The seven misses are:
@@ -3674,7 +3674,15 @@ lane's passed status does not imply overall quality acceptance. Artifact
 `fd8430ba3d5821d280664eff28f6da70858bec4f52776c225e8056f6fbe16db1`.
 Raw samples, recomputation, job log and paired traces are archived under
 `target/portable-performance-finished-pipeline-dedicated-20261016/`
-(1,206 files plus checksums). PR CI is still running; the performance gap remains open.
+(1,206 files plus checksums). The performance gap remains open.
+
+The corresponding PR CI run `38890329685` completed 2,244 Cargo cases with
+zero failures/errors and 20 skips. Full Miri, models, platform, portable,
+fuzz, mutation, native-careful, LLVM and documentation checks passed; the
+unchanged coverage regression gate failed. Its report ZIP has SHA-256
+`8912c11abab5b48d2ac5bf662d385b57bdd299fd1c4d962c1e179f2770b9c128`.
+The compact report, complete job log and coverage summary are archived under
+`target/portable-performance-finished-pipeline-ci-20261016/`.
 
 The subsequent local prototype publishes the wire projection queue when a
 prepared pipelined request is sent. Pending child clients retain that queue
@@ -3709,6 +3717,85 @@ Empty-call instructions remain client MISS/server PASS (18,510,707 / 17,003,489
 versus legacy 17,367,049 / 16,359,460). Raw samples, controls, traces, source
 patches and exact executable identities are retained in
 `target/portable-performance-direct-wire-interest-20261016/`.
+
+The next local experiment defers an exported pending endpoint's resolution
+channel until a caller actually observes resolution. Unobserved routes still
+settle and snapshot their terminal endpoint; observers retain the route, and
+bridge shutdown wakes them. Notification state is detached before callbacks.
+The `lazy-resolution20261016` executable has SHA-256
+`acf5326677b904465e2cc74bd267d79ad69ad8def5ecbab3e1f3c3e2d643611d`.
+It passes 284 RPC tests, 92 integration tests, 72 mixed-peer workflows, Clippy,
+formatting and 14 focused Miri cases. The new cases cover late observers,
+unpolled observers, bridge drop and reentrant resolution callbacks.
+
+Pipeline client/server instructions are 84,233,085 / 72,290,060; dependent
+reads 72,994,276 / 63,638,266; callbacks 60,474,375 / 60,016,881. This is a
+1.06% pipeline client instruction reduction from the direct-wire candidate,
+with all 11 steady C++ Finish/Release/Call/Call groups and batched Returns
+preserved. All 240 local trials were independently checked: **7/12 workflows
+and 1/4 loopback targets pass**. Large shared-VM timing variation remains;
+these results do not qualify latency. Empty-call instructions remain client
+MISS/server PASS: 18,406,791 / 17,010,769 versus legacy 17,367,714 / 16,360,118.
+Raw trials, controls, paired traces, cache simulation, tests, source patch and
+executable identities are retained in
+`target/portable-performance-lazy-resolution-20261016/` (936 files plus checksums).
+The next dedicated `d888c30` campaign, workflow `38897701997`, is the latest
+completed comparison: **11/16 targets, with 9/12 remote workflows and 2/4
+loopback payloads**. All 350 remote and 60 loopback trials, five repetitions
+per cell, p50/p95/p99 and inclusive 5% decisions were independently verified.
+The five misses are:
+
+| Case | Portable p50 ns | Faster reference p50 ns | Ratio |
+| --- | ---: | ---: | ---: |
+| dependent-read | 628,790 | legacy 597,300 | 1.052721 |
+| pipelined-read | 347,678 | C++ 318,119 | 1.092918 |
+| callback | 615,499 | legacy 564,904 | 1.089564 |
+| loopback 0 B | 37,720 | legacy 35,514 | 1.062116 |
+| loopback 64 B | 38,417 | legacy 36,225 | 1.060511 |
+
+All 21 steady pipeline writes match C++ Finish/Release/Call/Call, and both
+Returns share one write. Build provenance, all four environment manifests and
+recorded executable hashes agree. The source fingerprint is
+`b2b7689f9bd574230c600f38c48ffde8256f96108de0fdc0850b3432e9094df1`.
+The dedicated workflow and its existing report quality requirements passed;
+the separate all-sixteen portable goal remains open. Network latency differs
+from previous campaigns, so reference selection remains within this campaign.
+Artifact `12046522376` has ZIP SHA-256
+`03464493b67e934f6014ca26b69fea80027de697addc140af4e1dcd82395e328`.
+Raw samples, recomputation, build provenance, job log and paired traces are
+retained in `target/portable-performance-direct-wire-interest-dedicated-20261016/`
+(1,537 files plus checksums). PR CI is still running.
+
+Three subsequent local experiments retain that wire ordering. A bounded cache
+of four interface/method headers avoids rebuilding alternating request headers;
+its saturation test checks the fallback header and payload. Retirement-only
+Finish/Release publication preserves idle scans for unrelated coordinator lanes,
+while observing reentrant wakes and revisiting calls blocked by capacity. Finally,
+contiguous single frames use one stack-allocated IO vector, matching C++'s
+`writev` transport path while preserving partial writes and scalar fallbacks.
+
+Each candidate passed all 240 independently recomputed local trials, with
+**7/12 workflow and 2/4 loopback performance targets met**. Passing trial
+validation does not mean passing every performance target. Shared-VM variation
+prevents a latency claim. The cumulative single-vector executable SHA-256 is
+`f82da5948ff8afce5333faafe4f53e5add118ac37b60c7079dbb1399941dd4df`.
+Its client/server instructions are 84,324,835 / 72,404,492 for pipelined reads,
+71,811,902 / 63,698,993 for dependent reads, and 60,551,167 / 59,936,063 for
+callbacks. The header and retirement changes reduce dependent client work;
+pipeline work changes little. Single-vector writes alone establish matching
+syscall selection, not a measured speedup. The empty-call instruction gate
+remains client MISS/server PASS (18,436,059 / 17,031,436 versus legacy
+17,361,979 / 16,354,390).
+
+The cumulative changes pass 285 RPC, 135 wire, 58 futures and 92 integration
+tests, 72 mixed-peer workflows, Clippy and formatting. Focused Miri verifies
+the lazy-resolution observers, saturated header cache, cleanup/backpressure
+matrix, retirement classification and contiguous partial-write/error paths.
+All raw samples, profiles, controls, traces, patches and identities are retained
+in `target/portable-performance-method-templates-20261016/`,
+`target/portable-performance-retirement-publication-20261016/` and
+`target/portable-performance-single-iovec-20261016/`, with per-file checksums.
+No fixture, performance threshold or coverage floor changed.
 
 The earlier `ef9f4c8` Cargo CI completed 2,230 tests with zero failures and
 20 skips, but its coverage regression gate failed. The Miri job reached its

@@ -297,6 +297,121 @@ fn live_import_promise_waits_for_reflected_barrier_but_snapshot_stays_remote() {
 }
 
 #[test]
+fn unobserved_promise_routes_settle_before_the_first_resolution_waiter() {
+    for broken in [false, true] {
+        clients::with_growing_graph::<u32, u8, _>(0, 2, |graph| {
+            let pending = graph.promise(&mut None).unwrap();
+            let mut hooks = ClientHooks::new(1, 1);
+            let client = hooks.export_client(graph, &pending).unwrap();
+            let endpoint = hooks.entries[0]
+                .as_ref()
+                .unwrap()
+                .endpoint
+                .upgrade()
+                .unwrap();
+            assert!(endpoint.resolution.borrow().is_none());
+            let location = if broken {
+                Location::Broken
+            } else {
+                Location::Local
+            };
+            let mut replacement = Some(graph.endpoint(7, location).unwrap());
+            assert!(graph
+                .resolve(pending.key(), &mut replacement, clients::Source::Direct)
+                .unwrap()
+                .is_none());
+            hooks.collect(graph);
+            assert!(endpoint.settled.get());
+            assert!(endpoint.resolution.borrow().is_none());
+            assert_eq!(ready(&mut client.hook.when_resolved()).is_err(), broken);
+            drop((endpoint, client));
+            graph.release(pending);
+            hooks.collect(graph);
+            assert_eq!(graph.take_retired(), Some(7));
+            assert!(graph.is_empty());
+        })
+        .unwrap();
+    }
+}
+
+#[test]
+fn resolution_observers_retain_routes_and_wake_after_detachment() {
+    clients::with_growing_graph::<u32, u8, _>(0, 2, |graph| {
+        let pending = graph.promise(&mut None).unwrap();
+        let mut hooks = ClientHooks::new(1, 1);
+        let client = hooks.export_client(graph, &pending).unwrap();
+        let endpoint = hooks.entries[0].as_ref().unwrap().endpoint.clone();
+        let mut polled = client.hook.when_resolved();
+        let mut unpolled = client.hook.when_resolved();
+        let observed = Rc::new(Cell::new(false));
+        REENTER.with(|slot| {
+            let endpoint = endpoint.clone();
+            let observed = observed.clone();
+            *slot.borrow_mut() = Some(Box::new(move || {
+                let endpoint = endpoint.upgrade().unwrap();
+                assert!(endpoint.settled.get());
+                assert!(endpoint.resolution.try_borrow_mut().unwrap().is_none());
+                ready(&mut Hook(endpoint, None).when_resolved()).unwrap();
+                observed.set(true);
+            }));
+        });
+        let waker = Waker::from(Arc::new(Reenter));
+        assert!(Pin::new(&mut polled)
+            .poll(&mut Context::from_waker(&waker))
+            .is_pending());
+        drop(client);
+        hooks.collect(graph);
+        assert!(endpoint.upgrade().is_some());
+        let mut replacement = Some(graph.endpoint(7, Location::Local).unwrap());
+        assert!(graph
+            .resolve(pending.key(), &mut replacement, clients::Source::Direct)
+            .unwrap()
+            .is_none());
+        hooks.collect(graph);
+        assert!(observed.get());
+        ready(&mut polled).unwrap();
+        ready(&mut unpolled).unwrap();
+        drop((polled, unpolled));
+        assert!(endpoint.upgrade().is_none());
+        graph.release(pending);
+        hooks.collect(graph);
+        assert_eq!(graph.take_retired(), Some(7));
+        assert!(graph.is_empty());
+    })
+    .unwrap();
+}
+
+#[test]
+fn resolution_observers_disconnect_when_the_bridge_is_dropped() {
+    for poll_first in [false, true] {
+        clients::with_growing_graph::<u32, u8, _>(0, 1, |graph| {
+            let pending = graph.promise(&mut None).unwrap();
+            let mut hooks = ClientHooks::new(1, 1);
+            let client = hooks.export_client(graph, &pending).unwrap();
+            let endpoint = hooks.entries[0].as_ref().unwrap().endpoint.clone();
+            let mut waiter = client.hook.when_resolved();
+            let wakes = Arc::new(Wakes(AtomicUsize::new(0)));
+            let waker = Waker::from(wakes.clone());
+            if poll_first {
+                assert!(Pin::new(&mut waiter)
+                    .poll(&mut Context::from_waker(&waker))
+                    .is_pending());
+            }
+            drop(client);
+            graph.release(pending);
+            drop(hooks);
+            assert_eq!(wakes.0.load(Ordering::Relaxed) > 0, poll_first);
+            let failure = error(ready(&mut waiter));
+            assert_eq!(failure.kind, capnp::ErrorKind::Disconnected);
+            assert_eq!(failure.extra, "scoped ClientHook driver dropped");
+            drop(waiter);
+            assert!(endpoint.upgrade().is_none());
+        })
+        .unwrap();
+    }
+}
+
+#[test]
 fn unresolved_waiters_retain_the_graph_route_and_observe_shutdown() {
     clients::with_growing_graph::<u32, u8, _>(0, 2, |graph| {
         let pending = graph.promise(&mut None).unwrap();
@@ -1171,6 +1286,54 @@ fn response_context_callbacks_cannot_bypass_capacity_or_enqueue_after_close() {
         drop(client);
         hooks.close(graph, Error::disconnected("done".into()));
         graph.release(route);
+    })
+    .unwrap();
+}
+
+#[test]
+fn prepared_method_headers_preserve_parameters_after_cache_saturation() {
+    clients::with_growing_graph::<u32, u8, _>(0, 1, |graph| {
+        let route = graph.endpoint(7, Location::Remote(1)).unwrap();
+        let mut hooks = ClientHooks::new(1, 1);
+        let client = hooks.export_snapshot(graph, &route).unwrap();
+        for index in (0..8).chain((0..8).rev()) {
+            let interface = 47 + index / 3;
+            let method = (index % 3) as u16;
+            let text = format!("method {index}");
+            let mut request = client.hook.new_call(interface, method, None);
+            request.get().set_as::<capnp::text::Owned>(&text).unwrap();
+            let mut reply = request.send();
+            let call = next(&mut hooks);
+            let message = call.params.prepared_call().unwrap().message();
+            let crate::rpc_capnp::message::Call(wire) = message
+                .get_root_as_reader::<crate::rpc_capnp::message::Reader>()
+                .unwrap()
+                .which()
+                .unwrap()
+            else {
+                panic!("prepared Call");
+            };
+            let wire = wire.unwrap();
+            assert_eq!(
+                (wire.get_interface_id(), wire.get_method_id()),
+                (interface, method)
+            );
+            assert_eq!(
+                wire.get_params()
+                    .unwrap()
+                    .get_content()
+                    .get_as::<capnp::text::Reader>()
+                    .unwrap(),
+                text
+            );
+            call.complete(Ok(()));
+            ready(&mut reply.promise).unwrap();
+        }
+        drop(client);
+        graph.release(route);
+        hooks.collect(graph);
+        assert_eq!(graph.take_retired(), Some(7));
+        assert!(graph.is_empty());
     })
     .unwrap();
 }

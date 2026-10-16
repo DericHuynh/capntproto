@@ -2,6 +2,12 @@ use super::*;
 impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
     Driver<'pool, 'id, 's, I, A, P, S, CAPS, PATH>
 {
+    /// The last maintenance poll only retired references and published Finish
+    /// or Release. It performed no promise propagation or application dispatch.
+    /// Returned owners and independently notified work still need observation.
+    pub fn maintenance_published_retirement(&self) -> bool {
+        self.maintenance_published_retirement
+    }
     /// Check live ownership for an absence of immediately pollable maintenance.
     /// This bounded check calls no application hooks and changes no scan cursor.
     /// False requires normal polling; it does not necessarily mean work is ready.
@@ -158,6 +164,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             pipelines::Error,
         >,
     ) -> Result<Progress<I, A, S>, Error> {
+        self.maintenance_published_retirement = false;
         self.check_live()?;
         if *budget == 0 {
             return Ok(Progress::Yield);
@@ -289,6 +296,8 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 }
                 outcome => {
                     self.scan_remaining = self.maintenance_total;
+                    self.maintenance_published_retirement =
+                        matches!(phase, 9 | 10) && outcome.is_ok();
                     return outcome.map(|progress| progress.unwrap());
                 }
             }

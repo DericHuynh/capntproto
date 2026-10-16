@@ -150,6 +150,7 @@ fn large_pending_exchange_tables_only_scan_after_actual_cancellation() {
                     NonZeroUsize::new(1).unwrap(),
                 )
                 .unwrap();
+            assert_eq!(driver.maintenance_published_retirement(), !queue.is_empty());
             if !queue.is_empty() {
                 drain(&mut queue, messages, |root| {
                     assert!(matches!(
@@ -659,12 +660,16 @@ fn idle_certificate_observes_new_retirement_without_invalidation() {
         let mut released = false;
         for _ in 0..128 {
             match poll!() {
-                Progress::Import(()) => released = true,
+                Progress::Import(()) => {
+                    assert!(driver.maintenance_published_retirement());
+                    released = true;
+                }
                 Progress::Idle => {
+                    assert!(!driver.maintenance_published_retirement());
                     assert!(released);
                     break;
                 }
-                _ => (),
+                _ => assert!(!driver.maintenance_published_retirement()),
             }
         }
         assert!(released);

@@ -387,7 +387,7 @@ where
     M: AsOutputSegments,
 {
     if let Some(bytes) = message.framed_bytes() {
-        writer.write_all(bytes).await?;
+        write_framed(&mut writer, bytes).await?;
         return Ok(());
     }
     let segments = message.as_output_segments();
@@ -421,7 +421,7 @@ where
     if messages.len() == 1 {
         let message = messages.clone().next().unwrap();
         if let Some(bytes) = message.framed_bytes() {
-            writer.write_all(bytes).await?;
+            write_framed(&mut writer, bytes).await?;
             return Ok(());
         }
         let segments = message.as_output_segments();
@@ -508,6 +508,26 @@ where
         );
     }
     write_buffers(&mut writer, &mut buffers).await
+}
+
+// Keep the one-frame scatter/gather metadata on the poll stack. The future
+// retains only the writer and unsent suffix across partial writes or Pending.
+pub(crate) async fn write_framed<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    mut bytes: &[u8],
+) -> Result<()> {
+    while !bytes.is_empty() {
+        let written = core::future::poll_fn(|cx| {
+            core::pin::Pin::new(&mut *writer)
+                .poll_write_vectored(cx, &[std::io::IoSlice::new(bytes)])
+        })
+        .await?;
+        if written == 0 {
+            return Err(std::io::Error::from(std::io::ErrorKind::WriteZero).into());
+        }
+        bytes = &bytes[written..];
+    }
+    Ok(())
 }
 
 async fn write_buffers<W: AsyncWrite + Unpin>(
