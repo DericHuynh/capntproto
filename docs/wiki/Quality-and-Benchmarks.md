@@ -3388,6 +3388,52 @@ traces retain the C++ steady write grouping. Evidence is retained under
 `target/portable-performance-shared-driver-20261016/`; dedicated qualification
 is required before claiming progress against the latency gate.
 
+The completed dedicated run for `46c3a69`,
+[38864720957](https://github.com/DericHuynh/capntproto/actions/runs/38864720957),
+passes **9/12 workflows and 2/4 loopback payloads**. Independent recomputation
+checks all 350 remote and 60 loopback trials, including every p50/p95/p99 and
+the inclusive 1.05 limit. Misses are pipelined read (1.146512), 64 KiB
+(1.083280), 1 MiB (1.055378), empty loopback (1.253681) and 1 KiB loopback
+(1.410684). The raw artifact and validation are preserved under
+`target/portable-performance-settled-dedicated-20261016/`. No campaign has
+passed all sixteen cells.
+
+Further Return-admission batching, including exact parent propagation, restored
+an extra Release write per operation and regressed instructions; both prototypes
+were discarded. An unused-pipeline admission shortcut also showed no CPU gain:
+the dependent-read fixture retains its pipeline handle across the await. Their
+patches, traces, profiles, raw controls and validation logs remain under
+`target/portable-performance-rejected-read-batches-20261016/` and
+`target/portable-performance-unobserved-pipeline-20261016/`.
+
+The next retained candidate delivers an admitted Return directly to its original
+owner when no pipeline projection has been requested. It preserves the ordinary
+pipeline completion for later projections, exact question generations,
+authorization and cancellation. Capability export avoids a redundant refresh.
+Queued forwarding allocates its queue only when used, stores the first entry
+without a tree node, and omits a reply channel for detached publication. FIFO,
+stale cancellation, identity exhaustion and destructor reentry remain checked.
+Dependent-read client instructions are 77,040,613 versus 79,187,297 before this
+batch; pipelined-read client/server totals are 93,974,372 / 74,794,034. Matched
+legacy pipeline totals also improve, to 55,282,988 / 55,648,078. Empty-call
+instruction ratios remain a client miss and server pass.
+
+The complete local campaign passes **8/12 workflows and 3/4 loopback payloads**;
+all 72 mixed-peer workflows pass. Validation includes 274 RPC unit tests,
+81 integration tests, four queue Miri tests and the direct-completion Miri
+regression. Developer-tool tests cover diagnostic failure cleanup and ensure
+tracing follows both untraced control campaigns. Evidence is retained under
+`target/portable-performance-compact-sender-20261016/`. The dedicated workflow
+now collects paired portable/legacy/C++ syscall traces after all untraced
+measurements; traced latencies never enter acceptance reports.
+
+The earlier `ef9f4c8` Cargo CI completed 2,230 tests with zero failures and
+20 skips, but its coverage regression gate failed. The Miri job reached its
+45-minute limit after the 228-test 32-bit RPC matrix passed, leaving later
+replay tests incomplete. The job allowance is now 90 minutes with all checks
+retained. Coverage requirements and performance limits are unchanged; both
+coverage qualification and the full performance target remain open.
+
 ### Portable and legacy instruction qualification
 
 The October 15 optimization batch meets a **1.05× portable/legacy instruction

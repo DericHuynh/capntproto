@@ -205,7 +205,12 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
     fn immediate_receiver(&self, key: capntproto_rpc_engine::questions::Key<'id>) -> Option<usize> {
         let matches = |entry: &Option<Entry<'p, 'id, I, C, H>>| {
             entry.as_ref().is_some_and(|entry| {
-                entry.local.is_none() && entry.wire.task.is_none() && entry.wire.pipeline.is_none()
+                entry.local.is_none()
+                    && entry.wire.task.is_none()
+                    // An unused pipeline has no outgoing projections to settle
+                    // before taking its parent result. Keep the normal pipeline
+                    // completion so later projections still see the response.
+                    && entry.wire.pipeline.as_ref().is_none_or(|state| !state.used.get())
                     && matches!(entry.wire.direct, Some(DirectStage::Sent(question)) if question == key)
             })
         };

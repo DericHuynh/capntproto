@@ -2,6 +2,7 @@
 use super::*;
 use std::{fs, net::Ipv4Addr};
 mod report;
+mod trace;
 
 fn workflow_run_id(configured: Option<String>) -> String {
     configured.unwrap_or_else(|| std::process::id().to_string())
@@ -301,6 +302,7 @@ pub(super) fn cleanup_receipt(api: &impl Api, receipt: &Value, owner: &str) -> R
     ensure!(errors.is_empty(), "{}", errors.join("; "));
     Ok(())
 }
+#[allow(clippy::too_many_arguments)]
 pub(super) fn run(
     api: &impl Api,
     bundle: &Path,
@@ -309,6 +311,7 @@ pub(super) fn run(
     owner: &str,
     cancel: &Cancellation,
     commands: &impl Commands,
+    trace_io: bool,
 ) -> Result<()> {
     let manifest = crate::read_json(bundle.join("manifest.json"))?;
     for name in [
@@ -455,6 +458,17 @@ pub(super) fn run(
                 output,
                 file,
                 120,
+                cancel,
+            )?;
+        }
+        if trace_io {
+            // Tracing changes scheduling. Run it only after every untraced
+            // timing and instruction control has been saved independently.
+            trace::run(
+                commands,
+                server,
+                client,
+                &output.join("diagnostics"),
                 cancel,
             )?;
         }

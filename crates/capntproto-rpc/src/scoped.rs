@@ -184,7 +184,7 @@ impl<'id> ClientHooks<'id> {
         let (client, pending) = graph
             .snapshot_for_export(client)
             .map_err(|e| Error::failed(e.to_string()))?;
-        self.export_retained(graph, client, pending)
+        self.export_retained(graph, client, pending, true)
     }
 
     /// Export a live application client, following imported/pipelined promise
@@ -213,7 +213,10 @@ impl<'id> ClientHooks<'id> {
         let client = graph
             .retain_key(client.key())
             .map_err(|e| Error::failed(e.to_string()))?;
-        let exported = self.export_retained(graph, client, pending)?;
+        // The metadata-aware pass above already reclaimed dead hooks and
+        // published settled routes. Do not repeat the same scan without
+        // metadata while exporting this retained owner.
+        let exported = self.export_retained(graph, client, pending, false)?;
         self.collect_with_metadata(graph, metadata);
         Ok(exported)
     }
@@ -223,6 +226,7 @@ impl<'id> ClientHooks<'id> {
         graph: &mut impl Capabilities<'id>,
         client: Client<'id>,
         pending: bool,
+        refresh: bool,
     ) -> capnp::Result<capability::Client> {
         if self.inbox.closed.get() {
             graph.release(client);
@@ -230,7 +234,9 @@ impl<'id> ClientHooks<'id> {
                 "scoped ClientHook driver closed".into(),
             ));
         }
-        self.collect(graph);
+        if refresh {
+            self.collect(graph);
+        }
         for entry in self.entries.iter().flatten() {
             if entry.client.key() == client.key() {
                 if let Some(endpoint) = entry.endpoint.upgrade() {

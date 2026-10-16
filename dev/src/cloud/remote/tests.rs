@@ -342,7 +342,12 @@ fn fixture_bundle(path: &Path) -> Value {
 fn complete_remote_campaign_runs_both_controls_and_salvages_failed_portable_control() {
     // Synthetic archives exercise orchestration only. These are never timing
     // evidence and no process, provider API or paid host is contacted.
-    for fail_at in ["", "compare-portable", "compare /root/bench"] {
+    for fail_at in [
+        "",
+        "compare-portable",
+        "compare /root/bench",
+        "workflow-measure",
+    ] {
         let dir = tempfile::tempdir().unwrap();
         let bundle = dir.path().join("bundle");
         let commands = CompletedCommands {
@@ -364,6 +369,7 @@ fn complete_remote_campaign_runs_both_controls_and_salvages_failed_portable_cont
             &tag("test/complete-pair"),
             &Cancellation::default(),
             &commands,
+            true,
         );
         assert_eq!(result.is_ok(), fail_at.is_empty(), "{fail_at}: {result:?}");
         assert!(api.hosts.borrow().is_empty());
@@ -402,7 +408,33 @@ fn complete_remote_campaign_runs_both_controls_and_salvages_failed_portable_cont
                 .position(|call| call.contains("compare-portable /root/bench"))
                 .unwrap();
             assert!(legacy < portable);
+            let trace = calls
+                .iter()
+                .position(|call| call.contains("strace --version"))
+                .unwrap();
+            assert!(
+                portable < trace,
+                "tracing must follow all untraced controls"
+            );
+            assert_eq!(
+                calls
+                    .iter()
+                    .filter(|call| call.contains("workflow-measure"))
+                    .count(),
+                15
+            );
+            assert!(output
+                .join("diagnostics/client/io-trace/pipelined-read-cpp-client.strace")
+                .is_file());
             assert!(output.join("trials.json").is_file());
+        }
+        if fail_at == "workflow-measure" {
+            let calls = commands.commands.0.borrow();
+            assert!(calls.iter().any(|call| call.contains("kill -TERM")));
+            assert!(output
+                .join("diagnostics/server/io-trace/unary-empty-portable-server.strace")
+                .is_file());
+            assert!(output.join("portable-loopback/trials.json").is_file());
         }
     }
 }
@@ -445,6 +477,7 @@ fn pair_lifecycle_cleans_up_after_second_creation_and_measurement_failures() {
             &tag("test/remote-pair"),
             &Cancellation::default(),
             &commands,
+            false,
         );
         assert!(result.is_err(), "{mode}");
         assert!(api.hosts.borrow().is_empty(), "{mode}: leaked host");

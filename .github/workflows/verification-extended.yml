@@ -19,7 +19,9 @@ jobs:
   miri:
     name: Miri ownership and endian checks
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    # The expanded hosted RPC matrix takes over 22 minutes by itself on 32-bit
+    # Miri. Leave time for the remaining ownership and growing-ledger suites.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:

@@ -1867,3 +1867,108 @@ fn calls_before_and_after_foreign_resolution_keep_original_order() {
         teardown(calls, hooks, driver, messages, &mut queue);
     });
 }
+
+#[test]
+fn unprojected_reply_delivers_directly_and_preserves_late_capabilities() {
+    use capntproto_rpc_wire::rpc_capnp::api::{CapDescriptor, Message, Payload, Return};
+    for project_early in [false, true] {
+        with_peer(|mut driver, messages| {
+            let mut hooks = ClientHooks::new(24, 24);
+            let client = remote(&mut driver, &mut hooks);
+            let capability::RemotePromise {
+                mut promise,
+                pipeline,
+            } = request(&client, 1).send();
+            let early = project_early
+                .then(|| capability::Client::new(pipeline.hook.get_pipelined_cap(&[])));
+            let mut calls = Calls::new(8, None).unwrap();
+            let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+            drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+            let entry = calls.entries.iter().flatten().next().unwrap();
+            assert!(entry.wire.pipeline.is_some());
+            let Some(DirectStage::Sent(question)) = entry.wire.direct else {
+                panic!("published parent")
+            };
+            assert_eq!(calls.immediate_receiver(question).is_some(), !project_early);
+            drain(&mut queue, messages);
+            let reply = Frame::build(messages, 256, Default::default(), |builder| {
+                calls::dynamic_results(
+                    builder,
+                    capntproto_rpc_engine::ids::AnswerId::from_wire(question.id().to_wire()),
+                    |content| content.set_capability_index(0),
+                )?;
+                let mut root = builder.try_get_root::<Message>()?;
+                let mut result = root.field(Message::RETURN).edit()?;
+                let mut payload = result.field(Return::RESULTS).edit()?;
+                payload
+                    .field(Payload::CAP_TABLE)
+                    .init(1)?
+                    .get_mut(0)
+                    .unwrap()
+                    .scalar(CapDescriptor::SENDER_HOSTED)
+                    .set(73);
+                Ok(())
+            })
+            .unwrap();
+            driver
+                .receive(reply, messages, &mut [0; 24], |_| (), || ())
+                .unwrap_or_else(|rejected| panic!("Return: {:?}", rejected.error));
+            let completed = calls
+                .returned(
+                    question,
+                    &mut hooks,
+                    &mut driver,
+                    messages,
+                    &mut Context::from_waker(Waker::noop()),
+                    |hooks, driver| hooks.collect(&mut driver.runtime),
+                )
+                .unwrap();
+            assert_eq!(completed, (!project_early).then_some(false));
+            if project_early {
+                for _ in 0..64 {
+                    driver
+                        .poll_maintenance(
+                            messages,
+                            &mut queue,
+                            128,
+                            Default::default(),
+                            &mut [0; 24],
+                            NonZeroUsize::new(8).unwrap(),
+                        )
+                        .unwrap();
+                    hooks.collect(&mut driver.runtime);
+                }
+                drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+            }
+            let response = ready(&mut promise).unwrap();
+            let returned: capability::Client = response.get().unwrap().get_as_capability().unwrap();
+            let late = capability::Client::new(pipeline.hook.get_pipelined_cap(&[]));
+            drop((response, promise, pipeline, early));
+            hooks.collect(&mut driver.runtime);
+            drain(&mut queue, messages);
+            let child = request(&late, 2).send();
+            drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+            let bytes = drain(&mut queue, messages);
+            let message =
+                capnp::serialize::read_message(bytes.as_slice(), Default::default()).unwrap();
+            let rpc_capnp::message::Call(call) = message
+                .get_root::<rpc_capnp::message::Reader>()
+                .unwrap()
+                .which()
+                .unwrap()
+            else {
+                panic!("call through retained result capability")
+            };
+            let call = call.unwrap();
+            assert_eq!(call.get_method_id(), 2);
+            let rpc_capnp::message_target::ImportedCap(id) =
+                call.get_target().unwrap().which().unwrap()
+            else {
+                panic!("returned imported capability")
+            };
+            assert_eq!(id, 73);
+            drop((child, returned, late, client));
+            teardown(calls, hooks, driver, messages, &mut queue);
+        });
+    }
+}

@@ -136,7 +136,7 @@ jobs:
           DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
           DO_REGION: ${{ inputs.region || 'auto' }}
           DO_SIZE: ${{ inputs.size || 'auto' }}
-        run: cargo run --locked -p capntproto-dev -- digitalocean-bench run-remote --bundle target/benchmark-build/bundle --output "$RUNNER_TEMP/benchmark-quality/benchmark" --state "$RUNNER_TEMP/capntproto-do"
+        run: cargo run --locked -p capntproto-dev -- digitalocean-bench run-remote --trace-io --bundle target/benchmark-build/bundle --output "$RUNNER_TEMP/benchmark-quality/benchmark" --state "$RUNNER_TEMP/capntproto-do"
       - name: Always verify cleanup of both droplets and SSH keys
         if: always()
         env:

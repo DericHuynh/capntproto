@@ -36,7 +36,8 @@ where
     Out: 'static,
 {
     next_id: Option<u64>,
-    map: BTreeMap<u64, (In, oneshot::Sender<Out>)>,
+    first: Option<(u64, In, Sender<Out>)>,
+    map: BTreeMap<u64, (In, Sender<Out>)>,
 }
 
 /// A queue representing tasks that consume input of type `In` and produce output of
@@ -46,7 +47,7 @@ where
     In: 'static,
     Out: 'static,
 {
-    inner: Rc<RefCell<Inner<In, Out>>>,
+    inner: Option<Rc<RefCell<Inner<In, Out>>>>,
 }
 
 pub(crate) struct Remover<In, Out>
@@ -65,7 +66,18 @@ where
 {
     fn drop(&mut self) {
         if let Some(inner) = self.inner.upgrade() {
-            let removed = inner.borrow_mut().map.remove(&self.id);
+            let removed = {
+                let mut inner = inner.borrow_mut();
+                if inner
+                    .first
+                    .as_ref()
+                    .is_some_and(|(id, _, _)| *id == self.id)
+                {
+                    inner.first.take().map(|(_, value, sender)| (value, sender))
+                } else {
+                    inner.map.remove(&self.id)
+                }
+            };
             drop(removed);
         }
     }
@@ -77,19 +89,24 @@ where
     Out: 'static,
 {
     pub(crate) fn new() -> Self {
-        Self {
-            inner: Rc::new(RefCell::new(Inner {
+        Self { inner: None }
+    }
+
+    fn inner(&mut self) -> &Rc<RefCell<Inner<In, Out>>> {
+        self.inner.get_or_insert_with(|| {
+            Rc::new(RefCell::new(Inner {
                 next_id: Some(0),
+                first: None,
                 map: BTreeMap::new(),
-            })),
-        }
+            }))
+        })
     }
 
     /// Pushes `value` to the queue, returning a promise that resolves after
     /// `value` is consumed on the other end of the queue. If the returned promised
     /// is dropped, then `value` is removed from the queue.
     pub(crate) fn push(&mut self, value: In) -> Promise<Out, Error> {
-        let (id, rx) = match self.enqueue(value) {
+        let (id, rx) = match self.enqueue(value, true) {
             Ok(admitted) => admitted,
             Err(value) => {
                 drop(value);
@@ -100,11 +117,12 @@ where
         };
         let remover = Remover {
             id,
-            inner: Rc::downgrade(&self.inner),
+            inner: Rc::downgrade(self.inner.as_ref().expect("admitted queue")),
         };
 
         Promise::from_future(
-            rx.map_err(|_| Error::failed("SenderQueue canceled".into()))
+            rx.expect("observed queue entry")
+                .map_err(|_| Error::failed("SenderQueue canceled".into()))
                 .map(move |out| {
                     drop(remover);
                     out
@@ -114,25 +132,52 @@ where
 
     /// Detached work still needs a unique identity. Rejection returns its owner.
     pub(crate) fn push_detach(&mut self, value: In) -> Result<(), In> {
-        self.enqueue(value).map(|(_, receiver)| drop(receiver))
+        self.enqueue(value, false).map(|_| ())
     }
 
-    fn enqueue(&mut self, value: In) -> Result<(u64, oneshot::Receiver<Out>), In> {
-        let mut inner = self.inner.borrow_mut();
+    fn enqueue(
+        &mut self,
+        value: In,
+        observed: bool,
+    ) -> Result<(u64, Option<oneshot::Receiver<Out>>), In> {
+        let mut inner = self.inner().borrow_mut();
         let Some(id) = inner.next_id else {
             return Err(value);
         };
-        let (sender, receiver) = oneshot::channel();
+        // Detached pipeline publication has no receiver. Preserve the same
+        // rejected-value behavior without allocating a canceled channel.
+        let (sender, receiver) = if observed {
+            let (sender, receiver) = oneshot::channel();
+            (Sender(Some(sender)), Some(receiver))
+        } else {
+            (Sender(None), None)
+        };
         inner.next_id = id.checked_add(1);
-        inner.map.insert(id, (value, sender));
+        // Most promise clients have a single pending call. Keep that entry in
+        // the queue owner; larger bursts retain the ordered tree.
+        if inner.first.is_none() && inner.map.is_empty() {
+            inner.first = Some((id, value, sender));
+        } else {
+            inner.map.insert(id, (value, sender));
+        }
         Ok((id, receiver))
     }
 
     pub(crate) fn drain(&mut self) -> Drain<In, Out> {
         // Old promises keep Remover handles after a drain. Never recycle their
         // identities: canceling one must not remove newly enqueued work.
-        let map = std::mem::take(&mut self.inner.borrow_mut().map);
+        let (first, map) = match &self.inner {
+            Some(inner) => {
+                let mut inner = inner.borrow_mut();
+                (
+                    inner.first.take().map(|(_, value, sender)| (value, sender)),
+                    std::mem::take(&mut inner.map),
+                )
+            }
+            None => (None, BTreeMap::new()),
+        };
         Drain {
+            first,
             iter: map.into_iter(),
         }
     }
@@ -143,7 +188,8 @@ where
     In: 'static,
     Out: 'static,
 {
-    iter: ::std::collections::btree_map::IntoIter<u64, (In, oneshot::Sender<Out>)>,
+    first: Option<(In, Sender<Out>)>,
+    iter: ::std::collections::btree_map::IntoIter<u64, (In, Sender<Out>)>,
 }
 
 impl<In, Out> ::std::iter::Iterator for Drain<In, Out>
@@ -151,9 +197,21 @@ where
     In: 'static,
     Out: 'static,
 {
-    type Item = (In, oneshot::Sender<Out>);
+    type Item = (In, Sender<Out>);
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|(_k, v)| v)
+        self.first
+            .take()
+            .or_else(|| self.iter.next().map(|(_k, v)| v))
+    }
+}
+
+pub(crate) struct Sender<T>(Option<oneshot::Sender<T>>);
+impl<T> Sender<T> {
+    pub(crate) fn send(self, value: T) -> Result<(), T> {
+        match self.0 {
+            Some(sender) => sender.send(value),
+            None => Err(value),
+        }
     }
 }
 
@@ -170,7 +228,8 @@ mod tests {
         let mut new = queue.push(23);
         drop(old);
         assert_eq!(
-            queue.inner.borrow().map.len(),
+            usize::from(queue.inner.as_ref().unwrap().borrow().first.is_some())
+                + queue.inner.as_ref().unwrap().borrow().map.len(),
             1,
             "stale cancellation must preserve new work"
         );
@@ -190,7 +249,7 @@ mod tests {
             }
         }
         let mut queue = SenderQueue::<Reenter, ()>::new();
-        let weak = Rc::downgrade(&queue.inner);
+        let weak = Rc::downgrade(queue.inner());
         let inspected = Rc::new(Cell::new(false));
         let flag = inspected.clone();
         let pending = queue.push(Reenter(Rc::new(move || {
@@ -203,13 +262,14 @@ mod tests {
         })));
         drop(pending);
         assert!(inspected.get());
-        assert!(queue.inner.borrow().map.is_empty());
+        assert!(queue.inner.as_ref().unwrap().borrow().first.is_none());
+        assert!(queue.inner.as_ref().unwrap().borrow().map.is_empty());
     }
 
     #[test]
     fn identity_exhaustion_preserves_queued_work_and_rejects_detached_owners() {
         let mut queue = SenderQueue::<u32, u32>::new();
-        queue.inner.borrow_mut().next_id = Some(u64::MAX);
+        queue.inner().borrow_mut().next_id = Some(u64::MAX);
         let mut last = queue.push(31);
         let failed = queue.push(37).now_or_never().unwrap().unwrap_err();
         assert_eq!(failed.kind, capnp::ErrorKind::Overloaded);
@@ -223,5 +283,45 @@ mod tests {
             Err(47),
             "drain cannot reset identity exhaustion"
         );
+    }
+    #[test]
+    fn mixed_entries_preserve_fifo_after_first_cancellation_and_detached_completion() {
+        let mut queue = SenderQueue::<u32, u32>::new();
+        assert!(queue.drain().next().is_none());
+        assert!(queue.inner.is_none());
+        let first = queue.push(1);
+        assert_eq!(queue.push_detach(2), Ok(()));
+        let third = queue.push(3);
+        drop(first);
+        // Reusing the vacant inline slot must not overtake older tree entries.
+        let fourth = queue.push(4);
+        let mut drained = queue.drain();
+        let (value, detached) = drained.next().unwrap();
+        assert_eq!(value, 2);
+        assert_eq!(detached.send(20), Err(20));
+        let (value, sender) = drained.next().unwrap();
+        assert_eq!(value, 3);
+        sender.send(30).unwrap();
+        let (value, sender) = drained.next().unwrap();
+        assert_eq!(value, 4);
+        sender.send(40).unwrap();
+        assert!(drained.next().is_none());
+        assert_eq!(third.now_or_never().unwrap().unwrap(), 30);
+        assert_eq!(fourth.now_or_never().unwrap().unwrap(), 40);
+        // Detached completion returns its owner without calling its destructor.
+        let dropped = Rc::new(Cell::new(0));
+        struct Dropped(Rc<Cell<usize>>);
+        impl Drop for Dropped {
+            fn drop(&mut self) {
+                self.0.set(self.0.get() + 1);
+            }
+        }
+        let mut queue = SenderQueue::<(), Dropped>::new();
+        assert!(queue.push_detach(()).is_ok());
+        let (_, sender) = queue.drain().next().unwrap();
+        let value = sender.send(Dropped(dropped.clone())).err().unwrap();
+        assert_eq!(dropped.get(), 0);
+        drop(value);
+        assert_eq!(dropped.get(), 1);
     }
 }
