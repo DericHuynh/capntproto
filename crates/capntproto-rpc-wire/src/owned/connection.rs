@@ -1030,7 +1030,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     /// for control producers). Unreachable words are included. Rejection leaves
     /// the frame and protocol tables intact; Busy never invokes the factory.
     #[allow(clippy::too_many_arguments, clippy::result_large_err)]
-    #[inline(always)]
+    #[inline(never)]
     pub fn receive_with_policy(
         &mut self,
         frame: Frame<'pool>,

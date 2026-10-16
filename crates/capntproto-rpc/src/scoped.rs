@@ -404,42 +404,46 @@ impl<'id> ClientHooks<'id> {
                 }
             }
             if !endpoint.settled.get() {
-                // Export inspection does not accept a call or mark the promise
-                // used. In particular, a reflected resolution remains pending
-                // until its original-route loopback has completed.
-                if let Ok(true) = graph.is_settled(&entry.client) {
-                    // Once every promise and reflected-ordering barrier has
-                    // settled, its terminal endpoint is immutable. Retain that
-                    // endpoint directly, like a resolved upstream ClientHook,
-                    // instead of walking and retaining the completed promise
-                    // chain on every subsequent call. In particular a settled
-                    // bootstrap need not pin its question for the client's life.
-                    if let Ok((client, pending)) = graph.snapshot_for_export(&entry.client) {
-                        if pending {
-                            graph.release(client);
-                        } else {
-                            graph.release(core::mem::replace(&mut entry.client, client));
-                        }
-                    }
-                    let result = match graph.inspect(&entry.client) {
-                        Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
-                            location: capntproto_rpc_engine::clients::Location::Broken,
-                            ..
-                        }) => Err(endpoint.failure.borrow().clone().unwrap_or_else(|| {
-                            Error::failed("capability resolved to a broken endpoint".into())
-                        })),
-                        _ => Ok(()),
-                    };
-                    *endpoint.failure.borrow_mut() = result.as_ref().err().cloned();
-                    endpoint.settled.set(true);
-                    // Most promised-answer targets are called without anyone
-                    // waiting for their resolution. Allocate notification state
-                    // only for observers, and detach it before waking them.
-                    let resolution = endpoint.resolution.borrow_mut().take();
-                    if let Some(resolution) = resolution {
-                        let _ = resolution.sender.send(result);
-                    }
+                Self::settle_endpoint(graph, entry, &endpoint);
+            }
+        }
+    }
+
+    // Metadata on settled imports still refreshes on every collection. Keep
+    // first settlement and its notification work outside that repeated walk.
+    #[inline(never)]
+    fn settle_endpoint<G: Capabilities<'id>>(
+        graph: &mut G,
+        entry: &mut Entry<'id>,
+        endpoint: &Endpoint,
+    ) {
+        // Export inspection does not accept a call or mark the promise used.
+        // A reflected resolution waits for its original-route loopback.
+        if let Ok(true) = graph.is_settled(&entry.client) {
+            // A settled terminal endpoint is immutable. Retain it directly so
+            // completed promise chains do not remain pinned by public hooks.
+            if let Ok((client, pending)) = graph.snapshot_for_export(&entry.client) {
+                if pending {
+                    graph.release(client);
+                } else {
+                    graph.release(core::mem::replace(&mut entry.client, client));
                 }
+            }
+            let result = match graph.inspect(&entry.client) {
+                Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
+                    location: capntproto_rpc_engine::clients::Location::Broken,
+                    ..
+                }) => Err(endpoint.failure.borrow().clone().unwrap_or_else(|| {
+                    Error::failed("capability resolved to a broken endpoint".into())
+                })),
+                _ => Ok(()),
+            };
+            *endpoint.failure.borrow_mut() = result.as_ref().err().cloned();
+            endpoint.settled.set(true);
+            // Detach observer state before notification can invoke a waker.
+            let resolution = endpoint.resolution.borrow_mut().take();
+            if let Some(resolution) = resolution {
+                let _ = resolution.sender.send(result);
             }
         }
     }

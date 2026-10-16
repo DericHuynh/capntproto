@@ -628,6 +628,46 @@ mod tests {
         }
     }
     #[test]
+    fn direct_pipeline_field_getters_preserve_paths_and_owners() {
+        for depth in [0u16, 1, 7, 8, 32] {
+            let (sender, pipeline) = Pipeline::new();
+            let mut pipeline = any_pointer::Pipeline::new(Box::new(pipeline));
+            for field in 0..depth {
+                pipeline = pipeline.get_pointer_field(field);
+            }
+            let first = pipeline.get_pointer_field_as_cap(41);
+            let second = pipeline.noop().get_pointer_field_as_cap(42);
+            drop(pipeline);
+            let mut adopted = Vec::new();
+            sender.complete_with_clients(
+                Box::new(broken::Pipeline::new(Error::failed("completed".into()))),
+                |client, path| {
+                    adopted.push((client.clone(), path));
+                },
+            );
+            assert_eq!(adopted.len(), 2, "projections retain their parent");
+            for ((client, path), last) in adopted.into_iter().zip([41, 42]) {
+                let fields: Vec<_> = path
+                    .iter()
+                    .map(|op| match op {
+                        PipelineOp::GetPointerField(field) => *field,
+                        PipelineOp::Noop => panic!("unexpected extra operation"),
+                    })
+                    .collect();
+                assert_eq!(fields, (0..depth).chain([last]).collect::<Vec<_>>());
+                ClientInner::resolve(&client, Err(Error::failed(format!("field {last}"))));
+            }
+            assert_eq!(
+                first.get_resolved().unwrap().get_failure().unwrap().extra,
+                "field 41"
+            );
+            assert_eq!(
+                second.get_resolved().unwrap().get_failure().unwrap().extra,
+                "field 42"
+            );
+        }
+    }
+    #[test]
     fn adopting_pipeline_clients_preserves_identity_and_ignores_canceled_projections() {
         let (sender, pipeline) = Pipeline::new();
         let first = pipeline.get_pipelined_cap(&[PipelineOp::GetPointerField(1)]);

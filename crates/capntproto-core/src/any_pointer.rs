@@ -395,6 +395,27 @@ impl Pipeline {
         self.hook.get_pipelined_cap(&self.ops)
     }
 
+    /// Selects a capability field without constructing an intermediate pipeline.
+    /// The returned hook retains its own interest in the selected capability.
+    #[cfg(feature = "alloc")]
+    #[inline]
+    pub fn get_pointer_field_as_cap(
+        &self,
+        pointer_index: u16,
+    ) -> alloc::boxed::Box<dyn ClientHook> {
+        let mut inline = [PipelineOp::Noop; 8];
+        if self.ops.len() < inline.len() {
+            inline[..self.ops.len()].copy_from_slice(&self.ops);
+            inline[self.ops.len()] = PipelineOp::GetPointerField(pointer_index);
+            self.hook.get_pipelined_cap(&inline[..self.ops.len() + 1])
+        } else {
+            let mut path = alloc::vec::Vec::with_capacity(self.ops.len() + 1);
+            path.extend_from_slice(&self.ops);
+            path.push(PipelineOp::GetPointerField(pointer_index));
+            self.hook.get_pipelined_cap(&path)
+        }
+    }
+
     /// Consume this pipeline as a hook rooted at its current pointer path.
     #[cfg(feature = "alloc")]
     pub fn into_hook(self) -> alloc::boxed::Box<dyn PipelineHook> {

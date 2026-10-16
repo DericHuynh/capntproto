@@ -4583,6 +4583,24 @@ window. Both empty instruction peers miss: 18,644,408/17,259,128 portable versus
 Complete evidence is retained in
 `target/portable-performance-two-completion-cache-20261016/`.
 
+The dedicated campaign at `6c63432b` independently validates all 410 trials
+and passes 12/16 targets (10 remote, 2 loopback). Remaining ratios to the faster
+matched reference are small unary 1.056729×, pipeline 1.152886×, empty loopback
+1.071088× and 64 KiB loopback 1.393987×. All four manifests, available executable
+digests, build/runtime identities and checkout commit agree; workflow and cleanup
+succeeded. Steady pipeline message order and byte counts still match C++.
+Ninety validated CPU/wall journals give portable/C++ pipeline client CPU p50
+34,381/24,931 ns and server 20,204.5/18,725.5 ns. Legacy writes different groups,
+so its individual processing windows are not equivalent. Complete evidence is in
+`target/portable-performance-two-cache-dedicated-20261016/` (1,827 files plus
+checksums); source fingerprint is
+`fbce4438843999a6b470288226e78bb5ae7d616f3b636ec3cee4e94c8c63d7a2`
+and driver SHA-256 is
+`ac4eb256b3794b9df7dd280d1266d52aec69776781faec0f3636cc8183996a81`.
+The later `04aa4963` and local candidates below are excluded. Full CI completed:
+tests and the other jobs passed, but the coverage gate failed its unchanged
+per-file floors. The PR remains unqualified; no 16/16 performance campaign has passed.
+
 A subsequent exact-integer audit corrected the earlier stack-target and
 concrete-refresh empty-call server classifications: their ratios are 1.052252×
 and 1.053615×, so both miss the inclusive 1.05× instruction gate. The raw
@@ -4665,6 +4683,79 @@ selected window. Steady pipeline and callback message batching remains matched
 to C++; no causal latency improvement is established. Evidence is retained in
 `target/portable-performance-nonplain-prefilter-20261016/`; executable SHA-256 is
 `ef748aa38a03b814dc5e0f9125e570ca2c1de2eae51d9011a3384ee62a86ddf1`.
+
+Separating first settlement from the repeated metadata walk preserves every
+refresh, including metadata received through later aliases. The hosted refresh
+loop shrinks from 3,353 to 2,378 machine-code bytes, with a 1,315-byte settlement
+helper. Pipeline instructions become 77,265,435/67,631,616; simulated instruction
+cache misses are 5,397,396/4,881,982. Client instructions improve 0.58%, but server
+instructions rise 0.08% and some simulated branch misses increase. Sixty rotated
+CPU/wall trials compare both frozen portable binaries, legacy and C++ directly.
+Pipeline CPU p50 is 12,368/8,803 ns versus 12,628/9,004 ns for the prior portable
+binary; other cases and controls still vary substantially.
+
+All 294 RPC tests, resolution-observer Miri, hosted Clippy, 92 integration tests
+and 72 mixed-peer cases pass. All 240 local trials independently validate, but
+only 7/16 targets pass (6 remote, 1 loopback); both empty instruction peers still
+miss at 1.072948×/1.053359×. Eighteen gated profiles preserve matching portable/C++
+selected byte totals. No dedicated qualification or general latency gain is
+established. Complete evidence is in
+`target/portable-performance-outlined-settlement-20261016/`; executable SHA-256 is
+`8797be623903de57c4ac478497e2933e79cd83944bf11e816593ff478a341e4d`.
+
+Generated interface pipeline getters now resolve the final field directly from
+the existing hook using a short stack path. Longer paths retain a growing
+fallback. Both Rust drivers use this API; fixtures are unchanged. This removes
+two client allocations per pipeline workflow (2,200 malloc/free pairs across
+100 warmups and 1,000 iterations). Pipeline instructions become
+76,916,378/67,621,133, with simulated instruction-cache misses
+5,394,353/4,901,863. The paired 60-trial CPU diagnostic shows no clear pipeline
+gain: current client/server p50 is 12,508/9,024 ns versus 12,518/8,853 ns for the
+preceding portable executable. Eighteen gated profiles preserve all sampled
+portable/C++ read/write byte totals.
+
+All 75 core, 2 codegen, 295 RPC and 92 integration tests pass, along with
+72 mixed-peer cases, focused path/owner Miri, allocation-free core/wire builds,
+Clippy, formatting and documentation gates. The regression covers empty,
+inline-boundary and longer paths, no-op projections and dropping parent owners.
+All 240 local trials independently validate, but only 7/16 targets pass
+(5 remote, 2 loopback); both empty instruction peers still miss at
+1.072948×/1.053362×. No latency qualification is established. Complete evidence
+is in `target/portable-performance-direct-pipeline-field-20261016/`;
+executable SHA-256 is
+`501d324f1fdaffb293602aee5b1aa623759bb49715152584efa0984267049266`.
+
+Moving frame admission out of the large scheduler loop is retained provisionally.
+Pipeline instructions become 76,920,579/67,754,546 (client essentially unchanged,
+server +0.20%). Simulated instruction-cache misses fall to 5,285,542/4,862,322.
+Eighty paired CPU/wall trials include the preceding frozen portable executable,
+legacy and C++ across four workflows. Pipeline CPU p50 is 12,068/8,723 ns versus
+12,799/9,153 ns for the preceding portable executable; the baseline contains a
+slow repetition, so this does not establish a general latency gain. All 240 local
+trials independently validate, with 8/16 targets passing (5 remote, 3 loopback).
+Both empty instruction peers miss at 1.071305×/1.054242×. The clean 18-profile
+rerun preserves all sampled portable/C++ read/write byte totals. An earlier
+profile campaign overlapped gzip verification and is retained as excluded.
+
+The echo fixture is traced separately because 64 KiB loopback sends a large
+payload in both directions, unlike the remote bulk workflow. Thirty native
+CPU/wall trials retain the original 10,000 warmups and 1,000 measured calls,
+with five rotating repetitions at 0 and 65,536 bytes. The original final-read
+intervals are not equivalent: portable usually receives a complete large frame
+in one read, while legacy and C++ need two. Reanalysis pairs the first read with
+the following write and verifies identical steady byte totals. At 65,536 bytes,
+portable client/server CPU spans are 6,480/3,796 ns versus legacy 8,243/6,079 ns
+and C++ 9,274/8,102 ns. Subtracting subsequent read syscall intervals gives
+6,480/3,796 ns portable, 6,039/4,146 ns legacy and 8,362/7,192 ns C++.
+Original journals and both analyses remain available; these instrumented
+windows are excluded from the latency gate. No 16/16 campaign has passed.
+All 145 hosted wire tests, 96 allocation-free wire tests, both Clippy profiles,
+72 mixed-peer cases, formatting, 102-document validation and unsafe documentation
+pass. The allocation-free test helper now calls its dynamic fallback directly
+without unwrapping a literal None. Earlier direct-getter tests and Miri remain
+separate evidence. Complete source, raw trials, traces and exclusions are in
+`target/portable-performance-outlined-admission-20261016/`; executable SHA-256 is
+`6c0d2cd83e4e7f84f575ef787582816b86a7b6635bb3e851f3ab4514da37c472`.
 
 The dependent-read fixtures retain different ownership lifetimes. Rust's parent
 response and borrowed child capability survive across the child await. C++'s

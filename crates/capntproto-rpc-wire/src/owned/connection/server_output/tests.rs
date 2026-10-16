@@ -153,9 +153,7 @@ fn check_prepared_data_reply(_hosted: bool) {
                         .unwrap()
                         .unwrap()
                 });
-                #[cfg(not(feature = "alloc"))]
-                let result = None;
-                let result = result.unwrap_or_else(|| {
+                let mut dynamic = || {
                     driver
                         .local_answer_dynamic(
                             key,
@@ -172,7 +170,11 @@ fn check_prepared_data_reply(_hosted: bool) {
                             },
                         )
                         .unwrap()
-                });
+                };
+                #[cfg(feature = "alloc")]
+                let result = result.unwrap_or_else(&mut dynamic);
+                #[cfg(not(feature = "alloc"))]
+                let result = dynamic();
                 let original = messages.read(&result.frame.lease).as_ptr();
                 driver
                     .complete_answer(&call, Ok(result), messages)
