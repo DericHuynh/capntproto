@@ -1038,8 +1038,26 @@ fn pipeline_drop_releases_interest_before_synchronous_wake() {
     assert!(hooks
         .poll_next(&mut Context::from_waker(&waker))
         .is_pending());
+    let last = WirePipeline(PipelineRef(Some(pipeline.clone())));
+    drop(WirePipeline(PipelineRef(Some(pipeline.clone()))));
+    assert_eq!(observe.0.load(Ordering::SeqCst), usize::MAX);
+    drop(last);
+    assert_eq!(observe.0.load(Ordering::SeqCst), 1);
+    pipeline.finish(Box::new(crate::broken::Pipeline::new(Error::failed(
+        "finished".into(),
+    ))));
+    observe.0.store(usize::MAX, Ordering::SeqCst);
+    assert!(hooks
+        .poll_next(&mut Context::from_waker(&waker))
+        .is_pending());
+    drop(WirePipeline(PipelineRef(Some(pipeline.clone()))));
+    assert_eq!(observe.0.load(Ordering::SeqCst), usize::MAX);
+    // Custom hooks can release a pipeline during publication. A borrowed
+    // completion cell must preserve the conservative wake without panicking.
+    let borrowed = pipeline.finished.borrow_mut();
     drop(WirePipeline(PipelineRef(Some(pipeline.clone()))));
     assert_eq!(observe.0.load(Ordering::SeqCst), 1);
+    drop(borrowed);
     OBSERVED.with(|slot| slot.borrow_mut().take());
 }
 

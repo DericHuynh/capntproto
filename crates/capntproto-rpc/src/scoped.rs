@@ -1200,13 +1200,18 @@ impl Future for Reply {
                 Error::disconnected("scoped ClientHook driver dropped".into())
             })));
         }
-        Pin::new(
+        let result = Pin::new(
             self.receiver
                 .as_mut()
                 .expect("reply polled after completion"),
         )
-        .poll(cx)
-        .map(|result| {
+        .poll(cx);
+        if result.is_ready() {
+            // Completion already notified its tracked observer. A later drop
+            // cannot cancel this call or enable another coordinator scan.
+            drop(self.receiver.take());
+        }
+        result.map(|result| {
             result
                 .map_err(crate::canceled_to_error)
                 .and_then(|result| result)
@@ -1217,9 +1222,11 @@ impl Drop for Reply {
     fn drop(&mut self) {
         // First close the receiver, then wake the dispatcher to prune queued
         // cancellation even when no IO or application operation is ready.
-        drop(self.receiver.take());
-        if let Some(inbox) = self.inbox.upgrade() {
-            inbox.notify();
+        if let Some(receiver) = self.receiver.take() {
+            drop(receiver);
+            if let Some(inbox) = self.inbox.upgrade() {
+                inbox.notify();
+            }
         }
     }
 }

@@ -192,6 +192,14 @@ impl Pipeline {
         )
     }
 
+    // A request with a shared unit completion already has the exact driver
+    // needed by queued projections. Retain it without another shared future.
+    pub(crate) fn drive_shared(&mut self, promise: futures::future::Shared<Promise<(), Error>>) {
+        let mut inner = self.inner.borrow_mut();
+        assert!(inner.promise_to_drive.is_none());
+        inner.promise_to_drive = Some(promise);
+    }
+
     pub(crate) fn drive<F>(&mut self, promise: F)
     where
         F: Future<Output = Result<(), Error>> + 'static + Unpin,

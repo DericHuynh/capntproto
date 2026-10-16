@@ -1217,6 +1217,17 @@ impl Drop for PipelineRef {
         let inbox = self
             .0
             .as_ref()
+            // The driver holds at most one reference. Dropping an additional
+            // public clone cannot remove the last cancellation interest while
+            // two other owners remain. Endpoint drops notify independently.
+            .filter(|pipeline| {
+                Rc::strong_count(pipeline) <= 2
+                    // A completed pipeline cannot cancel its call. Releasing
+                    // its payload still notifies through the final endpoints.
+                    // A reentrant hook may hold the cell: retain the ordinary
+                    // notification in that case rather than borrowing again.
+                    && !pipeline.finished.try_borrow().is_ok_and(|done| done.is_some())
+            })
             .and_then(|pipeline| pipeline.inbox.upgrade());
         // A synchronous wake may poll cancellation immediately. Release the
         // interest first so that poll cannot observe the soon-to-die owner and

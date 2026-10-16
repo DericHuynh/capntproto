@@ -545,7 +545,7 @@ pub(super) fn request_prepared(
 pub(super) fn request_pipelined_prepared(
     mut call: Box<Call>,
 ) -> capability::RemotePromise<any_pointer::Owned> {
-    use futures::TryFutureExt;
+    use futures::FutureExt;
     let inbox = call.endpoint.inbox.upgrade();
     let state = inbox
         .as_ref()
@@ -560,20 +560,29 @@ pub(super) fn request_pipelined_prepared(
         Ok(inbox) => state.promise(inbox),
         Err(error) => Promise::err(*error),
     };
-    let completed = promise.map_ok(move |response| {
-        let mut response = Some(response);
+    // The response and pipeline share one driver. Store the non-Clone response
+    // separately so completion can be observed by both interests without a
+    // second shared future around the pipeline's unit result.
+    let result = Rc::new(Cell::new(None));
+    let output = result.clone();
+    let driver = Promise::from_future(async move {
+        let mut response = Some(promise.await?);
         sender.complete_with(|| {
             let (shared, pipeline) =
                 crate::local::Pipeline::share_response(response.take().unwrap());
             response = Some(shared);
             pipeline
         });
-        (response.unwrap(), ())
-    });
-    let (response, driver) = crate::split::split(completed);
-    pipeline.drive(driver);
+        output.set(response);
+        Ok(())
+    })
+    .shared();
+    pipeline.drive_shared(driver.clone());
     capability::RemotePromise {
-        promise: Promise::from_future(response),
+        promise: Promise::from_future(async move {
+            driver.await?;
+            Ok(result.take().expect("completed pipelined response"))
+        }),
         pipeline: any_pointer::Pipeline::new(Box::new(pipeline)),
     }
 }

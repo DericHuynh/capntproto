@@ -38,6 +38,45 @@ impl std::task::Wake for Wakes {
 }
 
 #[test]
+fn only_an_unfinished_reply_drop_wakes_the_inbox() {
+    for state in 0..4 {
+        let mut hooks = ClientHooks::new(1, 1);
+        let (sender, receiver) = shared::channel();
+        let mut sender = Some(sender);
+        let mut reply = Reply {
+            receiver: Some(receiver),
+            shutdown: hooks.inbox.shutdown.clone(),
+            inbox: Rc::downgrade(&hooks.inbox),
+        };
+        if state == 1 || state == 2 {
+            let result = if state == 1 {
+                Ok(())
+            } else {
+                Err(Error::failed("rejected".into()))
+            };
+            sender.take().unwrap().send(result).unwrap();
+        } else if state == 3 {
+            drop(sender.take());
+        }
+        let result = Pin::new(&mut reply).poll(&mut Context::from_waker(Waker::noop()));
+        assert_eq!(result.is_pending(), state == 0);
+        if let Poll::Ready(result) = result {
+            assert_eq!(result.is_ok(), state == 1);
+        }
+        let wakes = Arc::new(Wakes(AtomicUsize::new(0)));
+        let waker = Waker::from(wakes.clone());
+        assert!(hooks
+            .poll_next(&mut Context::from_waker(&waker))
+            .is_pending());
+        drop(reply);
+        assert_eq!(wakes.0.load(Ordering::Relaxed), usize::from(state == 0));
+        if let Some(sender) = sender {
+            assert!(sender.is_closed());
+        }
+    }
+}
+
+#[test]
 fn generated_client_uses_scoped_engine_dispatch_and_borrowed_service_owner() {
     use crate::persistent_capnp::persistent;
     type Text = capnp::text::Owned;
@@ -568,6 +607,79 @@ fn prepared_pipeline_interest_survives_response_drop_before_admission() {
             })
             .unwrap();
         }
+    }
+}
+
+#[test]
+fn prepared_pipeline_wakes_each_interest_and_cancels_after_the_last_drop() {
+    for keep_response in [false, true] {
+        clients::with_growing_graph::<u32, u8, _>(0, 2, |graph| {
+            let route = graph.endpoint(7, Location::Local).unwrap();
+            let target = graph.endpoint(8, Location::Local).unwrap();
+            let mut hooks = ClientHooks::new(2, 3);
+            let client = hooks.export_snapshot(graph, &route).unwrap();
+            let cap = hooks.export_snapshot(graph, &target).unwrap();
+            let parent = request(&client, 1);
+            let projected = capability::Client::new(parent.pipeline.as_cap());
+            let mut child = Some(request(&projected, 2));
+            let mut response = Some(parent.promise);
+            drop((parent.pipeline, projected));
+            let response_wakes = Arc::new(Wakes(AtomicUsize::new(0)));
+            let child_wakes = Arc::new(Wakes(AtomicUsize::new(0)));
+            assert!(Pin::new(response.as_mut().unwrap())
+                .poll(&mut Context::from_waker(&Waker::from(
+                    response_wakes.clone()
+                )))
+                .is_pending());
+            assert!(Pin::new(&mut child.as_mut().unwrap().promise)
+                .poll(&mut Context::from_waker(&Waker::from(child_wakes.clone())))
+                .is_pending());
+            if keep_response {
+                drop(child.take());
+            } else {
+                drop(response.take());
+            }
+            let mut call = next(&mut hooks);
+            assert!(!call.is_canceled());
+            call.results()
+                .get()
+                .unwrap()
+                .set_as_capability(cap.hook.add_ref());
+            call.complete(Ok(()));
+            if keep_response {
+                assert!(response_wakes.0.load(Ordering::Relaxed) > 0);
+                let received = ready(response.as_mut().unwrap()).unwrap();
+                let received: capability::Client =
+                    received.get().unwrap().get_as_capability().unwrap();
+                assert_eq!(received.hook.get_ptr(), cap.hook.get_ptr());
+            } else {
+                assert!(child_wakes.0.load(Ordering::Relaxed) > 0);
+                assert!(Pin::new(&mut child.as_mut().unwrap().promise)
+                    .poll(&mut Context::from_waker(Waker::noop()))
+                    .is_pending());
+                let child_call = next(&mut hooks);
+                assert_eq!(hooks.target(&child_call).unwrap().key(), target.key());
+                child_call.complete(Ok(()));
+                ready(&mut child.as_mut().unwrap().promise).unwrap();
+            }
+            drop((response, child));
+            let abandoned = request(&client, 3);
+            let abandoned_call = next(&mut hooks);
+            assert!(!abandoned_call.is_canceled());
+            drop(abandoned.promise);
+            assert!(!abandoned_call.is_canceled());
+            drop(abandoned.pipeline);
+            assert!(abandoned_call.is_canceled());
+            drop((abandoned_call, cap, client));
+            assert_eq!(hooks.inbox.live_calls.get(), 0);
+            hooks.collect(graph);
+            hooks.close(graph, Error::disconnected("done".into()));
+            graph.release(route);
+            graph.release(target);
+            while graph.take_retired().is_some() {}
+            assert!(graph.is_empty());
+        })
+        .unwrap();
     }
 }
 

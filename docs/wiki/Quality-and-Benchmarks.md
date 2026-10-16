@@ -3573,6 +3573,56 @@ retain prepared segments through output. Avoiding that copy requires preserving
 bounded storage accounting and ownership through partial writes; it remains
 an optimization opportunity, not a claimed improvement.
 
+The `2a2cda0` PR checkpoint subsequently completes all 2,241 Cargo tests
+without a failure (20 skips). Miri, distributed models, platforms, fuzzing,
+mutation checks and portable checks pass. Its unchanged coverage regression
+gate fails; exact counters and missed mappings are archived under
+`target/portable-performance-retirement-ci-20261016/`. Cargo artifact
+`12040512363` has SHA-256
+`538fad97a8194664bbff7d693ee79b91ace1e9f768d1e3b5405bc1d13baa56fd`.
+
+Further paired traces retain the C++ cleanup order while removing notifications
+from nonfinal pipeline clones and already-observed replies. This candidate
+passes 278 RPC tests, focused Miri and all 72 mixed-peer workflows. All 240
+local timing trials are independently checked: **8/12 workflows and 1/4
+loopback payloads** pass. Evidence, including an invalid startup-only profile
+attempt and its correctly named rerun, remains in
+`target/portable-performance-reply-wakes-20261016/` (870 files plus checksums).
+These shared-VM timings do not establish dedicated qualification.
+
+A portable pipelined response and its queued projections now share one
+completion driver, removing a second shared future around the unit result.
+Both response-only and pipeline-only interests still drive completion;
+final cancellation and wake delivery pass focused Miri. Pipeline client
+instructions fall from 87,667,251 to 86,696,943, with server instructions
+72,510,276. All eleven steady client writes remain Finish/Release/Call/Call,
+and both server Returns remain in one write. The full local campaign passes
+**6/12 workflows and 3/4 loopback payloads**, with 64 KiB loopback at
+49,893 ns versus legacy's 47,500 ns (1.050379, MISS). All 240 trials and
+percentiles are independently verified; all 72 mixed-peer workflows and
+279 RPC tests pass. Empty-call instructions remain a client miss/server pass.
+The exact source, frozen executable identity, traces and raw samples are in
+`target/portable-performance-shared-pipeline-20261016/` (866 files plus checksums).
+
+Dropping a finished pipeline also skips its obsolete cancellation wake;
+final capability endpoints still notify cleanup independently. Conservative
+notification remains available when a reentrant hook holds the completion
+cell. The final `finished-pipeline20261016` executable has SHA-256
+`d8d398f243713d454be8dc98f7de486c290b6e4116da89e22df50c3870d48ac0`.
+Pipeline instructions are 86,659,782 / 72,510,270, dependent read
+74,518,076 / 63,751,548, callback 60,586,651 / 60,391,292 and 64 KiB
+251,428,598 / 238,666,309. The additional reduction is small; C++ pipeline
+write ordering and batching remain unchanged. Native validation passes
+279 RPC tests, 92 integration tests and Clippy. Focused Miri passes the
+synchronous pipeline-drop test and the cleanup/backpressure matrix, including
+budgets 1/8/64 and output capacities 1/4. The full local campaign passes
+**7/12 workflows and 3/4 loopback payloads**; all 240 trials and percentiles
+are independently checked and all 72 mixed-peer workflows pass. Empty-call
+instructions remain client MISS/server PASS (18,494,219 / 17,003,605 versus
+legacy 17,370,093 / 16,281,103). Raw samples, traces, source and executable
+identities are retained in `target/portable-performance-finished-pipeline-20261016/`.
+The full dedicated 16-cell target remains open.
+
 The earlier `ef9f4c8` Cargo CI completed 2,230 tests with zero failures and
 20 skips, but its coverage regression gate failed. The Miri job reached its
 45-minute limit after the 228-test 32-bit RPC matrix passed, leaving later
