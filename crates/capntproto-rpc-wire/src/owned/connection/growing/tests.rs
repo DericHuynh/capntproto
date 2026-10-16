@@ -283,8 +283,7 @@ fn late_completion_binding_preserves_task_and_sender_on_rejection() {
         let (sender, receiver) = shared::channel();
         let rejected = full
             .bind_queued(&driver, messages, task, sender.into())
-            .err()
-            .expect("zero capacity");
+            .expect_err("zero capacity");
         assert_eq!(rejected.error, Error::Busy);
         assert_eq!(driver.runtime.queued(), 1);
         let mut invocations = Invocations::new_growing(0, 1).unwrap();
@@ -294,8 +293,7 @@ fn late_completion_binding_preserves_task_and_sender_on_rejection() {
         let (duplicate, duplicate_receiver) = shared::channel();
         let rejected = invocations
             .bind_queued(&driver, messages, task, duplicate.into())
-            .err()
-            .expect("duplicate binding");
+            .expect_err("duplicate binding");
         assert_eq!(rejected.error, Error::UnknownInvocation);
         let local = invocations.accept_local(&mut driver).unwrap().unwrap();
         assert_eq!(local.task(), task);
@@ -305,15 +303,13 @@ fn late_completion_binding_preserves_task_and_sender_on_rejection() {
         let mut other = Invocations::new_growing(0, 1).unwrap();
         let rejected = other
             .bind_queued(&driver, messages, task, rejected.sender)
-            .err()
-            .expect("running task is no longer queued");
+            .expect_err("running task is no longer queued");
         assert_eq!(rejected.error, Error::UnknownInvocation);
         assert_eq!(invocations.terminate(&mut driver, messages), 1);
         local.release(&mut driver, messages);
         let rejected = other
             .bind_queued(&driver, messages, task, rejected.sender)
-            .err()
-            .expect("retired task");
+            .expect_err("retired task");
         assert_eq!(rejected.error, Error::UnknownInvocation);
         drop((rejected, receiver, duplicate_receiver));
         driver.runtime.release(target);
