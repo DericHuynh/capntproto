@@ -301,6 +301,38 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .reserve_with(resources)
             .map_err(|e| Error::Input(super::super::super::Error::Storage(e)))?;
         let reservation = self.ledgers.questions.reserve().map_err(Error::Question)?;
+        #[cfg(feature = "alloc")]
+        if self.owned_output {
+            if let (ImmediateParams::EncodedCall(encoded), calls::Target::Imported(target)) =
+                (params, target)
+            {
+                if let Some(parts) = encoded
+                    .retain_parts(
+                        template.expect("validated encoded Call"),
+                        messages,
+                        reservation.id(),
+                        target,
+                        self.allow_answer_handoff,
+                    )
+                    .map_err(Error::Input)?
+                {
+                    let question = Question::publish_parts(
+                        reservation,
+                        parts,
+                        output,
+                        (method.interface, method.method),
+                        self.allow_answer_handoff,
+                    );
+                    let key = question.key();
+                    slot.exchange = Some(Exchange::Pending(question));
+                    slot.canceled = false;
+                    slot.tail_taken = false;
+                    slot.authorized = true;
+                    ticket.accept_published();
+                    return Ok(Some(key));
+                }
+            }
+        }
         let frame = match params {
             ImmediateParams::EncodedCall(encoded) => match target {
                 calls::Target::Imported(target) => encoded

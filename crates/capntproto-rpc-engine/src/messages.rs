@@ -49,7 +49,11 @@ use vstd::prelude::*;
 mod growing;
 #[cfg(feature = "alloc")]
 pub use growing::{with_growing_messages, with_growing_messages_async, GrowingBuffers};
+#[cfg(feature = "alloc")]
+mod parts;
 mod queue;
+#[cfg(feature = "alloc")]
+pub use parts::{Parts, SharedParts};
 pub use queue::{Queue, QueueEntry, QueueSlot, QueueWindow};
 
 type Brand<'id> = PhantomData<fn(&'id ()) -> &'id ()>;

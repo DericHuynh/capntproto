@@ -999,6 +999,14 @@ where
         self.arena.get_segments_for_output()
     }
 
+    /// Total allocator-reported segment capacity in bytes, including unused
+    /// words. Returns None on overflow or when an externally borrowed range
+    /// cannot reveal its owner's complete capacity. This excludes bounded arena
+    /// metadata and is useful when retaining segments in a byte-budgeted queue.
+    pub fn retained_segment_bytes(&self) -> Option<usize> {
+        self.arena.retained_segment_bytes()
+    }
+
     pub fn into_reader(self) -> Reader<Self> {
         Reader::new(
             self,
@@ -1029,11 +1037,11 @@ where
     A: Allocator,
 {
     fn get_segment(&self, id: u32) -> Option<&[u8]> {
-        self.get_segments_for_output().get(id as usize).copied()
+        self.arena.segment_for_output(id)
     }
 
     fn len(&self) -> usize {
-        self.get_segments_for_output().len()
+        self.arena.len()
     }
 }
 

@@ -618,10 +618,11 @@ enum CallParams {
     Hook(Box<dyn ParamsHook>, Option<usize>),
 }
 impl CallParams {
-    fn owned_request(request: Box<crate::local::Request>) -> Self {
+    fn owned_request(mut request: Box<crate::local::Request>) -> Self {
         // This private request keeps its original parameter allocation through
         // forwarding. Retain its concrete type for admission and wire encoding.
         let bytes = request.batch_content_bytes();
+        request.freeze_large_params();
         Self::OwnedRequest(request, bytes)
     }
     fn hook(params: Box<dyn ParamsHook>) -> Self {
@@ -809,6 +810,9 @@ impl Call {
             self.shutdown = inbox.shutdown.clone();
         }
         self._permit = permit;
+        if let CallParams::Request(params) = &mut self.params {
+            params.freeze_large_params();
+        }
         inbox.queue.borrow_mut().push_back(self);
         inbox.notify_enqueue();
         Ok(inbox)

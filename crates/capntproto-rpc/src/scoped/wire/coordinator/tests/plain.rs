@@ -3,6 +3,390 @@ use capntproto_rpc_engine::ids::QuestionId;
 use capntproto_rpc_wire::{attachments::ImportReceiver, calls};
 
 #[test]
+fn large_server_reply_retains_the_application_payload_until_flush() {
+    #[derive(Clone)]
+    struct LargeReply(Rc<Cell<*const u8>>);
+    impl capability::Server for LargeReply {
+        fn as_ptr(&self) -> usize {
+            Rc::as_ptr(&self.0) as usize
+        }
+        fn dispatch_call(
+            self,
+            _: u64,
+            _: u16,
+            _: capability::Params<any_pointer::Owned>,
+            mut results: capability::Results<any_pointer::Owned>,
+        ) -> capability::DispatchCallResult {
+            results
+                .get()
+                .set_as::<capnp::data::Owned>(&[0xa5; 8192][..])
+                .unwrap();
+            self.0.set(
+                results
+                    .get()
+                    .get_as::<capnp::data::Builder>()
+                    .unwrap()
+                    .as_ptr(),
+            );
+            capability::DispatchCallResult {
+                promise: Promise::ok(()),
+                is_streaming: false,
+                allow_cancellation: true,
+            }
+        }
+    }
+    struct Output {
+        original: Rc<Cell<*const u8>>,
+        bytes: Vec<u8>,
+        retained: Option<messages::SharedParts>,
+        accepted: usize,
+        write_waited: bool,
+        flush_waited: bool,
+    }
+    impl io::Flush for Output {
+        type Error = ();
+        fn poll_flush(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), io::IoError<()>>> {
+            if !self.flush_waited {
+                self.flush_waited = true;
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+            self.retained.take();
+            Poll::Ready(Ok(()))
+        }
+    }
+    impl io::WriteResources<()> for Output {
+        fn accepts_parts(&self) -> bool {
+            true
+        }
+        fn poll_write_parts(
+            &mut self,
+            cx: &mut Context<'_>,
+            parts: messages::SharedParts,
+            resources: Option<&()>,
+        ) -> Poll<Result<usize, io::IoError<()>>> {
+            assert!(resources.is_some());
+            assert!((0..parts.count()).any(|i| parts
+                .part(i)
+                .windows(8192)
+                .any(|bytes| bytes.as_ptr() == self.original.get())));
+            if !self.write_waited {
+                self.write_waited = true;
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+            let length = parts.len();
+            for i in 0..parts.count() {
+                self.bytes.extend_from_slice(parts.part(i));
+            }
+            self.accepted += 1;
+            self.retained = Some(parts);
+            Poll::Ready(Ok(length))
+        }
+        fn poll_write_resources(
+            &mut self,
+            _: &mut Context<'_>,
+            bytes: &[u8],
+            _: Option<&()>,
+        ) -> Poll<Result<usize, io::IoError<()>>> {
+            self.bytes.extend_from_slice(bytes);
+            Poll::Ready(Ok(bytes.len()))
+        }
+    }
+    for owned in [false, true] {
+        for budget in [1, 64] {
+            with_peer(|mut driver, messages| {
+                driver.use_owned_output_queues(owned);
+                let original = Rc::new(Cell::new(core::ptr::null()));
+                let target = expose(
+                    &mut driver,
+                    Rc::new(crate::local::Client::new(LargeReply(original.clone()))),
+                );
+                let mut opts = options();
+                opts.budget = NonZeroUsize::new(budget).unwrap();
+                let mut coordinator = Coordinator::new(
+                    driver,
+                    ClientHooks::new(8, 8),
+                    NonZeroUsize::new(8).unwrap(),
+                    None,
+                    opts,
+                )
+                .unwrap();
+                let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+                let mut output = Output {
+                    original,
+                    bytes: Vec::new(),
+                    retained: None,
+                    accepted: 0,
+                    write_waited: false,
+                    flush_waited: false,
+                };
+                let mut control = Policy {
+                    preserve_plain: true,
+                    ..Default::default()
+                };
+                let mut pending = Some(
+                    Frame::build(messages, 512, opts.reader, |builder| {
+                        calls::dynamic_call(
+                            builder,
+                            QuestionId::from_wire(17),
+                            calls::Target::Imported(target),
+                            calls::DynamicCall {
+                                interface: 7,
+                                no_promise_pipelining: true,
+                                ..Default::default()
+                            },
+                            |_| Ok(()),
+                        )
+                    })
+                    .unwrap(),
+                );
+                let mut pump = Pump::default();
+                let mut reader = BufferedInput;
+                let mut stop = std::pin::pin!(std::future::pending());
+                let mut cx = Context::from_waker(Waker::noop());
+                let wake = Waker::from(coordinator.wake.clone());
+                for _ in 0..4096 {
+                    if let Poll::Ready(result) = coordinator.poll_prepared(
+                        messages,
+                        &mut queue,
+                        &mut reader,
+                        &mut output,
+                        &mut [0; 32],
+                        &NoResources,
+                        &mut control,
+                        stop.as_mut(),
+                        &mut pending,
+                        &mut pump,
+                        &mut cx,
+                        &wake,
+                    ) {
+                        result.unwrap();
+                    }
+                    if pending.is_none()
+                        && coordinator.active == 0
+                        && coordinator.worker.is_empty()
+                        && queue.is_empty()
+                        && coordinator.output.is_clean()
+                    {
+                        break;
+                    }
+                }
+                // A one-step quantum separates collection from publication;
+                // its existing staged copy path keeps that fairness boundary.
+                assert_eq!(
+                    output.accepted,
+                    usize::from(owned && budget > 1),
+                    "owned {owned}, budget {budget}"
+                );
+                assert!(output.retained.is_none() && output.flush_waited);
+                assert!(
+                    pending.is_none()
+                        && coordinator.worker.is_empty()
+                        && coordinator.output.is_clean()
+                );
+                let mut bytes = output.bytes.as_slice();
+                let message = capnp::serialize::read_message(&mut bytes, opts.reader).unwrap();
+                let crate::rpc_capnp::message::Return(Ok(returned)) = message
+                    .get_root::<crate::rpc_capnp::message::Reader>()
+                    .unwrap()
+                    .which()
+                    .unwrap()
+                else {
+                    panic!("Return")
+                };
+                assert_eq!(returned.get_answer_id(), 17);
+                assert!(returned.get_no_finish_needed());
+                assert!(!returned.get_release_param_caps());
+                let crate::rpc_capnp::return_::Results(Ok(payload)) = returned.which().unwrap()
+                else {
+                    panic!("results")
+                };
+                assert_eq!(
+                    payload
+                        .get_content()
+                        .get_as::<capnp::data::Reader>()
+                        .unwrap(),
+                    &[0xa5; 8192]
+                );
+                assert!(bytes.is_empty());
+                futures::executor::block_on(coordinator.terminate::<NoResources, (), ()>(
+                    messages,
+                    &mut queue,
+                    &mut control,
+                    Ok(()),
+                ))
+                .unwrap();
+                reclaimed(messages);
+            });
+        }
+    }
+}
+
+#[test]
+fn large_generated_request_retains_its_payload_through_output_pressure() {
+    struct Output {
+        original: *const u8,
+        bytes: Vec<u8>,
+        retained: Option<messages::SharedParts>,
+        accepted_parts: usize,
+        write_waited: bool,
+        flush_waited: bool,
+    }
+    impl io::Flush for Output {
+        type Error = ();
+        fn poll_flush(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), io::IoError<()>>> {
+            if !self.flush_waited {
+                self.flush_waited = true;
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+            self.retained.take();
+            Poll::Ready(Ok(()))
+        }
+    }
+    impl io::WriteResources<()> for Output {
+        fn accepts_parts(&self) -> bool {
+            true
+        }
+        fn poll_write_parts(
+            &mut self,
+            cx: &mut Context<'_>,
+            parts: messages::SharedParts,
+            resources: Option<&()>,
+        ) -> Poll<Result<usize, io::IoError<()>>> {
+            assert!(resources.is_some());
+            // This checks the public request construction and coordinator path,
+            // not just the wire encoder: output must retain the original data.
+            assert!((0..parts.count()).any(|i| parts
+                .part(i)
+                .windows(8192)
+                .any(|window| window.as_ptr() == self.original)));
+            if !self.write_waited {
+                self.write_waited = true;
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+            let length = parts.len();
+            for i in 0..parts.count() {
+                self.bytes.extend_from_slice(parts.part(i));
+            }
+            self.accepted_parts += 1;
+            self.retained = Some(parts);
+            Poll::Ready(Ok(length))
+        }
+        fn poll_write_resources(
+            &mut self,
+            _: &mut Context<'_>,
+            bytes: &[u8],
+            _: Option<&()>,
+        ) -> Poll<Result<usize, io::IoError<()>>> {
+            self.bytes.extend_from_slice(bytes);
+            Poll::Ready(Ok(bytes.len()))
+        }
+    }
+    for owned in [false, true] {
+        for budget in [1, 64] {
+            with_peer(|mut driver, messages| {
+                driver.use_owned_output_queues(owned);
+                let mut hooks = ClientHooks::new(8, 8);
+                let client = remote(&mut driver, &mut hooks, ImportId::from_wire(7));
+                let mut opts = options();
+                opts.budget = NonZeroUsize::new(budget).unwrap();
+                let mut coordinator =
+                    Coordinator::new(driver, hooks, NonZeroUsize::new(8).unwrap(), None, opts)
+                        .unwrap();
+                let mut request = client
+                    .new_call_with_hints::<any_pointer::Owned, any_pointer::Owned>(
+                        7,
+                        0,
+                        None,
+                        capability::CallHints {
+                            no_promise_pipelining: true,
+                            ..Default::default()
+                        },
+                    );
+                request
+                    .get()
+                    .set_as::<capnp::data::Owned>(&[0xa5; 8192][..])
+                    .unwrap();
+                let original = request
+                    .get()
+                    .get_as::<capnp::data::Builder>()
+                    .unwrap()
+                    .as_ptr();
+                let response = request.send();
+                let mut output = Output {
+                    original,
+                    bytes: Vec::new(),
+                    retained: None,
+                    accepted_parts: 0,
+                    write_waited: false,
+                    flush_waited: false,
+                };
+                let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+                let mut control = Policy {
+                    preserve_plain: true,
+                    ..Default::default()
+                };
+                let mut cx = Context::from_waker(Waker::noop());
+                for _ in 0..512 {
+                    coordinator
+                        .poll_io_work::<(), _, _>(
+                            messages,
+                            &mut queue,
+                            &mut output,
+                            &mut [0; 32],
+                            &NoResources,
+                            &mut control,
+                            &mut cx,
+                        )
+                        .unwrap();
+                    if coordinator.active == 0 && queue.is_empty() && coordinator.output.is_clean()
+                    {
+                        break;
+                    }
+                }
+                assert!(queue.is_empty() && coordinator.output.is_clean());
+                assert_eq!(output.accepted_parts, usize::from(owned));
+                assert!(output.retained.is_none());
+                let mut bytes = output.bytes.as_slice();
+                let message =
+                    capnp::serialize::read_message(&mut bytes, Default::default()).unwrap();
+                let crate::rpc_capnp::message::Call(call) = message
+                    .get_root::<crate::rpc_capnp::message::Reader>()
+                    .unwrap()
+                    .which()
+                    .unwrap()
+                else {
+                    panic!("Call")
+                };
+                let call = call.unwrap();
+                assert_eq!(call.get_question_id(), 0);
+                assert_eq!(
+                    call.get_params()
+                        .unwrap()
+                        .get_content()
+                        .get_as::<capnp::data::Reader>()
+                        .unwrap(),
+                    &[0xa5; 8192]
+                );
+                assert!(bytes.is_empty());
+                drop((response, client));
+                futures::executor::block_on(coordinator.terminate::<NoResources, (), ()>(
+                    messages,
+                    &mut queue,
+                    &mut control,
+                    Ok(()),
+                ))
+                .unwrap();
+                reclaimed(messages);
+            });
+        }
+    }
+}
+
+#[test]
 fn plain_reply_to_an_opaque_sink_preserves_errors_owners_and_reentrant_work() {
     struct Params(capnp::message::Builder<capnp::message::HeapAllocator>);
     impl ParamsHook for Params {

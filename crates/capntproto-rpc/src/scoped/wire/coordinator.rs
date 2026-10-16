@@ -1380,7 +1380,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             |results| results.prepare_trace(&self.policy),
             |driver, messages, request, source| {
                 driver
-                    .try_send_answer_prepared(
+                    .try_send_answer_prepared_shared(
                         request,
                         source,
                         messages,

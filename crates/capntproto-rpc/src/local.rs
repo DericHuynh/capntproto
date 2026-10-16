@@ -76,6 +76,12 @@ pub(crate) struct Params {
 }
 
 impl Params {
+    pub(crate) fn freeze_large_params(&mut self) {
+        if self.cap_table.is_empty() {
+            self.request.freeze_large();
+        }
+    }
+
     pub(crate) fn batch_content_bytes(&self) -> Option<usize> {
         if !self.cap_table.is_empty() {
             return None;
@@ -124,6 +130,7 @@ impl Params {
         let mut result = match &mut self.request {
             RequestMessage::Root(message) => message.get_root::<any_pointer::Builder>().unwrap(),
             RequestMessage::Envelope(message) => message.params(),
+            RequestMessage::Frozen(_) => unreachable!("sent request is immutable"),
         };
         result.imbue_mut(&mut self.cap_table);
         result
@@ -158,6 +165,7 @@ impl Params {
         }
         match &self.request {
             RequestMessage::Envelope(message) => Some(message),
+            RequestMessage::Frozen(message) => Some(message),
             RequestMessage::Root(_) => None,
         }
     }
@@ -171,6 +179,7 @@ impl ParamsHook for Params {
         let request = match &self.request {
             RequestMessage::Root(message) => message,
             RequestMessage::Envelope(message) => message.message(),
+            RequestMessage::Frozen(message) => message.message(),
         };
         let mut result: any_pointer::Reader = if self.envelope {
             let root = request.get_root_as_reader::<crate::rpc_capnp::message::Reader>()?;
@@ -571,6 +580,30 @@ impl ResponseHook for ResultsDone {
 enum RequestMessage {
     Root(message::Builder<message::HeapAllocator>),
     Envelope(capntproto_rpc_wire::owned::connection::PreparedCall<message::HeapAllocator>),
+    // Constructed only after ownership has left the public RequestHook editor.
+    Frozen(Rc<capntproto_rpc_wire::owned::connection::PreparedCall<message::HeapAllocator>>),
+}
+
+impl RequestMessage {
+    fn freeze_large(&mut self) {
+        use capnp::message::ReaderSegments;
+        let RequestMessage::Envelope(message) = &*self else {
+            return;
+        };
+        let builder = message.message();
+        if builder.len() != 2
+            || builder.get_segment(0).unwrap().len() > 4096
+            || builder.get_segment(1).unwrap().len() < 4096
+        {
+            return;
+        }
+        let RequestMessage::Envelope(message) =
+            std::mem::replace(self, RequestMessage::Root(message::Builder::new_default()))
+        else {
+            unreachable!()
+        };
+        *self = RequestMessage::Frozen(message.into_shared());
+    }
 }
 
 // Keep the private hosted endpoint inline until an opaque API needs a box.
@@ -617,6 +650,15 @@ impl ParamsHook for Request {
                 };
                 call?.get_params()?.get_content()
             }
+            RequestMessage::Frozen(message) => {
+                let root = message
+                    .message()
+                    .get_root_as_reader::<crate::rpc_capnp::message::Reader>()?;
+                let crate::rpc_capnp::message::Call(call) = root.which()? else {
+                    unreachable!("private request envelope")
+                };
+                call?.get_params()?.get_content()
+            }
         };
         content.imbue(&self.cap_table);
         Ok(content)
@@ -624,6 +666,11 @@ impl ParamsHook for Request {
 }
 
 impl Request {
+    pub(crate) fn freeze_large_params(&mut self) {
+        if self.cap_table.is_empty() {
+            self.message.freeze_large();
+        }
+    }
     pub(crate) fn send_to(
         mut self: Box<Self>,
         client: Box<dyn ClientHook>,
@@ -653,6 +700,7 @@ impl Request {
         }
         match &self.message {
             RequestMessage::Envelope(message) => Some(message),
+            RequestMessage::Frozen(message) => Some(message),
             _ => None,
         }
     }
@@ -706,6 +754,7 @@ impl RequestHook for Request {
         let mut result: any_pointer::Builder = match &mut self.message {
             RequestMessage::Root(message) => message.get_root().unwrap(),
             RequestMessage::Envelope(message) => message.params(),
+            RequestMessage::Frozen(_) => unreachable!("sent request is immutable"),
         };
         result.imbue_mut(&mut self.cap_table);
         result
@@ -781,6 +830,7 @@ impl RequestHook for Request {
         } = tmp;
         let client = client.expect("unsent request");
         let (request, envelope) = match message {
+            RequestMessage::Frozen(message) => (RequestMessage::Frozen(message), true),
             RequestMessage::Root(message) => (RequestMessage::Root(message), false),
             RequestMessage::Envelope(message)
                 if hints.no_promise_pipelining && !hints.only_promise_pipeline =>

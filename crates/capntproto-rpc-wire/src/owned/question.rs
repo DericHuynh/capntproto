@@ -27,6 +27,25 @@ impl<'pool> Original<'pool> {
     }
 }
 impl<'pool, 'q> Question<'pool, 'q> {
+    #[cfg(feature = "alloc")]
+    pub(super) fn publish_parts(
+        reservation: questions::Reservation<'_, 'q, '_>,
+        parts: messages::SharedParts,
+        queue: messages::QueueSlot<'_, 'pool, '_, impl Sized>,
+        method: (u64, u16),
+        allows_handoff: bool,
+    ) -> Self {
+        let local = reservation.accept();
+        queue.accept_parts(parts);
+        Self {
+            key: local.key(),
+            local: Some(local),
+            original: Original::DataOnly {
+                method,
+                allows_handoff,
+            },
+        }
+    }
     /// Internal publication of a template already checked by the invocation
     /// encoder and patched with this reservation's ID. The caller must preserve
     /// its Caller destination, empty descriptor table and reader limits. No

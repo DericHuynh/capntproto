@@ -685,6 +685,141 @@ fn cooperative_output_preserves_fifo_partial_writes_and_flush_receipts() {
 }
 
 #[test]
+fn retained_segments_survive_bytewise_output_and_release_the_pool_charge() {
+    use capntproto_rpc_engine::{connection::Growth, messages};
+    struct Parts {
+        header: Vec<u8>,
+        segments: Vec<Vec<capnp::Word>>,
+    }
+    impl messages::Parts for Parts {
+        fn count(&self) -> usize {
+            1 + self.segments.len()
+        }
+        fn part(&self, index: usize) -> &[u8] {
+            if index == 0 {
+                &self.header
+            } else {
+                capnp::Word::words_to_bytes(&self.segments[index - 1])
+            }
+        }
+        fn retained_capacity(&self) -> usize {
+            self.header.capacity()
+                + self
+                    .segments
+                    .iter()
+                    .map(|p| p.capacity() * 8)
+                    .sum::<usize>()
+        }
+    }
+    let mut builder =
+        capnp::message::Builder::new(capnp::message::HeapAllocator::new().first_segment_words(1));
+    builder
+        .set_root("far payload retained through every byte and flush")
+        .unwrap();
+    let expected_first = capnp::serialize::write_message_to_words(&builder);
+    let segments = builder.get_segments_for_output();
+    assert!(segments.len() > 1);
+    let table_len = (segments.len() / 2 + 1) * 8;
+    let mut source = Parts {
+        header: expected_first[..table_len].to_vec(),
+        segments: segments
+            .iter()
+            .map(|s| {
+                let mut words = capnp::Word::allocate_zeroed_vec(s.len() / 8);
+                capnp::Word::words_to_bytes_mut(&mut words).copy_from_slice(s);
+                words
+            })
+            .collect(),
+    };
+    let mut pool = messages::GrowingBuffers::new(1, 1024, 2048);
+    // A framed owner must reject a mismatched declared segment extent.
+    source.header[4..8].copy_from_slice(&u32::MAX.to_le_bytes());
+    messages::with_growing_messages(
+        &mut pool,
+        Growth {
+            initial: 0,
+            maximum: 0,
+        },
+        |messages| {
+            let bad = messages.retain_parts(Rc::new(source)).unwrap().unwrap();
+            assert!(crate::OutgoingFrame::from_parts(bad).is_err());
+        },
+    )
+    .unwrap();
+    assert_eq!(pool.retained_bytes(), 0);
+    let source = Parts {
+        header: expected_first[..table_len].to_vec(),
+        segments: segments
+            .iter()
+            .map(|s| {
+                let mut words = capnp::Word::allocate_zeroed_vec(s.len() / 8);
+                capnp::Word::words_to_bytes_mut(&mut words).copy_from_slice(s);
+                words
+            })
+            .collect(),
+    };
+    let first = messages::with_growing_messages(
+        &mut pool,
+        Growth {
+            initial: 0,
+            maximum: 0,
+        },
+        |messages| {
+            crate::OutgoingFrame::from_parts(
+                messages.retain_parts(Rc::new(source)).unwrap().unwrap(),
+            )
+            .unwrap()
+        },
+    )
+    .unwrap();
+    assert!(pool.retained_bytes() >= expected_first.len());
+    let output = Rc::new(Output::default());
+    let mut network = VatNetwork::new(
+        futures::io::Cursor::new(Vec::<u8>::new()),
+        Writer(output.clone()),
+        VatId::Client,
+        Default::default(),
+    );
+    let mut connection = network.connection.take().unwrap();
+    let mut pump = connection.output_driver().unwrap();
+    let (second, second_bytes) = frame("successor");
+    let mut expected = expected_first;
+    expected.extend_from_slice(&second_bytes);
+    let mut first_receipt = connection.send_frame(first);
+    let mut second_receipt = connection.send_frame(second);
+    let mut cx = Context::from_waker(Waker::noop());
+    for index in 0..expected.len() {
+        output.allowed.set(1);
+        if let Some(wake) = output.wake.borrow_mut().take() {
+            wake.wake();
+        }
+        assert!(Pin::new(&mut pump).poll(&mut cx).is_pending());
+        assert!(Pin::new(&mut first_receipt).poll(&mut cx).is_pending());
+        assert!(Pin::new(&mut second_receipt).poll(&mut cx).is_pending());
+        assert_eq!(&*output.bytes.borrow(), &expected[..index + 1]);
+    }
+    output.flushed.set(true);
+    if let Some(wake) = output.wake.borrow_mut().take() {
+        wake.wake();
+    }
+    assert!(Pin::new(&mut pump).poll(&mut cx).is_pending());
+    assert!(matches!(
+        Pin::new(&mut first_receipt).poll(&mut cx),
+        Poll::Ready(Ok(()))
+    ));
+    assert!(matches!(
+        Pin::new(&mut second_receipt).poll(&mut cx),
+        Poll::Ready(Ok(()))
+    ));
+    assert_eq!(pool.retained_bytes(), 0);
+    drop(network);
+    assert!(matches!(
+        Pin::new(&mut pump).poll(&mut cx),
+        Poll::Ready(Err(_))
+    ));
+}
+
+#[test]
 fn cooperative_write_failure_reaches_the_existing_failure_observer() {
     let output = Rc::new(Output::default());
     let mut network = VatNetwork::new(

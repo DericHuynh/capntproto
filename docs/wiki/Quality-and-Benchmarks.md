@@ -3986,6 +3986,110 @@ runtime patch SHA-256 is
 `92e2f395da5ba4a96fde118449bdfe89aeb14b0901042fa67ccc67f02d0fdf91`.
 The full 16-cell qualification remains open; fixtures and thresholds are unchanged.
 
+The cumulative checkpoint `a18ef899` completed dedicated run `38916425998`
+with **11/16 targets met**: 9/12 workflows and 2/4 loopback payloads. Independent
+recomputation verifies all 350 remote and 60 loopback trials, five repetitions,
+pooled p50/p95/p99 and inclusive 1.05 gates. Its remaining misses are:
+
+| Target | Portable p50 (ns) | Faster reference p50 (ns) | Ratio |
+| --- | ---: | ---: | ---: |
+| dependent-read | 275889 | legacy 253655 | 1.087654 |
+| pipelined-read | 187107 | C++ 158975 | 1.176959 |
+| callback | 257088 | legacy 229643 | 1.119512 |
+| loopback 0 bytes | 41044 | legacy 35436 | 1.158257 |
+| loopback 65536 bytes | 93405 | legacy 80924 | 1.154231 |
+
+All four environment manifests match the build provenance and recorded binary
+hashes; source fingerprint is
+`171c16d7547bdc1db2bbdd4889d2c638dd4adb0e8fe03cedcd2f2f0e1b32774b`,
+driver SHA-256 is
+`171f87321dd7b1156d57fe464a4400f8a6ccbbf39d155424e8092682859c9979`.
+All 21 steady pipeline writes have C++ Finish/Release/Call/Call ordering;
+23 server writes batch both Returns. Steady 1368/1216 byte sizes also match.
+Evidence is in `target/portable-performance-prepared-dedicated-20261016/`
+(1538 files plus checksums), artifact `12054851562` with ZIP SHA-256
+`f90a3906b3bc505d542cb56aff689be17d6d752aef1d2168d1379883ee720e5f`.
+The workflow passed its existing report gates; the separate full portable
+performance target did not pass.
+
+The following `segmented-output20261016` prototype added bounded immutable
+output parts but connected them only to forwarded Request owners. Normal
+generated calls use a different parameter owner, so their bulk copy remained.
+All 240 local trials and 72 mixed-peer cases validated; 10/16 local targets
+passed. Pipeline client instructions increased 1.23%. This negative result is
+retained in `target/portable-performance-segmented-output-20261016/`
+(1372 files plus checksums); it is not a claimed speedup.
+
+The corrected `shared-call-params20261016` experiment freezes large, data-only
+parameters after the normal request editor relinquishes ownership. Output
+copies and patches the small envelope, then retains the original payload
+allocation through physical writes and flush. Growing storage charges the
+complete retained allocator capacity and one slot until the final owner drops.
+Fixed storage, unsupported layouts and capacity pressure keep the copy path.
+Partial writes preserve FIFO order and resource ownership.
+
+The 64 KiB client profile falls from **251,608,997 to 181,641,314 instructions
+(27.8%)**, with the large copy removed. Small workflow instruction counts are
+nearly unchanged from the prototype. Five rotating socket diagnostics report
+bulk client read-to-write p50 of 6169 ns (C++ 6320, legacy 4437), versus 7371 ns
+for the earlier prepared-cap-results checkpoint. These instrumented intervals
+are diagnostic, not acceptance evidence. All 240 local trials independently
+validate, but only **6/16 local targets pass**; every miss is retained. The
+empty instruction gate remains client MISS/server PASS.
+
+Validation includes 74 core, 194 engine, 136 wire, 290 RPC, 92 integration and
+72 mixed-peer cases, five Miri checks, Clippy, formatting, allocation-free builds,
+unchanged unsafe-debt limits and wiki checks. The new coordinator test verifies
+that the actual generated request retains the original payload allocation,
+including a one-slot queue, blocked writes and flush, then reclaims all slots.
+Initial measurement launch errors produced no timing samples and are retained.
+Evidence is in `target/portable-performance-shared-call-params-20261016/`
+(1356 files plus checksums); executable SHA-256 is
+`9a5814450c02ff30b93f74d82806870981c349d67ac5d3dc506f212c2e05756c`,
+runtime patch SHA-256 is
+`9e07cbf42eb1400aa29b15ed2ddc6c5cae8cb396ce49f6bad43e8b204da32135`.
+This experiment is not yet dedicated-qualified.
+
+The cumulative `shared-return-parts20261016` experiment also retains large
+completed Return payloads through hosted output, using their existing shared
+owner. Validation and queue reservation still precede answer retirement; fixed
+storage and capacity pressure fall back to copying. A one-step worker budget
+keeps its existing staged-copy path instead of combining collection and
+publication across the fairness boundary.
+
+Bulk 64 KiB server instructions decrease **29.6%, 238,899,122 to 168,192,911**;
+client instructions remain about 181.7 million. Small workflows are essentially
+unchanged. Rotating bulk socket read-to-write medians are 6129/3635 ns
+client/server (C++ 6309/5118, legacy 4467/2623). Pipeline remains substantially
+slower in these diagnostics: 26314/19238.5 ns versus C++ 5628/6459. All 240 local
+trials independently validate, with **9/16 targets met**; pipeline ratio is
+2.974924. No local timing result replaces dedicated qualification, and no miss
+is omitted. Empty instruction qualification still misses on the client and
+passes on the server.
+
+Validation passes 137 wire tests, 291 RPC tests, 92 integrations, 72 mixed-peer
+cases, Clippy, formatting and wiki checks. Two additional Miri checks validate
+retained Return bytes, limits, capacity fallback, original application payload
+identity, blocked writes/flush and complete slot reclamation. The earlier
+unchanged core/engine, allocation-free and unsafe-debt results still apply.
+Initial test compilation/expectation errors and a missing-TLC integration
+configuration are preserved alongside the corrected passing runs.
+
+Evidence is in `target/portable-performance-shared-return-parts-20261016/`
+(1361 files plus checksums), executable SHA-256
+`79e80af66b0609ae4c677bb0786ac4ebe6bd133e16aa1dd3faee5fed0670a8c7`,
+runtime patch SHA-256
+`7f3c67aa50569c1221a4cf02e489db02d3fd9dd2affe056c7523b0fc7fd5b638`.
+The binary and source were frozen before measurement; the following queue
+representation experiment is excluded. The complete 16-target goal remains open.
+
+The earlier `5891490` PR CI run `38909630783` passed 2251 Cargo tests with 20
+skips and no incomplete or failed tests. Its unchanged coverage floors failed;
+all other executed jobs passed. The coverage report and full job log are saved
+in `target/portable-performance-owned-request-ci-20261016/` alongside the
+previous full gap issue body. Coverage and performance requirements remain
+unchanged.
+
 The earlier `ef9f4c8` Cargo CI completed 2,230 tests with zero failures and
 20 skips, but its coverage regression gate failed. The Miri job reached its
 45-minute limit after the 228-test 32-bit RPC matrix passed, leaving later

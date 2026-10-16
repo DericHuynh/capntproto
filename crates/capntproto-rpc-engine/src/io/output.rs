@@ -96,6 +96,23 @@ impl<W: Flush> Flush for Tracking<'_, W> {
 }
 impl<R, W: WriteResources<R>> WriteResources<R> for Tracking<'_, W> {
     #[cfg(feature = "alloc")]
+    fn accepts_parts(&self) -> bool {
+        self.writer.accepts_parts()
+    }
+    #[cfg(feature = "alloc")]
+    fn poll_write_parts(
+        &mut self,
+        cx: &mut Context<'_>,
+        parts: messages::SharedParts,
+        resources: Option<&R>,
+    ) -> Poll<Result<usize, IoError<Self::Error>>> {
+        let result = self.writer.poll_write_parts(cx, parts, resources);
+        if matches!(result, Poll::Ready(Ok(count)) if count > 0) {
+            *self.accepted = true;
+        }
+        result
+    }
+    #[cfg(feature = "alloc")]
     fn accepts_shared(&self) -> bool {
         self.writer.accepts_shared()
     }

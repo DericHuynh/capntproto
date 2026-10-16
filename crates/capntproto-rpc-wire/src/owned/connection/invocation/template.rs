@@ -52,6 +52,7 @@ pub struct PreparedCall<A: capnp::message::Allocator> {
     message: capnp::message::SelectedBuilder<A>,
     method: calls::DynamicCall,
     offsets: Option<(usize, usize)>,
+    owner: Option<alloc::rc::Weak<PreparedCall<capnp::message::HeapAllocator>>>,
 }
 #[cfg(feature = "alloc")]
 impl<A: capnp::message::Allocator> PreparedCall<A> {
@@ -74,6 +75,7 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
                 message,
                 offsets: template.offsets,
                 method,
+                owner: None,
             });
         }
         // Keep the common immutable-header copy separate from reselecting an
@@ -93,6 +95,7 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
             message,
             offsets: template.offsets,
             method,
+            owner: None,
         })
     }
     pub fn new(
@@ -130,6 +133,7 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
         Ok(Self {
             message,
             offsets,
+            owner: None,
             method: calls::DynamicCall {
                 interface,
                 method,
@@ -211,6 +215,7 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
             segment,
             second,
             options,
+            owner: self.owner.as_ref().and_then(alloc::rc::Weak::upgrade),
             template: PlainTemplate {
                 method: (method.interface, method.method),
                 no_promise_pipelining: method.no_promise_pipelining,
@@ -219,6 +224,48 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
                 length: segment.len(),
             },
         }))
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl PreparedCall<capnp::message::HeapAllocator> {
+    /// Freeze this private envelope so output may retain its payload segments.
+    /// No mutable builder access is available through the returned owner.
+    pub fn into_shared(mut self) -> alloc::rc::Rc<Self> {
+        alloc::rc::Rc::new_cyclic(|owner| {
+            self.owner = Some(owner.clone());
+            self
+        })
+    }
+}
+
+#[cfg(feature = "alloc")]
+struct FramedCallParts {
+    header: [u8; 16],
+    first: alloc::vec::Vec<capnp::Word>,
+    source: alloc::rc::Rc<PreparedCall<capnp::message::HeapAllocator>>,
+    capacity: usize,
+}
+#[cfg(feature = "alloc")]
+impl messages::Parts for FramedCallParts {
+    fn count(&self) -> usize {
+        3
+    }
+    fn part(&self, index: usize) -> &[u8] {
+        use capnp::message::ReaderSegments;
+        match index {
+            0 => &self.header,
+            1 => capnp::Word::words_to_bytes(&self.first),
+            2 => self
+                .source
+                .message()
+                .get_segment(1)
+                .expect("frozen second segment"),
+            _ => panic!("invalid part"),
+        }
+    }
+    fn retained_capacity(&self) -> usize {
+        self.capacity
     }
 }
 
@@ -231,8 +278,70 @@ pub struct EncodedCall<'a> {
     second: Option<&'a [u8]>,
     template: PlainTemplate,
     options: capnp::message::ReaderOptions,
+    #[cfg(feature = "alloc")]
+    owner: Option<alloc::rc::Rc<PreparedCall<capnp::message::HeapAllocator>>>,
 }
 impl<'a> EncodedCall<'a> {
+    #[cfg(feature = "alloc")]
+    pub(super) fn retain_parts(
+        &self,
+        template: PlainTemplate,
+        messages: &mut messages::Messages<'_, '_, '_>,
+        question: QuestionId,
+        target: ImportId,
+        allow_handoff: bool,
+    ) -> Result<Option<messages::SharedParts>, super::super::super::Error> {
+        let (Some(source), Some(second)) = (&self.owner, self.second) else {
+            return Ok(None);
+        };
+        // Copying a small message is cheaper than another shared owner. Keep
+        // the retained path for a large second segment and a small envelope.
+        if second.len() < 4096 || self.segment.len() > 4096 {
+            return Ok(None);
+        }
+        let Some(source_capacity) = source.message().retained_segment_bytes() else {
+            return Ok(None);
+        };
+        let mut first = capnp::Word::allocate_zeroed_vec(self.segment.len() / 8);
+        let body = capnp::Word::words_to_bytes_mut(&mut first);
+        body.copy_from_slice(self.segment);
+        body[template.call..template.call + 4].copy_from_slice(&question.to_wire().to_le_bytes());
+        body[template.target..template.target + 4].copy_from_slice(&target.to_wire().to_le_bytes());
+        body[template.call + 16] = (body[template.call + 16] & !0b111)
+            | u8::from(allow_handoff)
+            | (u8::from(template.no_promise_pipelining) << 1);
+        let capacity = first
+            .capacity()
+            .checked_mul(8)
+            .and_then(|n| n.checked_add(16))
+            .and_then(|n| n.checked_add(source_capacity))
+            .ok_or(super::super::super::Error::Capacity)?;
+        let mut header = [0; 16];
+        header[..4].copy_from_slice(&1u32.to_le_bytes());
+        header[4..8].copy_from_slice(
+            &u32::try_from(self.segment.len() / 8)
+                .map_err(|_| super::super::super::Error::Capacity)?
+                .to_le_bytes(),
+        );
+        header[8..12].copy_from_slice(
+            &u32::try_from(second.len() / 8)
+                .map_err(|_| super::super::super::Error::Capacity)?
+                .to_le_bytes(),
+        );
+        let source = alloc::rc::Rc::new(FramedCallParts {
+            header,
+            first,
+            source: source.clone(),
+            capacity,
+        });
+        match messages.retain_parts(source) {
+            Ok(parts) => Ok(parts),
+            // Existing reusable contiguous storage may still fit. Its ordinary
+            // copy path enforces the same budget and preserves retry behavior.
+            Err(messages::Error::NoBuffer) => Ok(None),
+            Err(error) => Err(super::super::super::Error::Storage(error)),
+        }
+    }
     /// A promised-answer target needs a transform list, so rebuild its envelope
     /// from the certified parameters rather than rewriting the imported target.
     #[allow(clippy::too_many_arguments)]
@@ -329,6 +438,8 @@ impl<'a> EncodedCall<'a> {
         Ok(Self {
             segment,
             second: None,
+            #[cfg(feature = "alloc")]
+            owner: None,
             template: PlainTemplate::read_segment(segment, method, options)?,
             options,
         })
@@ -779,6 +890,122 @@ mod tests {
             call.params().get_as::<capnp::data::Builder>().unwrap(),
             data
         );
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn retained_call_parts_match_copied_wire_bytes_and_preserve_source() {
+        use capnp::message::{HeapAllocator, ReaderSegments};
+        use capntproto_rpc_engine::connection::Growth;
+        let mut call = PreparedCall::from_template(
+            &PreparedCallTemplate::default(),
+            HeapAllocator::new().first_segment_words(32),
+            17,
+            3,
+        )
+        .unwrap();
+        let data = [0xa5; 8192];
+        call.params()
+            .set_as::<capnp::data::Owned>(&data[..])
+            .unwrap();
+        let call = call.into_shared();
+        let source = capnp::serialize::write_message_to_words(call.message());
+        let source_capacity = call.message().retained_segment_bytes().unwrap();
+        assert!(source_capacity >= call.message().size_in_words() * 8);
+        let mut pool = messages::GrowingBuffers::new(4, 16384, 65536);
+        messages::with_growing_messages(
+            &mut pool,
+            Growth {
+                initial: 0,
+                maximum: 0,
+            },
+            |messages| {
+                let encoded = call
+                    .encoded(call.method, Default::default())
+                    .unwrap()
+                    .unwrap();
+                for (id, handoff) in [(u32::MAX, true), (0, false)] {
+                    let parts = encoded
+                        .retain_parts(
+                            encoded.template,
+                            messages,
+                            QuestionId::from_wire(id),
+                            ImportId::from_wire(id),
+                            handoff,
+                        )
+                        .unwrap()
+                        .unwrap();
+                    // The large payload is the original segment, not a copied buffer.
+                    assert_eq!(
+                        parts.part(2).as_ptr(),
+                        call.message().get_segment(1).unwrap().as_ptr()
+                    );
+                    let expected = encoded
+                        .copy(
+                            encoded.template,
+                            messages,
+                            QuestionId::from_wire(id),
+                            ImportId::from_wire(id),
+                            handoff,
+                            Default::default(),
+                        )
+                        .unwrap();
+                    let actual: alloc::vec::Vec<_> = (0..parts.count())
+                        .flat_map(|i| parts.part(i).iter().copied())
+                        .collect();
+                    assert_eq!(&actual, &*messages.read(&expected.lease));
+                    expected.release(messages);
+                    drop(parts);
+                    assert_eq!(
+                        capnp::serialize::write_message_to_words(call.message()),
+                        source
+                    );
+                }
+                let strict = capnp::message::ReaderOptions {
+                    traversal_limit_in_words: Some(1),
+                    ..Default::default()
+                };
+                assert!(encoded.for_policy(call.method, strict).is_err());
+            },
+        )
+        .unwrap();
+        // Retaining original capacities may fail even where compact output fits.
+        let mut small = messages::GrowingBuffers::new(1, 16384, source.len() + 7);
+        messages::with_growing_messages(
+            &mut small,
+            Growth {
+                initial: 0,
+                maximum: 0,
+            },
+            |messages| {
+                let encoded = call
+                    .encoded(call.method, Default::default())
+                    .unwrap()
+                    .unwrap();
+                assert!(encoded
+                    .retain_parts(
+                        encoded.template,
+                        messages,
+                        QuestionId::from_wire(1),
+                        ImportId::from_wire(1),
+                        false
+                    )
+                    .unwrap()
+                    .is_none());
+                let frame = encoded
+                    .copy(
+                        encoded.template,
+                        messages,
+                        QuestionId::from_wire(1),
+                        ImportId::from_wire(1),
+                        false,
+                        Default::default(),
+                    )
+                    .unwrap();
+                frame.release(messages);
+            },
+        )
+        .unwrap();
     }
 
     #[cfg(feature = "alloc")]

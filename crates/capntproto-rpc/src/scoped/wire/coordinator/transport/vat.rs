@@ -637,6 +637,21 @@ pub struct Bundle {
 }
 
 impl<V> io::WriteResources<Bundle> for Writer<V> {
+    fn accepts_parts(&self) -> bool {
+        true
+    }
+    fn poll_write_parts(
+        &mut self,
+        cx: &mut Context<'_>,
+        parts: messages::SharedParts,
+        resources: Option<&Bundle>,
+    ) -> Poll<Result<usize, IoError<Error>>> {
+        ready!(self.poll_capacity(cx))?;
+        let length = parts.len();
+        let frame = crate::OutgoingFrame::from_parts(parts).map_err(IoError::Failed)?;
+        self.enqueue(frame, resources)?;
+        Poll::Ready(Ok(length))
+    }
     fn start_batch(&mut self, frames: usize) {
         self.buffer_batch = frames > 1;
     }

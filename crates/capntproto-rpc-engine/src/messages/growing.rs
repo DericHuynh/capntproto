@@ -43,9 +43,10 @@ pub struct GrowingBuffers<'bytes> {
     count: Cell<usize>,
     retained_bytes: Cell<usize>,
     received_bytes: OnceCell<alloc::rc::Rc<Cell<usize>>>,
-    maximum_buffers: usize,
-    maximum_buffer_bytes: usize,
-    maximum_bytes: usize,
+    pub(super) parts_charges: OnceCell<alloc::rc::Rc<super::parts::Charges>>,
+    pub(super) maximum_buffers: usize,
+    pub(super) maximum_buffer_bytes: usize,
+    pub(super) maximum_bytes: usize,
 }
 impl<'bytes> GrowingBuffers<'bytes> {
     /// Start empty; reserve memory only as messages are admitted.
@@ -60,6 +61,7 @@ impl<'bytes> GrowingBuffers<'bytes> {
             count: Cell::new(0),
             retained_bytes: Cell::new(0),
             received_bytes: OnceCell::new(),
+            parts_charges: OnceCell::new(),
             maximum_buffers,
             maximum_buffer_bytes,
             maximum_bytes,
@@ -72,7 +74,9 @@ impl<'bytes> GrowingBuffers<'bytes> {
         self.len() == 0
     }
     pub fn retained_bytes(&self) -> usize {
-        self.retained_bytes.get() + self.received_bytes.get().map_or(0, |bytes| bytes.get())
+        self.retained_bytes.get()
+            + self.received_bytes.get().map_or(0, |bytes| bytes.get())
+            + self.parts_bytes()
     }
 
     pub(super) fn can_append(&self, minimum: usize) -> bool {
@@ -83,7 +87,7 @@ impl<'bytes> GrowingBuffers<'bytes> {
             return false;
         }
         let available = self.maximum_bytes - self.retained_bytes();
-        if self.len() < self.maximum_buffers && required <= available {
+        if self.len() + self.parts_slots() < self.maximum_buffers && required <= available {
             return true;
         }
         (0..self.len()).any(|index| {
@@ -153,7 +157,7 @@ impl<'bytes> GrowingBuffers<'bytes> {
             }
         }
         let index = self.len();
-        if index >= self.maximum_buffers {
+        if index + self.parts_slots() >= self.maximum_buffers {
             return None;
         }
         let allocation_len = minimum.checked_add(7)?;
@@ -221,7 +225,7 @@ impl<'bytes> GrowingBuffers<'bytes> {
             true
         });
         let index = reusable.unwrap_or(self.len());
-        if index >= self.maximum_buffers {
+        if reusable.is_none() && index + self.parts_slots() >= self.maximum_buffers {
             return Err(if exhausted {
                 Error::GenerationExhausted
             } else {
