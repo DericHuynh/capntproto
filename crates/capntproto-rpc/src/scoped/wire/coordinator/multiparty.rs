@@ -1056,6 +1056,9 @@ impl<
     fn plain_call_preserves_idle(&self) -> bool {
         self.plain_return_preserves_idle()
     }
+    fn retirement_preserves_idle(&self) -> bool {
+        self.plain_return_preserves_idle()
+    }
     #[inline(always)]
     fn plain_return_preserves_idle(&self) -> bool {
         <TwoParty<'id, F> as Control<'p, 'id, 's, resources::Import, (), C, H, vat::Resources>>::plain_return_preserves_idle(&self.bootstrap)

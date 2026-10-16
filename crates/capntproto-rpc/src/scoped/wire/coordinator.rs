@@ -115,6 +115,12 @@ pub trait Control<
     fn plain_call_preserves_idle(&self) -> bool {
         false
     }
+    /// Finish/Release only retire existing owners; they cannot enable this
+    /// idle policy. Independent commands and destructor callbacks must notify
+    /// its registered waker. Custom policies retain the full rescan.
+    fn retirement_preserves_idle(&self) -> bool {
+        false
+    }
     fn received(
         &mut self,
         event: connection::Received<'id, server::Results>,
@@ -190,6 +196,8 @@ pub struct Coordinator<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: us
     output_blocked: bool,
     calls_waiting_for_output: bool,
     delivered: bool,
+    cleanup_on_enqueue: bool,
+    cleanup_before_call: bool,
     cursor: usize,
     wake: Arc<WorkWake>,
     enqueue_waker: Rc<EnqueueWake>,
@@ -251,6 +259,8 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             output_blocked: false,
             calls_waiting_for_output: false,
             delivered: false,
+            cleanup_on_enqueue: false,
+            cleanup_before_call: false,
             cursor: 0,
             wake,
             enqueue_waker,
@@ -377,6 +387,33 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             } else if changed != 0 {
                 self.resume_at(2);
             }
+            if changed != 0
+                && self.cleanup_on_enqueue
+                && self.calls.is_empty()
+                && !self.hooks.inbox.queue.borrow().is_empty()
+            {
+                // A completed capability-bearing call can release its final
+                // public owners before the application enqueues its successor.
+                // Give that cleanup one ordinary maintenance quantum before
+                // admission, as C++ does when those owners are destroyed.
+                // Consume the preference once: repeated wakes or a blocked
+                // cleanup must not keep resetting the rotating cursor.
+                self.cleanup_on_enqueue = false;
+                self.hooks.collect_wire_optional(
+                    &mut self.driver,
+                    |owner| output.metadata_if_present(owner),
+                    foreign::local_metadata,
+                );
+                if self.driver.runtime.has_retired()
+                    || self.driver.ledgers.questions.has_pending_finish()
+                    || self.driver.ledgers.imports.has_pending_release()
+                {
+                    self.driver.invalidate_maintenance();
+                    self.active |= 1 << 4;
+                    self.cursor = 4;
+                    self.cleanup_before_call = true;
+                }
+            }
         }
         if !self
             .hooks
@@ -465,6 +502,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 Poll::Ready(Ok(progress)) => {
                     self.changed();
                     self.delivered |= progress == Progress::Completed;
+                    self.cleanup_on_enqueue |= progress == Progress::Completed;
                     Poll::Ready(Ok(()))
                 }
             };
@@ -608,6 +646,9 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 if index == 2 {
                     self.hooks.register_next(waker);
                 }
+                if index == 4 {
+                    self.cleanup_before_call = false;
+                }
                 *remaining -= 1;
                 self.active &= !(1 << index);
                 continue;
@@ -701,6 +742,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         Poll::Ready(Ok(Progress::Completed)) => {
                             completed = true;
                             self.delivered = true;
+                            self.cleanup_on_enqueue = true;
                             Poll::Ready(Ok(()))
                         }
                         Poll::Ready(Ok(Progress::Published)) => {
@@ -736,6 +778,8 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         }
                     },
                     _ => {
+                        let before_call = std::mem::take(&mut self.cleanup_before_call);
+                        let before_cleanup = queue.len();
                         let mut unused = quantum.get();
                         let result = self.driver.poll_maintenance_budget_with(
                             messages,
@@ -758,6 +802,18 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                             },
                         );
                         *remaining += unused;
+                        if before_call
+                            && queue.len() > before_cleanup
+                            && self.driver.ledgers.imports.has_pending_release()
+                        {
+                            // A Finish can leave its already-ready Release
+                            // behind. Allow one further ordinary quantum before
+                            // the next Call, so the peer can reclaim the old
+                            // capability before allocating its replacement.
+                            // The preference was consumed above; busy cleanup
+                            // cannot repeatedly reset the rotating cursor.
+                            self.cursor = 4;
+                        }
                         match result {
                             Ok(connection::Progress::Idle) => Poll::Pending,
                             Ok(connection::Progress::Yield) => continue,
@@ -1487,10 +1543,35 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     && self.worker.is_empty()
                     && self.foreign.is_empty()
                     && self.commands.is_empty();
+                let retirement = was_idle
+                    && matches!(
+                        event,
+                        connection::Received::Finished(_) | connection::Received::Released
+                    )
+                    && self.worker.is_empty()
+                    // Reclaimed storage can unblock an outgoing admission or
+                    // completion even without an application notification.
+                    && self.calls.is_empty()
+                    && self.foreign.is_empty()
+                    && self.commands.is_empty()
+                    && self.driver.runtime.queued() == 0
+                    && !self.driver.has_pending_call()
+                    && self.hooks.inbox.queue.borrow().is_empty();
                 controls
                     .received(event, self, messages, queue)
                     .map_err(|error| Box::new(Cause::Protocol(error)))?;
-                if plain_call
+                if retirement
+                    && controls.retirement_preserves_idle()
+                    && self.wake.changed.load(Ordering::Acquire) == 0
+                {
+                    // No application execution can progress from these owner
+                    // drops. Reclaim their ledger/graph state without restarting
+                    // every idle application scan. Destructors and independent
+                    // control commands still invalidate through their wakers.
+                    self.active = 1 << 4;
+                    self.cursor = 4;
+                    self.driver.invalidate_maintenance();
+                } else if plain_call
                     && controls.plain_call_preserves_idle()
                     && self.wake.changed.load(Ordering::Acquire) == 0
                 {

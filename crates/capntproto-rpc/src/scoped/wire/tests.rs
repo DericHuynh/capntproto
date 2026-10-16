@@ -210,6 +210,23 @@ fn admitted_capability_payloads_keep_slot_identity_and_outlive_their_frame() {
             )
             .unwrap();
             drop(pool);
+            // Both shared and copied admitted payloads keep their exact hooks
+            // through a completed pipeline, after the frame/pool are gone.
+            let payload = Rc::new(payload);
+            let original = payload.reader().unwrap().get_pipelined_cap(&[]).unwrap();
+            let pipeline = PayloadPipeline(payload.clone());
+            let retained = pipeline.add_ref();
+            drop(pipeline);
+            let projected = retained.get_pipelined_cap(&[PipelineOp::Noop]);
+            assert_eq!(projected.get_ptr(), original.get_ptr());
+            let invalid = retained.get_pipelined_cap(&[PipelineOp::GetPointerField(0)]);
+            assert!(
+                futures::executor::block_on(invalid.new_call(0, 0, None).send().promise).is_err()
+            );
+            drop(retained);
+            let payload = Rc::try_unwrap(payload)
+                .ok()
+                .expect("pipeline released payload");
             let capability = match kind {
                 PayloadKind::Params => payload
                     .into_params()

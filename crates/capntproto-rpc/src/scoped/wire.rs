@@ -197,9 +197,7 @@ impl Payload {
         Ok(root)
     }
     fn into_pipeline(self) -> Box<dyn PipelineHook> {
-        Box::new(crate::local::Pipeline::new(Box::new(PayloadDone(Rc::new(
-            self,
-        )))))
+        Box::new(PayloadPipeline(Rc::new(self)))
     }
 }
 impl capnp::private::capability::ResponseHook for Payload {
@@ -207,13 +205,22 @@ impl capnp::private::capability::ResponseHook for Payload {
         self.reader()
     }
 }
-struct PayloadDone(Rc<Payload>);
-impl crate::local::ResultsDoneHook for PayloadDone {
-    fn add_ref(&self) -> Box<dyn crate::local::ResultsDoneHook> {
+// A completed wire payload is immutable. Its pipeline can retain it directly;
+// there is no mutable local result state to synchronize with another owner.
+struct PayloadPipeline(Rc<Payload>);
+impl PipelineHook for PayloadPipeline {
+    fn add_ref(&self) -> Box<dyn PipelineHook> {
         Box::new(Self(self.0.clone()))
     }
-    fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
-        self.0.reader()
+    fn get_pipelined_cap(&self, ops: &[PipelineOp]) -> Box<dyn ClientHook> {
+        match self
+            .0
+            .reader()
+            .and_then(|reader| reader.get_pipelined_cap(ops))
+        {
+            Ok(client) => client,
+            Err(error) => Box::new(crate::broken::Client::new(error, true, 0)),
+        }
     }
 }
 
@@ -1067,11 +1074,10 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                     payload
                 };
                 let payload = Rc::new(payload);
-                let pipeline = self.pipeline.as_ref().map(|_| {
-                    Box::new(crate::local::Pipeline::new(Box::new(PayloadDone(
-                        payload.clone(),
-                    )))) as Box<dyn PipelineHook>
-                });
+                let pipeline = self
+                    .pipeline
+                    .as_ref()
+                    .map(|_| Box::new(PayloadPipeline(payload.clone())) as Box<dyn PipelineHook>);
                 let results = &mut self
                     .call
                     .as_mut()

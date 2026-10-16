@@ -622,6 +622,61 @@ fn buffered_server_bursts_flush_at_budget_end_and_when_input_runs_out() {
                 answers.sort_unstable();
                 assert_eq!(answers, (0..12).collect::<Vec<_>>());
                 assert!(source.is_empty());
+                // Completed answers and their exported service can retire
+                // while every application lane is idle. Exercise both quiet
+                // controls and a notification delivered during receipt; the
+                // last service owner must disappear without another Call.
+                control.notify_receive = budget == 1;
+                let control_polls = control.polls;
+                for id in 0..13 {
+                    let mut message = capnp::message::Builder::new_default();
+                    let root = message.init_root::<crate::rpc_capnp::message::Builder>();
+                    if id < 12 {
+                        let mut finish = root.init_finish();
+                        finish.set_question_id(id);
+                        finish.set_release_result_caps(false);
+                    } else {
+                        let mut release = root.init_release();
+                        release.set_id(target.to_wire());
+                        release.set_reference_count(1);
+                    }
+                    let encoded = capnp::serialize::write_message_to_words(&message);
+                    let mut words = capnp::Word::allocate_zeroed_vec(encoded.len() / 8);
+                    capnp::Word::words_to_bytes_mut(&mut words).copy_from_slice(&encoded);
+                    reader.frames.push_back(words);
+                }
+                for _ in 0..4096 {
+                    if let Poll::Ready(result) = coordinator.poll_prepared(
+                        messages,
+                        &mut queue,
+                        &mut reader,
+                        &mut transport::Writer(&mut bytes),
+                        &mut [0; 32],
+                        &NoResources,
+                        &mut control,
+                        stop.as_mut(),
+                        &mut pending,
+                        &mut pump,
+                        &mut cx,
+                        &application_waker,
+                    ) {
+                        result.unwrap();
+                    }
+                    if reader.frames.is_empty()
+                        && pending.is_none()
+                        && coordinator.active == 0
+                        && queue.is_empty()
+                        && coordinator.output.is_clean()
+                    {
+                        break;
+                    }
+                }
+                assert_eq!(reader.consumed, 153);
+                assert_eq!(seen.get(), 12);
+                assert_eq!(Rc::strong_count(&seen), 1, "Release retained the service");
+                if control.notify_receive {
+                    assert!(control.polls > control_polls, "control wake was lost");
+                }
                 futures::executor::block_on(coordinator.terminate::<NoResources, (), ()>(
                     messages,
                     &mut queue,

@@ -1,4 +1,5 @@
 use super::*;
+mod cleanup;
 mod lifecycle;
 mod network;
 mod plain;
@@ -77,6 +78,9 @@ impl<'p, 'id, 's> Control<'p, 'id, 's, (), u8, 8, 8> for Policy {
         self.direct_returns
     }
     fn plain_call_preserves_idle(&self) -> bool {
+        self.preserve_plain
+    }
+    fn retirement_preserves_idle(&self) -> bool {
         self.preserve_plain
     }
     fn direct_publication_preserves_idle(&self) -> bool {

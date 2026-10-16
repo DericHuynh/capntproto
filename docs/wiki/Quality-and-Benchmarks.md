@@ -3484,7 +3484,94 @@ interval comparison as a measured improvement. Raw samples, journals, source,
 rejected experiments and verification logs are archived under
 `target/portable-performance-retirement-burst-20261016/`. The full target remains
 open pending dedicated qualification. PR CI for the previous candidate now
-passes the complete Miri job; its Cargo coverage job is still running.
+passes the complete Miri job. Its Cargo job completed 2,232 tests with zero
+failures and 20 skips, but failed the unchanged coverage regression limits.
+Artifact `12036078454` has ZIP SHA-256
+`a73fe8f49824298663f6beeb33c2d7adca4c7cc50408ef9c208c7019aa17d5c4`.
+The tested optimization commit `2a2cda0` is in dedicated run
+[38877354685](https://github.com/DericHuynh/capntproto/actions/runs/38877354685)
+and PR CI run
+[38878916088](https://github.com/DericHuynh/capntproto/actions/runs/38878916088).
+The dedicated run completes **11/12 remote and 3/4 loopback comparisons
+(14/16)**. The remaining misses are pipelined read at 326,547 ns versus
+C++'s 301,881 ns (1.081708×), and 64 KiB loopback at 76,937 ns versus
+legacy's 72,805 ns (1.056754×). All 410 raw trials and the reported
+p50/p95/p99 were independently verified. Artifact `12037881984` has ZIP
+SHA-256 `bdcc2ae9d36186d6a11fc2316ee08e224ef475eb4538f565acd414a0e5ded5df`.
+The complete 5% requirement remains open.
+
+Further paired tracing identifies the steady C++ pipeline write order as
+**Finish, Release, Call, Call**. Giving completed capability cleanup an earlier
+bounded maintenance turn reproduces that order in all eleven steady local
+trace groups; both server Returns remain in one write. This reduces pipeline
+client instructions to 88,205,859 from 89,923,653. A complete untraced local
+campaign passes **7/12 workflows and 3/4 loopback payloads**; all 240 trials and
+their percentiles were independently checked, and all 72 mixed-peer checks
+pass. Pipeline latency still misses at 1.758011× matched legacy locally.
+The empty-call instruction client also still misses at 18,492,561 versus
+17,370,094; the server passes at 16,987,676 versus 16,281,081. Matching the
+traced write order is therefore an implementation improvement, not latency
+qualification. Serving immutable completed payload pipelines directly removes
+two intermediate allocations, reducing pipeline client instructions further
+to 87,770,982 and dependent-read client instructions to 75,879,258. The wire
+grouping remains unchanged and 277 RPC unit tests pass, including repeated
+pipeline cleanup with small budgets, output backpressure and control wakes.
+
+Inline Return-observer settlement was then evaluated and discarded. Its first
+version moved Release behind new Calls; a larger bounded cleanup burst restored
+C++ ordering but increased pipeline client instructions to 91,155,965. Both
+versions, raw profiles and traces are retained under
+`target/portable-performance-return-observers-20261016/` and
+`target/portable-performance-return-cleanup-20261016/`. Five rotating thread-CPU
+and elapsed-time trace repetitions locate the pipeline gap in computation:
+approximately 15/10 µs portable versus 6/7 µs C++ client/server processing.
+The added thread-clock calls impose diagnostic overhead; none of these samples
+enters the acceptance gate.
+
+The retained candidate instead preserves idle application scans when an idle
+control policy receives Finish/Release and has no execution to resume. Normal
+ledger retirement, independent control wakes and destructor notifications
+remain active. Pipeline client/server instructions are 87,774,260 / 72,485,730;
+dependent read is 75,888,327 / 63,726,864; callback is
+58,743,579 / 60,387,969. All eleven steady pipeline write groups retain the
+C++ Finish/Release/Call/Call order. The complete local campaign passes
+**7/12 workflows and 3/4 loopback payloads**, with all 240 raw trials checked
+and all 72 mixed-peer checks passing. Local timing variation remains large;
+the latest completed dedicated result remains **14/16**, and the complete
+target remains open. The empty instruction gate still misses on the client
+(18,492,801 versus 17,370,217) and passes on the server
+(17,003,704 versus 16,281,212).
+
+Final review restricts that idle-retirement certificate further: no outgoing
+call may be waiting, because releasing storage can enable an admission even
+without an application wake. The final `idle-retirement20261016` executable has
+SHA-256 `c23028be7f8b676371f10bd33aa6a98af262c112dfe9e1e776b29efa5fed6d9a`.
+Pipeline client/server instructions are 87,774,435 / 72,511,188, dependent read
+75,887,829 / 63,752,406, and callback 60,579,761 / 60,388,472. The earlier
+callback reduction does not survive this necessary guard. All eleven steady
+pipeline write groups still match C++'s Finish/Release/Call/Call order. Final
+native validation passes 277 RPC tests, 92 integration tests and Clippy. Miri
+passes the cleanup/backpressure, retained-payload and buffered-control tests
+on the preceding candidate; that run predates the outgoing-call guard.
+The final candidate's complete local campaign passes **7/12 workflows and
+2/4 loopback payloads**. All 240 trials and pooled percentiles are independently
+checked, and all 72 mixed-peer checks pass. Empty-call instructions are
+18,494,123 / 17,005,111 versus legacy's 17,371,608 / 16,282,563
+(client MISS, server PASS). Raw evidence and the exact source patch are in
+`target/portable-performance-idle-retirement-20261016/`. These local results
+retain all misses and do not replace the latest 14/16 dedicated result.
+
+Paired gperftools CPU samples use the original pipeline and 64 KiB operations
+with 100,000 iterations for sampling only. These samples, five rotating
+thread-CPU journals, profiles, all 240 untraced local trials and source identities
+are retained in `target/portable-performance-control-retirement-20261016/`
+(1,436 files plus checksums). ELF symbolization identifies system-call execution,
+coordinator work and payload copies; the initial unresolved-symbol reports are
+also retained. The 64 KiB Callgrind call graph confirms one complete extra
+payload copy from a prepared Call into the portable wire buffer. Legacy/C++
+retain prepared segments through output. Avoiding that copy requires preserving
+bounded storage accounting and ownership through partial writes; it remains
+an optimization opportunity, not a claimed improvement.
 
 The earlier `ef9f4c8` Cargo CI completed 2,230 tests with zero failures and
 20 skips, but its coverage regression gate failed. The Miri job reached its
