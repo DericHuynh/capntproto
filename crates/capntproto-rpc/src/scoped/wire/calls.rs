@@ -539,21 +539,17 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         } else {
             self.admission_streak = 0;
         }
-        // Immediate settled calls have no queued dispatch, projection, local
-        // execution or internal completion channel. Visit only their actual
-        // owners and admission, retaining a rotating cursor and the caller's
-        // budget. Bound the eligibility check itself; larger/mixed workloads
-        // keep the general resumable scan below.
+        // Published direct calls have no remaining queued dispatch, local
+        // execution or internal completion channel. Visit their owners and
+        // pending projections plus admission, retaining a rotating cursor and
+        // the caller's budget. Larger/mixed workloads keep the general scan.
         if !advanced
             && self.entries.len() <= 8
             && budget.get() > self.entries.len()
             && self.invocations.is_empty()
             && driver.runtime.queued() == 0
             && self.entries.iter().flatten().all(|entry| {
-                entry.local.is_none()
-                    && entry.wire.task.is_none()
-                    && entry.wire.pipeline.is_none()
-                    && matches!(entry.wire.direct, Some(DirectStage::Sent(_)))
+                entry.local.is_none() && matches!(entry.wire.direct, Some(DirectStage::Sent(_)))
             })
         {
             let size = self.entries.len() + 1;
@@ -577,6 +573,16 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         break;
                     }
                 } else if let Some(entry) = self.entries[index - 1].as_mut() {
+                    if entry.wire.pipeline.is_some() {
+                        entry.wire.poll_pipelines_using(
+                            hooks,
+                            driver,
+                            &mut self.invocations,
+                            messages,
+                            |_, _, _, _| Ok(None),
+                            &mut refresh,
+                        )?;
+                    }
                     if let Poll::Ready(result) = entry.wire.poll_using(
                         hooks,
                         driver,
@@ -894,8 +900,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         }
         let call = self.pending.as_ref().expect("pending call");
         let target = hooks.target(call)?;
-        if call.hints.no_promise_pipelining
-            && !call.hints.only_promise_pipeline
+        if !call.hints.only_promise_pipeline
             && call.third_party.is_none()
             && call.endpoint.remote.get()
         {
@@ -921,12 +926,14 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             let method = DynamicCall {
                 interface: call.interface,
                 method: call.method,
-                no_promise_pipelining: true,
+                no_promise_pipelining: call.hints.no_promise_pipelining,
                 only_promise_pipeline: false,
             };
             let encoded = call
-                .params
-                .prepared_call()
+                .hints
+                .no_promise_pipelining
+                .then(|| call.params.prepared_call())
+                .flatten()
                 .map(|builder| builder.encoded(method, options))
                 .transpose()
                 .map_err(wire_error)?
@@ -957,13 +964,24 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         .retain_credit(question, credit)
                         .map_err(wire_error)?;
                 }
+                let mut call = self.pending.take().expect("published call");
+                let pipeline = match hooks.attach_pipeline(&mut call) {
+                    Ok(pipeline) => pipeline,
+                    Err(error) => {
+                        driver.cancel(question).map_err(wire_error)?;
+                        call.complete_boxed(Err(error));
+                        // The accepted Call still needs its FIFO flush, and its
+                        // canceled question retains ordinary late-Return cleanup.
+                        return Ok(Some(Progress::Published));
+                    }
+                };
                 let entry = Some(Entry {
                     wire: WireCall {
-                        call: self.pending.take(),
+                        call: Some(call),
                         task: None,
                         receiver: None,
                         direct: Some(DirectStage::Sent(question)),
-                        pipeline: None,
+                        pipeline,
                         local_results: None,
                         tail_response: None,
                     },
@@ -1000,7 +1018,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
     ) -> capnp::Result<Option<Progress>> {
         let call = self.pending.take().expect("pending call");
         let wire = match hooks.enqueue_wire_using(
-            *call,
+            call,
             driver,
             &mut self.invocations,
             messages,
@@ -1010,7 +1028,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         ) {
             Ok(wire) => wire,
             Err(rejected) => {
-                self.pending = Some(Box::new(rejected.call));
+                self.pending = Some(rejected.call);
                 return Err(rejected.error);
             }
         };

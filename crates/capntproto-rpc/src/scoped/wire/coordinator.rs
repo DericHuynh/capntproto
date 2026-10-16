@@ -1347,8 +1347,8 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                             reader.finish_frame();
                             pump.blocked = false;
                             self.delivered_plain(index, message, controls);
-                            if self.calls.has_indexed_replies()
-                                && pump.frames < self.options.budget.get().min(8)
+                            if pump.frames < self.options.budget.get().min(8)
+                                && (self.calls.has_indexed_replies() || !self.worker.is_empty())
                             {
                                 continue;
                             }
@@ -1482,7 +1482,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 } else {
                     self.resume_at(2);
                 }
-                if completed.is_some() {
+                if completed.is_some() && self.worker.is_empty() {
                     // Let the application enqueue its next call before
                     // scanning cleanup, coalescing both in the next turn.
                     cx.waker().wake_by_ref();
@@ -1532,8 +1532,8 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         reader.consume_buffered_frame();
                         self.delivered_plain(index, message, controls);
                         pump.frames += 1;
-                        if self.calls.has_indexed_replies()
-                            && pump.frames < self.options.budget.get().min(8)
+                        if pump.frames < self.options.budget.get().min(8)
+                            && (self.calls.has_indexed_replies() || !self.worker.is_empty())
                         {
                             continue;
                         }

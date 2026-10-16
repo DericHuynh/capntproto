@@ -1,8 +1,8 @@
 //! Publish settled, data-only calls without a temporary queued Call envelope.
 use super::*;
 
-/// Parameters for immediate publication. An encoded Call is an unframed single
-/// segment, validated under the destination reader policy before copying. Its
+/// Parameters for immediate publication. An encoded Call has one or two unframed
+/// segments, validated under the destination reader policy before copying. Its
 /// method/hints must match; target/question IDs are assigned by the driver.
 pub enum ImmediateParams<'a> {
     Content(capnp::any_pointer::Reader<'a>),
@@ -12,8 +12,8 @@ pub enum ImmediateParams<'a> {
 impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
     Driver<'pool, 'id, 's, I, A, P, S, CAPS, PATH>
 {
-    /// Try immediate publication of a settled imported call without pipelines or
-    /// parameter capabilities. `None` leaves the caller's request untouched and
+    /// Try immediate publication of a settled imported call without parameter
+    /// capabilities. `None` leaves the caller's request untouched and
     /// requires ordinary queued invocation. Older tasks, pending promises and
     /// deferred wire input are never overtaken. All storage is caller supplied.
     ///
@@ -79,11 +79,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         resources: R,
     ) -> Result<Option<questions::Key<'id>>, Error> {
         self.check_live()?;
-        if !method.no_promise_pipelining
-            || method.only_promise_pipeline
-            || self.call.is_some()
-            || self.echo.is_some()
-        {
+        if method.only_promise_pipeline || self.call.is_some() || self.echo.is_some() {
             return Ok(None);
         }
         let Some(ticket) = self

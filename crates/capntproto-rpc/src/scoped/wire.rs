@@ -27,6 +27,10 @@ pub struct Rejected {
     pub error: Error,
     pub call: Call,
 }
+pub(super) struct RejectedOwner<T> {
+    error: Error,
+    call: T,
+}
 
 /// An owned message whose cap table is independent of scoped wire receipts.
 pub(crate) struct Payload {
@@ -254,12 +258,17 @@ impl<'id> ClientHooks<'id> {
             false,
             &mut import,
         )
+        .map_err(|rejected| Rejected {
+            error: rejected.error,
+            call: rejected.call,
+        })
     }
     #[allow(clippy::too_many_arguments, clippy::result_large_err)]
     #[inline(never)]
     pub(super) fn enqueue_wire_using<
         'pool,
         'storage,
+        B: core::borrow::BorrowMut<Call> + Into<Box<Call>>,
         I,
         A,
         P: Copy + Eq,
@@ -268,7 +277,7 @@ impl<'id> ClientHooks<'id> {
         const PATH: usize,
     >(
         &mut self,
-        mut call: Call,
+        mut owner: B,
         driver: &mut Driver<'pool, 'id, 'storage, I, A, P, S, CAPS, PATH>,
         invocations: &mut connection::Invocations<'_, '_, 'pool, 'id, I, CAPS>,
         messages: &mut messages::Messages<'pool, '_, '_>,
@@ -278,11 +287,15 @@ impl<'id> ClientHooks<'id> {
             &mut Runtime<'pool, 'id, 'storage, I, P, S, CAPS, PATH>,
             &dyn ClientHook,
         ) -> capnp::Result<Client<'id>>,
-    ) -> Result<WireCall<'pool, 'id, I, CAPS>, Rejected> {
+    ) -> Result<WireCall<'pool, 'id, I, CAPS>, RejectedOwner<B>> {
+        // The hosted inbox already owns a Box<Call>. Keep that same allocation
+        // through admission, retries and completion; the public by-value API
+        // boxes only after successful admission.
+        let call = owner.borrow_mut();
         let mut receiver = None;
         let mut direct_stage = None;
         let outcome = (|| {
-            let target = self.target(&call)?;
+            let target = self.target(call)?;
             // A settled imported endpoint cannot become a local producer. Its
             // hosted owner can consume the driver's result directly, without
             // another completion channel and polling ledger. Projections use
@@ -423,8 +436,30 @@ impl<'id> ClientHooks<'id> {
         })();
         let task = match outcome {
             Ok(task) => task,
-            Err(error) => return Err(Rejected { error, call }),
+            Err(error) => return Err(RejectedOwner { error, call: owner }),
         };
+        let pipeline = match self.attach_pipeline(call) {
+            Ok(pipeline) => pipeline,
+            Err(error) => {
+                // Direct owners have no invocation binding whose canceled
+                // receiver would reclaim this unpublished task.
+                if direct_stage.is_some() {
+                    driver.cancel_invocation(task, messages);
+                }
+                return Err(RejectedOwner { error, call: owner });
+            }
+        };
+        Ok(WireCall {
+            call: Some(owner.into()),
+            task: Some(task),
+            receiver,
+            direct: direct_stage,
+            pipeline,
+            local_results: None,
+            tail_response: None,
+        })
+    }
+    fn attach_pipeline(&self, call: &mut Call) -> capnp::Result<Option<Rc<PipelineState>>> {
         let pipeline = (!call.hints.no_promise_pipelining).then(|| {
             Rc::new(PipelineState {
                 used: Cell::new(false),
@@ -438,23 +473,11 @@ impl<'id> ClientHooks<'id> {
             })
         });
         if let Some(pipeline) = &pipeline {
-            if let Err(error) = call
-                .results
+            call.results
                 .hook()
-                .set_pipeline_from(Box::new(WirePipeline(PipelineRef(Some(pipeline.clone())))))
-            {
-                return Err(Rejected { error, call });
-            }
+                .set_pipeline_from(Box::new(WirePipeline(PipelineRef(Some(pipeline.clone())))))?;
         }
-        Ok(WireCall {
-            call: Some(Box::new(call)),
-            task: Some(task),
-            receiver,
-            direct: direct_stage,
-            pipeline,
-            local_results: None,
-            tail_response: None,
-        })
+        Ok(pipeline)
     }
 }
 

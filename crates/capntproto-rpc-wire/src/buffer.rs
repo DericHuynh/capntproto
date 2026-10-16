@@ -34,10 +34,17 @@ impl Capacity {
         }
         #[cfg(feature = "alloc")]
         {
+            if length == 1 {
+                return Some(Buffer::Heap(alloc::boxed::Box::new(HeapBuffer::One([
+                    fill(),
+                ]))));
+            }
             let mut values = alloc::vec::Vec::new();
             values.try_reserve_exact(length).ok()?;
             values.resize_with(length, fill);
-            Some(Buffer::Heap(alloc::boxed::Box::new(values)))
+            Some(Buffer::Heap(alloc::boxed::Box::new(HeapBuffer::Many(
+                values,
+            ))))
         }
         #[cfg(not(feature = "alloc"))]
         None
@@ -61,8 +68,34 @@ pub(crate) enum Buffer<T, const N: usize> {
     // The fixed provider still owns its array and never allocates.
     // Box the metadata as well: zero-inline hosted owners stay one pointer
     // wide while the backing vector grows, reducing every scheduler move.
-    #[allow(clippy::box_collection)]
-    Heap(alloc::boxed::Box<alloc::vec::Vec<T>>),
+    Heap(alloc::boxed::Box<HeapBuffer<T>>),
+}
+/// Keep the outer empty buffer one pointer wide, while a common one-capability
+/// receipt or one-field pipeline needs only one allocation instead of two.
+#[cfg(feature = "alloc")]
+#[derive(Debug)]
+pub(crate) enum HeapBuffer<T> {
+    One([T; 1]),
+    Many(alloc::vec::Vec<T>),
+}
+#[cfg(feature = "alloc")]
+impl<T> Deref for HeapBuffer<T> {
+    type Target = [T];
+    fn deref(&self) -> &[T] {
+        match self {
+            Self::One(values) => values,
+            Self::Many(values) => values,
+        }
+    }
+}
+#[cfg(feature = "alloc")]
+impl<T> DerefMut for HeapBuffer<T> {
+    fn deref_mut(&mut self) -> &mut [T] {
+        match self {
+            Self::One(values) => values,
+            Self::Many(values) => values,
+        }
+    }
 }
 impl<T, const N: usize> Buffer<T, N> {
     pub(crate) fn ensure(
@@ -79,24 +112,22 @@ impl<T, const N: usize> Buffer<T, N> {
         }
         #[cfg(feature = "alloc")]
         {
-            match self {
-                Self::Heap(values) => {
+            if let Self::Heap(values) = self {
+                if let HeapBuffer::Many(values) = &mut **values {
                     if values.try_reserve_exact(length - values.len()).is_err() {
                         return false;
                     }
                     values.resize_with(length, fill);
-                }
-                Self::Inline(values) => {
-                    let Some(Self::Heap(mut next)) = policy.buffer::<T, N>(length, &mut fill)
-                    else {
-                        return false;
-                    };
-                    for (old, new) in values.iter_mut().zip(next.iter_mut()) {
-                        core::mem::swap(old, new);
-                    }
-                    *self = Self::Heap(next);
+                    return true;
                 }
             }
+            let Some(Self::Heap(mut next)) = policy.buffer::<T, N>(length, &mut fill) else {
+                return false;
+            };
+            for (old, new) in self.iter_mut().zip(next.iter_mut()) {
+                core::mem::swap(old, new);
+            }
+            *self = Self::Heap(next);
             true
         }
         #[cfg(not(feature = "alloc"))]
@@ -129,6 +160,8 @@ pub(crate) enum IntoIter<T, const N: usize> {
     Inline(core::array::IntoIter<T, N>),
     #[cfg(feature = "alloc")]
     Heap(alloc::vec::IntoIter<T>),
+    #[cfg(feature = "alloc")]
+    One(core::array::IntoIter<T, 1>),
 }
 impl<T, const N: usize> Iterator for IntoIter<T, N> {
     type Item = T;
@@ -137,6 +170,8 @@ impl<T, const N: usize> Iterator for IntoIter<T, N> {
             Self::Inline(iter) => iter.next(),
             #[cfg(feature = "alloc")]
             Self::Heap(iter) => iter.next(),
+            #[cfg(feature = "alloc")]
+            Self::One(iter) => iter.next(),
         }
     }
 }
@@ -147,7 +182,10 @@ impl<T, const N: usize> IntoIterator for Buffer<T, N> {
         match self {
             Self::Inline(values) => IntoIter::Inline(values.into_iter()),
             #[cfg(feature = "alloc")]
-            Self::Heap(values) => IntoIter::Heap((*values).into_iter()),
+            Self::Heap(values) => match *values {
+                HeapBuffer::One(values) => IntoIter::One(values.into_iter()),
+                HeapBuffer::Many(values) => IntoIter::Heap(values.into_iter()),
+            },
         }
     }
 }
@@ -170,6 +208,26 @@ mod tests {
 
     #[cfg(feature = "alloc")]
     #[test]
+    fn singleton_receipts_need_one_allocation_without_enlarging_empty_owners() {
+        assert_eq!(
+            core::mem::size_of::<Buffer<usize, 0>>(),
+            core::mem::size_of::<usize>()
+        );
+        let usage = allocation_counter::measure(|| {
+            let policy = Capacity::Growing { maximum: 1 };
+            let mut value = policy.buffer::<usize, 0>(1, || 37).unwrap();
+            assert!(value.ensure(policy, 1, || panic!("existing owner")));
+            assert!(!value.ensure(policy, 2, || panic!("over budget")));
+            assert_eq!(&*value, &[37]);
+            let mut owned = value.into_iter();
+            assert_eq!(owned.next(), Some(37));
+            assert_eq!(owned.next(), None);
+        });
+        assert_eq!(usage.count_total, 1);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
     fn growth_moves_owners_once_and_obeys_budget_below_inline_size() {
         use core::cell::Cell;
         struct Owner<'a>(&'a Cell<usize>);
@@ -188,6 +246,18 @@ mod tests {
         assert_eq!(drops.get(), 0);
         drop(values);
         assert_eq!(drops.get(), 1);
+        let mut single = policy.buffer::<_, 0>(1, || None).unwrap();
+        single[0] = Some(Owner(&drops));
+        assert!(single.ensure(policy, 2, || None));
+        assert_eq!(drops.get(), 1);
+        assert!(single.ensure(policy, 4, || None));
+        assert_eq!(drops.get(), 1);
+        assert!(!single.ensure(policy, 5, || None));
+        let mut owned = single.into_iter();
+        drop(owned.next());
+        assert_eq!(drops.get(), 2);
+        drop(owned);
+        assert_eq!(drops.get(), 2);
         assert!(Capacity::Growing { maximum: 1 }
             .buffer::<u64, 8>(2, || 0)
             .is_none());
@@ -202,6 +272,9 @@ mod tests {
         let mut values = policy.buffer::<_, 1>(1, || 19u64).unwrap();
         assert!(!values.ensure(policy, usize::MAX, || 0));
         assert_eq!(&*values, &[19]);
+        let mut heap = policy.buffer::<u64, 0>(2, || 23).unwrap();
+        assert!(!heap.ensure(policy, usize::MAX, || 0));
+        assert_eq!(&*heap, &[23, 23]);
         assert!(policy.buffer::<u64, 0>(usize::MAX, || 0).is_none());
     }
 }

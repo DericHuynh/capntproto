@@ -2934,6 +2934,43 @@ provisioning measurement hosts. Smoke and measurement evidence now live under
 fresh runner-temporary paths, outside the restored Cargo target cache. Neither
 failed run supplies remote latency evidence.
 
+### Dedicated checkpoint and scheduling follow-up (October 16, 2026)
+
+[Run 38822957148](https://github.com/DericHuynh/capntproto/actions/runs/38822957148)
+at `b174998ae60cc803e02bf1510786882c69050041` completed measurement and cleanup.
+Artifact `12015243458` retains the complete report and raw trials. Seven of
+twelve remote workflows and three of four loopback payloads pass. The valid
+misses remain advisory, so a successful workflow does not close the gap.
+
+| Remaining workload | Portable p50 (µs) | Faster reference p50 (µs) | Ratio |
+| --- | ---: | ---: | ---: |
+| Remote fanout-32 | 763.145 | C++ 511.930 | 1.491× |
+| Remote dependent-read | 251.566 | Legacy 236.981 | 1.062× |
+| Remote pipelined-read | 178.644 | Legacy 148.922 | 1.200× |
+| Remote callback | 264.003 | Legacy 219.818 | 1.201× |
+| Remote bulk-4m | 13,231.881 | C++ 11,355.130 | 1.165× |
+| Loopback 64 KiB | 81.799 | Legacy 73.389 | 1.115× |
+
+The next candidate admits data-only pipeline-capable calls immediately when the
+target is settled, retaining the ordinary codec, publication ordering and
+pipeline ownership. Rejected pipeline sinks cancel the exact published question
+or unpublished task. Published direct calls share the bounded small-call scan,
+and ready callback workers resume within the existing frame budget. A growing
+one-element buffer uses one allocation while retaining a pointer-sized empty
+owner; admission retains its existing boxed Call instead of reallocating it.
+
+Validation passes 260 RPC tests, 121 allocation-enabled wire tests, 86 fixed and
+89 growing portable fixture tests, 72 mixed-peer workflow checks, and Clippy.
+The final local candidate binary SHA-256 is
+`39e482a96ffcd5d759dacf3085968ff3b04c7ed0364901945b30cb58a37dfe4d`.
+Empty-call portable/legacy instructions are 17,877,620 / 17,145,610 client
+(1.043×) and 16,409,626 / 16,055,624 server (1.022×). Its local four-payload
+loopback ratios are 1.011×, 1.034×, 1.045× and 1.115×; 64 KiB still misses.
+The most recent complete local twelve-workflow run belongs to the earlier
+`fastcalls` candidate and passes six cells. It is not evidence for the later
+allocation changes. Every intermediate trial, profile, patch and protocol trace
+is retained in `target/portable-performance-scheduling-20261015/`.
+
 ### Portable and legacy instruction qualification
 
 The October 15 optimization batch meets a **1.05× portable/legacy instruction

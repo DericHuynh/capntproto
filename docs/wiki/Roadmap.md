@@ -79,6 +79,11 @@ the serialization decode fixture includes a full byte-validation scan; storage
 research points to durability amortization and ORM worker integration. These do
 not change the portable plaintext target or justify removing fixture validation.
 
+[The October 16 dedicated checkpoint](Quality-and-Benchmarks.md#dedicated-checkpoint-and-scheduling-follow-up-october-16-2026)
+passes seven of twelve remote workflows and three of four loopback payloads.
+Fan-out, dependent and pipelined reads, callbacks, remote 4-MiB echo and loopback
+64-KiB echo remain above the target. The gap remains open.
+
 ## Storage and ORM
 
 - Integrate the bounded worker with ORM facets while preserving execution-time
