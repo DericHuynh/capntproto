@@ -79,6 +79,9 @@ pub struct Calls<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> {
     executor: Option<Rc<dyn capability::CallExecutor>>,
 }
 impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p, 'id, I, C, H> {
+    pub(super) fn has_pending_admission(&self) -> bool {
+        self.pending.is_some()
+    }
     pub fn new(
         maximum: usize,
         executor: Option<Rc<dyn capability::CallExecutor>>,

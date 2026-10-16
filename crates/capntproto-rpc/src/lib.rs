@@ -453,6 +453,12 @@ pub trait IncomingFrameStream {
 /// that completion and never cancel accepted writes when this handle is dropped.
 pub trait OutgoingMessageStream {
     fn send(&mut self, frame: OutgoingFrame) -> Result<(), Error>;
+    /// Accept a frame whose caller will poll `poll_flush` after its bounded
+    /// publication batch. Transports may defer an eager drive until that poll;
+    /// ownership, FIFO order and physical completion remain identical to send.
+    fn send_buffered(&mut self, frame: OutgoingFrame) -> Result<(), Error> {
+        self.send(frame)
+    }
     fn poll_flush(
         &mut self,
         cx: &mut core::task::Context<'_>,

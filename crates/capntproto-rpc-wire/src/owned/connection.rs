@@ -131,6 +131,9 @@ pub struct Driver<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, cons
     allow_answer_handoff: bool,
     defer_calls: bool,
     owned_output: bool,
+    // Conservative until the ordinary canceled-response scan proves absence.
+    // Exchange capacity alone does not make pending questions pollable.
+    canceled_exchanges: bool,
     descriptors: crate::publication::descriptors::Descriptors<binding::Route<'id, P, S, PATH>>,
     pub ledgers:
         connection::Connection<'id, 's, I, clients::Client<'id>, Answer<'pool, 'id, A, CAPS>>,
@@ -443,6 +446,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             allow_answer_handoff: false,
             defer_calls: false,
             owned_output: false,
+            canceled_exchanges: false,
             descriptors: Default::default(),
             ledgers: connection.ledgers,
             message_capabilities: storage.message_capabilities,
@@ -649,6 +653,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             }
         }
         slot.canceled = true;
+        self.canceled_exchanges = true;
         Ok(())
     }
 
@@ -851,6 +856,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     /// cleanup obligations are unchanged. Disabled for existing fixed adapters.
     pub fn use_owned_output_queues(&mut self, enabled: bool) {
         self.owned_output = enabled;
+    }
+    /// Whether plain publications are bounded by the output FIFO alone rather
+    /// than also consuming separately addressable message-pool send slots.
+    pub fn uses_owned_output_queues(&self) -> bool {
+        self.owned_output
     }
     pub fn has_pending_call(&self) -> bool {
         self.call.is_some()
@@ -1816,7 +1826,17 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         &mut self,
         messages: &mut messages::Messages<'pool, '_, '_>,
     ) -> bool {
-        let Some(slot) = self.exchanges.iter_mut().find(|slot| slot.canceled && matches!(&slot.exchange, Some(Exchange::Returned(response)) if !self.outgoing.pending_for(response.key()) && !self.invocation_pipelines.iter().any(|slot| slot.pending_for(response.key())))) else { return false };
+        let mut canceled = false;
+        let slot = self.exchanges.iter_mut().find(|slot| {
+            let live = slot.canceled && slot.exchange.is_some();
+            canceled |= live;
+            live && matches!(&slot.exchange, Some(Exchange::Returned(response)) if !self.outgoing.pending_for(response.key()) && !self.invocation_pipelines.iter().any(|slot| slot.pending_for(response.key())))
+        });
+        let Some(slot) = slot else {
+            self.canceled_exchanges = canceled;
+            return false;
+        };
+        slot.canceled = false;
         let Some(Exchange::Returned(response)) = slot.exchange.take() else {
             unreachable!()
         };

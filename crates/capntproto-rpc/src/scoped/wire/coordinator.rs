@@ -198,6 +198,7 @@ pub struct Coordinator<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: us
     idle: bool,
     control_idle: bool,
     direct_publication: bool,
+    coalescing_output: bool,
 }
 impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
     Coordinator<'p, 'id, 's, I, P, C, H>
@@ -253,6 +254,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             idle: false,
             control_idle: false,
             direct_publication: false,
+            coalescing_output: false,
         })
     }
 
@@ -625,13 +627,22 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             // sleeps on IO, while a zero-capacity queue is a configuration error.
             let writable = if index >= 2 && !empty {
                 let queued = !queue.is_empty();
-                match queue.ensure_capacity() {
-                    Ok(()) => true,
-                    Err(messages::Error::NoSendSlot) if queued => {
-                        self.output_blocked = true;
-                        false
+                if index == 2
+                    && self.driver.uses_owned_output_queues()
+                    && (queued || !self.output.is_clean())
+                    && !self.can_batch_request(messages)
+                {
+                    self.output_blocked = true;
+                    false
+                } else {
+                    match queue.ensure_capacity() {
+                        Ok(()) => true,
+                        Err(messages::Error::NoSendSlot) if queued => {
+                            self.output_blocked = true;
+                            false
+                        }
+                        Err(error) => return Poll::Ready(Err(wire_error(error))),
                     }
-                    Err(error) => return Poll::Ready(Err(wire_error(error))),
                 }
             } else {
                 true
@@ -817,8 +828,13 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 advanced = true;
                 // Publish promptly and give a completed application's waker a
                 // chance to run before scanning unrelated maintenance lanes.
-                let batch_calls =
-                    published && queue.len() < 8 && !self.hooks.inbox.queue.borrow().is_empty();
+                let batch_calls = published
+                    && !self.hooks.inbox.queue.borrow().is_empty()
+                    && if self.driver.uses_owned_output_queues() {
+                        queue.len() < 32 && self.can_batch_request(messages)
+                    } else {
+                        queue.len() < 8 && !self.hooks.inbox.queue.borrow().is_empty()
+                    };
                 if completed || (queue.len() > queued && !batch_calls) {
                     return Poll::Ready(Ok(()));
                 }
@@ -1756,6 +1772,54 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         }
     }
 
+    // Only private, descriptor-free prepared requests qualify for lookahead.
+    // Inspecting an arbitrary ParamsHook while borrowing the inbox could invoke
+    // application code. This estimate conservatively includes a maximum target
+    // transform and avoids retaining output across configured pool pressure.
+    fn can_batch_request(&self, messages: &messages::Messages<'p, '_, '_>) -> bool {
+        let inbox = self.hooks.inbox.queue.borrow();
+        let Some(call) = inbox.front() else {
+            return false;
+        };
+        if !self.driver.uses_owned_output_queues()
+            || self.calls.has_pending_admission()
+            || self.driver.runtime.queued() != 0
+            || !self.worker.is_empty()
+            || !self.foreign.is_empty()
+            || !self.commands.is_empty()
+        {
+            return false;
+        }
+        if call.third_party.is_some()
+            || !call.hints.no_promise_pipelining
+            || call.hints.only_promise_pipeline
+            || !call.endpoint.remote.get()
+        {
+            return false;
+        }
+        let CallParams::Request(params) = &call.params else {
+            return false;
+        };
+        let Some(prepared) = params.prepared_call() else {
+            return false;
+        };
+        let Some(overhead) = self
+            .driver
+            .path_capacity()
+            .checked_mul(16)
+            .and_then(|n| n.checked_add(256))
+        else {
+            return false;
+        };
+        let segments = prepared.message().get_segments_for_output();
+        segments
+            .iter()
+            .try_fold(overhead, |n, segment| n.checked_add(segment.len()))
+            .is_some_and(|minimum| {
+                messages.can_reserve(minimum.max(self.options.output_bytes.get()))
+            })
+    }
+
     #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     fn poll_io_work<R, O: Output<I>, W: io::WriteResources<O::Bundle>>(
@@ -1833,7 +1897,11 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 self.idle = false;
                 controls.set_idle(false);
             }
-            let mut output_ready = if defer_output && self.output.is_clean() && !self.output_blocked
+            let deferred_request =
+                self.coalescing_output && queue.len() < 32 && self.can_batch_request(messages);
+            let mut output_ready = if (defer_output || deferred_request)
+                && self.output.is_clean()
+                && !self.output_blocked
             {
                 false
             } else {
@@ -1849,7 +1917,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             // Publication already committed protocol state and invalidated scans.
             // Draining bytes only reactivates lanes which waited for FIFO capacity;
             // resource/application notifications still arrive through WorkWake.
-            if queue.len() < queued {
+            if queue.len() < queued || (output_ready && self.output_blocked) {
                 self.control_idle = false;
                 if std::mem::take(&mut self.output_blocked) {
                     self.changed();
@@ -1879,6 +1947,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             }
             let control_was_idle = self.control_idle;
             self.direct_publication = false;
+            let before_work = queue.len();
             if let Poll::Ready(result) =
                 self.poll_work_budget(messages, queue, scratch, output, cx, &mut remaining, waker)
             {
@@ -1901,13 +1970,26 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 remaining -= 1;
                 self.active = 0;
             }
+            // Carry a productive burst across cooperative yields, bounded by
+            // frame count and known pool capacity. A quantum that publishes no
+            // frame always flushes, so pending admission cannot hold old output.
+            self.coalescing_output = queue.len() > before_work
+                && !self.hooks.inbox.queue.borrow().is_empty()
+                && queue.len() < 32
+                && !self.delivered
+                && !self.output_blocked
+                && self.output.is_clean()
+                && controls.direct_publication_preserves_idle()
+                && self.policy.poll_ready(cx).is_ready()
+                && self.can_batch_request(messages);
             // Publish bytes produced by this turn without an executor round trip.
             // Physical flush remains owned by Output, including a Pending receipt.
             if !queue.is_empty()
-                && !(defer_output
-                    && !self.delivered
-                    && !self.output_blocked
-                    && self.policy.poll_ready(cx).is_ready())
+                && !(self.coalescing_output
+                    || (defer_output
+                        && !self.delivered
+                        && !self.output_blocked
+                        && self.policy.poll_ready(cx).is_ready()))
             {
                 // This turn may have published while the transport was idle.
                 // Wake it before handing over any frame, including network controls.
@@ -1928,7 +2010,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         Poll::Ready(Ok(())) => true,
                         Poll::Pending => false,
                     };
-                if queue.len() < queued {
+                if queue.len() < queued || (output_ready && self.output_blocked) {
                     if !preserves_control {
                         self.control_idle = false;
                     }

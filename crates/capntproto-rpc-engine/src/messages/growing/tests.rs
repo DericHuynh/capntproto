@@ -1,4 +1,39 @@
 use super::*;
+
+#[test]
+fn capacity_lookahead_observes_growth_limits_and_shared_owners() {
+    let mut pool = GrowingBuffers::new(1, 64, 71);
+    with_growing_messages(&mut pool, sends(0), |messages| {
+        assert!(messages.can_reserve(64));
+        assert!(!messages.can_reserve(65));
+        assert!(!messages.can_reserve(usize::MAX));
+        let first = messages.copy_from(b"small").unwrap();
+        assert!(!messages.can_reserve(0));
+        let shared = messages.share(&first).unwrap();
+        messages.release(first);
+        assert!(!messages.can_reserve(0));
+        drop(shared);
+        assert!(messages.can_reserve(64));
+        assert_eq!(messages.buffers[0].generation.get(), 1);
+        let second = messages.reserve(64).unwrap();
+        messages.discard(second);
+        assert!(messages.can_reserve(64));
+        messages.buffers[0].generation.set(u64::MAX);
+        assert!(!messages.can_reserve(0));
+    })
+    .unwrap();
+    let mut limited = GrowingBuffers::new(2, 64, 15);
+    with_growing_messages(&mut limited, sends(0), |messages| {
+        assert!(!messages.can_reserve(9));
+        assert!(messages.can_reserve(8));
+        let writer = messages.reserve(8).unwrap();
+        assert!(!messages.can_reserve(0));
+        messages.discard(writer);
+        assert!(messages.can_reserve(8));
+        assert!(!messages.can_reserve(9));
+    })
+    .unwrap();
+}
 use crate::connection::Growth;
 use core::{
     future::Future,

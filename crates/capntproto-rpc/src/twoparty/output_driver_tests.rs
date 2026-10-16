@@ -409,6 +409,46 @@ fn borrowed_frames_hold_exact_input_until_finished_and_end_on_truncation() {
 }
 
 #[test]
+fn buffered_stream_publication_preserves_pending_flush_resources_and_fifo() {
+    let output = Rc::new(Output::default());
+    output.allowed.set(usize::MAX);
+    let mut network = VatNetwork::new(
+        futures::io::Cursor::new(Vec::<u8>::new()),
+        Writer(output.clone()),
+        VatId::Client,
+        Default::default(),
+    );
+    let mut connection = network.connection.take().unwrap();
+    let mut stream = connection.take_outgoing_stream().unwrap();
+    let mut cx = Context::from_waker(Waker::noop());
+    assert!(network._output_driver.poll_network(&mut cx).is_pending());
+    let admission = crate::admission::Admission::new(1);
+    let (mut first, mut expected) = frame("buffered first");
+    first.credit = Some(admission.reserve().unwrap());
+    stream.send_buffered(first).unwrap();
+    let (second, bytes) = frame("buffered second");
+    expected.extend(bytes);
+    stream.send_buffered(second).unwrap();
+    assert!(output.bytes.borrow().is_empty());
+    assert!(stream.poll_flush(&mut cx).is_pending());
+    assert_eq!(*output.bytes.borrow(), expected);
+    assert_eq!(admission.used(), 1);
+    let (third, bytes) = frame("behind pending physical flush");
+    expected.extend(bytes);
+    stream.send_buffered(third).unwrap();
+    assert!(stream.poll_flush(&mut cx).is_pending());
+    assert!(output.bytes.borrow().len() < expected.len());
+    drop(stream);
+    output.flushed.set(true);
+    let mut pump = connection.output_driver().unwrap();
+    assert!(Pin::new(&mut pump).poll(&mut cx).is_pending());
+    assert_eq!(*output.bytes.borrow(), expected);
+    assert_eq!(admission.used(), 0);
+    let mut successor = connection.take_outgoing_stream().unwrap();
+    assert!(matches!(successor.poll_flush(&mut cx), Poll::Ready(Ok(()))));
+}
+
+#[test]
 fn reusable_output_sends_first_frame_eagerly_and_flushes_a_following_burst() {
     let output = Rc::new(Output::default());
     output.allowed.set(usize::MAX);

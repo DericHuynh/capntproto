@@ -525,6 +525,17 @@ struct OutgoingStream {
     deferred: bool,
 }
 impl crate::OutgoingMessageStream for OutgoingStream {
+    fn send_buffered(&mut self, frame: crate::OutgoingFrame) -> capnp::Result<()> {
+        #[cfg(unix)]
+        let frame = {
+            let mut frame = frame;
+            drop(frame.take_fds());
+            frame
+        };
+        self.sent = true;
+        self.deferred = true;
+        self.sender.send(QueuedMessage::Frame(frame))
+    }
     fn send(&mut self, frame: crate::OutgoingFrame) -> capnp::Result<()> {
         #[cfg(unix)]
         let frame = {

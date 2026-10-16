@@ -50,6 +50,10 @@ pub trait Write: Flush {
 /// Async completion belongs inside this adapter; report bytes only when IO has
 /// accepted them, never merely because an operation has been started.
 pub trait WriteResources<R>: Flush {
+    /// Hint the bounded number of queued frames before the next flush poll.
+    /// The actual writes can stop early on partial IO or backpressure. This is
+    /// not acceptance: all byte, resource and flush obligations remain in force.
+    fn start_batch(&mut self, _frames: usize) {}
     /// Opt into retaining allocating message buffers through asynchronous IO.
     /// Fixed providers continue to use borrowed writes. Retained bytes consume
     /// the pool's capacity until this adapter releases them.

@@ -58,7 +58,7 @@ pub(crate) struct PipelineInner {
     // Once the promise resolves, this will become non-null and point to the underlying object.
     redirect: Option<Box<dyn PipelineHook>>,
 
-    promise_to_drive: futures::future::Shared<Promise<(), Error>>,
+    promise_to_drive: Option<futures::future::Shared<Promise<(), Error>>>,
 
     clients_to_resolve: SenderQueue<(Weak<RefCell<ClientInner>>, Vec<PipelineOp>), ()>,
 }
@@ -89,10 +89,7 @@ impl PipelineInner {
         // Dropping the last driver fork can destroy its PipelineInnerSender,
         // which resolves this pipeline again. Publish the redirect and detach
         // the old driver before running that destructor.
-        let old_driver = std::mem::replace(
-            &mut this.borrow_mut().promise_to_drive,
-            Promise::ok(()).shared(),
-        );
+        let old_driver = this.borrow_mut().promise_to_drive.take();
         drop(old_driver);
     }
 }
@@ -159,7 +156,7 @@ impl Pipeline {
     pub(crate) fn new() -> (PipelineInnerSender, Self) {
         let inner = Rc::new(RefCell::new(PipelineInner {
             redirect: None,
-            promise_to_drive: Promise::ok(()).shared(),
+            promise_to_drive: None,
             clients_to_resolve: SenderQueue::new(),
         }));
 
@@ -176,12 +173,15 @@ impl Pipeline {
     where
         F: Future<Output = Result<(), Error>> + 'static + Unpin,
     {
-        let new = Promise::from_future(
-            futures::future::try_join(self.inner.borrow_mut().promise_to_drive.clone(), promise)
-                .map_ok(|_| ()),
-        )
+        let previous = self.inner.borrow().promise_to_drive.clone();
+        let new = match previous {
+            Some(previous) => {
+                Promise::from_future(futures::future::try_join(previous, promise).map_ok(|_| ()))
+            }
+            None => Promise::from_future(promise),
+        }
         .shared();
-        let old_driver = std::mem::replace(&mut self.inner.borrow_mut().promise_to_drive, new);
+        let old_driver = self.inner.borrow_mut().promise_to_drive.replace(new);
         drop(old_driver);
     }
 }
@@ -208,7 +208,9 @@ impl PipelineHook for Pipeline {
         }
 
         let mut queued_client = Client::new(Some(self.inner.clone()));
-        queued_client.drive(self.inner.borrow().promise_to_drive.clone());
+        if let Some(driver) = self.inner.borrow().promise_to_drive.clone() {
+            queued_client.drive(driver);
+        }
         let weak_queued = Rc::downgrade(&queued_client.inner);
         let admitted = self
             .inner
@@ -478,6 +480,67 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn optional_pipeline_drivers_keep_dependencies_and_reentrant_cleanup() {
+        for failing in [0, 1] {
+            let (_sender, mut pipeline) = Pipeline::new();
+            for index in 0..2 {
+                pipeline.drive(if index == failing {
+                    Promise::err(Error::failed(format!("driver {index}")))
+                } else {
+                    Promise::ok(())
+                });
+            }
+            let client = pipeline.get_pipelined_cap(&[]);
+            let error = futures::executor::block_on(client.when_resolved()).unwrap_err();
+            assert_eq!(error.extra, format!("driver {failing}"));
+        }
+        struct ReenterDrop(Weak<RefCell<PipelineInner>>, Rc<std::cell::Cell<bool>>);
+        impl Drop for ReenterDrop {
+            fn drop(&mut self) {
+                let inner = self.0.upgrade().unwrap();
+                {
+                    let state = inner
+                        .try_borrow_mut()
+                        .expect("driver drops outside the pipeline borrow");
+                    assert!(state.redirect.is_some());
+                }
+                PipelineInner::resolve(&inner, Err(Error::failed("late driver failure".into())));
+                self.1.set(true);
+            }
+        }
+        let (sender, mut pipeline) = Pipeline::new();
+        let dropped = Rc::new(std::cell::Cell::new(false));
+        let probe = ReenterDrop(Rc::downgrade(&pipeline.inner), dropped.clone());
+        pipeline.drive(futures::future::pending::<Result<(), Error>>().attach(probe));
+        sender.complete(Box::new(broken::Pipeline::new(Error::failed(
+            "published".into(),
+        ))));
+        assert!(dropped.get());
+        let target = pipeline.get_pipelined_cap(&[]);
+        assert_eq!(
+            futures::executor::block_on(target.when_resolved())
+                .unwrap_err()
+                .extra,
+            "published"
+        );
+
+        // A pipeline with no driving future still forwards its waiting clients.
+        let (sender, pipeline) = Pipeline::new();
+        let client = pipeline.get_pipelined_cap(&[]);
+        let mut resolved = client.when_resolved();
+        assert!(Pin::new(&mut resolved)
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending());
+        sender.complete(Box::new(broken::Pipeline::new(Error::failed(
+            "no driver".into(),
+        ))));
+        assert_eq!(
+            futures::executor::block_on(resolved).unwrap_err().extra,
+            "no driver"
+        );
+    }
+
     #[test]
     fn resolution_wakes_after_releasing_the_queued_client() {
         let client = Client::new(None);

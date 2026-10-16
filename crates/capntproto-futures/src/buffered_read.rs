@@ -419,7 +419,8 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
     /// segment table. The configured traversal limit is checked before allocating
     /// independent message storage, and counts payload words, excluding framing.
     /// Borrowed-frame reads may grow this buffer to fit a completed frame up to
-    /// 128 KiB; owning reads do not grow it. Larger borrowed frames use a separate
+    /// 128 KiB; streamed bursts can also grow it to this bound. Owning reads do
+    /// not grow it. Larger borrowed frames use a separate
     /// reusable spill allocation, bounded as documented by `finish_borrowed_frame`.
     pub fn with_buffer_size(input: R, options: ReaderOptions, words: usize) -> Result<Self> {
         if words < MIN_BUFFER_WORDS
@@ -934,6 +935,26 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
                     continue;
                 }
             }
+            // A full buffer containing consumed predecessors is evidence of a
+            // burst. Grow only the streaming adapter's exclusive storage, up
+            // to the same bound as spill promotion. Copy the unread suffix,
+            // including a partial header, before the next read. A sequential
+            // caller with no prefetched predecessor retains its small buffer.
+            if streaming
+                && self.begin != 0
+                && self.end == self.buffer.len() * 8
+                && self.buffer.len() < MAX_PROMOTED_BUFFER_WORDS
+                && (self.read_ahead)(&self.input)
+            {
+                let words = (self.buffer.len() * 2).min(MAX_PROMOTED_BUFFER_WORDS);
+                let remaining = self.end - self.begin;
+                let mut replacement = AlignedBuffer::new(words);
+                replacement.bytes_mut()[..remaining]
+                    .copy_from_slice(&self.buffer.bytes()[self.begin..self.end]);
+                self.buffer = ReceiveBuffer::Bytes(replacement);
+                self.begin = 0;
+                self.end = remaining;
+            }
             let buffer = self.buffer.bytes_mut();
             if buffer.len() - self.end < buffer.len() / 2 {
                 buffer.copy_within(self.begin..self.end, 0);
@@ -971,6 +992,78 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg_attr(miri, ignore = "fills the 128 KiB burst retention bound")]
+    fn streaming_bursts_grow_bounded_storage_and_preserve_retained_frames() {
+        let frames: Vec<_> = (0..300u16)
+            .map(|index| {
+                let mut message = capnp::message::Builder::new_default();
+                let data = message.initn_root::<capnp::data::Builder>(1016);
+                data.fill(index as u8);
+                data[..2].copy_from_slice(&index.to_le_bytes());
+                capnp::serialize::write_message_to_words(&message)
+            })
+            .collect();
+        let source = frames.concat();
+        for (streaming, read_ahead, chunk) in [
+            (true, true, usize::MAX),
+            (true, true, 1029),
+            (false, true, usize::MAX),
+            (true, false, usize::MAX),
+        ] {
+            let mut input = BufferedRead::with_buffer_size(
+                Fragmented {
+                    input: futures::io::Cursor::new(source.clone()),
+                    chunk,
+                    pending: false,
+                },
+                Default::default(),
+                MIN_BUFFER_WORDS,
+            )
+            .unwrap();
+            if !read_ahead {
+                input.set_read_ahead_policy(|_| false);
+            }
+            let mut retained = None;
+            for (index, expected) in frames.iter().enumerate() {
+                let size = futures::executor::block_on(futures::future::poll_fn(|cx| {
+                    if streaming {
+                        input.poll_stream_frame_size(cx)
+                    } else {
+                        input
+                            .poll_borrowed_frame(cx)
+                            .map_ok(|frame| frame.map(<[u8]>::len))
+                    }
+                }))
+                .unwrap();
+                assert_eq!(size, Some(expected.len()));
+                assert_eq!(input.borrowed_frame().unwrap(), expected);
+                if index == 0 && read_ahead {
+                    retained = input.share_borrowed_frame();
+                    assert!(retained.is_some());
+                }
+                input.finish_borrowed_frame();
+                assert!(input.buffer.capacity() <= MAX_PROMOTED_BUFFER_WORDS);
+            }
+            assert_eq!(input.consumed_bytes(), source.len() as u64);
+            if streaming && read_ahead && chunk == usize::MAX {
+                assert_eq!(input.buffer.len(), MAX_PROMOTED_BUFFER_WORDS);
+            } else if !streaming || !read_ahead {
+                assert_eq!(input.buffer.len(), MIN_BUFFER_WORDS);
+            }
+            if let Some((owner, range)) = retained {
+                assert_eq!(&owner[range], frames[0]);
+            }
+            assert_eq!(
+                futures::executor::block_on(futures::future::poll_fn(|cx| {
+                    input.poll_stream_frame_size(cx)
+                }))
+                .unwrap(),
+                None
+            );
+        }
+    }
 
     #[test]
     fn shared_frame_owners_preserve_successors_and_allow_exclusive_reuse() {

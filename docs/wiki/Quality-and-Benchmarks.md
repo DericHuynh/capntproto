@@ -3068,7 +3068,7 @@ Profiles, executable identities, trials and patches are retained in
 
 ### Shared receive-buffer follow-up (October 16, 2026)
 
-The latest completed dedicated campaign, [38834035472](https://github.com/DericHuynh/capntproto/actions/runs/38834035472)
+The preceding dedicated campaign, [38834035472](https://github.com/DericHuynh/capntproto/actions/runs/38834035472)
 at `a1b8d38a590f`, passes nine remote and three loopback cells. The remaining
 ratios are fanout 1.191482×, pipelined read 1.102962×, remote 64 KiB 1.070215×,
 and loopback 64 KiB 1.076264×. The following campaign stopped during provisioning
@@ -3130,6 +3130,73 @@ portable fixtures, 72 mixed-peer workflows, runtime Clippy and two focused Miri
 tests. The maintenance vacancy optimization examines at most eight slots;
 general-scan fixtures now exceed that bound and retain exact budget/cleanup
 assertions. Evidence is in `target/portable-performance-routed-20261016/`.
+
+### Shared-input dedicated checkpoint (October 16, 2026)
+
+[Campaign 38839510111](https://github.com/DericHuynh/capntproto/actions/runs/38839510111)
+at `cb3f85ff5db0b8382d53279e74a7729c998f4392` completes measurement and cleanup
+with **10/12 remote and 4/4 loopback cells passing (14/16)**. Independent
+recomputation verifies every target median and inclusive decision against all
+350 remote trials and 60 portable/legacy/C++ loopback trials.
+
+| Remaining remote miss | Portable p50 | Faster reference p50 | Ratio |
+| --- | ---: | ---: | ---: |
+| fanout-32 | 1,000.659 µs | C++ 810.345 µs | 1.234856× |
+| pipelined-read | 315.412 µs | C++ 294.146 µs | 1.072297× |
+
+The remote 64-KiB cell now passes at 0.979402× C++; loopback 64 KiB passes at
+1.020071× legacy. The other loopback ratios are 1.013652×, 1.016123× and 1.027125×.
+Artifact `12021629318` retains every raw sample, resource record and fixture
+result; ZIP SHA-256 is
+`c89751f4de74641cf0e57fe599fa2293b31a91cd1491cedb729230fab9639beb`.
+These results apply to the shared-input commit, before original-route publication
+or the output-coalescing experiments. The gap stays open until all 16 cells pass.
+
+### Original-route dedicated checkpoint (October 16, 2026)
+
+[Campaign 38841734555](https://github.com/DericHuynh/capntproto/actions/runs/38841734555)
+at `1f07fcf40f188e18b058238718643ab963f4fb69` completes measurement and cleanup
+with **9/12 remote and 4/4 loopback cells passing (13/16)**. Independent
+recomputation checks all 350 remote and 60 portable/legacy/C++ loopback trials.
+
+| Remaining remote miss | Portable p50 | Faster reference p50 | Ratio |
+| --- | ---: | ---: | ---: |
+| fanout-32 | 941.657 µs | C++ 679.101 µs | 1.386623× |
+| pipelined-read | 307.787 µs | legacy 282.372 µs | 1.090005× |
+| callback | 553.003 µs | legacy 515.077 µs | 1.073632× |
+
+Artifact `12022477908` retains every sample and fixture result; ZIP SHA-256 is
+`7f6c56da24dc83dcef31a6fc518c6d81cc8d3e4d2c402bf7ec68cd453ade44b9`.
+The change does not meet the target. Ratios use each campaign's faster control;
+the preceding 14/16 result remains recorded and does not qualify this commit.
+
+### Bounded coalescing candidate (October 16, 2026)
+
+The next candidate batches known outgoing calls only while FIFO and buffer
+capacity remain available. A physical flush still owns accepted resources;
+pool pressure and an unproductive work quantum force progress. Complete retained
+frames use vectored output without rebuilding segment tables. Only streaming
+receive bursts grow their buffer, geometrically and at most to 128 KiB; retained
+owners and partial successors remain valid. Cancellation maintenance now records
+whether any exchange needs cancellation scanning, and queued pipelines allocate
+a shared driver only when one exists.
+
+Local fanout tracing records 106 client writes and 808 server writes for 100
+batches, versus 102 server writes for C++. This is syscall evidence, not latency
+qualification. The full five-repetition local campaign passes **7/12 remote-style
+workflows and 1/4 loopback payloads**. Every miss and both controls are retained;
+the shared VM's large shifts also affect the controls. The empty-call instruction
+comparison is **18,312,409 / 17,363,548 client (1.054647×)** and
+**16,967,680 / 16,275,010 server (1.042560×)**. The client instruction gate still
+misses. Pipelined-read client instructions fall from 122,042,966 for the batch-hint
+prototype to 120,118,665 after removing empty shared pipeline drivers.
+
+Validation includes 268 RPC tests, 51 async framing/queue tests, all 72 mixed-peer
+workflow checks, and Clippy for all four runtime crates. Prototype patches,
+failed pressure experiments, raw timings, profiles and executable identities are
+preserved in `target/portable-performance-coalescing-20261016/`. This candidate
+requires a dedicated campaign; neither the local results nor a green workflow
+status close the 16-cell gap.
 
 ### Portable and legacy instruction qualification
 

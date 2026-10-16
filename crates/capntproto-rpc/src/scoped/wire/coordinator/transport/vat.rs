@@ -108,6 +108,7 @@ impl<V> Connection<V> {
                 output_driver,
                 output_stream,
                 stream_pending: 0,
+                buffer_batch: false,
             },
             Failure { finished, closing },
         )
@@ -539,8 +540,9 @@ pub struct Writer<V> {
     output_driver: Option<Promise<(), Error>>,
     output_stream: Option<Box<dyn crate::OutgoingMessageStream>>,
     stream_pending: usize,
+    buffer_batch: bool,
 }
-const MAXIMUM_RECEIPTS: usize = 8;
+const MAXIMUM_RECEIPTS: usize = 32;
 impl<V> Drop for Writer<V> {
     fn drop(&mut self) {
         if !self.closing.replace(true) {
@@ -605,6 +607,7 @@ impl<V> io::Flush for Writer<V> {
                 return Poll::Ready(Err(IoError::Failed(error)));
             }
         }
+        self.buffer_batch = false;
         Poll::Ready(Ok(()))
     }
 }
@@ -634,6 +637,9 @@ pub struct Bundle {
 }
 
 impl<V> io::WriteResources<Bundle> for Writer<V> {
+    fn start_batch(&mut self, frames: usize) {
+        self.buffer_batch = frames > 1;
+    }
     fn accepts_shared(&self) -> bool {
         true
     }
@@ -703,7 +709,12 @@ impl<V> Writer<V> {
             // OutgoingMessageStream retains the frame and its resources until
             // physical completion, even if this observer is dropped. The frame
             // already owns admission credit; a second owner/list is redundant.
-            stream.send(frame).map_err(IoError::Failed)?;
+            if self.buffer_batch {
+                stream.send_buffered(frame)
+            } else {
+                stream.send(frame)
+            }
+            .map_err(IoError::Failed)?;
             self.stream_pending += 1;
             return Ok(());
         }

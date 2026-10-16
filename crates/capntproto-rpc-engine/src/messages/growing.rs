@@ -75,6 +75,38 @@ impl<'bytes> GrowingBuffers<'bytes> {
         self.retained_bytes.get() + self.received_bytes.get().map_or(0, |bytes| bytes.get())
     }
 
+    pub(super) fn can_append(&self, minimum: usize) -> bool {
+        let Some(required) = minimum.checked_add(7) else {
+            return false;
+        };
+        if minimum > self.maximum_buffer_bytes {
+            return false;
+        }
+        let available = self.maximum_bytes - self.retained_bytes();
+        if self.len() < self.maximum_buffers && required <= available {
+            return true;
+        }
+        (0..self.len()).any(|index| {
+            let buffer = self.at(index);
+            if buffer.state.get() != State::Free || buffer.generation.get() == u64::MAX {
+                return false;
+            }
+            let Ok(bytes) = buffer.bytes.try_borrow_mut() else {
+                return false;
+            };
+            if !bytes.exclusive() {
+                return false;
+            }
+            let previous = match &*bytes {
+                Bytes::Owned { allocation, .. } => allocation.capacity(),
+                #[cfg(target_has_atomic = "ptr")]
+                Bytes::Released(_) => 0,
+                _ => return false,
+            };
+            required <= available + previous
+        })
+    }
+
     #[inline(always)]
     pub(super) fn at(&self, index: usize) -> &Buffer<'bytes> {
         if index < self.inline.len() {

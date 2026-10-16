@@ -27,6 +27,10 @@ use capnp::serialize::{BufferSegments, OwnedSegments, SegmentLengthsBuilder};
 use capnp::{message, Error, OutputSegments, Result};
 use futures_util::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
+// Linux supports at least 1024 iovecs. Keep stack metadata bounded to 64 there;
+// other targets retain the POSIX minimum of 16 and the scalar fallback.
+const MAX_IO_SLICES: usize = if cfg!(target_os = "linux") { 64 } else { 16 };
+
 mod leased;
 pub use leased::{poll_queued_message, write_queued_message, SendError};
 
@@ -433,6 +437,28 @@ where
             return write_buffers(&mut writer, &mut buffers).await;
         }
     }
+    if messages
+        .clone()
+        .all(|message| message.framed_bytes().is_some())
+    {
+        // Retained frames already include their segment tables. Rebuilding a
+        // table for each frame both allocates and spends an extra iovec per
+        // message. Keep bounded scatter/gather metadata on the stack instead.
+        let mut messages = messages;
+        while messages.len() != 0 {
+            let mut buffers = [std::io::IoSlice::new(&[]); MAX_IO_SLICES];
+            let mut count = 0;
+            for message in messages.by_ref().take(MAX_IO_SLICES) {
+                let bytes = message.framed_bytes().expect("complete frame");
+                if !bytes.is_empty() {
+                    buffers[count] = std::io::IoSlice::new(bytes);
+                    count += 1;
+                }
+            }
+            write_buffers(&mut writer, &mut buffers[..count]).await?;
+        }
+        return Ok(());
+    }
     if messages.len() <= 2 {
         let mut small = messages.clone();
         let segments: [_; 2] =
@@ -489,8 +515,7 @@ async fn write_buffers<W: AsyncWrite + Unpin>(
     mut remaining: &mut [std::io::IoSlice<'_>],
 ) -> Result<()> {
     while !remaining.is_empty() {
-        // Stay below platform iovec limits, including POSIX's minimum of 16.
-        let count = remaining.len().min(16);
+        let count = remaining.len().min(MAX_IO_SLICES);
         let written = writer.write_vectored(&remaining[..count]).await?;
         if written == 0 {
             return Err(std::io::Error::from(std::io::ErrorKind::WriteZero).into());
@@ -676,6 +701,55 @@ pub mod test {
             segment_lengths.to_segment_indices()
         );
         buf.clear();
+    }
+
+    #[test]
+    fn complete_frame_batches_preserve_order_without_reencoding_tables() {
+        struct Frame(Vec<u8>);
+        impl AsOutputSegments for Frame {
+            fn as_output_segments(&self) -> OutputSegments<'_> {
+                panic!("a retained frame needs no segment table reconstruction")
+            }
+            fn framed_bytes(&self) -> Option<&[u8]> {
+                Some(&self.0)
+            }
+        }
+        futures::executor::block_on(async {
+            for length in [
+                0,
+                1,
+                2,
+                16,
+                17,
+                32,
+                35,
+                super::MAX_IO_SLICES,
+                super::MAX_IO_SLICES + 1,
+            ] {
+                let mut frames = Vec::new();
+                for index in 0..length {
+                    let mut message = capnp::message::Builder::new_default();
+                    message
+                        .initn_root::<capnp::data::Builder>((index * 8) as u32)
+                        .fill(index as u8);
+                    frames.push(Frame(capnp::serialize::write_message_to_words(&message)));
+                }
+                let expected: Vec<_> = frames
+                    .iter()
+                    .flat_map(|frame| frame.0.iter().copied())
+                    .collect();
+                for fragment in [7, 23, 4096] {
+                    let mut output = BlockingWrite::new(Vec::new(), fragment);
+                    super::write_messages(&mut output, &frames).await.unwrap();
+                    assert_eq!(output.into_writer(), expected);
+                }
+            }
+            let mut output = Vec::new();
+            super::write_messages(&mut output, &[Frame(Vec::new()), Frame(Vec::new())])
+                .await
+                .unwrap();
+            assert!(output.is_empty());
+        });
     }
 
     #[test]

@@ -305,6 +305,27 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
     pub fn reserve(&mut self, minimum: usize) -> Result<Writer<'id>, Error> {
         self.reserve_length(minimum, false)
     }
+    /// Inspect configured capacity without reserving or changing generations.
+    /// Used to flush accepted output before admitting another buffered request.
+    /// True does not guarantee allocation success or reserve this capacity;
+    /// the actual reservation still checks every bound and exclusive owner.
+    pub fn can_reserve(&self, minimum: usize) -> bool {
+        #[cfg(feature = "alloc")]
+        if let Buffers::Growing(buffers) = &self.buffers {
+            if buffers.can_append(minimum) {
+                return true;
+            }
+        }
+        self.buffers.iter().any(|buffer| {
+            buffer.state.get() == State::Free
+                && buffer.generation.get() != u64::MAX
+                && buffer.capacity.get() >= minimum
+                && buffer
+                    .bytes
+                    .try_borrow_mut()
+                    .is_ok_and(|bytes| bytes.exclusive())
+        })
+    }
     /// Reserve and clear exactly `length` bytes, even when reusing a larger
     /// buffer. All writer views and sealing are limited to that prefix. Bytes
     /// beyond it remain inaccessible until a later reservation clears them.

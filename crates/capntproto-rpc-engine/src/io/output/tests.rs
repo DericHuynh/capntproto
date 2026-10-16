@@ -11,6 +11,7 @@ struct Sink {
     writes: usize,
     flushes: usize,
     closes: usize,
+    batches: usize,
     interrupt: bool,
     fail_after: Option<usize>,
 }
@@ -54,6 +55,14 @@ impl Drop for Resource<'_> {
     }
 }
 impl WriteResources<Resource<'_>> for Sink {
+    fn start_batch(&mut self, frames: usize) {
+        assert!(
+            self.buffered.is_none(),
+            "a pending physical flush owns the writer"
+        );
+        assert!((1..=2).contains(&frames));
+        self.batches += 1;
+    }
     fn poll_write_resources(
         &mut self,
         _: &mut Context<'_>,
@@ -107,8 +116,10 @@ fn partial_frames_flush_without_reordering_or_repeating_resources_and_allocate_n
                 for _ in 0..20 {
                     let flushing = output.flushing;
                     let writes = sink.writes;
+                    let batches = sink.batches;
                     let result = output.poll(&mut sink, &mut queue, messages, &mut cx, budget);
                     if flushing {
+                        assert_eq!(sink.batches, batches);
                         assert_eq!(
                             sink.writes, writes,
                             "pending flush must precede further writes"
@@ -123,7 +134,7 @@ fn partial_frames_flush_without_reordering_or_repeating_resources_and_allocate_n
                 assert_eq!(sink.resources, 3);
                 assert_eq!(released.get(), 3);
                 assert!(!output.flushing);
-                let counts = (sink.writes, sink.flushes);
+                let counts = (sink.writes, sink.flushes, sink.batches);
                 for _ in 0..3 {
                     assert_eq!(
                         output.poll(&mut sink, &mut queue, messages, &mut cx, budget),
@@ -131,7 +142,7 @@ fn partial_frames_flush_without_reordering_or_repeating_resources_and_allocate_n
                     );
                 }
                 assert_eq!(
-                    (sink.writes, sink.flushes),
+                    (sink.writes, sink.flushes, sink.batches),
                     counts,
                     "idle output must not touch IO"
                 );

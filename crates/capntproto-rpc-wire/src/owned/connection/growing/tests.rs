@@ -79,6 +79,102 @@ fn remote<'p, 'id>(driver: &mut Peer<'p, 'id, '_>) -> clients::Client<'id> {
 }
 
 #[test]
+fn large_pending_exchange_tables_only_scan_after_actual_cancellation() {
+    with_driver(|mut driver, messages| {
+        let mut queue = messages::Queue::new_growing(0, 4).unwrap();
+        let mut keys = alloc::vec::Vec::new();
+        for _ in 0..16 {
+            let key = driver
+                .send(
+                    messages,
+                    &mut queue,
+                    128,
+                    Default::default(),
+                    |builder, id| {
+                        calls::dynamic_call(
+                            builder,
+                            id,
+                            calls::Target::Imported(ImportId::from_wire(41)),
+                            DynamicCall {
+                                no_promise_pipelining: true,
+                                ..Default::default()
+                            },
+                            |_| Ok(()),
+                        )
+                    },
+                )
+                .unwrap();
+            drain(&mut queue, messages, |_| {});
+            keys.push(key);
+        }
+        assert_eq!(driver.exchanges.len(), 16);
+        assert!(driver.maintenance_is_idle());
+        for index in [0, 15] {
+            driver.cancel(keys[index]).unwrap();
+            driver.cancel(keys[index]).unwrap();
+        }
+        assert!(!driver.maintenance_is_idle());
+        assert!(!driver.drain_canceled_response(messages));
+        assert!(
+            driver.canceled_exchanges,
+            "pending cancellation must survive a full scan"
+        );
+        for index in [15, 0] {
+            let frame = Frame::build(messages, 128, Default::default(), |builder| {
+                let mut ret = builder
+                    .try_init_root::<Message>()?
+                    .into_field(Message::RETURN)
+                    .init()?;
+                ret.scalar(Return::ANSWER_ID)
+                    .set(keys[index].id().to_wire());
+                ret.scalar(Return::NO_FINISH_NEEDED).set(true);
+                ret.into_field(Return::RESULTS).init()?;
+                Ok(())
+            })
+            .unwrap();
+            driver
+                .receive(frame, messages, &mut [], |_| (), || ())
+                .unwrap_or_else(|rejected| panic!("{}", rejected.error));
+            assert!(driver.drain_canceled_response(messages));
+        }
+        assert!(!driver.drain_canceled_response(messages));
+        assert!(!driver.canceled_exchanges);
+        for _ in 0..256 {
+            let progress = driver
+                .poll_maintenance(
+                    messages,
+                    &mut queue,
+                    128,
+                    Default::default(),
+                    &mut [],
+                    NonZeroUsize::new(1).unwrap(),
+                )
+                .unwrap();
+            if !queue.is_empty() {
+                drain(&mut queue, messages, |root| {
+                    assert!(matches!(
+                        root.which().unwrap(),
+                        rpc_capnp::message::Finish(_)
+                    ));
+                });
+            }
+            if matches!(progress, Progress::Idle) {
+                break;
+            }
+        }
+        assert!(driver.maintenance_is_idle());
+        driver.cancel(keys[7]).unwrap();
+        assert!(driver.canceled_exchanges);
+        assert!(!driver.maintenance_is_idle());
+        close(driver, messages, &mut queue);
+        let writers: alloc::vec::Vec<_> = (0..32).map(|_| messages.reserve(128).unwrap()).collect();
+        for writer in writers {
+            messages.discard(writer);
+        }
+    });
+}
+
+#[test]
 fn retained_vacant_pipeline_capacity_does_not_require_maintenance() {
     with_driver(|mut driver, messages| {
         driver

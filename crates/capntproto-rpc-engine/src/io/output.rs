@@ -39,6 +39,7 @@ impl Output {
             return Poll::Ready(Ok(()));
         }
         if !self.flushing {
+            writer.start_batch(queue.len().min(budget.get()));
             let mut tracked = Tracking {
                 writer,
                 accepted: &mut self.flushing,

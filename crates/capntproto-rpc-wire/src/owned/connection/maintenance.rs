@@ -6,20 +6,28 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     /// This bounded check calls no application hooks and changes no scan cursor.
     /// False requires normal polling; it does not necessarily mean work is ready.
     pub fn maintenance_is_idle(&self) -> bool {
-        self.disconnected.is_none() && self.call.is_none() && self.resolution.is_none()
-            && self.pipelines.vacant_within(8) && self.outgoing.is_empty()
-            && self.ledgers.exports.retirement_is_idle(8) && !self.runtime.has_retired()
+        self.disconnected.is_none()
+            && self.call.is_none()
+            && self.resolution.is_none()
+            && self.pipelines.vacant_within(8)
+            && self.outgoing.is_empty()
+            && self.ledgers.exports.retirement_is_idle(8)
+            && !self.runtime.has_retired()
             && self.ledgers.answers.reclamation_is_idle(8)
-            // A retained bootstrap may coexist with an ordinary call. Keep
-            // this shortcut bounded independently of configured concurrency.
-            && self.exchanges.len() <= 8 && !self.exchanges.iter().any(|slot| slot.canceled)
+            && !self.canceled_exchanges
             && self.exported.vacant_within(8)
             && !self.ledgers.questions.has_pending_finish()
             && !self.ledgers.imports.has_pending_release()
-            && self.runtime.queued() == 0 && self.barrier.is_none() && self.echo.is_none()
-            && self.tails.len() <= 8 && self.tails.iter().all(|slot| !slot.is_occupied())
+            && self.runtime.queued() == 0
+            && self.barrier.is_none()
+            && self.echo.is_none()
+            && self.tails.len() <= 8
+            && self.tails.iter().all(|slot| !slot.is_occupied())
             && self.invocation_pipelines.len() <= 8
-            && self.invocation_pipelines.iter().all(|slot| !slot.is_occupied())
+            && self
+                .invocation_pipelines
+                .iter()
+                .all(|slot| !slot.is_occupied())
     }
     /// Poll caller-budgeted promise propagation, deferred admission, cleanup and
     /// cancellation. The cursor advances even on resource errors so one blocked
@@ -159,7 +167,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 4 => self.ledgers.exports.retirement_is_idle(8),
                 5 => !self.runtime.has_retired(),
                 6 => self.ledgers.answers.reclamation_is_idle(8),
-                7 => self.exchanges.is_empty(),
+                7 => !self.canceled_exchanges,
                 8 => self.exported.vacant_within(8),
                 9 => !self.ledgers.questions.has_pending_finish(),
                 10 => !self.ledgers.imports.has_pending_release(),

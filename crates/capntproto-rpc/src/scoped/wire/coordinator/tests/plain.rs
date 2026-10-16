@@ -2,6 +2,153 @@ use super::*;
 use capntproto_rpc_engine::ids::QuestionId;
 use capntproto_rpc_wire::{attachments::ImportReceiver, calls};
 
+#[test]
+fn outgoing_bursts_flush_under_pool_pressure_and_pending_receipts() {
+    #[derive(Default)]
+    struct OutputBytes {
+        bytes: Vec<u8>,
+        flushes: usize,
+        waiting: bool,
+        acknowledged: bool,
+        last_flush: usize,
+        largest_batch: usize,
+    }
+    impl io::Flush for OutputBytes {
+        type Error = ();
+        fn poll_flush(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), io::IoError<()>>> {
+            if !self.waiting {
+                self.waiting = true;
+                self.acknowledged = false;
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+            if !self.acknowledged {
+                return Poll::Pending;
+            }
+            self.waiting = false;
+            self.flushes += 1;
+            let mut batch = &self.bytes[self.last_flush..];
+            let mut frames = 0;
+            while !batch.is_empty() {
+                capnp::serialize::read_message(&mut batch, Default::default()).unwrap();
+                frames += 1;
+            }
+            self.largest_batch = self.largest_batch.max(frames);
+            self.last_flush = self.bytes.len();
+            Poll::Ready(Ok(()))
+        }
+    }
+    impl io::Write for OutputBytes {
+        fn poll_write(
+            &mut self,
+            _: &mut Context<'_>,
+            bytes: &[u8],
+        ) -> Poll<Result<usize, io::IoError<()>>> {
+            assert!(!self.waiting, "a physical flush still owns earlier output");
+            self.bytes.extend_from_slice(bytes);
+            Poll::Ready(Ok(bytes.len()))
+        }
+    }
+    for budget in [1, 8, 64] {
+        for capacity in [1, 4, 32] {
+            for (owned, occupied) in [(false, 0), (true, 0), (true, 30)] {
+                with_peer(|mut driver, messages| {
+                    driver.use_owned_output_queues(owned);
+                    let mut hooks = ClientHooks::new(32, 32);
+                    let client = remote(&mut driver, &mut hooks, ImportId::from_wire(7));
+                    let mut opts = options();
+                    opts.budget = NonZeroUsize::new(budget).unwrap();
+                    let mut coordinator =
+                        Coordinator::new(driver, hooks, NonZeroUsize::new(32).unwrap(), None, opts)
+                            .unwrap_or_else(|error| {
+                                panic!("budget {budget}, capacity {capacity}, owned {owned}, occupied {occupied}: {error:?}")
+                            });
+                    let holders: Vec<_> = (0..occupied)
+                        .map(|_| messages.reserve(1024).unwrap())
+                        .collect();
+                    let responses: Vec<_> = (0..24)
+                        .map(|_| {
+                            client
+                                .new_call_with_hints::<any_pointer::Owned, any_pointer::Owned>(
+                                    7,
+                                    0,
+                                    None,
+                                    capability::CallHints {
+                                        no_promise_pipelining: true,
+                                        ..Default::default()
+                                    },
+                                )
+                                .send()
+                        })
+                        .collect();
+                    let mut queue = messages::Queue::new_growing(0, capacity).unwrap();
+                    let mut bytes = OutputBytes::default();
+                    let mut control = Policy {
+                        preserve_plain: true,
+                        ..Default::default()
+                    };
+                    let mut cx = Context::from_waker(Waker::noop());
+                    for _ in 0..4096 {
+                        bytes.acknowledged = true;
+                        coordinator
+                            .poll_io_work::<(), _, _>(
+                                messages,
+                                &mut queue,
+                                &mut transport::Writer(&mut bytes),
+                                &mut [0; 32],
+                                &NoResources,
+                                &mut control,
+                                &mut cx,
+                            )
+                            .unwrap();
+                        if coordinator.active == 0
+                            && queue.is_empty()
+                            && coordinator.output.is_clean()
+                        {
+                            break;
+                        }
+                    }
+                    assert!(queue.is_empty() && coordinator.output.is_clean());
+                    let mut source = bytes.bytes.as_slice();
+                    for id in 0..24 {
+                        let message =
+                            capnp::serialize::read_message(&mut source, opts.reader).unwrap();
+                        let crate::rpc_capnp::message::Call(call) = message
+                            .get_root::<crate::rpc_capnp::message::Reader>()
+                            .unwrap()
+                            .which()
+                            .unwrap()
+                        else {
+                            panic!("Call")
+                        };
+                        assert_eq!(call.unwrap().get_question_id(), id);
+                    }
+                    assert!(source.is_empty());
+                    if owned && occupied == 0 && budget == 64 && capacity == 32 {
+                        assert!(
+                            bytes.largest_batch > 8,
+                            "burst stopped at a cooperative yield"
+                        );
+                    }
+                    assert!(bytes.largest_batch <= capacity);
+                    drop((responses, client));
+                    futures::executor::block_on(coordinator.terminate::<NoResources, (), ()>(
+                        messages,
+                        &mut queue,
+                        &mut control,
+                        Ok(()),
+                    ))
+                    .unwrap();
+                    for holder in holders {
+                        messages.discard(holder);
+                    }
+                    reclaimed(messages);
+                });
+            }
+        }
+    }
+}
+
 struct BufferedInput;
 impl io::Read for BufferedInput {
     type Error = ();
