@@ -449,6 +449,16 @@ impl<'id> ClientHooks<'id> {
             if !refresh_settled && !entry.pending {
                 continue;
             }
+            // A settled import's revision can be checked without retaining its
+            // endpoint. Destruction is already journaled independently above;
+            // unchanged metadata needs no Weak upgrade or matching Rc drop.
+            if subscriptions && !entry.pending {
+                if let Some((source, revision)) = &entry.metadata {
+                    if source.revision() == *revision {
+                        continue;
+                    }
+                }
+            }
             // Retain through metadata and resolution publication. Reentrant
             // notification may drop another endpoint; its release is journaled.
             let Some(endpoint) = entry.endpoint.upgrade() else {
@@ -457,12 +467,10 @@ impl<'id> ClientHooks<'id> {
             if subscriptions && !entry.pending {
                 if let Some((source, revision)) = &mut entry.metadata {
                     let next = source.revision();
-                    if next != *revision {
-                        if let Some(metadata) = source.snapshot() {
-                            endpoint.apply_metadata(metadata);
-                        }
-                        *revision = next;
+                    if let Some(metadata) = source.snapshot() {
+                        endpoint.apply_metadata(metadata);
                     }
+                    *revision = next;
                     continue;
                 }
             }

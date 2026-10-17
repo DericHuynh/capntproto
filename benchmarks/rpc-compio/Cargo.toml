@@ -6,10 +6,14 @@ publish = false
 
 [workspace]
 
+[features]
+default = []
+compio-experiment = ["dep:compio"]
+
 [dependencies]
 capnp = { package = "capntproto-core", path = "../../crates/capntproto-core" }
 capnp-rpc = { package = "capntproto-rpc", path = "../../crates/capntproto-rpc" }
-compio = { version = "=0.19.2", features = ["net", "time", "polling", "io-compat"] }
+compio = { version = "=0.19.2", optional = true, features = ["net", "time", "polling", "io-compat"] }
 futures = "0.3"
 serde_json = "1"
 socket2 = "0.6"

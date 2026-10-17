@@ -205,8 +205,8 @@ Three architectural costs remain after these API changes:
    interests. It must cover tail adoption and protected execution before removing
    existing owners. The borrowed context enables that work but does not finish it.
 2. **Metadata is revisioned, not event queued.** Wire refresh still walks the
-   endpoint registry and upgrades weak references; each metadata source adds
-   ownership overhead. A generation-checked dirty-route queue with bounded
+   endpoint registry; unchanged settled imports now skip weak-reference upgrades,
+   but each metadata source still adds ownership overhead. A generation-checked dirty-route queue with bounded
    overflow/rescan and explicit wakeup would remove unrelated settled-route work.
    Promise settlement and local dynamic projections need their own events.
 3. **Readiness is still primarily per lane.** General application wakes and
@@ -254,6 +254,11 @@ samples instead of treating pooled timing differences as causal speedups.
 
 ### Compio integration boundary
 
+Tokio remains the production host and the selected runtime for further portable
+optimization. Compio is an opt-in benchmark experiment (`compio-experiment`),
+with no migration of the production transports planned. Preserve its measurements
+as architectural evidence while comparing new portable changes on Tokio.
+
 The portable engine, hosted `portable::RpcSystem`, protected call executor and
 task set already run without Tokio. The [Compio benchmark host](../../benchmarks/rpc-compio/README.md)
 demonstrates that boundary with the production driver and shared workflow code.
@@ -275,9 +280,9 @@ completes and retain outgoing frame owners through every partial write, canceled
 observer and drain. The existing `IncomingFrameStream`, owned `OutgoingFrame`
 and `OutgoingMessageStream` are the useful integration boundary. The generic
 completion-to-`futures-io` bridge adds staging copies and boxed operation futures;
-replacing Tokio names alone does not remove them. Prototype a frame-oriented
-Compio `VatNetwork` at that boundary before changing the engine's ownership
-model again. No additional core API break is needed to run the measured
+replacing Tokio names alone does not remove them. A future completion experiment
+would belong in a frame-oriented `VatNetwork` at that boundary. No additional
+core API break is needed to run the measured
 Compio hosts; a direct completion implementation must prove buffer lifetime,
 FIFO publication, backpressure and cancellation before becoming the default.
 
@@ -298,8 +303,8 @@ that can combine retirement and ready application commands before flushing.
 Control-only traffic must still make progress when no application call follows;
 output backpressure, protected calls and early pipelines must retain their
 ordering. A blanket extra yield would not establish that contract. Validate this
-boundary with both runtimes and decoded wire groups before choosing a default
-executor or implementing a native completion transport.
+boundary with decoded Tokio and C++ wire groups. Tokio is the selected executor;
+the Compio comparison remains available for reproducing the scheduling evidence.
 
 ## Route ownership
 

@@ -1,5 +1,15 @@
 # Quality checks and benchmark reports
 
+## Tokio selection October 17, 2026
+
+Tokio is the selected host for further portable optimization. The comparison
+harness now builds without Compio unless `compio-experiment` is enabled. The
+[Tokio follow-up report](../../research/reports/portable-performance/2026-10-17-tokio/README.md)
+records a metadata refresh optimization, 300,000 diagnostic samples and identical
+before/after wire writes. Pipeline and callback client instructions fall 0.361%
+and 0.477%; variable local timings do not establish a latency improvement.
+The 5% qualification gap remains open. Historical results below are preserved.
+
 ## Mandatory integration and Compio October 17, 2026
 
 The [integration report](../../research/reports/portable-performance/2026-10-17-integration/README.md)

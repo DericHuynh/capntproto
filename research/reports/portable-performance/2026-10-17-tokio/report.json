@@ -1,0 +1,1572 @@
+{
+  "scope": "Tokio selection and unchanged-import metadata refresh; local diagnostics only",
+  "archive": {
+    "path": "target/portable-tokio-resume-20261017",
+    "files": 1133,
+    "bytes": 208186504,
+    "manifest_sha256": "e31ae9b9410940333a990c68a27826bbbc2233fa233dbab790bc003a0dac214f"
+  },
+  "source": {
+    "base": "625fe56c292e418ac033a636fd4a041b8b7f76e6",
+    "tree": "f838c38a887d03e725c97951d2b56e47b901e3c9",
+    "binary": "/workspace/scratch/portable-binaries/tokio-resume20261017",
+    "binary_sha256": "653ed43814019b1251dbd7b8af30b47da18d0e12a14996e69576f79fe4793046",
+    "source_files": {
+      "benchmarks/rpc-compio/Cargo.toml": "cc2ffe269898be684909f1e863b00c609b2af96b59f9c9db6b14c70400ba36ee",
+      "benchmarks/rpc-compio/README.md": "134cdba63695213da017e01ea651e461bf9a273a4abedb1d3750743c75e5b20f",
+      "benchmarks/rpc-compio/src/main.rs": "7e77e3c88a82d7b81e36af7ade3a368876753bbd940f135fd34a5889c2fe8766",
+      "crates/capntproto-rpc/src/scoped.rs": "96cf6c19d67136b9a8f5468e28258e299eebb0268ccbadc836144fa737f8ebca",
+      "docs/wiki/Architecture.md": "bfbbf5e2943700cab00ab18f2ff437431079f600e3f9d971ae0c1dc8bbb1d507",
+      "docs/wiki/Roadmap.md": "5da0b94c068592463dab5a6da713c0aa809e56f4860d4d8c3470b63a6d557441"
+    },
+    "patch_sha256": "c01f5c23b0a75f556b458faf59e1e45d1a15a8c66e88ac13ef3e7959b0d4319f",
+    "runtime": "Tokio current_thread; opt-in Compio compiled only to retain matching host composition",
+    "build_args": [
+      "cargo",
+      "build",
+      "--locked",
+      "--release",
+      "--features",
+      "compio-experiment",
+      "--manifest-path",
+      "benchmarks/rpc-compio/Cargo.toml"
+    ],
+    "target_dir": "benchmarks/rpc/target"
+  },
+  "initial_latency": [
+    {
+      "case": "pipelined-read",
+      "variants": {
+        "before": {
+          "case": "pipelined-read",
+          "variant": "before",
+          "p50_ns": 43224.0,
+          "p95_ns": 112737,
+          "repetition_p50_ns": [
+            42412.0,
+            54215.5,
+            43018.5,
+            43414.0,
+            42818.0
+          ]
+        },
+        "after": {
+          "case": "pipelined-read",
+          "variant": "after",
+          "p50_ns": 42662.5,
+          "p95_ns": 101560,
+          "repetition_p50_ns": [
+            42042.0,
+            42557.5,
+            43899.5,
+            41651.5,
+            42513.0
+          ]
+        },
+        "legacy": {
+          "case": "pipelined-read",
+          "variant": "legacy",
+          "p50_ns": 28201.0,
+          "p95_ns": 64885,
+          "repetition_p50_ns": [
+            27245.0,
+            29248.0,
+            27545.5,
+            28712.0,
+            27306.0
+          ]
+        },
+        "cpp": {
+          "case": "pipelined-read",
+          "variant": "cpp",
+          "p50_ns": 30696.0,
+          "p95_ns": 73949,
+          "repetition_p50_ns": [
+            30860.5,
+            31341.0,
+            30825.0,
+            30395.0,
+            30209.5
+          ]
+        }
+      },
+      "ratios": {
+        "before": {
+          "over_before": 1.0,
+          "over_cpp": 1.4081313526192338,
+          "over_faster_reference": 1.5327116059714194,
+          "paired_over_before": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "after": {
+          "over_before": 0.987009531741625,
+          "over_cpp": 1.389839066979411,
+          "over_faster_reference": 1.5128009645048048,
+          "paired_over_before": [
+            0.9912760539469961,
+            0.7849692431131319,
+            1.0204795611190534,
+            0.959402496890404,
+            0.9928768275024522
+          ]
+        }
+      }
+    },
+    {
+      "case": "unary-empty",
+      "variants": {
+        "before": {
+          "case": "unary-empty",
+          "variant": "before",
+          "p50_ns": 20620.0,
+          "p95_ns": 38817,
+          "repetition_p50_ns": [
+            20580.0,
+            20410.0,
+            31987.0,
+            20410.0,
+            20505.0
+          ]
+        },
+        "after": {
+          "case": "unary-empty",
+          "variant": "after",
+          "p50_ns": 31226.0,
+          "p95_ns": 42383,
+          "repetition_p50_ns": [
+            20260.0,
+            31276.0,
+            31897.0,
+            20560.0,
+            31958.0
+          ]
+        },
+        "legacy": {
+          "case": "unary-empty",
+          "variant": "legacy",
+          "p50_ns": 19889.0,
+          "p95_ns": 35222,
+          "repetition_p50_ns": [
+            19859.0,
+            19839.5,
+            19819.5,
+            19809.0,
+            29804.0
+          ]
+        },
+        "cpp": {
+          "case": "unary-empty",
+          "variant": "cpp",
+          "p50_ns": 21922.0,
+          "p95_ns": 39278,
+          "repetition_p50_ns": [
+            21972.0,
+            21742.0,
+            33309.0,
+            21852.0,
+            21511.0
+          ]
+        }
+      },
+      "ratios": {
+        "before": {
+          "over_before": 1.0,
+          "over_cpp": 0.940607608794818,
+          "over_faster_reference": 1.036753984614611,
+          "paired_over_before": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "after": {
+          "over_before": 1.5143549951503394,
+          "over_cpp": 1.424413830854849,
+          "over_faster_reference": 1.5700135753431546,
+          "paired_over_before": [
+            0.9844509232264335,
+            1.5323860852523272,
+            0.997186356957514,
+            1.0073493385595296,
+            1.5585466959278225
+          ]
+        }
+      }
+    },
+    {
+      "case": "callback",
+      "variants": {
+        "before": {
+          "case": "callback",
+          "variant": "before",
+          "p50_ns": 54856.0,
+          "p95_ns": 117003,
+          "repetition_p50_ns": [
+            90718.5,
+            49799.0,
+            89272.0,
+            50589.5,
+            50284.0
+          ]
+        },
+        "after": {
+          "case": "callback",
+          "variant": "after",
+          "p50_ns": 72091.5,
+          "p95_ns": 126296,
+          "repetition_p50_ns": [
+            74936.0,
+            73759.0,
+            51455.5,
+            51736.5,
+            48466.5
+          ]
+        },
+        "legacy": {
+          "case": "callback",
+          "variant": "legacy",
+          "p50_ns": 64675.0,
+          "p95_ns": 115941,
+          "repetition_p50_ns": [
+            64650.5,
+            66012.0,
+            65401.0,
+            42217.5,
+            40434.0
+          ]
+        },
+        "cpp": {
+          "case": "callback",
+          "variant": "cpp",
+          "p50_ns": 68722.0,
+          "p95_ns": 106077,
+          "repetition_p50_ns": [
+            69052.0,
+            45066.5,
+            70915.0,
+            70865.0,
+            44315.0
+          ]
+        }
+      },
+      "ratios": {
+        "before": {
+          "over_before": 1.0,
+          "over_cpp": 0.7982305520793923,
+          "over_faster_reference": 0.8481793583301122,
+          "paired_over_before": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "after": {
+          "over_before": 1.3141953478197463,
+          "over_cpp": 1.049030878030325,
+          "over_faster_reference": 1.1146733668341708,
+          "paired_over_before": [
+            0.8260277672139641,
+            1.4811341593204683,
+            0.5763901335245094,
+            1.0226726889967286,
+            0.9638553018852916
+          ]
+        }
+      }
+    }
+  ],
+  "additional_twenty_repetitions": [
+    {
+      "case": "pipelined-read",
+      "variant": "before",
+      "p50_ns": 43614.0,
+      "p95_ns": 107890,
+      "repetition_p50_ns": [
+        87574.5,
+        42513.0,
+        87359.0,
+        41606.5,
+        52422.0,
+        42773.0,
+        86152.0,
+        42227.5,
+        50900.5,
+        41381.0,
+        43238.5,
+        42793.0,
+        42092.0,
+        43138.5,
+        42703.0,
+        86853.5,
+        41731.5,
+        42352.0,
+        65897.0,
+        53098.0
+      ]
+    },
+    {
+      "case": "pipelined-read",
+      "variant": "after",
+      "p50_ns": 44015.0,
+      "p95_ns": 110323,
+      "repetition_p50_ns": [
+        42718.0,
+        43424.0,
+        87464.0,
+        41501.0,
+        53173.0,
+        85176.0,
+        43353.5,
+        46789.0,
+        91420.0,
+        41666.5,
+        42268.0,
+        41441.0,
+        41921.5,
+        42297.0,
+        41411.0,
+        85131.0,
+        42863.5,
+        41832.0,
+        85286.0,
+        41401.0
+      ]
+    },
+    {
+      "case": "pipelined-read",
+      "variant": "legacy",
+      "p50_ns": 29173.0,
+      "p95_ns": 72647,
+      "repetition_p50_ns": [
+        28252.0,
+        28662.0,
+        28387.0,
+        27050.0,
+        40654.5,
+        28612.0,
+        41581.0,
+        28717.5,
+        33244.0,
+        28777.0,
+        40785.0,
+        28336.5,
+        27771.0,
+        52938.0,
+        28021.0,
+        28367.0,
+        28712.0,
+        28632.0,
+        54174.5,
+        28091.5
+      ]
+    },
+    {
+      "case": "pipelined-read",
+      "variant": "cpp",
+      "p50_ns": 32378.0,
+      "p95_ns": 69062,
+      "repetition_p50_ns": [
+        30880.5,
+        50475.0,
+        31296.0,
+        30485.0,
+        42412.5,
+        30475.0,
+        30665.5,
+        30786.0,
+        51411.0,
+        30760.5,
+        31942.0,
+        39618.0,
+        30896.0,
+        31406.0,
+        31016.0,
+        48947.5,
+        49804.0,
+        30099.5,
+        48932.0,
+        42808.0
+      ]
+    },
+    {
+      "case": "unary-empty",
+      "variant": "before",
+      "p50_ns": 21772.0,
+      "p95_ns": 46017,
+      "repetition_p50_ns": [
+        21246.5,
+        22207.5,
+        22022.5,
+        32177.0,
+        32718.0,
+        32878.0,
+        31596.5,
+        20440.0,
+        32417.5,
+        20490.5,
+        32157.5,
+        20641.0,
+        20521.0,
+        32432.5,
+        20691.0,
+        20681.0,
+        20671.0,
+        20660.5,
+        20660.0,
+        20831.0
+      ]
+    },
+    {
+      "case": "unary-empty",
+      "variant": "after",
+      "p50_ns": 23379.5,
+      "p95_ns": 45307,
+      "repetition_p50_ns": [
+        30865.5,
+        20540.5,
+        31166.0,
+        32438.0,
+        32318.0,
+        20270.0,
+        31727.0,
+        20365.0,
+        31451.5,
+        20239.5,
+        31757.0,
+        20500.0,
+        20370.0,
+        31306.0,
+        20490.0,
+        20680.0,
+        20635.5,
+        31791.5,
+        20400.0,
+        20700.0
+      ]
+    },
+    {
+      "case": "unary-empty",
+      "variant": "legacy",
+      "p50_ns": 20070.0,
+      "p95_ns": 40379,
+      "repetition_p50_ns": [
+        30245.0,
+        20250.0,
+        29053.0,
+        31747.0,
+        31631.5,
+        19859.5,
+        19779.0,
+        19639.0,
+        30174.0,
+        19369.0,
+        19539.0,
+        19569.0,
+        19769.0,
+        29844.0,
+        19619.0,
+        19789.0,
+        19558.0,
+        29934.0,
+        19809.0,
+        19729.5
+      ]
+    },
+    {
+      "case": "unary-empty",
+      "variant": "cpp",
+      "p50_ns": 22283.0,
+      "p95_ns": 45487,
+      "repetition_p50_ns": [
+        33219.0,
+        22102.0,
+        22282.5,
+        21752.0,
+        33750.0,
+        32984.0,
+        32833.0,
+        21632.0,
+        33359.0,
+        21512.0,
+        33530.0,
+        21762.0,
+        22067.5,
+        33439.0,
+        21922.0,
+        21957.5,
+        33008.0,
+        21997.5,
+        22042.0,
+        21722.5
+      ]
+    },
+    {
+      "case": "callback",
+      "variant": "before",
+      "p50_ns": 73499.0,
+      "p95_ns": 121729,
+      "repetition_p50_ns": [
+        90058.0,
+        51130.0,
+        49944.0,
+        73388.0,
+        51767.0,
+        75100.0,
+        89191.5,
+        49573.5,
+        89306.5,
+        49793.5,
+        91139.5,
+        50274.0,
+        90043.0,
+        87749.5,
+        89316.5,
+        49147.5,
+        90143.0,
+        90093.0,
+        74786.0,
+        49994.0
+      ]
+    },
+    {
+      "case": "callback",
+      "variant": "after",
+      "p50_ns": 72346.0,
+      "p95_ns": 121479,
+      "repetition_p50_ns": [
+        50104.0,
+        91610.0,
+        48462.0,
+        73408.0,
+        50775.0,
+        73879.0,
+        88831.5,
+        54806.0,
+        56954.0,
+        58206.0,
+        93453.0,
+        49197.5,
+        51341.0,
+        86352.0,
+        49423.0,
+        50404.5,
+        50124.0,
+        88530.0,
+        73538.0,
+        87484.0
+      ]
+    },
+    {
+      "case": "callback",
+      "variant": "legacy",
+      "p50_ns": 43875.0,
+      "p95_ns": 97764,
+      "repetition_p50_ns": [
+        40835.5,
+        43113.0,
+        40835.0,
+        64605.0,
+        65637.0,
+        65742.0,
+        41311.0,
+        41481.0,
+        41050.5,
+        64760.0,
+        68371.0,
+        41326.0,
+        41752.0,
+        66628.0,
+        42242.0,
+        65872.0,
+        40604.5,
+        40935.5,
+        41020.5,
+        65326.0
+      ]
+    },
+    {
+      "case": "callback",
+      "variant": "cpp",
+      "p50_ns": 46679.0,
+      "p95_ns": 104044,
+      "repetition_p50_ns": [
+        45582.0,
+        46814.5,
+        44666.0,
+        68320.5,
+        69472.0,
+        69463.0,
+        44571.0,
+        44706.0,
+        45286.5,
+        69667.5,
+        68982.0,
+        44530.5,
+        44841.0,
+        70364.0,
+        45302.0,
+        45066.0,
+        45387.0,
+        44776.0,
+        69372.0,
+        45136.0
+      ]
+    }
+  ],
+  "instructions": [
+    {
+      "case": "pipelined-read",
+      "peer": "client",
+      "variants": {
+        "before": {
+          "instructions": 73115182,
+          "allocator_calls": {
+            "realloc": 18,
+            "malloc": 49840,
+            "free": 49852,
+            "calloc": 10
+          }
+        },
+        "after": {
+          "instructions": 72851524,
+          "allocator_calls": {
+            "malloc": 49840,
+            "free": 49852,
+            "realloc": 18,
+            "calloc": 10
+          }
+        }
+      },
+      "delta_percent": {
+        "after": -0.360606364899696
+      }
+    },
+    {
+      "case": "pipelined-read",
+      "peer": "server",
+      "variants": {
+        "before": {
+          "instructions": 64283170,
+          "allocator_calls": {
+            "malloc": 29912,
+            "calloc": 11,
+            "free": 29898,
+            "realloc": 14
+          }
+        },
+        "after": {
+          "instructions": 64280982,
+          "allocator_calls": {
+            "free": 29898,
+            "malloc": 29912,
+            "calloc": 11,
+            "realloc": 14
+          }
+        }
+      },
+      "delta_percent": {
+        "after": -0.0034036902660572466
+      }
+    },
+    {
+      "case": "unary-empty",
+      "peer": "client",
+      "variants": {
+        "before": {
+          "instructions": 17012721,
+          "allocator_calls": {
+            "malloc": 4729,
+            "free": 4741,
+            "calloc": 10,
+            "realloc": 13
+          }
+        },
+        "after": {
+          "instructions": 17010666,
+          "allocator_calls": {
+            "malloc": 4729,
+            "free": 4741,
+            "calloc": 10,
+            "realloc": 13
+          }
+        }
+      },
+      "delta_percent": {
+        "after": -0.012079196502423617
+      }
+    },
+    {
+      "case": "unary-empty",
+      "peer": "server",
+      "variants": {
+        "before": {
+          "instructions": 15222848,
+          "allocator_calls": {
+            "malloc": 2409,
+            "free": 2394,
+            "calloc": 10,
+            "realloc": 9
+          }
+        },
+        "after": {
+          "instructions": 15220936,
+          "allocator_calls": {
+            "malloc": 2409,
+            "free": 2394,
+            "calloc": 10,
+            "realloc": 9
+          }
+        }
+      },
+      "delta_percent": {
+        "after": -0.012560067603639702
+      }
+    },
+    {
+      "case": "callback",
+      "peer": "client",
+      "variants": {
+        "before": {
+          "instructions": 56639865,
+          "allocator_calls": {
+            "free": 11352,
+            "malloc": 11337,
+            "calloc": 13,
+            "realloc": 14
+          }
+        },
+        "after": {
+          "instructions": 56369500,
+          "allocator_calls": {
+            "free": 11352,
+            "malloc": 11337,
+            "calloc": 13,
+            "realloc": 14
+          }
+        }
+      },
+      "delta_percent": {
+        "after": -0.4773404738870779
+      }
+    },
+    {
+      "case": "callback",
+      "peer": "server",
+      "variants": {
+        "before": {
+          "instructions": 56563203,
+          "allocator_calls": {
+            "malloc": 26624,
+            "free": 26609,
+            "calloc": 10,
+            "realloc": 10
+          }
+        },
+        "after": {
+          "instructions": 56528940,
+          "allocator_calls": {
+            "malloc": 26624,
+            "free": 26609,
+            "calloc": 10,
+            "realloc": 10
+          }
+        }
+      },
+      "delta_percent": {
+        "after": -0.06057471674650872
+      }
+    }
+  ],
+  "wire": [
+    {
+      "case": "pipelined-read",
+      "peer": "client",
+      "equal_write_bytes_and_groups": true,
+      "before_sha256": "8fb77e37198853e9c19d36c556bd2d4965380242c036057734eeee49420bcedb",
+      "after_sha256": "8fb77e37198853e9c19d36c556bd2d4965380242c036057734eeee49420bcedb",
+      "write_groups": [
+        {
+          "bytes": 1216,
+          "kinds": [
+            "bootstrap",
+            "call"
+          ]
+        },
+        {
+          "bytes": 1368,
+          "kinds": [
+            "finish",
+            "call",
+            "call",
+            "finish"
+          ]
+        },
+        {
+          "bytes": 1368,
+          "kinds": [
+            "finish",
+            "release",
+            "call",
+            "call"
+          ]
+        },
+        {
+          "bytes": 1368,
+          "kinds": [
+            "finish",
+            "release",
+            "call",
+            "call"
+          ]
+        },
+        {
+          "bytes": 1368,
+          "kinds": [
+            "finish",
+            "release",
+            "call",
+            "call"
+          ]
+        },
+        {
+          "bytes": 1368,
+          "kinds": [
+            "finish",
+            "release",
+            "call",
+            "call"
+          ]
+        },
+        {
+          "bytes": 1368,
+          "kinds": [
+            "finish",
+            "release",
+            "call",
+            "call"
+          ]
+        },
+        {
+          "bytes": 1368,
+          "kinds": [
+            "finish",
+            "release",
+            "call",
+            "call"
+          ]
+        },
+        {
+          "bytes": 1368,
+          "kinds": [
+            "finish",
+            "release",
+            "call",
+            "call"
+          ]
+        },
+        {
+          "bytes": 1368,
+          "kinds": [
+            "finish",
+            "release",
+            "call",
+            "call"
+          ]
+        },
+        {
+          "bytes": 1368,
+          "kinds": [
+            "finish",
+            "release",
+            "call",
+            "call"
+          ]
+        },
+        {
+          "bytes": 1368,
+          "kinds": [
+            "finish",
+            "release",
+            "call",
+            "call"
+          ]
+        },
+        {
+          "bytes": 1368,
+          "kinds": [
+            "finish",
+            "release",
+            "call",
+            "call"
+          ]
+        },
+        {
+          "bytes": 160,
+          "kinds": [
+            "finish",
+            "release",
+            "release",
+            "release"
+          ]
+        }
+      ]
+    },
+    {
+      "case": "pipelined-read",
+      "peer": "server",
+      "equal_write_bytes_and_groups": true,
+      "before_sha256": "66a4428d8a9159c10ddf38a316b2574250997cc513ce51d69238cfd751babb3d",
+      "after_sha256": "66a4428d8a9159c10ddf38a316b2574250997cc513ce51d69238cfd751babb3d",
+      "write_groups": [
+        {
+          "bytes": 200,
+          "kinds": [
+            "return",
+            "return"
+          ]
+        },
+        {
+          "bytes": 1216,
+          "kinds": [
+            "return",
+            "return"
+          ]
+        },
+        {
+          "bytes": 1216,
+          "kinds": [
+            "return",
+            "return"
+          ]
+        },
+        {
+          "bytes": 1216,
+          "kinds": [
+            "return",
+            "return"
+          ]
+        },
+        {
+          "bytes": 1216,
+          "kinds": [
+            "return",
+            "return"
+          ]
+        },
+        {
+          "bytes": 1216,
+          "kinds": [
+            "return",
+            "return"
+          ]
+        },
+        {
+          "bytes": 1216,
+          "kinds": [
+            "return",
+            "return"
+          ]
+        },
+        {
+          "bytes": 1216,
+          "kinds": [
+            "return",
+            "return"
+          ]
+        },
+        {
+          "bytes": 1216,
+          "kinds": [
+            "return",
+            "return"
+          ]
+        },
+        {
+          "bytes": 1216,
+          "kinds": [
+            "return",
+            "return"
+          ]
+        },
+        {
+          "bytes": 1216,
+          "kinds": [
+            "return",
+            "return"
+          ]
+        },
+        {
+          "bytes": 1216,
+          "kinds": [
+            "return",
+            "return"
+          ]
+        },
+        {
+          "bytes": 1216,
+          "kinds": [
+            "return",
+            "return"
+          ]
+        }
+      ]
+    },
+    {
+      "case": "unary-empty",
+      "peer": "client",
+      "equal_write_bytes_and_groups": true,
+      "before_sha256": "a9164bd45447474fdb583a1bfb34ec6013ef46c5d2d7d528dfe0cf43d02c085a",
+      "after_sha256": "a9164bd45447474fdb583a1bfb34ec6013ef46c5d2d7d528dfe0cf43d02c085a",
+      "write_groups": [
+        {
+          "bytes": 192,
+          "kinds": [
+            "bootstrap",
+            "call"
+          ]
+        },
+        {
+          "bytes": 208,
+          "kinds": [
+            "finish",
+            "call",
+            "finish"
+          ]
+        },
+        {
+          "bytes": 128,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 128,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 128,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 128,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 128,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 128,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 128,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 128,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 128,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 128,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 128,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 80,
+          "kinds": [
+            "release",
+            "release"
+          ]
+        }
+      ]
+    },
+    {
+      "case": "unary-empty",
+      "peer": "server",
+      "equal_write_bytes_and_groups": true,
+      "before_sha256": "bc499d074ba0bed68f23fd05f9bc325078ccf38bc1ad5865e49344bfbc8a6851",
+      "after_sha256": "bc499d074ba0bed68f23fd05f9bc325078ccf38bc1ad5865e49344bfbc8a6851",
+      "write_groups": [
+        {
+          "bytes": 200,
+          "kinds": [
+            "return",
+            "return"
+          ]
+        },
+        {
+          "bytes": 88,
+          "kinds": [
+            "return"
+          ]
+        },
+        {
+          "bytes": 88,
+          "kinds": [
+            "return"
+          ]
+        },
+        {
+          "bytes": 88,
+          "kinds": [
+            "return"
+          ]
+        },
+        {
+          "bytes": 88,
+          "kinds": [
+            "return"
+          ]
+        },
+        {
+          "bytes": 88,
+          "kinds": [
+            "return"
+          ]
+        },
+        {
+          "bytes": 88,
+          "kinds": [
+            "return"
+          ]
+        },
+        {
+          "bytes": 88,
+          "kinds": [
+            "return"
+          ]
+        },
+        {
+          "bytes": 88,
+          "kinds": [
+            "return"
+          ]
+        },
+        {
+          "bytes": 88,
+          "kinds": [
+            "return"
+          ]
+        },
+        {
+          "bytes": 88,
+          "kinds": [
+            "return"
+          ]
+        },
+        {
+          "bytes": 88,
+          "kinds": [
+            "return"
+          ]
+        },
+        {
+          "bytes": 88,
+          "kinds": [
+            "return"
+          ]
+        }
+      ]
+    },
+    {
+      "case": "callback",
+      "peer": "client",
+      "equal_write_bytes_and_groups": true,
+      "before_sha256": "d7656f1e275c71a6a0bc3e9dc4c3959e059262c44cf5667fe6d2c6aabe9c063a",
+      "after_sha256": "d7656f1e275c71a6a0bc3e9dc4c3959e059262c44cf5667fe6d2c6aabe9c063a",
+      "write_groups": [
+        {
+          "bytes": 256,
+          "kinds": [
+            "bootstrap",
+            "call"
+          ]
+        },
+        {
+          "bytes": 80,
+          "kinds": [
+            "finish",
+            "finish"
+          ]
+        },
+        {
+          "bytes": 224,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 80,
+          "kinds": [
+            "return"
+          ]
+        },
+        {
+          "bytes": 224,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 80,
+          "kinds": [
+            "return"
+          ]
+        },
+        {
+          "bytes": 224,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 80,
+          "kinds": [
+            "return"
+          ]
+        },
+        {
+          "bytes": 224,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 80,
+          "kinds": [
+            "return"
+          ]
+        },
+        {
+          "bytes": 224,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 80,
+          "kinds": [
+            "return"
+          ]
+        },
+        {
+          "bytes": 224,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 80,
+          "kinds": [
+            "return"
+          ]
+        },
+        {
+          "bytes": 224,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 80,
+          "kinds": [
+            "return"
+          ]
+        },
+        {
+          "bytes": 224,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 80,
+          "kinds": [
+            "return"
+          ]
+        },
+        {
+          "bytes": 224,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 80,
+          "kinds": [
+            "return"
+          ]
+        },
+        {
+          "bytes": 224,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 80,
+          "kinds": [
+            "return"
+          ]
+        },
+        {
+          "bytes": 224,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 80,
+          "kinds": [
+            "return"
+          ]
+        },
+        {
+          "bytes": 224,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 80,
+          "kinds": [
+            "return"
+          ]
+        },
+        {
+          "bytes": 80,
+          "kinds": [
+            "release",
+            "release"
+          ]
+        }
+      ]
+    },
+    {
+      "case": "callback",
+      "peer": "server",
+      "equal_write_bytes_and_groups": true,
+      "before_sha256": "19bf87285eb912aef8a0dcf03ddd90847deb48acc7273b69d886fe7c7857e048",
+      "after_sha256": "19bf87285eb912aef8a0dcf03ddd90847deb48acc7273b69d886fe7c7857e048",
+      "write_groups": [
+        {
+          "bytes": 200,
+          "kinds": [
+            "return",
+            "return"
+          ]
+        },
+        {
+          "bytes": 192,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 120,
+          "kinds": [
+            "return",
+            "release"
+          ]
+        },
+        {
+          "bytes": 192,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 120,
+          "kinds": [
+            "return",
+            "release"
+          ]
+        },
+        {
+          "bytes": 192,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 120,
+          "kinds": [
+            "return",
+            "release"
+          ]
+        },
+        {
+          "bytes": 192,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 120,
+          "kinds": [
+            "return",
+            "release"
+          ]
+        },
+        {
+          "bytes": 192,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 120,
+          "kinds": [
+            "return",
+            "release"
+          ]
+        },
+        {
+          "bytes": 192,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 120,
+          "kinds": [
+            "return",
+            "release"
+          ]
+        },
+        {
+          "bytes": 192,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 120,
+          "kinds": [
+            "return",
+            "release"
+          ]
+        },
+        {
+          "bytes": 192,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 120,
+          "kinds": [
+            "return",
+            "release"
+          ]
+        },
+        {
+          "bytes": 192,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 120,
+          "kinds": [
+            "return",
+            "release"
+          ]
+        },
+        {
+          "bytes": 192,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 120,
+          "kinds": [
+            "return",
+            "release"
+          ]
+        },
+        {
+          "bytes": 192,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 120,
+          "kinds": [
+            "return",
+            "release"
+          ]
+        },
+        {
+          "bytes": 192,
+          "kinds": [
+            "call"
+          ]
+        },
+        {
+          "bytes": 120,
+          "kinds": [
+            "return",
+            "release"
+          ]
+        }
+      ]
+    }
+  ],
+  "tokio_only_binary_sha256": "80f8ec7c1a90b7c9e4bd301c172636c5cd98f3cf02ed218524ffe7decd78ef6c",
+  "validation": {
+    "rpc_unit_tests": 307,
+    "default_adapter_tests": 3,
+    "opt_in_adapter_tests": 4,
+    "mixed_peer_cases": 48,
+    "rpc_all_target_clippy": "passed",
+    "default_all_target_release_clippy": "passed",
+    "opt_in_all_target_release_clippy": "passed",
+    "default_compio_dependencies": 0,
+    "default_runtime": "tokio current_thread",
+    "disabled_compio_selector": "fails explicitly",
+    "fixtures": "unchanged from 625fe56c",
+    "uninstrumented_samples": 300000,
+    "profiles": 12,
+    "peer_syscall_journals": 12
+  }
+}

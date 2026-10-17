@@ -1,10 +1,16 @@
-# Portable RPC on Compio
+# Portable RPC runtime comparison
+
+Tokio is the active runtime for portable-driver optimization and the default
+build of this harness. Compio is retained as an opt-in reproduction experiment;
+it is not a production dependency or a planned runtime migration. The directory
+name remains unchanged so existing reports and archived commands stay traceable.
 
 This runtime comparison runs the production portable driver with Compio 0.19.2
 or Tokio's current-thread executor. It shares the generated services, operations,
 payload validation, response lifetimes, admission limits and ten-second deadlines
 with `../rpc`. Only the host's timeout function is injected into that fixture.
-The same executable contains the Tokio and both Compio controls. This is a
+With `--features compio-experiment`, the same executable contains the Tokio and
+both Compio controls. This is a
 benchmark host; the project's TLS, QUIC, Unix descriptor passing and application
 services have not been migrated to Compio.
 
@@ -28,10 +34,18 @@ request fails if unavailable; it does not silently substitute polling. The local
 October 17 environment rejects `io_uring_setup` with EPERM, so its measurements
 use the Poll backend and cannot establish io_uring performance.
 
-Build from the repository root, retaining its release settings:
+Build the Tokio host from the repository root, retaining its release settings:
 
 ```sh
 cargo build --locked --release --manifest-path benchmarks/rpc-compio/Cargo.toml
+benchmarks/rpc-compio/target/release/capntproto-rpc-runtime-bench runtime-info
+```
+
+Reproduce the historical Compio comparison explicitly:
+
+```sh
+cargo build --locked --release --features compio-experiment \
+  --manifest-path benchmarks/rpc-compio/Cargo.toml
 CAPNTPROTO_BENCH_RUNTIME=compio-poll CAPNTPROTO_COMPIO_DRIVER=poll \
   benchmarks/rpc-compio/target/release/capntproto-rpc-runtime-bench runtime-info
 CAPNTPROTO_BENCH_RUNTIME=compio-poll CAPNTPROTO_COMPIO_DRIVER=poll \

@@ -1,0 +1,189 @@
+diff --git a/benchmarks/rpc-compio/Cargo.toml b/benchmarks/rpc-compio/Cargo.toml
+index f3ce659..da1566b 100644
+--- a/benchmarks/rpc-compio/Cargo.toml
++++ b/benchmarks/rpc-compio/Cargo.toml
+@@ -6,10 +6,14 @@ publish = false
+ 
+ [workspace]
+ 
++[features]
++default = []
++compio-experiment = ["dep:compio"]
++
+ [dependencies]
+ capnp = { package = "capntproto-core", path = "../../crates/capntproto-core" }
+ capnp-rpc = { package = "capntproto-rpc", path = "../../crates/capntproto-rpc" }
+-compio = { version = "=0.19.2", features = ["net", "time", "polling", "io-compat"] }
++compio = { version = "=0.19.2", optional = true, features = ["net", "time", "polling", "io-compat"] }
+ futures = "0.3"
+ serde_json = "1"
+ socket2 = "0.6"
+diff --git a/benchmarks/rpc-compio/README.md b/benchmarks/rpc-compio/README.md
+index 82b2df8..e8c13b0 100644
+--- a/benchmarks/rpc-compio/README.md
++++ b/benchmarks/rpc-compio/README.md
+@@ -1,10 +1,16 @@
+-# Portable RPC on Compio
++# Portable RPC runtime comparison
++
++Tokio is the active runtime for portable-driver optimization and the default
++build of this harness. Compio is retained as an opt-in reproduction experiment;
++it is not a production dependency or a planned runtime migration. The directory
++name remains unchanged so existing reports and archived commands stay traceable.
+ 
+ This runtime comparison runs the production portable driver with Compio 0.19.2
+ or Tokio's current-thread executor. It shares the generated services, operations,
+ payload validation, response lifetimes, admission limits and ten-second deadlines
+ with `../rpc`. Only the host's timeout function is injected into that fixture.
+-The same executable contains the Tokio and both Compio controls. This is a
++With `--features compio-experiment`, the same executable contains the Tokio and
++both Compio controls. This is a
+ benchmark host; the project's TLS, QUIC, Unix descriptor passing and application
+ services have not been migrated to Compio.
+ 
+@@ -28,10 +34,18 @@ request fails if unavailable; it does not silently substitute polling. The local
+ October 17 environment rejects `io_uring_setup` with EPERM, so its measurements
+ use the Poll backend and cannot establish io_uring performance.
+ 
+-Build from the repository root, retaining its release settings:
++Build the Tokio host from the repository root, retaining its release settings:
+ 
+ ```sh
+ cargo build --locked --release --manifest-path benchmarks/rpc-compio/Cargo.toml
++benchmarks/rpc-compio/target/release/capntproto-rpc-runtime-bench runtime-info
++```
++
++Reproduce the historical Compio comparison explicitly:
++
++```sh
++cargo build --locked --release --features compio-experiment \
++  --manifest-path benchmarks/rpc-compio/Cargo.toml
+ CAPNTPROTO_BENCH_RUNTIME=compio-poll CAPNTPROTO_COMPIO_DRIVER=poll \
+   benchmarks/rpc-compio/target/release/capntproto-rpc-runtime-bench runtime-info
+ CAPNTPROTO_BENCH_RUNTIME=compio-poll CAPNTPROTO_COMPIO_DRIVER=poll \
+diff --git a/benchmarks/rpc-compio/src/main.rs b/benchmarks/rpc-compio/src/main.rs
+index 6f4e1e0..7d55ccd 100644
+--- a/benchmarks/rpc-compio/src/main.rs
++++ b/benchmarks/rpc-compio/src/main.rs
+@@ -13,6 +13,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+ mod echo_capnp {
+     include!(concat!(env!("OUT_DIR"), "/echo_capnp.rs"));
+ }
++#[cfg(feature = "compio-experiment")]
+ mod compio_host;
+ mod tokio_host;
+ 
+@@ -51,7 +52,12 @@ fn main() -> Result<()> {
+         .unwrap_or("tokio")
+     {
+         "tokio" => tokio_host::run(args),
++        #[cfg(feature = "compio-experiment")]
+         "compio-poll" | "compio-completion" => compio_host::run(args),
++        #[cfg(not(feature = "compio-experiment"))]
++        "compio-poll" | "compio-completion" => {
++            Err("Compio is disabled; rebuild with --features compio-experiment to reproduce the runtime comparison".into())
++        }
+         _ => Err("CAPNTPROTO_BENCH_RUNTIME must be tokio, compio-poll or compio-completion".into()),
+     }
+ }
+diff --git a/crates/capntproto-rpc/src/scoped.rs b/crates/capntproto-rpc/src/scoped.rs
+index 950b147..c0062be 100644
+--- a/crates/capntproto-rpc/src/scoped.rs
++++ b/crates/capntproto-rpc/src/scoped.rs
+@@ -449,6 +449,16 @@ impl<'id> ClientHooks<'id> {
+             if !refresh_settled && !entry.pending {
+                 continue;
+             }
++            // A settled import's revision can be checked without retaining its
++            // endpoint. Destruction is already journaled independently above;
++            // unchanged metadata needs no Weak upgrade or matching Rc drop.
++            if subscriptions && !entry.pending {
++                if let Some((source, revision)) = &entry.metadata {
++                    if source.revision() == *revision {
++                        continue;
++                    }
++                }
++            }
+             // Retain through metadata and resolution publication. Reentrant
+             // notification may drop another endpoint; its release is journaled.
+             let Some(endpoint) = entry.endpoint.upgrade() else {
+@@ -457,12 +467,10 @@ impl<'id> ClientHooks<'id> {
+             if subscriptions && !entry.pending {
+                 if let Some((source, revision)) = &mut entry.metadata {
+                     let next = source.revision();
+-                    if next != *revision {
+-                        if let Some(metadata) = source.snapshot() {
+-                            endpoint.apply_metadata(metadata);
+-                        }
+-                        *revision = next;
++                    if let Some(metadata) = source.snapshot() {
++                        endpoint.apply_metadata(metadata);
+                     }
++                    *revision = next;
+                     continue;
+                 }
+             }
+diff --git a/docs/wiki/Architecture.md b/docs/wiki/Architecture.md
+index 81c0b2b..b938193 100644
+--- a/docs/wiki/Architecture.md
++++ b/docs/wiki/Architecture.md
+@@ -254,6 +254,11 @@ samples instead of treating pooled timing differences as causal speedups.
+ 
+ ### Compio integration boundary
+ 
++Tokio remains the production host and the selected runtime for further portable
++optimization. Compio is an opt-in benchmark experiment (`compio-experiment`),
++with no migration of the production transports planned. Preserve its measurements
++as architectural evidence while comparing new portable changes on Tokio.
++
+ The portable engine, hosted `portable::RpcSystem`, protected call executor and
+ task set already run without Tokio. The [Compio benchmark host](../../benchmarks/rpc-compio/README.md)
+ demonstrates that boundary with the production driver and shared workflow code.
+@@ -275,9 +280,9 @@ completes and retain outgoing frame owners through every partial write, canceled
+ observer and drain. The existing `IncomingFrameStream`, owned `OutgoingFrame`
+ and `OutgoingMessageStream` are the useful integration boundary. The generic
+ completion-to-`futures-io` bridge adds staging copies and boxed operation futures;
+-replacing Tokio names alone does not remove them. Prototype a frame-oriented
+-Compio `VatNetwork` at that boundary before changing the engine's ownership
+-model again. No additional core API break is needed to run the measured
++replacing Tokio names alone does not remove them. A future completion experiment
++would belong in a frame-oriented `VatNetwork` at that boundary. No additional
++core API break is needed to run the measured
+ Compio hosts; a direct completion implementation must prove buffer lifetime,
+ FIFO publication, backpressure and cancellation before becoming the default.
+ 
+@@ -298,8 +303,8 @@ that can combine retirement and ready application commands before flushing.
+ Control-only traffic must still make progress when no application call follows;
+ output backpressure, protected calls and early pipelines must retain their
+ ordering. A blanket extra yield would not establish that contract. Validate this
+-boundary with both runtimes and decoded wire groups before choosing a default
+-executor or implementing a native completion transport.
++boundary with decoded Tokio and C++ wire groups. Tokio is the selected executor;
++the Compio comparison remains available for reproducing the scheduling evidence.
+ 
+ ## Route ownership
+ 
+diff --git a/docs/wiki/Roadmap.md b/docs/wiki/Roadmap.md
+index ae6622d..d1367ff 100644
+--- a/docs/wiki/Roadmap.md
++++ b/docs/wiki/Roadmap.md
+@@ -89,13 +89,12 @@ identifies the remaining parameter/execution ownership, registry scans and broad
+ readiness invalidation. These contracts enable further work; their presence alone
+ does not establish the 5% goal.
+ 
+-The [Compio host](../../benchmarks/rpc-compio/README.md) evaluates runtime
+-replacement with the same portable driver and workflow fixtures. It compares
+-borrowed readiness I/O and a buffered completion bridge against a Tokio control
+-in the same executable. Native completion transport over owned frame boundaries
+-is the next integration experiment if the measurements support it. The current
+-environment permits Compio's Poll backend but rejects io_uring; full hosted
+-TLS/QUIC/Unix migration and io_uring qualification remain open.
++Tokio is the selected host for continuing portable optimization. The
++[runtime comparison](../../benchmarks/rpc-compio/README.md) retains Compio behind
++the opt-in `compio-experiment` feature to reproduce the existing measurements.
++Focus further work on portable CPU overhead and matching Tokio/C++ publication
++turns. A Compio transport migration is no longer an active roadmap item; the
++recorded Poll results do not establish io_uring performance.
+ 
+ The first optimization slice indexes immediate reply owners beyond eight calls,
+ checking the full question generation before delivery, and copies two-segment

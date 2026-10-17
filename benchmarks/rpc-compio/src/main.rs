@@ -13,6 +13,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 mod echo_capnp {
     include!(concat!(env!("OUT_DIR"), "/echo_capnp.rs"));
 }
+#[cfg(feature = "compio-experiment")]
 mod compio_host;
 mod tokio_host;
 
@@ -51,7 +52,12 @@ fn main() -> Result<()> {
         .unwrap_or("tokio")
     {
         "tokio" => tokio_host::run(args),
+        #[cfg(feature = "compio-experiment")]
         "compio-poll" | "compio-completion" => compio_host::run(args),
+        #[cfg(not(feature = "compio-experiment"))]
+        "compio-poll" | "compio-completion" => {
+            Err("Compio is disabled; rebuild with --features compio-experiment to reproduce the runtime comparison".into())
+        }
         _ => Err("CAPNTPROTO_BENCH_RUNTIME must be tokio, compio-poll or compio-completion".into()),
     }
 }

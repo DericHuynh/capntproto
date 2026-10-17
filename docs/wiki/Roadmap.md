@@ -89,13 +89,12 @@ identifies the remaining parameter/execution ownership, registry scans and broad
 readiness invalidation. These contracts enable further work; their presence alone
 does not establish the 5% goal.
 
-The [Compio host](../../benchmarks/rpc-compio/README.md) evaluates runtime
-replacement with the same portable driver and workflow fixtures. It compares
-borrowed readiness I/O and a buffered completion bridge against a Tokio control
-in the same executable. Native completion transport over owned frame boundaries
-is the next integration experiment if the measurements support it. The current
-environment permits Compio's Poll backend but rejects io_uring; full hosted
-TLS/QUIC/Unix migration and io_uring qualification remain open.
+Tokio is the selected host for continuing portable optimization. The
+[runtime comparison](../../benchmarks/rpc-compio/README.md) retains Compio behind
+the opt-in `compio-experiment` feature to reproduce the existing measurements.
+Focus further work on portable CPU overhead and matching Tokio/C++ publication
+turns. A Compio transport migration is no longer an active roadmap item; the
+recorded Poll results do not establish io_uring performance.
 
 The first optimization slice indexes immediate reply owners beyond eight calls,
 checking the full question generation before delivery, and copies two-segment
