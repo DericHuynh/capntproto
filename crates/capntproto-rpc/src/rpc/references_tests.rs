@@ -528,6 +528,70 @@ fn synchronous_transport_reply_observes_the_installed_question_owner() {
 }
 
 #[test]
+fn bootstrap_pipeline_settles_directly_on_return() {
+    struct Incoming(capnp::message::Builder<capnp::message::HeapAllocator>);
+    impl crate::IncomingMessage for Incoming {
+        fn size_in_words(&self) -> usize {
+            self.0.size_in_words()
+        }
+        fn get_body(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+            self.0.get_root_as_reader()
+        }
+    }
+    for rejected in [false, true] {
+        let mut fixture = Fixture::new();
+        let expected = local_cap();
+        let export = fixture.export(&*expected);
+        let mut message = capnp::message::Builder::new_default();
+        let mut returned = message.init_root::<message::Builder>().init_return();
+        returned.set_answer_id(0);
+        returned.set_no_finish_needed(false);
+        let mut caps = Vec::new();
+        if rejected {
+            returned.init_exception().set_reason("bootstrap rejected");
+        } else {
+            let mut payload = returned.init_results();
+            payload
+                .reborrow()
+                .init_cap_table(1)
+                .get(0)
+                .set_receiver_hosted(export.to_wire());
+            let mut content = payload.get_content();
+            capnp::traits::ImbueMut::imbue_mut(&mut content, &mut caps);
+            content.set_as_capability(expected.add_ref());
+        }
+        ConnectionState::handle_message(
+            &Rc::downgrade(&fixture.state),
+            Box::new(Incoming(message)),
+        )
+        .unwrap();
+        let resolved = fixture
+            ._bootstrap
+            .hook
+            .get_resolved()
+            .expect("settled without polling RPC tasks");
+        if rejected {
+            let error = resolved
+                .when_resolved()
+                .now_or_never()
+                .unwrap()
+                .unwrap_err();
+            assert!(error.extra.contains("bootstrap rejected"));
+        } else {
+            assert_eq!(resolved.get_ptr(), expected.get_ptr());
+        }
+        assert_eq!(
+            fixture.state.snapshot().questions,
+            0,
+            "the old bootstrap route retires before another task can send a call"
+        );
+        let messages = fixture.drain();
+        assert!(messages.iter().any(|m| matches!(m.get_root::<message::Reader>().unwrap().which(), Ok(message::Finish(finish)) if finish.as_ref().unwrap().get_question_id() == 0)));
+        fixture.state.release_export(export, 1).unwrap();
+    }
+}
+
+#[test]
 fn direct_pipeline_settles_before_application_poll_and_survives_response_cancellation() {
     struct Incoming(capnp::message::Builder<capnp::message::HeapAllocator>);
     impl crate::IncomingMessage for Incoming {
@@ -604,7 +668,7 @@ fn direct_pipeline_settles_before_application_poll_and_survives_response_cancell
             drop((result, response));
         }
         drop((projected, caps));
-        // Replacement retires the old ordered route through the task set.
+        // Drain transport publication after all response owners are released.
         fixture.drain();
         assert!(weak.upgrade().is_none());
         fixture.state.release_export(export, 1).unwrap();
@@ -709,7 +773,9 @@ fn driven_call_and_finish_release_protocol_borrows_before_polling_io() {
     let connection = system.connections.borrow().states()[0].clone();
     *state.borrow_mut() = Rc::downgrade(&connection);
     let mut cx = Context::from_waker(std::task::Waker::noop());
-    assert!(Pin::new(&mut system).poll(&mut cx).is_pending());
+    for _ in 0..32 {
+        assert!(Pin::new(&mut system).poll(&mut cx).is_pending());
+    }
     let target = ConnectionState::import(&connection, ImportId::from_wire(7), false, None).unwrap();
     bytes.borrow_mut().clear();
     let before = writes.get();
@@ -724,7 +790,14 @@ fn driven_call_and_finish_release_protocol_borrows_before_polling_io() {
             },
         )
         .send();
-    assert!(writes.get() > before, "Call must reach IO within send");
+    assert_eq!(writes.get(), before, "Call joins the deferred output batch");
+    for _ in 0..32 {
+        assert!(Pin::new(&mut system).poll(&mut cx).is_pending());
+    }
+    assert!(
+        writes.get() > before,
+        "Call must progress on the network task"
+    );
     let call =
         capnp::serialize::read_message(bytes.borrow().as_slice(), Default::default()).unwrap();
     let message::Call(call) = call.get_root::<message::Reader>().unwrap().which().unwrap() else {
@@ -745,7 +818,9 @@ fn driven_call_and_finish_release_protocol_borrows_before_polling_io() {
         before,
         "Finish waits for the next output batch"
     );
-    assert!(Pin::new(&mut system).poll(&mut cx).is_pending());
+    for _ in 0..32 {
+        assert!(Pin::new(&mut system).poll(&mut cx).is_pending());
+    }
     assert!(
         writes.get() > before,
         "Finish must reach IO when the driver is polled"
@@ -1206,7 +1281,7 @@ fn local_promise_resolution_waits_for_its_own_loopback_echo() {
         let promise = PromiseClient::new(&fixture.state, fixture._bootstrap.hook.add_ref(), None);
         let client = Client::from(promise.clone());
         promise.borrow_mut().received_call = true;
-        promise.borrow_mut().resolve(Ok(local_cap()));
+        PromiseClient::resolve(&promise, Ok(local_cap()));
         assert_eq!(fixture.state.embargoes.borrow().len(), 1);
         let mut waiter = client.when_resolved();
         let waker = futures::task::noop_waker();

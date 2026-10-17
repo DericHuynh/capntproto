@@ -379,7 +379,7 @@ fn return_templates_preserve_payloads_and_invalidate_selections_after_root_edits
 }
 
 #[test]
-fn pipeline_and_finish_batch_with_the_next_terminal_call_or_network_poll() {
+fn pipeline_and_finish_batch_with_terminal_calls_on_the_network_poll() {
     let output = Rc::new(Output::default());
     output.allowed.set(usize::MAX);
     output.flushed.set(true);
@@ -405,6 +405,9 @@ fn pipeline_and_finish_batch_with_the_next_terminal_call_or_network_poll() {
     child.get_call().unwrap().set_question_id(9);
     child.get_call().unwrap().set_no_promise_pipelining(true);
     child.send_detached_and_drive();
+    assert!(output.bytes.borrow().is_empty());
+    assert_eq!(network.outgoing_queue().snapshot().message_count, 3);
+    assert!(network._output_driver.poll_network(&mut cx).is_pending());
     let bytes = output.bytes.borrow();
     let mut cursor = bytes.as_slice();
     let finish = capnp::serialize::read_message(&mut cursor, Default::default()).unwrap();
@@ -445,7 +448,7 @@ fn pipeline_and_finish_batch_with_the_next_terminal_call_or_network_poll() {
 }
 
 #[test]
-fn calls_and_returns_share_separate_inline_polls_and_retain_guards_until_flush() {
+fn calls_and_returns_batch_in_fifo_order_and_retain_guards_until_flush() {
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -478,8 +481,6 @@ fn calls_and_returns_share_separate_inline_polls_and_retain_guards_until_flush()
     let mut cx = Context::from_waker(&waker);
     let drops = Rc::new(Cell::new(0));
     assert!(network._output_driver.poll_network(&mut cx).is_pending());
-    let mut first_bytes = 0;
-    let mut first_wakes = 0;
     for id in 0..32 {
         let mut message = if id % 2 == 0 {
             let mut message = connection.new_outgoing_call(64).unwrap();
@@ -496,28 +497,16 @@ fn calls_and_returns_share_separate_inline_polls_and_retain_guards_until_flush()
             .retain_until_sent(Rc::new(Guard(drops.clone())))
             .is_ok());
         message.send_detached_and_drive();
-        if id == 0 {
-            first_bytes = output.bytes.borrow().len();
-            assert!(first_bytes > 0, "a lone call still writes inline");
-        } else if id == 1 {
-            assert!(
-                output.bytes.borrow().len() > first_bytes,
-                "an outgoing call must not defer its incoming callback's reply"
-            );
-            first_bytes = output.bytes.borrow().len();
-            first_wakes = wakes.0.load(Ordering::Relaxed);
-        } else {
-            assert_eq!(output.bytes.borrow().len(), first_bytes);
-            assert_eq!(drops.get(), 2, "queued messages retain their guards");
-        }
+        assert!(output.bytes.borrow().is_empty());
+        assert_eq!(drops.get(), 0, "queued messages retain their guards");
     }
-    assert!(wakes.0.load(Ordering::Relaxed) > first_wakes);
-    assert_eq!(network.outgoing_queue().snapshot().message_count, 30);
+    assert!(wakes.0.load(Ordering::Relaxed) > 0);
+    assert_eq!(network.outgoing_queue().snapshot().message_count, 32);
     output.flushed.set(false);
     assert!(network._output_driver.poll_network(&mut cx).is_pending());
     assert_eq!(
         drops.get(),
-        2,
+        0,
         "written bytes do not complete a blocked flush"
     );
     let bytes = output.bytes.borrow();
@@ -546,14 +535,13 @@ fn calls_and_returns_share_separate_inline_polls_and_retain_guards_until_flush()
     let mut message = connection.new_outgoing_call(64).unwrap();
     message.get_call().unwrap().set_no_promise_pipelining(true);
     message.send_detached_and_drive();
-    assert!(
-        output.bytes.borrow().len() > before,
-        "network polling replenishes the allowance"
-    );
+    assert_eq!(output.bytes.borrow().len(), before);
+    assert!(network._output_driver.poll_network(&mut cx).is_pending());
+    assert!(output.bytes.borrow().len() > before);
 }
 
 #[test]
-fn input_wait_replenishes_inline_poll_but_buffered_messages_do_not() {
+fn reading_buffered_messages_or_waiting_does_not_flush_queued_output() {
     struct PendingTail(futures::io::Cursor<Vec<u8>>);
     impl AsyncRead for PendingTail {
         fn poll_read(
@@ -603,7 +591,7 @@ fn input_wait_replenishes_inline_poll_but_buffered_messages_do_not() {
         };
         send(&mut connection);
         let first = output.bytes.borrow().len();
-        assert!(first > 0);
+        assert_eq!(first, 0);
         for _ in 0..2 {
             let Poll::Ready(Ok(Some(message))) = input.poll_receive(&mut cx) else {
                 panic!("both incoming messages must be buffered")
@@ -612,19 +600,19 @@ fn input_wait_replenishes_inline_poll_but_buffered_messages_do_not() {
             send(&mut connection);
             assert_eq!(output.bytes.borrow().len(), first);
         }
-        assert_eq!(network.outgoing_queue().snapshot().message_count, 2);
+        assert_eq!(network.outgoing_queue().snapshot().message_count, 3);
         assert!(input.poll_receive(&mut cx).is_pending());
         send(&mut connection);
-        assert!(
-            output.bytes.borrow().len() > first,
-            "input wait replenishes without an output-task poll"
-        );
+        assert_eq!(output.bytes.borrow().len(), first);
+        assert_eq!(network.outgoing_queue().snapshot().message_count, 4);
+        assert!(network._output_driver.poll_network(&mut cx).is_pending());
+        assert!(output.bytes.borrow().len() > first);
         assert_eq!(network.outgoing_queue().snapshot().message_count, 0);
     }
 }
 
 #[test]
-fn detached_drive_writes_immediately_but_keeps_ownership_until_flush() {
+fn detached_send_queues_until_driven_and_keeps_ownership_until_flush() {
     struct Guard(Rc<Cell<usize>>);
     impl Drop for Guard {
         fn drop(&mut self) {
@@ -656,6 +644,9 @@ fn detached_drive_writes_immediately_but_keeps_ownership_until_flush() {
     expected.set_root("driven message").unwrap();
     let expected = capnp::serialize::write_message_to_words(&expected);
     message.send_detached_and_drive();
+    assert!(output.bytes.borrow().is_empty());
+    assert_eq!(drops.get(), 0);
+    assert!(network._output_driver.poll_network(&mut cx).is_pending());
     assert_eq!(*output.bytes.borrow(), expected);
     assert_eq!(
         drops.get(),

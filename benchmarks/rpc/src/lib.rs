@@ -17,6 +17,7 @@ mod echo_capnp {
 mod grpc {
     tonic::include_proto!("echo");
 }
+mod topology;
 mod workflows;
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 const CONTEXT: &[u8] = b"reproto isolated loopback benchmark v1";
@@ -327,6 +328,8 @@ pub fn run(protocol: Option<&str>) -> Result<()> {
     runtime.block_on(tokio::task::LocalSet::new().run_until(async move {
         tokio::task::spawn_local(async move {
             match args.first().map(String::as_str) {
+                Some("topology-server") => topology::serve(&args[1..]).await,
+                Some("topology-measure") => topology::measure(&args[1..]).await,
                 Some("workflow-server") if args.len() == 2 => workflows::serve(&args[1]).await,
                 Some("workflow-measure") => workflows::measure(&args[1..]).await,
                 Some("comparison-server") if args.len() == 3 => {

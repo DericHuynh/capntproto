@@ -38,10 +38,18 @@ frontend again selects legacy by default; `CAPNTPROTO_BENCH_PORTABLE=1` explicit
 selects portable. The production `RpcSystem` already defaults to legacy.
 Tokio remains the host, and the earlier portable work remains available.
 
-The new target is **candidate pooled p50 <= 0.5 × frozen legacy pooled p50**
-in each of the twelve RPC workflows and, separately, all four loopback payloads.
+The current target is **candidate pooled p50 <= 0.70 × C++ pooled p50** in
+every equivalent benchmark cell. The [deep/concurrent suite](../../benchmarks/rpc/README.md)
+adds eight cells, including four- and eight-process service chains, nested
+request/response traversal and concurrent access over eight client connections.
+The original twelve workflows and four loopback payloads remain unchanged.
+Match or beat C++ reads and writes on every process as a separate diagnostic
+goal, using both lightweight socket journals and full-payload tracing.
+
+The earlier **candidate pooled p50 <= 0.5 × frozen legacy pooled p50** target
+remains separately tracked for the original sixteen cells.
 The before control is legacy at `6e37505d701df4dbea52a92e0691b6037f7f1922`;
-C++ remains an additional comparison. Preserve fixtures, payload validation,
+Preserve fixtures, payload validation,
 sampling budgets, p95/p99, throughput and all failed as well as passing trials.
 Local results do not qualify a dedicated remote topology.
 

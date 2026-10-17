@@ -2479,8 +2479,22 @@ mod wire_helpers {
             });
         }
 
-        let (mut ptr, src_ptr, src_segment_id) =
-            follow_fars(src.arena, src.pointer, src.segment_id)?;
+        // Near pointers need one validation of the relative target and its
+        // complete extent. Avoid resolving the segment twice for every copied
+        // child; far pointers still validate their landing pads separately.
+        // SAFETY: PointerReader's pointer word is live and already validated by
+        // its arena; inspecting the tag does not dereference the target.
+        let near = unsafe {
+            matches!(
+                (*src.pointer).kind(),
+                WirePointerKind::Struct | WirePointerKind::List
+            )
+        };
+        let (mut ptr, src_ptr, src_segment_id) = if near {
+            (ptr::null(), src.pointer, src.segment_id)
+        } else {
+            follow_fars(src.arena, src.pointer, src.segment_id)?
+        };
 
         match (*src_ptr).kind() {
             WirePointerKind::Struct => {
@@ -2490,13 +2504,27 @@ mod wire_helpers {
                     ));
                 }
 
-                bounds_check(
-                    src.arena,
-                    src_segment_id,
-                    ptr,
-                    (*src_ptr).struct_word_size() as usize,
-                    WirePointerKind::Struct,
-                )?;
+                if near {
+                    // SAFETY: src_ptr belongs to this live source segment.
+                    // The arena validates and charges the complete struct
+                    // before any target pointer is formed or read.
+                    ptr = unsafe {
+                        src.arena.check_offset_and_read(
+                            src_segment_id,
+                            src_ptr.cast(),
+                            (*src_ptr).offset_in_words(),
+                            (*src_ptr).struct_word_size() as usize,
+                        )?
+                    };
+                } else {
+                    bounds_check(
+                        src.arena,
+                        src_segment_id,
+                        ptr,
+                        (*src_ptr).struct_word_size() as usize,
+                        WirePointerKind::Struct,
+                    )?;
+                }
 
                 set_struct_pointer(
                     dst_arena,
@@ -2534,13 +2562,27 @@ mod wire_helpers {
                     // `read_list_pointer`): `ptr` may be out-of-bounds or
                     // one-past-the-end, so advancing with `.add()` first would
                     // be undefined behavior.
-                    bounds_check(
-                        src.arena,
-                        src_segment_id,
-                        ptr,
-                        word_count as usize + 1,
-                        WirePointerKind::List,
-                    )?;
+                    if near {
+                        // SAFETY: the validated source word is in this segment.
+                        // Include the inline tag in the checked extent before
+                        // advancing ptr or reading any tag fields.
+                        ptr = unsafe {
+                            src.arena.check_offset_and_read(
+                                src_segment_id,
+                                src_ptr.cast(),
+                                (*src_ptr).offset_in_words(),
+                                word_count as usize + 1,
+                            )?
+                        };
+                    } else {
+                        bounds_check(
+                            src.arena,
+                            src_segment_id,
+                            ptr,
+                            word_count as usize + 1,
+                            WirePointerKind::List,
+                        )?;
+                    }
 
                     let tag: *const WirePointer = ptr as *const _;
                     ptr = ptr.add(BYTES_PER_WORD);
@@ -2597,13 +2639,27 @@ mod wire_helpers {
                     let word_count =
                         round_bits_up_to_words(u64::from(element_count) * u64::from(step));
 
-                    bounds_check(
-                        src.arena,
-                        src_segment_id,
-                        ptr,
-                        word_count as usize,
-                        WirePointerKind::List,
-                    )?;
+                    if near {
+                        // SAFETY: the source pointer word belongs to this
+                        // segment. Check and charge the rounded full list,
+                        // including zero-word and negative-offset targets.
+                        ptr = unsafe {
+                            src.arena.check_offset_and_read(
+                                src_segment_id,
+                                src_ptr.cast(),
+                                (*src_ptr).offset_in_words(),
+                                word_count as usize,
+                            )?
+                        };
+                    } else {
+                        bounds_check(
+                            src.arena,
+                            src_segment_id,
+                            ptr,
+                            word_count as usize,
+                            WirePointerKind::List,
+                        )?;
+                    }
 
                     if element_size == Void {
                         // Watch out for lists of void, which can claim to be arbitrarily large

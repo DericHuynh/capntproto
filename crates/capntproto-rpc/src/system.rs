@@ -18,7 +18,7 @@ pub(crate) fn drive_network<V>(
     network: &mut dyn crate::VatNetwork<V>,
     tasks: &mut crate::task_set::TaskSetHandle<Error>,
 ) {
-    drive_network_with_completion(network, tasks, std::future::ready);
+    register_network(network, tasks, std::future::ready, true);
 }
 
 /// A network's writer can finish before a protocol task observes its close
@@ -29,16 +29,30 @@ pub(crate) fn drive_network_with_completion<V, F: Future<Output = capnp::Result<
     tasks: &mut crate::task_set::TaskSetHandle<Error>,
     complete: impl FnOnce(capnp::Result<()>) -> F + 'static,
 ) {
+    register_network(network, tasks, complete, false);
+}
+
+fn register_network<V, F: Future<Output = capnp::Result<()>> + 'static>(
+    network: &mut dyn crate::VatNetwork<V>,
+    tasks: &mut crate::task_set::TaskSetHandle<Error>,
+    complete: impl FnOnce(capnp::Result<()>) -> F + 'static,
+    write_last: bool,
+) {
     let driving = network.drive_until_shutdown();
     let mut handle = tasks.clone();
-    tasks.add(async move {
+    let task = async move {
         let result = match complete(driving.await).await {
             Err(error) if error.kind == capnp::ErrorKind::Disconnected => Ok(()),
             result => result,
         };
         handle.terminate(result);
         Ok(())
-    });
+    };
+    if write_last {
+        tasks.add_last(task);
+    } else {
+        tasks.add(task);
+    }
 }
 
 pub(crate) struct ConnectionRegistry<VatId: 'static> {

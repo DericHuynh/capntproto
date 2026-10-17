@@ -56,6 +56,10 @@ name = "double_far_oob"
 path = "tests/double_far_oob.rs"
 
 [[test]]
+name = "deep_copy_bounds"
+path = "tests/deep_copy_bounds.rs"
+
+[[test]]
 name = "far_pointer_oob"
 path = "tests/far_pointer_oob.rs"
 

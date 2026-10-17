@@ -777,7 +777,7 @@ impl<VatId> ConnectionState<VatId> {
             .collect::<Vec<_>>();
         for import in imports {
             if let Some(promise) = import.upgrade() {
-                promise.borrow_mut().resolve(Err(network_error.clone()));
+                PromiseClient::resolve(&promise, Err(network_error.clone()));
             }
         }
         let mut embargoes = mem::replace(&mut *self.embargoes.borrow_mut(), new_embargoes());
@@ -864,15 +864,12 @@ impl<VatId> ConnectionState<VatId> {
     pub(crate) fn bootstrap(state: &Rc<Self>) -> Box<dyn ClientHook> {
         let question_id = state.questions.borrow_mut().push(Question::new());
 
-        let (fulfiller, promise) = oneshot::channel();
-        let promise = promise.map_err(crate::canceled_to_error);
-        let promise = promise.and_then(|response_promise| response_promise);
+        let (fulfiller, _response) = oneshot::channel();
         let question_ref = Rc::new(RefCell::new(QuestionRef::new(
             state.clone(),
             question_id,
             fulfiller,
         )));
-        let promise = promise.attach(question_ref.clone());
         match state.questions.borrow_mut().find(question_id) {
             Some(ref mut q) => {
                 q.self_ref = Some(Rc::downgrade(&question_ref));
@@ -895,7 +892,10 @@ impl<VatId> ConnectionState<VatId> {
             Err(_) => panic!(),
         }
 
-        let pipeline = Pipeline::new(state, question_ref, Some(Promise::from_future(promise)));
+        // Bootstrap has no application response future. Settle its capability
+        // directly on Return, just like an ordinary result pipeline, instead
+        // of retaining the question through a second asynchronous promise chain.
+        let pipeline = Pipeline::direct(state, question_ref);
         pipeline.get_pipelined_cap_move(Vec::new())
     }
 
@@ -1772,12 +1772,12 @@ where
                     // the old path has reached the adopted capability. Standard
                     // senderLoopback is not a fence for a third-party target.
                     if let Some(fenced) = answer_adoption::fence(&connection, old.clone(), direct) {
-                        client.borrow_mut().replace_resolved(fenced);
+                        PromiseClient::replace_resolved(&client, fenced);
                     } else {
-                        client.borrow_mut().resolve(Ok(old));
+                        PromiseClient::resolve(&client, Ok(old));
                     }
                 } else {
-                    client.borrow_mut().resolve(Ok(direct));
+                    PromiseClient::resolve(&client, Ok(direct));
                 }
             }
         }
@@ -1802,7 +1802,7 @@ where
                 Err(e) => Err(e),
             };
             if let Some(c) = c.upgrade() {
-                c.borrow_mut().resolve(resolved);
+                PromiseClient::resolve(&c, resolved);
             }
         }
 
@@ -3052,7 +3052,18 @@ impl<VatId> PromiseClient<VatId> {
         }))
     }
 
-    fn resolve(&mut self, replacement: Result<Box<dyn ClientHook>, Error>) {
+    fn resolve(client: &Rc<RefCell<Self>>, replacement: Result<Box<dyn ClientHook>, Error>) {
+        let retired = client.borrow_mut().resolve_inner(replacement);
+        // C++ retires the old route during resolution. Release Rust's mutable
+        // borrow first: dropping the route may send Finish or Release and
+        // reenter the protocol through a transport or capability destructor.
+        drop(retired);
+    }
+
+    fn resolve_inner(
+        &mut self,
+        replacement: Result<Box<dyn ClientHook>, Error>,
+    ) -> Rc<dyn ClientHook> {
         let (mut replacement, is_error) = match replacement {
             Ok(v) => (v, false),
             Err(e) => (broken::new_cap(e), true),
@@ -3140,26 +3151,26 @@ impl<VatId> PromiseClient<VatId> {
             }
         }
 
-        self.replace_resolved(replacement);
+        self.replace_resolved_inner(replacement)
     }
 
     // Used only after the ordinary embargo above or an authenticated adoption
     // fence has installed its own queue. Never infer ordering from a new brand.
-    fn replace_resolved(&mut self, replacement: Box<dyn ClientHook>) {
+    fn replace_resolved(client: &Rc<RefCell<Self>>, replacement: Box<dyn ClientHook>) {
+        let retired = client.borrow_mut().replace_resolved_inner(replacement);
+        drop(retired);
+    }
+
+    fn replace_resolved_inner(&mut self, replacement: Box<dyn ClientHook>) -> Rc<dyn ClientHook> {
         let replacement: Rc<dyn ClientHook> = Rc::from(replacement);
-        let connection_state = self.connection_state.clone();
         for ((), waiter) in self.resolution_waiters.drain() {
             let _ = waiter.send(replacement.add_ref());
         }
 
         let old_cap = mem::replace(&mut self.cap, replacement);
-        connection_state.add_task(async move {
-            drop(old_cap);
-            Ok(())
-        });
-
         self.is_resolved = true;
         self.pipeline_owner.take();
+        old_cap
     }
 }
 

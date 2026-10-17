@@ -834,6 +834,14 @@ pub trait FlowController {
 /// objects.  Typically one Cap'n Proto process (in the Unix sense) is one vat.
 #[cfg(feature = "std")]
 pub trait VatNetwork<VatId> {
+    /// Schedule a deferred network turn. The callback must arrange a later
+    /// wake of this context without polling the RPC system reentrantly. Hosts
+    /// may use their executor's yield queue so application tasks and IO can run
+    /// before output is batched. The default uses an ordinary wake.
+    fn task_yield(&self) -> fn(&mut Context<'_>) {
+        |cx| cx.waker().wake_by_ref()
+    }
+
     fn join_network(&self) -> Option<Rc<dyn multiparty::JoinNetwork<VatId>>> {
         None
     }
@@ -964,7 +972,8 @@ impl<VatId> RpcSystem<VatId> {
         mut network: Box<dyn crate::VatNetwork<VatId>>,
         bootstrap: Bootstrap<VatId>,
     ) -> Self {
-        let (mut handle, tasks) = TaskSet::new(Box::new(SystemTaskReaper));
+        let (mut handle, mut tasks) = TaskSet::new(Box::new(SystemTaskReaper));
+        tasks.set_defer(network.task_yield());
 
         system::drive_network(&mut *network, &mut handle);
 

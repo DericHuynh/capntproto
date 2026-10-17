@@ -27,9 +27,10 @@ use capnp::serialize::{BufferSegments, OwnedSegments, SegmentLengthsBuilder};
 use capnp::{message, Error, OutputSegments, Result};
 use futures_util::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-// Linux supports at least 1024 iovecs. Keep stack metadata bounded to 64 there;
-// other targets retain the POSIX minimum of 16 and the scalar fallback.
-const MAX_IO_SLICES: usize = if cfg!(target_os = "linux") { 64 } else { 16 };
+// Use Linux's writev limit and the portable minimum elsewhere, independently
+// of stack-storage policy. A stack limit must not split a heap-backed batch.
+const MAX_IO_SLICES: usize = if cfg!(target_os = "linux") { 1024 } else { 16 };
+const STACK_IO_SLICES: usize = 16;
 
 mod leased;
 pub use leased::{poll_queued_message, write_queued_message, SendError};
@@ -443,21 +444,26 @@ where
     {
         // Retained frames already include their segment tables. Rebuilding a
         // table for each frame both allocates and spends an extra iovec per
-        // message. Keep bounded scatter/gather metadata on the stack instead.
-        let mut messages = messages;
-        while messages.len() != 0 {
-            let mut buffers = [std::io::IoSlice::new(&[]); MAX_IO_SLICES];
+        // message. Small batches keep metadata on the stack; larger batches
+        // use one allocation and the same platform limit as segmented frames.
+        if messages.len() <= STACK_IO_SLICES {
+            let mut buffers = [std::io::IoSlice::new(&[]); STACK_IO_SLICES];
             let mut count = 0;
-            for message in messages.by_ref().take(MAX_IO_SLICES) {
+            for message in messages {
                 let bytes = message.framed_bytes().expect("complete frame");
                 if !bytes.is_empty() {
                     buffers[count] = std::io::IoSlice::new(bytes);
                     count += 1;
                 }
             }
-            write_buffers(&mut writer, &mut buffers[..count]).await?;
+            return write_buffers(&mut writer, &mut buffers[..count]).await;
         }
-        return Ok(());
+        let mut buffers = Vec::with_capacity(messages.len());
+        buffers.extend(messages.filter_map(|message| {
+            let bytes = message.framed_bytes().expect("complete frame");
+            (!bytes.is_empty()).then(|| std::io::IoSlice::new(bytes))
+        }));
+        return write_buffers(&mut writer, &mut buffers).await;
     }
     if messages.len() <= 2 {
         let mut small = messages.clone();
@@ -767,7 +773,7 @@ pub mod test {
                 for index in 0..length {
                     let mut message = capnp::message::Builder::new_default();
                     message
-                        .initn_root::<capnp::data::Builder>((index * 8) as u32)
+                        .initn_root::<capnp::data::Builder>((index % 9 * 8) as u32)
                         .fill(index as u8);
                     frames.push(Frame(capnp::serialize::write_message_to_words(&message)));
                 }
@@ -1197,6 +1203,66 @@ pub mod test {
                     super::write_messages(&mut output, &messages).await.unwrap();
                     assert_eq!(output.into_writer(), expected);
                 }
+            }
+        });
+    }
+
+    #[test]
+    fn segmented_batches_use_the_platform_iovec_limit() {
+        #[derive(Default)]
+        struct Vectored {
+            bytes: Vec<u8>,
+            calls: Vec<usize>,
+        }
+        impl AsyncWrite for Vectored {
+            fn poll_write(
+                self: Pin<&mut Self>,
+                _: &mut Context<'_>,
+                _: &[u8],
+            ) -> Poll<io::Result<usize>> {
+                panic!("batch must use vectored IO")
+            }
+            fn poll_write_vectored(
+                mut self: Pin<&mut Self>,
+                _: &mut Context<'_>,
+                buffers: &[io::IoSlice<'_>],
+            ) -> Poll<io::Result<usize>> {
+                assert!(buffers.len() <= super::MAX_IO_SLICES);
+                self.calls.push(buffers.len());
+                let count = buffers.iter().map(|b| b.len()).sum();
+                for buffer in buffers {
+                    self.bytes.extend_from_slice(buffer);
+                }
+                Poll::Ready(Ok(count))
+            }
+            fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+                Poll::Ready(Ok(()))
+            }
+            fn poll_close(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+                Poll::Ready(Ok(()))
+            }
+        }
+        futures::executor::block_on(async {
+            for count in [
+                33,
+                65,
+                super::MAX_IO_SLICES / 2,
+                super::MAX_IO_SLICES / 2 + 1,
+            ] {
+                let messages: Vec<_> = (0..count)
+                    .map(|i| vec![vec![capnp::word(i as u8, 1, 2, 3, 4, 5, 6, 7)]])
+                    .collect();
+                let mut expected = Vec::new();
+                for message in &messages {
+                    write_message(&mut expected, message).await.unwrap();
+                }
+                let mut output = Vectored::default();
+                super::write_messages(&mut output, &messages).await.unwrap();
+                assert_eq!(output.bytes, expected);
+                assert_eq!(
+                    output.calls.len(),
+                    (count * 2).div_ceil(super::MAX_IO_SLICES)
+                );
             }
         });
     }

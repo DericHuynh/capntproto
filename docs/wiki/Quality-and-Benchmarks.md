@@ -1,5 +1,33 @@
 # Quality checks and benchmark reports
 
+## Deep and concurrent RPC access, October 17, 2026
+
+The [topology suite](../../benchmarks/rpc/README.md) adds eight matched Rust/C++
+cases: nested messages, 32 concurrent requests, and four/eight service processes
+with one/eight client connections. Every service traverses and validates the
+request, forwards a deep copy through TCP, and copies the response back. A setup
+RPC verifies the actual chain length. Client checks cover returned data, checksum
+and visits. The original twelve workflows and four loopback payloads are unchanged.
+The benchmark-build job runs every homogeneous and alternating Rust/C++ chain
+as a smoke check and retains its logs. Those short hosted runs are explicitly
+excluded from latency qualification; the dedicated two-peer measurement job
+continues to measure its original topology.
+
+The [source-bound report](../../research/reports/legacy-performance/2026-10-17-deep/README.md)
+retains the latency, mixed-peer checks, per-process socket journals, complete wire
+reassembly and Callgrind comparisons. The new four-service/eight-client first hop
+uses 7.09% fewer whole-process instructions after notification-driven shutdown
+observers and fused deep-copy checks. Deep-32 concurrency measures 237.9 µs versus
+C++'s 276.0 µs; the four-service concurrent case is nearly tied, and eight services
+still trail C++ by 7.3%. Instrumented runs do not qualify latency.
+
+The active target is **Rust pooled p50 <= 0.70 × C++ pooled p50 in every cell**.
+It remains unmet: the selected local campaigns observe 6/24 passes, with substantial
+timing-mode variation in several original cells. The separate frozen-legacy 2×
+gate observes 1/16. New topology read/write counts pass all 32 process rows under
+both instruments; the original lightweight probe still misses two positive-count
+rows. Keep [gap #15](https://github.com/DericHuynh/capntproto/issues/15) open.
+
 ## Legacy tracing and batching follow-up, October 17, 2026
 
 The [tracing report](../../research/reports/legacy-performance/2026-10-17-tracing/README.md)

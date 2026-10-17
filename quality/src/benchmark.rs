@@ -375,6 +375,7 @@ pub fn bundle(r: &mut Runner) -> Result<()> {
             .arg(format!("-I{}", cpp_dir.display()))
             .arg("benchmarks/rpc/capnp.c++")
             .arg("benchmarks/rpc/workflows.c++")
+            .arg("benchmarks/rpc/topology.c++")
             .arg(cpp_dir.join("echo.capnp.c++"))
             .arg(reference_bin.join("libcapnp-rpc.a"))
             .arg(reference_bin.join("libcapnp.a"))

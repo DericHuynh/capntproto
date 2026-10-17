@@ -46,12 +46,11 @@ impl Drop for Held {
         self.0.canceled.set(self.0.canceled.get() + 1);
     }
 }
-impl peer::Server for Server {
+impl Server {
     fn echo(
         self: Rc<Self>,
-        context: peer::EchoContext<'_>,
+        (params, mut results): (peer::EchoParams, peer::EchoResults),
     ) -> capnp::capability::Promise<(), capnp::Error> {
-        let (params, mut results) = context.into_owned();
         capnp::capability::Promise::from_future(async move {
             let p = params.get()?;
             let mut r = results.get();
@@ -63,9 +62,8 @@ impl peer::Server for Server {
     }
     fn bounce(
         self: Rc<Self>,
-        context: peer::BounceContext<'_>,
+        (params, mut results): (peer::BounceParams, peer::BounceResults),
     ) -> capnp::capability::Promise<(), capnp::Error> {
-        let (params, mut results) = context.into_owned();
         capnp::capability::Promise::from_future(async move {
             results.get().set_cap(params.get()?.get_cap()?);
             Ok(())
@@ -73,9 +71,8 @@ impl peer::Server for Server {
     }
     fn child(
         self: Rc<Self>,
-        context: peer::ChildContext<'_>,
+        (_, mut results): (peer::ChildParams, peer::ChildResults),
     ) -> capnp::capability::Promise<(), capnp::Error> {
-        let (_, mut results) = context.into_owned();
         capnp::capability::Promise::from_future(async move {
             results.get().set_cap(capnp_rpc::new_client(Server {
                 state: self.state.clone(),
@@ -86,9 +83,8 @@ impl peer::Server for Server {
     }
     fn tail(
         self: Rc<Self>,
-        context: peer::TailContext<'_>,
+        (params, results): (peer::TailParams, peer::TailResults),
     ) -> capnp::capability::Promise<(), capnp::Error> {
-        let (params, results) = context.into_owned();
         capnp::capability::Promise::from_future(async move {
             let p = params.get()?;
             let mut call = p.get_cap()?.echo_request();
@@ -98,9 +94,8 @@ impl peer::Server for Server {
     }
     fn callback(
         self: Rc<Self>,
-        context: peer::CallbackContext<'_>,
+        (params, mut results): (peer::CallbackParams, peer::CallbackResults),
     ) -> capnp::capability::Promise<(), capnp::Error> {
-        let (params, mut results) = context.into_owned();
         capnp::capability::Promise::from_future(async move {
             let p = params.get()?;
             let mut call = p.get_cap()?.tail_request();
@@ -114,9 +109,8 @@ impl peer::Server for Server {
     }
     fn fail(
         self: Rc<Self>,
-        context: peer::FailContext<'_>,
+        (params, _): (peer::FailParams, peer::FailResults),
     ) -> capnp::capability::Promise<(), capnp::Error> {
-        let (params, _) = context.into_owned();
         capnp::capability::Promise::from_future(async move {
             let mut error = capnp::Error::failed("interop failure".into());
             error.kind = error_kind(params.get()?.get_kind());
@@ -125,9 +119,8 @@ impl peer::Server for Server {
     }
     fn hold(
         self: Rc<Self>,
-        context: peer::HoldContext<'_>,
+        (_, _): (peer::HoldParams, peer::HoldResults),
     ) -> capnp::capability::Promise<(), capnp::Error> {
-        let (_, _) = context.into_owned();
         capnp::capability::Promise::from_future(async move {
             self.state.started.set(self.state.started.get() + 1);
             let _held = Held(self.state.clone());
@@ -136,9 +129,8 @@ impl peer::Server for Server {
     }
     fn stats(
         self: Rc<Self>,
-        context: peer::StatsContext<'_>,
+        (_, mut results): (peer::StatsParams, peer::StatsResults),
     ) -> capnp::capability::Promise<(), capnp::Error> {
-        let (_, mut results) = context.into_owned();
         capnp::capability::Promise::from_future(async move {
             let mut r = results.get();
             r.set_started(self.state.started.get());
@@ -150,9 +142,8 @@ impl peer::Server for Server {
     }
     fn promise(
         self: Rc<Self>,
-        context: peer::PromiseContext<'_>,
+        (_, mut results): (peer::PromiseParams, peer::PromiseResults),
     ) -> capnp::capability::Promise<(), capnp::Error> {
-        let (_, mut results) = context.into_owned();
         capnp::capability::Promise::from_future(async move {
             let (tx, rx) = oneshot::channel();
             assert!(self.state.pending.borrow_mut().replace(tx).is_none());
@@ -164,9 +155,8 @@ impl peer::Server for Server {
     }
     fn resolve(
         self: Rc<Self>,
-        context: peer::ResolveContext<'_>,
+        (params, _): (peer::ResolveParams, peer::ResolveResults),
     ) -> capnp::capability::Promise<(), capnp::Error> {
-        let (params, _) = context.into_owned();
         capnp::capability::Promise::from_future(async move {
             let result = if params.get()?.get_reject() {
                 Err(capnp::Error::failed("promise rejected".into()))
@@ -184,9 +174,8 @@ impl peer::Server for Server {
     }
     fn stream(
         self: Rc<Self>,
-        context: peer::StreamContext<'_>,
+        params: peer::StreamParams,
     ) -> capnp::capability::Promise<(), capnp::Error> {
-        let (params, _) = context.into_owned();
         capnp::capability::Promise::from_future(async move {
             self.state
                 .streamed
@@ -196,9 +185,8 @@ impl peer::Server for Server {
     }
     fn order(
         self: Rc<Self>,
-        context: peer::OrderContext<'_>,
+        (params, _): (peer::OrderParams, peer::OrderResults),
     ) -> capnp::capability::Promise<(), capnp::Error> {
-        let (params, _) = context.into_owned();
         capnp::capability::Promise::from_future({
             // Measure dispatch order, not the executor's polling order of two
             // independent async method bodies after delivery.
@@ -214,6 +202,20 @@ impl peer::Server for Server {
         })
     }
 }
+// Only the generated method signatures differ; both peers execute these same bodies.
+crate::impl_peer_server!(Server;
+    echo EchoContext EchoParams EchoResults;
+    bounce BounceContext BounceParams BounceResults;
+    child ChildContext ChildParams ChildResults;
+    tail TailContext TailParams TailResults;
+    callback CallbackContext CallbackParams CallbackResults;
+    fail FailContext FailParams FailResults;
+    hold HoldContext HoldParams HoldResults;
+    stats StatsContext StatsParams StatsResults;
+    promise PromiseContext PromiseParams PromiseResults;
+    resolve ResolveContext ResolveParams ResolveResults;
+    order OrderContext OrderParams OrderResults;
+);
 fn error_kind(kind: u16) -> capnp::ErrorKind {
     match kind {
         0 => capnp::ErrorKind::Failed,

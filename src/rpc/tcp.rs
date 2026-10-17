@@ -1,10 +1,13 @@
 //! TCP adapters with automatic socket-informed streaming flow control. Generic
 //! byte IO has no socket metadata; use these entry points to sample SO_SNDBUF.
-use super::io::TokioIo;
+mod io;
+#[cfg(target_os = "linux")]
+mod low_water;
 use capnp::{capability::Client, message::ReaderOptions};
 use capnp_rpc::{rpc_twoparty_capnp::Side, twoparty};
-use tokio::net::{tcp::OwnedReadHalf, TcpListener, TcpStream, ToSocketAddrs};
-use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
+pub use io::ReadHalf;
+use io::WriteHalf;
+use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 
 /// Dial a plaintext TCP peer with Nagle's algorithm disabled for RPC latency.
 /// Wrap this future in `tokio::time::timeout` to bound DNS and connection setup.
@@ -23,23 +26,30 @@ pub async fn connect(
 /// send-buffer size, with a connection-wide 64 KiB fallback on query failure.
 /// Explicit flow-policy setters on the returned network override this default
 /// for subsequently created streams. No socket is duplicated for the query.
+/// On Linux, incomplete large bodies supply a bounded readiness minimum. This
+/// preserves TCP receive autotuning; complete frames restore ordinary readiness.
 pub fn network(
     socket: TcpStream,
     side: Side,
     options: ReaderOptions,
-) -> twoparty::VatNetwork<Compat<OwnedReadHalf>> {
+) -> twoparty::VatNetwork<ReadHalf> {
     let (read, write) = socket.into_split();
-    twoparty::VatNetwork::new_with_send_buffer(
-        read.compat(),
-        TokioIo(write),
+    let mut network = twoparty::VatNetwork::new_with_send_buffer(
+        ReadHalf::new(read),
+        WriteHalf(write),
         side,
         options,
         |write| {
-            socket2::SockRef::from(write.get_ref().as_ref())
+            socket2::SockRef::from(write.0.as_ref())
                 .send_buffer_size()
                 .ok()
         },
-    )
+    );
+    network.set_task_yield(super::io::defer);
+    network
+        .set_read_hint(ReadHalf::set_read_hint)
+        .expect("new network owns its input");
+    network
 }
 
 /// Obtain bootstrap/observation handles, then poll this driver on a local

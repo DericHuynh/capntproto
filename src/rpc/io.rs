@@ -10,13 +10,14 @@ use std::{
 };
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-pub(crate) struct TokioIo<T>(pub(crate) T);
-
-impl<T> TokioIo<T> {
-    pub(crate) fn get_ref(&self) -> &T {
-        &self.0
-    }
+pub(crate) fn defer(cx: &mut Context<'_>) {
+    // yield_now's first poll places this waker on Tokio's deferred queue,
+    // independently of the future's lifetime. TaskSet owns the resume state.
+    let mut yielding = std::pin::pin!(tokio::task::yield_now());
+    let _ = std::future::Future::poll(yielding.as_mut(), cx);
 }
+
+pub(crate) struct TokioIo<T>(pub(crate) T);
 
 impl<T: AsyncRead + Unpin> futures::AsyncRead for TokioIo<T> {
     fn poll_read(
@@ -61,6 +62,35 @@ impl<T: AsyncWrite + Unpin> futures::AsyncWrite for TokioIo<T> {
 mod tests {
     use super::*;
     use futures::{AsyncReadExt, AsyncWriteExt};
+
+    #[test]
+    fn deferred_wake_allows_other_ready_local_tasks_to_run() {
+        use std::{cell::RefCell, rc::Rc};
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        runtime.block_on(tokio::task::LocalSet::new().run_until(async {
+            let events = Rc::new(RefCell::new(Vec::new()));
+            let writer_events = events.clone();
+            let mut yielded = false;
+            let writer = tokio::task::spawn_local(std::future::poll_fn(move |cx| {
+                if !yielded {
+                    yielded = true;
+                    defer(cx);
+                    Poll::Pending
+                } else {
+                    writer_events.borrow_mut().push("write");
+                    Poll::Ready(())
+                }
+            }));
+            let caller_events = events.clone();
+            tokio::task::spawn_local(async move {
+                caller_events.borrow_mut().push("call");
+            });
+            writer.await.unwrap();
+            assert_eq!(&*events.borrow(), &["call", "write"]);
+        }));
+    }
 
     #[derive(Default)]
     struct Writer {

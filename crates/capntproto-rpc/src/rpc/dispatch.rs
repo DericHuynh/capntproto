@@ -80,7 +80,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
         connection_state: &Rc<Self>,
         bootstrap: bootstrap::Reader,
     ) -> capnp::Result<()> {
-        use ::capnp::traits::ImbueMut;
+        use ::capnp::traits::{HasStructSize, ImbueMut};
 
         let answer_id = AnswerId::from_wire(bootstrap.get_question_id());
         answer_adoption::ordinary_id(answer_id)?;
@@ -112,7 +112,14 @@ impl<VatId: 'static> ConnectionState<VatId> {
             connection_state.bootstrap.for_peer(&peer)
         };
         let mut fds = OutgoingFds::default();
-        let mut response = connection_state.new_outgoing_message(10)?;
+        // Match C++ handleBootstrap's hint. Ten words split a normal bootstrap
+        // capability across two segments, adding a table entry and far pointer.
+        let words = 1
+            + message::Builder::STRUCT_SIZE.total()
+            + crate::rpc_capnp::return_::Builder::STRUCT_SIZE.total()
+            + cap_descriptor::Builder::STRUCT_SIZE.total()
+            + 32;
+        let mut response = connection_state.new_outgoing_message(words)?;
         let mut ret = response
             .get_body()?
             .init_as::<message::Builder>()
@@ -242,7 +249,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
             }
         };
         if let Some(promise_client) = pending.and_then(|weak| weak.upgrade()) {
-            promise_client.borrow_mut().resolve(replacement_or_error);
+            PromiseClient::resolve(&promise_client, replacement_or_error);
         }
         Ok(())
     }

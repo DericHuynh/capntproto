@@ -161,13 +161,15 @@ pub fn network(stream: TlsStream<TcpStream>, side: Side, options: ReaderOptions)
         .send_buffer_size()
         .ok();
     let (read, write) = tokio::io::split(stream);
-    twoparty::VatNetwork::new_with_send_buffer(
+    let mut network = twoparty::VatNetwork::new_with_send_buffer(
         read.compat(),
         TokioIo(write),
         side,
         options,
         move |_| window,
-    )
+    );
+    network.set_task_yield(super::io::defer);
+    network
 }
 
 /// Build the RPC driver after authentication. Poll it within a Tokio LocalSet.

@@ -27,7 +27,11 @@ impl Connection {
         bootstrap: Option<Client>,
         side: Side,
     ) -> Self {
-        Self::spawn(TwoPartyClient::with_bootstrap(TokioIo(io), bootstrap, side))
+        let (read, write) = futures::AsyncReadExt::split(TokioIo(io));
+        let mut network =
+            capnp_rpc::twoparty::VatNetwork::new(read, write, side, Default::default());
+        network.set_task_yield(super::io::defer);
+        Self::spawn(TwoPartyClient::from_network(network, bootstrap))
     }
 
     /// Start a configured TCP, TLS, QUIC or other owned two-party driver.

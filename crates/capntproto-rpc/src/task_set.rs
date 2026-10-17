@@ -21,7 +21,11 @@
 use capntproto_rpc_engine::completion::shared as oneshot;
 use futures::{Future, Stream};
 use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use std::task::{Context, Poll, Wake, Waker};
 
 mod queue;
 mod ready_set;
@@ -29,9 +33,24 @@ use ready_set::ReadySet;
 
 enum EnqueuedTask<E> {
     Task(Pin<Box<dyn Future<Output = Result<(), E>>>>),
+    Last(Pin<Box<dyn Future<Output = Result<(), E>>>>),
     Connection(Pin<Box<dyn Future<Output = Result<(), E>>>>),
     Terminate(Result<(), E>),
     OnEmpty(oneshot::Sender<()>),
+}
+
+struct Activity {
+    ready: AtomicBool,
+    parent: futures::task::AtomicWaker,
+}
+impl Wake for Activity {
+    fn wake(self: Arc<Self>) {
+        self.wake_by_ref();
+    }
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.ready.store(true, Ordering::Release);
+        self.parent.wake();
+    }
 }
 
 enum TaskInProgress<E> {
@@ -65,6 +84,14 @@ pub(crate) struct TaskSet<E> {
     enqueued: Option<queue::Receiver<EnqueuedTask<E>>>,
     connection: Option<Pin<Box<dyn Future<Output = Result<(), E>>>>>,
     in_progress: ReadySet<TaskInProgress<E>>,
+    last: ReadySet<TaskInProgress<E>>,
+    activity: Arc<Activity>,
+    activity_waker: Waker,
+    last_activity: Arc<Activity>,
+    last_waker: Waker,
+    deferred_last: bool,
+    busy_turns: u8,
+    defer: fn(&mut Context<'_>),
     on_empty_fulfillers: Vec<oneshot::Sender<()>>,
     reaper: Box<dyn TaskReaper<E>>,
 }
@@ -79,11 +106,27 @@ where
         E: ::std::fmt::Debug,
     {
         let (sender, receiver) = queue::channel();
+        let activity = Arc::new(Activity {
+            ready: AtomicBool::new(false),
+            parent: futures::task::AtomicWaker::new(),
+        });
+        let last_activity = Arc::new(Activity {
+            ready: AtomicBool::new(false),
+            parent: futures::task::AtomicWaker::new(),
+        });
 
         let mut set = Self {
             enqueued: Some(receiver),
             connection: None,
             in_progress: ReadySet::new(),
+            last: ReadySet::new(),
+            activity_waker: Waker::from(activity.clone()),
+            activity,
+            last_waker: Waker::from(last_activity.clone()),
+            last_activity,
+            deferred_last: false,
+            busy_turns: 0,
+            defer: |cx| cx.waker().wake_by_ref(),
             on_empty_fulfillers: vec![],
             reaper,
         };
@@ -98,6 +141,10 @@ where
         (handle, set)
     }
 
+    pub(crate) fn set_defer(&mut self, defer: fn(&mut Context<'_>)) {
+        self.defer = defer;
+    }
+
     fn update_on_empty_fulfillers(&mut self) {
         if self.on_empty_fulfillers.is_empty() {
             return;
@@ -105,6 +152,7 @@ where
         // There is always the one pending() future that we added in `new()`.
         if self.connection.is_none()
             && self.in_progress.len() <= 1
+            && self.last.len() == 0
             && self.enqueued.as_ref().is_none_or(|queue| queue.is_empty())
         {
             for f in std::mem::take(&mut self.on_empty_fulfillers) {
@@ -128,6 +176,15 @@ where
         F: Future<Output = Result<(), E>> + 'static,
     {
         let _ = self.sender.send(EnqueuedTask::Task(Box::pin(f)));
+    }
+
+    /// Run transport publication after ordinary ready work, allowing related
+    /// messages to share one write as with KJ's evalLast().
+    pub(crate) fn add_last<F>(&mut self, f: F)
+    where
+        F: Future<Output = Result<(), E>> + 'static,
+    {
+        let _ = self.sender.send(EnqueuedTask::Last(Box::pin(f)));
     }
 
     pub(crate) fn try_add<F>(&self, future: F) -> Result<(), ()>
@@ -182,6 +239,58 @@ where
     type Output = Result<(), E>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        self.activity.parent.register(cx.waker());
+        self.last_activity.parent.register(cx.waker());
+        let notified = self.activity.ready.swap(false, Ordering::AcqRel);
+        let wake = self.activity_waker.clone();
+        if let Poll::Ready(result) = self.poll_regular(&mut Context::from_waker(&wake)) {
+            return Poll::Ready(result);
+        }
+        if self.last.len() == 0 || !self.last_activity.ready.load(Ordering::Acquire) {
+            return Poll::Pending;
+        }
+        let busy = notified
+            || self.activity.ready.load(Ordering::Acquire)
+            || self
+                .enqueued
+                .as_ref()
+                .is_some_and(|queue| !queue.is_empty());
+        // Yield across the executor boundary too: a response consumer may be
+        // an application task outside this set. Bound deferral so a perpetually
+        // ready producer cannot starve transport progress.
+        if (busy && self.busy_turns < 32) || !self.deferred_last {
+            self.busy_turns = self.busy_turns.saturating_add(1);
+            self.deferred_last = true;
+            (self.defer)(cx);
+            return Poll::Pending;
+        }
+        self.busy_turns = 0;
+        self.deferred_last = false;
+        self.last_activity.ready.store(false, Ordering::Release);
+        let last_wake = self.last_waker.clone();
+        let mut last_cx = Context::from_waker(&last_wake);
+        while let Poll::Ready(Some(done)) = Pin::new(&mut self.last).poll_next(&mut last_cx) {
+            match done {
+                TaskDone::Continue(Ok(())) => self.reaper.task_succeeded(),
+                TaskDone::Continue(Err(error)) => self.reaper.task_failed(error),
+                TaskDone::Terminate(result) => return Poll::Ready(result),
+            }
+            self.update_on_empty_fulfillers();
+        }
+        if self.enqueued.is_none()
+            && self.connection.is_none()
+            && self.in_progress.len() <= 1
+            && self.last.len() == 0
+        {
+            Poll::Ready(Ok(()))
+        } else {
+            Poll::Pending
+        }
+    }
+}
+
+impl<E: 'static> TaskSet<E> {
+    fn poll_regular(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), E>> {
         let mut enqueued_stream_complete = false;
         // Run newly admitted work once before allocating a FuturesUnordered
         // node. Many RPC completions finish immediately. Pending work is then
@@ -210,6 +319,10 @@ where
                         }
                         Poll::Pending => self.in_progress.push(TaskInProgress::Task(f)),
                     },
+                    Poll::Ready(Some(EnqueuedTask::Last(f))) => {
+                        self.last.push(TaskInProgress::Task(f));
+                        self.last_activity.ready.store(true, Ordering::Release);
+                    }
                     Poll::Ready(Some(EnqueuedTask::Connection(f))) => {
                         if self.connection.is_none() {
                             self.connection = Some(f);
@@ -246,7 +359,11 @@ where
         // on_empty() must also complete when it was queued on an already
         // empty set. The sentinel future is not an application task.
         self.update_on_empty_fulfillers();
-        if self.enqueued.is_none() && self.connection.is_none() && self.in_progress.len() <= 1 {
+        if self.enqueued.is_none()
+            && self.connection.is_none()
+            && self.in_progress.len() <= 1
+            && self.last.len() == 0
+        {
             return Poll::Ready(Ok(()));
         }
         loop {
@@ -266,6 +383,7 @@ where
                         if self.enqueued.is_none()
                             && self.connection.is_none()
                             && self.in_progress.len() <= 1
+                            && self.last.len() == 0
                         {
                             return Poll::Ready(Ok(()));
                         }
@@ -281,6 +399,13 @@ where
                 },
             }
         }
+    }
+}
+
+impl<E> Drop for TaskSet<E> {
+    fn drop(&mut self) {
+        drop(self.activity.parent.take());
+        drop(self.last_activity.parent.take());
     }
 }
 
@@ -300,6 +425,111 @@ mod tests {
     }
     fn poll<F: Future + Unpin>(future: &mut F) -> Poll<F::Output> {
         Pin::new(future).poll(&mut Context::from_waker(futures::task::noop_waker_ref()))
+    }
+
+    #[test]
+    fn last_tasks_wait_for_ready_work_and_an_external_consumer_turn() {
+        let results = Rc::new(RefCell::new(Vec::new()));
+        let (mut handle, mut tasks) = TaskSet::new(Box::new(Reaper(results)));
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let seen = Rc::new(RefCell::new(Vec::new()));
+        handle.add_last({
+            let events = events.clone();
+            let seen = seen.clone();
+            async move {
+                *seen.borrow_mut() = events.borrow().clone();
+                Ok(())
+            }
+        });
+        handle.add({
+            let events = events.clone();
+            let mut handle = handle.clone();
+            async move {
+                events.borrow_mut().push(1);
+                handle.add(async move {
+                    events.borrow_mut().push(2);
+                    Ok(())
+                });
+                Ok(())
+            }
+        });
+        let mut drained = handle.on_empty();
+        assert!(poll(&mut tasks).is_pending());
+        assert!(seen.borrow().is_empty());
+        assert!(poll(&mut drained).is_pending());
+        events.borrow_mut().push(3); // response consumer outside this task set
+        for _ in 0..8 {
+            assert!(poll(&mut tasks).is_pending());
+            if !seen.borrow().is_empty() {
+                break;
+            }
+        }
+        assert_eq!(&*seen.borrow(), &[1, 2, 3]);
+        assert!(matches!(poll(&mut drained), Poll::Ready(Ok(()))));
+    }
+
+    #[test]
+    fn each_new_last_notification_defers_after_idle_polls() {
+        use std::cell::Cell;
+        let results = Rc::new(RefCell::new(Vec::new()));
+        let (mut handle, mut tasks) = TaskSet::new(Box::new(Reaper(results)));
+        let polls = Rc::new(Cell::new(0));
+        let wake = Rc::new(RefCell::new(None));
+        handle.add_last({
+            let polls = polls.clone();
+            let wake = wake.clone();
+            std::future::poll_fn(move |cx| {
+                polls.set(polls.get() + 1);
+                *wake.borrow_mut() = Some(cx.waker().clone());
+                Poll::Pending
+            })
+        });
+        for _ in 0..8 {
+            assert!(poll(&mut tasks).is_pending());
+        }
+        assert_eq!(polls.get(), 1);
+        for idle_polls in 0..8 {
+            for _ in 0..idle_polls {
+                assert!(poll(&mut tasks).is_pending());
+            }
+            let before = polls.get();
+            wake.borrow().as_ref().unwrap().wake_by_ref();
+            assert!(poll(&mut tasks).is_pending());
+            assert_eq!(polls.get(), before, "new work needs a fresh deferred turn");
+            assert!(poll(&mut tasks).is_pending());
+            assert_eq!(polls.get(), before + 1);
+        }
+    }
+
+    #[test]
+    fn perpetually_ready_work_cannot_starve_last_tasks_or_hide_their_errors() {
+        let results = Rc::new(RefCell::new(Vec::new()));
+        let (mut handle, mut tasks) = TaskSet::new(Box::new(Reaper(results.clone())));
+        let busy = Rc::new(std::cell::Cell::new(true));
+        handle.add({
+            let busy = busy.clone();
+            std::future::poll_fn(move |cx| {
+                if busy.get() {
+                    cx.waker().wake_by_ref();
+                    Poll::Pending
+                } else {
+                    Poll::Ready(Ok(()))
+                }
+            })
+        });
+        handle.add_last(async { Err(7) });
+        let mut drained = handle.on_empty();
+        for _ in 0..64 {
+            assert!(poll(&mut tasks).is_pending());
+            if results.borrow().contains(&Err(7)) {
+                break;
+            }
+        }
+        assert_eq!(&*results.borrow(), &[Err(7)]);
+        assert!(poll(&mut drained).is_pending());
+        busy.set(false);
+        assert!(poll(&mut tasks).is_pending());
+        assert!(matches!(poll(&mut drained), Poll::Ready(Ok(()))));
     }
 
     #[test]

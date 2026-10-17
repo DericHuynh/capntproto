@@ -1,0 +1,10 @@
+[
+  {"name":"deep-8","depth":8,"width":1,"connections":1,"hops":1,"payload_bytes_per_node":32},
+  {"name":"deep-32","depth":32,"width":1,"connections":1,"hops":1,"payload_bytes_per_node":32},
+  {"name":"concurrent-32","depth":1,"width":32,"connections":1,"hops":1,"payload_bytes_per_node":32},
+  {"name":"deep-32-concurrent-32","depth":32,"width":32,"connections":1,"hops":1,"payload_bytes_per_node":32},
+  {"name":"services-4-deep-16","depth":16,"width":1,"connections":1,"hops":4,"payload_bytes_per_node":32},
+  {"name":"services-4-deep-16-concurrent-32","depth":16,"width":32,"connections":1,"hops":4,"payload_bytes_per_node":32},
+  {"name":"services-4-deep-16-clients-8","depth":16,"width":32,"connections":8,"hops":4,"payload_bytes_per_node":32},
+  {"name":"services-8-deep-16-clients-8","depth":16,"width":32,"connections":8,"hops":8,"payload_bytes_per_node":32}
+]

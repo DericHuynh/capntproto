@@ -18,6 +18,38 @@ it also prepares admitted parameters for existing owned server hooks without
 replacing their result contexts. The default network runtime has not switched
 to that bridge.
 
+## Legacy scheduling, framing and deep copying
+
+The active hosted driver uses Tokio. Its task set distinguishes ordinary ready
+work from connection output: ordinary RPC transitions run before the output
+batch, following KJ's end-of-turn write policy. Separate activity notifications
+let newly ready work defer a pending batch, with a bounded turn count to prevent
+writer starvation. The transport supplies the executor's deferred-wake hook;
+the RPC task set retains scheduling and cancellation ownership.
+
+TCP exposes dedicated `ReadHalf` and `WriteHalf` adapters. Small reads drain
+readiness, scatter/gather writes reach the socket intact, and the framer can
+report the exact number of bytes missing from an incomplete message body. On
+Linux, large incomplete bodies use a bounded receive low-water hint while TCP
+receive autotuning remains enabled. Completing the body restores ordinary
+readiness; dropping the adapter restores the original socket option. Other
+transports keep the default no-op hint. These public half types replace the
+earlier compatibility-wrapper aliases, an intentional unreleased API change.
+
+Bootstrap settlement retires replaced capability routes outside mutable table
+borrows, so their Finish obligations can join the pending batch. Shutdown
+observers are polled only after their own notification, and completed observers
+are consumed. Physical write completion, response interest, pipeline interest,
+and producer lifetime remain separate ownership obligations.
+
+Deep copies validate a near pointer's target and complete extent in one arena
+operation. This removes a repeated segment lookup without removing bounds,
+nesting, traversal-budget or amplification checks. Far-pointer landing pads
+keep their existing validation. The new
+[deep/concurrent benchmark suite](../../benchmarks/rpc/README.md) measures these
+costs through real TCP service chains, including eight concurrent client
+connections sharing a downstream service connection.
+
 ## Portable hosted execution boundaries
 
 The October 17 redesign starts from the measured `866610259cf5` runtime.

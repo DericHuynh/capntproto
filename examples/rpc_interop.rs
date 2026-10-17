@@ -1,6 +1,21 @@
 //! Same scenarios as the upstream peer, using our generated bindings and drivers.
 #![forbid(unsafe_code)]
 use capntproto_test_support::interop_capnp;
+// Adapt generated signatures while sharing the entire behavioral contract.
+macro_rules! impl_peer_server {
+    ($server:ty; $($name:ident $context:ident $params:ident $results:ident;)*) => {
+        impl crate::interop_capnp::peer::Server for $server {
+            $(fn $name(self: std::rc::Rc<Self>, context: crate::interop_capnp::peer::$context<'_>) -> capnp::capability::Promise<(), capnp::Error> {
+                Self::$name(self, context.into_owned())
+            })*
+            fn stream(self: std::rc::Rc<Self>, context: crate::interop_capnp::peer::StreamContext<'_>) -> capnp::capability::Promise<(), capnp::Error> {
+                Self::stream(self, context.into_owned().0)
+            }
+        }
+    };
+}
+pub(crate) use impl_peer_server;
+
 #[path = "../tests/interop/rpc_peer.rs"]
 mod rpc_peer;
 

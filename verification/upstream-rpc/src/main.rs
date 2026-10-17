@@ -8,6 +8,21 @@ mod runtime_test_capnp {
     include!(concat!(env!("OUT_DIR"), "/runtime_test_capnp.rs"));
 }
 mod bounded;
+// Adapt generated signatures while sharing the entire behavioral contract.
+macro_rules! impl_peer_server {
+    ($server:ty; $($name:ident $context:ident $params:ident $results:ident;)*) => {
+        impl crate::interop_capnp::peer::Server for $server {
+            $(fn $name(self: std::rc::Rc<Self>, params: crate::interop_capnp::peer::$params, results: crate::interop_capnp::peer::$results) -> impl core::future::Future<Output = capnp::Result<()>> {
+                Self::$name(self, (params, results))
+            })*
+            fn stream(self: std::rc::Rc<Self>, params: crate::interop_capnp::peer::StreamParams) -> impl core::future::Future<Output = capnp::Result<()>> {
+                Self::stream(self, params)
+            }
+        }
+    };
+}
+pub(crate) use impl_peer_server;
+
 #[path = "../../../tests/interop/rpc_peer.rs"]
 mod rpc_peer;
 

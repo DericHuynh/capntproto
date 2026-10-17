@@ -1,0 +1,3487 @@
+diff --git a/benchmarks/rpc/README.md b/benchmarks/rpc/README.md
+new file mode 100644
+index 0000000..4ecbc98
+--- /dev/null
++++ b/benchmarks/rpc/README.md
+@@ -0,0 +1,100 @@
++# RPC benchmarks
++
++The existing `workflows.json` catalog and four loopback payloads retain their
++contracts and sampling budgets. `topologies.json` adds a separate, versioned
++suite compiled into both the Rust driver and the C++ reference executable.
++
++## Deep and concurrent access
++
++| Case | Nested nodes | Outstanding requests per batch | Client TCP connections | Service processes |
++| --- | ---: | ---: | ---: | ---: |
++| deep-8 | 8 | 1 | 1 | 1 |
++| deep-32 | 32 | 1 | 1 | 1 |
++| concurrent-32 | 1 | 32 | 1 | 1 |
++| deep-32-concurrent-32 | 32 | 32 | 1 | 1 |
++| services-4-deep-16 | 16 | 1 | 1 | 4 |
++| services-4-deep-16-concurrent-32 | 16 | 32 | 1 | 4 |
++| services-4-deep-16-clients-8 | 16 | 32 | 8 | 4 |
++| services-8-deep-16-clients-8 | 16 | 32 | 8 | 8 |
++
++Each node has a sequence-dependent value, 32 payload bytes, and a pointer to the
++next node. Every service traverses and validates every node and byte. Intermediate
++services copy the nested request into a downstream RPC, await its result, add
++their checksum and visit count, and copy its nested response back upstream. The
++client validates the returned chain, checksum, and total visits. Consequently,
++depth is actual pointer traversal and copying, and every service hop is a TCP RPC
++to another OS process. A setup RPC verifies the chain length before timing.
++
++Each service shares one persistent downstream connection across its incoming
++clients. The eight-connection cases distribute the 32 outstanding requests over
++eight independently established connections. All calls are submitted together;
++the next batch begins after every response has been validated and released.
++This measures closed-loop batch completion and throughput. It does not measure
++individual request percentiles or an open-loop saturation workload.
++
++Request construction, traversal, forwarding, response validation/destruction,
++and a ten-second batch deadline are inside the timed operation. Connection setup,
++bootstrap resolution and topology discovery are outside timing. Rust and C++
++perform the same application work; no payload or validation is skipped. The
++topology suite currently compares legacy Tokio and C++/KJ.
++
++## Running the suite
++
++Build the normal benchmark bundle (the quality runner includes `topology.c++`
++when compiling the C++ reference), or supply equivalent release binaries:
++
++```sh
++python3 benchmarks/rpc/topology-runner.py \
++  --rust target/quality/benchmark/bundle/driver \
++  --cpp target/quality/benchmark/bundle/capnp-reference \
++  --output target/topology-latency --mixed
++```
++
++Use the actual bundle paths produced by your build. Defaults are four repetitions,
++100 warmups and 1,000 retained batch samples per cell. Variant order rotates and
++reverses so each implementation occupies both positions equally. `--mixed` also
++checks alternating Rust/C++ service chains in both directions, outside the latency
++comparison. `--cases` accepts comma-separated catalog names.
++
++The runner selects distinct physical cores for the client and available service
++workers. Longer chains cycle over the available service cores; the exact placement
++is retained. On a five-core host, four-service chains use one core per process,
++while eight-service chains intentionally share service cores. These are same-host
++TCP microservice chains, not cross-host network measurements.
++
++Every output directory must be new. It retains raw latency samples, per-process
++logs, server readiness/chain checks, CPU placement, binary and fixture hashes,
++and every trial's p50/p95/p99 and batch/request/service-call throughput. The 30%
++latency goal is `Rust p50 <= 0.70 * C++ p50` in every cell; passing some cells
++does not qualify the suite.
++
++## Tracing and profiling
++
++Use separate directories for diagnostic captures:
++
++```sh
++python3 benchmarks/rpc/topology-runner.py --rust DRIVER --cpp CPP \
++  --output target/topology-socket --instrument socket --repetitions 1
++python3 benchmarks/rpc/topology-runner.py --rust DRIVER --cpp CPP \
++  --output target/topology-wire --instrument wire --repetitions 1
++python3 benchmarks/rpc/analyze-topology.py target/topology-wire
++python3 benchmarks/rpc/topology-runner.py --rust DRIVER --cpp CPP \
++  --output target/topology-cpu --instrument callgrind --repetitions 1
++```
++
++Diagnostic defaults are two warmups and ten measurements. The socket mode retains
++the lightweight probe's complete event journal and positive/nonpositive counts
++for the client and every service. Wire mode retains full-payload, timestamped
++strace journals compressed with gzip. Callgrind records each process separately.
++All modes include startup, warmup and shutdown. Instrumented timings are marked
++diagnostic and cannot pass the latency gate. Full tracing can perturb socket
++fragmentation; compare it with the lightweight probe rather than interpreting
++one capture as a universal syscall count.
++
++The wire analyzer reassembles each TCP connection independently, checks framing,
++and compares every received frame byte-for-byte with its peer's transmitted
++frame. It requires the expected number of connections and reports per-process
++read/write counts, protocol message counts, and any unread teardown frames.
++It pairs sockets between adjacent services using a unique match of both complete
++byte streams, so it also works when strace exposes only socket inodes. Missing
++or ambiguous peers and unconsumed calls or responses fail validation.
+diff --git a/benchmarks/rpc/analyze-topology.py b/benchmarks/rpc/analyze-topology.py
+new file mode 100644
+index 0000000..f672f50
+--- /dev/null
++++ b/benchmarks/rpc/analyze-topology.py
+@@ -0,0 +1,163 @@
++#!/usr/bin/env python3
++"""Reassemble every TCP edge in topology-runner.py's full wire captures."""
++import argparse
++from collections import Counter, defaultdict
++import gzip
++import hashlib
++import json
++from pathlib import Path
++import re
++import struct
++
++KINDS = ['unimplemented', 'abort', 'call', 'return', 'finish', 'resolve', 'release',
++         'obsoleteSave', 'bootstrap', 'obsoleteDelete', 'provide', 'accept', 'join',
++         'disembargo', 'thirdPartyAnswer']
++READS = {'read', 'readv', 'recvfrom', 'recvmsg'}
++
++
++class Stream:
++    def __init__(self):
++        self.pending = bytearray()
++        self.digest = hashlib.sha256()
++        self.size = 0
++        self.frames = []
++
++    def add(self, data):
++        self.digest.update(data)
++        self.size += len(data)
++        self.pending.extend(data)
++        while len(self.pending) >= 8:
++            segments = struct.unpack_from('<I', self.pending)[0] + 1
++            assert 1 <= segments <= 512, 'invalid segment table'
++            header = (segments // 2 + 1) * 8
++            if len(self.pending) < header:
++                break
++            words = sum(struct.unpack_from('<' + 'I' * segments, self.pending, 4))
++            size = header + words * 8
++            if len(self.pending) < size:
++                break
++            frame = self.pending[:size]
++            # These RPC envelopes use a near struct root. Reject an unfamiliar
++            # envelope rather than silently guessing its message discriminator.
++            pointer, = struct.unpack_from('<Q', frame, header)
++            assert pointer & 3 == 0 and (pointer >> 32) & 65535 >= 1
++            offset = (pointer >> 2) & 0x3fffffff
++            if offset & (1 << 29):
++                offset -= 1 << 30
++            target = header + 8 + offset * 8
++            segment_end = header + struct.unpack_from('<I', frame, 4)[0] * 8
++            assert header <= target and target + 2 <= segment_end
++            kind, = struct.unpack_from('<H', frame, target)
++            assert kind < len(KINDS)
++            self.frames.append(dict(kind=KINDS[kind], bytes=size,
++                                    sha256=hashlib.sha256(frame).hexdigest()))
++            del self.pending[:size]
++
++    def result(self):
++        assert not self.pending, 'capture ends inside a frame'
++        return dict(bytes=self.size, sha256=self.digest.hexdigest(), frames=self.frames)
++
++
++def decode(path):
++    pending, streams, identities = {}, defaultdict(Stream), {}
++    counts = Counter()
++    with gzip.open(path, 'rt') as lines:
++        for line in lines:
++            match = re.match(r'(\d+)\s+(\d+\.\d+)\s+(.*)', line)
++            if not match:
++                continue
++            pid, _, body = match.groups()
++            if '<unfinished ...>' in body:
++                assert pid not in pending
++                pending[pid] = (line.split('<unfinished ...>', 1)[0], body.split('(', 1)[0])
++                continue
++            resumed = re.match(r'<\.\.\. (\w+) resumed>(.*)', body)
++            if resumed:
++                prefix, operation = pending.pop(pid)
++                assert operation == resumed[1]
++                line = prefix + resumed[2]
++            match = re.search(r' (read|write|readv|writev|sendto|recvfrom|sendmsg|recvmsg)\((\d+)<TCP:\[([^]]+)\]>.*\)\s+= (-?\d+)', line)
++            if not match:
++                continue
++            operation, fd, identity, amount = match.groups()
++            # The fixture keeps every connection alive for the whole trial.
++            # Refuse descriptor reuse or inconsistent decoding. In restricted
++            # namespaces strace may expose only an inode, even for live TCP.
++            assert identities.setdefault(fd, identity) == identity, 'socket identity changed'
++            amount = int(amount)
++            direction = 'read' if operation in READS else 'write'
++            counts[direction + '_attempts'] += 1
++            if amount <= 0:
++                continue
++            counts[direction + '_positive'] += 1
++            data = b''.join(bytes.fromhex(part.replace('\\x', ''))
++                            for part in line.split('"')[1::2] if part.startswith('\\x'))
++            assert len(data) >= amount, f'truncated payload: {path}'
++            streams[fd, direction].add(data[:amount])
++    return counts, streams, identities, [operation for _, operation in pending.values()]
++
++
++def matches(sent, received):
++    return (bool(received) and received == sent[:len(received)] and
++            all(f['kind'] in {'finish', 'release', 'abort'} for f in sent[len(received):]))
++
++
++def adjacent(first, second):
++    level = lambda name: -1 if name == 'client' else int(name.removeprefix('service-'))
++    return abs(level(first) - level(second)) == 1
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('directory', type=Path)
++    args = parser.parse_args()
++    scope = json.loads((args.directory / 'scope.json').read_text())
++    assert scope['instrument'] == 'wire'
++    rows = []
++    for trial in scope['trials']:
++        directory = args.directory / trial['path']
++        connections, processes = {}, []
++        for path in sorted(directory.glob('*.strace.gz')):
++            counts, streams, identities, unfinished = decode(path)
++            process = path.name.removesuffix('.strace.gz')
++            processes.append(dict(process=path.name, counts=dict(counts),
++                                  unfinished_at_exit=unfinished))
++            for (fd, direction), stream in streams.items():
++                connection = connections.setdefault((process, fd), dict(identity=identities[fd]))
++                assert direction not in connection
++                connection[direction] = stream.result()
++        checks = []
++        while connections:
++            source, first = connections.popitem()
++            assert {'read', 'write'} <= first.keys(), (directory, source)
++            # Pair only adjacent service processes, requiring a unique full
++            # bidirectional payload match. Never pair by startup frame alone.
++            peers = [(key, other) for key, other in connections.items()
++                     if adjacent(source[0], key[0]) and {'read', 'write'} <= other.keys()
++                     and matches(first['write']['frames'], other['read']['frames'])
++                     and matches(other['write']['frames'], first['read']['frames'])]
++            assert len(peers) == 1, (directory, source, 'missing or ambiguous peer', len(peers))
++            destination, second = peers[0]
++            del connections[destination]
++            for start, end, writer, reader in [(source, destination, first, second),
++                                              (destination, source, second, first)]:
++                sent, received = writer['write']['frames'], reader['read']['frames']
++                checks.append(dict(source=start, destination=end, source_socket=writer['identity'],
++                                   destination_socket=reader['identity'], received_frames=len(received),
++                                   sent_frames=len(sent), received_bytes=reader['read']['bytes'],
++                                   sent_bytes=writer['write']['bytes'], received_sha256=reader['read']['sha256'],
++                                   sent_sha256=writer['write']['sha256'], kinds=dict(Counter(f['kind'] for f in sent)),
++                                   all_received_frames_match=True, unread_teardown=sent[len(received):]))
++        case = next(c for c in scope['cases'] if c['name'] == trial['case'])
++        assert len(checks) == 2 * (case['connections'] + case['hops'] - 1)
++        rows.append(dict(trial=trial['path'], processes=processes, edges=checks))
++    output = args.directory / 'wire-analysis.json'
++    with output.open('x') as sink:
++        json.dump(dict(analyzer_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
++                       trials=rows), sink, indent=2)
++        sink.write('\n')
++    print(f'Checked {len(rows)} trials, {sum(len(r["edges"]) for r in rows)} directed TCP edges')
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/benchmarks/rpc/capnp.c++ b/benchmarks/rpc/capnp.c++
+index 40d11c5..e85d791 100644
+--- a/benchmarks/rpc/capnp.c++
++++ b/benchmarks/rpc/capnp.c++
+@@ -10,6 +10,7 @@
+ #include <vector>
+ 
+ int runWorkflows(int argc, char** argv);
++int runTopologies(int argc, char** argv);
+ class Service final: public Echo::Server {
+   kj::Promise<void> echo(EchoContext context) override {
+     auto params = context.getParams();
+@@ -20,6 +21,7 @@ class Service final: public Echo::Server {
+   }
+ };
+ int main(int argc, char** argv) {
++  if (argc > 1 && std::string(argv[1]).starts_with("topology-")) return runTopologies(argc, argv);
+   if (argc > 1 && std::string(argv[1]).starts_with("workflow-")) return runWorkflows(argc, argv);
+   auto io = kj::setupAsyncIo();
+   if (argc == 2 && std::string(argv[1]) == "server") {
+diff --git a/benchmarks/rpc/echo.capnp b/benchmarks/rpc/echo.capnp
+index e4ae5c4..687941d 100644
+--- a/benchmarks/rpc/echo.capnp
++++ b/benchmarks/rpc/echo.capnp
+@@ -16,3 +16,15 @@ interface Cell {
+ interface Callback {
+   notify @0 (sequence :UInt64, payload :Data) -> (sequence :UInt64);
+ }
++
++# Separate, versioned topology suite; existing workflow contracts stay unchanged.
++struct AccessNode {
++  value @0 :UInt64;
++  payload @1 :Data;
++  next @2 :AccessNode;
++}
++interface AccessService {
++  access @0 (sequence :UInt64, depth :UInt16, root :AccessNode)
++      -> (checksum :UInt64, visits :UInt32, root :AccessNode);
++  describe @1 () -> (hops :UInt16);
++}
+diff --git a/benchmarks/rpc/src/lib.rs b/benchmarks/rpc/src/lib.rs
+index fb53703..65d4c9d 100644
+--- a/benchmarks/rpc/src/lib.rs
++++ b/benchmarks/rpc/src/lib.rs
+@@ -17,6 +17,7 @@ mod echo_capnp {
+ mod grpc {
+     tonic::include_proto!("echo");
+ }
++mod topology;
+ mod workflows;
+ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+ const CONTEXT: &[u8] = b"reproto isolated loopback benchmark v1";
+@@ -327,6 +328,8 @@ pub fn run(protocol: Option<&str>) -> Result<()> {
+     runtime.block_on(tokio::task::LocalSet::new().run_until(async move {
+         tokio::task::spawn_local(async move {
+             match args.first().map(String::as_str) {
++                Some("topology-server") => topology::serve(&args[1..]).await,
++                Some("topology-measure") => topology::measure(&args[1..]).await,
+                 Some("workflow-server") if args.len() == 2 => workflows::serve(&args[1]).await,
+                 Some("workflow-measure") => workflows::measure(&args[1..]).await,
+                 Some("comparison-server") if args.len() == 3 => {
+diff --git a/benchmarks/rpc/src/topology.rs b/benchmarks/rpc/src/topology.rs
+new file mode 100644
+index 0000000..2129339
+--- /dev/null
++++ b/benchmarks/rpc/src/topology.rs
+@@ -0,0 +1,245 @@
++//! Nested access through independent TCP services, with bounded concurrent batches.
++use crate::{
++    echo_capnp::{access_node, access_service},
++    Result,
++};
++use capnp::capability::Promise;
++use futures::future::try_join_all;
++use serde_json::{json, Value};
++use std::{
++    rc::Rc,
++    time::{Duration, Instant},
++};
++use tokio::{net::TcpListener, time::timeout};
++
++const DEADLINE: Duration = Duration::from_secs(10);
++const PAYLOAD: [u8; 32] = [
++    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
++    26, 27, 28, 29, 30, 31,
++];
++
++fn traverse(mut node: access_node::Reader<'_>, depth: u16, sequence: u64) -> capnp::Result<u64> {
++    if !(1..=32).contains(&depth) {
++        return Err(capnp::Error::failed("invalid depth".into()));
++    }
++    let mut sum = 0u64;
++    for level in 0..depth {
++        let value = sequence + u64::from(level);
++        let payload = node.get_payload()?;
++        if node.get_value() != value || payload != PAYLOAD || node.has_next() != (level + 1 < depth)
++        {
++            return Err(capnp::Error::failed("nested access mismatch".into()));
++        }
++        sum = sum.wrapping_add(value);
++        for byte in payload {
++            sum = sum.wrapping_add(u64::from(*byte));
++        }
++        if level + 1 < depth {
++            node = node.get_next()?;
++        }
++    }
++    Ok(sum)
++}
++
++fn fill(mut node: access_node::Builder<'_>, depth: u16, sequence: u64) {
++    for level in 0..depth {
++        node.set_value(sequence + u64::from(level));
++        node.set_payload(&PAYLOAD);
++        if level + 1 < depth {
++            node = node.init_next();
++        }
++    }
++}
++
++struct Service {
++    next: Option<access_service::Client>,
++    hops: u16,
++}
++impl access_service::Server for Service {
++    fn describe(
++        self: Rc<Self>,
++        context: access_service::DescribeContext<'_>,
++    ) -> Promise<(), capnp::Error> {
++        context.complete(|_, mut results| {
++            results.set_hops(self.hops);
++            Ok(())
++        })
++    }
++
++    fn access(
++        self: Rc<Self>,
++        context: access_service::AccessContext<'_>,
++    ) -> Promise<(), capnp::Error> {
++        if self.next.is_none() {
++            return context.complete(|params, mut results| {
++                let root = params.get_root()?;
++                let sum = traverse(root, params.get_depth(), params.get_sequence())?;
++                results.set_checksum(sum);
++                results.set_visits(u32::from(params.get_depth()));
++                results.set_root(root)?;
++                Ok(())
++            });
++        }
++        let (params, mut results) = context.into_owned();
++        Promise::from_future(async move {
++            let params = params.get()?;
++            let root = params.get_root()?;
++            let sum = traverse(root, params.get_depth(), params.get_sequence())?;
++            let mut request = self.next.as_ref().unwrap().access_request();
++            request.get().set_sequence(params.get_sequence());
++            request.get().set_depth(params.get_depth());
++            request.get().set_root(root)?;
++            let response = request.send().promise.await?;
++            let response = response.get()?;
++            let mut results = results.get();
++            results.set_checksum(sum.wrapping_add(response.get_checksum()));
++            results.set_visits(u32::from(params.get_depth()) + response.get_visits());
++            results.set_root(response.get_root()?)?;
++            Ok(())
++        })
++    }
++}
++
++async fn connect(address: &str) -> Result<access_service::Client> {
++    let mut driver = capntproto::rpc::connect(address, None, Default::default()).await?;
++    let client = driver.bootstrap();
++    tokio::task::spawn_local(driver);
++    Ok(client)
++}
++
++pub async fn serve(args: &[String]) -> Result<()> {
++    if !(1..=2).contains(&args.len()) {
++        return Err("topology-server ADDRESS [NEXT_ADDRESS]".into());
++    }
++    let next = if let Some(address) = args.get(1) {
++        Some(timeout(DEADLINE, connect(address)).await??)
++    } else {
++        None
++    };
++    let hops = if let Some(next) = &next {
++        let response = timeout(DEADLINE, next.describe_request().send().promise).await??;
++        let downstream = response.get()?.get_hops();
++        if !(1..8).contains(&downstream) {
++            return Err("service chain exceeds eight hops".into());
++        }
++        downstream + 1
++    } else {
++        1
++    };
++    let service: access_service::Client = capnp_rpc::new_client(Service { next, hops });
++    let listener = TcpListener::bind(&args[0]).await?;
++    println!(
++        "{}",
++        json!({"address":listener.local_addr()?.to_string(),"hops":hops})
++    );
++    use std::io::Write;
++    std::io::stdout().flush()?;
++    loop {
++        let (socket, _) = listener.accept().await?;
++        socket.set_nodelay(true)?;
++        let driver = capntproto::rpc::tcp::client(
++            socket,
++            Some(service.client.clone()),
++            capnp_rpc::rpc_twoparty_capnp::Side::Server,
++            Default::default(),
++        );
++        tokio::task::spawn_local(async move {
++            let _ = driver.await;
++        });
++    }
++}
++
++async fn access(
++    client: &access_service::Client,
++    depth: u16,
++    hops: u16,
++    sequence: u64,
++) -> Result<()> {
++    let mut request = client.access_request();
++    request.get().set_sequence(sequence);
++    request.get().set_depth(depth);
++    fill(request.get().init_root(), depth, sequence);
++    let response = request.send().promise.await?;
++    let response = response.get()?;
++    let sum = traverse(response.get_root()?, depth, sequence)?;
++    if response.get_checksum() != sum.wrapping_mul(u64::from(hops))
++        || response.get_visits() != u32::from(depth) * u32::from(hops)
++    {
++        return Err("service traversal count/checksum mismatch".into());
++    }
++    Ok(())
++}
++
++pub async fn measure(args: &[String]) -> Result<()> {
++    if args.len() != 4 {
++        return Err("topology-measure ADDRESS CASE WARMUP ITERATIONS".into());
++    }
++    let cases: Vec<Value> = serde_json::from_str(include_str!("../topologies.json"))?;
++    let case = cases
++        .into_iter()
++        .find(|c| c["name"] == args[1])
++        .ok_or("unknown topology")?;
++    let depth = case["depth"].as_u64().unwrap() as u16;
++    let hops = case["hops"].as_u64().unwrap() as u16;
++    let width = case["width"].as_u64().unwrap();
++    let connections = case["connections"].as_u64().unwrap() as usize;
++    let warmup: u64 = args[2].parse()?;
++    let iterations: u64 = args[3].parse()?;
++    if warmup > 100_000 || !(1..=100_000).contains(&iterations) {
++        return Err("topology budget exceeded".into());
++    }
++    let mut clients = Vec::with_capacity(connections);
++    for _ in 0..connections {
++        let client = timeout(DEADLINE, connect(&args[0])).await??;
++        let response = timeout(DEADLINE, client.describe_request().send().promise).await??;
++        if response.get()?.get_hops() != hops {
++            return Err("wrong service topology".into());
++        }
++        clients.push(client);
++    }
++    let operation = |sequence| {
++        try_join_all((0..width).map(|lane| {
++            access(
++                &clients[lane as usize % connections],
++                depth,
++                hops,
++                sequence * width + lane,
++            )
++        }))
++    };
++    for sequence in 0..warmup {
++        timeout(DEADLINE, operation(sequence)).await??;
++    }
++    let mut samples = Vec::with_capacity(iterations as usize);
++    let start = Instant::now();
++    for sequence in warmup..warmup + iterations {
++        let before = Instant::now();
++        timeout(DEADLINE, operation(sequence)).await??;
++        samples.push(u64::try_from(before.elapsed().as_nanos())?);
++    }
++    println!(
++        "{}",
++        json!({"topology_version":1,"implementation":"legacy","case":case,"warmup":warmup,"iterations":iterations,"elapsed_ns":u64::try_from(start.elapsed().as_nanos())?,"latency_ns":samples})
++    );
++    Ok(())
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    #[test]
++    fn nested_contract_rejects_corruption_and_wrong_depth() {
++        let mut message = capnp::message::Builder::new_default();
++        fill(message.init_root(), 32, 42);
++        let root: access_node::Reader<'_> = message.get_root_as_reader().unwrap();
++        assert_eq!(
++            traverse(root, 32, 42).unwrap(),
++            (42..74).sum::<u64>() + 32 * (0..32).sum::<u64>()
++        );
++        assert!(traverse(root, 31, 42).is_err());
++        assert!(traverse(root, 32, 43).is_err());
++        let mut root: access_node::Builder<'_> = message.get_root().unwrap();
++        root.reborrow().get_next().unwrap().set_payload(&[1]);
++        assert!(traverse(message.get_root_as_reader().unwrap(), 32, 42).is_err());
++    }
++}
+diff --git a/benchmarks/rpc/topologies.json b/benchmarks/rpc/topologies.json
+new file mode 100644
+index 0000000..5a95a81
+--- /dev/null
++++ b/benchmarks/rpc/topologies.json
+@@ -0,0 +1,10 @@
++[
++  {"name":"deep-8","depth":8,"width":1,"connections":1,"hops":1,"payload_bytes_per_node":32},
++  {"name":"deep-32","depth":32,"width":1,"connections":1,"hops":1,"payload_bytes_per_node":32},
++  {"name":"concurrent-32","depth":1,"width":32,"connections":1,"hops":1,"payload_bytes_per_node":32},
++  {"name":"deep-32-concurrent-32","depth":32,"width":32,"connections":1,"hops":1,"payload_bytes_per_node":32},
++  {"name":"services-4-deep-16","depth":16,"width":1,"connections":1,"hops":4,"payload_bytes_per_node":32},
++  {"name":"services-4-deep-16-concurrent-32","depth":16,"width":32,"connections":1,"hops":4,"payload_bytes_per_node":32},
++  {"name":"services-4-deep-16-clients-8","depth":16,"width":32,"connections":8,"hops":4,"payload_bytes_per_node":32},
++  {"name":"services-8-deep-16-clients-8","depth":16,"width":32,"connections":8,"hops":8,"payload_bytes_per_node":32}
++]
+diff --git a/benchmarks/rpc/topology-runner.py b/benchmarks/rpc/topology-runner.py
+new file mode 100644
+index 0000000..abc00c7
+--- /dev/null
++++ b/benchmarks/rpc/topology-runner.py
+@@ -0,0 +1,209 @@
++#!/usr/bin/env python3
++"""Matched independent-process service chains; raw trials are never overwritten."""
++import argparse
++import collections
++import gzip
++import hashlib
++import json
++import os
++from pathlib import Path
++import platform
++import selectors
++import signal
++import struct
++import subprocess
++
++ROOT = Path(__file__).resolve().parents[2]
++EVENT = struct.Struct('<QQQQqiIII')
++
++
++def digest(path):
++    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
++
++
++def percentile(values, p):
++    return sorted(values)[(len(values) * p + 99) // 100 - 1]
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('--rust', type=Path, required=True)
++    parser.add_argument('--cpp', type=Path, required=True)
++    parser.add_argument('--output', type=Path, required=True)
++    parser.add_argument('--repetitions', type=int, default=4)
++    parser.add_argument('--warmup', type=int)
++    parser.add_argument('--iterations', type=int)
++    parser.add_argument('--cases', default='')
++    parser.add_argument('--instrument', choices=['none', 'socket', 'wire', 'callgrind'], default='none')
++    parser.add_argument('--mixed', action='store_true', help='Also validate alternating Rust/C++ service chains in both directions.')
++    args = parser.parse_args()
++    diagnostic = args.instrument != 'none'
++    warmup = args.warmup if args.warmup is not None else (2 if diagnostic else 100)
++    iterations = args.iterations if args.iterations is not None else (10 if diagnostic else 1000)
++    assert 0 <= warmup <= 100000 and 1 <= iterations <= 100000 and 1 <= args.repetitions <= 100
++    qualifying = not diagnostic and warmup >= 100 and iterations >= 1000 and args.repetitions >= 4
++    binaries = {'legacy': args.rust.resolve(strict=True), 'cpp': args.cpp.resolve(strict=True)}
++    catalog_path = ROOT / 'benchmarks/rpc/topologies.json'
++    catalog = json.loads(catalog_path.read_text())
++    selected = set(args.cases.split(',')) if args.cases else {c['name'] for c in catalog}
++    assert selected <= {c['name'] for c in catalog}, 'unknown topology'
++    cases = [c for c in catalog if c['name'] in selected]
++    # Select physical cores, recording oversubscription for longer chains.
++    topology = subprocess.check_output(['lscpu', '-b', '-p=CPU,CORE,SOCKET'], text=True)
++    allowed = os.sched_getaffinity(0)
++    cpus, cores = [], set()
++    for row in topology.splitlines():
++        if row.startswith('#') or not row:
++            continue
++        cpu, core, socket = map(int, row.split(','))
++        if cpu in allowed and (core, socket) not in cores:
++            cpus.append(cpu)
++            cores.add((core, socket))
++    assert len(cpus) >= 2, 'requires distinct client and server cores'
++    for path in Path('/proc').glob('[0-9]*/comm'):
++        try:
++            name = path.read_text().strip()
++            if name in ['rustc', 'clippy-driver', 'miri', 'rust-lld', 'cc1plus', 'clang', 'clang++', 'strace'] or 'callgrind' in name:
++                assert (path.parent / 'stat').read_text().split(') ', 1)[1].split()[0] == 'Z', f'competing build/profiler: {path}'
++        except (FileNotFoundError, ProcessLookupError):
++            pass
++    out = args.output.resolve()
++    out.mkdir(parents=True, exist_ok=False)
++    probe = out / 'probe.so'
++    if args.instrument == 'socket':
++        source = ROOT / 'dev/src/cloud/remote/timing/probe.c'
++        (out / 'probe.c').write_bytes(source.read_bytes())
++        subprocess.run(['cc', '-O2', '-shared', '-fPIC', '-o', str(probe), str(source), '-ldl'], check=True)
++    scope = dict(topology_version=1, instrument=args.instrument, qualifying_budget=qualifying, warmup=warmup, iterations=iterations,
++                 repetitions=args.repetitions, cases=cases, binaries={k: dict(path=str(v), sha256=digest(v)) for k, v in binaries.items()},
++                 fixture_sha256=digest(catalog_path), runner_sha256=digest(__file__), cpu_topology=topology,
++                 uname=list(platform.uname()), client_cpu=cpus[0], server_cpus=cpus[1:],
++                 order_policy='Rotate two variants, then reverse every complete cycle; four repetitions balance positions.',
++                 metric='Whole concurrent batch latency, including construction, all service hops, validation, response destruction and ten-second deadline.',
++                 goal='Every uninstrumented cell pooled p50 <= 0.70 * C++ pooled p50; diagnostic timings do not qualify.',
++                 trials=[])
++    (out / 'scope.json').write_text(json.dumps(scope, indent=2) + '\n')
++
++    def launch(label, argv, prefix, cpu):
++        env = dict(os.environ, CAPNTPROTO_BENCH_PORTABLE='0')
++        command = ['taskset', '-c', str(cpu)]
++        if args.instrument == 'socket':
++            env.update(LD_PRELOAD=str(probe), CAPNTPROTO_IO_TRACE=str(prefix) + '.bin')
++        elif args.instrument == 'wire':
++            command += ['strace', '-f', '-qq', '-ttt', '-T', '-yy', '-xx', '-v', '-s', '8388608', '-e',
++                        'trace=read,write,readv,writev,sendto,recvfrom,sendmsg,recvmsg,epoll_wait,epoll_pwait,getsockopt,setsockopt', '-o', str(prefix) + '.strace']
++        elif args.instrument == 'callgrind':
++            command += ['valgrind', '--tool=callgrind', '--collect-atstart=yes', '--callgrind-out-file=' + str(prefix) + '.callgrind']
++        with Path(str(prefix) + '.stderr').open('x') as error:
++            process = subprocess.Popen([*command, str(binaries[label]), *argv], env=env, stdout=subprocess.PIPE,
++                                       stderr=error, text=True, start_new_session=True)
++        return process
++
++    def stop(process):
++        if process.poll() is None:
++            os.killpg(process.pid, signal.SIGTERM)
++        try:
++            process.wait(timeout=10)
++        except subprocess.TimeoutExpired:
++            os.killpg(process.pid, signal.SIGKILL)
++            process.wait(timeout=10)
++
++    def trial(case, client_label, services, prefix, warm, count):
++        directory = out / prefix
++        directory.mkdir()
++        workers = []
++        address = None
++        placement = []
++        client = None
++        try:
++            for hop in reversed(range(case['hops'])):
++                label = services[hop]
++                cpu = cpus[1 + hop % (len(cpus) - 1)]
++                command = ['topology-server', '127.0.0.1:0'] + ([address] if address else [])
++                process = launch(label, command, directory / f'service-{hop}', cpu)
++                workers.append(process)
++                with selectors.DefaultSelector() as selector:
++                    selector.register(process.stdout, selectors.EVENT_READ)
++                    assert selector.select(30), 'server readiness timeout'
++                    line = process.stdout.readline()
++                (directory / f'service-{hop}.ready.json').write_text(line)
++                ready = json.loads(line)
++                assert ready['hops'] == case['hops'] - hop, 'incorrect chain length'
++                address = ready.get('address') or f"127.0.0.1:{ready['port']}"
++                placement.append(dict(hop=hop, implementation=label, cpu=cpu, address=address))
++            client = launch(client_label, ['topology-measure', address, case['name'], str(warm), str(count)], directory / 'client', cpus[0])
++            output, _ = client.communicate(timeout=300)
++            (directory / 'trial.json').write_text(output)
++            assert client.returncode == 0, f'client failed: {directory}'
++            data = json.loads(output)
++            assert data['topology_version'] == 1 and data['case'] == case
++            assert data['implementation'] == ('legacy' if client_label == 'legacy' else 'capnp-cpp')
++            assert data['iterations'] == len(data['latency_ns']) == count and data['warmup'] == warm
++            assert all(type(n) is int and n > 0 for n in data['latency_ns'])
++            assert data['elapsed_ns'] >= sum(data['latency_ns'])
++            assert all(p.poll() is None for p in workers), 'service exited during trial'
++            for process in workers:
++                (directory / f'process-{process.pid}.stat').write_text(Path(f'/proc/{process.pid}/stat').read_text())
++            return data, placement
++        finally:
++            if client is not None:
++                stop(client)
++            for process in reversed(workers):
++                stop(process)
++            for trace in directory.glob('*.strace'):
++                with trace.open('rb') as source, gzip.open(str(trace) + '.gz', 'wb', compresslevel=1) as sink:
++                    import shutil
++                    shutil.copyfileobj(source, sink)
++                trace.unlink()
++
++    if args.mixed:
++        for case in cases:
++            for index, label in enumerate(binaries):
++                services = [list(binaries)[(hop + index + 1) % 2] for hop in range(case['hops'])]
++                prefix = f"mixed-{case['name']}-{label}"
++                _, placement = trial(case, label, services, prefix, 2, 5)
++                scope['trials'].append(dict(path=prefix, case=case['name'], client=label, services=placement, mixed=True))
++                (out / 'scope.json').write_text(json.dumps(scope, indent=2) + '\n')
++    for rep in range(args.repetitions):
++        order = list(binaries)
++        order = order[rep % 2:] + order[:rep % 2]
++        if rep // 2 % 2:
++            order.reverse()
++        for case in cases:
++            for label in order:
++                prefix = f"{rep}-{case['name']}-{label}"
++                _, placement = trial(case, label, [label] * case['hops'], prefix, warmup, iterations)
++                scope['trials'].append(dict(path=prefix, case=case['name'], client=label, services=placement, mixed=False, repetition=rep))
++                (out / 'scope.json').write_text(json.dumps(scope, indent=2) + '\n')
++            print(rep, case['name'], flush=True)
++    rows = []
++    for case in cases:
++        cells = {}
++        for label in binaries:
++            trials = [json.loads((out / f"{rep}-{case['name']}-{label}" / 'trial.json').read_text()) for rep in range(args.repetitions)]
++            values = [n for trial in trials for n in trial['latency_ns']]
++            rate = len(values) * 1e9 / sum(t['elapsed_ns'] for t in trials)
++            cells[label] = dict(samples=len(values), **{f'p{p}_ns': percentile(values, p) for p in [50, 95, 99]},
++                                repetition_p50_ns=[percentile(t['latency_ns'], 50) for t in trials],
++                                batches_per_second=rate, logical_requests_per_second=rate * case['width'],
++                                service_calls_per_second=rate * case['width'] * case['hops'])
++        ratio = cells['legacy']['p50_ns'] / cells['cpp']['p50_ns']
++        rows.append(dict(case=case, variants=cells, legacy_over_cpp=ratio, meets_target=ratio <= 0.70 if qualifying else None))
++    journals = []
++    for path in sorted(out.glob('*/*.bin')):
++        raw = path.read_bytes()
++        count, = struct.unpack_from('<Q', raw)
++        assert count <= 131072 and len(raw) == 8 + count * EVENT.size, f'incomplete probe: {path}'
++        counts = collections.Counter()
++        for _, _, _, _, result, _, op, _, _ in EVENT.iter_unpack(raw[8:]):
++            direction = 'read' if op in [1, 3, 5, 7, 9] else ('write' if op in [2, 4, 6, 8, 10] else 'epoll')
++            counts[direction + ('_positive' if result > 0 else '_nonpositive')] += 1
++        journals.append(dict(path=str(path.relative_to(out)), counts=dict(counts), sha256=digest(path)))
++    summary = dict(rows=rows, socket_journals=journals, diagnostic=diagnostic, qualifying_budget=qualifying,
++                   all_cells_meet_target=all(r['meets_target'] for r in rows) if qualifying else None)
++    (out / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
++    print(json.dumps(rows, indent=2))
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/benchmarks/rpc/topology.c++ b/benchmarks/rpc/topology.c++
+new file mode 100644
+index 0000000..c656f7e
+--- /dev/null
++++ b/benchmarks/rpc/topology.c++
+@@ -0,0 +1,171 @@
++#include "echo.capnp.h"
++#include <capnp/rpc-twoparty.h>
++#include <kj/async-io.h>
++#include <kj/debug.h>
++#include <kj/timer.h>
++#include <array>
++#include <chrono>
++#include <cstring>
++#include <iostream>
++#include <string>
++#include <vector>
++
++namespace {
++constexpr std::array<capnp::byte, 32> PAYLOAD = {
++  0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
++  16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31
++};
++uint64_t traverse(AccessNode::Reader node, uint16_t depth, uint64_t sequence) {
++  KJ_REQUIRE(depth >= 1 && depth <= 32);
++  uint64_t sum = 0;
++  for (uint16_t level = 0; level < depth; ++level) {
++    auto value = sequence + level;
++    auto payload = node.getPayload();
++    KJ_REQUIRE(node.getValue() == value && payload.size() == PAYLOAD.size());
++    KJ_REQUIRE(std::memcmp(payload.begin(), PAYLOAD.data(), PAYLOAD.size()) == 0);
++    KJ_REQUIRE(node.hasNext() == (level + 1 < depth));
++    sum += value;
++    for (auto byte: payload) sum += byte;
++    if (level + 1 < depth) node = node.getNext();
++  }
++  return sum;
++}
++void fill(AccessNode::Builder node, uint16_t depth, uint64_t sequence) {
++  for (uint16_t level = 0; level < depth; ++level) {
++    node.setValue(sequence + level);
++    node.setPayload(kj::arrayPtr(PAYLOAD.data(), PAYLOAD.size()));
++    if (level + 1 < depth) node = node.initNext();
++  }
++}
++class Service final: public AccessService::Server {
++  kj::Maybe<AccessService::Client> next;
++  uint16_t hops;
++public:
++  Service(kj::Maybe<AccessService::Client> next, uint16_t hops): next(kj::mv(next)), hops(hops) {}
++  kj::Promise<void> describe(DescribeContext context) override {
++    context.getResults().setHops(hops);
++    return kj::READY_NOW;
++  }
++  kj::Promise<void> access(AccessContext context) override {
++    auto params = context.getParams();
++    auto root = params.getRoot();
++    auto depth = params.getDepth();
++    auto sum = traverse(root, depth, params.getSequence());
++    KJ_IF_SOME(client, next) {
++      auto request = client.accessRequest();
++      request.setSequence(params.getSequence());
++      request.setDepth(depth);
++      request.setRoot(root);
++      return request.send().then([context = kj::mv(context), depth, sum](auto response) mutable {
++        auto results = context.getResults();
++        results.setChecksum(sum + response.getChecksum());
++        results.setVisits(depth + response.getVisits());
++        results.setRoot(response.getRoot());
++      });
++    }
++    auto results = context.getResults();
++    results.setChecksum(sum);
++    results.setVisits(depth);
++    results.setRoot(root);
++    return kj::READY_NOW;
++  }
++};
++struct Connection {
++  kj::Own<kj::AsyncIoStream> stream;
++  capnp::TwoPartyClient rpc;
++  AccessService::Client client;
++  explicit Connection(kj::Own<kj::AsyncIoStream> stream)
++    : stream(kj::mv(stream)), rpc(*this->stream), client(rpc.bootstrap().castAs<AccessService>()) {}
++};
++struct Case { const char* name; uint16_t depth, width, connections, hops; };
++constexpr Case CASES[] = {
++  {"deep-8", 8, 1, 1, 1},
++  {"deep-32", 32, 1, 1, 1},
++  {"concurrent-32", 1, 32, 1, 1},
++  {"deep-32-concurrent-32", 32, 32, 1, 1},
++  {"services-4-deep-16", 16, 1, 1, 4},
++  {"services-4-deep-16-concurrent-32", 16, 32, 1, 4},
++  {"services-4-deep-16-clients-8", 16, 32, 8, 4},
++  {"services-8-deep-16-clients-8", 16, 32, 8, 8}
++};
++kj::Promise<void> access(AccessService::Client& client, const Case& c, uint64_t sequence) {
++  auto request = client.accessRequest();
++  request.setSequence(sequence);
++  request.setDepth(c.depth);
++  fill(request.initRoot(), c.depth, sequence);
++  return request.send().then([&c, sequence](auto response) {
++    auto sum = traverse(response.getRoot(), c.depth, sequence);
++    KJ_REQUIRE(response.getChecksum() == sum * c.hops);
++    KJ_REQUIRE(response.getVisits() == uint32_t(c.depth) * c.hops);
++  });
++}
++}
++
++int runTopologies(int argc, char** argv) {
++  auto io = kj::setupAsyncIo();
++  auto connect = [&](const char* address) {
++    auto parsed = io.provider->getNetwork().parseAddress(address).wait(io.waitScope);
++    return kj::heap<Connection>(io.provider->getTimer().timeoutAfter(
++        10 * kj::SECONDS, parsed->connect()).wait(io.waitScope));
++  };
++  if ((argc == 3 || argc == 4) && std::string(argv[1]) == "topology-server") {
++    kj::Own<Connection> downstream;
++    kj::Maybe<AccessService::Client> next;
++    uint16_t hops = 1;
++    if (argc == 4) {
++      downstream = connect(argv[3]);
++      auto response = io.provider->getTimer().timeoutAfter(
++          10 * kj::SECONDS, downstream->client.describeRequest().send()).wait(io.waitScope);
++      KJ_REQUIRE(response.getHops() >= 1 && response.getHops() < 8);
++      hops += response.getHops();
++      next = downstream->client;
++    }
++    auto address = io.provider->getNetwork().parseAddress(argv[2]).wait(io.waitScope);
++    auto listener = address->listen();
++    capnp::TwoPartyServer server(kj::heap<Service>(kj::mv(next), hops));
++    std::cout << "{\"port\":" << listener->getPort() << ",\"hops\":" << hops << "}" << std::endl;
++    server.listen(*listener).wait(io.waitScope);
++    return 0;
++  }
++  KJ_REQUIRE(argc == 6 && std::string(argv[1]) == "topology-measure");
++  const Case* selected = nullptr;
++  for (auto& c: CASES) if (c.name == std::string(argv[3])) selected = &c;
++  KJ_REQUIRE(selected != nullptr, "unknown topology");
++  const auto& c = *selected;
++  auto warmup = std::stoull(argv[4]);
++  auto iterations = std::stoull(argv[5]);
++  KJ_REQUIRE(warmup <= 100000 && iterations > 0 && iterations <= 100000);
++  std::vector<kj::Own<Connection>> clients;
++  for (uint16_t n = 0; n < c.connections; ++n) {
++    auto connection = connect(argv[2]);
++    auto response = io.provider->getTimer().timeoutAfter(
++        10 * kj::SECONDS, connection->client.describeRequest().send()).wait(io.waitScope);
++    KJ_REQUIRE(response.getHops() == c.hops, "wrong service topology");
++    clients.push_back(kj::mv(connection));
++  }
++  using Clock = std::chrono::steady_clock;
++  Clock::time_point start;
++  std::vector<uint64_t> samples;
++  samples.reserve(iterations);
++  for (uint64_t sequence = 0; sequence < warmup + iterations; ++sequence) {
++    if (sequence == warmup) start = Clock::now();
++    auto before = Clock::now();
++    {
++      auto calls = kj::heapArrayBuilder<kj::Promise<void>>(c.width);
++      for (uint16_t lane = 0; lane < c.width; ++lane) {
++        calls.add(access(clients[lane % c.connections]->client, c, sequence * c.width + lane));
++      }
++      io.provider->getTimer().timeoutAfter(10 * kj::SECONDS, kj::joinPromises(calls.finish())).wait(io.waitScope);
++    }
++    if (sequence >= warmup) samples.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - before).count());
++  }
++  auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - start).count();
++  std::cout << "{\"topology_version\":1,\"implementation\":\"capnp-cpp\",\"case\":{\"name\":\""
++      << c.name << "\",\"depth\":" << c.depth << ",\"width\":" << c.width
++      << ",\"connections\":" << c.connections << ",\"hops\":" << c.hops
++      << ",\"payload_bytes_per_node\":32},\"warmup\":" << warmup << ",\"iterations\":"
++      << iterations << ",\"elapsed_ns\":" << elapsed << ",\"latency_ns\":[";
++  for (size_t n = 0; n < samples.size(); ++n) { if (n) std::cout << ','; std::cout << samples[n]; }
++  std::cout << "]}" << std::endl;
++  return 0;
++}
+diff --git a/crates/capntproto-core/Cargo.toml b/crates/capntproto-core/Cargo.toml
+index 36ed4e5..2f9d3cb 100644
+--- a/crates/capntproto-core/Cargo.toml
++++ b/crates/capntproto-core/Cargo.toml
+@@ -55,6 +55,10 @@ path = "tests/canonicalize.rs"
+ name = "double_far_oob"
+ path = "tests/double_far_oob.rs"
+ 
++[[test]]
++name = "deep_copy_bounds"
++path = "tests/deep_copy_bounds.rs"
++
+ [[test]]
+ name = "far_pointer_oob"
+ path = "tests/far_pointer_oob.rs"
+diff --git a/crates/capntproto-core/src/private/layout.rs b/crates/capntproto-core/src/private/layout.rs
+index e0c93bb..1e332e4 100644
+--- a/crates/capntproto-core/src/private/layout.rs
++++ b/crates/capntproto-core/src/private/layout.rs
+@@ -2479,8 +2479,22 @@ mod wire_helpers {
+             });
+         }
+ 
+-        let (mut ptr, src_ptr, src_segment_id) =
+-            follow_fars(src.arena, src.pointer, src.segment_id)?;
++        // Near pointers need one validation of the relative target and its
++        // complete extent. Avoid resolving the segment twice for every copied
++        // child; far pointers still validate their landing pads separately.
++        // SAFETY: PointerReader's pointer word is live and already validated by
++        // its arena; inspecting the tag does not dereference the target.
++        let near = unsafe {
++            matches!(
++                (*src.pointer).kind(),
++                WirePointerKind::Struct | WirePointerKind::List
++            )
++        };
++        let (mut ptr, src_ptr, src_segment_id) = if near {
++            (ptr::null(), src.pointer, src.segment_id)
++        } else {
++            follow_fars(src.arena, src.pointer, src.segment_id)?
++        };
+ 
+         match (*src_ptr).kind() {
+             WirePointerKind::Struct => {
+@@ -2490,13 +2504,27 @@ mod wire_helpers {
+                     ));
+                 }
+ 
+-                bounds_check(
+-                    src.arena,
+-                    src_segment_id,
+-                    ptr,
+-                    (*src_ptr).struct_word_size() as usize,
+-                    WirePointerKind::Struct,
+-                )?;
++                if near {
++                    // SAFETY: src_ptr belongs to this live source segment.
++                    // The arena validates and charges the complete struct
++                    // before any target pointer is formed or read.
++                    ptr = unsafe {
++                        src.arena.check_offset_and_read(
++                            src_segment_id,
++                            src_ptr.cast(),
++                            (*src_ptr).offset_in_words(),
++                            (*src_ptr).struct_word_size() as usize,
++                        )?
++                    };
++                } else {
++                    bounds_check(
++                        src.arena,
++                        src_segment_id,
++                        ptr,
++                        (*src_ptr).struct_word_size() as usize,
++                        WirePointerKind::Struct,
++                    )?;
++                }
+ 
+                 set_struct_pointer(
+                     dst_arena,
+@@ -2534,13 +2562,27 @@ mod wire_helpers {
+                     // `read_list_pointer`): `ptr` may be out-of-bounds or
+                     // one-past-the-end, so advancing with `.add()` first would
+                     // be undefined behavior.
+-                    bounds_check(
+-                        src.arena,
+-                        src_segment_id,
+-                        ptr,
+-                        word_count as usize + 1,
+-                        WirePointerKind::List,
+-                    )?;
++                    if near {
++                        // SAFETY: the validated source word is in this segment.
++                        // Include the inline tag in the checked extent before
++                        // advancing ptr or reading any tag fields.
++                        ptr = unsafe {
++                            src.arena.check_offset_and_read(
++                                src_segment_id,
++                                src_ptr.cast(),
++                                (*src_ptr).offset_in_words(),
++                                word_count as usize + 1,
++                            )?
++                        };
++                    } else {
++                        bounds_check(
++                            src.arena,
++                            src_segment_id,
++                            ptr,
++                            word_count as usize + 1,
++                            WirePointerKind::List,
++                        )?;
++                    }
+ 
+                     let tag: *const WirePointer = ptr as *const _;
+                     ptr = ptr.add(BYTES_PER_WORD);
+@@ -2597,13 +2639,27 @@ mod wire_helpers {
+                     let word_count =
+                         round_bits_up_to_words(u64::from(element_count) * u64::from(step));
+ 
+-                    bounds_check(
+-                        src.arena,
+-                        src_segment_id,
+-                        ptr,
+-                        word_count as usize,
+-                        WirePointerKind::List,
+-                    )?;
++                    if near {
++                        // SAFETY: the source pointer word belongs to this
++                        // segment. Check and charge the rounded full list,
++                        // including zero-word and negative-offset targets.
++                        ptr = unsafe {
++                            src.arena.check_offset_and_read(
++                                src_segment_id,
++                                src_ptr.cast(),
++                                (*src_ptr).offset_in_words(),
++                                word_count as usize,
++                            )?
++                        };
++                    } else {
++                        bounds_check(
++                            src.arena,
++                            src_segment_id,
++                            ptr,
++                            word_count as usize,
++                            WirePointerKind::List,
++                        )?;
++                    }
+ 
+                     if element_size == Void {
+                         // Watch out for lists of void, which can claim to be arbitrarily large
+diff --git a/crates/capntproto-core/tests/deep_copy_bounds.rs b/crates/capntproto-core/tests/deep_copy_bounds.rs
+new file mode 100644
+index 0000000..33c3bcb
+--- /dev/null
++++ b/crates/capntproto-core/tests/deep_copy_bounds.rs
+@@ -0,0 +1,85 @@
++use capnp::{any_pointer, message, ErrorKind, Word};
++
++fn copy(words: &[Word], limit: usize) -> capnp::Result<()> {
++    let segments = [Word::words_to_bytes(words)];
++    let source = message::Reader::new(
++        message::SegmentArray::new(&segments),
++        message::ReaderOptions {
++            traversal_limit_in_words: Some(limit),
++            ..Default::default()
++        },
++    );
++    let root = source.get_root::<any_pointer::Reader<'_>>()?;
++    let mut destination = message::Builder::new_default();
++    destination.set_root(root)
++}
++
++#[test]
++fn copying_nested_structs_and_lists_charges_every_extent_once() {
++    let cases: &[(&[Word], usize)] = &[
++        (
++            &[
++                capnp::word(1, 0, 0, 0, 66, 0, 0, 0),
++                capnp::word(1, 2, 3, 4, 5, 6, 7, 8),
++            ],
++            2,
++        ),
++        (
++            &[
++                capnp::word(0, 0, 0, 0, 1, 0, 1, 0),
++                capnp::word(7, 0, 0, 0, 0, 0, 0, 0),
++                capnp::word(1, 0, 0, 0, 66, 0, 0, 0),
++                capnp::word(1, 2, 3, 4, 5, 6, 7, 8),
++            ],
++            4,
++        ),
++        (
++            &[
++                capnp::word(1, 0, 0, 0, 14, 0, 0, 0),
++                capnp::word(1, 0, 0, 0, 66, 0, 0, 0),
++                capnp::word(1, 2, 3, 4, 5, 6, 7, 8),
++            ],
++            3,
++        ),
++        (
++            &[
++                capnp::word(1, 0, 0, 0, 23, 0, 0, 0),
++                capnp::word(8, 0, 0, 0, 1, 0, 0, 0),
++                capnp::word(7, 0, 0, 0, 0, 0, 0, 0),
++                capnp::word(9, 0, 0, 0, 0, 0, 0, 0),
++            ],
++            4,
++        ),
++    ];
++    for (words, budget) in cases {
++        copy(words, *budget).unwrap();
++        assert_eq!(
++            copy(words, budget - 1).unwrap_err().kind,
++            ErrorKind::ReadLimitExceeded
++        );
++    }
++    copy(&[capnp::word(1, 0, 0, 0, 2, 0, 0, 0)], 1).unwrap(); // empty list at segment end
++    copy(&[capnp::word(252, 255, 255, 255, 0, 0, 0, 0)], 1).unwrap(); // empty struct at negative offset
++}
++
++#[test]
++fn copying_rejects_escaped_targets_and_missing_inline_tags_before_reading_them() {
++    for offset in [i32::MIN >> 2, -2, 1, i32::MAX >> 2] {
++        for (kind, upper) in [(0u32, 1u32), (1, 66), (1, 7)] {
++            let tag = u64::from(((offset as u32) << 2) | kind) | (u64::from(upper) << 32);
++            let mut words = [capnp::word(0, 0, 0, 0, 0, 0, 0, 0)];
++            Word::words_to_bytes_mut(&mut words).copy_from_slice(&tag.to_le_bytes());
++            assert_eq!(
++                copy(&words, 1024).unwrap_err().kind,
++                ErrorKind::MessageContainsOutOfBoundsPointer
++            );
++        }
++    }
++    // A zero-word inline list still needs a tag; one-past-end is invalid.
++    assert_eq!(
++        copy(&[capnp::word(1, 0, 0, 0, 7, 0, 0, 0)], 1024)
++            .unwrap_err()
++            .kind,
++        ErrorKind::MessageContainsOutOfBoundsPointer
++    );
++}
+diff --git a/crates/capntproto-futures/src/buffered_read.rs b/crates/capntproto-futures/src/buffered_read.rs
+index b8ff161..d1de1ad 100644
+--- a/crates/capntproto-futures/src/buffered_read.rs
++++ b/crates/capntproto-futures/src/buffered_read.rs
+@@ -431,6 +431,7 @@ pub struct BufferedRead<R> {
+     borrowed: bool,
+     streaming: Option<Streaming>,
+     read_ahead: fn(&R) -> bool,
++    read_hint: fn(&mut R, usize) -> std::io::Result<()>,
+ }
+ impl<R: AsyncRead + Unpin> BufferedRead<R> {
+     /// Creates a reader with a 64 KiB receive buffer.
+@@ -474,6 +475,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
+             borrowed: false,
+             streaming: None,
+             read_ahead: |_| true,
++            read_hint: |_, _| Ok(()),
+         })
+     }
+ 
+@@ -485,6 +487,15 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
+         self.read_ahead = policy;
+     }
+ 
++    /// Advise the transport how many bytes an exact body read still needs.
++    /// Ordinary buffered/streaming reads and completed frames use one. A
++    /// canceled read keeps the hint and its partial frame until resumed; the
++    /// transport must restore any external socket state when it is dropped.
++    /// The callback must never require more than the supplied number of bytes.
++    pub fn set_read_hint(&mut self, hint: fn(&mut R, usize) -> std::io::Result<()>) {
++        self.read_hint = hint;
++    }
++
+     /// The underlying input, including transport-specific ancillary state.
+     pub fn get_ref(&self) -> &R {
+         &self.input
+@@ -922,6 +933,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
+         loop {
+             if let Some(spill) = &mut self.spill {
+                 if spill.filled < spill.frame.bytes {
++                    (self.read_hint)(&mut self.input, spill.frame.bytes - spill.filled)?;
+                     let count = ready!(Pin::new(&mut self.input).poll_read(
+                         cx,
+                         &mut Word::words_to_bytes_mut(&mut spill.storage)
+@@ -933,6 +945,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
+                     spill.filled += count;
+                     continue;
+                 }
++                (self.read_hint)(&mut self.input, 1)?;
+                 return Poll::Ready(Ok(true));
+             }
+             if self.frame.is_none() {
+@@ -1019,6 +1032,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
+                 };
+                 read_end = read_end.min(self.begin + header);
+             }
++            (self.read_hint)(&mut self.input, 1)?;
+             let count =
+                 ready!(Pin::new(&mut self.input).poll_read(cx, &mut buffer[self.end..read_end]))?;
+             if count == 0 {
+@@ -1037,6 +1051,89 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
+ mod tests {
+     use super::*;
+ 
++    struct Hinted {
++        reader: Fragmented,
++        frame_bytes: usize,
++        hints: Vec<usize>,
++        reject_reset: bool,
++    }
++
++    impl AsyncRead for Hinted {
++        fn poll_read(
++            mut self: Pin<&mut Self>,
++            cx: &mut Context<'_>,
++            bytes: &mut [u8],
++        ) -> Poll<std::io::Result<usize>> {
++            Pin::new(&mut self.reader).poll_read(cx, bytes)
++        }
++    }
++
++    impl Hinted {
++        fn hint(&mut self, bytes: usize) -> std::io::Result<()> {
++            if bytes > 1 {
++                assert_eq!(
++                    bytes,
++                    self.frame_bytes - self.reader.input.position() as usize
++                );
++            } else if self.reject_reset && self.hints.iter().any(|n| *n > 1) {
++                return Err(std::io::Error::other("readiness reset failed"));
++            }
++            self.hints.push(bytes);
++            Ok(())
++        }
++    }
++
++    #[test]
++    fn exact_read_hints_track_partial_progress_and_reset_before_exposing_a_frame() {
++        for reject_reset in [false, true] {
++            let mut message = capnp::message::Builder::new_default();
++            message.initn_root::<capnp::data::Builder>(4096).fill(0x91);
++            let frame = capnp::serialize::write_message_to_words(&message);
++            let mut input = BufferedRead::with_buffer_size(
++                Hinted {
++                    reader: Fragmented {
++                        input: futures::io::Cursor::new(frame.clone()),
++                        chunk: 127,
++                        pending: false,
++                    },
++                    frame_bytes: frame.len(),
++                    hints: Vec::new(),
++                    reject_reset,
++                },
++                Default::default(),
++                MIN_BUFFER_WORDS,
++            )
++            .unwrap();
++            input.set_read_hint(Hinted::hint);
++            let mut cx = Context::from_waker(futures::task::noop_waker_ref());
++            // Each Pending releases the preparation future; its next poll must
++            // resume both the exact remaining count and the partial frame.
++            loop {
++                match input.poll_borrowed_frame(&mut cx) {
++                    Poll::Pending => continue,
++                    Poll::Ready(Ok(Some(bytes))) => {
++                        assert!(!reject_reset);
++                        assert_eq!(bytes, frame);
++                        assert_eq!(input.get_ref().hints.last(), Some(&1));
++                        input.finish_borrowed_frame();
++                        break;
++                    }
++                    Poll::Ready(Err(error)) => {
++                        assert!(reject_reset);
++                        assert!(error.to_string().contains("readiness reset failed"));
++                        assert!(matches!(
++                            input.poll_borrowed_frame(&mut cx),
++                            Poll::Ready(Err(_))
++                        ));
++                        break;
++                    }
++                    _ => panic!("expected one complete frame"),
++                }
++            }
++            assert!(input.get_ref().hints.iter().any(|n| *n > 1));
++        }
++    }
++
+     #[test]
+     fn owning_spills_reuse_only_released_storage_and_limit_each_read() {
+         let frames: Vec<_> = [(6144, 0x91), (4096, 0x32), (3000, 0x73), (4096, 0x54)]
+diff --git a/crates/capntproto-futures/src/serialize.rs b/crates/capntproto-futures/src/serialize.rs
+index a20ac0d..1e5b3e4 100644
+--- a/crates/capntproto-futures/src/serialize.rs
++++ b/crates/capntproto-futures/src/serialize.rs
+@@ -27,9 +27,10 @@ use capnp::serialize::{BufferSegments, OwnedSegments, SegmentLengthsBuilder};
+ use capnp::{message, Error, OutputSegments, Result};
+ use futures_util::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+ 
+-// Linux supports at least 1024 iovecs. Keep stack metadata bounded to 64 there;
+-// other targets retain the POSIX minimum of 16 and the scalar fallback.
+-const MAX_IO_SLICES: usize = if cfg!(target_os = "linux") { 64 } else { 16 };
++// Use Linux's writev limit and the portable minimum elsewhere, independently
++// of stack-storage policy. A stack limit must not split a heap-backed batch.
++const MAX_IO_SLICES: usize = if cfg!(target_os = "linux") { 1024 } else { 16 };
++const STACK_IO_SLICES: usize = 16;
+ 
+ mod leased;
+ pub use leased::{poll_queued_message, write_queued_message, SendError};
+@@ -443,21 +444,26 @@ where
+     {
+         // Retained frames already include their segment tables. Rebuilding a
+         // table for each frame both allocates and spends an extra iovec per
+-        // message. Keep bounded scatter/gather metadata on the stack instead.
+-        let mut messages = messages;
+-        while messages.len() != 0 {
+-            let mut buffers = [std::io::IoSlice::new(&[]); MAX_IO_SLICES];
++        // message. Small batches keep metadata on the stack; larger batches
++        // use one allocation and the same platform limit as segmented frames.
++        if messages.len() <= STACK_IO_SLICES {
++            let mut buffers = [std::io::IoSlice::new(&[]); STACK_IO_SLICES];
+             let mut count = 0;
+-            for message in messages.by_ref().take(MAX_IO_SLICES) {
++            for message in messages {
+                 let bytes = message.framed_bytes().expect("complete frame");
+                 if !bytes.is_empty() {
+                     buffers[count] = std::io::IoSlice::new(bytes);
+                     count += 1;
+                 }
+             }
+-            write_buffers(&mut writer, &mut buffers[..count]).await?;
++            return write_buffers(&mut writer, &mut buffers[..count]).await;
+         }
+-        return Ok(());
++        let mut buffers = Vec::with_capacity(messages.len());
++        buffers.extend(messages.filter_map(|message| {
++            let bytes = message.framed_bytes().expect("complete frame");
++            (!bytes.is_empty()).then(|| std::io::IoSlice::new(bytes))
++        }));
++        return write_buffers(&mut writer, &mut buffers).await;
+     }
+     if messages.len() <= 2 {
+         let mut small = messages.clone();
+@@ -767,7 +773,7 @@ pub mod test {
+                 for index in 0..length {
+                     let mut message = capnp::message::Builder::new_default();
+                     message
+-                        .initn_root::<capnp::data::Builder>((index * 8) as u32)
++                        .initn_root::<capnp::data::Builder>((index % 9 * 8) as u32)
+                         .fill(index as u8);
+                     frames.push(Frame(capnp::serialize::write_message_to_words(&message)));
+                 }
+@@ -1201,6 +1207,66 @@ pub mod test {
+         });
+     }
+ 
++    #[test]
++    fn segmented_batches_use_the_platform_iovec_limit() {
++        #[derive(Default)]
++        struct Vectored {
++            bytes: Vec<u8>,
++            calls: Vec<usize>,
++        }
++        impl AsyncWrite for Vectored {
++            fn poll_write(
++                self: Pin<&mut Self>,
++                _: &mut Context<'_>,
++                _: &[u8],
++            ) -> Poll<io::Result<usize>> {
++                panic!("batch must use vectored IO")
++            }
++            fn poll_write_vectored(
++                mut self: Pin<&mut Self>,
++                _: &mut Context<'_>,
++                buffers: &[io::IoSlice<'_>],
++            ) -> Poll<io::Result<usize>> {
++                assert!(buffers.len() <= super::MAX_IO_SLICES);
++                self.calls.push(buffers.len());
++                let count = buffers.iter().map(|b| b.len()).sum();
++                for buffer in buffers {
++                    self.bytes.extend_from_slice(buffer);
++                }
++                Poll::Ready(Ok(count))
++            }
++            fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
++                Poll::Ready(Ok(()))
++            }
++            fn poll_close(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
++                Poll::Ready(Ok(()))
++            }
++        }
++        futures::executor::block_on(async {
++            for count in [
++                33,
++                65,
++                super::MAX_IO_SLICES / 2,
++                super::MAX_IO_SLICES / 2 + 1,
++            ] {
++                let messages: Vec<_> = (0..count)
++                    .map(|i| vec![vec![capnp::word(i as u8, 1, 2, 3, 4, 5, 6, 7)]])
++                    .collect();
++                let mut expected = Vec::new();
++                for message in &messages {
++                    write_message(&mut expected, message).await.unwrap();
++                }
++                let mut output = Vectored::default();
++                super::write_messages(&mut output, &messages).await.unwrap();
++                assert_eq!(output.bytes, expected);
++                assert_eq!(
++                    output.calls.len(),
++                    (count * 2).div_ceil(super::MAX_IO_SLICES)
++                );
++            }
++        });
++    }
++
+     #[test]
+     fn batched_writer_reports_transport_failure_after_a_partial_frame() {
+         struct FailingWrite {
+diff --git a/crates/capntproto-rpc/src/lib.rs b/crates/capntproto-rpc/src/lib.rs
+index 31f0ced..83e1b34 100644
+--- a/crates/capntproto-rpc/src/lib.rs
++++ b/crates/capntproto-rpc/src/lib.rs
+@@ -834,6 +834,14 @@ pub trait FlowController {
+ /// objects.  Typically one Cap'n Proto process (in the Unix sense) is one vat.
+ #[cfg(feature = "std")]
+ pub trait VatNetwork<VatId> {
++    /// Schedule a deferred network turn. The callback must arrange a later
++    /// wake of this context without polling the RPC system reentrantly. Hosts
++    /// may use their executor's yield queue so application tasks and IO can run
++    /// before output is batched. The default uses an ordinary wake.
++    fn task_yield(&self) -> fn(&mut Context<'_>) {
++        |cx| cx.waker().wake_by_ref()
++    }
++
+     fn join_network(&self) -> Option<Rc<dyn multiparty::JoinNetwork<VatId>>> {
+         None
+     }
+@@ -964,7 +972,8 @@ impl<VatId> RpcSystem<VatId> {
+         mut network: Box<dyn crate::VatNetwork<VatId>>,
+         bootstrap: Bootstrap<VatId>,
+     ) -> Self {
+-        let (mut handle, tasks) = TaskSet::new(Box::new(SystemTaskReaper));
++        let (mut handle, mut tasks) = TaskSet::new(Box::new(SystemTaskReaper));
++        tasks.set_defer(network.task_yield());
+ 
+         system::drive_network(&mut *network, &mut handle);
+ 
+diff --git a/crates/capntproto-rpc/src/rpc.rs b/crates/capntproto-rpc/src/rpc.rs
+index 0ab5b65..00f9f35 100644
+--- a/crates/capntproto-rpc/src/rpc.rs
++++ b/crates/capntproto-rpc/src/rpc.rs
+@@ -777,7 +777,7 @@ impl<VatId> ConnectionState<VatId> {
+             .collect::<Vec<_>>();
+         for import in imports {
+             if let Some(promise) = import.upgrade() {
+-                promise.borrow_mut().resolve(Err(network_error.clone()));
++                PromiseClient::resolve(&promise, Err(network_error.clone()));
+             }
+         }
+         let mut embargoes = mem::replace(&mut *self.embargoes.borrow_mut(), new_embargoes());
+@@ -864,15 +864,12 @@ impl<VatId> ConnectionState<VatId> {
+     pub(crate) fn bootstrap(state: &Rc<Self>) -> Box<dyn ClientHook> {
+         let question_id = state.questions.borrow_mut().push(Question::new());
+ 
+-        let (fulfiller, promise) = oneshot::channel();
+-        let promise = promise.map_err(crate::canceled_to_error);
+-        let promise = promise.and_then(|response_promise| response_promise);
++        let (fulfiller, _response) = oneshot::channel();
+         let question_ref = Rc::new(RefCell::new(QuestionRef::new(
+             state.clone(),
+             question_id,
+             fulfiller,
+         )));
+-        let promise = promise.attach(question_ref.clone());
+         match state.questions.borrow_mut().find(question_id) {
+             Some(ref mut q) => {
+                 q.self_ref = Some(Rc::downgrade(&question_ref));
+@@ -895,7 +892,10 @@ impl<VatId> ConnectionState<VatId> {
+             Err(_) => panic!(),
+         }
+ 
+-        let pipeline = Pipeline::new(state, question_ref, Some(Promise::from_future(promise)));
++        // Bootstrap has no application response future. Settle its capability
++        // directly on Return, just like an ordinary result pipeline, instead
++        // of retaining the question through a second asynchronous promise chain.
++        let pipeline = Pipeline::direct(state, question_ref);
+         pipeline.get_pipelined_cap_move(Vec::new())
+     }
+ 
+@@ -1772,12 +1772,12 @@ where
+                     // the old path has reached the adopted capability. Standard
+                     // senderLoopback is not a fence for a third-party target.
+                     if let Some(fenced) = answer_adoption::fence(&connection, old.clone(), direct) {
+-                        client.borrow_mut().replace_resolved(fenced);
++                        PromiseClient::replace_resolved(&client, fenced);
+                     } else {
+-                        client.borrow_mut().resolve(Ok(old));
++                        PromiseClient::resolve(&client, Ok(old));
+                     }
+                 } else {
+-                    client.borrow_mut().resolve(Ok(direct));
++                    PromiseClient::resolve(&client, Ok(direct));
+                 }
+             }
+         }
+@@ -1802,7 +1802,7 @@ where
+                 Err(e) => Err(e),
+             };
+             if let Some(c) = c.upgrade() {
+-                c.borrow_mut().resolve(resolved);
++                PromiseClient::resolve(&c, resolved);
+             }
+         }
+ 
+@@ -3052,7 +3052,18 @@ impl<VatId> PromiseClient<VatId> {
+         }))
+     }
+ 
+-    fn resolve(&mut self, replacement: Result<Box<dyn ClientHook>, Error>) {
++    fn resolve(client: &Rc<RefCell<Self>>, replacement: Result<Box<dyn ClientHook>, Error>) {
++        let retired = client.borrow_mut().resolve_inner(replacement);
++        // C++ retires the old route during resolution. Release Rust's mutable
++        // borrow first: dropping the route may send Finish or Release and
++        // reenter the protocol through a transport or capability destructor.
++        drop(retired);
++    }
++
++    fn resolve_inner(
++        &mut self,
++        replacement: Result<Box<dyn ClientHook>, Error>,
++    ) -> Rc<dyn ClientHook> {
+         let (mut replacement, is_error) = match replacement {
+             Ok(v) => (v, false),
+             Err(e) => (broken::new_cap(e), true),
+@@ -3140,26 +3151,26 @@ impl<VatId> PromiseClient<VatId> {
+             }
+         }
+ 
+-        self.replace_resolved(replacement);
++        self.replace_resolved_inner(replacement)
+     }
+ 
+     // Used only after the ordinary embargo above or an authenticated adoption
+     // fence has installed its own queue. Never infer ordering from a new brand.
+-    fn replace_resolved(&mut self, replacement: Box<dyn ClientHook>) {
++    fn replace_resolved(client: &Rc<RefCell<Self>>, replacement: Box<dyn ClientHook>) {
++        let retired = client.borrow_mut().replace_resolved_inner(replacement);
++        drop(retired);
++    }
++
++    fn replace_resolved_inner(&mut self, replacement: Box<dyn ClientHook>) -> Rc<dyn ClientHook> {
+         let replacement: Rc<dyn ClientHook> = Rc::from(replacement);
+-        let connection_state = self.connection_state.clone();
+         for ((), waiter) in self.resolution_waiters.drain() {
+             let _ = waiter.send(replacement.add_ref());
+         }
+ 
+         let old_cap = mem::replace(&mut self.cap, replacement);
+-        connection_state.add_task(async move {
+-            drop(old_cap);
+-            Ok(())
+-        });
+-
+         self.is_resolved = true;
+         self.pipeline_owner.take();
++        old_cap
+     }
+ }
+ 
+diff --git a/crates/capntproto-rpc/src/rpc/dispatch.rs b/crates/capntproto-rpc/src/rpc/dispatch.rs
+index 1de1bea..5ac1119 100644
+--- a/crates/capntproto-rpc/src/rpc/dispatch.rs
++++ b/crates/capntproto-rpc/src/rpc/dispatch.rs
+@@ -80,7 +80,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
+         connection_state: &Rc<Self>,
+         bootstrap: bootstrap::Reader,
+     ) -> capnp::Result<()> {
+-        use ::capnp::traits::ImbueMut;
++        use ::capnp::traits::{HasStructSize, ImbueMut};
+ 
+         let answer_id = AnswerId::from_wire(bootstrap.get_question_id());
+         answer_adoption::ordinary_id(answer_id)?;
+@@ -112,7 +112,14 @@ impl<VatId: 'static> ConnectionState<VatId> {
+             connection_state.bootstrap.for_peer(&peer)
+         };
+         let mut fds = OutgoingFds::default();
+-        let mut response = connection_state.new_outgoing_message(10)?;
++        // Match C++ handleBootstrap's hint. Ten words split a normal bootstrap
++        // capability across two segments, adding a table entry and far pointer.
++        let words = 1
++            + message::Builder::STRUCT_SIZE.total()
++            + crate::rpc_capnp::return_::Builder::STRUCT_SIZE.total()
++            + cap_descriptor::Builder::STRUCT_SIZE.total()
++            + 32;
++        let mut response = connection_state.new_outgoing_message(words)?;
+         let mut ret = response
+             .get_body()?
+             .init_as::<message::Builder>()
+@@ -242,7 +249,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
+             }
+         };
+         if let Some(promise_client) = pending.and_then(|weak| weak.upgrade()) {
+-            promise_client.borrow_mut().resolve(replacement_or_error);
++            PromiseClient::resolve(&promise_client, replacement_or_error);
+         }
+         Ok(())
+     }
+diff --git a/crates/capntproto-rpc/src/rpc/references_tests.rs b/crates/capntproto-rpc/src/rpc/references_tests.rs
+index 37a6fb1..502e2d9 100644
+--- a/crates/capntproto-rpc/src/rpc/references_tests.rs
++++ b/crates/capntproto-rpc/src/rpc/references_tests.rs
+@@ -527,6 +527,70 @@ fn synchronous_transport_reply_observes_the_installed_question_owner() {
+     assert_eq!(fixture.state.snapshot().outgoing_calls, 0);
+ }
+ 
++#[test]
++fn bootstrap_pipeline_settles_directly_on_return() {
++    struct Incoming(capnp::message::Builder<capnp::message::HeapAllocator>);
++    impl crate::IncomingMessage for Incoming {
++        fn size_in_words(&self) -> usize {
++            self.0.size_in_words()
++        }
++        fn get_body(&self) -> capnp::Result<any_pointer::Reader<'_>> {
++            self.0.get_root_as_reader()
++        }
++    }
++    for rejected in [false, true] {
++        let mut fixture = Fixture::new();
++        let expected = local_cap();
++        let export = fixture.export(&*expected);
++        let mut message = capnp::message::Builder::new_default();
++        let mut returned = message.init_root::<message::Builder>().init_return();
++        returned.set_answer_id(0);
++        returned.set_no_finish_needed(false);
++        let mut caps = Vec::new();
++        if rejected {
++            returned.init_exception().set_reason("bootstrap rejected");
++        } else {
++            let mut payload = returned.init_results();
++            payload
++                .reborrow()
++                .init_cap_table(1)
++                .get(0)
++                .set_receiver_hosted(export.to_wire());
++            let mut content = payload.get_content();
++            capnp::traits::ImbueMut::imbue_mut(&mut content, &mut caps);
++            content.set_as_capability(expected.add_ref());
++        }
++        ConnectionState::handle_message(
++            &Rc::downgrade(&fixture.state),
++            Box::new(Incoming(message)),
++        )
++        .unwrap();
++        let resolved = fixture
++            ._bootstrap
++            .hook
++            .get_resolved()
++            .expect("settled without polling RPC tasks");
++        if rejected {
++            let error = resolved
++                .when_resolved()
++                .now_or_never()
++                .unwrap()
++                .unwrap_err();
++            assert!(error.extra.contains("bootstrap rejected"));
++        } else {
++            assert_eq!(resolved.get_ptr(), expected.get_ptr());
++        }
++        assert_eq!(
++            fixture.state.snapshot().questions,
++            0,
++            "the old bootstrap route retires before another task can send a call"
++        );
++        let messages = fixture.drain();
++        assert!(messages.iter().any(|m| matches!(m.get_root::<message::Reader>().unwrap().which(), Ok(message::Finish(finish)) if finish.as_ref().unwrap().get_question_id() == 0)));
++        fixture.state.release_export(export, 1).unwrap();
++    }
++}
++
+ #[test]
+ fn direct_pipeline_settles_before_application_poll_and_survives_response_cancellation() {
+     struct Incoming(capnp::message::Builder<capnp::message::HeapAllocator>);
+@@ -604,7 +668,7 @@ fn direct_pipeline_settles_before_application_poll_and_survives_response_cancell
+             drop((result, response));
+         }
+         drop((projected, caps));
+-        // Replacement retires the old ordered route through the task set.
++        // Drain transport publication after all response owners are released.
+         fixture.drain();
+         assert!(weak.upgrade().is_none());
+         fixture.state.release_export(export, 1).unwrap();
+@@ -709,7 +773,9 @@ fn driven_call_and_finish_release_protocol_borrows_before_polling_io() {
+     let connection = system.connections.borrow().states()[0].clone();
+     *state.borrow_mut() = Rc::downgrade(&connection);
+     let mut cx = Context::from_waker(std::task::Waker::noop());
+-    assert!(Pin::new(&mut system).poll(&mut cx).is_pending());
++    for _ in 0..32 {
++        assert!(Pin::new(&mut system).poll(&mut cx).is_pending());
++    }
+     let target = ConnectionState::import(&connection, ImportId::from_wire(7), false, None).unwrap();
+     bytes.borrow_mut().clear();
+     let before = writes.get();
+@@ -724,7 +790,14 @@ fn driven_call_and_finish_release_protocol_borrows_before_polling_io() {
+             },
+         )
+         .send();
+-    assert!(writes.get() > before, "Call must reach IO within send");
++    assert_eq!(writes.get(), before, "Call joins the deferred output batch");
++    for _ in 0..32 {
++        assert!(Pin::new(&mut system).poll(&mut cx).is_pending());
++    }
++    assert!(
++        writes.get() > before,
++        "Call must progress on the network task"
++    );
+     let call =
+         capnp::serialize::read_message(bytes.borrow().as_slice(), Default::default()).unwrap();
+     let message::Call(call) = call.get_root::<message::Reader>().unwrap().which().unwrap() else {
+@@ -745,7 +818,9 @@ fn driven_call_and_finish_release_protocol_borrows_before_polling_io() {
+         before,
+         "Finish waits for the next output batch"
+     );
+-    assert!(Pin::new(&mut system).poll(&mut cx).is_pending());
++    for _ in 0..32 {
++        assert!(Pin::new(&mut system).poll(&mut cx).is_pending());
++    }
+     assert!(
+         writes.get() > before,
+         "Finish must reach IO when the driver is polled"
+@@ -1206,7 +1281,7 @@ fn local_promise_resolution_waits_for_its_own_loopback_echo() {
+         let promise = PromiseClient::new(&fixture.state, fixture._bootstrap.hook.add_ref(), None);
+         let client = Client::from(promise.clone());
+         promise.borrow_mut().received_call = true;
+-        promise.borrow_mut().resolve(Ok(local_cap()));
++        PromiseClient::resolve(&promise, Ok(local_cap()));
+         assert_eq!(fixture.state.embargoes.borrow().len(), 1);
+         let mut waiter = client.when_resolved();
+         let waker = futures::task::noop_waker();
+diff --git a/crates/capntproto-rpc/src/system.rs b/crates/capntproto-rpc/src/system.rs
+index dd01a24..eb9e1bd 100644
+--- a/crates/capntproto-rpc/src/system.rs
++++ b/crates/capntproto-rpc/src/system.rs
+@@ -18,7 +18,7 @@ pub(crate) fn drive_network<V>(
+     network: &mut dyn crate::VatNetwork<V>,
+     tasks: &mut crate::task_set::TaskSetHandle<Error>,
+ ) {
+-    drive_network_with_completion(network, tasks, std::future::ready);
++    register_network(network, tasks, std::future::ready, true);
+ }
+ 
+ /// A network's writer can finish before a protocol task observes its close
+@@ -28,17 +28,31 @@ pub(crate) fn drive_network_with_completion<V, F: Future<Output = capnp::Result<
+     network: &mut dyn crate::VatNetwork<V>,
+     tasks: &mut crate::task_set::TaskSetHandle<Error>,
+     complete: impl FnOnce(capnp::Result<()>) -> F + 'static,
++) {
++    register_network(network, tasks, complete, false);
++}
++
++fn register_network<V, F: Future<Output = capnp::Result<()>> + 'static>(
++    network: &mut dyn crate::VatNetwork<V>,
++    tasks: &mut crate::task_set::TaskSetHandle<Error>,
++    complete: impl FnOnce(capnp::Result<()>) -> F + 'static,
++    write_last: bool,
+ ) {
+     let driving = network.drive_until_shutdown();
+     let mut handle = tasks.clone();
+-    tasks.add(async move {
++    let task = async move {
+         let result = match complete(driving.await).await {
+             Err(error) if error.kind == capnp::ErrorKind::Disconnected => Ok(()),
+             result => result,
+         };
+         handle.terminate(result);
+         Ok(())
+-    });
++    };
++    if write_last {
++        tasks.add_last(task);
++    } else {
++        tasks.add(task);
++    }
+ }
+ 
+ pub(crate) struct ConnectionRegistry<VatId: 'static> {
+diff --git a/crates/capntproto-rpc/src/task_set.rs b/crates/capntproto-rpc/src/task_set.rs
+index ac183b1..a5bdf66 100644
+--- a/crates/capntproto-rpc/src/task_set.rs
++++ b/crates/capntproto-rpc/src/task_set.rs
+@@ -21,7 +21,11 @@
+ use capntproto_rpc_engine::completion::shared as oneshot;
+ use futures::{Future, Stream};
+ use std::pin::Pin;
+-use std::task::{Context, Poll};
++use std::sync::{
++    atomic::{AtomicBool, Ordering},
++    Arc,
++};
++use std::task::{Context, Poll, Wake, Waker};
+ 
+ mod queue;
+ mod ready_set;
+@@ -29,11 +33,26 @@ use ready_set::ReadySet;
+ 
+ enum EnqueuedTask<E> {
+     Task(Pin<Box<dyn Future<Output = Result<(), E>>>>),
++    Last(Pin<Box<dyn Future<Output = Result<(), E>>>>),
+     Connection(Pin<Box<dyn Future<Output = Result<(), E>>>>),
+     Terminate(Result<(), E>),
+     OnEmpty(oneshot::Sender<()>),
+ }
+ 
++struct Activity {
++    ready: AtomicBool,
++    parent: futures::task::AtomicWaker,
++}
++impl Wake for Activity {
++    fn wake(self: Arc<Self>) {
++        self.wake_by_ref();
++    }
++    fn wake_by_ref(self: &Arc<Self>) {
++        self.ready.store(true, Ordering::Release);
++        self.parent.wake();
++    }
++}
++
+ enum TaskInProgress<E> {
+     Task(Pin<Box<dyn Future<Output = Result<(), E>>>>),
+     Terminate(Option<Result<(), E>>),
+@@ -65,6 +84,14 @@ pub(crate) struct TaskSet<E> {
+     enqueued: Option<queue::Receiver<EnqueuedTask<E>>>,
+     connection: Option<Pin<Box<dyn Future<Output = Result<(), E>>>>>,
+     in_progress: ReadySet<TaskInProgress<E>>,
++    last: ReadySet<TaskInProgress<E>>,
++    activity: Arc<Activity>,
++    activity_waker: Waker,
++    last_activity: Arc<Activity>,
++    last_waker: Waker,
++    deferred_last: bool,
++    busy_turns: u8,
++    defer: fn(&mut Context<'_>),
+     on_empty_fulfillers: Vec<oneshot::Sender<()>>,
+     reaper: Box<dyn TaskReaper<E>>,
+ }
+@@ -79,11 +106,27 @@ where
+         E: ::std::fmt::Debug,
+     {
+         let (sender, receiver) = queue::channel();
++        let activity = Arc::new(Activity {
++            ready: AtomicBool::new(false),
++            parent: futures::task::AtomicWaker::new(),
++        });
++        let last_activity = Arc::new(Activity {
++            ready: AtomicBool::new(false),
++            parent: futures::task::AtomicWaker::new(),
++        });
+ 
+         let mut set = Self {
+             enqueued: Some(receiver),
+             connection: None,
+             in_progress: ReadySet::new(),
++            last: ReadySet::new(),
++            activity_waker: Waker::from(activity.clone()),
++            activity,
++            last_waker: Waker::from(last_activity.clone()),
++            last_activity,
++            deferred_last: false,
++            busy_turns: 0,
++            defer: |cx| cx.waker().wake_by_ref(),
+             on_empty_fulfillers: vec![],
+             reaper,
+         };
+@@ -98,6 +141,10 @@ where
+         (handle, set)
+     }
+ 
++    pub(crate) fn set_defer(&mut self, defer: fn(&mut Context<'_>)) {
++        self.defer = defer;
++    }
++
+     fn update_on_empty_fulfillers(&mut self) {
+         if self.on_empty_fulfillers.is_empty() {
+             return;
+@@ -105,6 +152,7 @@ where
+         // There is always the one pending() future that we added in `new()`.
+         if self.connection.is_none()
+             && self.in_progress.len() <= 1
++            && self.last.len() == 0
+             && self.enqueued.as_ref().is_none_or(|queue| queue.is_empty())
+         {
+             for f in std::mem::take(&mut self.on_empty_fulfillers) {
+@@ -130,6 +178,15 @@ where
+         let _ = self.sender.send(EnqueuedTask::Task(Box::pin(f)));
+     }
+ 
++    /// Run transport publication after ordinary ready work, allowing related
++    /// messages to share one write as with KJ's evalLast().
++    pub(crate) fn add_last<F>(&mut self, f: F)
++    where
++        F: Future<Output = Result<(), E>> + 'static,
++    {
++        let _ = self.sender.send(EnqueuedTask::Last(Box::pin(f)));
++    }
++
+     pub(crate) fn try_add<F>(&self, future: F) -> Result<(), ()>
+     where
+         F: Future<Output = Result<(), E>> + 'static,
+@@ -182,6 +239,58 @@ where
+     type Output = Result<(), E>;
+ 
+     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
++        self.activity.parent.register(cx.waker());
++        self.last_activity.parent.register(cx.waker());
++        let notified = self.activity.ready.swap(false, Ordering::AcqRel);
++        let wake = self.activity_waker.clone();
++        if let Poll::Ready(result) = self.poll_regular(&mut Context::from_waker(&wake)) {
++            return Poll::Ready(result);
++        }
++        if self.last.len() == 0 || !self.last_activity.ready.load(Ordering::Acquire) {
++            return Poll::Pending;
++        }
++        let busy = notified
++            || self.activity.ready.load(Ordering::Acquire)
++            || self
++                .enqueued
++                .as_ref()
++                .is_some_and(|queue| !queue.is_empty());
++        // Yield across the executor boundary too: a response consumer may be
++        // an application task outside this set. Bound deferral so a perpetually
++        // ready producer cannot starve transport progress.
++        if (busy && self.busy_turns < 32) || !self.deferred_last {
++            self.busy_turns = self.busy_turns.saturating_add(1);
++            self.deferred_last = true;
++            (self.defer)(cx);
++            return Poll::Pending;
++        }
++        self.busy_turns = 0;
++        self.deferred_last = false;
++        self.last_activity.ready.store(false, Ordering::Release);
++        let last_wake = self.last_waker.clone();
++        let mut last_cx = Context::from_waker(&last_wake);
++        while let Poll::Ready(Some(done)) = Pin::new(&mut self.last).poll_next(&mut last_cx) {
++            match done {
++                TaskDone::Continue(Ok(())) => self.reaper.task_succeeded(),
++                TaskDone::Continue(Err(error)) => self.reaper.task_failed(error),
++                TaskDone::Terminate(result) => return Poll::Ready(result),
++            }
++            self.update_on_empty_fulfillers();
++        }
++        if self.enqueued.is_none()
++            && self.connection.is_none()
++            && self.in_progress.len() <= 1
++            && self.last.len() == 0
++        {
++            Poll::Ready(Ok(()))
++        } else {
++            Poll::Pending
++        }
++    }
++}
++
++impl<E: 'static> TaskSet<E> {
++    fn poll_regular(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), E>> {
+         let mut enqueued_stream_complete = false;
+         // Run newly admitted work once before allocating a FuturesUnordered
+         // node. Many RPC completions finish immediately. Pending work is then
+@@ -210,6 +319,10 @@ where
+                         }
+                         Poll::Pending => self.in_progress.push(TaskInProgress::Task(f)),
+                     },
++                    Poll::Ready(Some(EnqueuedTask::Last(f))) => {
++                        self.last.push(TaskInProgress::Task(f));
++                        self.last_activity.ready.store(true, Ordering::Release);
++                    }
+                     Poll::Ready(Some(EnqueuedTask::Connection(f))) => {
+                         if self.connection.is_none() {
+                             self.connection = Some(f);
+@@ -246,7 +359,11 @@ where
+         // on_empty() must also complete when it was queued on an already
+         // empty set. The sentinel future is not an application task.
+         self.update_on_empty_fulfillers();
+-        if self.enqueued.is_none() && self.connection.is_none() && self.in_progress.len() <= 1 {
++        if self.enqueued.is_none()
++            && self.connection.is_none()
++            && self.in_progress.len() <= 1
++            && self.last.len() == 0
++        {
+             return Poll::Ready(Ok(()));
+         }
+         loop {
+@@ -266,6 +383,7 @@ where
+                         if self.enqueued.is_none()
+                             && self.connection.is_none()
+                             && self.in_progress.len() <= 1
++                            && self.last.len() == 0
+                         {
+                             return Poll::Ready(Ok(()));
+                         }
+@@ -284,6 +402,13 @@ where
+     }
+ }
+ 
++impl<E> Drop for TaskSet<E> {
++    fn drop(&mut self) {
++        drop(self.activity.parent.take());
++        drop(self.last_activity.parent.take());
++    }
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+@@ -302,6 +427,111 @@ mod tests {
+         Pin::new(future).poll(&mut Context::from_waker(futures::task::noop_waker_ref()))
+     }
+ 
++    #[test]
++    fn last_tasks_wait_for_ready_work_and_an_external_consumer_turn() {
++        let results = Rc::new(RefCell::new(Vec::new()));
++        let (mut handle, mut tasks) = TaskSet::new(Box::new(Reaper(results)));
++        let events = Rc::new(RefCell::new(Vec::new()));
++        let seen = Rc::new(RefCell::new(Vec::new()));
++        handle.add_last({
++            let events = events.clone();
++            let seen = seen.clone();
++            async move {
++                *seen.borrow_mut() = events.borrow().clone();
++                Ok(())
++            }
++        });
++        handle.add({
++            let events = events.clone();
++            let mut handle = handle.clone();
++            async move {
++                events.borrow_mut().push(1);
++                handle.add(async move {
++                    events.borrow_mut().push(2);
++                    Ok(())
++                });
++                Ok(())
++            }
++        });
++        let mut drained = handle.on_empty();
++        assert!(poll(&mut tasks).is_pending());
++        assert!(seen.borrow().is_empty());
++        assert!(poll(&mut drained).is_pending());
++        events.borrow_mut().push(3); // response consumer outside this task set
++        for _ in 0..8 {
++            assert!(poll(&mut tasks).is_pending());
++            if !seen.borrow().is_empty() {
++                break;
++            }
++        }
++        assert_eq!(&*seen.borrow(), &[1, 2, 3]);
++        assert!(matches!(poll(&mut drained), Poll::Ready(Ok(()))));
++    }
++
++    #[test]
++    fn each_new_last_notification_defers_after_idle_polls() {
++        use std::cell::Cell;
++        let results = Rc::new(RefCell::new(Vec::new()));
++        let (mut handle, mut tasks) = TaskSet::new(Box::new(Reaper(results)));
++        let polls = Rc::new(Cell::new(0));
++        let wake = Rc::new(RefCell::new(None));
++        handle.add_last({
++            let polls = polls.clone();
++            let wake = wake.clone();
++            std::future::poll_fn(move |cx| {
++                polls.set(polls.get() + 1);
++                *wake.borrow_mut() = Some(cx.waker().clone());
++                Poll::Pending
++            })
++        });
++        for _ in 0..8 {
++            assert!(poll(&mut tasks).is_pending());
++        }
++        assert_eq!(polls.get(), 1);
++        for idle_polls in 0..8 {
++            for _ in 0..idle_polls {
++                assert!(poll(&mut tasks).is_pending());
++            }
++            let before = polls.get();
++            wake.borrow().as_ref().unwrap().wake_by_ref();
++            assert!(poll(&mut tasks).is_pending());
++            assert_eq!(polls.get(), before, "new work needs a fresh deferred turn");
++            assert!(poll(&mut tasks).is_pending());
++            assert_eq!(polls.get(), before + 1);
++        }
++    }
++
++    #[test]
++    fn perpetually_ready_work_cannot_starve_last_tasks_or_hide_their_errors() {
++        let results = Rc::new(RefCell::new(Vec::new()));
++        let (mut handle, mut tasks) = TaskSet::new(Box::new(Reaper(results.clone())));
++        let busy = Rc::new(std::cell::Cell::new(true));
++        handle.add({
++            let busy = busy.clone();
++            std::future::poll_fn(move |cx| {
++                if busy.get() {
++                    cx.waker().wake_by_ref();
++                    Poll::Pending
++                } else {
++                    Poll::Ready(Ok(()))
++                }
++            })
++        });
++        handle.add_last(async { Err(7) });
++        let mut drained = handle.on_empty();
++        for _ in 0..64 {
++            assert!(poll(&mut tasks).is_pending());
++            if results.borrow().contains(&Err(7)) {
++                break;
++            }
++        }
++        assert_eq!(&*results.borrow(), &[Err(7)]);
++        assert!(poll(&mut drained).is_pending());
++        busy.set(false);
++        assert!(poll(&mut tasks).is_pending());
++        assert!(matches!(poll(&mut drained), Poll::Ready(Ok(()))));
++    }
++
+     #[test]
+     fn direct_connection_preserves_wakes_drain_and_other_task_progress() {
+         use std::{
+diff --git a/crates/capntproto-rpc/src/twoparty.rs b/crates/capntproto-rpc/src/twoparty.rs
+index 57f280e..29eae6d 100644
+--- a/crates/capntproto-rpc/src/twoparty.rs
++++ b/crates/capntproto-rpc/src/twoparty.rs
+@@ -27,7 +27,7 @@ use capnp::message::ReaderOptions;
+ use capntproto_rpc_engine::completion::shared as oneshot;
+ use futures::{AsyncRead, AsyncWrite, Future, FutureExt, TryFutureExt};
+ 
+-use std::cell::{Cell, RefCell};
++use std::cell::RefCell;
+ use std::rc::{Rc, Weak};
+ 
+ pub use capnp_futures::{OutgoingQueue, OutputSnapshot, QueueSnapshot};
+@@ -54,13 +54,11 @@ enum IncomingPayload {
+ 
+ struct IncomingStream<T> {
+     input: Box<capnp_futures::BufferedRead<T>>,
+-    output_driver: Weak<OutputDriver>,
+ }
+ 
+ struct OwnedIncomingStream<T> {
+     input: Option<Box<capnp_futures::BufferedRead<T>>>,
+     return_to: Rc<RefCell<Option<Box<capnp_futures::BufferedRead<T>>>>>,
+-    output_driver: Weak<OutputDriver>,
+ }
+ impl<T> Drop for OwnedIncomingStream<T> {
+     fn drop(&mut self) {
+@@ -73,18 +71,17 @@ impl<T: AsyncRead + Unpin> crate::IncomingMessageStream for OwnedIncomingStream<
+         &mut self,
+         cx: &mut std::task::Context<'_>,
+     ) -> std::task::Poll<capnp::Result<Option<Box<dyn crate::IncomingMessage>>>> {
+-        let result = self
+-            .input
++        self.input
+             .as_mut()
+             .expect("live input owner")
+             .poll_read_message(cx, |message| {
+                 crate::is_short_lived_rpc_message(message.get_root()?)
+-            });
+-        OutputDriver::finish_read_turn(&self.output_driver, result).map_ok(|message| {
+-            message.map(|message| {
+-                Box::new(IncomingMessage::new(message)) as Box<dyn crate::IncomingMessage>
+             })
+-        })
++            .map_ok(|message| {
++                message.map(|message| {
++                    Box::new(IncomingMessage::new(message)) as Box<dyn crate::IncomingMessage>
++                })
++            })
+     }
+ }
+ impl<T: AsyncRead + Unpin> crate::IncomingFrameStream for IncomingStream<T> {
+@@ -125,12 +122,13 @@ impl<T: AsyncRead + Unpin> crate::IncomingMessageStream for IncomingStream<T> {
+         &mut self,
+         cx: &mut std::task::Context<'_>,
+     ) -> std::task::Poll<capnp::Result<Option<Box<dyn crate::IncomingMessage>>>> {
+-        let result = self.input.poll_read_short_lived_message(cx);
+-        OutputDriver::finish_read_turn(&self.output_driver, result).map_ok(|message| {
+-            message.map(|message| {
+-                Box::new(IncomingMessage::new(message)) as Box<dyn crate::IncomingMessage>
++        self.input
++            .poll_read_short_lived_message(cx)
++            .map_ok(|message| {
++                message.map(|message| {
++                    Box::new(IncomingMessage::new(message)) as Box<dyn crate::IncomingMessage>
++                })
+             })
+-        })
+     }
+ }
+ 
+@@ -333,7 +331,6 @@ struct OutgoingMessage {
+     message: MessageBuilder,
+     sender: Option<Rc<capnp_futures::LocalSender<QueuedMessage>>>,
+     guard: Option<Rc<dyn std::any::Any>>,
+-    driver: Weak<OutputDriver>,
+ }
+ 
+ impl crate::OutgoingMessage for OutgoingMessage {
+@@ -403,34 +400,11 @@ impl crate::OutgoingMessage for OutgoingMessage {
+     }
+ 
+     fn send_detached_and_drive(mut self: Box<Self>) {
+-        // Transfer the original allocation to the writer. Remove its sender
+-        // first so queued output cannot retain its own queue in a cycle.
++        // Like C++ evalLast(), publish into the FIFO and let the network turn
++        // write related messages together. Remove the sender before enqueueing
++        // so queued output cannot retain its own queue in a cycle.
+         let sender = self.sender.take().expect("unsent message has sender");
+-        // Let a pipeline's parent and the preceding Finish join its next child
+-        // in one FIFO batch. The network driver is notified even when no child
+-        // follows. Calls and Returns each get one inline poll per turn; a
+-        // callback reply need not wait behind its initiating outgoing call.
+-        // Later messages join the next network-driven batch.
+-        let defer = match &mut self.message {
+-            MessageBuilder::Call(call) => call
+-                .get_as::<crate::rpc_capnp::call::Owned>()
+-                .is_ok_and(|call| !call.get_no_promise_pipelining()),
+-            MessageBuilder::Root(message) => message
+-                .get_root_as_reader::<crate::rpc_capnp::message::Reader<'_>>()
+-                .is_ok_and(|root| matches!(root.which(), Ok(crate::rpc_capnp::message::Finish(_)))),
+-            MessageBuilder::Return(_) => false,
+-        };
+-        if defer {
+-            sender.send_detached(QueuedMessage::Owned(self));
+-            return;
+-        }
+-        let driver = self.driver.clone();
+-        let is_return = matches!(&self.message, MessageBuilder::Return(_));
+-        let _ = sender.send_detached_and_drive(QueuedMessage::Owned(self), || {
+-            if let Some(driver) = driver.upgrade() {
+-                driver.drive_first(is_return);
+-            }
+-        });
++        sender.send_detached(QueuedMessage::Owned(self));
+     }
+ 
+     fn retain_until_sent(
+@@ -460,26 +434,9 @@ struct OutputDriver {
+     task: RefCell<Option<Promise<(), capnp::Error>>>,
+     result: RefCell<Option<capnp::Result<()>>>,
+     network: RefCell<Option<std::task::Waker>>,
+-    inline_ready: Cell<bool>,
+-    return_ready: Cell<bool>,
+ }
+ impl OutputDriver {
+-    fn finish_read_turn<T>(driver: &Weak<Self>, result: std::task::Poll<T>) -> std::task::Poll<T> {
+-        // A fully inline write need not wake the output task. Replenish when
+-        // input exhausts its ready work as well, so sequential request/reply
+-        // traffic does not alternate between inline and deferred writes.
+-        // Buffered messages do not replenish: a receive burst still batches.
+-        if result.is_pending() {
+-            if let Some(driver) = driver.upgrade() {
+-                driver.inline_ready.set(true);
+-                driver.return_ready.set(true);
+-            }
+-        }
+-        result
+-    }
+     fn poll_network(&self, cx: &mut std::task::Context<'_>) -> std::task::Poll<capnp::Result<()>> {
+-        self.inline_ready.set(true);
+-        self.return_ready.set(true);
+         if self
+             .network
+             .borrow()
+@@ -529,19 +486,6 @@ impl OutputDriver {
+             let _ = self.poll_inner(&mut std::task::Context::from_waker(&wake));
+         }
+     }
+-    fn drive_first(&self, is_return: bool) {
+-        // Keep a lone request's immediate write, but let a burst accumulate as
+-        // it does with KJ's evalLast. Enqueue still wakes the network task when
+-        // this allowance is exhausted. Explicit stream flushes bypass it.
+-        let allowance = if is_return {
+-            &self.return_ready
+-        } else {
+-            &self.inline_ready
+-        };
+-        if allowance.replace(false) {
+-            self.drive_ready();
+-        }
+-    }
+ }
+ 
+ struct ConnectionInner<T>
+@@ -664,14 +608,15 @@ where
+         Self {
+             inner: Rc::new(RefCell::new(ConnectionInner {
+                 input_stream: Rc::new(RefCell::new(Some(Box::new(
+-                    // Keep ordinary control frames buffered, but spill larger
+-                    // frames into their final storage after a bounded prefix.
++                    // Match C++'s 64 KiB receive buffer so a ready burst is not
++                    // split into 8 KiB reads. Larger frames still spill into
++                    // their final storage after this bounded prefix.
+                     capnp_futures::BufferedRead::with_buffer_size(
+                         input_stream,
+                         receive_options,
+-                        1024,
++                        8192,
+                     )
+-                    .expect("8 KiB holds every legal RPC segment table"),
++                    .expect("64 KiB holds every legal RPC segment table"),
+                 )))),
+                 sender: Rc::new(sender),
+                 side,
+@@ -681,9 +626,8 @@ where
+                 write_finished,
+                 output_closed,
+                 output_driver,
+-                // Cache a turn's burst of small segments and control envelopes
+-                // without increasing the 128 KiB retained-word budget. Includes
+-                // a 64 KiB body plus framing/envelope growth.
++                // Includes a 64 KiB body plus framing/envelope growth, while
++                // bounding retained storage independently of live messages.
+                 segments: capnp::message::SegmentPool::new(16 * 1024, 64),
+                 call_template: None,
+                 return_template: None,
+@@ -747,7 +691,6 @@ where
+             message: MessageBuilder::Root(message),
+             sender: Some(inner.sender.clone()),
+             guard: None,
+-            driver: inner.output_driver.clone(),
+         })
+     }
+ 
+@@ -796,7 +739,6 @@ where
+             message: MessageBuilder::Call(message),
+             sender: Some(inner.sender.clone()),
+             guard: None,
+-            driver: inner.output_driver.clone(),
+         }))
+     }
+ 
+@@ -836,7 +778,6 @@ where
+             message: MessageBuilder::Return(message),
+             sender: Some(inner.sender.clone()),
+             guard: None,
+-            driver: inner.output_driver.clone(),
+         }))
+     }
+ 
+@@ -876,7 +817,6 @@ where
+             message: MessageBuilder::Root(message.into_inner()),
+             sender: Some(inner.sender.clone()),
+             guard: None,
+-            driver: inner.output_driver.clone(),
+         }))
+     }
+ 
+@@ -893,12 +833,8 @@ where
+     }
+ 
+     fn take_incoming_stream(&mut self) -> Option<Box<dyn crate::IncomingMessageStream>> {
+-        let inner = self.inner.borrow();
+-        let input = inner.input_stream.borrow_mut().take()?;
+-        Some(Box::new(IncomingStream {
+-            input,
+-            output_driver: inner.output_driver.clone(),
+-        }))
++        let input = self.inner.borrow().input_stream.borrow_mut().take()?;
++        Some(Box::new(IncomingStream { input }))
+     }
+ 
+     fn take_owned_incoming_stream(&mut self) -> Option<Box<dyn crate::IncomingMessageStream>> {
+@@ -907,17 +843,12 @@ where
+         Some(Box::new(OwnedIncomingStream {
+             input: Some(input),
+             return_to,
+-            output_driver: self.inner.borrow().output_driver.clone(),
+         }))
+     }
+ 
+     fn take_incoming_frames(&mut self) -> Option<Box<dyn crate::IncomingFrameStream>> {
+-        let inner = self.inner.borrow();
+-        let input = inner.input_stream.borrow_mut().take()?;
+-        Some(Box::new(IncomingStream {
+-            input,
+-            output_driver: inner.output_driver.clone(),
+-        }))
++        let input = self.inner.borrow().input_stream.borrow_mut().take()?;
++        Some(Box::new(IncomingStream { input }))
+     }
+ 
+     fn new_stream(&mut self) -> (Box<dyn crate::FlowController>, Promise<(), capnp::Error>) {
+@@ -965,20 +896,17 @@ impl<T: AsyncRead + Unpin> Connection<T> {
+ 
+         let maybe_input_stream = inner.input_stream.borrow_mut().take();
+         let return_it_here = inner.input_stream.clone();
+-        let output_driver = inner.output_driver.clone();
+         match maybe_input_stream {
+             Some(mut s) => Promise::from_future(async move {
+-                let result = std::future::poll_fn(|cx| {
+-                    let result = s.poll_read_message(cx, |message| {
++                let result = s
++                    .try_read_message(|message| {
+                         if short_lived {
+                             Ok(true)
+                         } else {
+                             crate::is_short_lived_rpc_message(message.get_root()?)
+                         }
+-                    });
+-                    OutputDriver::finish_read_turn(&output_driver, result)
+-                })
+-                .await;
++                    })
++                    .await;
+                 *return_it_here.borrow_mut() = Some(s);
+                 Ok(result?.map(|message| {
+                     Box::new(IncomingMessage::new(message)) as Box<dyn crate::IncomingMessage>
+@@ -1008,6 +936,7 @@ where
+     write_finished: futures::future::Shared<Promise<(), ::capnp::Error>>,
+     outgoing_queue: OutgoingQueue,
+     side: crate::rpc_twoparty_capnp::Side,
++    task_yield: fn(&mut std::task::Context<'_>),
+ }
+ 
+ /// A two-party vat `VatNetwork` implementation.
+@@ -1015,6 +944,12 @@ impl<T> VatNetwork<T>
+ where
+     T: AsyncRead + Unpin,
+ {
++    /// Use the host executor's deferred wake queue for RPC output turns.
++    /// Configure before constructing RpcSystem. See [`crate::VatNetwork::task_yield`].
++    pub fn set_task_yield(&mut self, task_yield: fn(&mut std::task::Context<'_>)) {
++        self.task_yield = task_yield;
++    }
++
+     /// Enable optimized tail-result transfer for a peer known to support it
+     /// (for example C++ or capntproto). Disabled by default for interoperability
+     /// with capnp-rpc 0.27.0, whose redirected answers can remain unpolled.
+@@ -1042,6 +977,26 @@ where
+         self.write_finished.clone()
+     }
+ 
++    /// Configure exact-body read hints before the RPC system takes input.
++    /// The transport may use the remaining byte count for readiness, but must
++    /// not wait for more bytes than requested. Ordinary reads use one.
++    pub fn set_read_hint(
++        &mut self,
++        hint: fn(&mut T, usize) -> std::io::Result<()>,
++    ) -> capnp::Result<()> {
++        let inner = self
++            .weak_connection_inner
++            .upgrade()
++            .ok_or_else(|| capnp::Error::disconnected("connection no longer exists".into()))?;
++        let input = inner.borrow().input_stream.clone();
++        let mut input = input.borrow_mut();
++        let input = input
++            .as_mut()
++            .ok_or_else(|| capnp::Error::failed("receive stream already extracted".into()))?;
++        input.set_read_hint(hint);
++        Ok(())
++    }
++
+     /// Observe queued messages, excluding the active write batch. This handle
+     /// remains usable after moving the network into RpcSystem and does not keep
+     /// the connection alive. Byte counts exclude stream framing.
+@@ -1196,8 +1151,6 @@ where
+             task: RefCell::new(Some(execution)),
+             result: RefCell::new(None),
+             network: RefCell::new(None),
+-            inline_ready: Cell::new(true),
+-            return_ready: Cell::new(true),
+         });
+         let network_driver = output_driver.clone();
+         let execution_driver = Promise::from_future(std::future::poll_fn(move |cx| {
+@@ -1225,6 +1178,7 @@ where
+             write_finished,
+             outgoing_queue,
+             side,
++            task_yield: |cx| cx.waker().wake_by_ref(),
+         }
+     }
+ 
+@@ -1260,6 +1214,10 @@ impl<T> crate::VatNetwork<VatId> for VatNetwork<T>
+ where
+     T: AsyncRead + Unpin,
+ {
++    fn task_yield(&self) -> fn(&mut std::task::Context<'_>) {
++        self.task_yield
++    }
++
+     fn connect(&mut self, host_id: VatId) -> Option<Box<dyn crate::Connection<VatId>>> {
+         if host_id == self.side {
+             None
+diff --git a/crates/capntproto-rpc/src/twoparty/facade.rs b/crates/capntproto-rpc/src/twoparty/facade.rs
+index c25f6b1..12c2de5 100644
+--- a/crates/capntproto-rpc/src/twoparty/facade.rs
++++ b/crates/capntproto-rpc/src/twoparty/facade.rs
+@@ -1,5 +1,7 @@
+ //! Executor-neutral conveniences for a single peer and a collection of peers.
+ mod borrowed;
++mod notify;
++use notify::WakeDriven;
+ 
+ use super::{OutputSnapshot, QueueSnapshot, VatId, VatNetwork};
+ use crate::{task_set, RpcSystem};
+@@ -82,8 +84,8 @@ pub struct TwoPartyClient<'a> {
+     system: Option<RpcSystem<VatId>>,
+     side: VatId,
+     queue: QueueDiagnostics,
+-    output_closed: Shared<Promise<(), Error>>,
+-    write_finished: Option<Shared<Promise<(), Error>>>,
++    output_closed: Option<WakeDriven<Shared<Promise<(), Error>>>>,
++    write_finished: Option<WakeDriven<Shared<Promise<(), Error>>>>,
+     disconnected: Shared<Promise<(), Error>>,
+     completion: Option<oneshot::Sender<capnp::Result<()>>>,
+     borrowed: Option<Box<dyn borrowed::Pump + 'a>>,
+@@ -123,8 +125,8 @@ impl TwoPartyClient<'static> {
+             system: Some(RpcSystem::new(Box::new(network), bootstrap)),
+             side,
+             queue,
+-            output_closed,
+-            write_finished,
++            output_closed: Some(WakeDriven::new(output_closed)),
++            write_finished: write_finished.map(WakeDriven::new),
+             disconnected: Promise::from_future(async move {
+                 receiver
+                     .await
+@@ -283,9 +285,19 @@ impl Future for TwoPartyClient<'_> {
+                     if written.is_ready() {
+                         this.write_finished = None;
+                     }
++                    let closed = this
++                        .output_closed
++                        .as_mut()
++                        .map_or(Poll::Pending, |closed| Pin::new(closed).poll(cx));
++                    if closed.is_ready() {
++                        // Explicit shutdown can finish the physical close
++                        // before the RPC task set consumes its registrations.
++                        // Shared receivers cannot be polled after completion.
++                        this.output_closed = None;
++                    }
+                     let failure = match written {
+                         Poll::Ready(Err(error)) => Some(error),
+-                        _ => match Pin::new(&mut this.output_closed).poll(cx) {
++                        _ => match closed {
+                             Poll::Ready(Err(error)) => Some(error),
+                             _ => None,
+                         },
+diff --git a/crates/capntproto-rpc/src/twoparty/facade/notify.rs b/crates/capntproto-rpc/src/twoparty/facade/notify.rs
+new file mode 100644
+index 0000000..a731cf5
+--- /dev/null
++++ b/crates/capntproto-rpc/src/twoparty/facade/notify.rs
+@@ -0,0 +1,155 @@
++//! Poll shutdown observers only after their own notification. Ordinary RPC
++//! progress must not repeatedly enter Shared's synchronized waiter registry.
++use futures::task::AtomicWaker;
++use std::{
++    future::Future,
++    pin::Pin,
++    sync::{
++        atomic::{AtomicBool, Ordering},
++        Arc,
++    },
++    task::{Context, Poll, Wake, Waker},
++};
++
++struct Signal {
++    ready: AtomicBool,
++    parent: AtomicWaker,
++}
++impl Wake for Signal {
++    fn wake(self: Arc<Self>) {
++        self.wake_by_ref();
++    }
++    fn wake_by_ref(self: &Arc<Self>) {
++        self.ready.store(true, Ordering::Release);
++        self.parent.wake();
++    }
++}
++
++pub(super) struct WakeDriven<F> {
++    future: F,
++    signal: Arc<Signal>,
++    child: Waker,
++    parent: Option<Waker>,
++}
++impl<F> WakeDriven<F> {
++    pub(super) fn new(future: F) -> Self {
++        let signal = Arc::new(Signal {
++            ready: AtomicBool::new(true),
++            parent: AtomicWaker::new(),
++        });
++        Self {
++            future,
++            child: Waker::from(signal.clone()),
++            signal,
++            parent: None,
++        }
++    }
++}
++impl<F: Future + Unpin> Future for WakeDriven<F> {
++    type Output = F::Output;
++    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
++        let this = self.get_mut();
++        if this
++            .parent
++            .as_ref()
++            .is_none_or(|previous| !previous.will_wake(cx.waker()))
++        {
++            this.signal.parent.register(cx.waker());
++            this.parent = Some(cx.waker().clone());
++        }
++        if !this.signal.ready.load(Ordering::Acquire) {
++            return Poll::Pending;
++        }
++        // AtomicWaker::wake consumes its registration. Renew it on each child
++        // notification even when the enclosing task's waker is unchanged.
++        this.signal.parent.register(cx.waker());
++        this.signal.ready.swap(false, Ordering::AcqRel);
++        Pin::new(&mut this.future).poll(&mut Context::from_waker(&this.child))
++    }
++}
++impl<F> Drop for WakeDriven<F> {
++    fn drop(&mut self) {
++        // An external completion may retain the child waker after cancellation.
++        // It must not retain or schedule the parent task after this observer dies.
++        drop(self.signal.parent.take());
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use std::{
++        cell::{Cell, RefCell},
++        rc::Rc,
++        sync::atomic::AtomicUsize,
++    };
++    #[derive(Default)]
++    struct Parent(AtomicUsize);
++    impl Wake for Parent {
++        fn wake(self: Arc<Self>) {
++            self.0.fetch_add(1, Ordering::Relaxed);
++        }
++    }
++    #[test]
++    fn unrelated_polls_do_not_repoll_observers_and_notifications_follow_the_current_parent() {
++        let child = Rc::new(RefCell::new(None::<Waker>));
++        let polls = Cell::new(0);
++        let done = Cell::new(false);
++        let mut observer = WakeDriven::new(std::future::poll_fn(|cx| {
++            polls.set(polls.get() + 1);
++            *child.borrow_mut() = Some(cx.waker().clone());
++            if done.get() {
++                Poll::Ready(42)
++            } else {
++                Poll::Pending
++            }
++        }));
++        let first = Arc::new(Parent::default());
++        let second = Arc::new(Parent::default());
++        let first_waker = Waker::from(first.clone());
++        let second_waker = Waker::from(second.clone());
++        for _ in 0..20 {
++            assert!(Pin::new(&mut observer)
++                .poll(&mut Context::from_waker(&first_waker))
++                .is_pending());
++        }
++        assert_eq!(polls.get(), 1);
++        assert!(Pin::new(&mut observer)
++            .poll(&mut Context::from_waker(&second_waker))
++            .is_pending());
++        child.borrow().as_ref().unwrap().wake_by_ref();
++        assert_eq!(first.0.load(Ordering::Relaxed), 0);
++        assert_eq!(second.0.load(Ordering::Relaxed), 1);
++        assert!(Pin::new(&mut observer)
++            .poll(&mut Context::from_waker(&second_waker))
++            .is_pending());
++        done.set(true);
++        child.borrow().as_ref().unwrap().wake_by_ref();
++        assert_eq!(second.0.load(Ordering::Relaxed), 2);
++        assert_eq!(
++            Pin::new(&mut observer).poll(&mut Context::from_waker(&second_waker)),
++            Poll::Ready(42)
++        );
++        assert_eq!(polls.get(), 3);
++        drop(observer);
++        child.borrow().as_ref().unwrap().wake_by_ref();
++        assert_eq!(second.0.load(Ordering::Relaxed), 2);
++    }
++
++    #[test]
++    fn notification_during_poll_is_preserved() {
++        let mut polls = 0;
++        let mut observer = WakeDriven::new(std::future::poll_fn(|cx| {
++            polls += 1;
++            if polls == 1 {
++                cx.waker().wake_by_ref();
++                Poll::Pending
++            } else {
++                Poll::Ready(())
++            }
++        }));
++        let mut cx = Context::from_waker(futures::task::noop_waker_ref());
++        assert!(Pin::new(&mut observer).poll(&mut cx).is_pending());
++        assert!(Pin::new(&mut observer).poll(&mut cx).is_ready());
++    }
++}
+diff --git a/crates/capntproto-rpc/src/twoparty/output_driver_tests.rs b/crates/capntproto-rpc/src/twoparty/output_driver_tests.rs
+index c43ae93..d0f2517 100644
+--- a/crates/capntproto-rpc/src/twoparty/output_driver_tests.rs
++++ b/crates/capntproto-rpc/src/twoparty/output_driver_tests.rs
+@@ -379,7 +379,7 @@ fn return_templates_preserve_payloads_and_invalidate_selections_after_root_edits
+ }
+ 
+ #[test]
+-fn pipeline_and_finish_batch_with_the_next_terminal_call_or_network_poll() {
++fn pipeline_and_finish_batch_with_terminal_calls_on_the_network_poll() {
+     let output = Rc::new(Output::default());
+     output.allowed.set(usize::MAX);
+     output.flushed.set(true);
+@@ -405,6 +405,9 @@ fn pipeline_and_finish_batch_with_the_next_terminal_call_or_network_poll() {
+     child.get_call().unwrap().set_question_id(9);
+     child.get_call().unwrap().set_no_promise_pipelining(true);
+     child.send_detached_and_drive();
++    assert!(output.bytes.borrow().is_empty());
++    assert_eq!(network.outgoing_queue().snapshot().message_count, 3);
++    assert!(network._output_driver.poll_network(&mut cx).is_pending());
+     let bytes = output.bytes.borrow();
+     let mut cursor = bytes.as_slice();
+     let finish = capnp::serialize::read_message(&mut cursor, Default::default()).unwrap();
+@@ -445,7 +448,7 @@ fn pipeline_and_finish_batch_with_the_next_terminal_call_or_network_poll() {
+ }
+ 
+ #[test]
+-fn calls_and_returns_share_separate_inline_polls_and_retain_guards_until_flush() {
++fn calls_and_returns_batch_in_fifo_order_and_retain_guards_until_flush() {
+     use std::sync::{
+         atomic::{AtomicUsize, Ordering},
+         Arc,
+@@ -478,8 +481,6 @@ fn calls_and_returns_share_separate_inline_polls_and_retain_guards_until_flush()
+     let mut cx = Context::from_waker(&waker);
+     let drops = Rc::new(Cell::new(0));
+     assert!(network._output_driver.poll_network(&mut cx).is_pending());
+-    let mut first_bytes = 0;
+-    let mut first_wakes = 0;
+     for id in 0..32 {
+         let mut message = if id % 2 == 0 {
+             let mut message = connection.new_outgoing_call(64).unwrap();
+@@ -496,28 +497,16 @@ fn calls_and_returns_share_separate_inline_polls_and_retain_guards_until_flush()
+             .retain_until_sent(Rc::new(Guard(drops.clone())))
+             .is_ok());
+         message.send_detached_and_drive();
+-        if id == 0 {
+-            first_bytes = output.bytes.borrow().len();
+-            assert!(first_bytes > 0, "a lone call still writes inline");
+-        } else if id == 1 {
+-            assert!(
+-                output.bytes.borrow().len() > first_bytes,
+-                "an outgoing call must not defer its incoming callback's reply"
+-            );
+-            first_bytes = output.bytes.borrow().len();
+-            first_wakes = wakes.0.load(Ordering::Relaxed);
+-        } else {
+-            assert_eq!(output.bytes.borrow().len(), first_bytes);
+-            assert_eq!(drops.get(), 2, "queued messages retain their guards");
+-        }
++        assert!(output.bytes.borrow().is_empty());
++        assert_eq!(drops.get(), 0, "queued messages retain their guards");
+     }
+-    assert!(wakes.0.load(Ordering::Relaxed) > first_wakes);
+-    assert_eq!(network.outgoing_queue().snapshot().message_count, 30);
++    assert!(wakes.0.load(Ordering::Relaxed) > 0);
++    assert_eq!(network.outgoing_queue().snapshot().message_count, 32);
+     output.flushed.set(false);
+     assert!(network._output_driver.poll_network(&mut cx).is_pending());
+     assert_eq!(
+         drops.get(),
+-        2,
++        0,
+         "written bytes do not complete a blocked flush"
+     );
+     let bytes = output.bytes.borrow();
+@@ -546,14 +535,13 @@ fn calls_and_returns_share_separate_inline_polls_and_retain_guards_until_flush()
+     let mut message = connection.new_outgoing_call(64).unwrap();
+     message.get_call().unwrap().set_no_promise_pipelining(true);
+     message.send_detached_and_drive();
+-    assert!(
+-        output.bytes.borrow().len() > before,
+-        "network polling replenishes the allowance"
+-    );
++    assert_eq!(output.bytes.borrow().len(), before);
++    assert!(network._output_driver.poll_network(&mut cx).is_pending());
++    assert!(output.bytes.borrow().len() > before);
+ }
+ 
+ #[test]
+-fn input_wait_replenishes_inline_poll_but_buffered_messages_do_not() {
++fn reading_buffered_messages_or_waiting_does_not_flush_queued_output() {
+     struct PendingTail(futures::io::Cursor<Vec<u8>>);
+     impl AsyncRead for PendingTail {
+         fn poll_read(
+@@ -603,7 +591,7 @@ fn input_wait_replenishes_inline_poll_but_buffered_messages_do_not() {
+         };
+         send(&mut connection);
+         let first = output.bytes.borrow().len();
+-        assert!(first > 0);
++        assert_eq!(first, 0);
+         for _ in 0..2 {
+             let Poll::Ready(Ok(Some(message))) = input.poll_receive(&mut cx) else {
+                 panic!("both incoming messages must be buffered")
+@@ -612,19 +600,19 @@ fn input_wait_replenishes_inline_poll_but_buffered_messages_do_not() {
+             send(&mut connection);
+             assert_eq!(output.bytes.borrow().len(), first);
+         }
+-        assert_eq!(network.outgoing_queue().snapshot().message_count, 2);
++        assert_eq!(network.outgoing_queue().snapshot().message_count, 3);
+         assert!(input.poll_receive(&mut cx).is_pending());
+         send(&mut connection);
+-        assert!(
+-            output.bytes.borrow().len() > first,
+-            "input wait replenishes without an output-task poll"
+-        );
++        assert_eq!(output.bytes.borrow().len(), first);
++        assert_eq!(network.outgoing_queue().snapshot().message_count, 4);
++        assert!(network._output_driver.poll_network(&mut cx).is_pending());
++        assert!(output.bytes.borrow().len() > first);
+         assert_eq!(network.outgoing_queue().snapshot().message_count, 0);
+     }
+ }
+ 
+ #[test]
+-fn detached_drive_writes_immediately_but_keeps_ownership_until_flush() {
++fn detached_send_queues_until_driven_and_keeps_ownership_until_flush() {
+     struct Guard(Rc<Cell<usize>>);
+     impl Drop for Guard {
+         fn drop(&mut self) {
+@@ -656,6 +644,9 @@ fn detached_drive_writes_immediately_but_keeps_ownership_until_flush() {
+     expected.set_root("driven message").unwrap();
+     let expected = capnp::serialize::write_message_to_words(&expected);
+     message.send_detached_and_drive();
++    assert!(output.bytes.borrow().is_empty());
++    assert_eq!(drops.get(), 0);
++    assert!(network._output_driver.poll_network(&mut cx).is_pending());
+     assert_eq!(*output.bytes.borrow(), expected);
+     assert_eq!(
+         drops.get(),
+diff --git a/src/rpc/connection.rs b/src/rpc/connection.rs
+index 4ca313a..76dae60 100644
+--- a/src/rpc/connection.rs
++++ b/src/rpc/connection.rs
+@@ -27,7 +27,11 @@ impl Connection {
+         bootstrap: Option<Client>,
+         side: Side,
+     ) -> Self {
+-        Self::spawn(TwoPartyClient::with_bootstrap(TokioIo(io), bootstrap, side))
++        let (read, write) = futures::AsyncReadExt::split(TokioIo(io));
++        let mut network =
++            capnp_rpc::twoparty::VatNetwork::new(read, write, side, Default::default());
++        network.set_task_yield(super::io::defer);
++        Self::spawn(TwoPartyClient::from_network(network, bootstrap))
+     }
+ 
+     /// Start a configured TCP, TLS, QUIC or other owned two-party driver.
+diff --git a/src/rpc/io.rs b/src/rpc/io.rs
+index 2e0c014..507b7fb 100644
+--- a/src/rpc/io.rs
++++ b/src/rpc/io.rs
+@@ -10,14 +10,15 @@ use std::{
+ };
+ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+ 
+-pub(crate) struct TokioIo<T>(pub(crate) T);
+-
+-impl<T> TokioIo<T> {
+-    pub(crate) fn get_ref(&self) -> &T {
+-        &self.0
+-    }
++pub(crate) fn defer(cx: &mut Context<'_>) {
++    // yield_now's first poll places this waker on Tokio's deferred queue,
++    // independently of the future's lifetime. TaskSet owns the resume state.
++    let mut yielding = std::pin::pin!(tokio::task::yield_now());
++    let _ = std::future::Future::poll(yielding.as_mut(), cx);
+ }
+ 
++pub(crate) struct TokioIo<T>(pub(crate) T);
++
+ impl<T: AsyncRead + Unpin> futures::AsyncRead for TokioIo<T> {
+     fn poll_read(
+         self: Pin<&mut Self>,
+@@ -62,6 +63,35 @@ mod tests {
+     use super::*;
+     use futures::{AsyncReadExt, AsyncWriteExt};
+ 
++    #[test]
++    fn deferred_wake_allows_other_ready_local_tasks_to_run() {
++        use std::{cell::RefCell, rc::Rc};
++        let runtime = tokio::runtime::Builder::new_current_thread()
++            .build()
++            .unwrap();
++        runtime.block_on(tokio::task::LocalSet::new().run_until(async {
++            let events = Rc::new(RefCell::new(Vec::new()));
++            let writer_events = events.clone();
++            let mut yielded = false;
++            let writer = tokio::task::spawn_local(std::future::poll_fn(move |cx| {
++                if !yielded {
++                    yielded = true;
++                    defer(cx);
++                    Poll::Pending
++                } else {
++                    writer_events.borrow_mut().push("write");
++                    Poll::Ready(())
++                }
++            }));
++            let caller_events = events.clone();
++            tokio::task::spawn_local(async move {
++                caller_events.borrow_mut().push("call");
++            });
++            writer.await.unwrap();
++            assert_eq!(&*events.borrow(), &["call", "write"]);
++        }));
++    }
++
+     #[derive(Default)]
+     struct Writer {
+         calls: usize,
+diff --git a/src/rpc/quic.rs b/src/rpc/quic.rs
+index 49fc8d7..abe3728 100644
+--- a/src/rpc/quic.rs
++++ b/src/rpc/quic.rs
+@@ -156,7 +156,9 @@ pub async fn accept(incoming: Incoming, timeout: Duration) -> io::Result<Stream>
+ pub type Network = twoparty::VatNetwork<Compat<tokio::io::ReadHalf<Stream>>>;
+ pub fn network(stream: Stream, side: Side, options: ReaderOptions) -> Network {
+     let (read, write) = tokio::io::split(stream);
+-    twoparty::VatNetwork::new(read.compat(), TokioIo(write), side, options)
++    let mut network = twoparty::VatNetwork::new(read.compat(), TokioIo(write), side, options);
++    network.set_task_yield(super::io::defer);
++    network
+ }
+ pub fn client(
+     stream: Stream,
+diff --git a/src/rpc/tcp.rs b/src/rpc/tcp.rs
+index 1897b21..98634ad 100644
+--- a/src/rpc/tcp.rs
++++ b/src/rpc/tcp.rs
+@@ -1,10 +1,13 @@
+ //! TCP adapters with automatic socket-informed streaming flow control. Generic
+ //! byte IO has no socket metadata; use these entry points to sample SO_SNDBUF.
+-use super::io::TokioIo;
++mod io;
++#[cfg(target_os = "linux")]
++mod low_water;
+ use capnp::{capability::Client, message::ReaderOptions};
+ use capnp_rpc::{rpc_twoparty_capnp::Side, twoparty};
+-use tokio::net::{tcp::OwnedReadHalf, TcpListener, TcpStream, ToSocketAddrs};
+-use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
++pub use io::ReadHalf;
++use io::WriteHalf;
++use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
+ 
+ /// Dial a plaintext TCP peer with Nagle's algorithm disabled for RPC latency.
+ /// Wrap this future in `tokio::time::timeout` to bound DNS and connection setup.
+@@ -23,23 +26,30 @@ pub async fn connect(
+ /// send-buffer size, with a connection-wide 64 KiB fallback on query failure.
+ /// Explicit flow-policy setters on the returned network override this default
+ /// for subsequently created streams. No socket is duplicated for the query.
++/// On Linux, incomplete large bodies supply a bounded readiness minimum. This
++/// preserves TCP receive autotuning; complete frames restore ordinary readiness.
+ pub fn network(
+     socket: TcpStream,
+     side: Side,
+     options: ReaderOptions,
+-) -> twoparty::VatNetwork<Compat<OwnedReadHalf>> {
++) -> twoparty::VatNetwork<ReadHalf> {
+     let (read, write) = socket.into_split();
+-    twoparty::VatNetwork::new_with_send_buffer(
+-        read.compat(),
+-        TokioIo(write),
++    let mut network = twoparty::VatNetwork::new_with_send_buffer(
++        ReadHalf::new(read),
++        WriteHalf(write),
+         side,
+         options,
+         |write| {
+-            socket2::SockRef::from(write.get_ref().as_ref())
++            socket2::SockRef::from(write.0.as_ref())
+                 .send_buffer_size()
+                 .ok()
+         },
+-    )
++    );
++    network.set_task_yield(super::io::defer);
++    network
++        .set_read_hint(ReadHalf::set_read_hint)
++        .expect("new network owns its input");
++    network
+ }
+ 
+ /// Obtain bootstrap/observation handles, then poll this driver on a local
+diff --git a/src/rpc/tcp/io.rs b/src/rpc/tcp/io.rs
+new file mode 100644
+index 0000000..1257d5e
+--- /dev/null
++++ b/src/rpc/tcp/io.rs
+@@ -0,0 +1,305 @@
++//! TCP readiness and direct-body progress for the deferred RPC scheduler.
++//! Small reads drain like KJ; large reads report partial progress while using
++//! Tokio's short-read optimization. Exact body sizes bound Linux readiness.
++#![forbid(unsafe_code)]
++
++use std::{
++    io::{self, IoSlice},
++    pin::Pin,
++    task::{ready, Context, Poll},
++};
++use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
++
++/// Owned TCP input used by the RPC network. Small reads preserve readiness until
++/// WouldBlock. Direct body reads retain Tokio's short-read optimization and
++/// notify the RPC scheduler before yielding. On Linux, incomplete large bodies
++/// supply a bounded readiness minimum without disabling TCP receive autotuning.
++pub struct ReadHalf {
++    inner: OwnedReadHalf,
++    #[cfg(target_os = "linux")]
++    minimum: Option<Minimum>,
++}
++
++#[cfg(target_os = "linux")]
++struct Minimum {
++    original: usize,
++    current: usize,
++    enabled: bool,
++}
++
++impl ReadHalf {
++    pub(super) fn new(inner: OwnedReadHalf) -> Self {
++        #[cfg(target_os = "linux")]
++        let minimum = super::low_water::get(inner.as_ref())
++            .ok()
++            .map(|original| Minimum {
++                original,
++                current: original,
++                enabled: true,
++            });
++        Self {
++            inner,
++            #[cfg(target_os = "linux")]
++            minimum,
++        }
++    }
++
++    pub(super) fn set_read_hint(&mut self, bytes: usize) -> io::Result<()> {
++        #[cfg(target_os = "linux")]
++        if let Some(minimum) = &mut self.minimum {
++            let wanted = if bytes >= 128 * 1024 {
++                bytes.min(1024 * 1024)
++            } else {
++                1
++            };
++            if wanted == minimum.current || (!minimum.enabled && wanted != 1) {
++                return Ok(());
++            }
++            match super::low_water::set(self.inner.as_ref(), wanted) {
++                Ok(()) => minimum.current = wanted,
++                Err(_) if minimum.current == 1 => minimum.enabled = false,
++                Err(error) => return Err(error),
++            }
++        }
++        #[cfg(not(target_os = "linux"))]
++        let _ = bytes;
++        Ok(())
++    }
++}
++
++#[cfg(target_os = "linux")]
++impl Drop for ReadHalf {
++    fn drop(&mut self) {
++        if let Some(minimum) = &self.minimum {
++            if minimum.current != minimum.original {
++                let _ = super::low_water::set(self.inner.as_ref(), minimum.original);
++            }
++        }
++    }
++}
++
++impl futures::AsyncRead for ReadHalf {
++    fn poll_read(
++        self: Pin<&mut Self>,
++        cx: &mut Context<'_>,
++        bytes: &mut [u8],
++    ) -> Poll<io::Result<usize>> {
++        if bytes.is_empty() {
++            return Poll::Ready(Ok(0));
++        }
++        if bytes.len() > 64 * 1024 {
++            // Large direct body reads benefit from Tokio's short-read
++            // readiness optimization. Publish partial progress to the RPC
++            // scheduler so a queued reply still waits for the next input turn.
++            // Otherwise it can flush between two already arriving body chunks.
++            let this = self.get_mut();
++            let mut buffer = tokio::io::ReadBuf::new(bytes);
++            ready!(tokio::io::AsyncRead::poll_read(
++                Pin::new(&mut this.inner),
++                cx,
++                &mut buffer,
++            ))?;
++            let count = buffer.filled().len();
++            if count != 0 && buffer.remaining() != 0 {
++                cx.waker().wake_by_ref();
++            }
++            return Poll::Ready(Ok(count));
++        }
++        loop {
++            ready!(self.inner.as_ref().poll_read_ready(cx))?;
++            match self.inner.try_read(bytes) {
++                Err(error) if error.kind() == io::ErrorKind::WouldBlock => continue,
++                result => return Poll::Ready(result),
++            }
++        }
++    }
++}
++
++pub(super) struct WriteHalf(pub(super) OwnedWriteHalf);
++
++impl futures::AsyncWrite for WriteHalf {
++    fn poll_write(
++        self: Pin<&mut Self>,
++        cx: &mut Context<'_>,
++        bytes: &[u8],
++    ) -> Poll<io::Result<usize>> {
++        loop {
++            ready!(self.0.as_ref().poll_write_ready(cx))?;
++            match self.0.try_write(bytes) {
++                Err(error) if error.kind() == io::ErrorKind::WouldBlock => continue,
++                result => return Poll::Ready(result),
++            }
++        }
++    }
++
++    fn poll_write_vectored(
++        self: Pin<&mut Self>,
++        cx: &mut Context<'_>,
++        bytes: &[IoSlice<'_>],
++    ) -> Poll<io::Result<usize>> {
++        loop {
++            ready!(self.0.as_ref().poll_write_ready(cx))?;
++            match self.0.try_write_vectored(bytes) {
++                Err(error) if error.kind() == io::ErrorKind::WouldBlock => continue,
++                result => return Poll::Ready(result),
++            }
++        }
++    }
++
++    fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
++        Poll::Ready(Ok(()))
++    }
++
++    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
++        tokio::io::AsyncWrite::poll_shutdown(Pin::new(&mut self.get_mut().0), cx)
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use futures::{AsyncRead, AsyncReadExt, AsyncWriteExt};
++    use std::io::{Read, Write};
++
++    #[cfg(target_os = "linux")]
++    #[tokio::test]
++    async fn exact_body_minimum_resets_for_small_frames_and_restores_on_drop() {
++        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++        let mut peer = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
++        let (socket, _) = listener.accept().await.unwrap();
++        super::super::low_water::set(&socket, 7).unwrap();
++        let (read, write) = socket.into_split();
++        let mut read = ReadHalf::new(read);
++        read.set_read_hint(128 * 1024).unwrap();
++        assert_eq!(
++            super::super::low_water::get(write.as_ref()).unwrap(),
++            128 * 1024
++        );
++        peer.write_all(b"one").unwrap();
++        let mut bytes = vec![0; 128 * 1024];
++        let mut cx = Context::from_waker(futures::task::noop_waker_ref());
++        assert!(Pin::new(&mut read)
++            .poll_read(&mut cx, &mut bytes)
++            .is_pending());
++        peer.write_all(&vec![0x61; bytes.len() - 3]).unwrap();
++        tokio::time::timeout(
++            std::time::Duration::from_secs(5),
++            read.read_exact(&mut bytes),
++        )
++        .await
++        .unwrap()
++        .unwrap();
++        assert_eq!(&bytes[..3], b"one");
++        assert!(bytes[3..].iter().all(|b| *b == 0x61));
++        read.set_read_hint(1).unwrap();
++        peer.write_all(b"x").unwrap();
++        tokio::time::timeout(
++            std::time::Duration::from_secs(5),
++            read.read_exact(&mut bytes[..1]),
++        )
++        .await
++        .unwrap()
++        .unwrap();
++        assert_eq!(bytes[0], b'x');
++        read.set_read_hint(usize::MAX).unwrap();
++        assert_eq!(
++            super::super::low_water::get(write.as_ref()).unwrap(),
++            1024 * 1024
++        );
++        // A canceled body read can leave a raised minimum. Dropping the input
++        // restores the caller's original value even while the writer lives.
++        drop(read);
++        assert_eq!(super::super::low_water::get(write.as_ref()).unwrap(), 7);
++    }
++
++    #[tokio::test]
++    async fn partial_direct_body_read_notifies_progress_and_resumes_after_readiness() {
++        use std::sync::{
++            atomic::{AtomicBool, Ordering},
++            Arc,
++        };
++        use std::task::{Wake, Waker};
++        struct Notified(AtomicBool);
++        impl Wake for Notified {
++            fn wake(self: Arc<Self>) {
++                self.0.store(true, Ordering::Release);
++            }
++        }
++        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++        let mut peer = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
++        let (socket, _) = listener.accept().await.unwrap();
++        peer.write_all(b"one").unwrap();
++        socket.readable().await.unwrap();
++        let (read, _write) = socket.into_split();
++        let mut read = ReadHalf::new(read);
++        let notified = Arc::new(Notified(AtomicBool::new(false)));
++        let waker = Waker::from(notified.clone());
++        let mut cx = Context::from_waker(&waker);
++        let mut bytes = vec![0; 128 * 1024];
++        assert!(matches!(
++            Pin::new(&mut read).poll_read(&mut cx, &mut bytes),
++            Poll::Ready(Ok(3))
++        ));
++        assert_eq!(&bytes[..3], b"one");
++        assert!(notified.0.load(Ordering::Acquire));
++        assert!(Pin::new(&mut read)
++            .poll_read(&mut cx, &mut bytes)
++            .is_pending());
++        peer.write_all(b"two").unwrap();
++        tokio::time::timeout(
++            std::time::Duration::from_secs(5),
++            read.read_exact(&mut bytes[..3]),
++        )
++        .await
++        .unwrap()
++        .unwrap();
++        assert_eq!(&bytes[..3], b"two");
++        peer.shutdown(std::net::Shutdown::Write).unwrap();
++        assert_eq!(read.read(&mut bytes).await.unwrap(), 0);
++    }
++
++    #[tokio::test]
++    async fn short_read_keeps_readiness_and_would_block_registers_the_next_wake() {
++        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++        let mut peer = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
++        let (socket, _) = listener.accept().await.unwrap();
++        peer.write_all(b"one").unwrap();
++        socket.readable().await.unwrap();
++        let (read, write) = socket.into_split();
++        let mut read = ReadHalf::new(read);
++        let mut cx = Context::from_waker(futures::task::noop_waker_ref());
++        let mut bytes = [0; 64];
++        assert!(matches!(
++            Pin::new(&mut read).poll_read(&mut cx, &mut bytes),
++            Poll::Ready(Ok(3))
++        ));
++        assert_eq!(&bytes[..3], b"one");
++        // No reactor poll between the short read and the next socket write.
++        peer.write_all(b"two").unwrap();
++        assert!(matches!(
++            Pin::new(&mut read).poll_read(&mut cx, &mut bytes),
++            Poll::Ready(Ok(3))
++        ));
++        assert_eq!(&bytes[..3], b"two");
++        assert!(Pin::new(&mut read)
++            .poll_read(&mut cx, &mut bytes)
++            .is_pending());
++        peer.write_all(b"three").unwrap();
++        tokio::time::timeout(
++            std::time::Duration::from_secs(5),
++            read.read_exact(&mut bytes[..5]),
++        )
++        .await
++        .unwrap()
++        .unwrap();
++        assert_eq!(&bytes[..5], b"three");
++        let mut write = WriteHalf(write);
++        write.write_all(b"reply").await.unwrap();
++        write.close().await.unwrap();
++        let mut reply = Vec::new();
++        peer.read_to_end(&mut reply).unwrap();
++        assert_eq!(reply, b"reply");
++        peer.shutdown(std::net::Shutdown::Write).unwrap();
++        assert_eq!(read.read(&mut bytes).await.unwrap(), 0);
++    }
++}
+diff --git a/src/rpc/tcp/low_water.rs b/src/rpc/tcp/low_water.rs
+new file mode 100644
+index 0000000..75a1565
+--- /dev/null
++++ b/src/rpc/tcp/low_water.rs
+@@ -0,0 +1,57 @@
++//! Linux TCP readiness for an exact, incomplete message body. SO_RCVLOWAT
++//! preserves receive autotuning, unlike fixing SO_RCVBUF. The kernel clamps it
++//! to available receive capacity and signals readiness when it is lowered.
++use std::{
++    io,
++    os::fd::{AsFd, AsRawFd},
++};
++
++pub(super) fn get(socket: &impl AsFd) -> io::Result<usize> {
++    let mut value: libc::c_int = 0;
++    let mut length = std::mem::size_of_val(&value) as libc::socklen_t;
++    // SAFETY: The borrowed descriptor remains live through the call. For
++    // SOL_SOCKET/SO_RCVLOWAT, Linux writes one c_int and its socklen_t length;
++    // both initialized stack objects are writable and live for the whole call.
++    let result = unsafe {
++        libc::getsockopt(
++            socket.as_fd().as_raw_fd(),
++            libc::SOL_SOCKET,
++            libc::SO_RCVLOWAT,
++            std::ptr::from_mut(&mut value).cast(),
++            &mut length,
++        )
++    };
++    if result == -1 {
++        return Err(io::Error::last_os_error());
++    }
++    if length as usize != std::mem::size_of_val(&value) || value < 1 {
++        return Err(io::Error::other("invalid TCP receive low-water value"));
++    }
++    Ok(value as usize)
++}
++
++pub(super) fn set(socket: &impl AsFd, bytes: usize) -> io::Result<()> {
++    let value = libc::c_int::try_from(bytes)
++        .ok()
++        .filter(|v| *v > 0)
++        .ok_or_else(|| {
++            io::Error::new(io::ErrorKind::InvalidInput, "invalid TCP receive minimum")
++        })?;
++    // SAFETY: The borrowed descriptor remains live. SO_RCVLOWAT consumes one
++    // initialized c_int of exactly this size; setsockopt copies the value and
++    // retains no pointer to this stack object.
++    let result = unsafe {
++        libc::setsockopt(
++            socket.as_fd().as_raw_fd(),
++            libc::SOL_SOCKET,
++            libc::SO_RCVLOWAT,
++            std::ptr::from_ref(&value).cast(),
++            std::mem::size_of_val(&value) as libc::socklen_t,
++        )
++    };
++    if result == -1 {
++        Err(io::Error::last_os_error())
++    } else {
++        Ok(())
++    }
++}
+diff --git a/src/rpc/tls.rs b/src/rpc/tls.rs
+index c7e80d1..eed1e09 100644
+--- a/src/rpc/tls.rs
++++ b/src/rpc/tls.rs
+@@ -161,13 +161,15 @@ pub fn network(stream: TlsStream<TcpStream>, side: Side, options: ReaderOptions)
+         .send_buffer_size()
+         .ok();
+     let (read, write) = tokio::io::split(stream);
+-    twoparty::VatNetwork::new_with_send_buffer(
++    let mut network = twoparty::VatNetwork::new_with_send_buffer(
+         read.compat(),
+         TokioIo(write),
+         side,
+         options,
+         move |_| window,
+-    )
++    );
++    network.set_task_yield(super::io::defer);
++    network
+ }
+ 
+ /// Build the RPC driver after authentication. Poll it within a Tokio LocalSet.

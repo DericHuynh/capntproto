@@ -1,5 +1,7 @@
 //! Executor-neutral conveniences for a single peer and a collection of peers.
 mod borrowed;
+mod notify;
+use notify::WakeDriven;
 
 use super::{OutputSnapshot, QueueSnapshot, VatId, VatNetwork};
 use crate::{task_set, RpcSystem};
@@ -82,8 +84,8 @@ pub struct TwoPartyClient<'a> {
     system: Option<RpcSystem<VatId>>,
     side: VatId,
     queue: QueueDiagnostics,
-    output_closed: Shared<Promise<(), Error>>,
-    write_finished: Option<Shared<Promise<(), Error>>>,
+    output_closed: Option<WakeDriven<Shared<Promise<(), Error>>>>,
+    write_finished: Option<WakeDriven<Shared<Promise<(), Error>>>>,
     disconnected: Shared<Promise<(), Error>>,
     completion: Option<oneshot::Sender<capnp::Result<()>>>,
     borrowed: Option<Box<dyn borrowed::Pump + 'a>>,
@@ -123,8 +125,8 @@ impl TwoPartyClient<'static> {
             system: Some(RpcSystem::new(Box::new(network), bootstrap)),
             side,
             queue,
-            output_closed,
-            write_finished,
+            output_closed: Some(WakeDriven::new(output_closed)),
+            write_finished: write_finished.map(WakeDriven::new),
             disconnected: Promise::from_future(async move {
                 receiver
                     .await
@@ -283,9 +285,19 @@ impl Future for TwoPartyClient<'_> {
                     if written.is_ready() {
                         this.write_finished = None;
                     }
+                    let closed = this
+                        .output_closed
+                        .as_mut()
+                        .map_or(Poll::Pending, |closed| Pin::new(closed).poll(cx));
+                    if closed.is_ready() {
+                        // Explicit shutdown can finish the physical close
+                        // before the RPC task set consumes its registrations.
+                        // Shared receivers cannot be polled after completion.
+                        this.output_closed = None;
+                    }
                     let failure = match written {
                         Poll::Ready(Err(error)) => Some(error),
-                        _ => match Pin::new(&mut this.output_closed).poll(cx) {
+                        _ => match closed {
                             Poll::Ready(Err(error)) => Some(error),
                             _ => None,
                         },

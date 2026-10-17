@@ -431,6 +431,7 @@ pub struct BufferedRead<R> {
     borrowed: bool,
     streaming: Option<Streaming>,
     read_ahead: fn(&R) -> bool,
+    read_hint: fn(&mut R, usize) -> std::io::Result<()>,
 }
 impl<R: AsyncRead + Unpin> BufferedRead<R> {
     /// Creates a reader with a 64 KiB receive buffer.
@@ -474,6 +475,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
             borrowed: false,
             streaming: None,
             read_ahead: |_| true,
+            read_hint: |_, _| Ok(()),
         })
     }
 
@@ -483,6 +485,15 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
     /// current frame's descriptor budget. Large/direct reads are always bounded.
     pub fn set_read_ahead_policy(&mut self, policy: fn(&R) -> bool) {
         self.read_ahead = policy;
+    }
+
+    /// Advise the transport how many bytes an exact body read still needs.
+    /// Ordinary buffered/streaming reads and completed frames use one. A
+    /// canceled read keeps the hint and its partial frame until resumed; the
+    /// transport must restore any external socket state when it is dropped.
+    /// The callback must never require more than the supplied number of bytes.
+    pub fn set_read_hint(&mut self, hint: fn(&mut R, usize) -> std::io::Result<()>) {
+        self.read_hint = hint;
     }
 
     /// The underlying input, including transport-specific ancillary state.
@@ -922,6 +933,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
         loop {
             if let Some(spill) = &mut self.spill {
                 if spill.filled < spill.frame.bytes {
+                    (self.read_hint)(&mut self.input, spill.frame.bytes - spill.filled)?;
                     let count = ready!(Pin::new(&mut self.input).poll_read(
                         cx,
                         &mut Word::words_to_bytes_mut(&mut spill.storage)
@@ -933,6 +945,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
                     spill.filled += count;
                     continue;
                 }
+                (self.read_hint)(&mut self.input, 1)?;
                 return Poll::Ready(Ok(true));
             }
             if self.frame.is_none() {
@@ -1019,6 +1032,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
                 };
                 read_end = read_end.min(self.begin + header);
             }
+            (self.read_hint)(&mut self.input, 1)?;
             let count =
                 ready!(Pin::new(&mut self.input).poll_read(cx, &mut buffer[self.end..read_end]))?;
             if count == 0 {
@@ -1036,6 +1050,89 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct Hinted {
+        reader: Fragmented,
+        frame_bytes: usize,
+        hints: Vec<usize>,
+        reject_reset: bool,
+    }
+
+    impl AsyncRead for Hinted {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            bytes: &mut [u8],
+        ) -> Poll<std::io::Result<usize>> {
+            Pin::new(&mut self.reader).poll_read(cx, bytes)
+        }
+    }
+
+    impl Hinted {
+        fn hint(&mut self, bytes: usize) -> std::io::Result<()> {
+            if bytes > 1 {
+                assert_eq!(
+                    bytes,
+                    self.frame_bytes - self.reader.input.position() as usize
+                );
+            } else if self.reject_reset && self.hints.iter().any(|n| *n > 1) {
+                return Err(std::io::Error::other("readiness reset failed"));
+            }
+            self.hints.push(bytes);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn exact_read_hints_track_partial_progress_and_reset_before_exposing_a_frame() {
+        for reject_reset in [false, true] {
+            let mut message = capnp::message::Builder::new_default();
+            message.initn_root::<capnp::data::Builder>(4096).fill(0x91);
+            let frame = capnp::serialize::write_message_to_words(&message);
+            let mut input = BufferedRead::with_buffer_size(
+                Hinted {
+                    reader: Fragmented {
+                        input: futures::io::Cursor::new(frame.clone()),
+                        chunk: 127,
+                        pending: false,
+                    },
+                    frame_bytes: frame.len(),
+                    hints: Vec::new(),
+                    reject_reset,
+                },
+                Default::default(),
+                MIN_BUFFER_WORDS,
+            )
+            .unwrap();
+            input.set_read_hint(Hinted::hint);
+            let mut cx = Context::from_waker(futures::task::noop_waker_ref());
+            // Each Pending releases the preparation future; its next poll must
+            // resume both the exact remaining count and the partial frame.
+            loop {
+                match input.poll_borrowed_frame(&mut cx) {
+                    Poll::Pending => continue,
+                    Poll::Ready(Ok(Some(bytes))) => {
+                        assert!(!reject_reset);
+                        assert_eq!(bytes, frame);
+                        assert_eq!(input.get_ref().hints.last(), Some(&1));
+                        input.finish_borrowed_frame();
+                        break;
+                    }
+                    Poll::Ready(Err(error)) => {
+                        assert!(reject_reset);
+                        assert!(error.to_string().contains("readiness reset failed"));
+                        assert!(matches!(
+                            input.poll_borrowed_frame(&mut cx),
+                            Poll::Ready(Err(_))
+                        ));
+                        break;
+                    }
+                    _ => panic!("expected one complete frame"),
+                }
+            }
+            assert!(input.get_ref().hints.iter().any(|n| *n > 1));
+        }
+    }
 
     #[test]
     fn owning_spills_reuse_only_released_storage_and_limit_each_read() {
