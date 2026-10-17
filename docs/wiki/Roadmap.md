@@ -30,10 +30,31 @@ The [RPC research](RPC-Research.md) preserves its protocol probes and ordered
 acceptance criteria. [RPC applications](RPC-Applications.md) documents the APIs
 already available.
 
+## Legacy RPC performance gap
+
+**Open: [gap #15](https://github.com/DericHuynh/capntproto/issues/15).**
+The active October 17 work has returned to the legacy driver. The benchmark
+frontend again selects legacy by default; `CAPNTPROTO_BENCH_PORTABLE=1` explicitly
+selects portable. The production `RpcSystem` already defaults to legacy.
+Tokio remains the host, and the earlier portable work remains available.
+
+The new target is **candidate pooled p50 <= 0.5 × frozen legacy pooled p50**
+in each of the twelve RPC workflows and, separately, all four loopback payloads.
+The before control is legacy at `6e37505d701df4dbea52a92e0691b6037f7f1922`;
+C++ remains an additional comparison. Preserve fixtures, payload validation,
+sampling budgets, p95/p99, throughput and all failed as well as passing trials.
+Local results do not qualify a dedicated remote topology.
+
+The [legacy optimization report](../../research/reports/legacy-performance/2026-10-17/README.md)
+records receive-storage reuse, direct ordinary pipeline settlement and batching
+of pipeline parents and Finish messages. The 2× goal remains open. Continue from
+the measured remaining costs rather than interpreting an instruction reduction
+or one fast payload as completion of the whole target.
+
 ## Portable RPC performance gap
 
 **Open: [gap #11](https://github.com/DericHuynh/capntproto/issues/11), recorded October 15, 2026.**
-The October 17 goal is to make portable the fastest implementation in every
+The earlier October 17 goal was to make portable the fastest implementation in every
 matched cell: **portable pooled p50 < min(legacy p50, C++ p50)**. The existing
 **1.05 × min(legacy p50, C++ p50)** gate remains an intermediate milestone. Compare
 all peers in the same campaign with matched fixtures, release settings, CPU
@@ -83,7 +104,7 @@ with unchanged before/after wire writes. The local production build meets 8/16
 cells at 5% and is fastest in 4/16. Broader latency improvement is not established;
 a fresh dedicated campaign must measure this source independently.
 
-On October 17 the active work shifted to the
+Earlier on October 17 the work shifted to the
 [portable hosted architecture](Architecture.md#portable-hosted-execution-boundaries).
 Typed scheduling, centralized notification ownership, an explicit control-activity
 contract and separated execution/IO/lifecycle modules establish boundaries for
@@ -111,8 +132,8 @@ C++ ownership and access patterns. The [measured port](../../research/reports/po
 reduces pipeline-server instructions by 1.04% and callback-client instructions by
 0.46%; it does not establish the 5% latency target. An inline parameter owner
 saved allocations but increased instructions and was rejected.
-Focus further work on portable CPU overhead and matching Tokio/C++ publication
-turns. A Compio transport migration is no longer an active roadmap item; the
+Portable follow-up remains focused on CPU overhead and matching Tokio/C++ publication
+turns, after the active legacy work. A Compio transport migration is no longer an active roadmap item; the
 recorded Poll results do not establish io_uring performance.
 
 The first optimization slice indexes immediate reply owners beyond eight calls,

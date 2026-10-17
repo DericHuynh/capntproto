@@ -379,6 +379,72 @@ fn return_templates_preserve_payloads_and_invalidate_selections_after_root_edits
 }
 
 #[test]
+fn pipeline_and_finish_batch_with_the_next_terminal_call_or_network_poll() {
+    let output = Rc::new(Output::default());
+    output.allowed.set(usize::MAX);
+    output.flushed.set(true);
+    let mut network = VatNetwork::new(
+        futures::io::Cursor::new(Vec::<u8>::new()),
+        Writer(output.clone()),
+        VatId::Client,
+        Default::default(),
+    );
+    let mut connection = network.connection.take().unwrap();
+    let mut cx = Context::from_waker(Waker::noop());
+    assert!(network._output_driver.poll_network(&mut cx).is_pending());
+    connection
+        .new_outgoing_finish(7, true)
+        .unwrap()
+        .send_detached_and_drive();
+    let mut parent = connection.new_outgoing_call(64).unwrap();
+    parent.get_call().unwrap().set_question_id(8);
+    parent.send_detached_and_drive();
+    assert!(output.bytes.borrow().is_empty());
+    assert_eq!(network.outgoing_queue().snapshot().message_count, 2);
+    let mut child = connection.new_outgoing_call(64).unwrap();
+    child.get_call().unwrap().set_question_id(9);
+    child.get_call().unwrap().set_no_promise_pipelining(true);
+    child.send_detached_and_drive();
+    let bytes = output.bytes.borrow();
+    let mut cursor = bytes.as_slice();
+    let finish = capnp::serialize::read_message(&mut cursor, Default::default()).unwrap();
+    let crate::rpc_capnp::message::Finish(finish) = finish
+        .get_root::<crate::rpc_capnp::message::Reader>()
+        .unwrap()
+        .which()
+        .unwrap()
+    else {
+        panic!("Finish must precede reused questions")
+    };
+    assert_eq!(finish.unwrap().get_question_id(), 7);
+    for id in [8, 9] {
+        let message = capnp::serialize::read_message(&mut cursor, Default::default()).unwrap();
+        let crate::rpc_capnp::message::Call(call) = message
+            .get_root::<crate::rpc_capnp::message::Reader>()
+            .unwrap()
+            .which()
+            .unwrap()
+        else {
+            panic!("ordered Call")
+        };
+        assert_eq!(call.unwrap().get_question_id(), id);
+    }
+    assert!(cursor.is_empty());
+    drop(bytes);
+    let before = output.bytes.borrow().len();
+    connection
+        .new_outgoing_call(64)
+        .unwrap()
+        .send_detached_and_drive();
+    assert_eq!(output.bytes.borrow().len(), before);
+    assert!(network._output_driver.poll_network(&mut cx).is_pending());
+    assert!(
+        output.bytes.borrow().len() > before,
+        "a parent without a child still progresses"
+    );
+}
+
+#[test]
 fn detached_drive_writes_immediately_but_keeps_ownership_until_flush() {
     struct Guard(Rc<Cell<usize>>);
     impl Drop for Guard {

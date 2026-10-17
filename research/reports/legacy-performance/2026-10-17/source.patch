@@ -1,0 +1,933 @@
+diff --git a/benchmarks/rpc/src/lib.rs b/benchmarks/rpc/src/lib.rs
+index 91014fa..fb53703 100644
+--- a/benchmarks/rpc/src/lib.rs
++++ b/benchmarks/rpc/src/lib.rs
+@@ -348,8 +348,8 @@ pub mod driver;
+ 
+ pub(crate) fn tcp_driver() -> Result<&'static str> {
+     match std::env::var("CAPNTPROTO_BENCH_PORTABLE").as_deref() {
+-        Ok("1") | Err(std::env::VarError::NotPresent) => Ok("portable"),
+-        Ok("0") => Ok("legacy"),
++        Ok("1") => Ok("portable"),
++        Ok("0") | Err(std::env::VarError::NotPresent) => Ok("legacy"),
+         _ => Err("CAPNTPROTO_BENCH_PORTABLE must be 0 or 1".into()),
+     }
+ }
+diff --git a/crates/capntproto-futures/src/buffered_read.rs b/crates/capntproto-futures/src/buffered_read.rs
+index e39fbbc..b8ff161 100644
+--- a/crates/capntproto-futures/src/buffered_read.rs
++++ b/crates/capntproto-futures/src/buffered_read.rs
+@@ -5,7 +5,7 @@ use core::{
+     pin::Pin,
+     task::{ready, Context, Poll},
+ };
+-use std::sync::Arc;
++use std::sync::{Arc, Mutex, Weak};
+ 
+ use capnp::{
+     message::{Reader, ReaderOptions, ReaderSegments},
+@@ -145,6 +145,26 @@ enum Storage {
+     SharedWords(Arc<Vec<Word>>),
+     SharedBytes(Arc<Vec<u8>>),
+     Owned(Box<[Word]>),
++    Recycled(Box<RecycledSpill>),
++}
++// Only released owning frames may return storage. A weak cache reference keeps
++// retained readers independent of the stream and does not prolong its cache.
++struct RecycledSpill {
++    words: Vec<Word>,
++    cache: Weak<Mutex<Vec<Word>>>,
++}
++impl Drop for RecycledSpill {
++    fn drop(&mut self) {
++        if self.words.capacity() > MAX_CACHED_SPILL_WORDS {
++            return;
++        }
++        if let Some(cache) = self.cache.upgrade() {
++            let mut cached = cache.lock().unwrap();
++            if self.words.capacity() > cached.capacity() {
++                core::mem::swap(&mut self.words, &mut cached);
++            }
++        }
++    }
+ }
+ impl Storage {
+     fn bytes(&self) -> &[u8] {
+@@ -152,6 +172,7 @@ impl Storage {
+             Self::SharedWords(words) => Word::words_to_bytes(words),
+             Self::SharedBytes(bytes) => bytes,
+             Self::Owned(words) => Word::words_to_bytes(words),
++            Self::Recycled(spill) => Word::words_to_bytes(&spill.words),
+         }
+     }
+ }
+@@ -299,6 +320,7 @@ impl ReaderSegments for BufferedSegments {
+             // Owned frames always start at zero (detach, spill or scratch
+             // conversion). Only shared receive views need an additional offset.
+             Storage::Owned(words) => &Word::words_to_bytes(words)[start..end],
++            Storage::Recycled(spill) => &Word::words_to_bytes(&spill.words)[start..end],
+             Storage::SharedWords(words) => {
+                 &Word::words_to_bytes(words)[self.start + start..self.start + end]
+             }
+@@ -403,6 +425,7 @@ pub struct BufferedRead<R> {
+     frame: Option<Frame>,
+     spill: Option<Spill>,
+     spare: Vec<Word>,
++    owned_spare: Option<Arc<Mutex<Vec<Word>>>>,
+     terminal: Option<Result<()>>,
+     consumed: u64,
+     borrowed: bool,
+@@ -422,6 +445,8 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
+     /// 128 KiB; streamed bursts can also grow it to this bound. Owning reads do
+     /// not grow it. Larger borrowed frames use a separate
+     /// reusable spill allocation, bounded as documented by `finish_borrowed_frame`.
++    /// Owning reads lazily cache one released spill of at most 8 MiB. Live
++    /// readers never share that allocation with a subsequent receive.
+     pub fn with_buffer_size(input: R, options: ReaderOptions, words: usize) -> Result<Self> {
+         if words < MIN_BUFFER_WORDS
+             || words
+@@ -443,6 +468,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
+             frame: None,
+             spill: None,
+             spare: Vec::new(),
++            owned_spare: None,
+             terminal: None,
+             consumed: 0,
+             borrowed: false,
+@@ -604,9 +630,15 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
+         }
+         if let Some(spill) = self.spill.take() {
+             self.advance(spill.frame.bytes)?;
++            let cache = self
++                .owned_spare
++                .get_or_insert_with(|| Arc::new(Mutex::new(Vec::new())));
+             return Poll::Ready(Ok(Some(Reader::new(
+                 BufferedScratchSegments(ScratchStorage::Buffered(BufferedSegments {
+-                    storage: Storage::Owned(spill.storage.into_boxed_slice()),
++                    storage: Storage::Recycled(Box::new(RecycledSpill {
++                        words: spill.storage,
++                        cache: Arc::downgrade(cache),
++                    })),
+                     start: 0,
+                     frame: spill.frame,
+                 })),
+@@ -892,7 +924,8 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
+                 if spill.filled < spill.frame.bytes {
+                     let count = ready!(Pin::new(&mut self.input).poll_read(
+                         cx,
+-                        &mut Word::words_to_bytes_mut(&mut spill.storage)[spill.filled..],
++                        &mut Word::words_to_bytes_mut(&mut spill.storage)
++                            [spill.filled..spill.frame.bytes],
+                     ))?;
+                     if count == 0 {
+                         return Poll::Ready(Err(Error::from_kind(ErrorKind::PrematureEndOfFile)));
+@@ -917,11 +950,22 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
+                 if frame.bytes > threshold || !(self.read_ahead)(&self.input) {
+                     let words = frame.bytes / 8;
+                     let mut storage = core::mem::take(&mut self.spare);
++                    if storage.capacity() < words {
++                        if let Some(cache) = &self.owned_spare {
++                            let cached = core::mem::take(&mut *cache.lock().unwrap());
++                            if cached.capacity() > storage.capacity() {
++                                storage = cached;
++                            }
++                        }
++                    }
+                     if storage.capacity() < words {
+                         storage = Word::allocate_zeroed_vec(words);
+-                    } else {
++                    } else if storage.len() < words {
+                         storage.resize(words, capnp::word(0, 0, 0, 0, 0, 0, 0, 0));
+                     }
++                    // Keep initialized capacity on reuse. Only the validated
++                    // frame prefix is read or exposed; stale suffix bytes must
++                    // neither consume the successor frame nor reach readers.
+                     let filled = self.end - self.begin;
+                     Word::words_to_bytes_mut(&mut storage)[..filled]
+                         .copy_from_slice(&self.buffer.bytes()[self.begin..self.end]);
+@@ -993,6 +1037,77 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn owning_spills_reuse_only_released_storage_and_limit_each_read() {
++        let frames: Vec<_> = [(6144, 0x91), (4096, 0x32), (3000, 0x73), (4096, 0x54)]
++            .into_iter()
++            .map(|(size, byte)| {
++                let mut message = capnp::message::Builder::new_default();
++                message.initn_root::<capnp::data::Builder>(size).fill(byte);
++                capnp::serialize::write_message_to_words(&message)
++            })
++            .collect();
++        let mut input = BufferedRead::with_buffer_size(
++            Fragmented {
++                input: futures::io::Cursor::new(frames.concat()),
++                chunk: 127,
++                pending: false,
++            },
++            Default::default(),
++            MIN_BUFFER_WORDS,
++        )
++        .unwrap();
++        let read = |input: &mut BufferedRead<_>| {
++            futures::executor::block_on(futures::future::poll_fn(|cx| {
++                input.poll_read_message(cx, |_| Ok(false))
++            }))
++            .unwrap()
++            .unwrap()
++        };
++        let retained = read(&mut input);
++        let released = read(&mut input);
++        let address = released.get_segments().framed_bytes().as_ptr();
++        assert_eq!(retained.get_segments().framed_bytes(), frames[0]);
++        assert_eq!(released.get_segments().framed_bytes(), frames[1]);
++        drop(released);
++        let reused = read(&mut input);
++        assert_eq!(reused.get_segments().framed_bytes().as_ptr(), address);
++        assert_eq!(reused.get_segments().framed_bytes(), frames[2]);
++        assert_eq!(retained.get_segments().framed_bytes(), frames[0]);
++        drop(reused);
++        let last = read(&mut input);
++        assert_eq!(last.get_segments().framed_bytes().as_ptr(), address);
++        assert_eq!(last.get_segments().framed_bytes(), frames[3]);
++        assert_eq!(
++            input.consumed_bytes(),
++            frames.iter().map(|f| f.len() as u64).sum()
++        );
++        drop(input);
++        // Reader ownership survives the stream and its weak recycling cache.
++        assert_eq!(last.get_segments().framed_bytes(), frames[3]);
++        assert_eq!(retained.get_segments().framed_bytes(), frames[0]);
++    }
++
++    #[test]
++    fn owning_spill_cache_rejects_oversized_storage() {
++        let cache = Arc::new(Mutex::new(Vec::new()));
++        let mut small = Word::allocate_zeroed_vec(16);
++        small[0] = capnp::word(1, 2, 3, 4, 5, 6, 7, 8);
++        drop(RecycledSpill {
++            words: small,
++            cache: Arc::downgrade(&cache),
++        });
++        assert_eq!(cache.lock().unwrap().len(), 16);
++        // Capacity, including an initialized but currently unused suffix, is
++        // the retention bound. An empty oversized Vec must also be rejected.
++        let oversized = Vec::with_capacity(MAX_CACHED_SPILL_WORDS + 1);
++        drop(RecycledSpill {
++            words: oversized,
++            cache: Arc::downgrade(&cache),
++        });
++        assert_eq!(cache.lock().unwrap().len(), 16);
++    }
++
+     #[test]
+     fn interrupted_spill_reads_keep_the_error_and_discard_partial_storage() {
+         struct BrokenBody(futures::io::Cursor<Vec<u8>>);
+diff --git a/crates/capntproto-rpc/src/join.rs b/crates/capntproto-rpc/src/join.rs
+index a9ae3d2..27ba9b5 100644
+--- a/crates/capntproto-rpc/src/join.rs
++++ b/crates/capntproto-rpc/src/join.rs
+@@ -530,9 +530,10 @@ pub(super) fn unimplemented<VatId>(
+         reference
+     };
+     if let Some(reference) = reference {
+-        reference
+-            .borrow_mut()
+-            .reject(Error::unimplemented("peer does not implement Join".into()));
++        QuestionRef::reject(
++            &reference,
++            Error::unimplemented("peer does not implement Join".into()),
++        );
+     }
+     Ok(())
+ }
+diff --git a/crates/capntproto-rpc/src/multiparty_join.rs b/crates/capntproto-rpc/src/multiparty_join.rs
+index a24fc79..527fded 100644
+--- a/crates/capntproto-rpc/src/multiparty_join.rs
++++ b/crates/capntproto-rpc/src/multiparty_join.rs
+@@ -233,9 +233,10 @@ pub(super) fn unimplemented<VatId>(
+         reference
+     };
+     if let Some(reference) = reference {
+-        reference.borrow_mut().reject(Error::unimplemented(
+-            "peer does not implement multiparty Join".into(),
+-        ));
++        QuestionRef::reject(
++            &reference,
++            Error::unimplemented("peer does not implement multiparty Join".into()),
++        );
+     }
+     Ok(())
+ }
+diff --git a/crates/capntproto-rpc/src/rpc.rs b/crates/capntproto-rpc/src/rpc.rs
+index e1d9762..0ab5b65 100644
+--- a/crates/capntproto-rpc/src/rpc.rs
++++ b/crates/capntproto-rpc/src/rpc.rs
+@@ -127,16 +127,54 @@ impl<VatId> QuestionRef<VatId> {
+             pipeline: None,
+         }
+     }
+-    fn fulfill(&mut self, response: Promise<Response<VatId>, Error>) {
+-        if let Some(fulfiller) = self.fulfiller.take() {
+-            let _ = fulfiller.send(response);
+-        }
++    fn fulfill(reference: &Rc<RefCell<Self>>, mut response: Promise<Response<VatId>, Error>) {
++        let (fulfiller, pipeline) = Self::take_completion(reference);
++        let Some(fulfiller) = fulfiller else { return };
++        if let Some(state) = pipeline {
++            // Only redirected/adopted answers need an asynchronous second
++            // completion stage. Keep it alive for pipeline-only interest and
++            // settle pipeline clients before exposing the application response.
++            let fork = response.shared();
++            Pipeline::drive(&state, Promise::from_future(fork.clone()));
++            let resolved = Pipeline { state }.when_resolved();
++            response = Promise::from_future(resolved.map(|_| ()).then(move |()| fork));
++        }
++        let _ = fulfiller.send(response);
++    }
++
++    fn fulfill_result(reference: &Rc<RefCell<Self>>, response: capnp::Result<Response<VatId>>) {
++        let (fulfiller, pipeline) = Self::take_completion(reference);
++        let Some(fulfiller) = fulfiller else { return };
++        if let Some(pipeline) = pipeline {
++            // Like C++ QuestionRef, receipt owns settlement. No background
++            // shared-future task or waiter is needed for an ordinary Return.
++            PipelineState::resolve(&pipeline, response.clone());
++        }
++        let _ = fulfiller.send(match response {
++            Ok(response) => Promise::ok(response),
++            Err(error) => Promise::err(error),
++        });
+     }
+ 
+-    fn reject(&mut self, err: Error) {
+-        if let Some(fulfiller) = self.fulfiller.take() {
+-            let _ = fulfiller.send(Promise::err(err));
+-        }
++    #[allow(clippy::type_complexity)]
++    fn take_completion(
++        reference: &Rc<RefCell<Self>>,
++    ) -> (
++        Option<oneshot::Sender<Promise<Response<VatId>, Error>>>,
++        Option<Rc<RefCell<PipelineState<VatId>>>>,
++    ) {
++        let mut reference = reference.borrow_mut();
++        let fulfiller = reference.fulfiller.take();
++        let pipeline = reference
++            .pipeline
++            .as_ref()
++            .and_then(Weak::upgrade)
++            .filter(|state| state.borrow().resolves_on_return);
++        (fulfiller, pipeline)
++    }
++
++    fn reject(reference: &Rc<RefCell<Self>>, err: Error) {
++        Self::fulfill_result(reference, Err(err));
+     }
+ }
+ 
+@@ -720,9 +758,8 @@ impl<VatId> ConnectionState<VatId> {
+         let questions = mem::replace(&mut *self.questions.borrow_mut(), LocalTable::new());
+         for question in questions.iter() {
+             if let Some(reference) = question.self_ref.as_ref().and_then(Weak::upgrade) {
+-                let mut reference = reference.borrow_mut();
+-                reference.connection_state.take();
+-                reference.reject(network_error.clone());
++                reference.borrow_mut().connection_state.take();
++                QuestionRef::reject(&reference, network_error.clone());
+             }
+         }
+         let answers_to_release = mem::take(&mut self.answers.borrow_mut().slots);
+@@ -1222,9 +1259,11 @@ where
+         cap_table: &[Option<Box<dyn ClientHook>>],
+         is_tail_call: bool,
+         permit: Rc<crate::admission::Permit>,
++        pipelined: bool,
+     ) -> capnp::Result<(
+         Rc<RefCell<QuestionRef<VatId>>>,
+         impl Future<Output = capnp::Result<Response<VatId>>> + 'static,
++        Option<Pipeline<VatId>>,
+     )> {
+         // Build the cap table.
+         let mut fds = OutgoingFds::default();
+@@ -1290,11 +1329,12 @@ where
+             drop(response_owner);
+             result
+         };
++        let pipeline = pipelined.then(|| Pipeline::direct(connection_state, question_ref.clone()));
+         // Install the response owner before invoking transport code. A custom
+         // sender may deliver a response synchronously during publication.
+         fds.attach(&mut *message);
+         connection_state.send_call(message, permit);
+-        Ok((question_ref, promise))
++        Ok((question_ref, promise, pipeline))
+     }
+ 
+     fn send_streaming_internal(
+@@ -1549,49 +1589,30 @@ impl<VatId> RequestHook for Request<VatId> {
+             }
+             call_builder.get_no_promise_pipelining()
+         };
+-        let (question_ref, promise) =
+-            match Self::send_internal(&connection_state, message, &cap_table, false, permit) {
+-                Ok(sent) => sent,
+-                Err(error) => {
+-                    return capnp::capability::RemotePromise {
+-                        promise: Promise::err(error.clone()),
+-                        pipeline: any_pointer::Pipeline::new(Box::new(broken::Pipeline::new(
+-                            error,
+-                        ))),
+-                    }
+-                }
+-            };
+-        if disabled {
+-            return capnp::capability::RemotePromise {
+-                promise: Promise::from_future(
+-                    promise.map_ok(|response| capnp::capability::Response::new(Box::new(response))),
+-                ),
+-                pipeline: any_pointer::Pipeline::new(Box::new(broken::DisabledPipeline)),
+-            };
+-        }
+-
+-        let forked_promise1 = promise.shared();
+-        let forked_promise2 = forked_promise1.clone();
+-
+-        // The pipeline must get notified of resolution before the app does to maintain ordering.
+-        let pipeline = Pipeline::new(
++        let (_question_ref, promise, pipeline) = match Self::send_internal(
+             &connection_state,
+-            question_ref,
+-            Some(Promise::from_future(forked_promise1)),
+-        );
+-
+-        let resolved = pipeline.when_resolved();
+-
+-        let forked_promise2 = resolved.map(|_| Ok(())).and_then(|()| forked_promise2);
+-
+-        let app_promise = Promise::from_future(
+-            forked_promise2
+-                .map_ok(|response| ::capnp::capability::Response::new(Box::new(response))),
+-        );
+-
++            message,
++            &cap_table,
++            false,
++            permit,
++            !disabled,
++        ) {
++            Ok(sent) => sent,
++            Err(error) => {
++                return capnp::capability::RemotePromise {
++                    promise: Promise::err(error.clone()),
++                    pipeline: any_pointer::Pipeline::new(Box::new(broken::Pipeline::new(error))),
++                }
++            }
++        };
+         ::capnp::capability::RemotePromise {
+-            promise: app_promise,
+-            pipeline: any_pointer::Pipeline::new(Box::new(pipeline)),
++            promise: Promise::from_future(
++                promise.map_ok(|response| capnp::capability::Response::new(Box::new(response))),
++            ),
++            pipeline: any_pointer::Pipeline::new(match pipeline {
++                Some(pipeline) => Box::new(pipeline),
++                None => Box::new(broken::DisabledPipeline),
++            }),
+         }
+     }
+     fn send_streaming(self: Box<Self>) -> Promise<(), Error> {
+@@ -1664,13 +1685,14 @@ impl<VatId> RequestHook for Request<VatId> {
+         };
+ 
+         let disabled = get_call(&mut message).unwrap().get_no_promise_pipelining();
+-        let (question_ref, promise) = match write_target_result {
++        let (question_ref, promise, _) = match write_target_result {
+             Some(_redirect) => {
+                 return None;
+             }
+             // No question ID was published if descriptor admission failed.
+             None => {
+-                Self::send_internal(&connection_state, message, &cap_table, true, permit).ok()?
++                Self::send_internal(&connection_state, message, &cap_table, true, permit, false)
++                    .ok()?
+             }
+         };
+ 
+@@ -1709,10 +1731,11 @@ where
+ {
+     variant: PipelineVariant<VatId>,
+     redirect_later: Option<RefCell<futures::future::Shared<Promise<Response<VatId>, Error>>>>,
++    resolves_on_return: bool,
+     connection_state: Rc<ConnectionState<VatId>>,
+ 
+     #[allow(dead_code)]
+-    resolve_self_promise: Promise<(), Error>,
++    resolve_self_promise: Option<Promise<(), Error>>,
+ 
+     promise_clients_to_resolve: RefCell<
+         crate::sender_queue::SenderQueue<
+@@ -1814,29 +1837,43 @@ impl<VatId> Pipeline<VatId> {
+             variant: PipelineVariant::Waiting(question_ref),
+             connection_state: connection_state.clone(),
+             redirect_later: None,
+-            resolve_self_promise: Promise::from_future(future::pending()),
++            resolves_on_return: false,
++            resolve_self_promise: None,
+             promise_clients_to_resolve: RefCell::new(crate::sender_queue::SenderQueue::new()),
+             resolution_waiters: crate::sender_queue::SenderQueue::new(),
+         }));
+         reference.borrow_mut().pipeline = Some(Rc::downgrade(&state));
+         if let Some(redirect_later_promise) = redirect_later {
+-            let fork = redirect_later_promise.shared();
+-            let this = Rc::downgrade(&state);
+-            let resolve_self_promise =
+-                connection_state.eagerly_evaluate(fork.clone().then(move |response| {
+-                    let Some(state) = this.upgrade() else {
+-                        return Promise::err(Error::failed("dangling reference to this".into()));
+-                    };
+-                    PipelineState::resolve(&state, response);
+-                    Promise::ok(())
+-                }));
+-
+-            state.borrow_mut().resolve_self_promise = resolve_self_promise;
+-            state.borrow_mut().redirect_later = Some(RefCell::new(fork));
++            Self::drive(&state, redirect_later_promise);
+         }
+         Self { state }
+     }
+ 
++    fn direct(
++        connection_state: &Rc<ConnectionState<VatId>>,
++        reference: Rc<RefCell<QuestionRef<VatId>>>,
++    ) -> Self {
++        let pipeline = Self::new(connection_state, reference, None);
++        pipeline.state.borrow_mut().resolves_on_return = true;
++        pipeline
++    }
++
++    fn drive(state: &Rc<RefCell<PipelineState<VatId>>>, response: Promise<Response<VatId>, Error>) {
++        let fork = response.shared();
++        let this = Rc::downgrade(state);
++        let connection = state.borrow().connection_state.clone();
++        let resolve = connection.eagerly_evaluate(fork.clone().then(move |response| {
++            if let Some(state) = this.upgrade() {
++                PipelineState::resolve(&state, response);
++            }
++            Promise::ok(())
++        }));
++        let mut state = state.borrow_mut();
++        state.resolves_on_return = false;
++        state.resolve_self_promise = Some(resolve);
++        state.redirect_later = Some(RefCell::new(fork));
++    }
++
+     fn when_resolved(&self) -> Promise<(), Error> {
+         let mut state = self.state.borrow_mut();
+         match &state.variant {
+@@ -1856,7 +1893,8 @@ impl<VatId> Pipeline<VatId> {
+             variant: PipelineVariant::Waiting(question_ref),
+             connection_state,
+             redirect_later: None,
+-            resolve_self_promise: Promise::from_future(future::pending()),
++            resolves_on_return: false,
++            resolve_self_promise: None,
+             promise_clients_to_resolve: RefCell::new(crate::sender_queue::SenderQueue::new()),
+             resolution_waiters: crate::sender_queue::SenderQueue::new(),
+         }));
+@@ -1880,6 +1918,7 @@ impl<VatId> PipelineHook for Pipeline<VatId> {
+                 variant: PipelineVariant::Waiting(ref question_ref),
+                 ref connection_state,
+                 ref redirect_later,
++                resolves_on_return,
+                 ref promise_clients_to_resolve,
+                 ..
+             } => {
+@@ -1887,8 +1926,8 @@ impl<VatId> PipelineHook for Pipeline<VatId> {
+                 let pipeline_client =
+                     PipelineClient::new(connection_state, question_ref.clone(), ops.clone());
+ 
+-                match redirect_later {
+-                    Some(_r) => {
++                match redirect_later.is_some() || resolves_on_return {
++                    true => {
+                         let client: Client<VatId> = pipeline_client.into();
+                         let promise_client =
+                             PromiseClient::new(connection_state, Box::new(client), None);
+@@ -1904,7 +1943,7 @@ impl<VatId> PipelineHook for Pipeline<VatId> {
+                         let result: Client<VatId> = promise_client.into();
+                         Box::new(result)
+                     }
+-                    None => {
++                    false => {
+                         // Oh, this pipeline will never get redirected, so just return the PipelineClient.
+                         let client: Client<VatId> = pipeline_client.into();
+                         Box::new(client)
+diff --git a/crates/capntproto-rpc/src/rpc/dispatch.rs b/crates/capntproto-rpc/src/rpc/dispatch.rs
+index 343813f..1de1bea 100644
+--- a/crates/capntproto-rpc/src/rpc/dispatch.rs
++++ b/crates/capntproto-rpc/src/rpc/dispatch.rs
+@@ -714,7 +714,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
+                                 message,
+                                 caps,
+                             );
+-                            reference.borrow_mut().fulfill(Promise::ok(response));
++                            QuestionRef::fulfill_result(&reference, Ok(response));
+                         }
+                         return_::Exception(exception) => {
+                             if is_tail {
+@@ -722,9 +722,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
+                                     "tail call returned ordinary exception".into(),
+                                 ));
+                             }
+-                            reference
+-                                .borrow_mut()
+-                                .reject(remote_exception_to_error(exception?));
++                            QuestionRef::reject(&reference, remote_exception_to_error(exception?));
+                         }
+                         return_::Canceled(()) => {
+                             return Err(Error::failed(
+@@ -741,9 +739,10 @@ impl<VatId: 'static> ConnectionState<VatId> {
+                                 capnp::message::Builder::new_default(),
+                                 vec![],
+                             );
+-                            reference
+-                                .borrow_mut()
+-                                .fulfill(Promise::ok(Response::redirected(Box::new(empty))));
++                            QuestionRef::fulfill_result(
++                                &reference,
++                                Ok(Response::redirected(Box::new(empty))),
++                            );
+                         }
+                         return_::TakeFromOtherQuestion(id) => {
+                             let id = AnswerId::from_wire(id);
+@@ -767,9 +766,10 @@ impl<VatId: 'static> ConnectionState<VatId> {
+                             // Taking the response also takes ownership of its producer.
+                             // Finish may release the old answer before the adopted call
+                             // completes; the adopting question must keep it running.
+-                            reference
+-                                .borrow_mut()
+-                                .fulfill(Promise::from_future(response.attach(task)));
++                            QuestionRef::fulfill(
++                                &reference,
++                                Promise::from_future(response.attach(task)),
++                            );
+                             connection_state.acknowledge_redirected_answer(
+                                 id,
+                                 &responded.return_has_been_sent,
+@@ -779,7 +779,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
+                             let pipeline = reference.borrow().pipeline.clone();
+                             let response =
+                                 answer_adoption::await_answer(&connection_state, token, pipeline);
+-                            reference.borrow_mut().fulfill(response);
++                            QuestionRef::fulfill(&reference, response);
+                         }
+                     }
+                 } else {
+diff --git a/crates/capntproto-rpc/src/rpc/references_tests.rs b/crates/capntproto-rpc/src/rpc/references_tests.rs
+index 5e09a02..37a6fb1 100644
+--- a/crates/capntproto-rpc/src/rpc/references_tests.rs
++++ b/crates/capntproto-rpc/src/rpc/references_tests.rs
+@@ -385,18 +385,19 @@ fn response_completion_keeps_question_alive_across_forwarding_and_cancellation()
+         fixture.bytes.borrow_mut().clear();
+         let message = fixture.state.new_outgoing_call(64).unwrap();
+         let permit = fixture.state.admission.reserve().unwrap();
+-        let (reference, response) =
+-            Request::send_internal(&fixture.state, message, &[], false, permit).unwrap();
++        let (reference, response, _) =
++            Request::send_internal(&fixture.state, message, &[], false, permit, false).unwrap();
+         let weak = Rc::downgrade(&reference);
+         let id = reference.borrow().id;
+         let (sender, receiver) = oneshot::channel::<()>();
+         if stage != 0 {
+-            reference
+-                .borrow_mut()
+-                .fulfill(Promise::from_future(async move {
++            QuestionRef::fulfill(
++                &reference,
++                Promise::from_future(async move {
+                     receiver.await.map_err(crate::canceled_to_error)?;
+                     Err(Error::failed("forwarded failure".into()))
+-                }));
++                }),
++            );
+         }
+         drop(reference);
+         let mut response = Box::pin(response);
+@@ -496,8 +497,17 @@ fn synchronous_transport_reply_observes_the_installed_question_owner() {
+         state: Rc::downgrade(&fixture.state),
+     });
+     let permit = fixture.state.admission.reserve().unwrap();
+-    let (reference, response) =
+-        Request::send_internal(&fixture.state, message, &[], false, permit).unwrap();
++    let (reference, response, pipeline) =
++        Request::send_internal(&fixture.state, message, &[], false, permit, true).unwrap();
++    let pipeline = pipeline.unwrap();
++    assert!(
++        matches!(
++            pipeline.state.borrow().variant,
++            PipelineVariant::Resolved(_)
++        ),
++        "synchronous Return settles the installed pipeline before send returns"
++    );
++    assert!(pipeline.state.borrow().resolve_self_promise.is_none());
+     let response = response
+         .now_or_never()
+         .expect("reply delivered during send")
+@@ -510,13 +520,135 @@ fn synchronous_transport_reply_observes_the_installed_question_owner() {
+             .unwrap(),
+         "synchronous reply"
+     );
+-    drop((response, reference));
++    drop((response, reference, pipeline));
+     fixture.drain();
+     assert_eq!(fixture.state.snapshot().questions, baseline);
+     assert_eq!(fixture.state.snapshot().held_responses, 0);
+     assert_eq!(fixture.state.snapshot().outgoing_calls, 0);
+ }
+ 
++#[test]
++fn direct_pipeline_settles_before_application_poll_and_survives_response_cancellation() {
++    struct Incoming(capnp::message::Builder<capnp::message::HeapAllocator>);
++    impl crate::IncomingMessage for Incoming {
++        fn size_in_words(&self) -> usize {
++            self.0.size_in_words()
++        }
++        fn get_body(&self) -> capnp::Result<any_pointer::Reader<'_>> {
++            self.0.get_root_as_reader()
++        }
++    }
++    for cancel_response in [false, true] {
++        let mut fixture = Fixture::new();
++        fixture.drain();
++        let baseline = fixture.state.snapshot().questions;
++        let expected = local_cap();
++        let export = fixture.export(&*expected);
++        let message = fixture.state.new_outgoing_call(64).unwrap();
++        let permit = fixture.state.admission.reserve().unwrap();
++        let (reference, response, pipeline) =
++            Request::send_internal(&fixture.state, message, &[], false, permit, true).unwrap();
++        let id = reference.borrow().id;
++        let weak = Rc::downgrade(&reference);
++        let pipeline = pipeline.unwrap();
++        let projected = pipeline.get_pipelined_cap(&[]);
++        let mut response = Some(Box::pin(response));
++        drop((pipeline, reference));
++        if cancel_response {
++            drop(response.take());
++        }
++        assert!(
++            weak.upgrade().is_some(),
++            "projected client keeps the question alive"
++        );
++
++        let mut message = capnp::message::Builder::new_default();
++        let mut returned = message.init_root::<message::Builder>().init_return();
++        returned.set_answer_id(id.to_wire());
++        returned.set_no_finish_needed(false);
++        let mut payload = returned.init_results();
++        payload
++            .reborrow()
++            .init_cap_table(1)
++            .get(0)
++            .set_receiver_hosted(export.to_wire());
++        let mut caps = Vec::new();
++        let mut content = payload.get_content();
++        capnp::traits::ImbueMut::imbue_mut(&mut content, &mut caps);
++        content.set_as_capability(expected.add_ref());
++        ConnectionState::handle_message(
++            &Rc::downgrade(&fixture.state),
++            Box::new(Incoming(message)),
++        )
++        .unwrap();
++        assert_eq!(
++            projected.get_resolved().unwrap().get_ptr(),
++            expected.get_ptr(),
++            "pipeline settles synchronously before any application response poll"
++        );
++        if let Some(mut response) = response.take() {
++            let mut cx = Context::from_waker(std::task::Waker::noop());
++            let Poll::Ready(Ok(result)) = response.as_mut().poll(&mut cx) else {
++                panic!("ready response")
++            };
++            assert_eq!(
++                result
++                    .get()
++                    .unwrap()
++                    .get_as_capability::<capnp::capability::Client>()
++                    .unwrap()
++                    .hook
++                    .get_ptr(),
++                expected.get_ptr()
++            );
++            drop((result, response));
++        }
++        drop((projected, caps));
++        // Replacement retires the old ordered route through the task set.
++        fixture.drain();
++        assert!(weak.upgrade().is_none());
++        fixture.state.release_export(export, 1).unwrap();
++        fixture.drain();
++        assert_eq!(fixture.state.snapshot().questions, baseline);
++        assert_eq!(fixture.state.snapshot().held_responses, 0);
++    }
++}
++
++#[test]
++fn redirected_direct_pipeline_drives_completion_after_application_cancellation() {
++    let mut fixture = Fixture::new();
++    fixture.drain();
++    let message = fixture.state.new_outgoing_call(64).unwrap();
++    let permit = fixture.state.admission.reserve().unwrap();
++    let (reference, response, pipeline) =
++        Request::send_internal(&fixture.state, message, &[], false, permit, true).unwrap();
++    let pipeline = pipeline.unwrap();
++    let projected = pipeline.get_pipelined_cap(&[]);
++    let weak = Rc::downgrade(&reference);
++    let (sender, receiver) = oneshot::channel::<()>();
++    QuestionRef::fulfill(
++        &reference,
++        Promise::from_future(async move {
++            receiver.await.map_err(crate::canceled_to_error)?;
++            Err(Error::failed("deferred pipeline result".into()))
++        }),
++    );
++    drop((response, pipeline, reference));
++    fixture.drain();
++    assert!(weak.upgrade().is_some());
++    sender.send(()).unwrap();
++    fixture.drain();
++    assert!(projected
++        .get_resolved()
++        .unwrap()
++        .get_failure()
++        .unwrap()
++        .to_string()
++        .contains("deferred pipeline result"));
++    drop(projected);
++    assert!(weak.upgrade().is_none());
++}
++
+ #[test]
+ fn driven_call_and_finish_release_protocol_borrows_before_polling_io() {
+     struct Inspect {
+@@ -608,9 +740,15 @@ fn driven_call_and_finish_release_protocol_borrows_before_polling_io() {
+     bytes.borrow_mut().clear();
+     let before = writes.get();
+     drop(response);
++    assert_eq!(
++        writes.get(),
++        before,
++        "Finish waits for the next output batch"
++    );
++    assert!(Pin::new(&mut system).poll(&mut cx).is_pending());
+     assert!(
+         writes.get() > before,
+-        "Finish must reach IO within response drop"
++        "Finish must reach IO when the driver is polled"
+     );
+     let finish =
+         capnp::serialize::read_message(bytes.borrow().as_slice(), Default::default()).unwrap();
+diff --git a/crates/capntproto-rpc/src/twoparty.rs b/crates/capntproto-rpc/src/twoparty.rs
+index 07f7ef6..eb3facc 100644
+--- a/crates/capntproto-rpc/src/twoparty.rs
++++ b/crates/capntproto-rpc/src/twoparty.rs
+@@ -404,6 +404,22 @@ impl crate::OutgoingMessage for OutgoingMessage {
+         // Transfer the original allocation to the writer. Remove its sender
+         // first so queued output cannot retain its own queue in a cycle.
+         let sender = self.sender.take().expect("unsent message has sender");
++        // Let a pipeline's parent and the preceding Finish join its next child
++        // in one FIFO batch. The network driver is notified even when no child
++        // follows. Terminal calls and Returns can still drive ready IO inline.
++        let defer = match &mut self.message {
++            MessageBuilder::Call(call) => call
++                .get_as::<crate::rpc_capnp::call::Owned>()
++                .is_ok_and(|call| !call.get_no_promise_pipelining()),
++            MessageBuilder::Root(message) => message
++                .get_root_as_reader::<crate::rpc_capnp::message::Reader<'_>>()
++                .is_ok_and(|root| matches!(root.which(), Ok(crate::rpc_capnp::message::Finish(_)))),
++            MessageBuilder::Return(_) => false,
++        };
++        if defer {
++            sender.send_detached(QueuedMessage::Owned(self));
++            return;
++        }
+         let driver = self.driver.clone();
+         let _ = sender.send_detached_and_drive(QueuedMessage::Owned(self), || {
+             if let Some(driver) = driver.upgrade() {
+diff --git a/crates/capntproto-rpc/src/twoparty/output_driver_tests.rs b/crates/capntproto-rpc/src/twoparty/output_driver_tests.rs
+index e92a31c..5ade897 100644
+--- a/crates/capntproto-rpc/src/twoparty/output_driver_tests.rs
++++ b/crates/capntproto-rpc/src/twoparty/output_driver_tests.rs
+@@ -378,6 +378,72 @@ fn return_templates_preserve_payloads_and_invalidate_selections_after_root_edits
+     }
+ }
+ 
++#[test]
++fn pipeline_and_finish_batch_with_the_next_terminal_call_or_network_poll() {
++    let output = Rc::new(Output::default());
++    output.allowed.set(usize::MAX);
++    output.flushed.set(true);
++    let mut network = VatNetwork::new(
++        futures::io::Cursor::new(Vec::<u8>::new()),
++        Writer(output.clone()),
++        VatId::Client,
++        Default::default(),
++    );
++    let mut connection = network.connection.take().unwrap();
++    let mut cx = Context::from_waker(Waker::noop());
++    assert!(network._output_driver.poll_network(&mut cx).is_pending());
++    connection
++        .new_outgoing_finish(7, true)
++        .unwrap()
++        .send_detached_and_drive();
++    let mut parent = connection.new_outgoing_call(64).unwrap();
++    parent.get_call().unwrap().set_question_id(8);
++    parent.send_detached_and_drive();
++    assert!(output.bytes.borrow().is_empty());
++    assert_eq!(network.outgoing_queue().snapshot().message_count, 2);
++    let mut child = connection.new_outgoing_call(64).unwrap();
++    child.get_call().unwrap().set_question_id(9);
++    child.get_call().unwrap().set_no_promise_pipelining(true);
++    child.send_detached_and_drive();
++    let bytes = output.bytes.borrow();
++    let mut cursor = bytes.as_slice();
++    let finish = capnp::serialize::read_message(&mut cursor, Default::default()).unwrap();
++    let crate::rpc_capnp::message::Finish(finish) = finish
++        .get_root::<crate::rpc_capnp::message::Reader>()
++        .unwrap()
++        .which()
++        .unwrap()
++    else {
++        panic!("Finish must precede reused questions")
++    };
++    assert_eq!(finish.unwrap().get_question_id(), 7);
++    for id in [8, 9] {
++        let message = capnp::serialize::read_message(&mut cursor, Default::default()).unwrap();
++        let crate::rpc_capnp::message::Call(call) = message
++            .get_root::<crate::rpc_capnp::message::Reader>()
++            .unwrap()
++            .which()
++            .unwrap()
++        else {
++            panic!("ordered Call")
++        };
++        assert_eq!(call.unwrap().get_question_id(), id);
++    }
++    assert!(cursor.is_empty());
++    drop(bytes);
++    let before = output.bytes.borrow().len();
++    connection
++        .new_outgoing_call(64)
++        .unwrap()
++        .send_detached_and_drive();
++    assert_eq!(output.bytes.borrow().len(), before);
++    assert!(network._output_driver.poll_network(&mut cx).is_pending());
++    assert!(
++        output.bytes.borrow().len() > before,
++        "a parent without a child still progresses"
++    );
++}
++
+ #[test]
+ fn detached_drive_writes_immediately_but_keeps_ownership_until_flush() {
+     struct Guard(Rc<Cell<usize>>);

@@ -39,6 +39,12 @@ Source/executable hashes, replay verification and matched local profiles are
 included. Raw samples and binaries remain in the workspace evidence archive;
 these experiments do not qualify the dedicated 5% latency target.
 
+The [legacy optimization campaign](legacy-performance/2026-10-17/README.md)
+freezes legacy at `6e37505d701df4dbea52a92e0691b6037f7f1922` and measures receive
+storage reuse, direct pipeline settlement and output batching. Its target is
+2× in every RPC workflow and separate loopback payload. All trial summaries,
+profiles, source hashes and rejected intermediate results remain retained.
+
 Historical logs and model-checker output referenced by older design documents
 are local archives and are not included in this repository. Model source and
 verification fixtures remain under `research/baseline/`, `verification/`, and

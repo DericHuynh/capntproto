@@ -404,6 +404,22 @@ impl crate::OutgoingMessage for OutgoingMessage {
         // Transfer the original allocation to the writer. Remove its sender
         // first so queued output cannot retain its own queue in a cycle.
         let sender = self.sender.take().expect("unsent message has sender");
+        // Let a pipeline's parent and the preceding Finish join its next child
+        // in one FIFO batch. The network driver is notified even when no child
+        // follows. Terminal calls and Returns can still drive ready IO inline.
+        let defer = match &mut self.message {
+            MessageBuilder::Call(call) => call
+                .get_as::<crate::rpc_capnp::call::Owned>()
+                .is_ok_and(|call| !call.get_no_promise_pipelining()),
+            MessageBuilder::Root(message) => message
+                .get_root_as_reader::<crate::rpc_capnp::message::Reader<'_>>()
+                .is_ok_and(|root| matches!(root.which(), Ok(crate::rpc_capnp::message::Finish(_)))),
+            MessageBuilder::Return(_) => false,
+        };
+        if defer {
+            sender.send_detached(QueuedMessage::Owned(self));
+            return;
+        }
         let driver = self.driver.clone();
         let _ = sender.send_detached_and_drive(QueuedMessage::Owned(self), || {
             if let Some(driver) = driver.upgrade() {

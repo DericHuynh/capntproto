@@ -1,5 +1,31 @@
 # Quality checks and benchmark reports
 
+## Legacy 2× optimization, October 17, 2026
+
+The active performance work has returned to legacy. The benchmark frontend now
+defaults to legacy, with portable explicitly selected by
+`CAPNTPROTO_BENCH_PORTABLE=1`; `RpcSystem` already defaults to legacy.
+The [source-bound report](../../research/reports/legacy-performance/2026-10-17/README.md)
+freezes legacy at `6e37505d701df4dbea52a92e0691b6037f7f1922` and records three
+changes: reuse released incoming spill storage, settle ordinary pipelines at
+Return receipt, and batch pipeline parents and Finish messages.
+
+The final local campaign observes **1/16 cells at 2×**, only 64-KiB loopback.
+Its slow baseline repetitions make that pass insufficient to establish a stable
+2× gain. All twelve workflow cells miss; the largest workflow speedup is 1.63×
+at 4 MiB. Pipeline-client instructions fall 21.55%, while 64-KiB client/server
+instructions fall about 29–31%. Server allocation growth and remaining separate
+cleanup writes are recorded alongside the gains.
+
+All 1,260,000 uninstrumented samples, 384 mixed-peer cells and 24 complete peer
+journals remain retained. Two full campaigns and two twenty-repetition
+follow-ups expose timing variability rather than replacing failed cells.
+Validation passes 311 RPC tests, 66 framing tests, 99 integration tests and nine
+focused Miri tests, plus strict Clippy and the unsafe documentation gate.
+Fixtures, sampling budgets, coverage floors and the exact half-latency target
+remain unchanged. This local campaign does not qualify a remote topology or
+complete the 2× goal.
+
 ## Publication ownership and forwarding October 17, 2026
 
 The [publication report](../../research/reports/portable-performance/2026-10-17-publication/README.md)

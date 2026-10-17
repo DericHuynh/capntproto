@@ -348,8 +348,8 @@ pub mod driver;
 
 pub(crate) fn tcp_driver() -> Result<&'static str> {
     match std::env::var("CAPNTPROTO_BENCH_PORTABLE").as_deref() {
-        Ok("1") | Err(std::env::VarError::NotPresent) => Ok("portable"),
-        Ok("0") => Ok("legacy"),
+        Ok("1") => Ok("portable"),
+        Ok("0") | Err(std::env::VarError::NotPresent) => Ok("legacy"),
         _ => Err("CAPNTPROTO_BENCH_PORTABLE must be 0 or 1".into()),
     }
 }

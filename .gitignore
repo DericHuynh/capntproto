@@ -108,6 +108,13 @@ _apalache-tmp/
 !/research/reports/portable-performance/2026-10-17-publication/README.md
 !/research/reports/portable-performance/2026-10-17-publication/report.json
 !/research/reports/portable-performance/2026-10-17-publication/source.patch
+!/research/reports/legacy-performance/
+/research/reports/legacy-performance/*
+!/research/reports/legacy-performance/2026-10-17/
+/research/reports/legacy-performance/2026-10-17/*
+!/research/reports/legacy-performance/2026-10-17/README.md
+!/research/reports/legacy-performance/2026-10-17/report.json
+!/research/reports/legacy-performance/2026-10-17/source.patch
 
 # Locally discovered fuzz inputs; checked-in upstream corpora remain included.
 /fuzz/artifacts/

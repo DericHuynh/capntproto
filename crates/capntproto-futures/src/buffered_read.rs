@@ -5,7 +5,7 @@ use core::{
     pin::Pin,
     task::{ready, Context, Poll},
 };
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, Weak};
 
 use capnp::{
     message::{Reader, ReaderOptions, ReaderSegments},
@@ -145,6 +145,26 @@ enum Storage {
     SharedWords(Arc<Vec<Word>>),
     SharedBytes(Arc<Vec<u8>>),
     Owned(Box<[Word]>),
+    Recycled(Box<RecycledSpill>),
+}
+// Only released owning frames may return storage. A weak cache reference keeps
+// retained readers independent of the stream and does not prolong its cache.
+struct RecycledSpill {
+    words: Vec<Word>,
+    cache: Weak<Mutex<Vec<Word>>>,
+}
+impl Drop for RecycledSpill {
+    fn drop(&mut self) {
+        if self.words.capacity() > MAX_CACHED_SPILL_WORDS {
+            return;
+        }
+        if let Some(cache) = self.cache.upgrade() {
+            let mut cached = cache.lock().unwrap();
+            if self.words.capacity() > cached.capacity() {
+                core::mem::swap(&mut self.words, &mut cached);
+            }
+        }
+    }
 }
 impl Storage {
     fn bytes(&self) -> &[u8] {
@@ -152,6 +172,7 @@ impl Storage {
             Self::SharedWords(words) => Word::words_to_bytes(words),
             Self::SharedBytes(bytes) => bytes,
             Self::Owned(words) => Word::words_to_bytes(words),
+            Self::Recycled(spill) => Word::words_to_bytes(&spill.words),
         }
     }
 }
@@ -299,6 +320,7 @@ impl ReaderSegments for BufferedSegments {
             // Owned frames always start at zero (detach, spill or scratch
             // conversion). Only shared receive views need an additional offset.
             Storage::Owned(words) => &Word::words_to_bytes(words)[start..end],
+            Storage::Recycled(spill) => &Word::words_to_bytes(&spill.words)[start..end],
             Storage::SharedWords(words) => {
                 &Word::words_to_bytes(words)[self.start + start..self.start + end]
             }
@@ -403,6 +425,7 @@ pub struct BufferedRead<R> {
     frame: Option<Frame>,
     spill: Option<Spill>,
     spare: Vec<Word>,
+    owned_spare: Option<Arc<Mutex<Vec<Word>>>>,
     terminal: Option<Result<()>>,
     consumed: u64,
     borrowed: bool,
@@ -422,6 +445,8 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
     /// 128 KiB; streamed bursts can also grow it to this bound. Owning reads do
     /// not grow it. Larger borrowed frames use a separate
     /// reusable spill allocation, bounded as documented by `finish_borrowed_frame`.
+    /// Owning reads lazily cache one released spill of at most 8 MiB. Live
+    /// readers never share that allocation with a subsequent receive.
     pub fn with_buffer_size(input: R, options: ReaderOptions, words: usize) -> Result<Self> {
         if words < MIN_BUFFER_WORDS
             || words
@@ -443,6 +468,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
             frame: None,
             spill: None,
             spare: Vec::new(),
+            owned_spare: None,
             terminal: None,
             consumed: 0,
             borrowed: false,
@@ -604,9 +630,15 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
         }
         if let Some(spill) = self.spill.take() {
             self.advance(spill.frame.bytes)?;
+            let cache = self
+                .owned_spare
+                .get_or_insert_with(|| Arc::new(Mutex::new(Vec::new())));
             return Poll::Ready(Ok(Some(Reader::new(
                 BufferedScratchSegments(ScratchStorage::Buffered(BufferedSegments {
-                    storage: Storage::Owned(spill.storage.into_boxed_slice()),
+                    storage: Storage::Recycled(Box::new(RecycledSpill {
+                        words: spill.storage,
+                        cache: Arc::downgrade(cache),
+                    })),
                     start: 0,
                     frame: spill.frame,
                 })),
@@ -892,7 +924,8 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
                 if spill.filled < spill.frame.bytes {
                     let count = ready!(Pin::new(&mut self.input).poll_read(
                         cx,
-                        &mut Word::words_to_bytes_mut(&mut spill.storage)[spill.filled..],
+                        &mut Word::words_to_bytes_mut(&mut spill.storage)
+                            [spill.filled..spill.frame.bytes],
                     ))?;
                     if count == 0 {
                         return Poll::Ready(Err(Error::from_kind(ErrorKind::PrematureEndOfFile)));
@@ -918,10 +951,21 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
                     let words = frame.bytes / 8;
                     let mut storage = core::mem::take(&mut self.spare);
                     if storage.capacity() < words {
+                        if let Some(cache) = &self.owned_spare {
+                            let cached = core::mem::take(&mut *cache.lock().unwrap());
+                            if cached.capacity() > storage.capacity() {
+                                storage = cached;
+                            }
+                        }
+                    }
+                    if storage.capacity() < words {
                         storage = Word::allocate_zeroed_vec(words);
-                    } else {
+                    } else if storage.len() < words {
                         storage.resize(words, capnp::word(0, 0, 0, 0, 0, 0, 0, 0));
                     }
+                    // Keep initialized capacity on reuse. Only the validated
+                    // frame prefix is read or exposed; stale suffix bytes must
+                    // neither consume the successor frame nor reach readers.
                     let filled = self.end - self.begin;
                     Word::words_to_bytes_mut(&mut storage)[..filled]
                         .copy_from_slice(&self.buffer.bytes()[self.begin..self.end]);
@@ -992,6 +1036,77 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn owning_spills_reuse_only_released_storage_and_limit_each_read() {
+        let frames: Vec<_> = [(6144, 0x91), (4096, 0x32), (3000, 0x73), (4096, 0x54)]
+            .into_iter()
+            .map(|(size, byte)| {
+                let mut message = capnp::message::Builder::new_default();
+                message.initn_root::<capnp::data::Builder>(size).fill(byte);
+                capnp::serialize::write_message_to_words(&message)
+            })
+            .collect();
+        let mut input = BufferedRead::with_buffer_size(
+            Fragmented {
+                input: futures::io::Cursor::new(frames.concat()),
+                chunk: 127,
+                pending: false,
+            },
+            Default::default(),
+            MIN_BUFFER_WORDS,
+        )
+        .unwrap();
+        let read = |input: &mut BufferedRead<_>| {
+            futures::executor::block_on(futures::future::poll_fn(|cx| {
+                input.poll_read_message(cx, |_| Ok(false))
+            }))
+            .unwrap()
+            .unwrap()
+        };
+        let retained = read(&mut input);
+        let released = read(&mut input);
+        let address = released.get_segments().framed_bytes().as_ptr();
+        assert_eq!(retained.get_segments().framed_bytes(), frames[0]);
+        assert_eq!(released.get_segments().framed_bytes(), frames[1]);
+        drop(released);
+        let reused = read(&mut input);
+        assert_eq!(reused.get_segments().framed_bytes().as_ptr(), address);
+        assert_eq!(reused.get_segments().framed_bytes(), frames[2]);
+        assert_eq!(retained.get_segments().framed_bytes(), frames[0]);
+        drop(reused);
+        let last = read(&mut input);
+        assert_eq!(last.get_segments().framed_bytes().as_ptr(), address);
+        assert_eq!(last.get_segments().framed_bytes(), frames[3]);
+        assert_eq!(
+            input.consumed_bytes(),
+            frames.iter().map(|f| f.len() as u64).sum()
+        );
+        drop(input);
+        // Reader ownership survives the stream and its weak recycling cache.
+        assert_eq!(last.get_segments().framed_bytes(), frames[3]);
+        assert_eq!(retained.get_segments().framed_bytes(), frames[0]);
+    }
+
+    #[test]
+    fn owning_spill_cache_rejects_oversized_storage() {
+        let cache = Arc::new(Mutex::new(Vec::new()));
+        let mut small = Word::allocate_zeroed_vec(16);
+        small[0] = capnp::word(1, 2, 3, 4, 5, 6, 7, 8);
+        drop(RecycledSpill {
+            words: small,
+            cache: Arc::downgrade(&cache),
+        });
+        assert_eq!(cache.lock().unwrap().len(), 16);
+        // Capacity, including an initialized but currently unused suffix, is
+        // the retention bound. An empty oversized Vec must also be rejected.
+        let oversized = Vec::with_capacity(MAX_CACHED_SPILL_WORDS + 1);
+        drop(RecycledSpill {
+            words: oversized,
+            cache: Arc::downgrade(&cache),
+        });
+        assert_eq!(cache.lock().unwrap().len(), 16);
+    }
 
     #[test]
     fn interrupted_spill_reads_keep_the_error_and_discard_partial_storage() {

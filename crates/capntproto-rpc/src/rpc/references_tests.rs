@@ -385,18 +385,19 @@ fn response_completion_keeps_question_alive_across_forwarding_and_cancellation()
         fixture.bytes.borrow_mut().clear();
         let message = fixture.state.new_outgoing_call(64).unwrap();
         let permit = fixture.state.admission.reserve().unwrap();
-        let (reference, response) =
-            Request::send_internal(&fixture.state, message, &[], false, permit).unwrap();
+        let (reference, response, _) =
+            Request::send_internal(&fixture.state, message, &[], false, permit, false).unwrap();
         let weak = Rc::downgrade(&reference);
         let id = reference.borrow().id;
         let (sender, receiver) = oneshot::channel::<()>();
         if stage != 0 {
-            reference
-                .borrow_mut()
-                .fulfill(Promise::from_future(async move {
+            QuestionRef::fulfill(
+                &reference,
+                Promise::from_future(async move {
                     receiver.await.map_err(crate::canceled_to_error)?;
                     Err(Error::failed("forwarded failure".into()))
-                }));
+                }),
+            );
         }
         drop(reference);
         let mut response = Box::pin(response);
@@ -496,8 +497,17 @@ fn synchronous_transport_reply_observes_the_installed_question_owner() {
         state: Rc::downgrade(&fixture.state),
     });
     let permit = fixture.state.admission.reserve().unwrap();
-    let (reference, response) =
-        Request::send_internal(&fixture.state, message, &[], false, permit).unwrap();
+    let (reference, response, pipeline) =
+        Request::send_internal(&fixture.state, message, &[], false, permit, true).unwrap();
+    let pipeline = pipeline.unwrap();
+    assert!(
+        matches!(
+            pipeline.state.borrow().variant,
+            PipelineVariant::Resolved(_)
+        ),
+        "synchronous Return settles the installed pipeline before send returns"
+    );
+    assert!(pipeline.state.borrow().resolve_self_promise.is_none());
     let response = response
         .now_or_never()
         .expect("reply delivered during send")
@@ -510,11 +520,133 @@ fn synchronous_transport_reply_observes_the_installed_question_owner() {
             .unwrap(),
         "synchronous reply"
     );
-    drop((response, reference));
+    drop((response, reference, pipeline));
     fixture.drain();
     assert_eq!(fixture.state.snapshot().questions, baseline);
     assert_eq!(fixture.state.snapshot().held_responses, 0);
     assert_eq!(fixture.state.snapshot().outgoing_calls, 0);
+}
+
+#[test]
+fn direct_pipeline_settles_before_application_poll_and_survives_response_cancellation() {
+    struct Incoming(capnp::message::Builder<capnp::message::HeapAllocator>);
+    impl crate::IncomingMessage for Incoming {
+        fn size_in_words(&self) -> usize {
+            self.0.size_in_words()
+        }
+        fn get_body(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+            self.0.get_root_as_reader()
+        }
+    }
+    for cancel_response in [false, true] {
+        let mut fixture = Fixture::new();
+        fixture.drain();
+        let baseline = fixture.state.snapshot().questions;
+        let expected = local_cap();
+        let export = fixture.export(&*expected);
+        let message = fixture.state.new_outgoing_call(64).unwrap();
+        let permit = fixture.state.admission.reserve().unwrap();
+        let (reference, response, pipeline) =
+            Request::send_internal(&fixture.state, message, &[], false, permit, true).unwrap();
+        let id = reference.borrow().id;
+        let weak = Rc::downgrade(&reference);
+        let pipeline = pipeline.unwrap();
+        let projected = pipeline.get_pipelined_cap(&[]);
+        let mut response = Some(Box::pin(response));
+        drop((pipeline, reference));
+        if cancel_response {
+            drop(response.take());
+        }
+        assert!(
+            weak.upgrade().is_some(),
+            "projected client keeps the question alive"
+        );
+
+        let mut message = capnp::message::Builder::new_default();
+        let mut returned = message.init_root::<message::Builder>().init_return();
+        returned.set_answer_id(id.to_wire());
+        returned.set_no_finish_needed(false);
+        let mut payload = returned.init_results();
+        payload
+            .reborrow()
+            .init_cap_table(1)
+            .get(0)
+            .set_receiver_hosted(export.to_wire());
+        let mut caps = Vec::new();
+        let mut content = payload.get_content();
+        capnp::traits::ImbueMut::imbue_mut(&mut content, &mut caps);
+        content.set_as_capability(expected.add_ref());
+        ConnectionState::handle_message(
+            &Rc::downgrade(&fixture.state),
+            Box::new(Incoming(message)),
+        )
+        .unwrap();
+        assert_eq!(
+            projected.get_resolved().unwrap().get_ptr(),
+            expected.get_ptr(),
+            "pipeline settles synchronously before any application response poll"
+        );
+        if let Some(mut response) = response.take() {
+            let mut cx = Context::from_waker(std::task::Waker::noop());
+            let Poll::Ready(Ok(result)) = response.as_mut().poll(&mut cx) else {
+                panic!("ready response")
+            };
+            assert_eq!(
+                result
+                    .get()
+                    .unwrap()
+                    .get_as_capability::<capnp::capability::Client>()
+                    .unwrap()
+                    .hook
+                    .get_ptr(),
+                expected.get_ptr()
+            );
+            drop((result, response));
+        }
+        drop((projected, caps));
+        // Replacement retires the old ordered route through the task set.
+        fixture.drain();
+        assert!(weak.upgrade().is_none());
+        fixture.state.release_export(export, 1).unwrap();
+        fixture.drain();
+        assert_eq!(fixture.state.snapshot().questions, baseline);
+        assert_eq!(fixture.state.snapshot().held_responses, 0);
+    }
+}
+
+#[test]
+fn redirected_direct_pipeline_drives_completion_after_application_cancellation() {
+    let mut fixture = Fixture::new();
+    fixture.drain();
+    let message = fixture.state.new_outgoing_call(64).unwrap();
+    let permit = fixture.state.admission.reserve().unwrap();
+    let (reference, response, pipeline) =
+        Request::send_internal(&fixture.state, message, &[], false, permit, true).unwrap();
+    let pipeline = pipeline.unwrap();
+    let projected = pipeline.get_pipelined_cap(&[]);
+    let weak = Rc::downgrade(&reference);
+    let (sender, receiver) = oneshot::channel::<()>();
+    QuestionRef::fulfill(
+        &reference,
+        Promise::from_future(async move {
+            receiver.await.map_err(crate::canceled_to_error)?;
+            Err(Error::failed("deferred pipeline result".into()))
+        }),
+    );
+    drop((response, pipeline, reference));
+    fixture.drain();
+    assert!(weak.upgrade().is_some());
+    sender.send(()).unwrap();
+    fixture.drain();
+    assert!(projected
+        .get_resolved()
+        .unwrap()
+        .get_failure()
+        .unwrap()
+        .to_string()
+        .contains("deferred pipeline result"));
+    drop(projected);
+    assert!(weak.upgrade().is_none());
 }
 
 #[test]
@@ -608,9 +740,15 @@ fn driven_call_and_finish_release_protocol_borrows_before_polling_io() {
     bytes.borrow_mut().clear();
     let before = writes.get();
     drop(response);
+    assert_eq!(
+        writes.get(),
+        before,
+        "Finish waits for the next output batch"
+    );
+    assert!(Pin::new(&mut system).poll(&mut cx).is_pending());
     assert!(
         writes.get() > before,
-        "Finish must reach IO within response drop"
+        "Finish must reach IO when the driver is polled"
     );
     let finish =
         capnp::serialize::read_message(bytes.borrow().as_slice(), Default::default()).unwrap();
