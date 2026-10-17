@@ -1,5 +1,55 @@
 # Quality checks and benchmark reports
 
+## Three portable architecture experiments October 17, 2026
+
+The [experiment report and replayable patches](../../research/reports/portable-performance/2026-10-17-architecture/README.md)
+test restricted control polling, import metadata revisions and borrowed native
+service dispatch separately, then together, against frozen `fe843e22`.
+These are local diagnostics; the dedicated 5% target remains open.
+
+| Prototype | Pipeline client instructions | Pipeline server instructions | Empty unary server instructions |
+| --- | ---: | ---: | ---: |
+| Borrowed dispatch | -0.002% | -1.581% | -2.910% |
+| Metadata revisions | -0.517% | +0.359% | +0.016% |
+| Control context | -0.492% | +1.377% | +0.009% |
+| Combined | -1.004% | +0.153% | -2.890% |
+
+Borrowed dispatch removes two allocations per eligible synchronous service call.
+Metadata subscriptions add one allocation per subscribed import, and the
+restricted control path has different costs across client/server workflows.
+No broad performance gain is established for the metadata/control changes;
+the combined pipeline instruction savings are smaller than borrowed dispatch
+alone. The runtime baseline is retained and all four source patches are saved.
+
+Each variant has five paired repetitions of four workflows against baseline,
+legacy and C++, with 100 warmups and 1,000 measurements per run. Separate CPU/wall
+traces measure read-to-write processing. Uninstrumented pipeline p50 for borrowed
+dispatch is 40.830 µs versus 42.172 µs baseline; combined is 42.468 µs versus
+43.384 µs baseline. Those candidates remain 1.450× and 1.501× their faster matched
+references. Repetition modes vary; every sample, p95 and repetition median is
+retained. These values do not replace a dedicated qualification.
+
+The combined executable also ran all twelve workflow fixtures over local TCP:
+nine meet the local comparison, while dependent reads (1.213×), pipelined reads
+(1.464×) and callbacks (1.324×) miss. This is a distinct campaign, with every
+reference measured alongside it. In total 560,000 uninstrumented samples and
+320,000 separately instrumented measurements are retained; no repetition is
+discarded. The dedicated twelve-remote-plus-four-loopback result remains 11/16.
+
+All 24 baseline/candidate peer comparisons have identical complete write bytes
+and groups across pipeline, callback and empty unary, including startup and
+cleanup. All 72 decoded journals include the matched C++ reference. No request
+validation, payload, schema or response-lifetime obligation is removed; native
+service binding changes are explicit in its benchmark patch.
+
+Each prototype passes 92 integration tests and 72 mixed-peer workflow cases.
+The isolated RPC unit counts are 303 native, 303 metadata and 304 control;
+combined passes 306. RPC all-target Clippy, formatting and focused Miri pass.
+The combined tree also passes the alloc-enabled ARM compile check and four
+focused Miri tests. Full workspace coverage and the 16-cell latency gate remain
+open. Exact frozen source, binaries, scripts, raw profiles, traces and samples
+are retained in `target/portable-architecture-three-20261017/` with checksums.
+
 ## Portable endpoint lifecycle October 17, 2026
 
 The [ownership and integration review](Architecture.md#portable-ownership-and-integration-review)

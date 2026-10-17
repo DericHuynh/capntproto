@@ -1,0 +1,385 @@
+diff --git a/benchmarks/rpc/Cargo.toml b/benchmarks/rpc/Cargo.toml
+index 7b2255d..54e40b6 100644
+--- a/benchmarks/rpc/Cargo.toml
++++ b/benchmarks/rpc/Cargo.toml
+@@ -6,6 +6,9 @@ publish = false
+ 
+ [workspace]
+ 
++[features]
++borrowed-native = []
++
+ [dependencies]
+ capntproto = { path = "../..", default-features = false, features = ["native"] }
+ capnp = { package = "capntproto-core", path = "../../crates/capntproto-core" }
+diff --git a/benchmarks/rpc/capability-workflows.rs b/benchmarks/rpc/capability-workflows.rs
+index b960b6e..7c3cb6d 100644
+--- a/benchmarks/rpc/capability-workflows.rs
++++ b/benchmarks/rpc/capability-workflows.rs
+@@ -13,12 +13,19 @@ use std::{
+ };
+ 
+ pub(super) struct Service;
++#[cfg(feature = "borrowed-native")]
++#[path = "capability-borrowed.rs"]
++mod borrowed;
+ struct Cell(RefCell<(u64, Vec<u8>)>);
+ struct Sink {
+     payload: Vec<u8>,
+     calls: Rc<std::cell::Cell<u64>>,
+ }
+ impl workflows::Server for Service {
++    #[cfg(feature = "borrowed-native")]
++    fn _capnp_server_hooks(&self) -> Option<&dyn capnp::capability::ServerHooks> {
++        Some(self)
++    }
+     async fn echo(
+         self: Rc<Self>,
+         params: workflows::EchoParams,
+@@ -57,6 +64,10 @@ impl workflows::Server for Service {
+     }
+ }
+ impl cell::Server for Cell {
++    #[cfg(feature = "borrowed-native")]
++    fn _capnp_server_hooks(&self) -> Option<&dyn capnp::capability::ServerHooks> {
++        Some(self)
++    }
+     async fn read(
+         self: Rc<Self>,
+         _: cell::ReadParams,
+@@ -88,6 +99,10 @@ impl cell::Server for Cell {
+     }
+ }
+ impl callback::Server for Sink {
++    #[cfg(feature = "borrowed-native")]
++    fn _capnp_server_hooks(&self) -> Option<&dyn capnp::capability::ServerHooks> {
++        Some(self)
++    }
+     async fn notify(
+         self: Rc<Self>,
+         params: callback::NotifyParams,
+diff --git a/crates/capntproto-core/src/capability.rs b/crates/capntproto-core/src/capability.rs
+index cadefb7..72417e3 100644
+--- a/crates/capntproto-core/src/capability.rs
++++ b/crates/capntproto-core/src/capability.rs
+@@ -850,6 +850,20 @@ impl SelfCapability {
+ /// generated Server trait's `_capnp_server_hooks()` to expose an implementation.
+ #[cfg(feature = "alloc")]
+ pub trait ServerHooks {
++    /// Complete a non-streaming method synchronously with borrowed call storage.
++    /// Returning None must leave parameters, results, and application state
++    /// unchanged. Borrowed storage cannot escape this invocation. Suspended or
++    /// streaming methods must use the ordinary generated dispatcher instead.
++    fn dispatch_borrowed(
++        &self,
++        _interface_id: u64,
++        _method_id: u16,
++        _params: &dyn crate::private::capability::ParamsHook,
++        _results: &mut dyn crate::private::capability::ResultsHook,
++    ) -> Option<crate::Result<()>> {
++        None
++    }
++
+     fn self_cap(&self) -> Option<&SelfCapability> {
+         None
+     }
+diff --git a/crates/capntproto-core/src/private/capability.rs b/crates/capntproto-core/src/private/capability.rs
+index 67af672..be271a4 100644
+--- a/crates/capntproto-core/src/private/capability.rs
++++ b/crates/capntproto-core/src/private/capability.rs
+@@ -121,6 +121,19 @@ impl DebugInfo {
+ }
+ 
+ pub trait ClientHook {
++    /// Optional synchronous dispatch at an already admitted execution boundary.
++    /// None means no effects occurred and the owned dispatch remains necessary.
++    /// Wrappers default to that owned path, preserving interception policies.
++    fn call_borrowed_during_dispatch(
++        &self,
++        _interface_id: u64,
++        _method_id: u16,
++        _params: &dyn ParamsHook,
++        _results: &mut dyn ResultsHook,
++    ) -> Option<crate::Result<()>> {
++        None
++    }
++
+     /// Optional concrete runtime identity for safe in-process adapter lookup.
+     /// An adapter must downcast and validate its own private identity; pointer
+     /// and connection-brand integers alone are not capability authority.
+diff --git a/crates/capntproto-rpc/src/local.rs b/crates/capntproto-rpc/src/local.rs
+index a3fdca7..5534b6f 100644
+--- a/crates/capntproto-rpc/src/local.rs
++++ b/crates/capntproto-rpc/src/local.rs
+@@ -1617,6 +1617,32 @@ impl<S> ClientHook for Client<S>
+ where
+     S: capability::Server + Clone + 'static,
+ {
++    fn call_borrowed_during_dispatch(
++        &self,
++        interface_id: u64,
++        method_id: u16,
++        params: &dyn ParamsHook,
++        results: &mut dyn ResultsHook,
++    ) -> Option<capnp::Result<()>> {
++        let inner = {
++            let state = self.state.borrow();
++            // Preserve streaming barriers, revocation, and shortening in the
++            // existing dispatcher. No state borrow crosses application code.
++            if state.blocked
++                || state.broken_error.is_some()
++                || state.resolved.is_some()
++                || state.resolve_task.is_some()
++                || state.revocation.is_some()
++            {
++                return None;
++            }
++            state.inner.as_ref()?.clone()
++        };
++        inner
++            .get_hooks()?
++            .dispatch_borrowed(interface_id, method_id, params, results)
++    }
++
+     fn get_failure(&self) -> Option<Error> {
+         let state = self.state.borrow();
+         // shorten_path explicitly released replacement authority. As with an
+diff --git a/crates/capntproto-rpc/src/scoped/wire/server/results.rs b/crates/capntproto-rpc/src/scoped/wire/server/results.rs
+index 9f15e51..0f5ecab 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/server/results.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/server/results.rs
+@@ -791,12 +791,31 @@ impl Prepared {
+             return Err(Error::failed("server results already started".into()));
+         }
+         results.0.method.set(Some(self.method));
+-        let hook = Hook {
++        let mut hook = Hook {
+             results: results.clone(),
+             message: None,
+             caps: Vec::new(),
+             executor,
+         };
++        if immediate {
++            if let Some(result) = destination.call_borrowed_during_dispatch(
++                self.method.interface,
++                self.method.method,
++                &*self.params,
++                &mut hook,
++            ) {
++                // Drop publishes into the original answer producer. The same
++                // response/pipeline interests and cancellation context survive.
++                drop(hook);
++                return Ok(Execution {
++                    operation: Some(match result {
++                        Ok(()) => Promise::ok(()),
++                        Err(error) => Promise::err(error),
++                    }),
++                    results: results.clone(),
++                });
++            }
++        }
+         Ok(Execution {
+             operation: Some(if immediate {
+                 destination.call_during_dispatch(
+diff --git a/crates/capntproto-rpc/src/scoped/wire/server/results/tests.rs b/crates/capntproto-rpc/src/scoped/wire/server/results/tests.rs
+index dd60e84..971a725 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/server/results/tests.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/server/results/tests.rs
+@@ -1,5 +1,73 @@
+ use super::*;
+ 
++#[test]
++fn borrowed_dispatch_uses_original_results_and_owned_fallback() {
++    #[derive(Clone)]
++    struct Native(Rc<Cell<usize>>, Rc<Cell<usize>>);
++    impl capability::ServerHooks for Native {
++        fn dispatch_borrowed(
++            &self,
++            _: u64,
++            method: u16,
++            _: &dyn ParamsHook,
++            results: &mut dyn ResultsHook,
++        ) -> Option<capnp::Result<()>> {
++            if method != 0 {
++                return None;
++            }
++            self.0.set(self.0.get() + 1);
++            Some(results.get().map(|mut root| {
++                root.set_as_capability(crate::broken::new_cap(Error::failed(
++                    "borrowed result".into(),
++                )));
++            }))
++        }
++    }
++    impl capability::Server for Native {
++        fn dispatch_call(
++            self,
++            _: u64,
++            _: u16,
++            _: capability::Params<any_pointer::Owned>,
++            _: capability::Results<any_pointer::Owned>,
++        ) -> capability::DispatchCallResult {
++            self.1.set(self.1.get() + 1);
++            capability::DispatchCallResult::new(Promise::ok(()), false)
++        }
++        fn as_ptr(&self) -> usize {
++            Rc::as_ptr(&self.0) as usize
++        }
++        fn get_hooks(&self) -> Option<&dyn capability::ServerHooks> {
++            Some(self)
++        }
++    }
++    let native = Rc::new(Cell::new(0));
++    let owned = Rc::new(Cell::new(0));
++    let client = crate::local::Client::new(Native(native.clone(), owned.clone()));
++    for (method, immediate) in [(0, true), (1, true), (0, false)] {
++        let results = Results::new();
++        let prepared = Prepared {
++            method: DynamicCall {
++                method,
++                ..Default::default()
++            },
++            params: Payload::owned(Default::default(), vec![]).into_params(),
++        };
++        let work = prepared
++            .execute_using(&client, &results, None, immediate)
++            .unwrap();
++        assert!(results.pipeline(pipeline::Path::new(&[])).is_none());
++        futures::executor::block_on(work).unwrap();
++        if method == 0 && immediate {
++            let retained = results.pipeline(pipeline::Path::new(&[])).unwrap();
++            drop(results);
++            assert_eq!(retained.get_failure().unwrap().extra, "borrowed result");
++        }
++    }
++    assert_eq!(native.get(), 1);
++    assert_eq!(owned.get(), 2);
++}
++
+ #[test]
+ fn pipeline_paths_preserve_early_precedence_and_retained_result_capabilities() {
+     #[derive(Clone)]
+diff --git a/benchmarks/rpc/capability-borrowed.rs b/benchmarks/rpc/capability-borrowed.rs
+new file mode 100644
+index 0000000..c67ee9e
+--- /dev/null
++++ b/benchmarks/rpc/capability-borrowed.rs
+@@ -0,0 +1,118 @@
++//! Prototype borrowed implementations of the unchanged workflow operations.
++use super::*;
++use capnp::{
++    capability::ServerHooks,
++    private::capability::{ParamsHook, ResultsHook},
++    traits::HasTypeId,
++};
++
++impl ServerHooks for Service {
++    fn dispatch_borrowed(
++        &self,
++        interface: u64,
++        method: u16,
++        params: &dyn ParamsHook,
++        results: &mut dyn ResultsHook,
++    ) -> Option<capnp::Result<()>> {
++        if interface != workflows::Client::TYPE_ID || method > 1 {
++            return None;
++        }
++        Some((|| {
++            match method {
++                0 => {
++                    let params = params
++                        .get()?
++                        .get_as::<workflows::echo_params::Reader<'_>>()?;
++                    let mut results = results
++                        .get()?
++                        .get_as::<workflows::echo_results::Builder<'_>>()?;
++                    results.set_sequence(params.get_sequence());
++                    results.set_payload(params.get_payload()?);
++                }
++                1 => {
++                    let params = params
++                        .get()?
++                        .get_as::<workflows::open_params::Reader<'_>>()?;
++                    let client: cell::Client = capnp_rpc::new_client(Cell(RefCell::new((
++                        0,
++                        params.get_payload()?.to_vec(),
++                    ))));
++                    results
++                        .get()?
++                        .get_as::<workflows::open_results::Builder<'_>>()?
++                        .set_cell(client);
++                }
++                _ => unreachable!(),
++            }
++            Ok(())
++        })())
++    }
++}
++impl ServerHooks for Cell {
++    fn dispatch_borrowed(
++        &self,
++        interface: u64,
++        method: u16,
++        params: &dyn ParamsHook,
++        results: &mut dyn ResultsHook,
++    ) -> Option<capnp::Result<()>> {
++        if interface != cell::Client::TYPE_ID || method > 1 {
++            return None;
++        }
++        Some((|| {
++            match method {
++                0 => {
++                    let state = self.0.borrow();
++                    let mut results = results.get()?.get_as::<cell::read_results::Builder<'_>>()?;
++                    results.set_version(state.0);
++                    results.set_payload(&state.1);
++                }
++                1 => {
++                    let params = params.get()?.get_as::<cell::write_params::Reader<'_>>()?;
++                    let mut state = self.0.borrow_mut();
++                    if params.get_expected_version() != state.0 {
++                        return Err(capnp::Error::failed("version mismatch".into()));
++                    }
++                    state.0 = state
++                        .0
++                        .checked_add(1)
++                        .ok_or_else(|| capnp::Error::failed("version overflow".into()))?;
++                    state.1 = params.get_payload()?.to_vec();
++                    results
++                        .get()?
++                        .get_as::<cell::write_results::Builder<'_>>()?
++                        .set_version(state.0);
++                }
++                _ => unreachable!(),
++            }
++            Ok(())
++        })())
++    }
++}
++impl ServerHooks for Sink {
++    fn dispatch_borrowed(
++        &self,
++        interface: u64,
++        method: u16,
++        params: &dyn ParamsHook,
++        results: &mut dyn ResultsHook,
++    ) -> Option<capnp::Result<()>> {
++        if interface != callback::Client::TYPE_ID || method != 0 {
++            return None;
++        }
++        Some((|| {
++            let params = params
++                .get()?
++                .get_as::<callback::notify_params::Reader<'_>>()?;
++            if params.get_payload()? != self.payload || params.get_sequence() != self.calls.get() {
++                return Err(capnp::Error::failed("callback payload mismatch".into()));
++            }
++            self.calls.set(self.calls.get() + 1);
++            results
++                .get()?
++                .get_as::<callback::notify_results::Builder<'_>>()?
++                .set_sequence(params.get_sequence());
++            Ok(())
++        })())
++    }
++}

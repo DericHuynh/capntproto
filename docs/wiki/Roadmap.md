@@ -79,11 +79,15 @@ refactoring and local profiling do not replace a complete dedicated campaign.
 
 The [ownership and integration review](Architecture.md#portable-ownership-and-integration-review)
 separates explicit endpoint retirement from promise settlement and metadata
-refresh. Next, replace broad invalidation with a measured effect-reporting
-control context and revisioned metadata contract; preserve a conservative
-adapter for integrations that expose arbitrary mutations. A native generated
-service ABI is a separate decision requiring evidence that removing owned-hook
-adaptation improves latency while preserving early pipelines and cancellation.
+refresh. The [three architecture experiments](../../research/reports/portable-performance/2026-10-17-architecture/README.md)
+implement restricted control polling, revision-backed metadata and borrowed
+synchronous dispatch separately and together. Native dispatch gives modest
+instruction savings; control and per-import subscriptions have offsetting costs,
+and none establishes 5% latency parity. Preserve these as replayable experiments.
+Further native work must address retained parameter adapters and concurrent
+execution ownership while preserving early pipelines, cancellation and policy
+wrappers. Mandatory integration or generated-service API breaks are not yet
+justified by the measured gains.
 
 The first optimization slice indexes immediate reply owners beyond eight calls,
 checking the full question generation before delivery, and copies two-segment

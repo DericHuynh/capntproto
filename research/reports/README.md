@@ -32,6 +32,13 @@ with real framing and a paused virtual clock. Three fresh processes reproduced
 the same propagation times and wire counters. These are protocol observations,
 not CPU, TCP or QUIC performance measurements.
 
+The [portable architecture experiments](portable-performance/2026-10-17-architecture/README.md)
+preserve restricted control polling, metadata revisions and borrowed synchronous
+dispatch as three independent patches and a combined patch against `fe843e22`.
+Source/executable hashes, replay verification and matched local profiles are
+included. Raw samples and binaries remain in the workspace evidence archive;
+these experiments do not qualify the dedicated 5% latency target.
+
 Historical logs and model-checker output referenced by older design documents
 are local archives and are not included in this repository. Model source and
 verification fixtures remain under `research/baseline/`, `verification/`, and

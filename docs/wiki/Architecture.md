@@ -150,6 +150,25 @@ now-explicit final-owner release path.
 
 ### Decisions about breaking changes
 
+The [three implementation experiments](../../research/reports/portable-performance/2026-10-17-architecture/README.md)
+now test a restricted control-poll context, revision-backed import metadata and
+borrowed synchronous service dispatch separately and together. The patches are
+replayable against `fe843e22`; they are preserved as experiments rather than
+enabled runtime changes. Borrowed dispatch reduces pipeline server instructions
+by 1.58% and empty-unary server instructions by 2.91%. Per-import subscription
+allocations and control scheduling introduce offsetting costs: the combination
+reduces pipeline client instructions by 1.00% but increases server instructions
+by 0.15%. All traced baseline/candidate socket-write bytes and groups match.
+These results do not justify making any proposed integration break mandatory
+or claim the 5% latency target has been met.
+
+The borrowed prototype still owns its parameter adapter and only specializes
+the existing immediate dispatch boundary. The control prototype retains
+conservative transactions for active handoffs and existing adapters. Metadata
+subscriptions still walk the endpoint registry. Removing those remaining costs
+requires additional design and measurement; the prototypes do not establish a
+complete event-driven scheduler or a new generated service ABI.
+
 The useful breaking change is at the **integration contract**, if the project
 chooses to make precise event reporting mandatory. Replacing whole-coordinator
 mutation in `Control` with a restricted context would break custom controls and

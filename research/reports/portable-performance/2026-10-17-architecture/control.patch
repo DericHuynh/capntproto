@@ -1,0 +1,486 @@
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator.rs
+index 0de69d9..d12e15a 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator.rs
+@@ -17,7 +17,7 @@ pub mod policy;
+ pub mod transport;
+ use transport::{Input, NoResources, Output};
+ mod control;
+-pub use control::{Activity, Control};
++pub use control::{Activity, Control, ControlContext};
+ mod scheduler;
+ pub(in crate::scoped) use scheduler::EnqueueWake;
+ use scheduler::{Lane, Notifications, Schedule, WorkSet};
+@@ -96,6 +96,7 @@ pub struct Coordinator<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: us
+     cleanup_on_enqueue: bool,
+     cleanup_before_call: bool,
+     notifications: Notifications,
++    control_waker: Waker,
+     enqueue_waker: Rc<EnqueueWake>,
+     commands: Rc<handle::Commands>,
+     output: io::Output,
+@@ -139,6 +140,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+         driver.defer_call_dispatch(true);
+         let notifications = Notifications::default();
+         let enqueue_waker = Rc::new(notifications.enqueue());
++        let control_waker = notifications.control_waker();
+         // Commands have one coordinator owner and retain this stable notifier.
+         // Parent-task replacement is handled by WorkWake's registration, so
+         // ordinary calls need not register the command inbox again.
+@@ -157,6 +159,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+             cleanup_on_enqueue: false,
+             cleanup_before_call: false,
+             notifications,
++            control_waker,
+             enqueue_waker,
+             commands,
+             output: io::Output::new(),
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator/bootstrap.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator/bootstrap.rs
+index 0022ad1..7180c08 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator/bootstrap.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator/bootstrap.rs
+@@ -35,6 +35,24 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize, F, O: Output<
+ where
+     F: FnMut() -> capnp::Result<capability::Client>,
+ {
++    fn poll_scoped(
++        &mut self,
++        context: &mut ControlContext<'_, 'p, 'id, 's, I, P, C, H>,
++        messages: &mut messages::Messages<'p, '_, '_>,
++        queue: &mut messages::Queue<'p, '_, O::Bundle>,
++        scratch: &mut [u32],
++        output: &O,
++        _: &mut Context<'_>,
++    ) -> Poll<capnp::Result<bool>> {
++        let Some(bootstrap) = self.pending.front() else {
++            return Poll::Pending;
++        };
++        let result = context.publish_bootstrap(bootstrap, messages, queue, scratch, output);
++        if matches!(result, Poll::Ready(Ok(true))) {
++            self.pending.pop_front();
++        }
++        result
++    }
+     fn observes_hooks(&self, event: &connection::Received<'id, server::Results>) -> bool {
+         !matches!(
+             event,
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator/control.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator/control.rs
+index dc040bb..a73a138 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator/control.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator/control.rs
+@@ -1,6 +1,94 @@
+ //! Network policy boundary; conservative defaults support custom integrations.
+ use super::*;
+ 
++#[derive(Clone, Copy, Default)]
++pub(super) enum Effects {
++    #[default]
++    None,
++    Publication,
++    Conservative,
++}
++
++/// Restricted control-poll operations. Protocol owners remain in the coordinator;
++/// successful operations record their scheduling effects. Compatibility access
++/// explicitly forfeits precise invalidation for that poll.
++pub struct ControlContext<'a, 'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize> {
++    pub(super) coordinator: &'a mut Coordinator<'p, 'id, 's, I, P, C, H>,
++    pub(super) effects: Effects,
++    pub(super) general: &'a Waker,
++}
++impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
++    ControlContext<'_, 'p, 'id, 's, I, P, C, H>
++{
++    /// Compatibility transaction. Its waker invalidates all application lanes.
++    pub fn compatibility<T>(
++        &mut self,
++        operation: impl FnOnce(&mut Coordinator<'p, 'id, 's, I, P, C, H>, &mut Context<'_>) -> T,
++    ) -> T {
++        self.effects = Effects::Conservative;
++        operation(self.coordinator, &mut Context::from_waker(self.general))
++    }
++    pub(super) fn network_idle(&self) -> bool {
++        self.coordinator.driver.runtime.queued() == 0
++            && !self.coordinator.driver.has_network()
++            && self.coordinator.worker.pending_redirect().is_none()
++    }
++    pub(super) fn allow_answer_handoff(&mut self, allow: bool) {
++        self.coordinator.driver.allow_answer_handoff(allow);
++    }
++    pub fn publish_bootstrap<O: Output<I>>(
++        &mut self,
++        bootstrap: &connection::Bootstrap<'id>,
++        messages: &mut messages::Messages<'p, '_, '_>,
++        queue: &mut messages::Queue<'p, '_, O::Bundle>,
++        scratch: &mut [u32],
++        output: &O,
++    ) -> Poll<capnp::Result<bool>> {
++        let coordinator = &mut self.coordinator;
++        let key = bootstrap.answer();
++        let queued = !queue.is_empty();
++        match queue.reserve() {
++            Ok(slot) => drop(slot),
++            Err(messages::Error::NoSendSlot) if queued => return Poll::Pending,
++            Err(error) => return Poll::Ready(Err(wire_error(error))),
++        }
++        let result = (|| {
++            let driver = &mut coordinator.driver;
++            let producer = &driver
++                .ledgers
++                .answers
++                .get(key)
++                .map_err(wire_error)?
++                .owner
++                .producer;
++            let minimum = if producer.failure().is_some() {
++                producer.prepare_trace(&coordinator.policy);
++                producer.publication_bytes()?
++            } else {
++                128
++            }
++            .max(coordinator.options.output_bytes.get());
++            driver
++                .send_answer_using(
++                    key,
++                    messages,
++                    queue,
++                    minimum,
++                    coordinator.options.reader,
++                    scratch,
++                    output.bundle(),
++                    |owner, imports, bundle| output.attach(owner, imports, bundle),
++                    |results, root| results.write_exception(root),
++                )
++                .map_err(wire_error)
++        })();
++        if result.is_ok() && !matches!(self.effects, Effects::Conservative) {
++            self.effects = Effects::Publication;
++        }
++        Poll::Ready(result.map(|_| true))
++    }
++}
++
+ /// Protocol activity whose effects on a control policy must be declared.
+ /// These are scheduling certificates, never permission to bypass wire checks.
+ #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+@@ -29,6 +117,21 @@ pub trait Control<
+     O: Output<I> = NoResources,
+ >
+ {
++    /// Opt in to operations with explicit effects. Existing controls retain
++    /// conservative scheduling and their original general-purpose waker.
++    fn poll_scoped(
++        &mut self,
++        context: &mut ControlContext<'_, 'p, 'id, 's, I, P, C, H>,
++        messages: &mut messages::Messages<'p, '_, '_>,
++        queue: &mut messages::Queue<'p, '_, O::Bundle>,
++        scratch: &mut [u32],
++        output: &O,
++        _cx: &mut Context<'_>,
++    ) -> Poll<capnp::Result<bool>> {
++        context.compatibility(|coordinator, cx| {
++            self.poll(coordinator, messages, queue, scratch, output, cx)
++        })
++    }
+     /// Notify protocol quiescence after output flush. This is advisory transport
+     /// policy, not a peer acknowledgement or permission to discard active refs.
+     fn set_idle(&mut self, _idle: bool) {}
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty.rs
+index c8c2cb4..0bf185c 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty.rs
+@@ -1039,6 +1039,51 @@ impl<
+     > Control<'p, 'id, 's, resources::Import, (), C, H, vat::Resources>
+     for NetworkControl<'p, 'id, V, F, C, H>
+ {
++    fn poll_scoped(
++        &mut self,
++        context: &mut ControlContext<'_, 'p, 'id, 's, resources::Import, (), C, H>,
++        messages: &mut messages::Messages<'p, '_, '_>,
++        queue: &mut messages::Queue<'p, '_, vat::Bundle>,
++        scratch: &mut [u32],
++        output: &vat::Resources,
++        cx: &mut Context<'_>,
++    ) -> Poll<capnp::Result<bool>> {
++        // The restricted path certifies absence of authenticated network work.
++        // Active handoffs keep the existing conservative transaction until its
++        // individual operations have equally precise effect contracts.
++        if context.network_idle()
++            && self.pending.is_empty()
++            && self.sent.is_empty()
++            && self.local.is_empty()
++            && self.handoffs.is_empty()
++            && self.provided.is_empty()
++            && self.barriers.is_empty()
++            && self.produced.is_empty()
++            && self.commands.queue.borrow().is_empty()
++            && self.commands.markers.borrow().is_empty()
++            && self.commands.adoptions.borrow().is_empty()
++            && self.commands.provisions.borrow().is_empty()
++            && self.commands.forwarding.borrow().is_empty()
++        {
++            context.allow_answer_handoff(self.connection.borrow().supports_third_party_answers());
++            if self
++                .commands
++                .wake
++                .borrow()
++                .as_ref()
++                .is_none_or(|wake| !wake.will_wake(cx.waker()))
++            {
++                let previous = self.commands.wake.borrow_mut().replace(cx.waker().clone());
++                drop(previous);
++            }
++            self.bootstrap
++                .poll_scoped(context, messages, queue, scratch, output, cx)
++        } else {
++            context.compatibility(|coordinator, cx| {
++                self.poll(coordinator, messages, queue, scratch, output, cx)
++            })
++        }
++    }
+     fn observes_hooks(&self, event: &connection::Received<'id, server::Results>) -> bool {
+         !matches!(
+             event,
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator/pump.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator/pump.rs
+index 3367b5c..d72bfc4 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator/pump.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator/pump.rs
+@@ -118,18 +118,53 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+             // including on idle polls. A control callback can wake before that
+             // registration: its changed flag is consumed later in this same
+             // turn. Registering here as well only repeats the atomic operation.
+-            if self.notifications.pending() & !(WorkSet::CALLS) != WorkSet::NONE {
++            if self.notifications.pending() & (!(WorkSet::CALLS) | WorkSet::CONTROL)
++                != WorkSet::NONE
++            {
+                 self.control_idle = false;
+             }
+             if !self.control_idle {
+                 // Controls observe both protocol progress and independently woken
+                 // application futures. IO-only polls can retain their idle result.
+-                // Use the same notifying waker as the other application lanes; the
+-                // poll_work check below also catches a wake during this callback.
+-                let mut control_cx = Context::from_waker(waker);
+-                match controls.poll(self, messages, queue, scratch, output, &mut control_cx) {
++                // Restricted polls notify controls independently. Compatibility
++                // transactions still receive the general application waker.
++                let control_waker = self.control_waker.clone();
++                let mut control_cx = Context::from_waker(&control_waker);
++                let mut context = ControlContext {
++                    coordinator: self,
++                    effects: control::Effects::None,
++                    general: waker,
++                };
++                let result = controls.poll_scoped(
++                    &mut context,
++                    messages,
++                    queue,
++                    scratch,
++                    output,
++                    &mut control_cx,
++                );
++                let effects = context.effects;
++                match result {
+                     Poll::Ready(Ok(true)) => {
+-                        self.changed();
++                        match effects {
++                            control::Effects::Publication => {
++                                self.control_idle = false;
++                                self.schedule.active |= WorkSet::CALLS | WorkSet::MAINTENANCE;
++                                self.calls.invalidate_scan();
++                                self.driver.invalidate_maintenance();
++                                if self.driver.runtime.queued() != 0
++                                    || self.driver.has_pending_call()
++                                {
++                                    self.schedule.active |= WorkSet::ACCEPT;
++                                }
++                                if !self.worker.is_empty() {
++                                    self.schedule.active |= WorkSet::WORKER;
++                                    self.worker.invalidate_scan();
++                                }
++                            }
++                            control::Effects::Conservative => self.changed(),
++                            control::Effects::None => self.changed(),
++                        }
+                         cx.waker().wake_by_ref();
+                     }
+                     Poll::Ready(Err(e)) => return Err(Box::new(Cause::Protocol(e))),
+@@ -243,7 +278,10 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+                     || !self.control_idle
+                     || self.notifications.pending() != WorkSet::NONE)
+             {
+-                if remaining != 0 {
++                // A control-only self-wake consumes no application lane's
++                // quantum. Yield it explicitly instead of spinning forever.
++                if remaining != 0 && !(self.schedule.active == WorkSet::NONE && !self.control_idle)
++                {
+                     continue;
+                 }
+                 cx.waker().wake_by_ref();
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator/scheduler.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator/scheduler.rs
+index b9f468d..2170263 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator/scheduler.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator/scheduler.rs
+@@ -44,6 +44,7 @@ impl Lane {
+ #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+ pub(super) struct WorkSet(u8);
+ impl WorkSet {
++    pub(super) const CONTROL: Self = Self(1 << 6);
+     pub(super) const NONE: Self = Self(0);
+     pub(super) const ALL: Self = Self(0x3f);
+     pub(super) const FOREIGN: Self = Lane::Foreign.work();
+@@ -144,6 +145,15 @@ impl Wake for WorkWake {
+ 
+ // Local enqueue shares the notifier without a task-waker clone per request.
+ pub(in crate::scoped) struct EnqueueWake(Arc<WorkWake>);
++struct ControlWake(Arc<WorkWake>);
++impl Wake for ControlWake {
++    fn wake(self: Arc<Self>) {
++        self.wake_by_ref();
++    }
++    fn wake_by_ref(self: &Arc<Self>) {
++        self.0.notify(WorkSet::CONTROL);
++    }
++}
+ impl EnqueueWake {
+     pub(in crate::scoped) fn notify(&self) {
+         self.0.notify(WorkSet::CALLS);
+@@ -156,6 +166,9 @@ pub(super) struct Notifications {
+     parent: Option<Waker>,
+ }
+ impl Notifications {
++    pub(super) fn control_waker(&self) -> Waker {
++        Waker::from(Arc::new(ControlWake(self.wake.clone())))
++    }
+     pub(super) fn waker(&self) -> Waker {
+         Waker::from(self.wake.clone())
+     }
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator/scheduler/tests.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator/scheduler/tests.rs
+index 3a7015d..cbac911 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator/scheduler/tests.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator/scheduler/tests.rs
+@@ -1,5 +1,23 @@
+ use super::*;
+ 
++#[test]
++fn scoped_control_notification_preserves_application_idle_certificates() {
++    let mut notifications = Notifications::default();
++    let parent = futures::task::noop_waker();
++    notifications.take(&parent);
++    notifications.control_waker().wake_by_ref();
++    assert_eq!(notifications.take(&parent), WorkSet::CONTROL);
++    assert_eq!(notifications.take(&parent), WorkSet::NONE);
++    notifications.control_waker().wake_by_ref();
++    notifications.enqueue().notify();
++    assert_eq!(
++        notifications.take(&parent),
++        WorkSet::CONTROL | WorkSet::CALLS
++    );
++    notifications.waker().wake_by_ref();
++    assert_eq!(notifications.take(&parent), WorkSet::ALL);
++}
++
+ #[test]
+ fn every_ready_subset_is_fair_for_every_starting_lane() {
+     // Independent reference: enumerate the rotated lane order, then filter it.
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator/tests.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator/tests.rs
+index 659ea19..e42a388 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator/tests.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator/tests.rs
+@@ -60,6 +60,7 @@ fn reclaimed(messages: &mut messages::Messages<'_, '_, '_>) {
+ }
+ #[derive(Default)]
+ struct Policy {
++    scoped_wake: bool,
+     stopped: bool,
+     polls: usize,
+     wake: Option<Waker>,
+@@ -71,6 +72,25 @@ struct Policy {
+     idle_transitions: Vec<bool>,
+ }
+ impl<'p, 'id, 's> Control<'p, 'id, 's, (), u8, 8, 8> for Policy {
++    fn poll_scoped(
++        &mut self,
++        context: &mut ControlContext<'_, 'p, 'id, 's, (), u8, 8, 8>,
++        messages: &mut messages::Messages<'p, '_, '_>,
++        queue: &mut messages::Queue<'p, '_>,
++        scratch: &mut [u32],
++        output: &NoResources,
++        cx: &mut Context<'_>,
++    ) -> Poll<capnp::Result<bool>> {
++        if !self.scoped_wake {
++            return context.compatibility(|coordinator, cx| {
++                self.poll(coordinator, messages, queue, scratch, output, cx)
++            });
++        }
++        self.polls += 1;
++        assert!(self.polls < 16, "control-only self-wake must yield");
++        cx.waker().wake_by_ref();
++        Poll::Pending
++    }
+     fn accepts_direct_plain_return(&self) -> bool {
+         self.direct_returns
+     }
+@@ -141,6 +161,45 @@ impl<'p, 'id, 's> Control<'p, 'id, 's, (), u8, 8, 8> for Policy {
+     }
+ }
+ 
++#[test]
++fn restricted_control_self_wake_yields_without_restarting_application_scans() {
++    with_peer(|driver, messages| {
++        let mut coordinator = Coordinator::new(
++            driver,
++            ClientHooks::new(8, 8),
++            NonZeroUsize::new(4).unwrap(),
++            None,
++            options(),
++        )
++        .unwrap();
++        coordinator.schedule.active = WorkSet::NONE;
++        let mut queue = messages::Queue::new_growing(0, 1).unwrap();
++        let mut writer = Writer(Rc::default());
++        let mut control = Policy {
++            scoped_wake: true,
++            ..Default::default()
++        };
++        let waker = Waker::from(Arc::new(WakeCount::default()));
++        let mut cx = Context::from_waker(&waker);
++        for expected in 1..=2 {
++            assert!(!coordinator
++                .poll_io_work::<(), _, _>(
++                    messages,
++                    &mut queue,
++                    &mut transport::Writer(&mut writer),
++                    &mut [0; 8],
++                    &NoResources,
++                    &mut control,
++                    &mut cx
++                )
++                .unwrap());
++            assert_eq!(control.polls, expected);
++            assert_eq!(coordinator.schedule.active, WorkSet::NONE);
++            assert!(!coordinator.control_idle);
++        }
++    });
++}
++
+ #[test]
+ fn idle_controls_resume_on_notifications_progress_and_output_capacity() {
+     with_peer(|driver, messages| {
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs
+index 996c852..d75a8a5 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs
+@@ -62,7 +62,11 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+         remaining: &mut usize,
+         waker: &Waker,
+     ) -> Poll<capnp::Result<()>> {
+-        let changed = self.notifications.take(cx.waker());
++        let notified = self.notifications.take(cx.waker());
++        if notified & WorkSet::CONTROL != WorkSet::NONE {
++            self.control_idle = false;
++        }
++        let changed = notified & !WorkSet::CONTROL;
+         if changed != WorkSet::NONE {
+             if changed == WorkSet::CALLS {
+                 // A newly enqueued request cannot change foreign promises,
