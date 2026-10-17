@@ -100,7 +100,7 @@ jobs:
             printf '\nShared RPC ownership: **%s**. Heap-owned and caller-owned replies share the same transitions. [32-bit ownership and growing storage log](shared-replies-32.log), [queue and flow reentrancy log](flow-wakeups.log), [selected reader provenance, bounds and promise ownership](selected-readers-32.log), [session wakeups](session-wakeups-32.log), [growing graph and ledger RPC cleanup](growing-graph-32.log), [growing provider protocol replay](growing-ledger-replay-32.log); JUnit reports are included in the artifact.\n' "$REPLIES"
           } > target/verification/memory-safety/README.md
           cat target/verification/memory-safety/README.md >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: extended-miri
@@ -150,7 +150,7 @@ jobs:
           # shellcheck disable=SC2016
             printf '# Native memory checks\n\nCommit: `%s`\n\nResult: **%s**. cargo-careful 0.4.10 on nightly-2026-08-29 checks storage fault recovery, native descriptor/RPC behavior, framing, and allocation budgets. The TLC replay runs in Verification / Formal checks and is excluded from this native-only run. These checks detect selected unsafe-precondition violations; C++ internals are not instrumented by cargo-careful.\n\n- [Storage fault tests](storage.log)\n- [Native tests](native.log)\n- [Compiler](compiler.txt)\n' "$GITHUB_SHA" "$RESULT" > target/extended/careful/README.md
           cat target/extended/careful/README.md >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: native-careful
@@ -189,7 +189,7 @@ jobs:
           # shellcheck disable=SC2016
             printf '# LLVM IR size\n\nCommit: `%s`\n\nReports include the default-feature runtime and the native_store consumer, where generic bindings are instantiated. Counts measure IR size and instantiations, not compilation time. No regression baseline is established.\n\n- [Runtime](runtime.txt)\n- [Consumer](consumer.txt)\n- [Compiler](compiler.txt)\n' "$GITHUB_SHA" > target/extended/llvm-lines/README.md
           cat target/extended/llvm-lines/README.md >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: llvm-ir-size
@@ -211,7 +211,7 @@ jobs:
         env:
           TLA2TOOLS_JAR: ${{ runner.temp }}/tla2tools.jar
         run: cargo run --locked -p capntproto-dev -- nextest cargo -- --locked --test guard_quality
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: guard-mutation-report
