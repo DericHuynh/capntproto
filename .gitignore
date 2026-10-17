@@ -93,6 +93,16 @@ _apalache-tmp/
 !/research/reports/portable-performance/2026-10-17-integration/compio-source.json
 !/research/reports/portable-performance/2026-10-17-integration/replay.json
 !/research/reports/portable-performance/2026-10-17-integration/validation.json
+!/research/reports/portable-performance/2026-10-17-tokio/
+/research/reports/portable-performance/2026-10-17-tokio/*
+!/research/reports/portable-performance/2026-10-17-tokio/README.md
+!/research/reports/portable-performance/2026-10-17-tokio/report.json
+!/research/reports/portable-performance/2026-10-17-tokio/source.patch
+!/research/reports/portable-performance/2026-10-17-cpp-readers/
+/research/reports/portable-performance/2026-10-17-cpp-readers/*
+!/research/reports/portable-performance/2026-10-17-cpp-readers/README.md
+!/research/reports/portable-performance/2026-10-17-cpp-readers/report.json
+!/research/reports/portable-performance/2026-10-17-cpp-readers/source.patch
 
 # Locally discovered fuzz inputs; checked-in upstream corpora remain included.
 /fuzz/artifacts/

@@ -92,6 +92,11 @@ does not establish the 5% goal.
 Tokio is the selected host for continuing portable optimization. The
 [runtime comparison](../../benchmarks/rpc-compio/README.md) retains Compio behind
 the opt-in `compio-experiment` feature to reproduce the existing measurements.
+Prepared call/result readers now reuse the selected payload location, following
+C++ ownership and access patterns. The [measured port](../../research/reports/portable-performance/2026-10-17-cpp-readers/README.md)
+reduces pipeline-server instructions by 1.04% and callback-client instructions by
+0.46%; it does not establish the 5% latency target. An inline parameter owner
+saved allocations but increased instructions and was rejected.
 Focus further work on portable CPU overhead and matching Tokio/C++ publication
 turns. A Compio transport migration is no longer an active roadmap item; the
 recorded Poll results do not establish io_uring performance.

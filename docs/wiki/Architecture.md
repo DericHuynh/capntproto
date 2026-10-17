@@ -195,6 +195,23 @@ rejection precedes application side effects. The normal generator produces this 
 specific interface/method dispatcher is needed. Opaque policy hooks explicitly
 take ownership, so membranes and other wrappers still intercept calls.
 
+Prepared calls and returns now read the payload through the same selected pointer
+used for building it. This follows `RpcRequest::getRoot`,
+`RpcResponseImpl::getResults` and `RpcCallContext::getParams`: retain the payload
+location instead of decoding the Call/Return envelope again on each access.
+`SelectedBuilder::get_reader` reconstructs a borrowed reader from the owner's
+segment and offset, so Rust moves cannot invalidate a cached arena reference.
+The owning selection prohibits ancestor replacement. The reader retains the
+ordinary builder-reader policy; publication still validates capability indices,
+traversal limits and nesting through an independent checked reader. Hosted
+parameter hooks still imbue their capability table after selecting the content.
+
+An inline admitted-parameter owner was also tested. It removed one allocation per
+eligible call but increased server instructions, so the boxed owner remains.
+Allocation count alone is insufficient evidence for changing dispatch ownership.
+The [selected-reader measurements](../../research/reports/portable-performance/2026-10-17-cpp-readers/README.md)
+record both experiments and map the retained change to the pinned C++ source.
+
 Three architectural costs remain after these API changes:
 
 1. **Execution ownership remains distributed.** The parameter adapter is still

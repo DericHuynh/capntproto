@@ -1480,6 +1480,39 @@ fn hosted_hook_bridge_exceeds_inline_capability_capacity_in_both_directions() {
 fn retained_plain_params_keep_segments_and_outlive_the_connection() {
     use capntproto_rpc_engine::ids::ExportId;
     use capntproto_rpc_wire::clients as binding;
+    #[derive(Clone)]
+    struct Suspended;
+    impl capability::Server for Suspended {
+        fn dispatch_call(
+            self,
+            _: u64,
+            _: u16,
+            context: capability::CallContext<'_, any_pointer::Owned, any_pointer::Owned>,
+        ) -> capability::DispatchCallResult {
+            let (params, mut results) = context.into_owned();
+            let mut first = true;
+            capability::DispatchCallResult::new(
+                Promise::from_future(async move {
+                    futures::future::poll_fn(|cx| {
+                        if std::mem::take(&mut first) {
+                            cx.waker().wake_by_ref();
+                            Poll::Pending
+                        } else {
+                            Poll::Ready(())
+                        }
+                    })
+                    .await;
+                    let bytes = params.get()?.get_as::<capnp::data::Reader>()?;
+                    assert_eq!(bytes, b"retained parameters");
+                    results.get().set_as::<capnp::data::Owned>(bytes)
+                }),
+                true,
+            )
+        }
+        fn as_ptr(&self) -> usize {
+            self as *const Self as usize
+        }
+    }
     fn prepare<'p>(
         messages: &mut messages::Messages<'p, '_, '_>,
         segmented: bool,
@@ -1599,6 +1632,13 @@ fn retained_plain_params_keep_segments_and_outlive_the_connection() {
                     .unwrap(),
                 b"retained parameters"
             );
+            // Transfer the retained reader into a suspended application after
+            // the original request, graph and pool have all been destroyed.
+            let results = server::Results::new();
+            let work = payload
+                .execute(&crate::local::Client::new(Suspended), &results, None)
+                .unwrap();
+            futures::executor::block_on(work).unwrap();
         }
     }
 }

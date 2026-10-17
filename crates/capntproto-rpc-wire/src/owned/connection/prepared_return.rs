@@ -69,18 +69,9 @@ impl<A: capnp::message::Allocator> PreparedReturn<A> {
         frame_layout(&self.message.message().get_segments_for_output()).map(|(_, length)| length)
     }
     pub fn reader(&self) -> capnp::Result<capnp::any_pointer::Reader<'_>> {
-        let rpc_capnp::message::Return(result) = self
-            .message
-            .message()
-            .get_root_as_reader::<rpc_capnp::message::Reader>()?
-            .which()?
-        else {
-            unreachable!("private Return header")
-        };
-        let rpc_capnp::return_::Results(payload) = result?.which()? else {
-            unreachable!("private result selection")
-        };
-        Ok(payload?.get_content())
+        // Like RpcServerResponseImpl::getResultsBuilder().asReader(), use the
+        // selected result field instead of decoding the envelope on each read.
+        self.message.get_reader()
     }
     #[inline(always)]
     fn copy<'pool>(

@@ -176,19 +176,17 @@ impl ParamsHook for Params {
         Some(self)
     }
     fn get(&self) -> ::capnp::Result<any_pointer::Reader<'_>> {
-        let request = match &self.request {
-            RequestMessage::Root(message) => message,
-            RequestMessage::Envelope(message) => message.message(),
-            RequestMessage::Frozen(message) => message.message(),
-        };
-        let mut result: any_pointer::Reader = if self.envelope {
-            let root = request.get_root_as_reader::<crate::rpc_capnp::message::Reader>()?;
-            let crate::rpc_capnp::message::Call(call) = root.which()? else {
-                return Err(Error::failed("request envelope changed".into()));
-            };
-            call?.get_params()?.get_content()
-        } else {
-            request.get_root_as_reader()?
+        let mut result = match &self.request {
+            RequestMessage::Envelope(message) => message.params_reader()?,
+            RequestMessage::Frozen(message) => message.params_reader()?,
+            RequestMessage::Root(message) if self.envelope => {
+                let root = message.get_root_as_reader::<crate::rpc_capnp::message::Reader>()?;
+                let crate::rpc_capnp::message::Call(call) = root.which()? else {
+                    return Err(Error::failed("request envelope changed".into()));
+                };
+                call?.get_params()?.get_content()
+            }
+            RequestMessage::Root(message) => message.get_root_as_reader()?,
         };
         result.imbue(&self.cap_table);
         Ok(result)
@@ -641,24 +639,8 @@ impl ParamsHook for Request {
     fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
         let mut content = match &self.message {
             RequestMessage::Root(message) => message.get_root_as_reader()?,
-            RequestMessage::Envelope(message) => {
-                let root = message
-                    .message()
-                    .get_root_as_reader::<crate::rpc_capnp::message::Reader>()?;
-                let crate::rpc_capnp::message::Call(call) = root.which()? else {
-                    unreachable!("private Call envelope")
-                };
-                call?.get_params()?.get_content()
-            }
-            RequestMessage::Frozen(message) => {
-                let root = message
-                    .message()
-                    .get_root_as_reader::<crate::rpc_capnp::message::Reader>()?;
-                let crate::rpc_capnp::message::Call(call) = root.which()? else {
-                    unreachable!("private request envelope")
-                };
-                call?.get_params()?.get_content()
-            }
+            RequestMessage::Envelope(message) => message.params_reader()?,
+            RequestMessage::Frozen(message) => message.params_reader()?,
         };
         content.imbue(&self.cap_table);
         Ok(content)

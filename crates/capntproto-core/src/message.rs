@@ -837,6 +837,27 @@ impl<A: Allocator> SelectedBuilder<A> {
         pointer.validate_capability_indices(count)
     }
 
+    /// Read the selected pointer without traversing its immutable ancestors.
+    /// Uses the same reader policy as `Builder::get_root_as_reader`; the result
+    /// borrows this owner, so it cannot overlap edits or outlive its storage.
+    #[inline]
+    pub fn get_reader(&self) -> Result<any_pointer::Reader<'_>> {
+        let (start, _) = self.message.arena.get_segment(self.segment)?;
+        // SAFETY: selection checked this pointer word in the owning arena.
+        // Only descendants can be edited, so its allocation remains present.
+        // Resolve the base again after moves and let get_root check the extent,
+        // as Builder::get_root_as_reader does for the message's root word.
+        let pointer = unsafe {
+            layout::PointerReader::get_root(
+                self.message.arena.as_reader(),
+                self.segment,
+                start.wrapping_add(self.offset),
+                i32::MAX,
+            )?
+        };
+        Ok(any_pointer::Reader::new(pointer))
+    }
+
     /// Borrow the selected pointer. Changing its contents, including allocating
     /// additional segments or replacing it with another type, is permitted.
     pub fn get(&mut self) -> any_pointer::Builder<'_> {

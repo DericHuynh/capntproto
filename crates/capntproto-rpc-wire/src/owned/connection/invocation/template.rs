@@ -145,6 +145,10 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
     pub fn params(&mut self) -> capnp::any_pointer::Builder<'_> {
         self.message.get()
     }
+    /// Read the same selected parameter field used by the mutable builder.
+    pub fn params_reader(&self) -> capnp::Result<capnp::any_pointer::Reader<'_>> {
+        self.message.get_reader()
+    }
     pub fn message(&self) -> &capnp::message::Builder<A> {
         self.message.message()
     }

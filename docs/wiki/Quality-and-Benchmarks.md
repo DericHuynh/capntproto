@@ -1,5 +1,27 @@
 # Quality checks and benchmark reports
 
+## C++ selected-payload readers October 17, 2026
+
+The [selected-reader port](../../research/reports/portable-performance/2026-10-17-cpp-readers/README.md)
+reuses the owning builder's payload location, following C++ request/response
+access. Pipeline-server instructions fall 1.04% and callback-client instructions
+fall 0.46%, with unchanged allocation counts. All six before/after comparisons
+retain identical write bytes and groups. An inline parameter-owner prototype
+reduced allocations but increased instructions and was reverted.
+
+The twelve-workflow campaign passes 8/12 local faster-reference cells. A separate
+twenty-repetition follow-up retains a 9.14% pipeline pooled-p50 regression,
+despite nearly flat paired trial medians. The report retains all 480,000 samples,
+24 final profiles, 12 rejected-prototype profiles and 24 decoded peer journals.
+No latency improvement or full 5% qualification is claimed.
+
+Six core selected-builder tests, 307 RPC tests, 146 wire tests, three Tokio
+adapter tests and 192 mixed-peer combinations pass. Miri passes the six core
+tests and a suspended retained-parameter test after connection storage teardown.
+ARM alloc/no-alloc checks, strict Clippy and the workspace unsafe documentation
+gate pass. The source-bound unsafe fingerprint was reviewed and refreshed with
+unchanged diagnostic allowances; coverage floors and tolerances are unchanged.
+
 ## Tokio selection October 17, 2026
 
 Tokio is the selected host for further portable optimization. The comparison
