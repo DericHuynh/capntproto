@@ -3,6 +3,7 @@
 use crate::{echo_capnp::workflows, Result};
 use serde_json::Value;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::time::timeout;
 
 #[path = "../capability-workflows.rs"]
 mod capability;

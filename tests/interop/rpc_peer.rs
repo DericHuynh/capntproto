@@ -47,139 +47,171 @@ impl Drop for Held {
     }
 }
 impl peer::Server for Server {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        params: peer::EchoParams,
-        mut results: peer::EchoResults,
-    ) -> capnp::Result<()> {
-        let p = params.get()?;
-        let mut r = results.get();
-        r.set_value(p.get_value());
-        r.set_payload(p.get_payload()?);
-        r.set_text(p.get_text()?);
-        Ok(())
+        context: peer::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let p = params.get()?;
+            let mut r = results.get();
+            r.set_value(p.get_value());
+            r.set_payload(p.get_payload()?);
+            r.set_text(p.get_text()?);
+            Ok(())
+        })
     }
-    async fn bounce(
+    fn bounce(
         self: Rc<Self>,
-        params: peer::BounceParams,
-        mut results: peer::BounceResults,
-    ) -> capnp::Result<()> {
-        results.get().set_cap(params.get()?.get_cap()?);
-        Ok(())
+        context: peer::BounceContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            results.get().set_cap(params.get()?.get_cap()?);
+            Ok(())
+        })
     }
-    async fn child(
+    fn child(
         self: Rc<Self>,
-        _: peer::ChildParams,
-        mut results: peer::ChildResults,
-    ) -> capnp::Result<()> {
-        results.get().set_cap(capnp_rpc::new_client(Server {
-            state: self.state.clone(),
-            child: true,
-        }));
-        Ok(())
+        context: peer::ChildContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            results.get().set_cap(capnp_rpc::new_client(Server {
+                state: self.state.clone(),
+                child: true,
+            }));
+            Ok(())
+        })
     }
-    async fn tail(
+    fn tail(
         self: Rc<Self>,
-        params: peer::TailParams,
-        results: peer::TailResults,
-    ) -> capnp::Result<()> {
-        let p = params.get()?;
-        let mut call = p.get_cap()?.echo_request();
-        call.get().set_value(p.get_value());
-        crate::tail(results, call).await
+        context: peer::TailContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let p = params.get()?;
+            let mut call = p.get_cap()?.echo_request();
+            call.get().set_value(p.get_value());
+            crate::tail(results, call).await
+        })
     }
-    async fn callback(
+    fn callback(
         self: Rc<Self>,
-        params: peer::CallbackParams,
-        mut results: peer::CallbackResults,
-    ) -> capnp::Result<()> {
-        let p = params.get()?;
-        let mut call = p.get_cap()?.tail_request();
-        call.get()
-            .set_cap(capnp_rpc::new_client_from_rc(self.clone()));
-        call.get().set_value(p.get_value());
-        let response = call.send().promise.await?;
-        results.get().set_value(response.get()?.get_value());
-        Ok(())
+        context: peer::CallbackContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let p = params.get()?;
+            let mut call = p.get_cap()?.tail_request();
+            call.get()
+                .set_cap(capnp_rpc::new_client_from_rc(self.clone()));
+            call.get().set_value(p.get_value());
+            let response = call.send().promise.await?;
+            results.get().set_value(response.get()?.get_value());
+            Ok(())
+        })
     }
-    async fn fail(
+    fn fail(
         self: Rc<Self>,
-        params: peer::FailParams,
-        _: peer::FailResults,
-    ) -> capnp::Result<()> {
-        let mut error = capnp::Error::failed("interop failure".into());
-        error.kind = error_kind(params.get()?.get_kind());
-        Err(error)
+        context: peer::FailContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let mut error = capnp::Error::failed("interop failure".into());
+            error.kind = error_kind(params.get()?.get_kind());
+            Err(error)
+        })
     }
-    async fn hold(self: Rc<Self>, _: peer::HoldParams, _: peer::HoldResults) -> capnp::Result<()> {
-        self.state.started.set(self.state.started.get() + 1);
-        let _held = Held(self.state.clone());
-        futures::future::pending().await
-    }
-    async fn stats(
+    fn hold(
         self: Rc<Self>,
-        _: peer::StatsParams,
-        mut results: peer::StatsResults,
-    ) -> capnp::Result<()> {
-        let mut r = results.get();
-        r.set_started(self.state.started.get());
-        r.set_canceled(self.state.canceled.get());
-        r.set_released(self.state.released.get());
-        r.set_streamed(self.state.streamed.get());
-        Ok(())
+        context: peer::HoldContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.state.started.set(self.state.started.get() + 1);
+            let _held = Held(self.state.clone());
+            futures::future::pending().await
+        })
     }
-    async fn promise(
+    fn stats(
         self: Rc<Self>,
-        _: peer::PromiseParams,
-        mut results: peer::PromiseResults,
-    ) -> capnp::Result<()> {
-        let (tx, rx) = oneshot::channel();
-        assert!(self.state.pending.borrow_mut().replace(tx).is_none());
-        results
-            .get()
-            .set_cap(capnp_rpc::new_future_client(async { rx.await.unwrap() }));
-        Ok(())
+        context: peer::StatsContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let mut r = results.get();
+            r.set_started(self.state.started.get());
+            r.set_canceled(self.state.canceled.get());
+            r.set_released(self.state.released.get());
+            r.set_streamed(self.state.streamed.get());
+            Ok(())
+        })
     }
-    async fn resolve(
+    fn promise(
         self: Rc<Self>,
-        params: peer::ResolveParams,
-        _: peer::ResolveResults,
-    ) -> capnp::Result<()> {
-        let result = if params.get()?.get_reject() {
-            Err(capnp::Error::failed("promise rejected".into()))
-        } else {
-            Ok(capnp_rpc::new_client_from_rc(self.clone()))
-        };
-        self.state
-            .pending
-            .borrow_mut()
-            .take()
-            .unwrap()
-            .send(result)
-            .map_err(|_| capnp::Error::failed("promise abandoned".into()))
+        context: peer::PromiseContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let (tx, rx) = oneshot::channel();
+            assert!(self.state.pending.borrow_mut().replace(tx).is_none());
+            results
+                .get()
+                .set_cap(capnp_rpc::new_future_client(async { rx.await.unwrap() }));
+            Ok(())
+        })
     }
-    async fn stream(self: Rc<Self>, params: peer::StreamParams) -> capnp::Result<()> {
-        self.state
-            .streamed
-            .set(self.state.streamed.get() + params.get()?.get_value());
-        Ok(())
+    fn resolve(
+        self: Rc<Self>,
+        context: peer::ResolveContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let result = if params.get()?.get_reject() {
+                Err(capnp::Error::failed("promise rejected".into()))
+            } else {
+                Ok(capnp_rpc::new_client_from_rc(self.clone()))
+            };
+            self.state
+                .pending
+                .borrow_mut()
+                .take()
+                .unwrap()
+                .send(result)
+                .map_err(|_| capnp::Error::failed("promise abandoned".into()))
+        })
+    }
+    fn stream(
+        self: Rc<Self>,
+        context: peer::StreamContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.state
+                .streamed
+                .set(self.state.streamed.get() + params.get()?.get_value());
+            Ok(())
+        })
     }
     fn order(
         self: Rc<Self>,
-        params: peer::OrderParams,
-        _: peer::OrderResults,
-    ) -> impl Future<Output = capnp::Result<()>> {
-        // Measure dispatch order, not the executor's polling order of two
-        // independent async method bodies after delivery.
-        let result = params.get().map(|params| {
-            assert_eq!(
-                params.get_value(),
-                self.state.ordered.get(),
-                "E-order lost during reflection"
-            );
-            self.state.ordered.set(self.state.ordered.get() + 1);
-        });
-        futures::future::ready(result)
+        context: peer::OrderContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, _) = context.into_owned();
+        capnp::capability::Promise::from_future({
+            // Measure dispatch order, not the executor's polling order of two
+            // independent async method bodies after delivery.
+            let result = params.get().map(|params| {
+                assert_eq!(
+                    params.get_value(),
+                    self.state.ordered.get(),
+                    "E-order lost during reflection"
+                );
+                self.state.ordered.set(self.state.ordered.get() + 1);
+            });
+            futures::future::ready(result)
+        })
     }
 }
 fn error_kind(kind: u16) -> capnp::ErrorKind {

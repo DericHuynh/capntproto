@@ -319,71 +319,75 @@ struct ServiceServer {
     factory: HttpOverCapnpFactory,
 }
 impl wire::http_service::Server for ServiceServer {
-    async fn request(
+    fn request(
         self: Rc<Self>,
-        params: wire::http_service::RequestParams,
-        mut results: wire::http_service::RequestResults,
-    ) -> Result<()> {
-        let p = params.get()?;
-        let request = read_request(p.get_request()?)?;
-        let context = p.get_context()?;
-        let response = Rc::new(RpcResponse {
-            client: context,
-            factory: self.factory.clone(),
-            started: Cell::new(false),
-            head: request.method == HttpMethod::Head,
-        });
-        let body = if request.body_size == BodySize::Fixed(0) {
-            Box::new(futures::io::Cursor::new(Vec::<u8>::new())) as Body
-        } else {
-            let (body, output) = body_pipe(request.body_size);
+        context: wire::http_service::RequestContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let p = params.get()?;
+            let request = read_request(p.get_request()?)?;
+            let context = p.get_context()?;
+            let response = Rc::new(RpcResponse {
+                client: context,
+                factory: self.factory.clone(),
+                started: Cell::new(false),
+                head: request.method == HttpMethod::Head,
+            });
+            let body = if request.body_size == BodySize::Fixed(0) {
+                Box::new(futures::io::Cursor::new(Vec::<u8>::new())) as Body
+            } else {
+                let (body, output) = body_pipe(request.body_size);
+                results
+                    .get()
+                    .set_request_body(self.factory.streams.from_output(output));
+                body
+            };
+            results.set_pipeline()?;
+            self.service
+                .request(request, body, response.clone())
+                .await?;
+            if !response.started.get() {
+                return Err(invalid("HTTP service completed without response"));
+            }
+            Ok(())
+        })
+    }
+    fn connect(
+        self: Rc<Self>,
+        context: wire::http_service::ConnectContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let p = params.get()?;
+            let request = ConnectRequest {
+                host: p.get_host()?.to_str()?.into(),
+                headers: decode_headers(p.get_headers()?)?,
+                use_tls: p.get_settings()?.get_use_tls(),
+            };
+            let response = Rc::new(RpcConnectResponse {
+                client: p.get_context()?,
+                factory: self.factory.clone(),
+                started: Cell::new(false),
+            });
+            let connection = self
+                .service
+                .connect(
+                    request,
+                    self.factory.streams.to_output(p.get_down()?),
+                    response.clone(),
+                )
+                .await?;
             results
                 .get()
-                .set_request_body(self.factory.streams.from_output(output));
-            body
-        };
-        results.set_pipeline()?;
-        self.service
-            .request(request, body, response.clone())
-            .await?;
-        if !response.started.get() {
-            return Err(invalid("HTTP service completed without response"));
-        }
-        Ok(())
-    }
-    async fn connect(
-        self: Rc<Self>,
-        params: wire::http_service::ConnectParams,
-        mut results: wire::http_service::ConnectResults,
-    ) -> Result<()> {
-        let p = params.get()?;
-        let request = ConnectRequest {
-            host: p.get_host()?.to_str()?.into(),
-            headers: decode_headers(p.get_headers()?)?,
-            use_tls: p.get_settings()?.get_use_tls(),
-        };
-        let response = Rc::new(RpcConnectResponse {
-            client: p.get_context()?,
-            factory: self.factory.clone(),
-            started: Cell::new(false),
-        });
-        let connection = self
-            .service
-            .connect(
-                request,
-                self.factory.streams.to_output(p.get_down()?),
-                response.clone(),
-            )
-            .await?;
-        results
-            .get()
-            .set_up(self.factory.streams.from_output(connection.up));
-        results.set_pipeline()?;
-        connection.completion.await?;
-        if !response.started.get() {
-            return Err(invalid("CONNECT completed without response"));
-        }
-        Ok(())
+                .set_up(self.factory.streams.from_output(connection.up));
+            results.set_pipeline()?;
+            connection.completion.await?;
+            if !response.started.get() {
+                return Err(invalid("CONNECT completed without response"));
+            }
+            Ok(())
+        })
     }
 }
 struct RpcService {
@@ -552,51 +556,55 @@ struct ResponseServer {
     head: bool,
 }
 impl wire::http_service::client_request_context::Server for ResponseServer {
-    async fn start_response(
+    fn start_response(
         self: Rc<Self>,
-        params: wire::http_service::client_request_context::StartResponseParams,
-        mut results: wire::http_service::client_request_context::StartResponseResults,
-    ) -> Result<()> {
-        let response = read_response(params.get()?.get_response()?)?;
-        check_response(&response, self.head)?;
-        start(&self.started)?;
-        let size = response.body_size;
-        let output = self.inner.start_response(response).await?;
-        if size != BodySize::Fixed(0) {
-            results.get().set_body(
-                self.factory
-                    .streams
-                    .from_output(checked_output(output, size)),
-            );
-        } else {
-            output.end().await?;
-        }
-        Ok(())
+        context: wire::http_service::client_request_context::StartResponseContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let response = read_response(params.get()?.get_response()?)?;
+            check_response(&response, self.head)?;
+            start(&self.started)?;
+            let size = response.body_size;
+            let output = self.inner.start_response(response).await?;
+            if size != BodySize::Fixed(0) {
+                results.get().set_body(
+                    self.factory
+                        .streams
+                        .from_output(checked_output(output, size)),
+                );
+            } else {
+                output.end().await?;
+            }
+            Ok(())
+        })
     }
-    async fn start_web_socket(
+    fn start_web_socket(
         self: Rc<Self>,
-        params: wire::http_service::client_request_context::StartWebSocketParams,
-        mut results: wire::http_service::client_request_context::StartWebSocketResults,
-    ) -> Result<()> {
-        start(&self.started)?;
-        let p = params.get()?;
-        let down = self
-            .inner
-            .start_websocket(
-                decode_headers(p.get_headers()?)?,
-                Rc::new(RpcSocket {
-                    client: p.get_up_socket()?,
+        context: wire::http_service::client_request_context::StartWebSocketContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            start(&self.started)?;
+            let p = params.get()?;
+            let down = self
+                .inner
+                .start_websocket(
+                    decode_headers(p.get_headers()?)?,
+                    Rc::new(RpcSocket {
+                        client: p.get_up_socket()?,
+                        closed: Cell::new(false),
+                    }),
+                )
+                .await?;
+            results
+                .get()
+                .set_down_socket(capnp_rpc::new_client(SocketServer {
+                    inner: down,
                     closed: Cell::new(false),
-                }),
-            )
-            .await?;
-        results
-            .get()
-            .set_down_socket(capnp_rpc::new_client(SocketServer {
-                inner: down,
-                closed: Cell::new(false),
-            }));
-        Ok(())
+                }));
+            Ok(())
+        })
     }
 }
 struct RpcConnectResponse {
@@ -639,35 +647,39 @@ struct ConnectResponseServer {
     started: Cell<bool>,
 }
 impl wire::http_service::connect_client_request_context::Server for ConnectResponseServer {
-    async fn start_connect(
+    fn start_connect(
         self: Rc<Self>,
-        params: wire::http_service::connect_client_request_context::StartConnectParams,
-        _: wire::http_service::connect_client_request_context::StartConnectResults,
-    ) -> Result<()> {
-        start(&self.started)?;
-        self.inner
-            .start_connect(read_response(params.get()?.get_response()?)?)
-            .await
+        context: wire::http_service::connect_client_request_context::StartConnectContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            start(&self.started)?;
+            self.inner
+                .start_connect(read_response(params.get()?.get_response()?)?)
+                .await
+        })
     }
-    async fn start_error(
+    fn start_error(
         self: Rc<Self>,
-        params: wire::http_service::connect_client_request_context::StartErrorParams,
-        mut results: wire::http_service::connect_client_request_context::StartErrorResults,
-    ) -> Result<()> {
-        start(&self.started)?;
-        let r = read_response(params.get()?.get_response()?)?;
-        let size = r.body_size;
-        let output = self.inner.start_error(r).await?;
-        if size != BodySize::Fixed(0) {
-            results.get().set_body(
-                self.factory
-                    .streams
-                    .from_output(checked_output(output, size)),
-            );
-        } else {
-            output.end().await?;
-        }
-        Ok(())
+        context: wire::http_service::connect_client_request_context::StartErrorContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            start(&self.started)?;
+            let r = read_response(params.get()?.get_response()?)?;
+            let size = r.body_size;
+            let output = self.inner.start_error(r).await?;
+            if size != BodySize::Fixed(0) {
+                results.get().set_body(
+                    self.factory
+                        .streams
+                        .from_output(checked_output(output, size)),
+                );
+            } else {
+                output.end().await?;
+            }
+            Ok(())
+        })
     }
 }
 struct RpcSocket {
@@ -709,39 +721,53 @@ struct SocketServer {
     closed: Cell<bool>,
 }
 impl wire::web_socket::Server for SocketServer {
-    async fn send_text(self: Rc<Self>, p: wire::web_socket::SendTextParams) -> Result<()> {
-        if self.closed.get() {
-            return Err(invalid("WebSocket is closed"));
-        }
-        self.inner
-            .send(Message::Text(p.get()?.get_text()?.to_str()?.into()))
-            .await
-    }
-    async fn send_data(self: Rc<Self>, p: wire::web_socket::SendDataParams) -> Result<()> {
-        if self.closed.get() {
-            return Err(invalid("WebSocket is closed"));
-        }
-        self.inner
-            .send(Message::Binary(p.get()?.get_data()?.into()))
-            .await
-    }
-    async fn close(
+    fn send_text(
         self: Rc<Self>,
-        p: wire::web_socket::CloseParams,
-        _: wire::web_socket::CloseResults,
-    ) -> Result<()> {
-        start(&self.closed)?;
-        let p = p.get()?;
-        self.inner
-            .send(Message::Close {
-                code: if p.get_code() == 1005 {
-                    None
-                } else {
-                    Some(p.get_code())
-                },
-                reason: p.get_reason()?.to_str()?.into(),
-            })
-            .await
+        context: wire::web_socket::SendTextContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            if self.closed.get() {
+                return Err(invalid("WebSocket is closed"));
+            }
+            self.inner
+                .send(Message::Text(p.get()?.get_text()?.to_str()?.into()))
+                .await
+        })
+    }
+    fn send_data(
+        self: Rc<Self>,
+        context: wire::web_socket::SendDataContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            if self.closed.get() {
+                return Err(invalid("WebSocket is closed"));
+            }
+            self.inner
+                .send(Message::Binary(p.get()?.get_data()?.into()))
+                .await
+        })
+    }
+    fn close(
+        self: Rc<Self>,
+        context: wire::web_socket::CloseContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            start(&self.closed)?;
+            let p = p.get()?;
+            self.inner
+                .send(Message::Close {
+                    code: if p.get_code() == 1005 {
+                        None
+                    } else {
+                        Some(p.get_code())
+                    },
+                    reason: p.get_reason()?.to_str()?.into(),
+                })
+                .await
+        })
     }
 }
 struct EmptyOutput;

@@ -60,6 +60,7 @@ fn reclaimed(messages: &mut messages::Messages<'_, '_, '_>) {
 }
 #[derive(Default)]
 struct Policy {
+    scoped_wake: bool,
     stopped: bool,
     polls: usize,
     wake: Option<Waker>,
@@ -74,22 +75,17 @@ impl<'p, 'id, 's> Control<'p, 'id, 's, (), u8, 8, 8> for Policy {
     fn accepts_direct_plain_return(&self) -> bool {
         self.direct_returns
     }
-    fn plain_return_preserves_idle(&self) -> bool {
-        self.direct_returns
-    }
-    fn plain_call_preserves_idle(&self) -> bool {
-        self.preserve_plain
-    }
-    fn retirement_preserves_idle(&self) -> bool {
-        self.preserve_plain
-    }
-    fn direct_publication_preserves_idle(&self) -> bool {
-        self.preserve_plain
+    fn preserves_idle(&self, activity: Activity) -> bool {
+        if activity == Activity::PlainReturn {
+            self.direct_returns
+        } else {
+            self.preserve_plain
+        }
     }
     fn received(
         &mut self,
         event: connection::Received<'id, server::Results>,
-        _: &mut TestCoordinator<'p, 'id, 's>,
+        _: &mut ControlContext<'_, 'p, 'id, 's, (), u8, 8, 8>,
         _: &mut messages::Messages<'p, '_, '_>,
         _: &mut messages::Queue<'p, '_>,
     ) -> capnp::Result<()> {
@@ -107,13 +103,19 @@ impl<'p, 'id, 's> Control<'p, 'id, 's, (), u8, 8, 8> for Policy {
     }
     fn poll(
         &mut self,
-        _: &mut TestCoordinator<'p, 'id, 's>,
+        _: &mut ControlContext<'_, 'p, 'id, 's, (), u8, 8, 8>,
         messages: &mut messages::Messages<'p, '_, '_>,
         queue: &mut messages::Queue<'p, '_>,
         _: &mut [u32],
         _: &NoResources,
         cx: &mut Context<'_>,
     ) -> Poll<capnp::Result<bool>> {
+        if self.scoped_wake {
+            self.polls += 1;
+            assert!(self.polls < 16, "control-only self-wake must yield");
+            cx.waker().wake_by_ref();
+            return Poll::Pending;
+        }
         self.polls += 1;
         self.wake = Some(cx.waker().clone());
         if std::mem::take(&mut self.publish_on_poll) {
@@ -134,11 +136,50 @@ impl<'p, 'id, 's> Control<'p, 'id, 's, (), u8, 8, 8> for Policy {
     }
     fn shutdown(
         &mut self,
-        _: &mut TestCoordinator<'p, 'id, 's>,
+        _: &mut ControlContext<'_, 'p, 'id, 's, (), u8, 8, 8>,
         _: &mut messages::Messages<'p, '_, '_>,
     ) {
         self.stopped = true;
     }
+}
+
+#[test]
+fn restricted_control_self_wake_yields_without_restarting_application_scans() {
+    with_peer(|driver, messages| {
+        let mut coordinator = Coordinator::new(
+            driver,
+            ClientHooks::new(8, 8),
+            NonZeroUsize::new(4).unwrap(),
+            None,
+            options(),
+        )
+        .unwrap();
+        coordinator.schedule.active = WorkSet::NONE;
+        let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+        let mut writer = Writer(Rc::default());
+        let mut control = Policy {
+            scoped_wake: true,
+            ..Default::default()
+        };
+        let waker = Waker::from(Arc::new(WakeCount::default()));
+        let mut cx = Context::from_waker(&waker);
+        for expected in 1..=2 {
+            assert!(!coordinator
+                .poll_io_work::<(), _, _>(
+                    messages,
+                    &mut queue,
+                    &mut transport::Writer(&mut writer),
+                    &mut [0; 8],
+                    &NoResources,
+                    &mut control,
+                    &mut cx
+                )
+                .unwrap());
+            assert_eq!(control.polls, expected);
+            assert_eq!(coordinator.schedule.active, WorkSet::NONE);
+            assert!(!coordinator.control_idle);
+        }
+    });
 }
 
 #[test]
@@ -414,9 +455,9 @@ impl capability::Server for Echo {
         self,
         _: u64,
         _: u16,
-        params: capability::Params<any_pointer::Owned>,
-        mut results: capability::Results<any_pointer::Owned>,
+        context: capability::CallContext<'_, any_pointer::Owned, any_pointer::Owned>,
     ) -> capability::DispatchCallResult {
+        let (params, mut results) = context.into_owned();
         self.0.set(self.0.get() + 1);
         let result = params.get().and_then(|params| results.get().set_as(params));
         capability::DispatchCallResult {
@@ -1502,7 +1543,7 @@ fn bootstrap_exception_details_survive_full_fifo_without_repeating_factory() {
         <TwoParty<'_, _> as Control<'_, '_, '_, (), u8, 8, 8>>::received(
             &mut control,
             received,
-            &mut coordinator,
+            &mut ControlContext::new(&mut coordinator),
             messages,
             &mut queue,
         )
@@ -1521,7 +1562,7 @@ fn bootstrap_exception_details_survive_full_fifo_without_repeating_factory() {
         for _ in 0..5 {
             assert!(control
                 .poll(
-                    &mut coordinator,
+                    &mut ControlContext::new(&mut coordinator),
                     messages,
                     &mut queue,
                     &mut [0; 32],
@@ -1536,7 +1577,7 @@ fn bootstrap_exception_details_survive_full_fifo_without_repeating_factory() {
         window.advance(size).unwrap();
         assert!(matches!(
             control.poll(
-                &mut coordinator,
+                &mut ControlContext::new(&mut coordinator),
                 messages,
                 &mut queue,
                 &mut [0; 32],
@@ -1573,7 +1614,7 @@ fn bootstrap_exception_details_survive_full_fifo_without_repeating_factory() {
         window.advance(size).unwrap();
         assert!(control
             .poll(
-                &mut coordinator,
+                &mut ControlContext::new(&mut coordinator),
                 messages,
                 &mut queue,
                 &mut [0; 32],

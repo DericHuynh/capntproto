@@ -99,172 +99,182 @@ impl<T: Owned + Unpin + 'static> object::Server<T> for ObjectServer<T>
 where
     for<'a> T::Reader<'a>: SetterInput<T> + HasTypeId,
 {
-    async fn history(
+    fn history(
         self: Rc<Self>,
-        _: object::HistoryParams<T>,
-        mut results: object::HistoryResults<T>,
-    ) -> capnp::Result<()> {
-        self.require(Rights::SUBSCRIBE)?;
-        let (floor, published) = self
-            .state
-            .store
-            .borrow()
-            .history_bounds(ObjectKey::from(self.state.object))
-            .map_err(failure)?;
-        let client = history::client::<T>(self.state.clone(), self.grant.clone())?;
-        let mut result = results.get();
-        result.set_history(client);
-        result.set_floor(floor.get());
-        result.set_published(published.get());
-        Ok(())
-    }
-
-    async fn get(
-        self: Rc<Self>,
-        _: object::GetParams<T>,
-        mut results: object::GetResults<T>,
-    ) -> capnp::Result<()> {
-        self.require(Rights::GET)?;
-        let snapshot = self
-            .state
-            .store
-            .borrow()
-            .get(ObjectKey::from(self.state.object))
-            .map_err(failure)?;
-        let mut bytes = typed_bytes::<T>(&snapshot)?;
-        let message =
-            capnp::serialize::read_message_from_flat_slice(&mut bytes, ReaderOptions::new())?;
-        results
-            .get()
-            .set_value(message.get_root::<T::Reader<'_>>()?)?;
-        results.get().set_revision(snapshot.revision().get());
-        Ok(())
-    }
-    async fn put(
-        self: Rc<Self>,
-        params: object::PutParams<T>,
-        mut results: object::PutResults<T>,
-    ) -> capnp::Result<()> {
-        self.require(Rights::PUT)?;
-        let p = params.get()?;
-        let bytes = encode_value::<T>(p.get_value()?)?;
-        {
-            let store = self.state.store.borrow();
-            let head = store.head(ObjectKey::from(self.state.object));
-            if head > Revision::INITIAL {
-                let snapshot = store
-                    .revision(ObjectKey::from(self.state.object), head)
-                    .map_err(failure)?;
-                typed_bytes::<T>(&snapshot)?;
-            }
-        }
-        let rev = self
-            .state
-            .store
-            .borrow_mut()
-            .put(
-                ObjectKey::from(self.state.object),
-                Revision::new(p.get_expected_head()),
-                &bytes,
-            )
-            .map_err(failure)?;
-        results.get().set_revision(rev.get());
-        Ok(())
-    }
-    async fn publish(
-        self: Rc<Self>,
-        params: object::PublishParams<T>,
-        mut results: object::PublishResults<T>,
-    ) -> capnp::Result<()> {
-        self.require(Rights::PUBLISH)?;
-        let p = params.get()?;
-        let rev = self
-            .state
-            .store
-            .borrow_mut()
-            .publish(
-                ObjectKey::from(self.state.object),
-                Revision::new(p.get_revision()),
-                Revision::new(p.get_expected_published()),
-            )
-            .map_err(failure)?;
-        self.state.changed.send_replace(rev);
-        results.get().set_revision(rev.get());
-        Ok(())
-    }
-    async fn subscribe(
-        self: Rc<Self>,
-        params: object::SubscribeParams<T>,
-        mut results: object::SubscribeResults<T>,
-    ) -> capnp::Result<()> {
-        self.require(Rights::SUBSCRIBE)?;
-        let p = params.get()?;
-        let observer = p.get_observer()?;
-        let mut after = Revision::new(p.get_after());
-        if after
-            > self
+        context: object::HistoryContext<'_, T>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.require(Rights::SUBSCRIBE)?;
+            let (floor, published) = self
                 .state
                 .store
                 .borrow()
-                .published(ObjectKey::from(self.state.object))
-        {
-            return Err(failure("subscription cursor ahead of published revision"));
-        }
-        if self.state.subscribers.get() >= 64 {
-            return Err(failure("subscription capacity exhausted"));
-        }
-        self.state.subscribers.set(self.state.subscribers.get() + 1);
-        let mut updates = self.state.changed.subscribe();
-        let state = self.state.clone();
-        let grant = self.grant.clone();
-        let task = tokio::task::spawn_local(async move {
-            loop {
-                if !grant.allows(Rights::SUBSCRIBE) {
-                    return;
-                }
-                let revision = *updates.borrow_and_update();
-                if revision > after {
-                    let snapshot = match state
-                        .store
-                        .borrow()
-                        .revision(ObjectKey::from(state.object), revision)
-                    {
-                        Ok(v) => v,
-                        Err(_) => return,
-                    };
-                    let result = (|| -> capnp::Result<_> {
-                        let mut bytes = typed_bytes::<T>(&snapshot)?;
-                        let message = capnp::serialize::read_message_from_flat_slice(
-                            &mut bytes,
-                            ReaderOptions::new(),
-                        )?;
-                        let mut call = observer.changed_request();
-                        call.get().set_revision(revision.get());
-                        call.get().set_value(message.get_root::<T::Reader<'_>>()?)?;
-                        Ok(call.send().promise)
-                    })();
-                    match result {
-                        Ok(p) => {
-                            if p.await.is_err() {
-                                return;
-                            }
-                        }
-                        Err(_) => return,
-                    };
-                    after = revision;
-                }
-                if updates.changed().await.is_err() {
-                    return;
+                .history_bounds(ObjectKey::from(self.state.object))
+                .map_err(failure)?;
+            let client = history::client::<T>(self.state.clone(), self.grant.clone())?;
+            let mut result = results.get();
+            result.set_history(client);
+            result.set_floor(floor.get());
+            result.set_published(published.get());
+            Ok(())
+        })
+    }
+
+    fn get(
+        self: Rc<Self>,
+        context: object::GetContext<'_, T>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.require(Rights::GET)?;
+            let snapshot = self
+                .state
+                .store
+                .borrow()
+                .get(ObjectKey::from(self.state.object))
+                .map_err(failure)?;
+            let mut bytes = typed_bytes::<T>(&snapshot)?;
+            let message =
+                capnp::serialize::read_message_from_flat_slice(&mut bytes, ReaderOptions::new())?;
+            results
+                .get()
+                .set_value(message.get_root::<T::Reader<'_>>()?)?;
+            results.get().set_revision(snapshot.revision().get());
+            Ok(())
+        })
+    }
+    fn put(
+        self: Rc<Self>,
+        context: object::PutContext<'_, T>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.require(Rights::PUT)?;
+            let p = params.get()?;
+            let bytes = encode_value::<T>(p.get_value()?)?;
+            {
+                let store = self.state.store.borrow();
+                let head = store.head(ObjectKey::from(self.state.object));
+                if head > Revision::INITIAL {
+                    let snapshot = store
+                        .revision(ObjectKey::from(self.state.object), head)
+                        .map_err(failure)?;
+                    typed_bytes::<T>(&snapshot)?;
                 }
             }
-        });
-        results
-            .get()
-            .set_subscription(capnp_rpc::new_client(Subscription {
-                task: RefCell::new(Some(task)),
-                state: self.state.clone(),
-            }));
-        Ok(())
+            let rev = self
+                .state
+                .store
+                .borrow_mut()
+                .put(
+                    ObjectKey::from(self.state.object),
+                    Revision::new(p.get_expected_head()),
+                    &bytes,
+                )
+                .map_err(failure)?;
+            results.get().set_revision(rev.get());
+            Ok(())
+        })
+    }
+    fn publish(
+        self: Rc<Self>,
+        context: object::PublishContext<'_, T>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.require(Rights::PUBLISH)?;
+            let p = params.get()?;
+            let rev = self
+                .state
+                .store
+                .borrow_mut()
+                .publish(
+                    ObjectKey::from(self.state.object),
+                    Revision::new(p.get_revision()),
+                    Revision::new(p.get_expected_published()),
+                )
+                .map_err(failure)?;
+            self.state.changed.send_replace(rev);
+            results.get().set_revision(rev.get());
+            Ok(())
+        })
+    }
+    fn subscribe(
+        self: Rc<Self>,
+        context: object::SubscribeContext<'_, T>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.require(Rights::SUBSCRIBE)?;
+            let p = params.get()?;
+            let observer = p.get_observer()?;
+            let mut after = Revision::new(p.get_after());
+            if after
+                > self
+                    .state
+                    .store
+                    .borrow()
+                    .published(ObjectKey::from(self.state.object))
+            {
+                return Err(failure("subscription cursor ahead of published revision"));
+            }
+            if self.state.subscribers.get() >= 64 {
+                return Err(failure("subscription capacity exhausted"));
+            }
+            self.state.subscribers.set(self.state.subscribers.get() + 1);
+            let mut updates = self.state.changed.subscribe();
+            let state = self.state.clone();
+            let grant = self.grant.clone();
+            let task = tokio::task::spawn_local(async move {
+                loop {
+                    if !grant.allows(Rights::SUBSCRIBE) {
+                        return;
+                    }
+                    let revision = *updates.borrow_and_update();
+                    if revision > after {
+                        let snapshot = match state
+                            .store
+                            .borrow()
+                            .revision(ObjectKey::from(state.object), revision)
+                        {
+                            Ok(v) => v,
+                            Err(_) => return,
+                        };
+                        let result = (|| -> capnp::Result<_> {
+                            let mut bytes = typed_bytes::<T>(&snapshot)?;
+                            let message = capnp::serialize::read_message_from_flat_slice(
+                                &mut bytes,
+                                ReaderOptions::new(),
+                            )?;
+                            let mut call = observer.changed_request();
+                            call.get().set_revision(revision.get());
+                            call.get().set_value(message.get_root::<T::Reader<'_>>()?)?;
+                            Ok(call.send().promise)
+                        })();
+                        match result {
+                            Ok(p) => {
+                                if p.await.is_err() {
+                                    return;
+                                }
+                            }
+                            Err(_) => return,
+                        };
+                        after = revision;
+                    }
+                    if updates.changed().await.is_err() {
+                        return;
+                    }
+                }
+            });
+            results
+                .get()
+                .set_subscription(capnp_rpc::new_client(Subscription {
+                    task: RefCell::new(Some(task)),
+                    state: self.state.clone(),
+                }));
+            Ok(())
+        })
     }
 }
 struct Subscription {
@@ -285,13 +295,15 @@ impl Drop for Subscription {
     }
 }
 impl subscription::Server for Subscription {
-    async fn cancel(
+    fn cancel(
         self: Rc<Self>,
-        _: subscription::CancelParams,
-        _: subscription::CancelResults,
-    ) -> capnp::Result<()> {
-        self.stop();
-        Ok(())
+        context: subscription::CancelContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.stop();
+            Ok(())
+        })
     }
 }
 

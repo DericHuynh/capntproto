@@ -30,22 +30,26 @@ impl Drop for Server {
     }
 }
 impl service::Server for Server {
-    async fn ping(
+    fn ping(
         self: Rc<Self>,
-        _: service::PingParams,
-        mut results: service::PingResults,
-    ) -> capnp::Result<()> {
-        self.0.calls.set(self.0.calls.get() + 1);
-        results.get().set_value(17);
-        Ok(())
+        context: service::PingContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.0.calls.set(self.0.calls.get() + 1);
+            results.get().set_value(17);
+            Ok(())
+        })
     }
-    async fn bounce(
+    fn bounce(
         self: Rc<Self>,
-        params: service::BounceParams,
-        mut results: service::BounceResults,
-    ) -> capnp::Result<()> {
-        results.get().set_cap(params.get()?.get_cap()?);
-        Ok(())
+        context: service::BounceContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            results.get().set_cap(params.get()?.get_cap()?);
+            Ok(())
+        })
     }
 }
 fn server(stats: &Rc<Stats>) -> service::Client {

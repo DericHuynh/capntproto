@@ -522,9 +522,9 @@ mod allocated {
             self,
             interface_id: u64,
             method_id: u16,
-            params: capability::Params<any_pointer::Owned>,
-            results: capability::Results<any_pointer::Owned>,
+            context: capability::CallContext<'_, any_pointer::Owned, any_pointer::Owned>,
         ) -> capability::DispatchCallResult {
+            let (params, results) = context.into_owned();
             let method = self
                 .schema
                 .find_superclass(interface_id)

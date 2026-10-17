@@ -12,13 +12,15 @@ use std::{cell::Cell, rc::Rc};
 
 struct Service(Rc<Cell<usize>>);
 impl harness::Server for Service {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        _: harness::EchoParams,
-        mut results: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        results.get().set_value(73);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            results.get().set_value(73);
+            Ok(())
+        })
     }
 }
 impl Drop for Service {

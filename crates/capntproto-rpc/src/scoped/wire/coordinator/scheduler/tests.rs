@@ -1,6 +1,24 @@
 use super::*;
 
 #[test]
+fn scoped_control_notification_preserves_application_idle_certificates() {
+    let mut notifications = Notifications::default();
+    let parent = futures::task::noop_waker();
+    notifications.take(&parent);
+    notifications.control_waker().wake_by_ref();
+    assert_eq!(notifications.take(&parent), WorkSet::CONTROL);
+    assert_eq!(notifications.take(&parent), WorkSet::NONE);
+    notifications.control_waker().wake_by_ref();
+    notifications.enqueue().notify();
+    assert_eq!(
+        notifications.take(&parent),
+        WorkSet::CONTROL | WorkSet::CALLS
+    );
+    notifications.waker().wake_by_ref();
+    assert_eq!(notifications.take(&parent), WorkSet::ALL);
+}
+
+#[test]
 fn every_ready_subset_is_fair_for_every_starting_lane() {
     // Independent reference: enumerate the rotated lane order, then filter it.
     // A lane which yields must get another turn only after its ready peers.

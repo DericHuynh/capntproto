@@ -52,22 +52,29 @@ impl Service {
     }
 }
 impl policy::Server for Service {
-    async fn stream(self: Rc<Self>, _: policy::StreamParams) -> capnp::Result<()> {
-        self.work().await
-    }
-    async fn cancellable_stream(
+    fn stream(
         self: Rc<Self>,
-        _: policy::CancellableStreamParams,
-    ) -> capnp::Result<()> {
-        self.work().await
+        context: policy::StreamContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move { self.work().await })
     }
-    async fn pending(
+    fn cancellable_stream(
         self: Rc<Self>,
-        _: policy::PendingParams,
-        _: policy::PendingResults,
-    ) -> capnp::Result<()> {
-        assert!(!self.0.bstarted.replace(true));
-        Ok(())
+        context: policy::CancellableStreamContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move { self.work().await })
+    }
+    fn pending(
+        self: Rc<Self>,
+        context: policy::PendingContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            assert!(!self.0.bstarted.replace(true));
+            Ok(())
+        })
     }
 }
 struct DynamicService(Service, bool);

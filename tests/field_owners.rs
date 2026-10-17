@@ -68,14 +68,16 @@ fn segments(input: &impl ReaderSegments, counts: &Counts) -> Segments {
 }
 struct Server(Counts);
 impl service::Server for Server {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        params: service::EchoParams,
-        mut results: service::EchoResults,
-    ) -> Result<()> {
-        let id = params.get()?.get_person()?.get_id();
-        results.get().init_person().set_id(id + 1);
-        Ok(())
+        context: service::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let id = params.get()?.get_person()?.get_id();
+            results.get().init_person().set_id(id + 1);
+            Ok(())
+        })
     }
 }
 impl Drop for Server {

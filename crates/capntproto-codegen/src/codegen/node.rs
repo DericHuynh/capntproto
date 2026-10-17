@@ -720,15 +720,32 @@ pub(super) fn generate_node(
                 let result_id = method.get_result_struct_type();
                 let no_promise_pipelining = !schema_may_contain_capabilities(ctx, result_id)?;
                 if result_id != STREAM_RESULT_ID {
-                    let (reply_type, reply_conversion) = if ctx.structured_replies {
-                        ("Reply", "internal_get_typed_reply")
+                    let reply_type = if ctx.structured_replies {
+                        "Reply"
                     } else {
-                        ("Results", "internal_get_typed_results")
+                        "Results"
                     };
-                    dispatch_arms.push(
-                        Line(fmt!(ctx,
-                                  "{ordinal} => {capnp}::capability::DispatchCallResult::with_cancellation_policy({capnp}::capability::Promise::from_future(<_T as Server{bracketed_params}>::{}(this, {capnp}::private::capability::internal_get_typed_params(params), {capnp}::private::capability::{reply_conversion}(results))), false, {allow_cancellation}),",
-                                  module_name(name))));
+                    let context_type = if ctx.structured_replies {
+                        "ReplyContext"
+                    } else {
+                        "CallContext"
+                    };
+                    let context_conversion = if ctx.structured_replies {
+                        "context.into_typed().into_reply_context()"
+                    } else {
+                        "context.into_typed()"
+                    };
+                    let invocation = format!(
+                        "<_T as Server{bracketed_params}>::{}(this, {context_conversion})",
+                        module_name(name)
+                    );
+                    let invocation = if allow_cancellation {
+                        invocation
+                    } else {
+                        format!("context.dispatch_protected(move |context| {invocation})")
+                    };
+                    dispatch_arms.push(Line(fmt!(ctx,
+                        "{ordinal} => {capnp}::capability::DispatchCallResult::with_cancellation_policy({invocation}, false, {allow_cancellation}),")));
 
                     let result_node = &ctx.node_map[&result_id];
                     let (result_scopes, results_ty_params) = if result_node.get_scope_id() == 0 {
@@ -762,14 +779,29 @@ pub(super) fn generate_node(
                         results_ty_params,
                         result_type
                     )));
-                    server_interior.push(
-                        Line(fmt!(ctx,
-                                  "fn {}(self: {capnp}::capability::Rc<Self>, _: {}Params<{}>, _: {}Results<{}>) -> impl ::core::future::Future<Output = Result<(), {capnp}::Error>> + 'static {{ ::core::future::ready(Err({capnp}::Error::unimplemented(\"method {}::Server::{} not implemented\".to_string()))) }}",
-                                  module_name(name),
-                                  capitalize_first_letter(name), params_ty_params,
-                                  capitalize_first_letter(name), results_ty_params,
-                                  node_name, module_name(name)
-                        )));
+                    let mut context_params = Vec::new();
+                    for parameter in params_ty_params
+                        .split(',')
+                        .chain(results_ty_params.split(','))
+                    {
+                        let parameter = parameter.trim();
+                        if !parameter.is_empty() && !context_params.contains(&parameter) {
+                            context_params.push(parameter);
+                        }
+                    }
+                    let context_params = params
+                        .params
+                        .split(',')
+                        .filter(|parameter| context_params.contains(&parameter.trim()))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    mod_interior.push(Line(fmt!(ctx,
+                        "pub type {}Context<'call, {}> = {capnp}::capability::{context_type}<'call, {param_type}, {result_type}>;",
+                        capitalize_first_letter(name), context_params)));
+                    server_interior.push(Line(fmt!(ctx,
+                        "fn {}(self: {capnp}::capability::Rc<Self>, _: {}Context<'_, {}>) -> {capnp}::capability::Promise<(), {capnp}::Error> {{ {capnp}::capability::Promise::err({capnp}::Error::unimplemented(\"method {}::Server::{} not implemented\".to_string())) }}",
+                        module_name(name), capitalize_first_letter(name), context_params,
+                        node_name, module_name(name))));
 
                     client_impl_interior.push(Line(fmt!(
                         ctx,
@@ -807,19 +839,25 @@ pub(super) fn generate_node(
                 } else {
                     method_type_arms.push(Line(fmt!(ctx, "{ordinal} => {capnp}::introspect::MethodTypes {{ params: <{param_type} as {capnp}::introspect::Introspect>::introspect(), results: ::core::option::Option::None, no_promise_pipelining: true }},")));
                     // It's a streaming method.
-                    dispatch_arms.push(
-                        Line(fmt!(ctx,
-                                  "{ordinal} => {capnp}::capability::DispatchCallResult::with_cancellation_policy({capnp}::capability::Promise::from_future(<_T as Server{bracketed_params}>::{}(this, {capnp}::private::capability::internal_get_typed_params(params))), true, {allow_cancellation}),",
+                    let invocation = format!(
+                        "<_T as Server{bracketed_params}>::{}(this, context.into_typed())",
+                        module_name(name)
+                    );
+                    let invocation = if allow_cancellation {
+                        invocation
+                    } else {
+                        format!("context.defer(move |context| {invocation})")
+                    };
+                    dispatch_arms.push(Line(fmt!(ctx,
+                        "{ordinal} => {capnp}::capability::DispatchCallResult::with_cancellation_policy({invocation}, true, {allow_cancellation}),")));
 
-                                  module_name(name))));
-
-                    server_interior.push(
-                        Line(fmt!(ctx,
-                                  "fn {}(self: {capnp}::capability::Rc<Self>, _: {}Params<{}>) -> impl ::core::future::Future<Output = Result<(), {capnp}::Error>> + 'static {{ ::core::future::ready(Err({capnp}::Error::unimplemented(\"method {}::Server::{} not implemented\".to_string()))) }}",
-                                  module_name(name),
-                                  capitalize_first_letter(name), params_ty_params,
-                                  node_name, module_name(name)
-                        )));
+                    mod_interior.push(Line(fmt!(ctx,
+                        "pub type {}Context<'call, {}> = {capnp}::capability::CallContext<'call, {param_type}, {capnp}::any_pointer::Owned>;",
+                        capitalize_first_letter(name), params_ty_params)));
+                    server_interior.push(Line(fmt!(ctx,
+                        "fn {}(self: {capnp}::capability::Rc<Self>, _: {}Context<'_, {}>) -> {capnp}::capability::Promise<(), {capnp}::Error> {{ {capnp}::capability::Promise::err({capnp}::Error::unimplemented(\"method {}::Server::{} not implemented\".to_string())) }}",
+                        module_name(name), capitalize_first_letter(name), params_ty_params,
+                        node_name, module_name(name))));
                     client_impl_interior.push(Line(fmt!(
                         ctx,
                         "pub fn {}_request(&self) -> {capnp}::capability::StreamingRequest<{}> {{",
@@ -1005,7 +1043,7 @@ pub(super) fn generate_node(
                     // Retain the branded base-trait obligations below.
                     if dispatched.insert(type_id) {
                         base_dispatch_arms.push(Line(format!(
-                            "0x{type_id:x} => {}::dispatch_call_internal(self.server, method_id, params, results),",
+                            "0x{type_id:x} => {}::dispatch_call_internal(self.server, method_id, context),",
                             do_branding(
                                 ctx, type_id, brand, Leaf::ServerDispatch, &the_mod)?)));
                     }
@@ -1216,9 +1254,9 @@ pub(super) fn generate_node(
                     } else {
                         Line(fmt!(ctx,"impl <_T: Server> {capnp}::capability::Server for ServerDispatch<_T> {{"))
                     }),
-                    indent(Line(fmt!(ctx,"fn dispatch_call(self, interface_id: u64, method_id: u16, params: {capnp}::capability::Params<{capnp}::any_pointer::Owned>, results: {capnp}::capability::Results<{capnp}::any_pointer::Owned>) -> {capnp}::capability::DispatchCallResult {{"))),
+                    indent(Line(fmt!(ctx,"fn dispatch_call(self, interface_id: u64, method_id: u16, context: {capnp}::capability::CallContext<'_, {capnp}::any_pointer::Owned, {capnp}::any_pointer::Owned>) -> {capnp}::capability::DispatchCallResult {{"))),
                     indent(indent(line("match interface_id {"))),
-                    indent(indent(indent(line("_private::TYPE_ID => Self::dispatch_call_internal(self.server, method_id, params, results),")))),
+                    indent(indent(indent(line("_private::TYPE_ID => Self::dispatch_call_internal(self.server, method_id, context),")))),
                     indent(indent(indent(base_dispatch_arms))),
                     indent(indent(indent(Line(fmt!(ctx,"_ => {{ {capnp}::capability::DispatchCallResult::new({capnp}::capability::Promise::err({capnp}::Error::unimplemented(\"Method not implemented.\".to_string())), false) }}"))))),
                     indent(indent(line("}"))),
@@ -1238,7 +1276,7 @@ pub(super) fn generate_node(
                     }),
 
                     indent(line("#[allow(clippy::match_single_binding)]")),
-                    indent(Line(fmt!(ctx,"pub fn dispatch_call_internal(this: {capnp}::capability::Rc<_T>, method_id: u16, params: {capnp}::capability::Params<{capnp}::any_pointer::Owned>, results: {capnp}::capability::Results<{capnp}::any_pointer::Owned>) -> {capnp}::capability::DispatchCallResult {{"))),
+                    indent(Line(fmt!(ctx,"pub fn dispatch_call_internal(this: {capnp}::capability::Rc<_T>, method_id: u16, context: {capnp}::capability::CallContext<'_, {capnp}::any_pointer::Owned, {capnp}::any_pointer::Owned>) -> {capnp}::capability::DispatchCallResult {{"))),
                     indent(indent(line("match method_id {"))),
                     indent(indent(indent(dispatch_arms))),
                     indent(indent(indent(Line(fmt!(ctx,"_ => {{ {capnp}::capability::DispatchCallResult::new({capnp}::capability::Promise::err({capnp}::Error::unimplemented(\"Method not implemented.\".to_string())), false) }}"))))),

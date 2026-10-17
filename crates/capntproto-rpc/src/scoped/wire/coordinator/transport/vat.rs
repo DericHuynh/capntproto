@@ -382,8 +382,8 @@ impl<V> ImportReceiver<resources::Import> for Reader<V> {
             Ok(Rc::new(body))
         })();
         match result {
-            Ok(body) => owner.metadata_mut().introduction = Some(body),
-            Err(error) => owner.metadata_mut().failure = Some(error),
+            Ok(body) => owner.update_metadata(|metadata| metadata.introduction = Some(body)),
+            Err(error) => owner.update_metadata(|metadata| metadata.failure = Some(error)),
         }
     }
     fn attach(&mut self, owner: Option<&mut resources::Import>, index: u8) {
@@ -825,11 +825,8 @@ impl Output<resources::Import> for Resources {
             u8::MAX
         }
     }
-    fn metadata(&self, owner: &resources::Import) -> EndpointMetadata {
-        owner.metadata()
-    }
-    fn metadata_if_present(&self, owner: &resources::Import) -> Option<EndpointMetadata> {
-        owner.metadata_if_present()
+    fn metadata_source(&self, owner: &resources::Import) -> Option<Rc<MetadataSource>> {
+        Some(owner.metadata_source())
     }
 }
 

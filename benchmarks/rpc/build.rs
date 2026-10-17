@@ -1,4 +1,5 @@
 fn main() {
+    println!("cargo:rustc-check-cfg=cfg(capntproto_upstream_api)");
     // A fresh coverage run needs fresh build-script and code-generation counters.
     println!("cargo:rerun-if-env-changed=LLVM_PROFILE_FILE");
     println!("cargo:rerun-if-changed=echo.capnp");

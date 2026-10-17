@@ -80,14 +80,22 @@ refactoring and local profiling do not replace a complete dedicated campaign.
 The [ownership and integration review](Architecture.md#portable-ownership-and-integration-review)
 separates explicit endpoint retirement from promise settlement and metadata
 refresh. The [three architecture experiments](../../research/reports/portable-performance/2026-10-17-architecture/README.md)
-implement restricted control polling, revision-backed metadata and borrowed
-synchronous dispatch separately and together. Native dispatch gives modest
-instruction savings; control and per-import subscriptions have offsetting costs,
-and none establishes 5% latency parity. Preserve these as replayable experiments.
-Further native work must address retained parameter adapters and concurrent
-execution ownership while preserving early pipelines, cancellation and policy
-wrappers. Mandatory integration or generated-service API breaks are not yet
-justified by the measured gains.
+are retained as historical evidence. The current implementation makes restricted
+control contexts, revision-backed metadata and generated borrowed service
+contexts mandatory, with an explicit ownership transfer for asynchronous work.
+This deliberately breaks the unreleased Rust APIs. The
+[renewed architecture review](Architecture.md#mandatory-integration-contracts-and-c-reassessment)
+identifies the remaining parameter/execution ownership, registry scans and broad
+readiness invalidation. These contracts enable further work; their presence alone
+does not establish the 5% goal.
+
+The [Compio host](../../benchmarks/rpc-compio/README.md) evaluates runtime
+replacement with the same portable driver and workflow fixtures. It compares
+borrowed readiness I/O and a buffered completion bridge against a Tokio control
+in the same executable. Native completion transport over owned frame boundaries
+is the next integration experiment if the measurements support it. The current
+environment permits Compio's Poll backend but rejects io_uring; full hosted
+TLS/QUIC/Unix migration and io_uring qualification remain open.
 
 The first optimization slice indexes immediate reply owners beyond eight calls,
 checking the full question generation before delivery, and copies two-segment

@@ -11,17 +11,19 @@ use tokio::net::UdpSocket;
 type Doc = object::Client<document::Owned>;
 struct Observer(Rc<RefCell<Vec<(u64, String)>>>);
 impl observer::Server<document::Owned> for Observer {
-    async fn changed(
+    fn changed(
         self: Rc<Self>,
-        p: observer::ChangedParams<document::Owned>,
-        _: observer::ChangedResults<document::Owned>,
-    ) -> capnp::Result<()> {
-        let p = p.get()?;
-        self.0.borrow_mut().push((
-            p.get_revision(),
-            p.get_value()?.get_text()?.to_str()?.into(),
-        ));
-        Ok(())
+        context: observer::ChangedContext<'_, document::Owned>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let p = p.get()?;
+            self.0.borrow_mut().push((
+                p.get_revision(),
+                p.get_value()?.get_text()?.to_str()?.into(),
+            ));
+            Ok(())
+        })
     }
 }
 async fn network(

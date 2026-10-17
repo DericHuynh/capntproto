@@ -15,36 +15,44 @@ use std::{
 
 struct Service;
 impl harness::Server for Service {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        p: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        r.get().set_value(p.get()?.get_value());
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            r.get().set_value(p.get()?.get_value());
+            Ok(())
+        })
     }
-    async fn bounce(
+    fn bounce(
         self: Rc<Self>,
-        p: harness::BounceParams,
-        mut r: harness::BounceResults,
-    ) -> capnp::Result<()> {
-        let cap = p.get()?.get_cap()?;
-        // A callback must still progress while the caller's budget is full.
-        let mut call = cap.echo_request();
-        call.get().set_value(17);
-        assert_eq!(call.send().promise.await?.get()?.get_value(), 17);
-        r.get().set_cap(cap);
-        Ok(())
+        context: harness::BounceContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let cap = p.get()?.get_cap()?;
+            // A callback must still progress while the caller's budget is full.
+            let mut call = cap.echo_request();
+            call.get().set_value(17);
+            assert_eq!(call.send().promise.await?.get()?.get_value(), 17);
+            r.get().set_cap(cap);
+            Ok(())
+        })
     }
-    async fn pending(
+    fn pending(
         self: Rc<Self>,
-        _: harness::PendingParams,
-        _: harness::PendingResults,
-    ) -> capnp::Result<()> {
-        futures::future::pending().await
+        context: harness::PendingContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move { futures::future::pending().await })
     }
-    async fn stream(self: Rc<Self>, _: harness::StreamParams) -> capnp::Result<()> {
-        futures::future::pending().await
+    fn stream(
+        self: Rc<Self>,
+        context: harness::StreamContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move { futures::future::pending().await })
     }
 }
 

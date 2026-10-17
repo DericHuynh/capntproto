@@ -378,23 +378,25 @@ impl Catalog {
 }
 struct Service(Rc<RefCell<Catalog>>);
 impl wire::catalog::Server for Service {
-    async fn get(
+    fn get(
         self: Rc<Self>,
-        p: wire::catalog::GetParams,
-        mut r: wire::catalog::GetResults,
-    ) -> capnp::Result<()> {
-        let key = Key::read(p.get()?.get_key()?)?;
-        let catalog = self.0.borrow();
-        let mut result = r.get().init_result();
-        match catalog.get(key) {
-            None => result.set_missing(()),
-            Some(d) => {
-                let mut out = result.init_found();
-                d.key.write(out.reborrow().init_key());
-                out.set_node(&d.bytes);
+        context: wire::catalog::GetContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let key = Key::read(p.get()?.get_key()?)?;
+            let catalog = self.0.borrow();
+            let mut result = r.get().init_result();
+            match catalog.get(key) {
+                None => result.set_missing(()),
+                Some(d) => {
+                    let mut out = result.init_found();
+                    d.key.write(out.reborrow().init_key());
+                    out.set_node(&d.bytes);
+                }
             }
-        }
-        Ok(())
+            Ok(())
+        })
     }
 }
 /// No partially retrieved graph is exposed as an active Bundle.

@@ -722,13 +722,15 @@ impl Drop for OwnedEcho {
     }
 }
 impl capntproto_test_support::runtime_test_capnp::harness::Server for OwnedEcho {
-    async fn echo(
+    fn echo(
         self: std::rc::Rc<Self>,
-        _: capntproto_test_support::runtime_test_capnp::harness::EchoParams,
-        mut r: capntproto_test_support::runtime_test_capnp::harness::EchoResults,
-    ) -> capnp::Result<()> {
-        r.get().set_value(42);
-        Ok(())
+        context: capntproto_test_support::runtime_test_capnp::harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            r.get().set_value(42);
+            Ok(())
+        })
     }
 }
 struct Drivers(Vec<tokio::task::JoinHandle<capnp::Result<()>>>);

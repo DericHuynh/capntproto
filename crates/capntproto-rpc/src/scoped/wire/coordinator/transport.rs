@@ -67,6 +67,9 @@ pub trait Input<I>: io::Read + ImportReceiver<I> {
 /// Returning 255 explicitly omits an attachment. Metadata is synchronized before
 /// exposing an imported hook to application code, including late import aliases.
 pub trait Output<I> {
+    /// Stable metadata subscription for an imported route. Every later change
+    /// must advance this source. None declares that this import has no metadata.
+    fn metadata_source(&self, owner: &I) -> Option<Rc<MetadataSource>>;
     type Bundle: Default;
     fn bundle(&self) -> Self::Bundle;
     /// Retain Call credit through frame acceptance and transport completion.
@@ -86,12 +89,6 @@ pub trait Output<I> {
         imports: &Imports<'id, '_, I>,
         bundle: &mut Self::Bundle,
     ) -> u8;
-    fn metadata(&self, owner: &I) -> EndpointMetadata;
-    /// Query on every refresh, including settled aliases. None means there is
-    /// currently nothing to copy; it never caches the absence of later metadata.
-    fn metadata_if_present(&self, owner: &I) -> Option<EndpointMetadata> {
-        Some(self.metadata(owner))
-    }
 }
 
 /// Ordinary TCP/QUIC streams do not carry ancillary resources.
@@ -107,10 +104,7 @@ impl<I> Output<I> for NoResources {
     ) -> u8 {
         u8::MAX
     }
-    fn metadata(&self, _: &I) -> EndpointMetadata {
-        EndpointMetadata::default()
-    }
-    fn metadata_if_present(&self, _: &I) -> Option<EndpointMetadata> {
+    fn metadata_source(&self, _: &I) -> Option<Rc<MetadataSource>> {
         None
     }
 }
@@ -195,10 +189,7 @@ impl<T, const N: usize> Output<resources::Import<T>> for FileDescriptors<N> {
             _ => None,
         })
     }
-    fn metadata(&self, owner: &resources::Import<T>) -> EndpointMetadata {
-        owner.metadata()
-    }
-    fn metadata_if_present(&self, owner: &resources::Import<T>) -> Option<EndpointMetadata> {
-        owner.metadata_if_present()
+    fn metadata_source(&self, owner: &resources::Import<T>) -> Option<Rc<MetadataSource>> {
+        Some(owner.metadata_source())
     }
 }

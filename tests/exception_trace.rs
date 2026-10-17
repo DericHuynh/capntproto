@@ -17,12 +17,14 @@ use std::{
 use support::{Endpoint, Hub};
 struct Fail;
 impl harness::Server for Fail {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        _: harness::EchoParams,
-        _: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        Err(Error::overloaded("call failed".into()))
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            Err(Error::overloaded("call failed".into()))
+        })
     }
 }
 struct Factory {

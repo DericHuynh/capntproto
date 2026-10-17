@@ -30,21 +30,25 @@ async fn until(mut predicate: impl FnMut() -> bool) {
 }
 struct Service;
 impl harness::Server for Service {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        p: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        r.get().set_value(p.get()?.get_value());
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            r.get().set_value(p.get()?.get_value());
+            Ok(())
+        })
     }
-    async fn bounce(
+    fn bounce(
         self: Rc<Self>,
-        p: harness::BounceParams,
-        mut r: harness::BounceResults,
-    ) -> capnp::Result<()> {
-        r.get().set_cap(p.get()?.get_cap()?);
-        Ok(())
+        context: harness::BounceContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            r.get().set_cap(p.get()?.get_cap()?);
+            Ok(())
+        })
     }
 }
 async fn echo(cap: &harness::Client, value: u32) {

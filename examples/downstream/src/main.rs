@@ -4,21 +4,25 @@ pub mod preview_capnp {
 }
 struct Echo;
 impl preview_capnp::echo::Server for Echo {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        params: preview_capnp::echo::EchoParams,
-        mut results: preview_capnp::echo::EchoResults,
-    ) -> capnp::Result<()> {
-        results.get().set_value(params.get()?.get_value());
-        Ok(())
+        context: preview_capnp::echo::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            results.get().set_value(params.get()?.get_value());
+            Ok(())
+        })
     }
-    async fn child(
+    fn child(
         self: Rc<Self>,
-        _: preview_capnp::echo::ChildParams,
-        mut results: preview_capnp::echo::ChildResults,
-    ) -> capnp::Result<()> {
-        results.get().set_cap(capnp_rpc::new_client(Echo));
-        Ok(())
+        context: preview_capnp::echo::ChildContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            results.get().set_cap(capnp_rpc::new_client(Echo));
+            Ok(())
+        })
     }
 }
 #[tokio::main(flavor = "current_thread")]

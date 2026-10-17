@@ -28,9 +28,9 @@ impl capability::Server for Server {
         self,
         _: u64,
         method: u16,
-        params: capability::Params<any_pointer::Owned>,
-        results: capability::Results<any_pointer::Owned>,
+        context: capability::CallContext<'_, any_pointer::Owned, any_pointer::Owned>,
     ) -> capability::DispatchCallResult {
+        let (params, results) = context.into_owned();
         (self.0)(method, params, results)
     }
 }

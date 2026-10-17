@@ -1,6 +1,128 @@
 use super::*;
 
 #[test]
+fn protected_context_borrows_only_with_executor_and_immediate_permission() {
+    use capnp::private::capability::CallContextHook;
+    struct Tracked {
+        inner: InboundCall,
+        takes: Rc<Cell<usize>>,
+    }
+    impl CallContextHook for Tracked {
+        fn borrow(&mut self) -> (&dyn ParamsHook, &mut dyn ResultsHook) {
+            self.inner.borrow()
+        }
+        fn results(&self) -> &dyn ResultsHook {
+            self.inner.results()
+        }
+        fn take(&mut self) -> (Box<dyn ParamsHook>, Box<dyn ResultsHook>) {
+            self.takes.set(self.takes.get() + 1);
+            self.inner.take()
+        }
+    }
+    for executor in [false, true] {
+        for streaming in [false, true] {
+            let takes = Rc::new(Cell::new(0));
+            let called = Rc::new(Cell::new(false));
+            let mut tracked = Tracked {
+                inner: InboundCall {
+                    params: Some(prepared().params),
+                    results: Some(Hook {
+                        results: Results::new(),
+                        message: None,
+                        caps: vec![],
+                        executor: executor.then(|| {
+                            Rc::new(Executor::default()) as Rc<dyn capability::CallExecutor>
+                        }),
+                    }),
+                },
+                takes: takes.clone(),
+            };
+            let context = capability::CallContext::<any_pointer::Owned, any_pointer::Owned>::new(
+                &mut tracked,
+            );
+            let seen = called.clone();
+            let method =
+                move |_: capability::CallContext<'_, any_pointer::Owned, any_pointer::Owned>| {
+                    seen.set(true);
+                    Promise::ok(())
+                };
+            // Generated streaming methods always defer until their ordering
+            // barrier is installed. Non-streaming protected methods use the
+            // same permission as the runtime's existing immediate first poll.
+            let promise = if streaming {
+                context.defer(method)
+            } else {
+                context.dispatch_protected(method)
+            };
+            let immediate = executor && !streaming;
+            assert_eq!(called.get(), immediate);
+            assert_eq!(takes.get(), usize::from(!immediate));
+            futures::executor::block_on(promise).unwrap();
+            assert!(called.get());
+        }
+    }
+}
+
+#[test]
+fn call_context_preserves_borrowed_and_suspended_results() {
+    #[derive(Clone)]
+    struct Native(Rc<Cell<usize>>, Rc<Cell<usize>>);
+    impl capability::Server for Native {
+        fn dispatch_call(
+            self,
+            _: u64,
+            method: u16,
+            mut context: capability::CallContext<'_, any_pointer::Owned, any_pointer::Owned>,
+        ) -> capability::DispatchCallResult {
+            let promise = if method == 0 {
+                self.0.set(self.0.get() + 1);
+                Promise::from(context.get().map(|(_, mut root)| {
+                    root.set_as_capability(crate::broken::new_cap(Error::failed(
+                        "borrowed result".into(),
+                    )));
+                }))
+            } else {
+                self.1.set(self.1.get() + 1);
+                let (_params, results) = context.into_owned();
+                Promise::from_future(async move {
+                    drop(results);
+                    Ok(())
+                })
+            };
+            capability::DispatchCallResult::new(promise, false)
+        }
+        fn as_ptr(&self) -> usize {
+            Rc::as_ptr(&self.0) as usize
+        }
+    }
+    let native = Rc::new(Cell::new(0));
+    let owned = Rc::new(Cell::new(0));
+    let client = crate::local::Client::new(Native(native.clone(), owned.clone()));
+    for (method, immediate) in [(0, true), (1, true), (0, false)] {
+        let results = Results::new();
+        let prepared = Prepared {
+            method: DynamicCall {
+                method,
+                ..Default::default()
+            },
+            params: Payload::owned(Default::default(), vec![]).into_params(),
+        };
+        let work = prepared
+            .execute_using(&client, &results, None, immediate)
+            .unwrap();
+        assert!(results.pipeline(pipeline::Path::new(&[])).is_none());
+        futures::executor::block_on(work).unwrap();
+        if method == 0 && immediate {
+            let retained = results.pipeline(pipeline::Path::new(&[])).unwrap();
+            drop(results);
+            assert_eq!(retained.get_failure().unwrap().extra, "borrowed result");
+        }
+    }
+    assert_eq!(native.get(), 2);
+    assert_eq!(owned.get(), 1);
+}
+
+#[test]
 fn pipeline_paths_preserve_early_precedence_and_retained_result_capabilities() {
     #[derive(Clone)]
     struct Early(Rc<RefCell<Vec<Vec<u16>>>>);
@@ -165,9 +287,9 @@ impl capability::Server for Server {
         self,
         _: u64,
         _: u16,
-        _: capability::Params<any_pointer::Owned>,
-        results: capability::Results<any_pointer::Owned>,
+        context: capability::CallContext<'_, any_pointer::Owned, any_pointer::Owned>,
     ) -> capability::DispatchCallResult {
+        let (_, results) = context.into_owned();
         (self.0)(results)
     }
 }

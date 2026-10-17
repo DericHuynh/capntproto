@@ -55,11 +55,10 @@ execution is divided inside `capntproto-rpc::scoped::wire::coordinator`:
 
 `Coordinator` composes these components in the existing generative scope. The
 split adds no background tasks, dynamic dispatch, locks, allocation sites or
-second protocol ledger. Public constructors, run methods and transport traits
-remain usable. Custom controls implementing the older per-activity methods keep
-their behavior through the default `preserves_idle` adapter; built-in controls
-implement the new contract directly. Controls with no optimization declarations
-retain conservative rescanning. A policy must notify its registered waker when
+second protocol ledger. Public constructors and run methods remain usable. Custom controls now implement
+`preserves_idle` and receive the restricted `ControlContext`; the old per-activity
+adapter and arbitrary coordinator-mutation API have been removed. A control can
+return false from `preserves_idle` when it needs conservative rescanning. A policy must notify its registered waker when
 independent work becomes ready, including reentrant destructor callbacks.
 
 Scheduling state and wake state are deliberately distinct. A ready bit means
@@ -116,10 +115,10 @@ that reclamation alone will reach parity.
 | --- | --- | --- |
 | Hosted endpoint to graph route | `ClientHooks` owns a graph reference while generated hooks own an `Rc<Endpoint>`. Previously every collection discovered releases by upgrading every weak endpoint. Export also triggered those collections. | Record final-owner release explicitly; consume records without inspecting unrelated live routes. Keep protocol retirement in the engine. |
 | Graph route to hosted readiness | Pending hooks must follow resolution and reflected ordering barriers, then retain the settled endpoint before notifying observers. | Keep settlement separate from reclamation. A future graph change feed must identify dependent promises and barrier openings, including indirect aliases. |
-| Import owner to hosted metadata | `Output::metadata_if_present()` is a polling callback. A settled import can receive its first descriptor through a later alias. Local hooks can also change their diagnostics. | Add an explicit metadata revision/subscription contract before eliminating polling. Caching an absent descriptor or treating settlement as metadata immutability is incorrect. |
+| Import owner to hosted metadata | `Output::metadata_source()` now supplies a stable revision source. A settled import can receive its first descriptor through a later alias. Local hooks can also change their diagnostics. | Consume explicit revisions; the current consumer still walks live entries. Caching an absent descriptor or treating settlement as metadata immutability is incorrect. |
 | Hosted call to portable invocation | `Call`, `Calls::Entry`, `WireCall`, optional local execution, response state and pipeline observers carry different interest and cancellation lifetimes. | Introduce one execution owner with separate response and pipeline interests before removing adapters. Keep early pipelines, tail adoption, membranes and protected execution in the design. |
 | Readiness to execution | `Calls` and `Worker` use rotating slot scans; a general wake invalidates multiple idle certificates. High-water table capacity can outlive a burst. | Use generation-checked ready tokens for individual execution owners, with an allocation-free bounded overflow/full-rescan path and explicit fairness. Merely adding a live count does not establish a latency gain. |
-| Network policy to coordinator | `Control` receives `&mut Coordinator`; `driver`, `hooks` and `foreign` are public. Arbitrary mutations have no complete effect record. | Give optimized controls a restricted turn context whose operations record readiness, metadata and lifecycle effects. Legacy arbitrary mutation must retain conservative invalidation. |
+| Network policy to coordinator | `Control` now receives a restricted context. Built-in active multiparty work still uses a private broad mutation boundary. | Refine internal network effects without reopening arbitrary external mutation; preserve invalidation on Pending and error paths. |
 | Parameters/results to physical output | Plain payloads already use admitted shared storage and prepared output. Capability-bearing payloads still build owned hook tables. | Preserve admitted storage and exact receipts through execution; measure capability-table construction separately from byte copying. Do not add another generic message wrapper. |
 
 The first implemented step is an endpoint release journal in the hosted bridge.
@@ -141,78 +140,166 @@ borrow across graph operations. Normal maintenance still sends Finish/Release
 under the same ordering and output-backpressure rules. Storage grows with the
 registry's admitted high-water slot count, not its configured maximum.
 
-This change is additive: generated clients, server traits, schemas, `Control`
-implementations, and transport implementations retain their APIs. It does not
+The initial endpoint-journal change was additive. The subsequent integration
+redesign below deliberately breaks server, control and metadata adapter APIs. It does not
 make all collection constant-time: metadata refresh still scans live entries,
 pending settlement scans the table when needed, and export identity lookup and
 free-slot selection remain linear. Those costs should not be confused with the
 now-explicit final-owner release path.
 
-### Decisions about breaking changes
+### Mandatory integration contracts and C++ reassessment
 
-The [three implementation experiments](../../research/reports/portable-performance/2026-10-17-architecture/README.md)
-now test a restricted control-poll context, revision-backed import metadata and
-borrowed synchronous service dispatch separately and together. The patches are
-replayable against `fe843e22`; they are preserved as experiments rather than
-enabled runtime changes. Borrowed dispatch reduces pipeline server instructions
-by 1.58% and empty-unary server instructions by 2.91%. Per-import subscription
-allocations and control scheduling introduce offsetting costs: the combination
-reduces pipeline client instructions by 1.00% but increases server instructions
-by 0.15%. All traced baseline/candidate socket-write bytes and groups match.
-These results do not justify making any proposed integration break mandatory
-or claim the 5% latency target has been met.
+The earlier [three experiments](../../research/reports/portable-performance/2026-10-17-architecture/README.md)
+remain immutable historical evidence. The project has no API compatibility
+obligation at this stage, so all three contracts are now mandatory production
+interfaces. This is a larger integration change than applying the combined
+prototype: generated bindings and application services use the new call context,
+and the optional borrowed-dispatch and metadata-polling compatibility paths are
+removed. See the [migration guide](RPC-Applications.md#generated-service-dispatch).
 
-The borrowed prototype still owns its parameter adapter and only specializes
-the existing immediate dispatch boundary. The control prototype retains
-conservative transactions for active handoffs and existing adapters. Metadata
-subscriptions still walk the endpoint registry. Removing those remaining costs
-requires additional design and measurement; the prototypes do not establish a
-complete event-driven scheduler or a new generated service ABI.
+* `Control::poll`, `received` and `shutdown` accept `ControlContext`.
+  Public operations perform bootstrap completion/publication and record effects;
+  dropping the context commits invalidation even after Pending or an error.
+  An independent control wake does not invalidate application idle certificates.
+  Active built-in multiparty work still records a broad network effect.
+* `Output::metadata_source` provides a stable `Rc<MetadataSource>` for imports
+  that can acquire metadata, including an initially absent descriptor. Revisions
+  replace repeated metadata reconstruction. Sources are consulted before exposing
+  imported hooks, including pending aliases and synchronous dispatch. `None`
+  declares that an import has no metadata; it is not a transient empty snapshot.
+* Generated server methods receive `FooContext<'_>` and return `Promise`.
+  `complete` borrows admitted parameters and the original result sink during
+  synchronous dispatch; `into_owned` transfers the hooks before suspension.
+  Structured reply bindings use an affine `ReplyContext`: completion consumes it,
+  builders cannot escape, and ownership transfer yields `Reply`, not `Results`.
+  The same local dispatch path enforces cancellation, streaming and revocation.
+  Non-cancellable wire methods can borrow under the existing immediate-poll
+  permission with a supplied executor. Local calls and opaque wrappers defer
+  entry until protected execution is admitted, and streaming methods defer until
+  their ordering barrier is installed.
 
-The useful breaking change is at the **integration contract**, if the project
-chooses to make precise event reporting mandatory. Replacing whole-coordinator
-mutation in `Control` with a restricted context would break custom controls and
-code accessing the public fields. Replacing polling metadata with revisioned
-ownership would break custom `Output`/import adapters. These changes enable the
-driver to know exactly which routes and lanes need work. They can also be
-introduced as opt-in interfaces with conservative adapters for existing code;
-breaking every integration is therefore not a prerequisite for a faster default
-driver. Do not change the current signatures without implementing and measuring
-the event-driven consumer they are meant to enable.
+The C++ implementation provides a useful ownership comparison. In
+`vendor/capnproto/c++/src/capnp/rpc.c++`, `Question` and `Answer` directly track
+response/pipeline interest and running execution (around lines 690 and 720).
+`RpcCallContext` owns the admitted message, capability table and parameter reader
+(line 3159), explicitly releases parameters (`releaseParams`, line 3370), and
+lazily constructs results in the outgoing message (`getResults`, line 3373).
+`sendReturn` handles answer interest and capability exports together (line 3243).
 
-Removing `ClientHook`/`ParamsHook`/`ResultsHook` from the native execution path is
-a larger, separate option. An opt-in generated portable service ABI could borrow
-admitted parameters and publish results through a single execution owner, while
-an adapter supports existing owned services. Making it the only ABI would break
-generated server code, custom hooks, membranes and result-context integrations.
-The lifetime mismatch is fundamental to the current interfaces: an owned
-generated client may outlive its connection, but a branded graph `Client` cannot
-escape its generative scope. The private endpoint registry bridges those two
-contracts. Removing it requires a different lifetime/ownership interface or a
-different hosted state owner; moving the same conversions into another module
-does not remove their cost. Borrowed native dispatch is therefore a meaningful
-API experiment, whereas exposing raw graph IDs to existing owned hooks is not
-an acceptable shortcut.
-The earlier response-sharing experiment saved allocations without establishing
-a general latency gain, so allocation counts alone do not justify that break.
-It needs a complete cancellation, early-pipeline, tail-transfer and resource
-ownership model, plus matched end-to-end measurements.
+The new Rust context moves service invocation closer to that model: synchronous
+methods at a permitted non-streaming wire dispatch borrow the real result
+producer and do not allocate a boxed result hook or an async method future.
+Protected methods require the existing immediate-poll permission and a supplied
+executor; local calls and opaque wrappers retain deferred entry so executor
+rejection precedes application side effects. The normal generator produces this path; no benchmark
+specific interface/method dispatcher is needed. Opaque policy hooks explicitly
+take ownership, so membranes and other wrappers still intercept calls.
 
-No evidence calls for changing the Cap'n Proto wire format, schema semantics,
-the generative authority model, or the allocation-free engine profile. Copying
-C++'s direct connection access into arbitrary Rust destructors would undermine
-the scoped borrowing and bounded-output design. Explicit lifecycle records give
-the hosted driver comparable information while retaining those contracts.
+Three architectural costs remain after these API changes:
 
-The existing fixtures also limit conclusions. Pipelined-read deliberately sends
-the child call before awaiting the parent and retains parent response interest;
-dependent-read retains the parent response while awaiting the child. Callback
-checks bidirectional execution, and fanout-32 stresses concurrent calls, but
-none is a large live-capability registry scaling test. Follow-up qualification
-should add separate diagnostics for many settled hooks, sparse pending aliases,
-late descriptors and a burst followed by one call. Keep the existing 12 remote
-and four loopback acceptance cells unchanged. Use phase timing and operation
-counts to attribute improvements, then qualify on uninstrumented paired runs.
+1. **Execution ownership remains distributed.** The parameter adapter is still
+   boxed, and concurrent/deferred dispatch still transfers owned hooks. `Calls`,
+   graph routes, wire questions, worker execution and pipeline interests remain
+   separate owners. A next design should bind one admitted invocation to its
+   parameter storage, result producer and separately counted response/pipeline
+   interests. It must cover tail adoption and protected execution before removing
+   existing owners. The borrowed context enables that work but does not finish it.
+2. **Metadata is revisioned, not event queued.** Wire refresh still walks the
+   endpoint registry and upgrades weak references; each metadata source adds
+   ownership overhead. A generation-checked dirty-route queue with bounded
+   overflow/rescan and explicit wakeup would remove unrelated settled-route work.
+   Promise settlement and local dynamic projections need their own events.
+3. **Readiness is still primarily per lane.** General application wakes and
+   active multiparty effects can invalidate broad scans. Individual execution
+   readiness should carry generation-checked tokens with fair rotation and an
+   allocation-free overflow path. A live count or a narrower trait alone does
+   not make a scheduler event driven.
+
+No further wire-format, schema, generative-authority or allocation-free-engine
+break is indicated. These remaining changes should stay within the new ownership
+boundaries where possible. Copying C++ direct connection access into arbitrary
+Rust destructors would conflict with scoped borrowing and bounded output;
+explicit lifecycle records provide comparable information safely.
+
+The existing pipelined-read fixture sends the child before awaiting the parent
+and retains parent response interest. Dependent-read retains the parent while
+awaiting the child; callback exercises bidirectional execution and fanout-32
+concurrency. None is a large live-registry scaling fixture. Add separate scaling
+diagnostics for settled hooks, sparse aliases, late descriptors and post-burst
+traffic while keeping the 12 remote/four loopback acceptance cells unchanged.
+Matching socket write groups is necessary evidence about batching, but internal
+read-to-write CPU work and uninstrumented latency determine the remaining gap.
+
+The [mandatory integration measurements](../../research/reports/portable-performance/2026-10-17-integration/README.md)
+confirm two fewer allocations per eligible synchronous call. Pipeline server
+malloc calls fall from 34,314 to 29,913, including startup; one control owner is
+added at startup. The metadata contract adds 1,103 pipeline client allocations.
+Total pipeline instructions change by -0.738% client and +1.646% server, so the
+new boundaries do not establish a broad speedup. The final local pipeline p50
+is 43.044 microseconds, against 31.026 for C++ and 30.255 for current legacy.
+All six baseline/candidate peer traces preserve complete write bytes and groups.
+The steady pipeline still matches C++ batching: 1,368-byte
+Finish/Release/Call/Call writes and 1,216-byte paired Returns. Startup and cleanup
+remain distinct and are retained in the traces.
+
+Work remains spread across scheduling, wire/engine transitions, checked layout
+access, allocation and copies. The annotated 95% of pipeline self-instructions
+attributes about 13% on each peer to scoped hosted code, 8-12% to wire code,
+12-15% to core layout/value code, and 2-3% to Tokio/Mio source locations. Inlining
+and unattributed standard-library work limit that classification; these are not
+exclusive causal latency budgets. In particular, scheduler ordering can change
+latency without dominating instruction counts. Repetition modes vary greatly,
+including the separately instrumented processing CPU windows, so retain all
+samples instead of treating pooled timing differences as causal speedups.
+
+### Compio integration boundary
+
+The portable engine, hosted `portable::RpcSystem`, protected call executor and
+task set already run without Tokio. The [Compio benchmark host](../../benchmarks/rpc-compio/README.md)
+demonstrates that boundary with the production driver and shared workflow code.
+It runs a Compio local executor, TCP sockets and deadlines, with a current-thread
+Tokio control in the same executable. The two Compio adapters use either
+`PollFd` with borrowed buffers and vectored writes, or the buffered completion
+compatibility layer. This does not migrate the root package's TLS, QUIC, Unix
+descriptor passing, timers or application services.
+
+Compio fits the local `Rc` ownership model, but its completion API is not the
+same as KJ's Linux socket implementation. The pinned `kj/async-unix.c++` uses
+epoll readiness. Compio supports both a polling driver and io_uring; the local
+container rejects `io_uring_setup` with EPERM, so only its Poll backend is
+measured. An explicit io_uring request fails visibly rather than silently
+falling back.
+
+A native completion transport should retain input buffers until the operation
+completes and retain outgoing frame owners through every partial write, canceled
+observer and drain. The existing `IncomingFrameStream`, owned `OutgoingFrame`
+and `OutgoingMessageStream` are the useful integration boundary. The generic
+completion-to-`futures-io` bridge adds staging copies and boxed operation futures;
+replacing Tokio names alone does not remove them. Prototype a frame-oriented
+Compio `VatNetwork` at that boundary before changing the engine's ownership
+model again. No additional core API break is needed to run the measured
+Compio hosts; a direct completion implementation must prove buffer lifetime,
+FIFO publication, backpressure and cancellation before becoming the default.
+
+The same-executable experiment does not support replacing the current host with
+either adapter as a performance improvement. Pipeline instructions rise about
+13% with readiness and 23-26% with the completion bridge. More significantly,
+both Compio hosts split a steady pipeline client write into 40 bytes of Finish
+and 1,328 bytes of Call/Call/Release. Tokio and C++ retain one 1,368-byte
+Finish/Release/Call/Call group. The server still sends paired 1,216-byte Returns.
+Thus the Compio read-to-first-write CPU interval ends before much of the next
+call's work and is not comparable to the complete Tokio/C++ group. The bridge's
+rustix direct syscalls are also outside the libc CPU probe; its empty probe
+journal is rejected, not reported as zero processing cost.
+
+This reveals a fourth architecture issue: **publication batching depends on
+executor wake order**. Give a connection an explicit, bounded publication turn
+that can combine retirement and ready application commands before flushing.
+Control-only traffic must still make progress when no application call follows;
+output backpressure, protected calls and early pipelines must retain their
+ordering. A blanket extra yield would not establish that contract. Validate this
+boundary with both runtimes and decoded wire groups before choosing a default
+executor or implementing a native completion transport.
 
 ## Route ownership
 

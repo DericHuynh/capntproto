@@ -35,6 +35,8 @@ use std::{
 };
 
 mod admission;
+mod metadata;
+pub use metadata::MetadataSource;
 pub(crate) mod response;
 mod shutdown;
 pub mod wire;
@@ -158,6 +160,7 @@ struct Entry<'id> {
     endpoint: Weak<Endpoint>,
     client: Client<'id>,
     pending: bool,
+    metadata: Option<(Rc<MetadataSource>, u64)>,
 }
 
 /// Scoped graph ownership paired with ordinary owned generated clients.
@@ -362,6 +365,7 @@ impl<'id> ClientHooks<'id> {
             endpoint: Rc::downgrade(&endpoint),
             client,
             pending,
+            metadata: None,
         });
         self.unsettled += usize::from(pending);
         Ok(capability::Client::new(Box::new(Hook(endpoint, None))))
@@ -372,7 +376,7 @@ impl<'id> ClientHooks<'id> {
     /// A retained response/pipeline may still own hooks and deliberately keeps
     /// those entries alive. No fallible release command is enqueued by Drop.
     pub fn collect(&mut self, graph: &mut impl Capabilities<'id>) {
-        self.synchronize(graph, |_| None, false);
+        self.synchronize(graph, |_| None, |_| None, false, false);
     }
 
     /// Release precisely the graph references whose final hosted owner dropped.
@@ -418,7 +422,7 @@ impl<'id> ClientHooks<'id> {
         graph: &mut G,
         metadata: impl FnMut(&G::Owner) -> Option<EndpointMetadata>,
     ) {
-        self.synchronize(graph, metadata, true);
+        self.synchronize(graph, metadata, |_| None, true, false);
     }
 
     #[inline(always)]
@@ -426,7 +430,9 @@ impl<'id> ClientHooks<'id> {
         &mut self,
         graph: &mut G,
         mut metadata: impl FnMut(&G::Owner) -> Option<EndpointMetadata>,
+        mut subscribe: impl FnMut(&G::Owner) -> Option<Rc<MetadataSource>>,
         refresh_settled: bool,
+        subscriptions: bool,
     ) {
         self.reclaim_released(graph);
         if !refresh_settled && self.unsettled == 0 {
@@ -436,6 +442,10 @@ impl<'id> ClientHooks<'id> {
             let Some(entry) = slot.as_mut() else {
                 continue;
             };
+            if refresh_settled && !subscriptions {
+                // Switching projection policy invalidates the old source.
+                entry.metadata = None;
+            }
             if !refresh_settled && !entry.pending {
                 continue;
             }
@@ -444,6 +454,18 @@ impl<'id> ClientHooks<'id> {
             let Some(endpoint) = entry.endpoint.upgrade() else {
                 continue;
             };
+            if subscriptions && !entry.pending {
+                if let Some((source, revision)) = &mut entry.metadata {
+                    let next = source.revision();
+                    if next != *revision {
+                        if let Some(metadata) = source.snapshot() {
+                            endpoint.apply_metadata(metadata);
+                        }
+                        *revision = next;
+                    }
+                    continue;
+                }
+            }
             let destination = graph.inspect(&entry.client);
             endpoint.remote.set(matches!(
                 destination,
@@ -454,20 +476,20 @@ impl<'id> ClientHooks<'id> {
             ));
             if let Some(metadata) = destination.ok().and_then(|destination| match destination {
                 capntproto_rpc_engine::clients::Destination::Endpoint { owner, .. } => {
+                    if subscriptions {
+                        if let Some(source) = subscribe(owner) {
+                            let snapshot = source.snapshot();
+                            if !entry.pending {
+                                entry.metadata = Some((source.clone(), source.revision()));
+                            }
+                            return snapshot;
+                        }
+                    }
                     metadata(owner)
                 }
                 _ => None,
             }) {
-                if metadata.introduction.is_some() && endpoint.introduction.borrow().is_none() {
-                    *endpoint.introduction.borrow_mut() = metadata.introduction;
-                }
-                if let Some(failure) = metadata.failure {
-                    *endpoint.failure.borrow_mut() = Some(failure);
-                }
-                #[cfg(unix)]
-                if metadata.fd.is_some() && endpoint.fd.borrow().is_none() {
-                    *endpoint.fd.borrow_mut() = metadata.fd;
-                }
+                endpoint.apply_metadata(metadata);
             }
             if entry.pending {
                 Self::settle_endpoint(graph, entry, &endpoint, &mut self.unsettled);

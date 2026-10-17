@@ -179,21 +179,25 @@ mod tests {
         }
     }
     impl directory::Server for Reader {
-        async fn lookup(
+        fn lookup(
             self: Rc<Self>,
-            params: directory::LookupParams,
-            mut results: directory::LookupResults,
-        ) -> capnp::Result<()> {
-            assert_eq!(params.get()?.get_host()?, &[2; 32]);
-            self.read(results.get().init_record()).await
+            context: directory::LookupContext<'_>,
+        ) -> capnp::capability::Promise<(), capnp::Error> {
+            let (params, mut results) = context.into_owned();
+            capnp::capability::Promise::from_future(async move {
+                assert_eq!(params.get()?.get_host()?, &[2; 32]);
+                self.read(results.get().init_record()).await
+            })
         }
-        async fn resolve(
+        fn resolve(
             self: Rc<Self>,
-            params: directory::ResolveParams,
-            mut results: directory::ResolveResults,
-        ) -> capnp::Result<()> {
-            assert_eq!(params.get()?.get_name()?.to_str()?, "service");
-            self.read(results.get().init_record()).await
+            context: directory::ResolveContext<'_>,
+        ) -> capnp::capability::Promise<(), capnp::Error> {
+            let (params, mut results) = context.into_owned();
+            capnp::capability::Promise::from_future(async move {
+                assert_eq!(params.get()?.get_name()?.to_str()?, "service");
+                self.read(results.get().init_record()).await
+            })
         }
     }
     fn setup(count: usize, options: DiscoveryOptions) -> (Discovery, Vec<Rc<Reader>>) {

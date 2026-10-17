@@ -1,5 +1,180 @@
-//! Network policy boundary; conservative defaults support custom integrations.
+//! Effect-reporting network policy boundary. Controls never own the coordinator.
 use super::*;
+
+#[derive(Clone, Copy, Default)]
+pub(super) enum Effects {
+    #[default]
+    None,
+    Publication,
+    Network,
+}
+
+/// Restricted control-poll operations. Protocol owners remain in the coordinator;
+/// successful operations record their scheduling effects. No public operation
+/// exposes the coordinator or allows unreported mutation of its protocol owners.
+pub struct ControlContext<'a, 'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize> {
+    coordinator: &'a mut Coordinator<'p, 'id, 's, I, P, C, H>,
+    effects: Effects,
+}
+impl<'a, 'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+    ControlContext<'a, 'p, 'id, 's, I, P, C, H>
+{
+    pub(super) fn new(coordinator: &'a mut Coordinator<'p, 'id, 's, I, P, C, H>) -> Self {
+        Self {
+            coordinator,
+            effects: Effects::None,
+        }
+    }
+    pub(super) fn has_effects(&self) -> bool {
+        !matches!(self.effects, Effects::None)
+    }
+    // Only the built-in authenticated vat integration can access protocol
+    // owners. This records all affected lanes, including on Pending/error.
+    pub(super) fn network(&mut self) -> &mut Coordinator<'p, 'id, 's, I, P, C, H> {
+        self.effects = Effects::Network;
+        self.coordinator
+    }
+    /// Complete an admitted bootstrap without exposing the protocol tables.
+    pub fn complete_bootstrap(
+        &mut self,
+        bootstrap: &connection::Bootstrap<'id>,
+        value: capnp::Result<capability::Client>,
+        messages: &mut messages::Messages<'p, '_, '_>,
+    ) -> capnp::Result<()> {
+        self.effects = Effects::Network;
+        let coordinator = &mut self.coordinator;
+        let driver = &mut coordinator.driver;
+        let options = coordinator.options;
+        match value {
+            Ok(client) => {
+                let client = match coordinator
+                    .hooks
+                    .try_retain(&mut driver.runtime, &*client.hook)?
+                {
+                    Some(client) => client,
+                    None => coordinator
+                        .foreign
+                        .import(&mut driver.runtime, &*client.hook)?,
+                };
+                let result = driver.complete_bootstrap(
+                    bootstrap,
+                    Ok(&client),
+                    messages,
+                    options.output_bytes.get(),
+                    options.reader,
+                );
+                driver.runtime.release(client);
+                result.map_err(wire_error)?;
+            }
+            Err(error) => {
+                driver
+                    .complete_bootstrap(
+                        bootstrap,
+                        Err(error.kind),
+                        messages,
+                        options.output_bytes.get(),
+                        options.reader,
+                    )
+                    .map_err(wire_error)?;
+                driver
+                    .ledgers
+                    .answers
+                    .get(bootstrap.answer())
+                    .map_err(wire_error)?
+                    .owner
+                    .producer
+                    .fail(error);
+            }
+        }
+        Ok(())
+    }
+    pub(super) fn network_idle(&self) -> bool {
+        self.coordinator.driver.runtime.queued() == 0
+            && !self.coordinator.driver.has_network()
+            && self.coordinator.worker.pending_redirect().is_none()
+    }
+    pub(super) fn allow_answer_handoff(&mut self, allow: bool) {
+        self.coordinator.driver.allow_answer_handoff(allow);
+    }
+    pub fn publish_bootstrap<O: Output<I>>(
+        &mut self,
+        bootstrap: &connection::Bootstrap<'id>,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        queue: &mut messages::Queue<'p, '_, O::Bundle>,
+        scratch: &mut [u32],
+        output: &O,
+    ) -> Poll<capnp::Result<bool>> {
+        let coordinator = &mut self.coordinator;
+        let key = bootstrap.answer();
+        let queued = !queue.is_empty();
+        match queue.reserve() {
+            Ok(slot) => drop(slot),
+            Err(messages::Error::NoSendSlot) if queued => return Poll::Pending,
+            Err(error) => return Poll::Ready(Err(wire_error(error))),
+        }
+        let result = (|| {
+            let driver = &mut coordinator.driver;
+            let producer = &driver
+                .ledgers
+                .answers
+                .get(key)
+                .map_err(wire_error)?
+                .owner
+                .producer;
+            let minimum = if producer.failure().is_some() {
+                producer.prepare_trace(&coordinator.policy);
+                producer.publication_bytes()?
+            } else {
+                128
+            }
+            .max(coordinator.options.output_bytes.get());
+            driver
+                .send_answer_using(
+                    key,
+                    messages,
+                    queue,
+                    minimum,
+                    coordinator.options.reader,
+                    scratch,
+                    output.bundle(),
+                    |owner, imports, bundle| output.attach(owner, imports, bundle),
+                    |results, root| results.write_exception(root),
+                )
+                .map_err(wire_error)
+        })();
+        if result.is_ok() && !matches!(self.effects, Effects::Network) {
+            self.effects = Effects::Publication;
+        }
+        Poll::Ready(result.map(|_| true))
+    }
+}
+
+impl<I, P: Copy + Eq, const C: usize, const H: usize> Drop
+    for ControlContext<'_, '_, '_, '_, I, P, C, H>
+{
+    fn drop(&mut self) {
+        // Pending and error paths commit mutations too. A control cannot lose
+        // scheduler invalidation by returning early after a protocol operation.
+        let coordinator = &mut self.coordinator;
+        match self.effects {
+            Effects::Network => coordinator.changed(),
+            Effects::Publication => {
+                coordinator.schedule.active |= WorkSet::CALLS | WorkSet::MAINTENANCE;
+                coordinator.calls.invalidate_scan();
+                coordinator.driver.invalidate_maintenance();
+                if coordinator.driver.runtime.queued() != 0 || coordinator.driver.has_pending_call()
+                {
+                    coordinator.schedule.active |= WorkSet::ACCEPT;
+                }
+                if !coordinator.worker.is_empty() {
+                    coordinator.schedule.active |= WorkSet::WORKER;
+                    coordinator.worker.invalidate_scan();
+                }
+            }
+            Effects::None => (),
+        }
+    }
+}
 
 /// Protocol activity whose effects on a control policy must be declared.
 /// These are scheduling certificates, never permission to bypass wire checks.
@@ -15,7 +190,8 @@ pub enum Activity {
 /// Integration with a vat network. Every received event is delivered once.
 /// Retain any unfinished bootstrap/network work in this handler and drive it in
 /// `poll`, registering the supplied waker. Return true only after making progress.
-/// Raw wire IDs never authenticate a handoff; use the driver's authenticated APIs.
+/// Multi-party handoffs belong to the built-in authenticated vat integration;
+/// policy callbacks have no direct access to protocol tables or graph authority.
 /// `shutdown` must return/release every detached protocol owner before teardown.
 /// Ordinary Call/Return/Resolve/Finish handling is performed by the coordinator.
 pub trait Control<
@@ -50,48 +226,17 @@ pub trait Control<
     /// Called at the transition, so policies may depend on pending network work.
     /// Independent commands and destructor callbacks must notify the waker from
     /// `poll`. Return false whenever the activity may enable control work.
-    ///
-    /// The default delegates to the original per-activity methods for source
-    /// compatibility. New integrations should override this single contract.
-    fn preserves_idle(&self, activity: Activity) -> bool {
-        match activity {
-            Activity::PlainPublication => self.direct_publication_preserves_idle(),
-            Activity::PlainReturn => self.plain_return_preserves_idle(),
-            Activity::PlainCall => self.plain_call_preserves_idle(),
-            Activity::Retirement => self.retirement_preserves_idle(),
-        }
-    }
-    /// True only when an ordinary directly published Call cannot enable this
-    /// idle policy, including by releasing FIFO capacity. Independent commands
-    /// must still notify the registered control waker.
-    fn direct_publication_preserves_idle(&self) -> bool {
-        false
-    }
-    fn plain_return_preserves_idle(&self) -> bool {
-        false
-    }
-    /// Admission of an ordinary descriptor-free Call to a hosted target does
-    /// not enable this idle control policy. Independent commands must notify
-    /// its registered waker. Custom policies retain the general rescan.
-    fn plain_call_preserves_idle(&self) -> bool {
-        false
-    }
-    /// Finish/Release only retire existing owners; they cannot enable this
-    /// idle policy. Independent commands and destructor callbacks must notify
-    /// its registered waker. Custom policies retain the full rescan.
-    fn retirement_preserves_idle(&self) -> bool {
-        false
-    }
+    fn preserves_idle(&self, activity: Activity) -> bool;
     fn received(
         &mut self,
         event: connection::Received<'id, server::Results>,
-        coordinator: &mut Coordinator<'p, 'id, 's, I, P, C, H>,
+        context: &mut ControlContext<'_, 'p, 'id, 's, I, P, C, H>,
         messages: &mut messages::Messages<'p, '_, '_>,
         queue: &mut messages::Queue<'p, '_, O::Bundle>,
     ) -> capnp::Result<()>;
     fn poll(
         &mut self,
-        coordinator: &mut Coordinator<'p, 'id, 's, I, P, C, H>,
+        context: &mut ControlContext<'_, 'p, 'id, 's, I, P, C, H>,
         messages: &mut messages::Messages<'p, '_, '_>,
         queue: &mut messages::Queue<'p, '_, O::Bundle>,
         scratch: &mut [u32],
@@ -100,7 +245,7 @@ pub trait Control<
     ) -> Poll<capnp::Result<bool>>;
     fn shutdown(
         &mut self,
-        coordinator: &mut Coordinator<'p, 'id, 's, I, P, C, H>,
+        context: &mut ControlContext<'_, 'p, 'id, 's, I, P, C, H>,
         messages: &mut messages::Messages<'p, '_, '_>,
     );
 }

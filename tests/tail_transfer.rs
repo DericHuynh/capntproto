@@ -10,13 +10,15 @@ use std::{cell::RefCell, future::Future, pin::Pin, rc::Rc, time::Duration};
 use support::{Endpoint, Hub};
 struct Tail;
 impl harness::Server for Tail {
-    async fn tail_cap(
+    fn tail_cap(
         self: Rc<Self>,
-        p: harness::TailCapParams,
-        r: harness::TailCapResults,
-    ) -> capnp::Result<()> {
-        let request = p.get()?.get_cap()?.pending_request();
-        r.hook.tail_call(request.hook).await
+        context: harness::TailCapContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let request = p.get()?.get_cap()?.pending_request();
+            r.hook.tail_call(request.hook).await
+        })
     }
 }
 async fn settle() {
@@ -456,33 +458,39 @@ struct DelayedTail {
     gate: RefCell<Option<futures::channel::oneshot::Receiver<()>>>,
 }
 impl harness::Server for DelayedTail {
-    async fn tail_cap(
+    fn tail_cap(
         self: Rc<Self>,
-        p: harness::TailCapParams,
-        r: harness::TailCapResults,
-    ) -> capnp::Result<()> {
-        let request = p.get()?.get_cap()?.pending_request();
-        self.prepared.borrow_mut().take().unwrap().send(()).unwrap();
-        let gate = self.gate.borrow_mut().take().unwrap();
-        gate.await.unwrap();
-        r.hook.tail_call(request.hook).await
+        context: harness::TailCapContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let request = p.get()?.get_cap()?.pending_request();
+            self.prepared.borrow_mut().take().unwrap().send(()).unwrap();
+            let gate = self.gate.borrow_mut().take().unwrap();
+            gate.await.unwrap();
+            r.hook.tail_call(request.hook).await
+        })
     }
-    async fn pending(
+    fn pending(
         self: Rc<Self>,
-        _: harness::PendingParams,
-        mut r: harness::PendingResults,
-    ) -> capnp::Result<()> {
-        let cap: harness::Client = capnp_rpc::new_client_from_rc(self);
-        r.get().set_cap(cap);
-        Ok(())
+        context: harness::PendingContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let cap: harness::Client = capnp_rpc::new_client_from_rc(self);
+            r.get().set_cap(cap);
+            Ok(())
+        })
     }
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        _: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        r.get().set_value(9);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            r.get().set_value(9);
+            Ok(())
+        })
     }
 }
 #[derive(serde::Deserialize, Debug)]

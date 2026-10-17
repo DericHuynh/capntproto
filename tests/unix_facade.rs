@@ -44,14 +44,16 @@ struct Echo {
     calls: Rc<Cell<u64>>,
 }
 impl harness::Server for Echo {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        _: harness::EchoParams,
-        mut results: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        self.calls.set(self.calls.get() + 1);
-        results.get().set_value(self.number);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.calls.set(self.calls.get() + 1);
+            results.get().set_value(self.number);
+            Ok(())
+        })
     }
 }
 fn fd_cap(number: u8, calls: &Rc<Cell<u64>>) -> harness::Client {
@@ -68,28 +70,30 @@ struct Service {
     calls: Rc<Cell<u64>>,
 }
 impl harness::Server for Service {
-    async fn fd_caps(
+    fn fd_caps(
         self: Rc<Self>,
-        params: harness::FdCapsParams,
-        mut results: harness::FdCapsResults,
-    ) -> capnp::Result<()> {
-        let caps = params.get()?.get_caps()?;
-        let mut received = 0;
-        for i in 0..caps.len() {
-            let cap = caps.get(i)?;
-            let fd = cap.client.get_fd().await?;
-            received += value(&fd) * 10u64.pow(i);
-            // Descriptor truncation must not destroy the capability itself.
-            assert_eq!(
-                cap.echo_request().send().promise.await?.get()?.get_value(),
-                i + 1
-            );
-        }
-        self.received.set(received);
-        let mut caps = results.get().init_caps(2);
-        caps.set(0, fd_cap(3, &self.calls).into_client_hook());
-        caps.set(1, fd_cap(4, &self.calls).into_client_hook());
-        Ok(())
+        context: harness::FdCapsContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let caps = params.get()?.get_caps()?;
+            let mut received = 0;
+            for i in 0..caps.len() {
+                let cap = caps.get(i)?;
+                let fd = cap.client.get_fd().await?;
+                received += value(&fd) * 10u64.pow(i);
+                // Descriptor truncation must not destroy the capability itself.
+                assert_eq!(
+                    cap.echo_request().send().promise.await?.get()?.get_value(),
+                    i + 1
+                );
+            }
+            self.received.set(received);
+            let mut caps = results.get().init_caps(2);
+            caps.set(0, fd_cap(3, &self.calls).into_client_hook());
+            caps.set(1, fd_cap(4, &self.calls).into_client_hook());
+            Ok(())
+        })
     }
 }
 fn service(received: &Rc<Cell<u64>>, calls: &Rc<Cell<u64>>) -> Client {

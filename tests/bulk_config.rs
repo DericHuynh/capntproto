@@ -96,41 +96,49 @@ struct Advertised {
     calls: Rc<Cell<usize>>,
 }
 impl transfer::Server for Advertised {
-    async fn describe(
+    fn describe(
         self: Rc<Self>,
-        _: transfer::DescribeParams,
-        mut out: transfer::DescribeResults,
-    ) -> capnp::Result<()> {
-        let mut config = out.get().init_config();
-        config.set_length(self.limits.0);
-        config.set_max_chunk_bytes(self.limits.1);
-        config.set_window_bytes(self.limits.2);
-        config.set_max_chunks(self.limits.3);
-        Ok(())
+        context: transfer::DescribeContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let mut config = out.get().init_config();
+            config.set_length(self.limits.0);
+            config.set_max_chunk_bytes(self.limits.1);
+            config.set_window_bytes(self.limits.2);
+            config.set_max_chunks(self.limits.3);
+            Ok(())
+        })
     }
-    async fn write(
+    fn write(
         self: Rc<Self>,
-        _: transfer::WriteParams,
-        _: transfer::WriteResults,
-    ) -> capnp::Result<()> {
-        self.calls.set(self.calls.get() + 1);
-        Ok(())
+        context: transfer::WriteContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.calls.set(self.calls.get() + 1);
+            Ok(())
+        })
     }
-    async fn done(
+    fn done(
         self: Rc<Self>,
-        _: transfer::DoneParams,
-        _: transfer::DoneResults,
-    ) -> capnp::Result<()> {
-        self.calls.set(self.calls.get() + 1);
-        Ok(())
+        context: transfer::DoneContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.calls.set(self.calls.get() + 1);
+            Ok(())
+        })
     }
-    async fn cancel(
+    fn cancel(
         self: Rc<Self>,
-        _: transfer::CancelParams,
-        _: transfer::CancelResults,
-    ) -> capnp::Result<()> {
-        self.calls.set(self.calls.get() + 1);
-        Ok(())
+        context: transfer::CancelContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.calls.set(self.calls.get() + 1);
+            Ok(())
+        })
     }
 }
 fn advertised(limits: Raw) -> (transfer::Client, Rc<Cell<usize>>) {

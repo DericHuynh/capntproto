@@ -391,29 +391,33 @@ struct DelayedReceipt {
     gate: std::cell::RefCell<Option<futures::channel::oneshot::Receiver<()>>>,
 }
 impl snapshots::Server for DelayedReceipt {
-    async fn describe(
+    fn describe(
         self: Rc<Self>,
-        _: snapshots::DescribeParams,
-        mut out: snapshots::DescribeResults,
-    ) -> capnp::Result<()> {
-        let response = self.inner.describe_request().send().promise.await?;
-        out.get().set_config(response.get()?.get_config()?)?;
-        Ok(())
+        context: snapshots::DescribeContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let response = self.inner.describe_request().send().promise.await?;
+            out.get().set_config(response.get()?.get_config()?)?;
+            Ok(())
+        })
     }
-    async fn offer(
+    fn offer(
         self: Rc<Self>,
-        p: snapshots::OfferParams,
-        mut out: snapshots::OfferResults,
-    ) -> capnp::Result<()> {
-        let mut request = self.inner.offer_request();
-        request.set(p.get()?)?;
-        drop(p);
-        let response = request.send().promise.await?;
-        let gate = self.gate.borrow_mut().take().unwrap();
-        gate.await
-            .map_err(|_| capnp::Error::failed("receipt gate canceled".into()))?;
-        out.get().set_outcome(response.get()?.get_outcome()?);
-        Ok(())
+        context: snapshots::OfferContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let mut request = self.inner.offer_request();
+            request.set(p.get()?)?;
+            drop(p);
+            let response = request.send().promise.await?;
+            let gate = self.gate.borrow_mut().take().unwrap();
+            gate.await
+                .map_err(|_| capnp::Error::failed("receipt gate canceled".into()))?;
+            out.get().set_outcome(response.get()?.get_outcome()?);
+            Ok(())
+        })
     }
 }
 #[tokio::test(flavor = "current_thread")]

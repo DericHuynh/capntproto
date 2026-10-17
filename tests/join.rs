@@ -21,13 +21,15 @@ impl Drop for Echo {
     }
 }
 impl harness::Server for Echo {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        _: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        r.get().set_value(self.0);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            r.get().set_value(self.0);
+            Ok(())
+        })
     }
 }
 fn client(n: u32) -> harness::Client {

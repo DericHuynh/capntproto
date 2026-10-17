@@ -428,59 +428,67 @@ impl<T: Owned + Unpin + 'static> durable_transfer::Server for Service<T>
 where
     for<'a> T::Reader<'a>: HasTypeId + SetterInput<T>,
 {
-    async fn describe(
+    fn describe(
         self: Rc<Self>,
-        _: durable_transfer::DescribeParams,
-        mut out: durable_transfer::DescribeResults,
-    ) -> capnp::Result<()> {
-        self.authorize()?;
-        let (_, meta) = self.load(&self.state.store().borrow())?;
-        let mut out = out.get();
-        meta.config.write(out.reborrow().init_config());
-        out.reborrow()
-            .init_progress()
-            .set_bytes(meta.progress.bytes);
-        out.reborrow()
-            .get_progress()?
-            .set_chunks(meta.progress.chunks);
-        out.set_status(meta.phase.status());
-        out.set_revision(meta.revision.get());
-        out.set_sha256(&meta.sha256);
-        Ok(())
+        context: durable_transfer::DescribeContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.authorize()?;
+            let (_, meta) = self.load(&self.state.store().borrow())?;
+            let mut out = out.get();
+            meta.config.write(out.reborrow().init_config());
+            out.reborrow()
+                .init_progress()
+                .set_bytes(meta.progress.bytes);
+            out.reborrow()
+                .get_progress()?
+                .set_chunks(meta.progress.chunks);
+            out.set_status(meta.phase.status());
+            out.set_revision(meta.revision.get());
+            out.set_sha256(&meta.sha256);
+            Ok(())
+        })
     }
-    async fn write(
+    fn write(
         self: Rc<Self>,
-        p: durable_transfer::WriteParams,
-        mut out: durable_transfer::WriteResults,
-    ) -> capnp::Result<()> {
-        let p = p.get()?;
-        self.write_chunk(p.get_sequence(), p.get_data()?)?;
-        out.get().set_sequence(p.get_sequence());
-        Ok(())
+        context: durable_transfer::WriteContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let p = p.get()?;
+            self.write_chunk(p.get_sequence(), p.get_data()?)?;
+            out.get().set_sequence(p.get_sequence());
+            Ok(())
+        })
     }
-    async fn done(
+    fn done(
         self: Rc<Self>,
-        _: durable_transfer::DoneParams,
-        mut out: durable_transfer::DoneResults,
-    ) -> capnp::Result<()> {
-        let checkpoint = self.complete()?;
-        let mut out = out.get();
-        out.reborrow()
-            .init_summary()
-            .set_bytes(checkpoint.progress.bytes);
-        out.reborrow()
-            .get_summary()?
-            .set_chunks(checkpoint.progress.chunks);
-        out.set_revision(checkpoint.revision.get());
-        Ok(())
+        context: durable_transfer::DoneContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let checkpoint = self.complete()?;
+            let mut out = out.get();
+            out.reborrow()
+                .init_summary()
+                .set_bytes(checkpoint.progress.bytes);
+            out.reborrow()
+                .get_summary()?
+                .set_chunks(checkpoint.progress.chunks);
+            out.set_revision(checkpoint.revision.get());
+            Ok(())
+        })
     }
-    async fn cancel(
+    fn cancel(
         self: Rc<Self>,
-        _: durable_transfer::CancelParams,
-        mut out: durable_transfer::CancelResults,
-    ) -> capnp::Result<()> {
-        out.get().set_status(self.cancel_transfer()?);
-        Ok(())
+        context: durable_transfer::CancelContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            out.get().set_status(self.cancel_transfer()?);
+            Ok(())
+        })
     }
 }
 

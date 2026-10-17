@@ -19,13 +19,15 @@ mod verification;
 
 struct Server;
 impl service::Server for Server {
-    async fn ping(
+    fn ping(
         self: Rc<Self>,
-        _: service::PingParams,
-        mut result: service::PingResults,
-    ) -> capnp::Result<()> {
-        result.get().set_value(17);
-        Ok(())
+        context: service::PingContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut result) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            result.get().set_value(17);
+            Ok(())
+        })
     }
 }
 fn server() -> service::Client {

@@ -761,6 +761,30 @@ impl PipelineHook for TransferPipeline {
         client.hook
     }
 }
+// Result storage stays on the dispatch stack until a service suspends. Taking
+// ownership boxes exactly this producer; synchronous handlers never box it.
+struct InboundCall {
+    params: Option<Box<dyn ParamsHook>>,
+    results: Option<Hook>,
+}
+impl capnp::private::capability::CallContextHook for InboundCall {
+    fn borrow(&mut self) -> (&dyn ParamsHook, &mut dyn ResultsHook) {
+        (
+            &**self.params.as_ref().expect("consumed call"),
+            self.results.as_mut().expect("consumed call"),
+        )
+    }
+    fn results(&self) -> &dyn ResultsHook {
+        self.results.as_ref().expect("consumed call")
+    }
+    fn take(&mut self) -> (Box<dyn ParamsHook>, Box<dyn ResultsHook>) {
+        (
+            self.params.take().expect("consumed call"),
+            Box::new(self.results.take().expect("consumed call")),
+        )
+    }
+}
+
 impl Prepared {
     /// Start once, without borrowing driver tables. The same Results handle can
     /// live in the answer producer and supplies its executor cancellation guard.
@@ -797,13 +821,17 @@ impl Prepared {
             caps: Vec::new(),
             executor,
         };
+
         Ok(Execution {
             operation: Some(if immediate {
+                let mut context = InboundCall {
+                    params: Some(self.params),
+                    results: Some(hook),
+                };
                 destination.call_during_dispatch(
                     self.method.interface,
                     self.method.method,
-                    self.params,
-                    Box::new(hook),
+                    &mut context,
                     CallHints {
                         no_promise_pipelining: self.method.no_promise_pipelining,
                         only_promise_pipeline: self.method.only_promise_pipeline,

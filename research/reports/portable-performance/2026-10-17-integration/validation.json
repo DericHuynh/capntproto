@@ -1,0 +1,101 @@
+{
+  "checks": [
+    {
+      "log": "architecture-admitted-rpc20261017.log",
+      "sha256": "7484c0b3596b14d7fdb3a12f0a9986589ca8d8b97a591a6ccda4792256290dad",
+      "scope": "Complete RPC unit suite",
+      "status": "passed"
+    },
+    {
+      "log": "architecture-admitted-root-lib-configured20261017.log",
+      "sha256": "8c321b6be61536d2157e6af5b5c9b8d1ce2f93128875cf12387059709e563507",
+      "scope": "Root library: 283 passed, 4 ignored; TLA2TOOLS_JAR configured",
+      "status": "passed"
+    },
+    {
+      "log": "architecture-admitted-clippy20261017.log",
+      "sha256": "f99f88bf3cfa577db1626d3d71b9b2b57c70e3ccfc6ac7fecc571875465fac7b",
+      "scope": "Workspace all-target Clippy, warnings denied",
+      "status": "passed"
+    },
+    {
+      "log": "architecture-admitted-bench-clippy20261017.log",
+      "sha256": "2f8f0c34499ff32e32b02b09c8c081f02324f9bf66cd39fa9fdf3502fd85c031",
+      "scope": "Release benchmark all-target Clippy, warnings denied",
+      "status": "passed"
+    },
+    {
+      "log": "architecture-admitted-miri20261017.log",
+      "sha256": "a00a16cb9fa46006a13002ebb0373c097c1c2d96f65afa8728ed4ae5be0c9b4b",
+      "scope": "Five focused Miri tests",
+      "status": "passed"
+    },
+    {
+      "log": "architecture-admitted-arm20261017.log",
+      "sha256": "243fbd4128600fbf7f896bd1370e0efe8d86e8bce6835496e54c53c5d9c361cd",
+      "scope": "RPC no-default-features + alloc, thumbv7em-none-eabi",
+      "status": "passed"
+    },
+    {
+      "log": "architecture-admitted-arm-noalloc20261017.log",
+      "sha256": "c1df41c66c2e47f616fcfd9d750a803b3649b266a58c547677da8ec4fa1e0dcf",
+      "scope": "RPC no-default-features without alloc, thumbv7em-none-eabi",
+      "status": "passed"
+    },
+    {
+      "log": "compio-clippy-final20261017.log",
+      "sha256": "d3050ca67a0744d0047e15699062c086709a7167c30b45e001044518d1fe702e",
+      "scope": "Compio/Tokio comparison all-target Clippy, warnings denied",
+      "status": "passed"
+    },
+    {
+      "log": "compio-tests20261017.log",
+      "sha256": "18ad85231f24bd37432892431d866873c4edb0b5a65bd6a117e877ee1426d0a9",
+      "scope": "Four adapter tests, including canceled Compio reads and half-close",
+      "status": "passed"
+    },
+    {
+      "log": "compio-shared-tokio-clippy20261017.log",
+      "sha256": "da30f7e4db4ecf33bdd7a2a92386aee4cb7cbbd025eb6d95b7b0a2f60cd2495c",
+      "scope": "Shared timeout injection: original benchmark all-target Clippy",
+      "status": "passed"
+    },
+    {
+      "log": "compio-shared-upstream-check20261017.log",
+      "sha256": "83674df7e4c23c7675fa8e044b35199247ccda7fd00750663eff5fa173745446",
+      "scope": "Shared timeout injection: independent upstream benchmark check",
+      "status": "passed"
+    },
+    {
+      "log": "compio-publication-wiki20261017.log",
+      "sha256": "a6a6da3c31b7962cc91da97d145e30561cb38dbe5a7e285362e31fa597d2b98a",
+      "scope": "Wiki validation and export",
+      "status": "passed"
+    },
+    {
+      "log": "compio-publication-repository20261017.log",
+      "sha256": "98d1b5bb9cd2dd146b55058a1c55fd4f417c82b156c494e61bca42efa49e4635",
+      "scope": "Repository artifact policy",
+      "status": "passed"
+    }
+  ],
+  "integration": {
+    "targets": 72,
+    "tests": 522,
+    "scope": "71 full integration targets plus structured_rpc_reply_compile_contracts in api_contracts; serialized test threads",
+    "summary_sha256": "047e9e14383374e946702e485f592b64eef850646c0e98241e3e3966edfc2e6e"
+  },
+  "mixed_peer_cases": {
+    "mandatory_integration": 108,
+    "compio_campaign": 300
+  },
+  "coverage": "Not requalified; coverage floors and tolerances unchanged",
+  "dedicated_performance": "Still 11/16 at 86661025, run 38978275111; no new dedicated campaign",
+  "resolved_attempts": [
+    "Initial root-library run omitted TLA2TOOLS_JAR; model-dependent tests passed with the configured jar.",
+    "Earlier parallel storage tests had file-lock conflicts; the final integration suite ran serially and passed.",
+    "Preliminary integration policy always deferred protected calls; final admission uses the existing immediate-poll permission and executor.",
+    "The libc CPU probe cannot intercept Compio completion rustix direct syscalls. Zero-event attempt retained and rejected.",
+    "Initial syscall decoder omitted sendmsg/recvmsg and resumed records; all 18 Compio journals were normalized, decoded and validated before comparison."
+  ]
+}

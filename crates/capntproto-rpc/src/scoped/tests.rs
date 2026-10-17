@@ -9,6 +9,73 @@ use std::sync::{
 type Remote = capability::RemotePromise<any_pointer::Owned>;
 
 #[test]
+fn metadata_revisions_preserve_late_changes_and_dynamic_projection() {
+    clients::with_growing_graph::<Rc<MetadataSource>, u8, _>(0, 8, |graph| {
+        let source = Rc::new(MetadataSource::default());
+        let route = graph
+            .endpoint(source.clone(), Location::Local)
+            .unwrap_or_else(|_| panic!("endpoint capacity"));
+        let mut hooks = ClientHooks::new(8, 1);
+        let client = hooks.export_snapshot(graph, &route).unwrap();
+        let reads = Cell::new(0);
+        for _ in 0..100 {
+            hooks.synchronize(
+                graph,
+                |owner| owner.snapshot(),
+                |owner| {
+                    reads.set(reads.get() + 1);
+                    Some(owner.clone())
+                },
+                true,
+                true,
+            );
+        }
+        assert_eq!(reads.get(), 1, "stable imports project metadata once");
+        assert!(client.hook.get_failure().is_none());
+        source
+            .update(|metadata| metadata.failure = Some(Error::overloaded("late metadata".into())));
+        hooks.synchronize(
+            graph,
+            |_| panic!("subscribed owner needs no graph projection"),
+            |_| unreachable!(),
+            true,
+            true,
+        );
+        assert_eq!(client.hook.get_failure().unwrap().extra, "late metadata");
+        hooks.collect_with_metadata(graph, |_| EndpointMetadata {
+            failure: Some(Error::failed("dynamic override".into())),
+            ..Default::default()
+        });
+        assert_eq!(client.hook.get_failure().unwrap().extra, "dynamic override");
+        hooks.synchronize(
+            graph,
+            |owner| owner.snapshot(),
+            |owner| Some(owner.clone()),
+            true,
+            true,
+        );
+        assert_eq!(client.hook.get_failure().unwrap().extra, "late metadata");
+        source.update(|metadata| metadata.failure = Some(Error::failed("later revision".into())));
+        hooks.synchronize(graph, |_| unreachable!(), |_| unreachable!(), true, true);
+        assert_eq!(client.hook.get_failure().unwrap().extra, "later revision");
+        #[cfg(all(unix, not(miri)))]
+        {
+            let (resource, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
+            let fd = Rc::new(std::os::fd::OwnedFd::from(resource));
+            assert!(client.hook.get_fd().is_none());
+            source.update(|metadata| metadata.fd = Some(fd.clone()));
+            hooks.synchronize(graph, |_| unreachable!(), |_| unreachable!(), true, true);
+            assert!(Rc::ptr_eq(&fd, &client.hook.get_fd().unwrap()));
+        }
+        drop(client);
+        hooks.collect(graph);
+        graph.release(route);
+        assert!(graph.take_retired().is_some());
+    })
+    .unwrap();
+}
+
+#[test]
 fn release_journal_tracks_final_owners_without_growing_on_drop() {
     clients::with_growing_graph::<usize, u8, _>(0, 64, |graph| {
         let mut hooks = ClientHooks::new(64, 1);

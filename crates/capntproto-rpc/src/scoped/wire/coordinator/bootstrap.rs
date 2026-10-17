@@ -35,6 +35,24 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize, F, O: Output<
 where
     F: FnMut() -> capnp::Result<capability::Client>,
 {
+    fn poll(
+        &mut self,
+        context: &mut ControlContext<'_, 'p, 'id, 's, I, P, C, H>,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        queue: &mut messages::Queue<'p, '_, O::Bundle>,
+        scratch: &mut [u32],
+        output: &O,
+        _: &mut Context<'_>,
+    ) -> Poll<capnp::Result<bool>> {
+        let Some(bootstrap) = self.pending.front() else {
+            return Poll::Pending;
+        };
+        let result = context.publish_bootstrap(bootstrap, messages, queue, scratch, output);
+        if matches!(result, Poll::Ready(Ok(true))) {
+            self.pending.pop_front();
+        }
+        result
+    }
     fn observes_hooks(&self, event: &connection::Received<'id, server::Results>) -> bool {
         !matches!(
             event,
@@ -49,20 +67,6 @@ where
     fn preserves_idle(&self, _activity: Activity) -> bool {
         self.pending.is_empty()
     }
-    // Preserve direct callers of the original public trait methods as well as
-    // custom implementations using Control's compatibility adapter.
-    fn direct_publication_preserves_idle(&self) -> bool {
-        self.pending.is_empty()
-    }
-    fn plain_return_preserves_idle(&self) -> bool {
-        self.pending.is_empty()
-    }
-    fn plain_call_preserves_idle(&self) -> bool {
-        self.pending.is_empty()
-    }
-    fn retirement_preserves_idle(&self) -> bool {
-        self.pending.is_empty()
-    }
     fn set_idle(&mut self, idle: bool) {
         if let Some(notify) = &mut self.idle {
             notify(idle);
@@ -71,7 +75,7 @@ where
     fn received(
         &mut self,
         event: connection::Received<'id, server::Results>,
-        coordinator: &mut Coordinator<'p, 'id, 's, I, P, C, H>,
+        context: &mut ControlContext<'_, 'p, 'id, 's, I, P, C, H>,
         messages: &mut messages::Messages<'p, '_, '_>,
         _: &mut messages::Queue<'p, '_, O::Bundle>,
     ) -> capnp::Result<()> {
@@ -92,112 +96,14 @@ where
         self.pending.try_reserve(1).map_err(wire_error)?;
         // No protocol-table borrow is held while invoking application policy.
         let value = (self.factory)();
-        let driver = &mut coordinator.driver;
-        let options = coordinator.options;
-        match value {
-            Ok(client) => {
-                let client = match coordinator
-                    .hooks
-                    .try_retain(&mut driver.runtime, &*client.hook)?
-                {
-                    Some(client) => client,
-                    None => coordinator
-                        .foreign
-                        .import(&mut driver.runtime, &*client.hook)?,
-                };
-                let result = driver.complete_bootstrap(
-                    &bootstrap,
-                    Ok(&client),
-                    messages,
-                    options.output_bytes.get(),
-                    options.reader,
-                );
-                driver.runtime.release(client);
-                result.map_err(wire_error)?;
-            }
-            Err(error) => {
-                driver
-                    .complete_bootstrap(
-                        &bootstrap,
-                        Err(error.kind),
-                        messages,
-                        options.output_bytes.get(),
-                        options.reader,
-                    )
-                    .map_err(wire_error)?;
-                // The producer is retained by the answer through Finish and all
-                // pipelines, preserving the complete exception for publication.
-                driver
-                    .ledgers
-                    .answers
-                    .get(bootstrap.answer())
-                    .map_err(wire_error)?
-                    .owner
-                    .producer
-                    .fail(error);
-            }
-        }
+        context.complete_bootstrap(&bootstrap, value, messages)?;
         self.pending.push_back(bootstrap);
         Ok(())
     }
 
-    fn poll(
-        &mut self,
-        coordinator: &mut Coordinator<'p, 'id, 's, I, P, C, H>,
-        messages: &mut messages::Messages<'p, '_, '_>,
-        queue: &mut messages::Queue<'p, '_, O::Bundle>,
-        scratch: &mut [u32],
-        output: &O,
-        _: &mut Context<'_>,
-    ) -> Poll<capnp::Result<bool>> {
-        let Some(bootstrap) = self.pending.front() else {
-            return Poll::Pending;
-        };
-        let key = bootstrap.answer();
-        let queued = !queue.is_empty();
-        match queue.reserve() {
-            Ok(slot) => drop(slot),
-            Err(messages::Error::NoSendSlot) if queued => return Poll::Pending,
-            Err(error) => return Poll::Ready(Err(wire_error(error))),
-        }
-        let outcome = (|| {
-            let driver = &mut coordinator.driver;
-            let producer = &driver
-                .ledgers
-                .answers
-                .get(key)
-                .map_err(wire_error)?
-                .owner
-                .producer;
-            let minimum = if producer.failure().is_some() {
-                producer.prepare_trace(&coordinator.policy);
-                producer.publication_bytes()?
-            } else {
-                128
-            }
-            .max(coordinator.options.output_bytes.get());
-            driver
-                .send_answer_using(
-                    key,
-                    messages,
-                    queue,
-                    minimum,
-                    coordinator.options.reader,
-                    scratch,
-                    output.bundle(),
-                    |owner, imports, bundle| output.attach(owner, imports, bundle),
-                    |results, output| results.write_exception(output),
-                )
-                .map_err(wire_error)?;
-            self.pending.pop_front();
-            Ok(true)
-        })();
-        Poll::Ready(outcome)
-    }
-
     fn shutdown(
         &mut self,
-        _: &mut Coordinator<'p, 'id, 's, I, P, C, H>,
+        _: &mut ControlContext<'_, 'p, 'id, 's, I, P, C, H>,
         _: &mut messages::Messages<'p, '_, '_>,
     ) {
         // All result frames and capability references remain in the driver's

@@ -6,23 +6,27 @@ use std::{rc::Rc, time::Duration};
 
 struct Echo;
 impl harness::Server for Echo {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        params: harness::EchoParams,
-        mut results: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        results.get().set_value(params.get()?.get_value());
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            results.get().set_value(params.get()?.get_value());
+            Ok(())
+        })
     }
-    async fn bounce(
+    fn bounce(
         self: Rc<Self>,
-        params: harness::BounceParams,
-        mut results: harness::BounceResults,
-    ) -> capnp::Result<()> {
-        let cap = params.get()?.get_cap()?;
-        assert_eq!(echo(&cap, 19).await?, 19);
-        results.get().set_cap(cap);
-        Ok(())
+        context: harness::BounceContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let cap = params.get()?.get_cap()?;
+            assert_eq!(echo(&cap, 19).await?, 19);
+            results.get().set_cap(cap);
+            Ok(())
+        })
     }
 }
 async fn echo(cap: &harness::Client, value: u32) -> capnp::Result<u32> {

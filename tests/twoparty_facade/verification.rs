@@ -3,14 +3,16 @@ use capntproto_test_support::verification::{command, cpp, exploration, root, run
 
 struct CountingEcho(Rc<Cell<u64>>);
 impl harness::Server for CountingEcho {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        _: harness::EchoParams,
-        mut results: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        self.0.set(self.0.get() + 1);
-        results.get().set_value(73);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.0.set(self.0.get() + 1);
+            results.get().set_value(73);
+            Ok(())
+        })
     }
 }
 

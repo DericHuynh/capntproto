@@ -38,13 +38,15 @@ impl Drop for Child {
     }
 }
 impl harness::Server for Child {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        _: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        r.get().set_value(42);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            r.get().set_value(42);
+            Ok(())
+        })
     }
 }
 struct Service(Rc<State>);
@@ -85,19 +87,23 @@ impl Service {
     }
 }
 impl policy::Server for Service {
-    async fn pending(
+    fn pending(
         self: Rc<Self>,
-        p: policy::PendingParams,
-        r: policy::PendingResults,
-    ) -> capnp::Result<()> {
-        self.work(p.get()?.get_early_drop(), r.hook).await
+        context: policy::PendingContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.work(p.get()?.get_early_drop(), r.hook).await
+        })
     }
-    async fn cancellable(
+    fn cancellable(
         self: Rc<Self>,
-        p: policy::CancellableParams,
-        r: policy::CancellableResults,
-    ) -> capnp::Result<()> {
-        self.work(p.get()?.get_early_drop(), r.hook).await
+        context: policy::CancellableContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.work(p.get()?.get_early_drop(), r.hook).await
+        })
     }
 }
 struct Permit;
@@ -468,19 +474,21 @@ async fn self_revocation_and_reentrant_destruction_do_not_borrow_panic() {
         }
     }
     impl harness::Server for SelfRevoking {
-        async fn echo(
+        fn echo(
             self: Rc<Self>,
-            _: harness::EchoParams,
-            _: harness::EchoResults,
-        ) -> capnp::Result<()> {
-            self.owner
-                .borrow()
-                .as_ref()
-                .unwrap()
-                .upgrade()
-                .unwrap()
-                .revoke();
-            Ok(())
+            context: harness::EchoContext<'_>,
+        ) -> capnp::capability::Promise<(), capnp::Error> {
+            let (_, _) = context.into_owned();
+            capnp::capability::Promise::from_future(async move {
+                self.owner
+                    .borrow()
+                    .as_ref()
+                    .unwrap()
+                    .upgrade()
+                    .unwrap()
+                    .revoke();
+                Ok(())
+            })
         }
     }
     let slot = Rc::new(RefCell::new(None));
@@ -512,17 +520,25 @@ async fn revocation_cancels_stream_and_queued_call_without_dispatch() {
         }
     }
     impl harness::Server for Streaming {
-        async fn stream(self: Rc<Self>, _: harness::StreamParams) -> capnp::Result<()> {
-            self.0.set(self.0.get() + 1);
-            futures::future::pending().await
-        }
-        async fn echo(
+        fn stream(
             self: Rc<Self>,
-            _: harness::EchoParams,
-            _: harness::EchoResults,
-        ) -> capnp::Result<()> {
-            self.0.set(self.0.get() + 1);
-            Ok(())
+            context: harness::StreamContext<'_>,
+        ) -> capnp::capability::Promise<(), capnp::Error> {
+            let (_, _) = context.into_owned();
+            capnp::capability::Promise::from_future(async move {
+                self.0.set(self.0.get() + 1);
+                futures::future::pending().await
+            })
+        }
+        fn echo(
+            self: Rc<Self>,
+            context: harness::EchoContext<'_>,
+        ) -> capnp::capability::Promise<(), capnp::Error> {
+            let (_, _) = context.into_owned();
+            capnp::capability::Promise::from_future(async move {
+                self.0.set(self.0.get() + 1);
+                Ok(())
+            })
         }
     }
     let calls = Rc::new(Cell::new(0));

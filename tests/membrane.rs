@@ -14,14 +14,16 @@ use std::{
 use support::Hub;
 struct Echo(u32, Rc<Cell<u32>>);
 impl harness::Server for Echo {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        _: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        self.1.set(self.1.get() + 1);
-        r.get().set_value(self.0);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.1.set(self.1.get() + 1);
+            r.get().set_value(self.0);
+            Ok(())
+        })
     }
 }
 struct Root {
@@ -265,14 +267,16 @@ impl Drop for Recorded {
     }
 }
 impl harness::Server for Recorded {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        _: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        self.effects.set(self.effects.get() + 1);
-        r.get().set_value(1);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.effects.set(self.effects.get() + 1);
+            r.get().set_value(1);
+            Ok(())
+        })
     }
 }
 struct RevokedPolicy {

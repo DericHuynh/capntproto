@@ -222,7 +222,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         client_reason.kind = capnp::ErrorKind::Disconnected;
         self.hooks.disconnect(client_reason.clone());
         self.driver.disconnect(reason.kind);
-        controls.shutdown(&mut self, messages);
+        controls.shutdown(&mut ControlContext::new(&mut self), messages);
         self.calls
             .terminate_with_error(&mut self.driver, messages, client_reason);
         self.worker.terminate(&mut self.driver, messages);

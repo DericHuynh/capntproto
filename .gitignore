@@ -85,6 +85,14 @@ _apalache-tmp/
 !/research/reports/portable-performance/2026-10-17-architecture/control-source.json
 !/research/reports/portable-performance/2026-10-17-architecture/combined.patch
 !/research/reports/portable-performance/2026-10-17-architecture/combined-source.json
+!/research/reports/portable-performance/2026-10-17-integration/
+/research/reports/portable-performance/2026-10-17-integration/*
+!/research/reports/portable-performance/2026-10-17-integration/README.md
+!/research/reports/portable-performance/2026-10-17-integration/report.json
+!/research/reports/portable-performance/2026-10-17-integration/source.json
+!/research/reports/portable-performance/2026-10-17-integration/compio-source.json
+!/research/reports/portable-performance/2026-10-17-integration/replay.json
+!/research/reports/portable-performance/2026-10-17-integration/validation.json
 
 # Locally discovered fuzz inputs; checked-in upstream corpora remain included.
 /fuzz/artifacts/

@@ -57,19 +57,19 @@ impl Service {
     }
 }
 impl policy::Server for Service {
-    async fn pending(
+    fn pending(
         self: Rc<Self>,
-        _: policy::PendingParams,
-        r: policy::PendingResults,
-    ) -> capnp::Result<()> {
-        self.work(r.hook).await
+        context: policy::PendingContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move { self.work(r.hook).await })
     }
-    async fn cancellable(
+    fn cancellable(
         self: Rc<Self>,
-        _: policy::CancellableParams,
-        r: policy::CancellableResults,
-    ) -> capnp::Result<()> {
-        self.work(r.hook).await
+        context: policy::CancellableContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move { self.work(r.hook).await })
     }
 }
 struct Drivers(Vec<tokio::task::JoinHandle<capnp::Result<()>>>);

@@ -44,6 +44,9 @@ fn idle_is_revoked_before_prequeued_and_same_turn_writes() {
         messages.release(lease);
     }
     impl<'p, 'id, 's> Control<'p, 'id, 's, (), u8, 8, 8> for ControlWriter {
+        fn preserves_idle(&self, _: Activity) -> bool {
+            false
+        }
         fn set_idle(&mut self, idle: bool) {
             assert_ne!(self.idle.replace(idle), idle, "duplicate notification");
             self.notifications.push(idle);
@@ -51,7 +54,7 @@ fn idle_is_revoked_before_prequeued_and_same_turn_writes() {
         fn received(
             &mut self,
             _: connection::Received<'id, server::Results>,
-            _: &mut TestCoordinator<'p, 'id, 's>,
+            _: &mut ControlContext<'_, 'p, 'id, 's, (), u8, 8, 8>,
             _: &mut messages::Messages<'p, '_, '_>,
             _: &mut messages::Queue<'p, '_>,
         ) -> capnp::Result<()> {
@@ -59,7 +62,7 @@ fn idle_is_revoked_before_prequeued_and_same_turn_writes() {
         }
         fn poll(
             &mut self,
-            _: &mut TestCoordinator<'p, 'id, 's>,
+            _: &mut ControlContext<'_, 'p, 'id, 's, (), u8, 8, 8>,
             messages: &mut messages::Messages<'p, '_, '_>,
             queue: &mut messages::Queue<'p, '_>,
             _: &mut [u32],
@@ -76,7 +79,7 @@ fn idle_is_revoked_before_prequeued_and_same_turn_writes() {
         }
         fn shutdown(
             &mut self,
-            _: &mut TestCoordinator<'p, 'id, 's>,
+            _: &mut ControlContext<'_, 'p, 'id, 's, (), u8, 8, 8>,
             _: &mut messages::Messages<'p, '_, '_>,
         ) {
         }

@@ -214,94 +214,98 @@ impl Provisioner {
 }
 struct Lease(Rc<LeaseState>);
 impl lease::Server for Lease {
-    async fn ready(
+    fn ready(
         self: Rc<Self>,
-        _: lease::ReadyParams,
-        _: lease::ReadyResults,
-    ) -> capnp::Result<()> {
-        self.0.ready().await
+        context: lease::ReadyContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move { self.0.ready().await })
     }
-    async fn cancel(
+    fn cancel(
         self: Rc<Self>,
-        _: lease::CancelParams,
-        _: lease::CancelResults,
-    ) -> capnp::Result<()> {
-        self.0.cancel(canceled());
-        Ok(())
+        context: lease::CancelContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.0.cancel(canceled());
+            Ok(())
+        })
     }
 }
 impl provisioner::Server for Provisioner {
-    async fn reserve(
+    fn reserve(
         self: Rc<Self>,
-        params: provisioner::ReserveParams,
-        mut results: provisioner::ReserveResults,
-    ) -> capnp::Result<()> {
-        let service = &self.0;
-        if !service.network.accepts_provision(service.recipient) {
-            return Err(failed("Native recipient already has a live route"));
-        }
-        let address = params.get()?.get_rendezvous_address()?;
-        let rendezvous = if address.is_empty() {
-            None
-        } else {
-            if !service.rendezvous || address.len() > 128 {
-                return Err(failed("Native rendezvous is not authorized"));
+        context: provisioner::ReserveContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let service = &self.0;
+            if !service.network.accepts_provision(service.recipient) {
+                return Err(failed("Native recipient already has a live route"));
             }
-            let address = address.to_str()?.parse::<SocketAddr>().map_err(failed)?;
-            if !address_ok(address) {
-                return Err(failed("invalid Native rendezvous address"));
-            }
-            Some(address)
-        };
-        let state = service.registry.allocate()?;
-        let mut psk = Zeroizing::new([0u8; 32]);
-        ring::rand::SystemRandom::new()
-            .fill(&mut *psk)
-            .map_err(failed)?;
-        let reservation = service
-            .listener
-            .reserve(service.recipient, Some(*psk), &service.context)
-            .map_err(failed)?;
-        let mut out = results.get();
-        {
-            let mut ticket = out.reborrow().init_ticket();
-            ticket.set_host(&service.listener.identity());
-            ticket.set_recipient(&service.recipient);
-            ticket.set_address(service.address.to_string());
-            ticket.set_connection_id(&reservation.target().connection_id);
-            ticket.set_psk(&*psk);
-            ticket.set_context(&service.context);
-        }
-        out.set_lease(capnp_rpc::new_client(Lease(state.clone())));
-        let weak = Rc::downgrade(&state);
-        let network = service.network.clone();
-        let listener = service.listener.clone();
-        let task = tokio::task::spawn_local(async move {
-            let accept = reservation.accept();
-            tokio::pin!(accept);
-            let mut interval = tokio::time::interval(Duration::from_millis(250));
-            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            let accepted = loop {
-                tokio::select! {
-                    biased;
-                    result = &mut accept => break result,
-                    _ = interval.tick(), if rendezvous.is_some() => {
-                        if let Err(error) = listener.punch(rendezvous.unwrap()).await { break Err(error); }
-                    }
+            let address = params.get()?.get_rendezvous_address()?;
+            let rendezvous = if address.is_empty() {
+                None
+            } else {
+                if !service.rendezvous || address.len() > 128 {
+                    return Err(failed("Native rendezvous is not authorized"));
                 }
+                let address = address.to_str()?.parse::<SocketAddr>().map_err(failed)?;
+                if !address_ok(address) {
+                    return Err(failed("invalid Native rendezvous address"));
+                }
+                Some(address)
             };
-            if let Some(state) = weak.upgrade() {
-                match accepted {
-                    Ok(session) if state.begin_install() => {
-                        state.installed(network.attach(session));
-                    }
-                    Ok(_) => {}
-                    Err(error) => state.cancel(failed(error)),
-                }
+            let state = service.registry.allocate()?;
+            let mut psk = Zeroizing::new([0u8; 32]);
+            ring::rand::SystemRandom::new()
+                .fill(&mut *psk)
+                .map_err(failed)?;
+            let reservation = service
+                .listener
+                .reserve(service.recipient, Some(*psk), &service.context)
+                .map_err(failed)?;
+            let mut out = results.get();
+            {
+                let mut ticket = out.reborrow().init_ticket();
+                ticket.set_host(&service.listener.identity());
+                ticket.set_recipient(&service.recipient);
+                ticket.set_address(service.address.to_string());
+                ticket.set_connection_id(&reservation.target().connection_id);
+                ticket.set_psk(&*psk);
+                ticket.set_context(&service.context);
             }
-        });
-        *state.task.borrow_mut() = Some(task.abort_handle());
-        Ok(())
+            out.set_lease(capnp_rpc::new_client(Lease(state.clone())));
+            let weak = Rc::downgrade(&state);
+            let network = service.network.clone();
+            let listener = service.listener.clone();
+            let task = tokio::task::spawn_local(async move {
+                let accept = reservation.accept();
+                tokio::pin!(accept);
+                let mut interval = tokio::time::interval(Duration::from_millis(250));
+                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                let accepted = loop {
+                    tokio::select! {
+                        biased;
+                        result = &mut accept => break result,
+                        _ = interval.tick(), if rendezvous.is_some() => {
+                            if let Err(error) = listener.punch(rendezvous.unwrap()).await { break Err(error); }
+                        }
+                    }
+                };
+                if let Some(state) = weak.upgrade() {
+                    match accepted {
+                        Ok(session) if state.begin_install() => {
+                            state.installed(network.attach(session));
+                        }
+                        Ok(_) => {}
+                        Err(error) => state.cancel(failed(error)),
+                    }
+                }
+            });
+            *state.task.borrow_mut() = Some(task.abort_handle());
+            Ok(())
+        })
     }
 }
 
@@ -315,42 +319,48 @@ pub fn relay(provider: provisioner::Client) -> provisioner::Client {
 struct Relay(provisioner::Client);
 struct RelayLease(lease::Client);
 impl provisioner::Server for Relay {
-    async fn reserve(
+    fn reserve(
         self: Rc<Self>,
-        params: provisioner::ReserveParams,
-        mut results: provisioner::ReserveResults,
-    ) -> capnp::Result<()> {
-        let mut request = self.0.reserve_request();
-        let address = params.get()?.get_rendezvous_address()?;
-        if address.len() > 128 {
-            return Err(failed("invalid Native rendezvous address"));
-        }
-        request.get().set_rendezvous_address(address);
-        let response = request.send().promise.await?;
-        let value = response.get()?;
-        results.get().set_ticket(value.get_ticket()?)?;
-        results
-            .get()
-            .set_lease(capnp_rpc::new_client(RelayLease(value.get_lease()?)));
-        Ok(())
+        context: provisioner::ReserveContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let mut request = self.0.reserve_request();
+            let address = params.get()?.get_rendezvous_address()?;
+            if address.len() > 128 {
+                return Err(failed("invalid Native rendezvous address"));
+            }
+            request.get().set_rendezvous_address(address);
+            let response = request.send().promise.await?;
+            let value = response.get()?;
+            results.get().set_ticket(value.get_ticket()?)?;
+            results
+                .get()
+                .set_lease(capnp_rpc::new_client(RelayLease(value.get_lease()?)));
+            Ok(())
+        })
     }
 }
 impl lease::Server for RelayLease {
-    async fn ready(
+    fn ready(
         self: Rc<Self>,
-        _: lease::ReadyParams,
-        _: lease::ReadyResults,
-    ) -> capnp::Result<()> {
-        self.0.ready_request().send().promise.await?;
-        Ok(())
+        context: lease::ReadyContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.0.ready_request().send().promise.await?;
+            Ok(())
+        })
     }
-    async fn cancel(
+    fn cancel(
         self: Rc<Self>,
-        _: lease::CancelParams,
-        _: lease::CancelResults,
-    ) -> capnp::Result<()> {
-        self.0.cancel_request().send().promise.await?;
-        Ok(())
+        context: lease::CancelContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.0.cancel_request().send().promise.await?;
+            Ok(())
+        })
     }
 }
 

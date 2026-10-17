@@ -44,6 +44,7 @@ impl Lane {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct WorkSet(u8);
 impl WorkSet {
+    pub(super) const CONTROL: Self = Self(1 << 6);
     pub(super) const NONE: Self = Self(0);
     pub(super) const ALL: Self = Self(0x3f);
     pub(super) const FOREIGN: Self = Lane::Foreign.work();
@@ -144,6 +145,15 @@ impl Wake for WorkWake {
 
 // Local enqueue shares the notifier without a task-waker clone per request.
 pub(in crate::scoped) struct EnqueueWake(Arc<WorkWake>);
+struct ControlWake(Arc<WorkWake>);
+impl Wake for ControlWake {
+    fn wake(self: Arc<Self>) {
+        self.wake_by_ref();
+    }
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.0.notify(WorkSet::CONTROL);
+    }
+}
 impl EnqueueWake {
     pub(in crate::scoped) fn notify(&self) {
         self.0.notify(WorkSet::CALLS);
@@ -156,6 +166,9 @@ pub(super) struct Notifications {
     parent: Option<Waker>,
 }
 impl Notifications {
+    pub(super) fn control_waker(&self) -> Waker {
+        Waker::from(Arc::new(ControlWake(self.wake.clone())))
+    }
     pub(super) fn waker(&self) -> Waker {
         Waker::from(self.wake.clone())
     }

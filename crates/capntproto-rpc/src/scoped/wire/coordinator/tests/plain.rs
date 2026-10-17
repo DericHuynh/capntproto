@@ -14,9 +14,9 @@ fn large_server_reply_retains_the_application_payload_until_flush() {
             self,
             _: u64,
             _: u16,
-            _: capability::Params<any_pointer::Owned>,
-            mut results: capability::Results<any_pointer::Owned>,
+            context: capability::CallContext<'_, any_pointer::Owned, any_pointer::Owned>,
         ) -> capability::DispatchCallResult {
+            let (_, mut results) = context.into_owned();
             results
                 .get()
                 .set_as::<capnp::data::Owned>(&[0xa5; 8192][..])
@@ -1261,9 +1261,9 @@ fn capability_replies_rescan_controls_and_flush_under_small_budgets() {
             self,
             _: u64,
             _: u16,
-            _: capability::Params<any_pointer::Owned>,
-            mut results: capability::Results<any_pointer::Owned>,
+            context: capability::CallContext<'_, any_pointer::Owned, any_pointer::Owned>,
         ) -> capability::DispatchCallResult {
+            let (_, mut results) = context.into_owned();
             self.1.set(self.1.get() + 1);
             results.get().set_as_capability(self.0.add_ref());
             capability::DispatchCallResult {
@@ -1670,7 +1670,7 @@ fn general_notification_refreshes_late_metadata_before_enqueue_only_admission() 
     use capntproto_rpc_wire::clients::Route;
     use std::os::fd::OwnedFd;
     struct Metadata {
-        fd: RefCell<Option<Rc<OwnedFd>>>,
+        source: Rc<MetadataSource>,
         queries: Cell<usize>,
     }
     impl Output<()> for Metadata {
@@ -1684,12 +1684,9 @@ fn general_notification_refreshes_late_metadata_before_enqueue_only_admission() 
         ) -> u8 {
             u8::MAX
         }
-        fn metadata(&self, _: &()) -> EndpointMetadata {
+        fn metadata_source(&self, _: &()) -> Option<Rc<MetadataSource>> {
             self.queries.set(self.queries.get() + 1);
-            EndpointMetadata {
-                fd: self.fd.borrow().clone(),
-                ..Default::default()
-            }
+            Some(self.source.clone())
         }
     }
     for notify_first in [false, true] {
@@ -1702,7 +1699,7 @@ fn general_notification_refreshes_late_metadata_before_enqueue_only_admission() 
                 Coordinator::new(driver, hooks, NonZeroUsize::new(4).unwrap(), None, opts).unwrap();
             let mut queue = messages::Queue::new_growing(0, 4).unwrap();
             let output = Metadata {
-                fd: RefCell::new(None),
+                source: Rc::new(MetadataSource::default()),
                 queries: Cell::new(0),
             };
             let mut cx = Context::from_waker(Waker::noop());
@@ -1720,7 +1717,9 @@ fn general_notification_refreshes_late_metadata_before_enqueue_only_admission() 
             assert!(client.hook.get_fd().is_none());
             let previous = output.queries.get();
             let fd = Rc::new(OwnedFd::from(std::fs::File::open("/dev/null").unwrap()));
-            *output.fd.borrow_mut() = Some(fd.clone());
+            output
+                .source
+                .update(|metadata| metadata.fd = Some(fd.clone()));
             let wake = coordinator.notifications.waker();
             if notify_first {
                 wake.wake_by_ref();
@@ -1750,7 +1749,11 @@ fn general_notification_refreshes_late_metadata_before_enqueue_only_admission() 
                 }
             }
             assert_eq!(queue.len(), 1);
-            assert!(output.queries.get() > previous);
+            assert_eq!(
+                output.queries.get(),
+                previous,
+                "revision avoids another projection"
+            );
             assert!(Rc::ptr_eq(
                 &client.hook.get_fd().expect("late metadata"),
                 &fd

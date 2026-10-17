@@ -117,40 +117,46 @@ struct Service {
     early: bool,
 }
 impl harness::Server for Service {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        params: harness::EchoParams,
-        mut results: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        self.state.calls.set(self.state.calls.get() + 1);
-        results.get().set_value(params.get()?.get_value());
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.state.calls.set(self.state.calls.get() + 1);
+            results.get().set_value(params.get()?.get_value());
+            Ok(())
+        })
     }
-    async fn bounce(
+    fn bounce(
         self: Rc<Self>,
-        params: harness::BounceParams,
-        mut results: harness::BounceResults,
-    ) -> capnp::Result<()> {
-        self.state.calls.set(self.state.calls.get() + 1);
-        results.get().set_cap(params.get()?.get_cap()?);
-        Ok(())
+        context: harness::BounceContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.state.calls.set(self.state.calls.get() + 1);
+            results.get().set_cap(params.get()?.get_cap()?);
+            Ok(())
+        })
     }
-    async fn pending(
+    fn pending(
         self: Rc<Self>,
-        _: harness::PendingParams,
-        mut results: harness::PendingResults,
-    ) -> capnp::Result<()> {
-        self.state.calls.set(self.state.calls.get() + 1);
-        let target: harness::Client = capnp_rpc::new_client_from_rc(self.clone());
-        if self.early {
-            let mut pipeline = PipelineBuilder::<harness::pending_results::Owned>::new();
-            pipeline.get().set_cap(target.clone());
-            results.set_pipeline_from(pipeline.build())?;
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-        results.get().set_cap(target);
-        self.state.parent_completed.set(true);
-        Ok(())
+        context: harness::PendingContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.state.calls.set(self.state.calls.get() + 1);
+            let target: harness::Client = capnp_rpc::new_client_from_rc(self.clone());
+            if self.early {
+                let mut pipeline = PipelineBuilder::<harness::pending_results::Owned>::new();
+                pipeline.get().set_cap(target.clone());
+                results.set_pipeline_from(pipeline.build())?;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            results.get().set_cap(target);
+            self.state.parent_completed.set(true);
+            Ok(())
+        })
     }
 }
 

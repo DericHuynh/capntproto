@@ -27,44 +27,50 @@ struct MalformedReply {
     acknowledgment: bool,
 }
 impl durable_transfer::Server for MalformedReply {
-    async fn describe(
+    fn describe(
         self: Rc<Self>,
-        _: durable_transfer::DescribeParams,
-        mut out: durable_transfer::DescribeResults,
-    ) -> capnp::Result<()> {
-        let c = config(&self.bytes);
-        let mut out = out.get();
-        let mut config = out.reborrow().init_config();
-        config.set_length(c.length());
-        config.set_max_chunk_bytes(c.max_chunk_bytes());
-        config.set_window_bytes(c.window_bytes());
-        config.set_max_chunks(c.max_chunks());
-        out.reborrow()
-            .init_progress()
-            .set_bytes(if self.checkpoint { c.length() + 1 } else { 0 });
-        out.set_status(Status::Receiving);
-        out.set_sha256(&hash(&self.bytes));
-        Ok(())
+        context: durable_transfer::DescribeContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let c = config(&self.bytes);
+            let mut out = out.get();
+            let mut config = out.reborrow().init_config();
+            config.set_length(c.length());
+            config.set_max_chunk_bytes(c.max_chunk_bytes());
+            config.set_window_bytes(c.window_bytes());
+            config.set_max_chunks(c.max_chunks());
+            out.reborrow()
+                .init_progress()
+                .set_bytes(if self.checkpoint { c.length() + 1 } else { 0 });
+            out.set_status(Status::Receiving);
+            out.set_sha256(&hash(&self.bytes));
+            Ok(())
+        })
     }
-    async fn write(
+    fn write(
         self: Rc<Self>,
-        p: durable_transfer::WriteParams,
-        mut out: durable_transfer::WriteResults,
-    ) -> capnp::Result<()> {
-        out.get().set_sequence(if self.acknowledgment {
-            0
-        } else {
-            p.get()?.get_sequence()
-        });
-        Ok(())
+        context: durable_transfer::WriteContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            out.get().set_sequence(if self.acknowledgment {
+                0
+            } else {
+                p.get()?.get_sequence()
+            });
+            Ok(())
+        })
     }
-    async fn done(
+    fn done(
         self: Rc<Self>,
-        _: durable_transfer::DoneParams,
-        mut out: durable_transfer::DoneResults,
-    ) -> capnp::Result<()> {
-        out.get().init_summary().set_bytes(1); // A partial receipt cannot imply success.
-        Ok(())
+        context: durable_transfer::DoneContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            out.get().init_summary().set_bytes(1); // A partial receipt cannot imply success.
+            Ok(())
+        })
     }
 }
 
@@ -123,42 +129,46 @@ async fn file_sender_rejects_wrong_source_and_malformed_checkpoints_acknowledgme
         .await;
 }
 impl durable_transfer::Server for Gate {
-    async fn write(
+    fn write(
         self: Rc<Self>,
-        p: durable_transfer::WriteParams,
-        mut out: durable_transfer::WriteResults,
-    ) -> capnp::Result<()> {
-        let p = p.get()?;
-        let sequence = p.get_sequence();
-        self.receiver.write(sequence, p.get_data()?)?;
-        if !self.final_reply {
-            self.reached.set(true);
-            std::future::pending::<()>().await;
-        }
-        out.get().set_sequence(sequence);
-        Ok(())
+        context: durable_transfer::WriteContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let p = p.get()?;
+            let sequence = p.get_sequence();
+            self.receiver.write(sequence, p.get_data()?)?;
+            if !self.final_reply {
+                self.reached.set(true);
+                std::future::pending::<()>().await;
+            }
+            out.get().set_sequence(sequence);
+            Ok(())
+        })
     }
-    async fn done(
+    fn done(
         self: Rc<Self>,
-        _: durable_transfer::DoneParams,
-        mut out: durable_transfer::DoneResults,
-    ) -> capnp::Result<()> {
-        let checkpoint = self.receiver.done()?;
-        if self.final_reply {
-            self.reached.set(true);
-            std::future::pending::<()>().await;
-        }
-        let mut result = out.get();
-        result
-            .reborrow()
-            .init_summary()
-            .set_bytes(checkpoint.progress.bytes);
-        result
-            .reborrow()
-            .get_summary()?
-            .set_chunks(checkpoint.progress.chunks);
-        result.set_revision(checkpoint.revision.get());
-        Ok(())
+        context: durable_transfer::DoneContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let checkpoint = self.receiver.done()?;
+            if self.final_reply {
+                self.reached.set(true);
+                std::future::pending::<()>().await;
+            }
+            let mut result = out.get();
+            result
+                .reborrow()
+                .init_summary()
+                .set_bytes(checkpoint.progress.bytes);
+            result
+                .reborrow()
+                .get_summary()?
+                .set_chunks(checkpoint.progress.chunks);
+            result.set_revision(checkpoint.revision.get());
+            Ok(())
+        })
     }
 }
 
@@ -875,13 +885,18 @@ async fn completion_notifies_orm_history_and_push_subscribers_over_native() {
                 assert!((&mut waiting).now_or_never().is_none());
                 struct Observer(Rc<RefCell<Vec<u64>>>);
                 impl capntproto::store_capnp::observer::Server<document::Owned> for Observer {
-                    async fn changed(
+                    fn changed(
                         self: Rc<Self>,
-                        p: capntproto::store_capnp::observer::ChangedParams<document::Owned>,
-                        _: capntproto::store_capnp::observer::ChangedResults<document::Owned>,
-                    ) -> capnp::Result<()> {
-                        self.0.borrow_mut().push(p.get()?.get_revision());
-                        Ok(())
+                        context: capntproto::store_capnp::observer::ChangedContext<
+                            '_,
+                            document::Owned,
+                        >,
+                    ) -> capnp::capability::Promise<(), capnp::Error> {
+                        let (p, _) = context.into_owned();
+                        capnp::capability::Promise::from_future(async move {
+                            self.0.borrow_mut().push(p.get()?.get_revision());
+                            Ok(())
+                        })
                     }
                 }
                 let observations = Rc::new(RefCell::new(vec![]));

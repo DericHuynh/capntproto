@@ -59,57 +59,60 @@ impl<T: Owned + Unpin + 'static> introducer::Server<T> for Introducer<T>
 where
     for<'a> T::Reader<'a>: SetterInput<T> + HasTypeId,
 {
-    async fn provide(
+    fn provide(
         self: Rc<Self>,
-        params: introducer::ProvideParams<T>,
-        mut results: introducer::ProvideResults<T>,
-    ) -> capnp::Result<()> {
-        let recipient: [u8; 32] = params
-            .get()?
-            .get_recipient()?
-            .try_into()
-            .map_err(|_| capnp::Error::failed("recipient must be Ed25519 key".into()))?;
-        if self.active.get() >= 64 {
-            return Err(capnp::Error::overloaded("introduction limit".into()));
-        }
-        let mut introduction = Introduction::new(&self.owner, &self.parent, recipient, self.rights)
-            .ok_or_else(|| capnp::Error::failed("delegation not permitted".into()))?;
-        let ticket = introduction.provide().unwrap();
-        let socket = tokio::net::UdpSocket::bind(self.bind)
-            .await
-            .map_err(failed)?;
-        let address = socket.local_addr().map_err(failed)?;
-        if address.ip().is_unspecified() {
-            return Err(capnp::Error::failed(
-                "provide requires a concrete advertised bind address".into(),
-            ));
-        }
-        let mut out = results.get().init_ticket();
-        out.set_id(&ticket.id);
-        out.set_target(&ticket.target);
-        out.set_recipient(&recipient);
-        out.set_psk(&ticket.psk);
-        out.set_context(&ticket.context);
-        out.set_address(address.to_string());
-        self.active.set(self.active.get() + 1);
-        let active = Active(self.active.clone());
-        let object = self.object.clone();
-        let owner = self.owner.clone();
-        tokio::task::spawn_local(async move {
-            let _active = active;
-            let Ok(serving) = crate::handoff::serve::<T>(
-                Rc::new(RefCell::new(introduction)),
-                object,
-                &owner,
-                socket,
-            )
-            .await
-            else {
-                return;
-            };
-            let _ = serving.wait().await;
-        });
-        Ok(())
+        context: introducer::ProvideContext<'_, T>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let recipient: [u8; 32] = params
+                .get()?
+                .get_recipient()?
+                .try_into()
+                .map_err(|_| capnp::Error::failed("recipient must be Ed25519 key".into()))?;
+            if self.active.get() >= 64 {
+                return Err(capnp::Error::overloaded("introduction limit".into()));
+            }
+            let mut introduction =
+                Introduction::new(&self.owner, &self.parent, recipient, self.rights)
+                    .ok_or_else(|| capnp::Error::failed("delegation not permitted".into()))?;
+            let ticket = introduction.provide().unwrap();
+            let socket = tokio::net::UdpSocket::bind(self.bind)
+                .await
+                .map_err(failed)?;
+            let address = socket.local_addr().map_err(failed)?;
+            if address.ip().is_unspecified() {
+                return Err(capnp::Error::failed(
+                    "provide requires a concrete advertised bind address".into(),
+                ));
+            }
+            let mut out = results.get().init_ticket();
+            out.set_id(&ticket.id);
+            out.set_target(&ticket.target);
+            out.set_recipient(&recipient);
+            out.set_psk(&ticket.psk);
+            out.set_context(&ticket.context);
+            out.set_address(address.to_string());
+            self.active.set(self.active.get() + 1);
+            let active = Active(self.active.clone());
+            let object = self.object.clone();
+            let owner = self.owner.clone();
+            tokio::task::spawn_local(async move {
+                let _active = active;
+                let Ok(serving) = crate::handoff::serve::<T>(
+                    Rc::new(RefCell::new(introduction)),
+                    object,
+                    &owner,
+                    socket,
+                )
+                .await
+                else {
+                    return;
+                };
+                let _ = serving.wait().await;
+            });
+            Ok(())
+        })
     }
 }
 fn failed(e: impl std::fmt::Display) -> capnp::Error {
@@ -181,18 +184,20 @@ pub struct Receiver<T> {
 impl<T: Owned + Unpin + 'static> crate::store_capnp::introduction_receiver::Server<T>
     for Receiver<T>
 {
-    async fn introduce(
+    fn introduce(
         self: Rc<Self>,
-        params: crate::store_capnp::introduction_receiver::IntroduceParams<T>,
-        _: crate::store_capnp::introduction_receiver::IntroduceResults<T>,
-    ) -> capnp::Result<()> {
-        let permit = self
-            .accepted
-            .try_reserve()
-            .map_err(|_| failed("recipient introduction queue full"))?;
-        let p = params.get()?;
-        let session = connect::<T>(&self.identity, p.get_ticket()?, self.local).await?;
-        permit.send(session);
-        Ok(())
+        context: crate::store_capnp::introduction_receiver::IntroduceContext<'_, T>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let permit = self
+                .accepted
+                .try_reserve()
+                .map_err(|_| failed("recipient introduction queue full"))?;
+            let p = params.get()?;
+            let session = connect::<T>(&self.identity, p.get_ticket()?, self.local).await?;
+            permit.send(session);
+            Ok(())
+        })
     }
 }

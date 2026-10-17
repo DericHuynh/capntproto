@@ -19,14 +19,16 @@ mod result_pipeline {
 
 struct Echo(u32, Rc<Cell<u32>>);
 impl harness::Server for Echo {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        _: harness::EchoParams,
-        mut results: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        self.1.set(self.1.get() + 1);
-        results.get().set_value(self.0);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.1.set(self.1.get() + 1);
+            results.get().set_value(self.0);
+            Ok(())
+        })
     }
 }
 type ParentPromise = Promise<Response<harness::pending_results::Owned>, Error>;
@@ -45,20 +47,22 @@ impl Drop for Running {
 }
 struct Controlled(Rc<State>);
 impl harness::Server for Controlled {
-    async fn pending(
+    fn pending(
         self: Rc<Self>,
-        _: harness::PendingParams,
-        results: harness::PendingResults,
-    ) -> capnp::Result<()> {
-        self.0.running.set(true);
-        let _running = Running(self.0.clone());
-        *self.0.results.borrow_mut() = Some(results);
-        let gate = self.0.gate.borrow_mut().take().unwrap();
-        if gate.await.map_err(|_| Error::failed("gate lost".into()))? {
-            Ok(())
-        } else {
-            Err(Error::failed("late failure".into()))
-        }
+        context: harness::PendingContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.0.running.set(true);
+            let _running = Running(self.0.clone());
+            *self.0.results.borrow_mut() = Some(results);
+            let gate = self.0.gate.borrow_mut().take().unwrap();
+            if gate.await.map_err(|_| Error::failed("gate lost".into()))? {
+                Ok(())
+            } else {
+                Err(Error::failed("late failure".into()))
+            }
+        })
     }
 }
 async fn settle() {

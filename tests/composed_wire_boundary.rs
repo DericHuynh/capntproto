@@ -34,25 +34,29 @@ impl Drop for Tracked {
     }
 }
 impl harness::Server for Tracked {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        p: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        let value = p.get()?.get_value();
-        self.calls.borrow_mut().push((self.index, 0, value));
-        r.get().set_value(value);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let value = p.get()?.get_value();
+            self.calls.borrow_mut().push((self.index, 0, value));
+            r.get().set_value(value);
+            Ok(())
+        })
     }
-    async fn tail(
+    fn tail(
         self: Rc<Self>,
-        p: harness::TailParams,
-        mut r: harness::TailResults,
-    ) -> capnp::Result<()> {
-        let value = p.get()?.get_value();
-        self.calls.borrow_mut().push((self.index, 2, value));
-        r.get().set_value(value);
-        Ok(())
+        context: harness::TailContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let value = p.get()?.get_value();
+            self.calls.borrow_mut().push((self.index, 2, value));
+            r.get().set_value(value);
+            Ok(())
+        })
     }
 }
 async fn drain() {

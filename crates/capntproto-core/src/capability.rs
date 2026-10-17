@@ -45,6 +45,11 @@ mod reply;
 #[cfg(feature = "alloc")]
 pub use reply::{PublishedReply, Reply, ReplyBuilder};
 
+#[cfg(feature = "alloc")]
+mod call;
+#[cfg(feature = "alloc")]
+pub use call::{CallContext, ReplyContext};
+
 /// Type alias for `dyn ClientHook`. We define this here because so that generated code
 /// can avoid needing to refer to `dyn` types directly; in Rust 2015 the syntax for
 /// `dyn` types requires extra parentheses that trigger warnings in newer editions.
@@ -872,8 +877,7 @@ pub trait Server {
         self,
         interface_id: u64,
         method_id: u16,
-        params: Params<any_pointer::Owned>,
-        results: Results<any_pointer::Owned>,
+        context: CallContext<'_, any_pointer::Owned, any_pointer::Owned>,
     ) -> DispatchCallResult;
 
     fn as_ptr(&self) -> usize;

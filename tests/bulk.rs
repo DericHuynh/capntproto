@@ -145,61 +145,69 @@ impl Gate {
     }
 }
 impl transfer::Server for Gate {
-    async fn describe(
+    fn describe(
         self: Rc<Self>,
-        _: transfer::DescribeParams,
-        mut out: transfer::DescribeResults,
-    ) -> capnp::Result<()> {
-        let r = self.inner.describe_request().send().promise.await?;
-        out.get().set_config(r.get()?.get_config()?)?;
-        Ok(())
+        context: transfer::DescribeContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let r = self.inner.describe_request().send().promise.await?;
+            out.get().set_config(r.get()?.get_config()?)?;
+            Ok(())
+        })
     }
-    async fn write(
+    fn write(
         self: Rc<Self>,
-        p: transfer::WriteParams,
-        mut out: transfer::WriteResults,
-    ) -> capnp::Result<()> {
-        let mut request = self.inner.write_request();
-        request.set(p.get()?)?;
-        drop(p);
-        let r = request.send().promise.await?;
-        if !self.done {
-            self.wait().await;
-        }
-        out.get().set_sequence(if self.wrong_ack {
-            0
-        } else {
-            r.get()?.get_sequence()
-        });
-        Ok(())
+        context: transfer::WriteContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let mut request = self.inner.write_request();
+            request.set(p.get()?)?;
+            drop(p);
+            let r = request.send().promise.await?;
+            if !self.done {
+                self.wait().await;
+            }
+            out.get().set_sequence(if self.wrong_ack {
+                0
+            } else {
+                r.get()?.get_sequence()
+            });
+            Ok(())
+        })
     }
-    async fn done(
+    fn done(
         self: Rc<Self>,
-        _: transfer::DoneParams,
-        mut out: transfer::DoneResults,
-    ) -> capnp::Result<()> {
-        let r = self.inner.done_request().send().promise.await?;
-        if self.done {
-            self.wait().await;
-        }
-        out.get().set_summary(r.get()?.get_summary()?)?;
-        Ok(())
+        context: transfer::DoneContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let r = self.inner.done_request().send().promise.await?;
+            if self.done {
+                self.wait().await;
+            }
+            out.get().set_summary(r.get()?.get_summary()?)?;
+            Ok(())
+        })
     }
-    async fn cancel(
+    fn cancel(
         self: Rc<Self>,
-        _: transfer::CancelParams,
-        mut out: transfer::CancelResults,
-    ) -> capnp::Result<()> {
-        out.get().set_status(
-            self.inner
-                .cancel_request()
-                .send()
-                .promise
-                .await?
-                .get()?
-                .get_status()?,
-        );
-        Ok(())
+        context: transfer::CancelContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            out.get().set_status(
+                self.inner
+                    .cancel_request()
+                    .send()
+                    .promise
+                    .await?
+                    .get()?
+                    .get_status()?,
+            );
+            Ok(())
+        })
     }
 }
 
@@ -580,57 +588,65 @@ fn lost(_: oneshot::Canceled) -> capnp::Error {
     capnp::Error::disconnected("test controller dropped".into())
 }
 impl transfer::Server for Controlled {
-    async fn describe(
+    fn describe(
         self: Rc<Self>,
-        _: transfer::DescribeParams,
-        mut out: transfer::DescribeResults,
-    ) -> capnp::Result<()> {
-        let r = self.inner.describe_request().send().promise.await?;
-        out.get().set_config(r.get()?.get_config()?)?;
-        Ok(())
+        context: transfer::DescribeContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let r = self.inner.describe_request().send().promise.await?;
+            out.get().set_config(r.get()?.get_config()?)?;
+            Ok(())
+        })
     }
-    async fn write(
+    fn write(
         self: Rc<Self>,
-        p: transfer::WriteParams,
-        mut out: transfer::WriteResults,
-    ) -> capnp::Result<()> {
-        let sequence = p.get()?.get_sequence();
-        let mut request = self.inner.write_request();
-        request.set(p.get()?)?;
-        drop(p);
-        let (run, reply, processed) = self.register(1, sequence);
-        run.await.map_err(lost)?;
-        let result = request.send().promise.await;
-        processed.set(true);
-        reply.await.map_err(lost)?;
-        out.get().set_sequence(result?.get()?.get_sequence());
-        Ok(())
+        context: transfer::WriteContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let sequence = p.get()?.get_sequence();
+            let mut request = self.inner.write_request();
+            request.set(p.get()?)?;
+            drop(p);
+            let (run, reply, processed) = self.register(1, sequence);
+            run.await.map_err(lost)?;
+            let result = request.send().promise.await;
+            processed.set(true);
+            reply.await.map_err(lost)?;
+            out.get().set_sequence(result?.get()?.get_sequence());
+            Ok(())
+        })
     }
-    async fn done(
+    fn done(
         self: Rc<Self>,
-        _: transfer::DoneParams,
-        mut out: transfer::DoneResults,
-    ) -> capnp::Result<()> {
-        let (run, reply, processed) = self.register(2, 0);
-        run.await.map_err(lost)?;
-        let result = self.inner.done_request().send().promise.await;
-        processed.set(true);
-        reply.await.map_err(lost)?;
-        out.get().set_summary(result?.get()?.get_summary()?)?;
-        Ok(())
+        context: transfer::DoneContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let (run, reply, processed) = self.register(2, 0);
+            run.await.map_err(lost)?;
+            let result = self.inner.done_request().send().promise.await;
+            processed.set(true);
+            reply.await.map_err(lost)?;
+            out.get().set_summary(result?.get()?.get_summary()?)?;
+            Ok(())
+        })
     }
-    async fn cancel(
+    fn cancel(
         self: Rc<Self>,
-        _: transfer::CancelParams,
-        mut out: transfer::CancelResults,
-    ) -> capnp::Result<()> {
-        let (run, reply, processed) = self.register(3, 0);
-        run.await.map_err(lost)?;
-        let result = self.inner.cancel_request().send().promise.await;
-        processed.set(true);
-        reply.await.map_err(lost)?;
-        out.get().set_status(result?.get()?.get_status()?);
-        Ok(())
+        context: transfer::CancelContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let (run, reply, processed) = self.register(3, 0);
+            run.await.map_err(lost)?;
+            let result = self.inner.cancel_request().send().promise.await;
+            processed.set(true);
+            reply.await.map_err(lost)?;
+            out.get().set_status(result?.get()?.get_status()?);
+            Ok(())
+        })
     }
 }
 #[tokio::test(flavor = "current_thread")]

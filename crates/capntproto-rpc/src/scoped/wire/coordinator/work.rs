@@ -62,7 +62,11 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         remaining: &mut usize,
         waker: &Waker,
     ) -> Poll<capnp::Result<()>> {
-        let changed = self.notifications.take(cx.waker());
+        let notified = self.notifications.take(cx.waker());
+        if notified & WorkSet::CONTROL != WorkSet::NONE {
+            self.control_idle = false;
+        }
+        let changed = notified & !WorkSet::CONTROL;
         if changed != WorkSet::NONE {
             if changed == WorkSet::CALLS {
                 // A newly enqueued request cannot change foreign promises,
@@ -634,9 +638,9 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         driver: &mut Peer<'_, 'domain, '_, I, P, C, H>,
         output: &O,
     ) {
-        hooks.collect_wire_optional(
+        hooks.collect_wire(
             driver,
-            |owner| output.metadata_if_present(owner),
+            |owner| output.metadata_source(owner),
             foreign::local_metadata,
         );
     }

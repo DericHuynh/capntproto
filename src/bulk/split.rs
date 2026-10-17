@@ -53,150 +53,164 @@ pub fn enable(
     }))
 }
 impl wire::transfer::Server for Service {
-    async fn describe(
+    fn describe(
         self: Rc<Self>,
-        _: wire::transfer::DescribeParams,
-        mut out: wire::transfer::DescribeResults,
-    ) -> capnp::Result<()> {
-        let response = self.client.describe_request().send().promise.await?;
-        Config::read(response.get()?.get_config()?)?.write(out.get().init_config());
-        Ok(())
+        context: wire::transfer::DescribeContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let response = self.client.describe_request().send().promise.await?;
+            Config::read(response.get()?.get_config()?)?.write(out.get().init_config());
+            Ok(())
+        })
     }
-    async fn write(
+    fn write(
         self: Rc<Self>,
-        p: wire::transfer::WriteParams,
-        mut out: wire::transfer::WriteResults,
-    ) -> capnp::Result<()> {
-        {
-            let mut mode = self.mode.borrow_mut();
-            match &mut *mode {
-                Mode::Ordinary { used } => *used = true,
-                _ => return Err(failed("transfer has selected the stream plane or closed")),
-            }
-        }
-        let p = p.get()?;
-        let mut request = self.client.write_request();
-        request.get().set_sequence(p.get_sequence());
-        request.get().set_data(p.get_data()?);
-        out.get()
-            .set_sequence(request.send().promise.await?.get()?.get_sequence());
-        Ok(())
-    }
-    async fn done(
-        self: Rc<Self>,
-        _: wire::transfer::DoneParams,
-        mut out: wire::transfer::DoneResults,
-    ) -> capnp::Result<()> {
-        let completion = {
-            let mut mode = self.mode.borrow_mut();
-            match &*mode {
-                Mode::Opening => return Err(failed("stream negotiation is incomplete")),
-                Mode::Streaming(worker) => Some(worker.done.clone()),
-                _ => {
-                    *mode = Mode::Closed;
-                    None
+        context: wire::transfer::WriteContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            {
+                let mut mode = self.mode.borrow_mut();
+                match &mut *mode {
+                    Mode::Ordinary { used } => *used = true,
+                    _ => return Err(failed("transfer has selected the stream plane or closed")),
                 }
             }
-        };
-        if let Some(completion) = completion {
-            completion.await?;
-        }
-        let response = self.client.done_request().send().promise.await?;
-        out.get().set_summary(response.get()?.get_summary()?)?;
-        Ok(())
+            let p = p.get()?;
+            let mut request = self.client.write_request();
+            request.get().set_sequence(p.get_sequence());
+            request.get().set_data(p.get_data()?);
+            out.get()
+                .set_sequence(request.send().promise.await?.get()?.get_sequence());
+            Ok(())
+        })
     }
-    async fn cancel(
+    fn done(
         self: Rc<Self>,
-        _: wire::transfer::CancelParams,
-        mut out: wire::transfer::CancelResults,
-    ) -> capnp::Result<()> {
-        let previous = self.mode.replace(Mode::Closed);
-        drop(previous);
-        out.get().set_status(
-            self.client
-                .cancel_request()
-                .send()
-                .promise
-                .await?
-                .get()?
-                .get_status()?,
-        );
-        Ok(())
-    }
-    async fn open_stream(
-        self: Rc<Self>,
-        _: wire::transfer::OpenStreamParams,
-        mut out: wire::transfer::OpenStreamResults,
-    ) -> capnp::Result<()> {
-        {
-            let mut mode = self.mode.borrow_mut();
-            if !matches!(*mode, Mode::Ordinary { used: false }) {
-                return Err(failed("bulk stream grant is single-use"));
-            }
-            *mode = Mode::Opening;
-        }
-        let response = self.client.describe_request().send().promise.await?;
-        let config = Config::read(response.get()?.get_config()?)?;
-        let (offer, mut input) = self
-            .plane
-            .receive(config.length(), self.timeout)
-            .map_err(io_error)?;
-        let client = self.client.clone();
-        let (abort, registration) = AbortHandle::new_pair();
-        let (sent, wait) = tokio::sync::oneshot::channel();
-        let timeout = self.timeout;
-        tokio::task::spawn_local(async move {
-            let consume = async {
-                let mut buffer = vec![0; config.max_chunk_bytes() as usize];
-                let mut remaining = config.length();
-                let mut sequence = 0;
-                while remaining > 0 {
-                    let count = remaining.min(buffer.len() as u64) as usize;
-                    input
-                        .read_exact(&mut buffer[..count])
-                        .await
-                        .map_err(io_error)?;
-                    sequence += 1;
-                    write(&client, sequence, &buffer[..count]).await?;
-                    remaining -= count as u64;
+        context: wire::transfer::DoneContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let completion = {
+                let mut mode = self.mode.borrow_mut();
+                match &*mode {
+                    Mode::Opening => return Err(failed("stream negotiation is incomplete")),
+                    Mode::Streaming(worker) => Some(worker.done.clone()),
+                    _ => {
+                        *mode = Mode::Closed;
+                        None
+                    }
                 }
-                if input.read(&mut [0]).await.map_err(io_error)? != 0 {
-                    return Err(failed("excess bulk payload"));
-                }
-                Ok(())
             };
-            let result =
-                match tokio::time::timeout(timeout, Abortable::new(consume, registration)).await {
+            if let Some(completion) = completion {
+                completion.await?;
+            }
+            let response = self.client.done_request().send().promise.await?;
+            out.get().set_summary(response.get()?.get_summary()?)?;
+            Ok(())
+        })
+    }
+    fn cancel(
+        self: Rc<Self>,
+        context: wire::transfer::CancelContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let previous = self.mode.replace(Mode::Closed);
+            drop(previous);
+            out.get().set_status(
+                self.client
+                    .cancel_request()
+                    .send()
+                    .promise
+                    .await?
+                    .get()?
+                    .get_status()?,
+            );
+            Ok(())
+        })
+    }
+    fn open_stream(
+        self: Rc<Self>,
+        context: wire::transfer::OpenStreamContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            {
+                let mut mode = self.mode.borrow_mut();
+                if !matches!(*mode, Mode::Ordinary { used: false }) {
+                    return Err(failed("bulk stream grant is single-use"));
+                }
+                *mode = Mode::Opening;
+            }
+            let response = self.client.describe_request().send().promise.await?;
+            let config = Config::read(response.get()?.get_config()?)?;
+            let (offer, mut input) = self
+                .plane
+                .receive(config.length(), self.timeout)
+                .map_err(io_error)?;
+            let client = self.client.clone();
+            let (abort, registration) = AbortHandle::new_pair();
+            let (sent, wait) = tokio::sync::oneshot::channel();
+            let timeout = self.timeout;
+            tokio::task::spawn_local(async move {
+                let consume = async {
+                    let mut buffer = vec![0; config.max_chunk_bytes() as usize];
+                    let mut remaining = config.length();
+                    let mut sequence = 0;
+                    while remaining > 0 {
+                        let count = remaining.min(buffer.len() as u64) as usize;
+                        input
+                            .read_exact(&mut buffer[..count])
+                            .await
+                            .map_err(io_error)?;
+                        sequence += 1;
+                        write(&client, sequence, &buffer[..count]).await?;
+                        remaining -= count as u64;
+                    }
+                    if input.read(&mut [0]).await.map_err(io_error)? != 0 {
+                        return Err(failed("excess bulk payload"));
+                    }
+                    Ok(())
+                };
+                let result = match tokio::time::timeout(
+                    timeout,
+                    Abortable::new(consume, registration),
+                )
+                .await
+                {
                     Ok(Ok(result)) => result,
                     Ok(Err(_)) => Err(failed("bulk stream consumer canceled")),
                     Err(_) => Err(failed("bulk stream consumer timed out")),
                 };
-            // Release receive credit immediately on failure; cancellation RPC
-            // is best effort and cannot keep a stream or task alive indefinitely.
-            drop(input);
-            if result.is_err() {
-                let _ = tokio::time::timeout(
-                    Duration::from_secs(1),
-                    client.cancel_request().send().promise,
-                )
-                .await;
+                // Release receive credit immediately on failure; cancellation RPC
+                // is best effort and cannot keep a stream or task alive indefinitely.
+                drop(input);
+                if result.is_err() {
+                    let _ = tokio::time::timeout(
+                        Duration::from_secs(1),
+                        client.cancel_request().send().promise,
+                    )
+                    .await;
+                }
+                let _ = sent.send(result);
+            });
+            let done = async {
+                wait.await
+                    .map_err(|_| failed("bulk stream worker stopped"))?
             }
-            let _ = sent.send(result);
-        });
-        let done = async {
-            wait.await
-                .map_err(|_| failed("bulk stream worker stopped"))?
-        }
-        .boxed_local()
-        .shared();
-        // A cancel may have arrived while describe was awaiting its response.
-        if !matches!(*self.mode.borrow(), Mode::Opening) {
-            abort.abort();
-            return Err(failed("bulk stream negotiation canceled"));
-        }
-        *self.mode.borrow_mut() = Mode::Streaming(Worker { abort, done });
-        out.get().set_offer(&offer.encode());
-        Ok(())
+            .boxed_local()
+            .shared();
+            // A cancel may have arrived while describe was awaiting its response.
+            if !matches!(*self.mode.borrow(), Mode::Opening) {
+                abort.abort();
+                return Err(failed("bulk stream negotiation canceled"));
+            }
+            *self.mode.borrow_mut() = Mode::Streaming(Worker { abort, done });
+            out.get().set_offer(&offer.encode());
+            Ok(())
+        })
     }
 }
 fn io_error(error: std::io::Error) -> capnp::Error {

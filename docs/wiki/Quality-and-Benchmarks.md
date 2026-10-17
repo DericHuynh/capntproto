@@ -1,5 +1,59 @@
 # Quality checks and benchmark reports
 
+## Mandatory integration and Compio October 17, 2026
+
+The [integration report](../../research/reports/portable-performance/2026-10-17-integration/README.md)
+records the production API breaks and the subsequent Compio comparison.
+Restricted control contexts, revision-backed import metadata and generated
+borrowed call contexts are mandatory; services, adapters and tests are migrated.
+This supersedes the earlier decision below to retain the prototypes separately.
+Historical reports and raw evidence remain unchanged.
+
+Borrowed synchronous dispatch removes two allocations per eligible call, but
+the combined instruction change is mixed: pipeline client -0.738%, server
++1.646%, and empty-unary server -0.716%. Pipeline server malloc calls fall from
+34,314 to 29,913 while metadata sources add 1,103 client allocations. The final
+local pipeline p50 is 43.044 microseconds versus 30.255 for current legacy and
+31.026 for C++. Four of twelve workflows meet the local faster-reference
+comparison and seven meet C++ alone. Repetition modes vary substantially; all
+300,000 uninstrumented samples, p95s and repetition medians are retained.
+All six baseline/candidate peer comparisons preserve full write bytes and groups.
+
+The [Compio host](../../benchmarks/rpc-compio/README.md) runs the same portable
+driver with Compio 0.19.2 and contains a matched Tokio control. Another 300,000
+samples compare borrowed readiness I/O and a buffered completion bridge.
+
+| Local pipeline | Tokio control | Compio readiness | Compio bridge | Legacy | C++ |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| p50 microseconds | 53.855 | 69.302 | 62.733 | 32.348 | 42.188 |
+| Client instructions versus Tokio | baseline | +13.173% | +23.143% | separate reference | separate reference |
+| Server instructions versus Tokio | baseline | +13.400% | +25.841% | separate reference | separate reference |
+
+These are separate campaigns; compare Compio with its same-executable Tokio
+control. Both Compio adapters use the Poll backend because io_uring construction
+is denied by this environment. No io_uring speed claim is made. The Compio
+readiness and bridge hosts meet 5/12 and 6/12 faster-reference cells respectively,
+against 8/12 for their Tokio control. These counts do not qualify the dedicated
+remote/loopback target.
+
+Decoded traces expose executor-dependent batching: Tokio and C++ send one
+1,368-byte Finish/Release/Call/Call group, while both Compio adapters send a
+40-byte Finish and then 1,328 bytes of Call/Call/Release. The server still batches
+paired Returns. Compio's shorter read-to-first-write client CPU interval covers
+less work, so it cannot establish a faster request turn. The completion bridge's
+direct syscalls bypass the libc CPU probe; its empty journal is rejected. All
+18 Compio peer journals are decoded, including sendmsg and resumed syscalls.
+The [architecture reassessment](Architecture.md#compio-integration-boundary)
+prioritizes explicit connection-turn publication before a default executor swap.
+
+The mandatory implementation passes 307 RPC unit tests, 283 root-library tests
+(four ignored), 522 integration tests across 72 targets, five focused Miri tests,
+108 mixed-peer cases, strict Clippy and both ARM allocation configurations.
+The integration selection includes 71 full targets and the structured-reply
+compile contract target. Compio adds four adapter tests and 300 mixed-peer cases.
+All pass. Coverage floors and tolerances are unchanged; fresh CI and the full
+5% qualification remain open. The last dedicated result is still 11/16.
+
 ## Three portable architecture experiments October 17, 2026
 
 The [experiment report and replayable patches](../../research/reports/portable-performance/2026-10-17-architecture/README.md)

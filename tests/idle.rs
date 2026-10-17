@@ -10,21 +10,25 @@ use std::{cell::RefCell, future::Future, pin::Pin, rc::Rc, time::Duration};
 use support::{ConnectionStatus, Endpoint, Hub};
 struct Echo(Rc<RefCell<Option<harness::PendingResults>>>);
 impl harness::Server for Echo {
-    async fn pending(
+    fn pending(
         self: Rc<Self>,
-        _: harness::PendingParams,
-        results: harness::PendingResults,
-    ) -> capnp::Result<()> {
-        *self.0.borrow_mut() = Some(results);
-        futures::future::pending().await
+        context: harness::PendingContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            *self.0.borrow_mut() = Some(results);
+            futures::future::pending().await
+        })
     }
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        _: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        r.get().set_value(42);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            r.get().set_value(42);
+            Ok(())
+        })
     }
 }
 async fn drain() {

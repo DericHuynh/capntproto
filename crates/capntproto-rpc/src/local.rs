@@ -1283,6 +1283,16 @@ where
         params: Box<dyn ParamsHook>,
         results: Box<dyn ResultsHook>,
     ) -> Promise<(), Error> {
+        let mut context = capnp::private::capability::OwnedCall::new(params, results);
+        Self::dispatch_context(state, interface_id, method_id, &mut context)
+    }
+
+    fn dispatch_context(
+        state: Rc<RefCell<Self>>,
+        interface_id: u64,
+        method_id: u16,
+        context: &mut dyn capnp::private::capability::CallContextHook,
+    ) -> Promise<(), Error> {
         let inner = {
             let state_ref = state.borrow();
             if let Some(e) = &state_ref.broken_error {
@@ -1291,6 +1301,7 @@ where
             state_ref.inner.as_ref().expect("live server").clone()
         };
 
+        let results = context.results();
         let permits_immediate_poll = results.permits_immediate_poll();
         let guard = results.cancellation_context();
         let executor = state
@@ -1301,8 +1312,7 @@ where
         let mut f = inner.dispatch_call(
             interface_id,
             method_id,
-            ::capnp::capability::Params::new(params),
-            ::capnp::capability::Results::new(results),
+            ::capnp::capability::CallContext::new(context),
         );
 
         let revocation = state.borrow().revocation.clone();
@@ -1745,16 +1755,21 @@ where
         &self,
         interface_id: u64,
         method_id: u16,
-        params: Box<dyn ParamsHook>,
-        results: Box<dyn ResultsHook>,
+        context: &mut dyn capnp::private::capability::CallContextHook,
         hints: CallHints,
     ) -> Promise<(), Error> {
         if let Some(target) = self.get_resolved() {
-            return target.call_during_dispatch(interface_id, method_id, params, results, hints);
+            return target.call_during_dispatch(interface_id, method_id, context, hints);
         }
         let state = self.state.clone();
         let task = state.borrow().resolve_task.clone();
-        let call = ClientState::dispatch_or_queue(state, interface_id, method_id, params, results);
+        let blocked = state.borrow().blocked;
+        let call = if blocked {
+            let (params, results) = context.take();
+            ClientState::dispatch_or_queue(state, interface_id, method_id, params, results)
+        } else {
+            ClientState::dispatch_context(state, interface_id, method_id, context)
+        };
         match task {
             None => call,
             Some(task) => Promise::from_future(async move {

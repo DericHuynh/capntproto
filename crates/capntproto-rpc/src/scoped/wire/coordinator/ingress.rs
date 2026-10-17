@@ -182,10 +182,13 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     && self.driver.runtime.queued() == 0
                     && !self.driver.has_pending_call()
                     && self.hooks.inbox.queue.borrow().is_empty();
-                controls
-                    .received(event, self, messages, queue)
-                    .map_err(|error| Box::new(Cause::Protocol(error)))?;
+                let mut context = ControlContext::new(self);
+                let received = controls.received(event, &mut context, messages, queue);
+                let preserves_application = !context.has_effects();
+                drop(context);
+                received.map_err(|error| Box::new(Cause::Protocol(error)))?;
                 if retirement
+                    && preserves_application
                     && controls.preserves_idle(Activity::Retirement)
                     && self.notifications.pending() == WorkSet::NONE
                 {
@@ -197,6 +200,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     self.schedule.cursor = Lane::Maintenance;
                     self.driver.invalidate_maintenance();
                 } else if plain_call
+                    && preserves_application
                     && controls.preserves_idle(Activity::PlainCall)
                     && self.notifications.pending() == WorkSet::NONE
                 {

@@ -118,18 +118,29 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             // including on idle polls. A control callback can wake before that
             // registration: its changed flag is consumed later in this same
             // turn. Registering here as well only repeats the atomic operation.
-            if self.notifications.pending() & !(WorkSet::CALLS) != WorkSet::NONE {
+            if self.notifications.pending() & (!(WorkSet::CALLS) | WorkSet::CONTROL)
+                != WorkSet::NONE
+            {
                 self.control_idle = false;
             }
             if !self.control_idle {
                 // Controls observe both protocol progress and independently woken
                 // application futures. IO-only polls can retain their idle result.
-                // Use the same notifying waker as the other application lanes; the
-                // poll_work check below also catches a wake during this callback.
-                let mut control_cx = Context::from_waker(waker);
-                match controls.poll(self, messages, queue, scratch, output, &mut control_cx) {
+                let control_waker = self.control_waker.clone();
+                let mut control_cx = Context::from_waker(&control_waker);
+                let mut context = ControlContext::new(self);
+                let result = controls.poll(
+                    &mut context,
+                    messages,
+                    queue,
+                    scratch,
+                    output,
+                    &mut control_cx,
+                );
+                drop(context);
+                match result {
                     Poll::Ready(Ok(true)) => {
-                        self.changed();
+                        self.control_idle = false;
                         cx.waker().wake_by_ref();
                     }
                     Poll::Ready(Err(e)) => return Err(Box::new(Cause::Protocol(e))),
@@ -243,7 +254,10 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     || !self.control_idle
                     || self.notifications.pending() != WorkSet::NONE)
             {
-                if remaining != 0 {
+                // A control-only self-wake consumes no application lane's
+                // quantum. Yield it explicitly instead of spinning forever.
+                if remaining != 0 && !(self.schedule.active == WorkSet::NONE && !self.control_idle)
+                {
                     continue;
                 }
                 cx.waker().wake_by_ref();

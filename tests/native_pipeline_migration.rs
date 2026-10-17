@@ -21,33 +21,39 @@ impl capnp_rpc::BootstrapFactory<[u8; 32]> for Factory {
 }
 struct Tail(harness::Client, Rc<RefCell<Option<harness::Client>>>);
 impl harness::Server for Tail {
-    async fn bounce(
+    fn bounce(
         self: Rc<Self>,
-        p: harness::BounceParams,
-        _: harness::BounceResults,
-    ) -> capnp::Result<()> {
-        *self.1.borrow_mut() = Some(p.get()?.get_cap()?);
-        Ok(())
+        context: harness::BounceContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            *self.1.borrow_mut() = Some(p.get()?.get_cap()?);
+            Ok(())
+        })
     }
-    async fn pending(
+    fn pending(
         self: Rc<Self>,
-        _: harness::PendingParams,
-        r: harness::PendingResults,
-    ) -> capnp::Result<()> {
-        r.hook.tail_call(self.0.pending_request().hook).await
+        context: harness::PendingContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            r.hook.tail_call(self.0.pending_request().hook).await
+        })
     }
 }
 struct Echo(Rc<RefCell<Vec<u32>>>);
 impl harness::Server for Echo {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        p: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        let value = p.get()?.get_value();
-        self.0.borrow_mut().push(value);
-        r.get().set_value(value);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let value = p.get()?.get_value();
+            self.0.borrow_mut().push(value);
+            r.get().set_value(value);
+            Ok(())
+        })
     }
 }
 struct Early {
@@ -56,19 +62,21 @@ struct Early {
     gate: RefCell<Option<oneshot::Receiver<()>>>,
 }
 impl harness::Server for Early {
-    async fn pending(
+    fn pending(
         self: Rc<Self>,
-        _: harness::PendingParams,
-        mut r: harness::PendingResults,
-    ) -> capnp::Result<()> {
-        let publish = self.publish.borrow_mut().take().unwrap();
-        publish
-            .await
-            .map_err(|_| Error::failed("publish dropped".into()))?;
-        r.get().set_cap(self.cap.clone());
-        r.hook.set_pipeline()?;
-        let gate = self.gate.borrow_mut().take().unwrap();
-        gate.await.map_err(|_| Error::failed("gate dropped".into()))
+        context: harness::PendingContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let publish = self.publish.borrow_mut().take().unwrap();
+            publish
+                .await
+                .map_err(|_| Error::failed("publish dropped".into()))?;
+            r.get().set_cap(self.cap.clone());
+            r.hook.set_pipeline()?;
+            let gate = self.gate.borrow_mut().take().unwrap();
+            gate.await.map_err(|_| Error::failed("gate dropped".into()))
+        })
     }
 }
 async fn pair(a: &Identity, b: &Identity, ah: &Handle, bh: &Handle) {

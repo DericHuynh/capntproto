@@ -23,24 +23,32 @@ const OWNER: OwnerId = [1; 16];
 const PEER: [u8; 32] = [1; 32];
 struct Echo;
 impl harness::Server for Echo {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        params: harness::EchoParams,
-        mut results: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        results.get().set_value(params.get()?.get_value());
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            results.get().set_value(params.get()?.get_value());
+            Ok(())
+        })
     }
-    async fn bounce(
+    fn bounce(
         self: Rc<Self>,
-        params: harness::BounceParams,
-        mut results: harness::BounceResults,
-    ) -> capnp::Result<()> {
-        results.get().set_cap(params.get()?.get_cap()?);
-        Ok(())
+        context: harness::BounceContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            results.get().set_cap(params.get()?.get_cap()?);
+            Ok(())
+        })
     }
-    async fn stream(self: Rc<Self>, _: harness::StreamParams) -> capnp::Result<()> {
-        Ok(())
+    fn stream(
+        self: Rc<Self>,
+        context: harness::StreamContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move { Ok(()) })
     }
 }
 fn client() -> harness::Client {
@@ -246,13 +254,15 @@ struct DropEcho {
     _guard: Dropped,
 }
 impl harness::Server for DropEcho {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        params: harness::EchoParams,
-        mut results: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        results.get().set_value(params.get()?.get_value());
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            results.get().set_value(params.get()?.get_value());
+            Ok(())
+        })
     }
 }
 type Gate = Rc<RefCell<Option<oneshot::Sender<()>>>>;
@@ -778,13 +788,15 @@ async fn restored_orm_facets_share_publication_notifications() {
     use capntproto::store_capnp::observer;
     struct Observer(Rc<Cell<u64>>);
     impl observer::Server<document::Owned> for Observer {
-        async fn changed(
+        fn changed(
             self: Rc<Self>,
-            params: observer::ChangedParams<document::Owned>,
-            _: observer::ChangedResults<document::Owned>,
-        ) -> capnp::Result<()> {
-            self.0.set(params.get()?.get_revision());
-            Ok(())
+            context: observer::ChangedContext<'_, document::Owned>,
+        ) -> capnp::capability::Promise<(), capnp::Error> {
+            let (params, _) = context.into_owned();
+            capnp::capability::Promise::from_future(async move {
+                self.0.set(params.get()?.get_revision());
+                Ok(())
+            })
         }
     }
     tokio::task::LocalSet::new()
@@ -859,11 +871,17 @@ async fn protected_save_waits_for_earlier_local_stream_policy() {
         deny: bool,
     }
     impl harness::Server for Streaming {
-        async fn stream(self: Rc<Self>, _: harness::StreamParams) -> capnp::Result<()> {
-            let gate = self.gate.borrow_mut().take().unwrap();
-            gate.await.unwrap();
-            self.permitted.set(!self.deny);
-            Ok(())
+        fn stream(
+            self: Rc<Self>,
+            context: harness::StreamContext<'_>,
+        ) -> capnp::capability::Promise<(), capnp::Error> {
+            let (_, _) = context.into_owned();
+            capnp::capability::Promise::from_future(async move {
+                let gate = self.gate.borrow_mut().take().unwrap();
+                gate.await.unwrap();
+                self.permitted.set(!self.deny);
+                Ok(())
+            })
         }
     }
     tokio::task::LocalSet::new()
@@ -927,11 +945,17 @@ async fn replay_tlc_persistent_save_traces() {
         deny: bool,
     }
     impl harness::Server for Streaming {
-        async fn stream(self: Rc<Self>, _: harness::StreamParams) -> capnp::Result<()> {
-            let gate = self.gate.borrow_mut().take().unwrap();
-            gate.await.unwrap();
-            self.permitted.set(!self.deny);
-            Ok(())
+        fn stream(
+            self: Rc<Self>,
+            context: harness::StreamContext<'_>,
+        ) -> capnp::capability::Promise<(), capnp::Error> {
+            let (_, _) = context.into_owned();
+            capnp::capability::Promise::from_future(async move {
+                let gate = self.gate.borrow_mut().take().unwrap();
+                gate.await.unwrap();
+                self.permitted.set(!self.deny);
+                Ok(())
+            })
         }
     }
     for (index, case) in cases.iter().enumerate() {

@@ -14,11 +14,17 @@ use std::{
 
 struct Echo(Rc<Cell<u32>>);
 impl base::Server for Echo {
-    async fn echo(self: Rc<Self>, p: base::EchoParams, r: base::EchoResults) -> capnp::Result<()> {
-        self.0.set(self.0.get() + 1);
-        r.complete(|mut out| {
-            out.set_value(p.get()?.get_value());
-            Ok(())
+    fn echo(
+        self: Rc<Self>,
+        context: base::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.0.set(self.0.get() + 1);
+            r.complete(|mut out| {
+                out.set_value(p.get()?.get_value());
+                Ok(())
+            })
         })
     }
 }
@@ -29,56 +35,74 @@ struct Service {
     streams: Rc<Cell<usize>>,
 }
 impl base::Server for Service {
-    async fn echo(self: Rc<Self>, p: base::EchoParams, r: base::EchoResults) -> capnp::Result<()> {
-        let mut call = self.child.echo_request();
-        call.get().set_value(p.get()?.get_value());
-        r.tail_call(call).await
+    fn echo(
+        self: Rc<Self>,
+        context: base::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let mut call = self.child.echo_request();
+            call.get().set_value(p.get()?.get_value());
+            r.tail_call(call).await
+        })
     }
 }
 impl service::Server for Service {
-    async fn open(
+    fn open(
         self: Rc<Self>,
-        _: service::OpenParams,
-        r: service::OpenResults,
-    ) -> capnp::Result<()> {
-        let mut reply = r.build();
-        reply.edit()?.set_cap(self.child.clone());
-        let gate = self.gate.borrow_mut().take();
-        if let Some(gate) = gate {
-            let published = reply.publish()?;
-            self.published.set(true);
-            if gate
-                .await
-                .map_err(|_| capnp::Error::failed("gate dropped".into()))?
-            {
-                published.finish()
+        context: service::OpenContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let mut reply = r.build();
+            reply.edit()?.set_cap(self.child.clone());
+            let gate = self.gate.borrow_mut().take();
+            if let Some(gate) = gate {
+                let published = reply.publish()?;
+                self.published.set(true);
+                if gate
+                    .await
+                    .map_err(|_| capnp::Error::failed("gate dropped".into()))?
+                {
+                    published.finish()
+                } else {
+                    Err(capnp::Error::failed("late parent failure".into()))
+                }
             } else {
-                Err(capnp::Error::failed("late parent failure".into()))
+                reply.finish()
             }
-        } else {
-            reply.finish()
-        }
+        })
     }
-    async fn forward(
+    fn forward(
         self: Rc<Self>,
-        p: service::ForwardParams,
-        r: service::ForwardResults,
-    ) -> capnp::Result<()> {
-        let p = p.get()?;
-        let mut request = p.get_cap()?.echo_request();
-        request.get().set_value(p.get_value());
-        r.tail_call(request).await
+        context: service::ForwardContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let p = p.get()?;
+            let mut request = p.get_cap()?.echo_request();
+            request.get().set_value(p.get_value());
+            r.tail_call(request).await
+        })
     }
-    async fn forward_cap(
+    fn forward_cap(
         self: Rc<Self>,
-        p: service::ForwardCapParams,
-        r: service::ForwardCapResults,
-    ) -> capnp::Result<()> {
-        r.tail_call(p.get()?.get_cap()?.open_request()).await
+        context: service::ForwardCapContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            r.tail_call(p.get()?.get_cap()?.open_request()).await
+        })
     }
-    async fn stream(self: Rc<Self>, _: service::StreamParams) -> capnp::Result<()> {
-        self.streams.set(self.streams.get() + 1);
-        Ok(())
+    fn stream(
+        self: Rc<Self>,
+        context: service::StreamContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.streams.set(self.streams.get() + 1);
+            Ok(())
+        })
     }
 }
 struct Drivers(Vec<tokio::task::JoinHandle<capnp::Result<()>>>);
@@ -155,34 +179,36 @@ async fn non_pipelined_calls_keep_pending_wakes_and_late_errors() {
         polls: Rc<Cell<usize>>,
     }
     impl base::Server for DelayedEcho {
-        async fn echo(
+        fn echo(
             self: Rc<Self>,
-            p: base::EchoParams,
-            r: base::EchoResults,
-        ) -> capnp::Result<()> {
-            // The first poll wakes itself, but still returns Pending. A later
-            // independent wake must reach the scheduled continuation as well.
-            futures::future::poll_fn(|cx| {
-                let n = self.polls.get();
-                self.polls.set(n + 1);
-                if n == 0 {
-                    cx.waker().wake_by_ref();
-                    std::task::Poll::Pending
-                } else {
-                    std::task::Poll::Ready(())
+            context: base::EchoContext<'_>,
+        ) -> capnp::capability::Promise<(), capnp::Error> {
+            let (p, r) = context.into_owned();
+            capnp::capability::Promise::from_future(async move {
+                // The first poll wakes itself, but still returns Pending. A later
+                // independent wake must reach the scheduled continuation as well.
+                futures::future::poll_fn(|cx| {
+                    let n = self.polls.get();
+                    self.polls.set(n + 1);
+                    if n == 0 {
+                        cx.waker().wake_by_ref();
+                        std::task::Poll::Pending
+                    } else {
+                        std::task::Poll::Ready(())
+                    }
+                })
+                .await;
+                let gate = self.gate.borrow_mut().take().unwrap();
+                if !gate
+                    .await
+                    .map_err(|_| capnp::Error::failed("gate dropped".into()))?
+                {
+                    return Err(capnp::Error::failed("late echo failure".into()));
                 }
-            })
-            .await;
-            let gate = self.gate.borrow_mut().take().unwrap();
-            if !gate
-                .await
-                .map_err(|_| capnp::Error::failed("gate dropped".into()))?
-            {
-                return Err(capnp::Error::failed("late echo failure".into()));
-            }
-            r.complete(|mut out| {
-                out.set_value(p.get()?.get_value());
-                Ok(())
+                r.complete(|mut out| {
+                    out.set_value(p.get()?.get_value());
+                    Ok(())
+                })
             })
         }
     }
@@ -338,12 +364,14 @@ async fn frozen_publication_runs_children_before_parent_and_preserves_late_error
 struct Proxy(service::Client);
 impl base::Server for Proxy {}
 impl service::Server for Proxy {
-    async fn open(
+    fn open(
         self: Rc<Self>,
-        _: service::OpenParams,
-        r: service::OpenResults,
-    ) -> capnp::Result<()> {
-        r.tail_call(self.0.open_request()).await
+        context: service::OpenContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, r) = context.into_owned();
+        capnp::capability::Promise::from_future(
+            async move { r.tail_call(self.0.open_request()).await },
+        )
     }
 }
 struct Factory(RefCell<Option<capnp::capability::Client>>);

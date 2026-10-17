@@ -23,27 +23,31 @@ struct Counted {
     calls: Rc<Cell<usize>>,
 }
 impl directory::Server for Counted {
-    async fn lookup(
+    fn lookup(
         self: Rc<Self>,
-        params: directory::LookupParams,
-        mut results: directory::LookupResults,
-    ) -> capnp::Result<()> {
-        self.calls.set(self.calls.get() + 1);
-        let mut call = self.reader.lookup_request();
-        call.get().set_host(params.get()?.get_host()?);
-        let response = call.send().promise.await?;
-        results.get().set_record(response.get()?.get_record()?)
+        context: directory::LookupContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.calls.set(self.calls.get() + 1);
+            let mut call = self.reader.lookup_request();
+            call.get().set_host(params.get()?.get_host()?);
+            let response = call.send().promise.await?;
+            results.get().set_record(response.get()?.get_record()?)
+        })
     }
-    async fn resolve(
+    fn resolve(
         self: Rc<Self>,
-        params: directory::ResolveParams,
-        mut results: directory::ResolveResults,
-    ) -> capnp::Result<()> {
-        self.calls.set(self.calls.get() + 1);
-        let mut call = self.reader.resolve_request();
-        call.get().set_name(params.get()?.get_name()?);
-        let response = call.send().promise.await?;
-        results.get().set_record(response.get()?.get_record()?)
+        context: directory::ResolveContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.calls.set(self.calls.get() + 1);
+            let mut call = self.reader.resolve_request();
+            call.get().set_name(params.get()?.get_name()?);
+            let response = call.send().promise.await?;
+            results.get().set_record(response.get()?.get_record()?)
+        })
     }
 }
 struct Control {
@@ -70,13 +74,15 @@ fn control(directory: &Directory, recipient: [u8; 32]) -> Control {
 }
 struct Echo;
 impl harness::Server for Echo {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        p: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        r.get().set_value(p.get()?.get_value());
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            r.get().set_value(p.get()?.get_value());
+            Ok(())
+        })
     }
 }
 async fn echo(cap: &harness::Client, value: u32) {

@@ -26,40 +26,44 @@ impl Drop for Running {
 }
 struct Service(Rc<RefCell<Control>>);
 impl harness::Server for Service {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        _: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        self.0.borrow_mut().echoes += 1;
-        r.get().set_value(7);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.0.borrow_mut().echoes += 1;
+            r.get().set_value(7);
+            Ok(())
+        })
     }
-    async fn pending(
+    fn pending(
         self: Rc<Self>,
-        p: harness::PendingParams,
-        r: harness::PendingResults,
-    ) -> capnp::Result<()> {
-        let _running = Running(self.0.clone());
-        self.0.borrow_mut().started += 1;
-        let mut r = if p.get()?.get_hold_context() {
-            self.0.borrow_mut().held = Some(r);
-            None
-        } else {
-            Some(r)
-        };
-        let receiver = self.0.borrow_mut().receiver.take().unwrap();
-        receiver
-            .await
-            .map_err(|_| capnp::Error::failed("gate failed".into()))?;
-        let mut results = r
-            .take()
-            .or_else(|| self.0.borrow_mut().held.take())
-            .unwrap();
-        let cap: harness::Client = capnp_rpc::new_client_from_rc(self.clone());
-        results.get().set_cap(cap);
-        self.0.borrow_mut().completed += 1;
-        Ok(())
+        context: harness::PendingContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let _running = Running(self.0.clone());
+            self.0.borrow_mut().started += 1;
+            let mut r = if p.get()?.get_hold_context() {
+                self.0.borrow_mut().held = Some(r);
+                None
+            } else {
+                Some(r)
+            };
+            let receiver = self.0.borrow_mut().receiver.take().unwrap();
+            receiver
+                .await
+                .map_err(|_| capnp::Error::failed("gate failed".into()))?;
+            let mut results = r
+                .take()
+                .or_else(|| self.0.borrow_mut().held.take())
+                .unwrap();
+            let cap: harness::Client = capnp_rpc::new_client_from_rc(self.clone());
+            results.get().set_cap(cap);
+            self.0.borrow_mut().completed += 1;
+            Ok(())
+        })
     }
 }
 async fn settle() {

@@ -34,9 +34,9 @@ impl capability::Server for Echo {
         self,
         _: u64,
         _: u16,
-        params: capability::Params<any_pointer::Owned>,
-        mut results: capability::Results<any_pointer::Owned>,
+        context: capability::CallContext<'_, any_pointer::Owned, any_pointer::Owned>,
     ) -> capability::DispatchCallResult {
+        let (params, mut results) = context.into_owned();
         self.0.set(self.0.get() + 1);
         capability::DispatchCallResult {
             promise: Promise::from(params.get().and_then(|params| results.get().set_as(params))),
@@ -84,12 +84,9 @@ impl capability::Server for Dispatch {
         self,
         interface: u64,
         method: u16,
-        params: capability::Params<any_pointer::Owned>,
-        results: capability::Results<any_pointer::Owned>,
+        context: capability::CallContext<'_, any_pointer::Owned, any_pointer::Owned>,
     ) -> capability::DispatchCallResult {
-        (*self.0)
-            .clone()
-            .dispatch_call(interface, method, params, results)
+        (*self.0).clone().dispatch_call(interface, method, context)
     }
 }
 

@@ -42,14 +42,14 @@
 //! // Rust server defining an implementation of Foo.
 //! struct FooImpl;
 //! impl foo::Server for FooImpl {
-//!     async fn identity(
+//!     fn identity(
 //!         self: Rc<Self>,
-//!         params: foo::IdentityParams,
-//!         mut results: foo::IdentityResults
-//!     ) -> Result<(), ::capnp::Error> {
-//!         let x = params.get()?.get_x();
-//!         results.get().set_y(x);
-//!         Ok(())
+//!         context: foo::IdentityContext<'_>,
+//!     ) -> capnp::capability::Promise<(), capnp::Error> {
+//!         context.complete(|params, mut results| {
+//!             results.set_y(params.get_x());
+//!             Ok(())
+//!         })
 //!     }
 //! }
 //! ```

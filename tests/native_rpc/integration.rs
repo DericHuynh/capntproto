@@ -217,21 +217,23 @@ struct DelayedFactory {
     cap: service::Client<Text>,
 }
 impl factory::Server for DelayedFactory {
-    async fn open(
+    fn open(
         self: Rc<Self>,
-        _: factory::OpenParams,
-        mut results: factory::OpenResults,
-    ) -> capnp::Result<()> {
-        self.started.set(true);
-        let gate = self.gate.borrow_mut().take().unwrap();
-        gate.await
-            .map_err(|_| capnp::Error::failed("gate gone".into()))?;
-        results
-            .get()
-            .init_inner()
-            .init_body()
-            .set_cap(self.cap.clone())?;
-        Ok(())
+        context: factory::OpenContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.started.set(true);
+            let gate = self.gate.borrow_mut().take().unwrap();
+            gate.await
+                .map_err(|_| capnp::Error::failed("gate gone".into()))?;
+            results
+                .get()
+                .init_inner()
+                .init_body()
+                .set_cap(self.cap.clone())?;
+            Ok(())
+        })
     }
 }
 struct Drivers(Vec<tokio::task::JoinHandle<capnp::Result<()>>>);

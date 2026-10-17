@@ -746,25 +746,29 @@ async fn two_party_rpc_retains_call_and_return_capabilities_across_buffer_reuse(
         gate: RefCell<Option<oneshot::Receiver<()>>>,
     }
     impl harness::Server for Service {
-        async fn echo(
+        fn echo(
             self: Rc<Self>,
-            p: harness::EchoParams,
-            mut r: harness::EchoResults,
-        ) -> capnp::Result<()> {
-            r.get().set_value(self.offset + p.get()?.get_value());
-            Ok(())
+            context: harness::EchoContext<'_>,
+        ) -> capnp::capability::Promise<(), capnp::Error> {
+            let (p, mut r) = context.into_owned();
+            capnp::capability::Promise::from_future(async move {
+                r.get().set_value(self.offset + p.get()?.get_value());
+                Ok(())
+            })
         }
-        async fn bounce(
+        fn bounce(
             self: Rc<Self>,
-            p: harness::BounceParams,
-            mut r: harness::BounceResults,
-        ) -> capnp::Result<()> {
-            let gate = self.gate.borrow_mut().take();
-            if let Some(gate) = gate {
-                gate.await.unwrap();
-            }
-            r.get().set_cap(p.get()?.get_cap()?);
-            Ok(())
+            context: harness::BounceContext<'_>,
+        ) -> capnp::capability::Promise<(), capnp::Error> {
+            let (p, mut r) = context.into_owned();
+            capnp::capability::Promise::from_future(async move {
+                let gate = self.gate.borrow_mut().take();
+                if let Some(gate) = gate {
+                    gate.await.unwrap();
+                }
+                r.get().set_cap(p.get()?.get_cap()?);
+                Ok(())
+            })
         }
     }
     tokio::task::LocalSet::new()
