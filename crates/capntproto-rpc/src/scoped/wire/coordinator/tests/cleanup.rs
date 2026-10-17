@@ -40,7 +40,7 @@ fn completed_pipeline_cleanup_and_successor_calls_survive_small_budgets_and_back
                             pipe.borrow_mut().blocked = false;
                         }
                         if poll < 8 {
-                            Waker::from(coordinator.wake.clone()).wake_by_ref();
+                            coordinator.notifications.waker().wake_by_ref();
                         }
                         coordinator
                             .poll_io_work::<(), _, _>(
@@ -57,7 +57,7 @@ fn completed_pipeline_cleanup_and_successor_calls_survive_small_budgets_and_back
                         if let Some(wake) = pipe.borrow_mut().write_wake.take() {
                             wake.wake();
                         }
-                        if coordinator.active == 0
+                        if coordinator.schedule.active == WorkSet::NONE
                             && queue.is_empty()
                             && coordinator.output.is_clean()
                             && coordinator.hooks.inbox.queue.borrow().is_empty()
@@ -149,7 +149,7 @@ fn completed_pipeline_cleanup_and_successor_calls_survive_small_budgets_and_back
                             if let Some(wake) = pipe.borrow_mut().write_wake.take() {
                                 wake.wake();
                             }
-                            if coordinator.active == 0
+                            if coordinator.schedule.active == WorkSet::NONE
                                 && queue.is_empty()
                                 && coordinator.output.is_clean()
                             {

@@ -1051,17 +1051,20 @@ impl<
         true
     }
     fn direct_publication_preserves_idle(&self) -> bool {
-        self.plain_return_preserves_idle()
+        self.preserves_idle(Activity::PlainPublication)
+    }
+    fn plain_return_preserves_idle(&self) -> bool {
+        self.preserves_idle(Activity::PlainReturn)
     }
     fn plain_call_preserves_idle(&self) -> bool {
-        self.plain_return_preserves_idle()
+        self.preserves_idle(Activity::PlainCall)
     }
     fn retirement_preserves_idle(&self) -> bool {
-        self.plain_return_preserves_idle()
+        self.preserves_idle(Activity::Retirement)
     }
     #[inline(always)]
-    fn plain_return_preserves_idle(&self) -> bool {
-        <TwoParty<'id, F> as Control<'p, 'id, 's, resources::Import, (), C, H, vat::Resources>>::plain_return_preserves_idle(&self.bootstrap)
+    fn preserves_idle(&self, activity: Activity) -> bool {
+        <TwoParty<'id, F> as Control<'p, 'id, 's, resources::Import, (), C, H, vat::Resources>>::preserves_idle(&self.bootstrap, activity)
             && self.pending.is_empty()
             && self.sent.is_empty()
             && self.local.is_empty()

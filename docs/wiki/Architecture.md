@@ -18,6 +18,81 @@ it also prepares admitted parameters for existing owned server hooks without
 replacing their result contexts. The default network runtime has not switched
 to that bridge.
 
+## Portable hosted execution boundaries
+
+The October 17 redesign starts from the measured `866610259cf5` runtime.
+Its dedicated campaign passes 11 of 16 latency targets. In the pipelined-read
+trace, portable and C++ already issue the same steady-state frame groups and
+byte counts, while portable client processing takes 33,143 ns p50 versus
+25,802 ns for C++ and 10,839 ns for legacy. The portable server is faster than
+C++ in that trace. Matching socket writes alone therefore cannot explain or
+close the remaining gap. These instrumented timings identify where to look;
+they are not acceptance measurements. See the
+[benchmark evidence](Quality-and-Benchmarks.md#portable-architecture-reset-october-17-2026).
+
+The architecture has three sources of optimization friction. The hosted bridge
+adapts owned hooks, portable graph references, invocation owners and response
+futures; each has distinct cancellation and lifetime obligations. The connection
+coordinator previously mixed six work lanes, frame admission, network policy,
+completion and physical flushing in one 2,184-line module. Finally, optimizations
+relied on numeric lane masks and separate policy booleans, making it difficult
+to establish which idle scans a transition could safely preserve. Allocation
+reductions in local response-sharing prototypes did not establish a general
+latency improvement. Those prototypes are preserved as evidence and are not
+part of this architectural baseline.
+
+The protocol remains in the allocation-free engine and wire crates. Hosted
+execution is divided inside `capntproto-rpc::scoped::wire::coordinator`:
+
+| Component | Responsibility and boundary |
+| --- | --- |
+| `scheduler` | Typed `Lane`/`WorkSet`, bounded round-robin selection, idle-scan cursor, coalesced notifications and executor-task registration. It imports no protocol tables, transport or application hooks. |
+| `control` | Bootstrap/network integration and the public `Activity` contract. `Control::preserves_idle(activity)` describes effects on pending policy work. Admission bypass and hook visibility retain separate contracts. |
+| `work` | Outgoing invocation, incoming worker, foreign-promise and maintenance adapters; preserves their existing budget charges and ownership transitions. It does not poll physical IO. |
+| `ingress` | Validated frame admission, Busy-frame retention, resource handoff and response delivery. |
+| `pump` | Arbitration between ready work and output capacity, batching, partial writes, flush completion and transport idle reporting. |
+| `lifecycle` | Public run methods, stop/abort polling, receive loop and terminal cleanup. |
+
+`Coordinator` composes these components in the existing generative scope. The
+split adds no background tasks, dynamic dispatch, locks, allocation sites or
+second protocol ledger. Public constructors, run methods and transport traits
+remain usable. Custom controls implementing the older per-activity methods keep
+their behavior through the default `preserves_idle` adapter; built-in controls
+implement the new contract directly. Controls with no optimization declarations
+retain conservative rescanning. A policy must notify its registered waker when
+independent work becomes ready, including reentrant destructor callbacks.
+
+Scheduling state and wake state are deliberately distinct. A ready bit means
+that a lane must be polled, not that progress is guaranteed. Pending certifies
+idle; Yield retains readiness and wakes the executor without invalidating other
+certificates. A new event prefers its lane only when the preceding scan is fully
+idle, preserving cleanup fairness during hot traffic. Notifications register
+the current executor before consuming the pending mask, and replace that
+registration when the task changes. Terminal teardown releases both notifier
+and cached parent-waker ownership. All 64 ready subsets and six starting lanes
+are checked against an independent rotated-order model.
+
+Ownership stays with its existing authority: the engine owns question/answer
+and capability ledgers, `Calls` and `Worker` own application execution, input
+retains ancillary resources until admission, and `io::Output` owns accepted
+send cursors through partial write and flush. A module boundary does not permit
+callbacks under table borrows, premature result recycling, duplicate resources,
+or treating local flush as peer acknowledgement. Existing lifecycle, early
+pipeline, retained-result, resource and backpressure tests cross these boundaries.
+The coverage gate compares the combined production components with the original
+coordinator floor, in addition to existing per-file and crate-group checks. Every
+extracted component must have instrumentation; test modules cannot dilute this
+comparison. The existing baseline and coverage tolerance are unchanged.
+
+Further optimization should target one boundary at a time. Measure admission to
+dispatch, dispatch to publication, and publication to physical write alongside
+the existing socket trace; account separately for hook synchronization and
+completion ownership. Collapse an owned-hook/graph conversion only after its
+authority, early-pipeline and cancellation roles are explicit. Keep optimized
+and general paths on the same scheduler and frame/output owners. The response
+ownership bridge itself has not been replaced in this change, and the new
+boundaries do not constitute a claim of 5% performance parity.
+
 ## Route ownership
 
 `transport::Identity` owns an immutable, construction-checked Ed25519 pair.

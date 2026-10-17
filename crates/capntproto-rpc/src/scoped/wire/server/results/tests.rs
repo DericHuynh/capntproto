@@ -1,6 +1,81 @@
 use super::*;
 
 #[test]
+fn pipeline_paths_preserve_early_precedence_and_retained_result_capabilities() {
+    #[derive(Clone)]
+    struct Early(Rc<RefCell<Vec<Vec<u16>>>>);
+    impl PipelineHook for Early {
+        fn add_ref(&self) -> Box<dyn PipelineHook> {
+            Box::new(self.clone())
+        }
+        fn get_pipelined_cap(&self, ops: &[PipelineOp]) -> Box<dyn ClientHook> {
+            self.0.borrow_mut().push(
+                ops.iter()
+                    .map(|op| match op {
+                        PipelineOp::GetPointerField(field) => *field,
+                        PipelineOp::Noop => panic!("normalized path has no no-op"),
+                    })
+                    .collect(),
+            );
+            crate::broken::new_cap(Error::failed("early result".into()))
+        }
+    }
+    for depth in [0, 1, 8, 9, 32] {
+        let fields = vec![0; depth];
+        let path = pipeline::Path::new(&fields);
+        let results = Results::new();
+        assert!(results.pipeline(path).is_none());
+        let mut hook = Hook {
+            results: results.clone(),
+            message: None,
+            caps: vec![],
+            executor: None,
+        };
+        let mut pointer = hook.get_with_size_hint(None).unwrap();
+        for _ in 0..depth {
+            pointer = pointer
+                .init_as::<rpc_capnp::payload::Builder<'_>>()
+                .get_content();
+        }
+        pointer.set_as_capability(crate::broken::new_cap(Error::failed("final result".into())));
+        drop(hook);
+        assert!(
+            results.pipeline(path).is_none(),
+            "returned builder still waits for execution"
+        );
+        results.0.complete(Ok(()));
+        let retained = results.pipeline(path).unwrap();
+        assert_eq!(retained.get_failure().unwrap().extra, "final result");
+        let invalid = vec![u16::MAX; depth + 1];
+        assert!(results
+            .pipeline(pipeline::Path::new(&invalid))
+            .unwrap()
+            .get_failure()
+            .is_some());
+        results.fail(Error::failed("method failed".into()));
+        assert_eq!(
+            results.pipeline(path).unwrap().get_failure().unwrap().extra,
+            "method failed"
+        );
+        let observed = Rc::new(RefCell::new(Vec::new()));
+        *results.0.pipeline.borrow_mut() = Some(Rc::new(Early(observed.clone())));
+        let early_fields: Vec<_> = (0..depth as u16).collect();
+        assert_eq!(
+            results
+                .pipeline(pipeline::Path::new(&early_fields))
+                .unwrap()
+                .get_failure()
+                .unwrap()
+                .extra,
+            "early result"
+        );
+        assert_eq!(*observed.borrow(), vec![early_fields]);
+        drop(results);
+        assert_eq!(retained.get_failure().unwrap().extra, "final result");
+    }
+}
+
+#[test]
 fn cached_results_clear_state_and_never_reuse_retained_owners() {
     let cache = Cache::default();
     let first = cache.acquire(None, None);

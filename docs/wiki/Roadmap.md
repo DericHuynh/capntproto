@@ -64,12 +64,18 @@ admission, cancellation, FIFO, partial-write and shutdown guarantees intact.
 Local experiments guide changes; closing this gap requires a fresh dedicated
 campaign with every applicable cell passing, not an empty-call result alone.
 
-The latest completed October 16 campaign at `a1b8d38a590f` passes 12 of 16 cells.
-Remote fanout, pipelined reads and 64 KiB, plus 64-KiB loopback, remain above the
-limit. Single-capability publication and shared receive-buffer experiments remain
-local diagnostics until a new dedicated campaign qualifies all sixteen cells.
-The shared-buffer candidate passes all four local loopback cells but only six
-of twelve local workflow cells; every miss remains in the evidence.
+The latest completed dedicated campaign at `866610259cf5` passes 11 of 16 cells:
+remote pipelined reads, callbacks and 64-KiB echo, plus empty and 64-byte loopback,
+remain above the limit. Earlier campaigns used different hosts and timing;
+their pass counts are historical observations rather than a progression score.
+
+On October 17 the active work shifted to the
+[portable hosted architecture](Architecture.md#portable-hosted-execution-boundaries).
+Typed scheduling, centralized notification ownership, an explicit control-activity
+contract and separated execution/IO/lifecycle modules establish boundaries for
+integration and further optimization. Unqualified response-sharing and worker
+experiments are archived separately. The 5% target remains open; architectural
+refactoring and local profiling do not replace a complete dedicated campaign.
 
 The first optimization slice indexes immediate reply owners beyond eight calls,
 checking the full question generation before delivery, and copies two-segment

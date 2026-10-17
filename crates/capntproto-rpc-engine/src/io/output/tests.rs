@@ -311,6 +311,7 @@ fn zero_progress_from_borrowed_and_shared_adapters_preserves_owners_until_abort(
     }
     struct ZeroWriter {
         mode: u8,
+        zero: bool,
         writes: usize,
         flushes: usize,
     }
@@ -336,20 +337,28 @@ fn zero_progress_from_borrowed_and_shared_adapters_preserves_owners_until_abort(
             bytes: &[u8],
             resource: Option<&Resource<'_>>,
         ) -> Poll<Result<usize, IoError<u8>>> {
+            let first = self.writes == 0;
             self.writes += 1;
             assert_eq!(
                 bytes,
-                if self.mode == 2 {
-                    b"a".as_slice()
-                } else {
-                    b"abc".as_slice()
+                match (self.mode, first) {
+                    (2, true) => b"a".as_slice(),
+                    (2, false) => b"bc".as_slice(),
+                    _ => b"abc".as_slice(),
                 }
             );
-            assert_eq!(resource.unwrap().0, 1);
-            Poll::Ready(Ok(0))
+            assert_eq!(resource.map(|resource| resource.0), first.then_some(1));
+            Poll::Ready(Ok(if self.zero { 0 } else { bytes.len() }))
         }
     }
-    for mode in 0..3 {
+    for (mode, zero) in [
+        (0, true),
+        (0, false),
+        (1, true),
+        (1, false),
+        (2, true),
+        (2, false),
+    ] {
         let source = Rc::new(Parts);
         let mut pool = messages::GrowingBuffers::new(1, 32, 32);
         messages::with_growing_messages(
@@ -382,26 +391,54 @@ fn zero_progress_from_borrowed_and_shared_adapters_preserves_owners_until_abort(
                 }
                 let mut writer = ZeroWriter {
                     mode,
+                    zero,
                     writes: 0,
                     flushes: 0,
                 };
                 let mut output = Output::new();
                 let mut cx = Context::from_waker(Waker::noop());
                 let budget = NonZeroUsize::new(1).unwrap();
-                assert_eq!(
-                    output.poll(&mut writer, &mut queue, messages, &mut cx, budget),
-                    Poll::Ready(Err(SendError::State(messages::Error::WriteZero)))
-                );
-                assert!(queue.is_failed() && output.is_clean());
-                assert_eq!(released.get(), 0);
-                assert!(!messages.can_reserve(1));
-                assert_eq!(
-                    output.poll(&mut writer, &mut queue, messages, &mut cx, budget),
-                    Poll::Ready(Err(SendError::State(messages::Error::QueueFailed)))
-                );
-                assert_eq!((writer.writes, writer.flushes), (1, 0));
-                assert!(queue.discard_one(messages).unwrap());
-                assert!(!queue.discard_one(messages).unwrap());
+                if zero {
+                    assert_eq!(
+                        output.poll(&mut writer, &mut queue, messages, &mut cx, budget),
+                        Poll::Ready(Err(SendError::State(messages::Error::WriteZero)))
+                    );
+                    assert!(queue.is_failed() && output.is_clean());
+                    assert_eq!(released.get(), 0);
+                    assert!(!messages.can_reserve(1));
+                    assert_eq!(
+                        output.poll(&mut writer, &mut queue, messages, &mut cx, budget),
+                        Poll::Ready(Err(SendError::State(messages::Error::QueueFailed)))
+                    );
+                    assert_eq!((writer.writes, writer.flushes), (1, 0));
+                    assert!(queue.discard_one(messages).unwrap());
+                    assert!(!queue.discard_one(messages).unwrap());
+                } else {
+                    let result = output.poll(&mut writer, &mut queue, messages, &mut cx, budget);
+                    if mode == 2 {
+                        // The default owning adapter borrows one part at a time.
+                        // A positive prefix flushes but retains the frame and
+                        // its resource until the remaining bytes are accepted.
+                        assert_eq!(result, Poll::Pending);
+                        assert_eq!(released.get(), 0);
+                        assert!(!messages.can_reserve(1));
+                        assert_eq!((writer.writes, writer.flushes), (1, 1));
+                        assert_eq!(
+                            output.poll(&mut writer, &mut queue, messages, &mut cx, budget),
+                            Poll::Ready(Ok(()))
+                        );
+                    } else {
+                        assert_eq!(result, Poll::Ready(Ok(())));
+                    }
+                    assert!(queue.is_empty() && output.is_clean());
+                    let expected = if mode == 2 { 2 } else { 1 };
+                    assert_eq!((writer.writes, writer.flushes), (expected, expected));
+                    assert_eq!(
+                        output.poll(&mut writer, &mut queue, messages, &mut cx, budget),
+                        Poll::Ready(Ok(()))
+                    );
+                    assert_eq!((writer.writes, writer.flushes), (expected, expected));
+                }
                 assert_eq!(released.get(), 1);
                 assert!(messages.can_reserve(1));
             },

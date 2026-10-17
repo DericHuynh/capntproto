@@ -484,9 +484,9 @@ fn hook_collection_reactivates_already_idle_maintenance() {
         drop(client);
         // Reproduce a rotation where maintenance went idle before hook
         // collection observes the final application owner disappearing.
-        coordinator.active = 1;
-        coordinator.cursor = 0;
-        coordinator.wake.changed.store(0, Ordering::Release);
+        coordinator.schedule.active = WorkSet::FOREIGN;
+        coordinator.schedule.cursor = Lane::Foreign;
+        coordinator.notifications.take(cx.waker());
         for _ in 0..256 {
             let result =
                 coordinator.poll_work(messages, &mut queue, &mut scratch, &NoResources, &mut cx);
@@ -497,7 +497,8 @@ fn hook_collection_reactivates_already_idle_maintenance() {
                 break;
             }
             assert_ne!(
-                coordinator.active, 0,
+                coordinator.schedule.active,
+                WorkSet::NONE,
                 "retired import must keep cleanup runnable"
             );
         }
@@ -571,7 +572,10 @@ fn published_direct_call_sleeps_until_cancellation_or_new_admission() {
                 Poll::Ready(Ok(()))
             ));
             assert_eq!(queue.len(), 1);
-            assert_eq!(coordinator.active & (1 << 2), 0);
+            assert_eq!(
+                coordinator.schedule.active & (WorkSet::CALLS),
+                WorkSet::NONE
+            );
             {
                 let window = queue.window(messages).unwrap().unwrap();
                 let size = window.bytes().len();
@@ -583,20 +587,20 @@ fn published_direct_call_sleeps_until_cancellation_or_new_admission() {
                 {
                     result.unwrap();
                 }
-                if coordinator.active == 0 {
+                if coordinator.schedule.active == WorkSet::NONE {
                     break;
                 }
             }
-            assert_eq!(coordinator.active, 0);
+            assert_eq!(coordinator.schedule.active, WorkSet::NONE);
             assert!(queue.is_empty());
-            assert_eq!(coordinator.wake.changed.load(Ordering::Acquire), 0);
+            assert_eq!(coordinator.notifications.pending(), WorkSet::NONE);
             let second = if cancel {
                 drop(request.take());
                 None
             } else {
                 Some(call())
             };
-            assert_ne!(coordinator.wake.changed.load(Ordering::Acquire), 0);
+            assert_ne!(coordinator.notifications.pending(), WorkSet::NONE);
             for _ in 0..256 {
                 if let Poll::Ready(result) =
                     coordinator.poll_work(messages, &mut queue, &mut scratch, &NoResources, &mut cx)
@@ -709,14 +713,14 @@ fn empty_application_lanes_need_no_output_slot_but_ready_calls_do() {
         // The other lanes have certified idle. Empty application/command
         // lanes cannot publish, so output backpressure must not hide their
         // idle certificates or turn an empty poll into a capacity failure.
-        coordinator.active = (1 << 2) | (1 << 3) | (1 << 5);
+        coordinator.schedule.active = (WorkSet::CALLS) | (WorkSet::WORKER) | (WorkSet::COMMANDS);
         let mut queue = messages::Queue::new_growing(0, 0).unwrap();
         let mut scratch = [0; 32];
         let mut cx = Context::from_waker(Waker::noop());
         assert!(coordinator
             .poll_work(messages, &mut queue, &mut scratch, &NoResources, &mut cx,)
             .is_pending());
-        assert_eq!(coordinator.active, 0);
+        assert_eq!(coordinator.schedule.active, WorkSet::NONE);
         let request = client
             .new_call::<any_pointer::Owned, any_pointer::Owned>(7, 0, None)
             .send();
@@ -1372,19 +1376,23 @@ fn foreign_resolution_invalidates_an_idle_lane_during_an_unfinished_scan() {
             {
                 result.unwrap();
             }
-            if coordinator.active & 1 == 0
-                && coordinator.active != 0
+            if coordinator.schedule.active & WorkSet::FOREIGN == WorkSet::NONE
+                && coordinator.schedule.active != WorkSet::NONE
                 && ready.wake.borrow().is_some()
             {
                 break;
             }
         }
         assert_eq!(
-            coordinator.active & 1,
-            0,
+            coordinator.schedule.active & WorkSet::FOREIGN,
+            WorkSet::NONE,
             "promise lane completed its pending scan"
         );
-        assert_ne!(coordinator.active, 0, "other lanes are still scanning");
+        assert_ne!(
+            coordinator.schedule.active,
+            WorkSet::NONE,
+            "other lanes are still scanning"
+        );
         ready.stop();
         if let Poll::Ready(result) =
             coordinator.poll_work(messages, &mut queue, &mut scratch, &NoResources, &mut cx)
@@ -1392,8 +1400,8 @@ fn foreign_resolution_invalidates_an_idle_lane_during_an_unfinished_scan() {
             result.unwrap();
         }
         assert_ne!(
-            coordinator.active & 1,
-            0,
+            coordinator.schedule.active & WorkSet::FOREIGN,
+            WorkSet::NONE,
             "application wake invalidates the idle certificate immediately"
         );
         let mut completed = false;
@@ -1836,49 +1844,4 @@ fn newly_published_output_cannot_report_idle_before_physical_flush() {
         assert_eq!(control.idle_transitions, [false, true]);
         reclaimed(messages);
     });
-}
-
-#[test]
-fn outgoing_notification_coalesces_without_losing_general_work() {
-    use std::sync::atomic::AtomicUsize;
-    struct Count(AtomicUsize);
-    impl std::task::Wake for Count {
-        fn wake(self: Arc<Self>) {
-            self.0.fetch_add(1, Ordering::SeqCst);
-        }
-    }
-    let state = Arc::<WorkWake>::default();
-    let outgoing = EnqueueWake(state.clone());
-    let general = Waker::from(state.clone());
-    let first = Arc::new(Count(AtomicUsize::new(0)));
-    let second = Arc::new(Count(AtomicUsize::new(0)));
-    for outgoing_first in [true, false] {
-        state.parent.register(&Waker::from(first.clone()));
-        state.changed.store(0, Ordering::Release);
-        let before = first.0.load(Ordering::SeqCst);
-        if outgoing_first {
-            outgoing.notify();
-        } else {
-            general.wake_by_ref();
-        }
-        assert_eq!(
-            state.changed.load(Ordering::Acquire),
-            if outgoing_first { 4 } else { 0x3f }
-        );
-        if outgoing_first {
-            general.wake_by_ref();
-        } else {
-            outgoing.notify();
-        }
-        assert_eq!(state.changed.load(Ordering::Acquire), 0x3f);
-        assert_eq!(first.0.load(Ordering::SeqCst), before + 1);
-        // The consumer registers before consuming the pending mask. A later
-        // outgoing-only notification must reach the new task, not the old one.
-        state.parent.register(&Waker::from(second.clone()));
-        assert_eq!(state.changed.swap(0, Ordering::AcqRel), 0x3f);
-        outgoing.notify();
-        assert_eq!(state.changed.load(Ordering::Acquire), 4);
-        assert_eq!(first.0.load(Ordering::SeqCst), before + 1);
-    }
-    assert_eq!(second.0.load(Ordering::SeqCst), 2);
 }

@@ -145,7 +145,7 @@ fn large_server_reply_retains_the_application_payload_until_flush() {
                 let mut reader = BufferedInput;
                 let mut stop = std::pin::pin!(std::future::pending());
                 let mut cx = Context::from_waker(Waker::noop());
-                let wake = Waker::from(coordinator.wake.clone());
+                let wake = coordinator.notifications.waker();
                 for _ in 0..4096 {
                     if let Poll::Ready(result) = coordinator.poll_prepared(
                         messages,
@@ -164,7 +164,7 @@ fn large_server_reply_retains_the_application_payload_until_flush() {
                         result.unwrap();
                     }
                     if pending.is_none()
-                        && coordinator.active == 0
+                        && coordinator.schedule.active == WorkSet::NONE
                         && coordinator.worker.is_empty()
                         && queue.is_empty()
                         && coordinator.output.is_clean()
@@ -342,7 +342,9 @@ fn large_generated_request_retains_its_payload_through_output_pressure() {
                             &mut cx,
                         )
                         .unwrap();
-                    if coordinator.active == 0 && queue.is_empty() && coordinator.output.is_clean()
+                    if coordinator.schedule.active == WorkSet::NONE
+                        && queue.is_empty()
+                        && coordinator.output.is_clean()
                     {
                         break;
                     }
@@ -502,7 +504,7 @@ fn plain_reply_to_an_opaque_sink_preserves_errors_owners_and_reentrant_work() {
                 {
                     result.unwrap();
                 }
-                if coordinator.active == 0 && !queue.is_empty() {
+                if coordinator.schedule.active == WorkSet::NONE && !queue.is_empty() {
                     break;
                 }
             }
@@ -555,7 +557,7 @@ fn plain_reply_to_an_opaque_sink_preserves_errors_owners_and_reentrant_work() {
             coordinator.delivered_plain::<NoResources>(index, message, &control);
             assert_eq!(calls.get(), 1);
             assert_eq!(coordinator.hooks.inbox.queue.borrow().len(), 1);
-            assert_ne!(coordinator.wake.changed.load(Ordering::Acquire), 0);
+            assert_ne!(coordinator.notifications.pending(), WorkSet::NONE);
             let result = futures::executor::block_on(completion);
             if reject {
                 assert_eq!(result.unwrap_err().extra, "opaque result rejection");
@@ -693,7 +695,7 @@ fn outgoing_bursts_flush_under_pool_pressure_and_pending_receipts() {
                                 &mut cx,
                             )
                             .unwrap();
-                        if coordinator.active == 0
+                        if coordinator.schedule.active == WorkSet::NONE
                             && queue.is_empty()
                             && coordinator.output.is_clean()
                         {
@@ -874,7 +876,7 @@ fn buffered_server_bursts_flush_at_budget_end_and_when_input_runs_out() {
                 let mut pending = None;
                 let mut pump = Pump::default();
                 let mut cx = Context::from_waker(Waker::noop());
-                let application_waker = Waker::from(coordinator.wake.clone());
+                let application_waker = coordinator.notifications.waker();
                 let mut stop = std::pin::pin!(std::future::pending());
                 // Certify idle before the first arrival, just as a live server
                 // waiting for its next peer burst does.
@@ -890,7 +892,7 @@ fn buffered_server_bursts_flush_at_budget_end_and_when_input_runs_out() {
                             &mut cx,
                         )
                         .unwrap();
-                    if coordinator.active == 0 {
+                    if coordinator.schedule.active == WorkSet::NONE {
                         break;
                     }
                 }
@@ -963,7 +965,7 @@ fn buffered_server_bursts_flush_at_budget_end_and_when_input_runs_out() {
                     if reader.frames.is_empty()
                         && pending.is_none()
                         && queue.is_empty()
-                        && coordinator.active == 0
+                        && coordinator.schedule.active == WorkSet::NONE
                         && coordinator.output.is_clean()
                     {
                         break;
@@ -1048,7 +1050,7 @@ fn buffered_server_bursts_flush_at_budget_end_and_when_input_runs_out() {
                     }
                     if reader.frames.is_empty()
                         && pending.is_none()
-                        && coordinator.active == 0
+                        && coordinator.schedule.active == WorkSet::NONE
                         && queue.is_empty()
                         && coordinator.output.is_clean()
                     {
@@ -1111,7 +1113,7 @@ fn buffered_reply_batches_respect_frame_budget_and_stop_between_frames() {
                         ..Default::default()
                     };
                     let mut cx = Context::from_waker(Waker::noop());
-                    let application_waker = Waker::from(coordinator.wake.clone());
+                    let application_waker = coordinator.notifications.waker();
                     let mut scratch = [0; 32];
                     let mut sent = Vec::new();
                     for _ in 0..4096 {
@@ -1130,7 +1132,7 @@ fn buffered_reply_batches_respect_frame_budget_and_stop_between_frames() {
                         if let Some(wake) = pipe.borrow_mut().write_wake.take() {
                             wake.wake();
                         }
-                        if coordinator.active == 0
+                        if coordinator.schedule.active == WorkSet::NONE
                             && queue.is_empty()
                             && coordinator.output.is_clean()
                         {
@@ -1180,7 +1182,7 @@ fn buffered_reply_batches_respect_frame_budget_and_stop_between_frames() {
                             // A reply that only retires its own question preserves
                             // idle scans, but an independent control wake still
                             // invalidates that certificate before the next frame.
-                            assert_eq!(coordinator.active, 0);
+                            assert_eq!(coordinator.schedule.active, WorkSet::NONE);
                             control.wake.as_ref().unwrap().wake_by_ref();
                         }
                         let result = coordinator.poll_prepared(
@@ -1304,7 +1306,7 @@ fn capability_replies_rescan_controls_and_flush_under_small_budgets() {
             let mut scratch = [0; 32];
             let mut stop = std::pin::pin!(std::future::pending());
             let mut cx = Context::from_waker(Waker::noop());
-            let wake = Waker::from(coordinator.wake.clone());
+            let wake = coordinator.notifications.waker();
             macro_rules! poll {
                 () => {
                     if let Poll::Ready(result) = coordinator.poll_prepared(
@@ -1327,11 +1329,11 @@ fn capability_replies_rescan_controls_and_flush_under_small_budgets() {
             }
             for _ in 0..4096 {
                 poll!();
-                if coordinator.active == 0 && coordinator.control_idle {
+                if coordinator.schedule.active == WorkSet::NONE && coordinator.control_idle {
                     break;
                 }
             }
-            assert!(coordinator.active == 0 && coordinator.control_idle);
+            assert!(coordinator.schedule.active == WorkSet::NONE && coordinator.control_idle);
             let before = control.polls;
             pending = Some(
                 Frame::build(messages, 512, opts.reader, |builder| {
@@ -1362,7 +1364,7 @@ fn capability_replies_rescan_controls_and_flush_under_small_budgets() {
                 received.extend(pipe.borrow_mut().bytes.drain(..));
                 if step >= 4
                     && pending.is_none()
-                    && coordinator.active == 0
+                    && coordinator.schedule.active == WorkSet::NONE
                     && coordinator.output.is_clean()
                     && coordinator.control_idle
                 {
@@ -1448,7 +1450,7 @@ fn plain_calls_preserve_control_wakes_fairness_and_output_backpressure() {
                 let waker = Waker::from(wake.clone());
                 let mut cx = Context::from_waker(&waker);
                 let mut stop = std::pin::pin!(std::future::pending());
-                let application_waker = Waker::from(coordinator.wake.clone());
+                let application_waker = coordinator.notifications.waker();
                 macro_rules! poll {
                     () => {
                         if let Poll::Ready(outcome) = coordinator.poll_prepared(
@@ -1471,11 +1473,11 @@ fn plain_calls_preserve_control_wakes_fairness_and_output_backpressure() {
                 }
                 for _ in 0..4096 {
                     poll!();
-                    if coordinator.active == 0 && coordinator.control_idle {
+                    if coordinator.schedule.active == WorkSet::NONE && coordinator.control_idle {
                         break;
                     }
                 }
-                assert_eq!(coordinator.active, 0);
+                assert_eq!(coordinator.schedule.active, WorkSet::NONE);
                 assert!(coordinator.control_idle);
                 let mut payload = capnp::message::Builder::new_default();
                 payload.set_root("plain result").unwrap();
@@ -1496,14 +1498,14 @@ fn plain_calls_preserve_control_wakes_fairness_and_output_backpressure() {
                         );
                         for _ in 0..4096 {
                             poll!();
-                            if coordinator.active == 0
+                            if coordinator.schedule.active == WorkSet::NONE
                                 && coordinator.output.is_clean()
                                 && queue.is_empty()
                             {
                                 break;
                             }
                         }
-                        assert_eq!(coordinator.active, 0);
+                        assert_eq!(coordinator.schedule.active, WorkSet::NONE);
                         assert!(!coordinator.calls.is_empty());
                         let bytes: Vec<_> = output.borrow_mut().bytes.drain(..).collect();
                         let mut source = bytes.as_slice();
@@ -1586,7 +1588,7 @@ fn plain_calls_preserve_control_wakes_fairness_and_output_backpressure() {
                         poll!();
                         received.extend(output.borrow_mut().bytes.drain(..));
                         if pending.is_none()
-                            && coordinator.active == 0
+                            && coordinator.schedule.active == WorkSet::NONE
                             && coordinator.output.is_clean()
                         {
                             break;
@@ -1710,16 +1712,16 @@ fn general_notification_refreshes_late_metadata_before_enqueue_only_admission() 
                 {
                     result.unwrap();
                 }
-                if coordinator.active == 0 {
+                if coordinator.schedule.active == WorkSet::NONE {
                     break;
                 }
             }
-            assert_eq!(coordinator.active, 0);
+            assert_eq!(coordinator.schedule.active, WorkSet::NONE);
             assert!(client.hook.get_fd().is_none());
             let previous = output.queries.get();
             let fd = Rc::new(OwnedFd::from(std::fs::File::open("/dev/null").unwrap()));
             *output.fd.borrow_mut() = Some(fd.clone());
-            let wake = Waker::from(coordinator.wake.clone());
+            let wake = coordinator.notifications.waker();
             if notify_first {
                 wake.wake_by_ref();
             }

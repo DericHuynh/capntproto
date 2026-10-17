@@ -110,8 +110,12 @@ and optional transport/storage dependencies. Production code must not depend on
 Runtime module ownership is described in [Architecture](Architecture.md).
 The [planned portability boundaries](Architecture.md#planned-portability-boundaries)
 describe the allocation-free RPC engine used by caller-supplied adapters and the
-existing hosted defaults. Streaming credit is extracted; the remaining migration
-is not yet implemented. `verification/portable` independently links an ARM fixture
+existing hosted defaults. The engine and wire crates implement caller-backed
+protocol ownership; the opt-in hosted bridge adapts owned clients and servers.
+Its [execution components](Architecture.md#portable-hosted-execution-boundaries)
+separate scheduling, policy, application work, admission, IO and lifecycle inside
+the existing RPC crate. The default runtime has not switched to that bridge.
+`verification/portable` independently links an ARM fixture
 without a global allocator so hosted feature unification cannot mask dependencies.
 The textual schema compiler lives alongside the other owned crates. It depends on the core wire runtime, not the RPC/Native/storage runtime or
 verification helpers. `crates/capntproto-codegen` owns Rust generation from compiled requests;

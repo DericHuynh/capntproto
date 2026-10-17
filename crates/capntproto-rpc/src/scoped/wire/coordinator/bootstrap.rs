@@ -46,6 +46,11 @@ where
     fn accepts_direct_plain_return(&self) -> bool {
         true
     }
+    fn preserves_idle(&self, _activity: Activity) -> bool {
+        self.pending.is_empty()
+    }
+    // Preserve direct callers of the original public trait methods as well as
+    // custom implementations using Control's compatibility adapter.
     fn direct_publication_preserves_idle(&self) -> bool {
         self.pending.is_empty()
     }

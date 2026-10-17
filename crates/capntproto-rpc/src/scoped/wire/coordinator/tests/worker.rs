@@ -101,7 +101,8 @@ fn resumed_plain_results_release_parameter_grants_without_another_input() {
                 {
                     result.unwrap();
                 }
-                if coordinator.active == 0 && coordinator.wake.changed.load(Ordering::Acquire) == 0
+                if coordinator.schedule.active == WorkSet::NONE
+                    && coordinator.notifications.pending() == WorkSet::NONE
                 {
                     break;
                 }
@@ -157,7 +158,7 @@ fn resumed_plain_results_release_parameter_grants_without_another_input() {
                     // Completion of blocked FIFO output wakes every blocked lane.
                     coordinator.changed();
                 }
-                if replies == 1 && releases == 1 && coordinator.active == 0 {
+                if replies == 1 && releases == 1 && coordinator.schedule.active == WorkSet::NONE {
                     break;
                 }
             }
@@ -251,17 +252,18 @@ fn pending_worker_wake_dispatches_early_pipeline_before_parent_completes() {
                 {
                     result.unwrap();
                 }
-                if coordinator.active == 0 && coordinator.wake.changed.load(Ordering::Acquire) == 0
+                if coordinator.schedule.active == WorkSet::NONE
+                    && coordinator.notifications.pending() == WorkSet::NONE
                 {
                     break;
                 }
             }
-            assert_eq!(coordinator.active, 0);
+            assert_eq!(coordinator.schedule.active, WorkSet::NONE);
             assert!(queue.is_empty());
             let wakes = parent.0.load(Ordering::SeqCst);
             early.send(()).unwrap();
             assert!(parent.0.load(Ordering::SeqCst) > wakes);
-            assert_ne!(coordinator.wake.changed.load(Ordering::Acquire), 0);
+            assert_ne!(coordinator.notifications.pending(), WorkSet::NONE);
             for _ in 0..1024 {
                 if let Poll::Ready(result) =
                     coordinator.poll_work(messages, &mut queue, &mut scratch, &NoResources, &mut cx)
