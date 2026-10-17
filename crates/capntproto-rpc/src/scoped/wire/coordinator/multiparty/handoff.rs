@@ -230,7 +230,7 @@ impl<
                         used: Cell::new(false),
                         adopted: RefCell::default(),
                         cached: RefCell::default(),
-                        _credit: None,
+                        _credit: Cell::new(None),
                         waiting: RefCell::default(),
                         finished: RefCell::default(),
                         inbox: Rc::downgrade(&coordinator.hooks.inbox),
@@ -240,7 +240,7 @@ impl<
                         response: Promise::from_future(async move {
                             receiver.await.map_err(|_| closed())?
                         }),
-                        pipeline: Box::new(WirePipeline(PipelineRef(Some(pipeline.clone())))),
+                        pipeline: Box::new(WirePipeline(PipelineRef(Some(pipeline.clone()), None))),
                     };
                     match coordinator
                         .driver
@@ -304,7 +304,7 @@ pub(super) fn project<'p, 'id, const C: usize, const H: usize>(
                 result.map(|cap| cap.hook)
             });
         if let Ok(hook) = &result {
-            pipeline.remember(fields, &**hook)?;
+            pipeline.remember(projection.path, &**hook)?;
         }
         crate::queued::ClientInner::resolve(&client, result);
     }

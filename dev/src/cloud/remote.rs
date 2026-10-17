@@ -2,6 +2,8 @@
 use super::*;
 use std::{fs, net::Ipv4Addr};
 mod report;
+mod timing;
+mod trace;
 
 fn workflow_run_id(configured: Option<String>) -> String {
     configured.unwrap_or_else(|| std::process::id().to_string())
@@ -39,6 +41,26 @@ fn addresses(d: &Value) -> Result<(Ipv4Addr, Ipv4Addr, String)> {
         "invalid VPC identity"
     );
     Ok((public, private, vpc.to_owned()))
+}
+fn ready_addresses(d: &Value) -> Result<Option<(Ipv4Addr, Ipv4Addr, String)>> {
+    // The provider can publish `active` before assigning both network addresses.
+    // Keep polling incomplete metadata, but still reject populated invalid data.
+    let populated = |value: &Value| !value.is_null() && value.as_str() != Some("");
+    let has_address = |kind| {
+        d["networks"]["v4"].as_array().is_some_and(|networks| {
+            networks
+                .iter()
+                .any(|n| n["type"] == kind && populated(&n["ip_address"]))
+        })
+    };
+    if d["status"] != "active"
+        || !has_address("public")
+        || !has_address("private")
+        || !populated(&d["vpc_uuid"])
+    {
+        return Ok(None);
+    }
+    addresses(d).map(Some)
 }
 fn provision(
     api: &impl Api,
@@ -109,8 +131,8 @@ fn provision(
         let d = api
             .request("GET", &format!("/droplets/{id}"), None)?
             .context("droplet disappeared")?;
-        if d["droplet"]["status"] == "active" {
-            break addresses(&d["droplet"])?;
+        if let Some(addresses) = ready_addresses(&d["droplet"])? {
+            break addresses;
         }
         pause(cancel)?;
     };
@@ -281,6 +303,7 @@ pub(super) fn cleanup_receipt(api: &impl Api, receipt: &Value, owner: &str) -> R
     ensure!(errors.is_empty(), "{}", errors.join("; "));
     Ok(())
 }
+#[allow(clippy::too_many_arguments)]
 pub(super) fn run(
     api: &impl Api,
     bundle: &Path,
@@ -289,6 +312,7 @@ pub(super) fn run(
     owner: &str,
     cancel: &Cancellation,
     commands: &impl Commands,
+    trace_io: bool,
 ) -> Result<()> {
     let manifest = crate::read_json(bundle.join("manifest.json"))?;
     for name in [
@@ -419,6 +443,43 @@ pub(super) fn run(
                 cancel,
             )?;
         }
+        commands.ssh(&client.options, &client.public.to_string(),
+            "bash -o pipefail -c 'timeout --kill-after=10s 10m /root/bench/driver compare-portable /root/bench /root/results/portable-loopback 2>&1 | tee /root/results/portable-loopback.log'", 620, cancel)?;
+        fs::create_dir_all(output.join("portable-loopback"))?;
+        for file in [
+            "portable-loopback/trials.json",
+            "portable-loopback/environment.json",
+            "portable-loopback/summary.json",
+            "portable-loopback/README.md",
+            "portable-loopback.log",
+        ] {
+            commands.download(
+                &client.options,
+                &client.public.to_string(),
+                output,
+                file,
+                120,
+                cancel,
+            )?;
+        }
+        if trace_io {
+            // Tracing changes scheduling. Run it only after every untraced
+            // timing and instruction control has been saved independently.
+            trace::run(
+                commands,
+                server,
+                client,
+                &output.join("diagnostics"),
+                cancel,
+            )?;
+            timing::run(
+                commands,
+                server,
+                client,
+                &output.join("socket-timing"),
+                cancel,
+            )?;
+        }
         Ok(())
     })();
     if result.is_err() {
@@ -433,6 +494,27 @@ pub(super) fn run(
             );
             if let Err(error) = retrieve(commands, host, &remote.join(role), &salvage) {
                 eprintln!("Could not salvage {role} artifacts: {error}");
+            }
+            if role == "client" {
+                let _ = fs::create_dir_all(output.join("portable-loopback"));
+                for file in [
+                    "portable-loopback.log",
+                    "portable-loopback/environment.json",
+                    "portable-loopback/trials.json",
+                    "portable-loopback/summary.json",
+                    "portable-loopback/README.md",
+                ] {
+                    if let Err(error) = commands.download(
+                        &host.options,
+                        &host.public.to_string(),
+                        output,
+                        file,
+                        120,
+                        &salvage,
+                    ) {
+                        eprintln!("Could not salvage {file}: {error}");
+                    }
+                }
             }
         }
     }

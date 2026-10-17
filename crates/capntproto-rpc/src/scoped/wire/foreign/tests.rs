@@ -19,9 +19,9 @@ impl capability::Server for Service {
         self,
         _: u64,
         _: u16,
-        _: capability::Params<any_pointer::Owned>,
-        _: capability::Results<any_pointer::Owned>,
+        context: capability::CallContext<'_, any_pointer::Owned, any_pointer::Owned>,
     ) -> capability::DispatchCallResult {
+        let (_, _) = context.into_owned();
         capability::DispatchCallResult {
             promise: Promise::ok(()),
             is_streaming: false,

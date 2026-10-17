@@ -33,13 +33,15 @@ impl Drop for Echo {
     }
 }
 impl harness::Server for Echo {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        _: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        r.get().set_value(self.0);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            r.get().set_value(self.0);
+            Ok(())
+        })
     }
 }
 fn result_type() -> capnp::introspect::Type {
@@ -104,41 +106,43 @@ struct Construct {
     fail: bool,
 }
 impl harness::Server for Construct {
-    async fn pending(
+    fn pending(
         self: Rc<Self>,
-        _: harness::PendingParams,
-        mut results: harness::PendingResults,
-    ) -> capnp::Result<()> {
-        {
-            let (mut root, token) = results.get_orphanage(self.hint)?;
-            assert!(root.is_null()); // No throwaway result struct before adoption.
-            let orphan = new_orphan(&mut root, &token, 73, &self.live);
-            root.adopt(orphan).unwrap();
-            let original = root_cap(&root).unwrap().as_client_hook().get_ptr();
-            let orphan = root.disown(&token)?;
-            assert!(root.is_null());
-            root.adopt(orphan).unwrap();
-            assert_eq!(
-                root_cap(&root).unwrap().as_client_hook().get_ptr(),
-                original
-            );
-        }
-        assert_eq!(self.live.get(), 1);
-        // Later allocation hints do not replace the arena or invalidate caps.
-        results.get_with_size_hint(Some(MessageSize {
-            word_count: 1,
-            cap_count: 0,
-        }));
-        results.set_pipeline()?;
-        assert!(results.set_pipeline().is_err());
-        self.ready.set(true);
-        let gate = self.gate.borrow_mut().take().unwrap();
-        gate.await.map_err(|_| Error::failed("gate lost".into()))?;
-        if self.fail {
-            Err(Error::failed("late error".into()))
-        } else {
-            Ok(())
-        }
+        context: harness::PendingContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            {
+                let (mut root, token) = results.get_orphanage(self.hint)?;
+                assert!(root.is_null()); // No throwaway result struct before adoption.
+                let orphan = new_orphan(&mut root, &token, 73, &self.live);
+                root.adopt(orphan).unwrap();
+                let original = root_cap(&root).unwrap().as_client_hook().get_ptr();
+                let orphan = root.disown(&token)?;
+                assert!(root.is_null());
+                root.adopt(orphan).unwrap();
+                assert_eq!(
+                    root_cap(&root).unwrap().as_client_hook().get_ptr(),
+                    original
+                );
+            }
+            assert_eq!(self.live.get(), 1);
+            // Later allocation hints do not replace the arena or invalidate caps.
+            results.get_with_size_hint(Some(MessageSize {
+                word_count: 1,
+                cap_count: 0,
+            }));
+            results.set_pipeline()?;
+            assert!(results.set_pipeline().is_err());
+            self.ready.set(true);
+            let gate = self.gate.borrow_mut().take().unwrap();
+            gate.await.map_err(|_| Error::failed("gate lost".into()))?;
+            if self.fail {
+                Err(Error::failed("late error".into()))
+            } else {
+                Ok(())
+            }
+        })
     }
 }
 struct Drivers(Vec<tokio::task::JoinHandle<capnp::Result<()>>>);
@@ -326,24 +330,26 @@ async fn result_adoption_keeps_capabilities_through_pipeline_return_errors_and_m
 async fn init_replaces_results_and_releases_old_capability() {
     struct Reset(Rc<Cell<u32>>);
     impl harness::Server for Reset {
-        async fn pending(
+        fn pending(
             self: Rc<Self>,
-            _: harness::PendingParams,
-            mut r: harness::PendingResults,
-        ) -> capnp::Result<()> {
-            r.get_with_size_hint(Some(MessageSize {
-                word_count: 0,
-                cap_count: 0,
-            }))
-            .set_cap(Echo::client(1, &self.0));
-            assert_eq!(self.0.get(), 1);
-            r.init_with_size_hint(Some(MessageSize {
-                word_count: u64::MAX,
-                cap_count: u32::MAX,
-            }));
-            assert_eq!(self.0.get(), 0);
-            r.init().set_cap(Echo::client(73, &self.0));
-            Ok(())
+            context: harness::PendingContext<'_>,
+        ) -> capnp::capability::Promise<(), capnp::Error> {
+            let (_, mut r) = context.into_owned();
+            capnp::capability::Promise::from_future(async move {
+                r.get_with_size_hint(Some(MessageSize {
+                    word_count: 0,
+                    cap_count: 0,
+                }))
+                .set_cap(Echo::client(1, &self.0));
+                assert_eq!(self.0.get(), 1);
+                r.init_with_size_hint(Some(MessageSize {
+                    word_count: u64::MAX,
+                    cap_count: u32::MAX,
+                }));
+                assert_eq!(self.0.get(), 0);
+                r.init().set_cap(Echo::client(73, &self.0));
+                Ok(())
+            })
         }
     }
     let live = Rc::new(Cell::new(0));
@@ -377,22 +383,24 @@ async fn first_result_hint_reaches_transport_once_and_is_bounded_through_membran
     }
     struct Hinted(Option<MessageSize>);
     impl harness::Server for Hinted {
-        async fn echo(
+        fn echo(
             self: Rc<Self>,
-            _: harness::EchoParams,
-            mut r: harness::EchoResults,
-        ) -> capnp::Result<()> {
-            r.get_with_size_hint(self.0).set_value(7);
-            // A second hint must not replace the message or its populated data.
-            assert_eq!(
-                r.get_with_size_hint(Some(MessageSize {
-                    word_count: 13,
-                    cap_count: 0
-                }))
-                .get_value(),
-                7
-            );
-            Ok(())
+            context: harness::EchoContext<'_>,
+        ) -> capnp::capability::Promise<(), capnp::Error> {
+            let (_, mut r) = context.into_owned();
+            capnp::capability::Promise::from_future(async move {
+                r.get_with_size_hint(self.0).set_value(7);
+                // A second hint must not replace the message or its populated data.
+                assert_eq!(
+                    r.get_with_size_hint(Some(MessageSize {
+                        word_count: 13,
+                        cap_count: 0
+                    }))
+                    .get_value(),
+                    7
+                );
+                Ok(())
+            })
         }
     }
     tokio::task::LocalSet::new()
@@ -480,16 +488,18 @@ async fn first_result_hint_reaches_transport_once_and_is_bounded_through_membran
 async fn canceling_a_call_releases_unadopted_result_orphans() {
     struct Pending(Rc<Cell<u32>>);
     impl harness::Server for Pending {
-        async fn pending(
+        fn pending(
             self: Rc<Self>,
-            _: harness::PendingParams,
-            mut r: harness::PendingResults,
-        ) -> capnp::Result<()> {
-            let (mut root, token) = r.get_orphanage(None)?;
-            let orphan = new_orphan(&mut root, &token, 1, &self.0);
-            futures::future::pending::<()>().await;
-            drop(orphan);
-            Ok(())
+            context: harness::PendingContext<'_>,
+        ) -> capnp::capability::Promise<(), capnp::Error> {
+            let (_, mut r) = context.into_owned();
+            capnp::capability::Promise::from_future(async move {
+                let (mut root, token) = r.get_orphanage(None)?;
+                let orphan = new_orphan(&mut root, &token, 1, &self.0);
+                futures::future::pending::<()>().await;
+                drop(orphan);
+                Ok(())
+            })
         }
     }
     tokio::task::LocalSet::new()

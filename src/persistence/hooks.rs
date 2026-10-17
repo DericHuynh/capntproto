@@ -18,31 +18,31 @@ struct Save {
 impl capnp_rpc::persistent_capnp::persistent::Server<wire::sturdy_ref::Owned, wire::owner::Owned>
     for Save
 {
-    async fn save(
+    fn save(
         self: Rc<Self>,
-        params: capnp_rpc::persistent_capnp::persistent::SaveParams<
+        context: capnp_rpc::persistent_capnp::persistent::SaveContext<
+            '_,
             wire::sturdy_ref::Owned,
             wire::owner::Owned,
         >,
-        mut results: capnp_rpc::persistent_capnp::persistent::SaveResults<
-            wire::sturdy_ref::Owned,
-            wire::owner::Owned,
-        >,
-    ) -> capnp::Result<()> {
-        // Saving may depend on policy changed by an earlier application stream.
-        // Keep the protected save task behind that stream's local barrier.
-        self.application.hook.when_local_server_ready().await?;
-        let owner = params
-            .get()?
-            .get_seal_for()?
-            .get_id()?
-            .try_into()
-            .map_err(|_| fail("invalid sealed owner"))?;
-        let expires_at = (self.authorize)(owner)?;
-        let realm = Realm(self.realm.upgrade().ok_or_else(unavailable)?);
-        let reference = realm.issue(owner, &self.descriptor, expires_at)?;
-        reference.write(results.get().init_sturdy_ref());
-        Ok(())
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            // Saving may depend on policy changed by an earlier application stream.
+            // Keep the protected save task behind that stream's local barrier.
+            self.application.hook.when_local_server_ready().await?;
+            let owner = params
+                .get()?
+                .get_seal_for()?
+                .get_id()?
+                .try_into()
+                .map_err(|_| fail("invalid sealed owner"))?;
+            let expires_at = (self.authorize)(owner)?;
+            let realm = Realm(self.realm.upgrade().ok_or_else(unavailable)?);
+            let reference = realm.issue(owner, &self.descriptor, expires_at)?;
+            reference.write(results.get().init_sturdy_ref());
+            Ok(())
+        })
     }
 }
 struct Binding {

@@ -40,21 +40,25 @@ async fn pair(
 }
 struct Echo;
 impl harness::Server for Echo {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        p: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        r.get().set_value(p.get()?.get_value());
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            r.get().set_value(p.get()?.get_value());
+            Ok(())
+        })
     }
-    async fn generic(
+    fn generic(
         self: Rc<Self>,
-        _: harness::GenericParams,
-        mut r: harness::GenericResults,
-    ) -> capnp::Result<()> {
-        r.get().set_value(vec![42; 256 * 1024].as_slice())?;
-        Ok(())
+        context: harness::GenericContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            r.get().set_value(vec![42; 256 * 1024].as_slice())?;
+            Ok(())
+        })
     }
 }
 async fn echo(cap: &harness::Client, value: u32) {

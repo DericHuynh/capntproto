@@ -25,23 +25,27 @@ impl Drop for OwnedEcho {
     }
 }
 impl harness::Server for OwnedEcho {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        _: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        r.get().set_value(42);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            r.get().set_value(42);
+            Ok(())
+        })
     }
 }
 impl harness::Server for Echo {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        p: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        r.get().set_value(p.get()?.get_value() + 1);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            r.get().set_value(p.get()?.get_value() + 1);
+            Ok(())
+        })
     }
 }
 #[derive(Default)]
@@ -469,12 +473,12 @@ impl Drop for Stored {
 }
 impl base::Server<harness::Owned> for Stored {}
 impl derived::Server<harness::Owned> for Stored {
-    async fn own(
+    fn own(
         self: Rc<Self>,
-        _: derived::OwnParams<harness::Owned>,
-        _: derived::OwnResults<harness::Owned>,
-    ) -> capnp::Result<()> {
-        Ok(())
+        context: derived::OwnContext<'_, harness::Owned>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move { Ok(()) })
     }
 }
 type Message = (

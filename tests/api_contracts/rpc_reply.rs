@@ -35,12 +35,22 @@ async fn pipeline(cap: service::Client) -> capnp::Result<()> {
     response.await?;
     Ok(())
 }
+struct Borrowed;
+impl base::Server for Borrowed {
+    fn echo(self: std::rc::Rc<Self>, c: base::EchoContext<'_>) -> capnp::capability::Promise<(), capnp::Error> {
+        c.complete(|p, mut r| { r.set_value(p.get_value()); Ok(()) })
+    }
+}
 fn main() {}
 "#
         ),
         None,
     )];
     for (name, code, diagnostic) in [
+        ("borrowed-reply-cannot-edit", "fn bad(mut c: base::EchoContext<'_>) { let _ = c.get(); }", "E0599"),
+        ("borrowed-reply-consumed", "fn bad(c: base::EchoContext<'_>) { drop(c.complete(|_, _| Ok(()))); drop(c.into_owned()); }", "E0382"),
+        ("borrowed-reply-escape", "fn bad(c: base::EchoContext<'_>) { let mut escaped = None; drop(c.complete(|_, r| { escaped = Some(r); Ok(()) })); }", "E0521"),
+        ("borrowed-reply-stays-affine", "fn bad(c: base::EchoContext<'_>) { let (_, r) = c.into_owned(); let _: capnp::capability::Results<_> = r; }", "E0308"),
         ("wrong-tail-results", "fn bad(r: service::OpenResults, c: base::Client) { drop(r.tail_call(c.echo_request())); }", "E0308"),
         ("streaming-tail", "fn bad(r: service::OpenResults, c: service::Client) { drop(r.tail_call(c.stream_request())); }", "E0308"),
         ("write-then-tail", "fn bad(r: service::OpenResults, c: service::Client) { let draft = r.build(); drop(draft.tail_call(c.open_request())); }", "E0599"),

@@ -153,9 +153,7 @@ fn check_prepared_data_reply(_hosted: bool) {
                         .unwrap()
                         .unwrap()
                 });
-                #[cfg(not(feature = "alloc"))]
-                let result = None;
-                let result = result.unwrap_or_else(|| {
+                let mut dynamic = || {
                     driver
                         .local_answer_dynamic(
                             key,
@@ -172,7 +170,11 @@ fn check_prepared_data_reply(_hosted: bool) {
                             },
                         )
                         .unwrap()
-                });
+                };
+                #[cfg(feature = "alloc")]
+                let result = result.unwrap_or_else(&mut dynamic);
+                #[cfg(not(feature = "alloc"))]
+                let result = dynamic();
                 let original = messages.read(&result.frame.lease).as_ptr();
                 driver
                     .complete_answer(&call, Ok(result), messages)
@@ -918,6 +920,126 @@ fn early_pipeline_retry_is_transactional_and_survives_final_failure() {
             messages,
             &mut messages::Queue::new(&mut slots).unwrap(),
         );
+    });
+}
+
+#[test]
+fn endpoint_retirement_bursts_charge_each_owner_and_preserve_the_rotating_cursor() {
+    with_driver(|mut driver, messages| {
+        let mut slots = [None];
+        let mut queue = messages::Queue::new(&mut slots).unwrap();
+        for _ in 0..10 {
+            let client = driver
+                .runtime
+                .endpoint(
+                    binding::Route::Capability(crate::clients::Endpoint::Broken(
+                        capnp::ErrorKind::Failed,
+                    )),
+                    clients::Location::Broken,
+                )
+                .unwrap();
+            driver.runtime.release(client);
+        }
+        driver.maintenance_phase = 5;
+        driver.maintenance_index = 0;
+        let mut remaining = 8;
+        macro_rules! poll {
+            () => {
+                driver
+                    .poll_maintenance_budget_with(
+                        messages,
+                        &mut queue,
+                        512,
+                        Default::default(),
+                        &mut [0; 8],
+                        &mut remaining,
+                        &mut || (),
+                        &mut |_, _, _| 255,
+                        &mut |_, _, _| Ok(None),
+                    )
+                    .unwrap()
+            };
+        }
+        assert!(matches!(poll!(), Progress::Advanced));
+        assert_eq!(remaining, 0);
+        assert_eq!(driver.maintenance_phase, 6);
+        assert!(driver.runtime.has_retired());
+        remaining = 1;
+        assert!(matches!(poll!(), Progress::Yield));
+        assert_eq!(remaining, 0);
+        assert_eq!(
+            driver.maintenance_phase, 6,
+            "the answer slots retain their normal rotation"
+        );
+        // The first burst freed exactly eight owners, leaving the other two
+        // available to the ordinary round-robin maintenance scan.
+        assert!(driver.drain_endpoint().is_some());
+        assert!(driver.drain_endpoint().is_some());
+        assert!(driver.drain_endpoint().is_none());
+        assert!(queue.is_empty());
+        close(driver, messages, &mut queue);
+    });
+}
+
+#[test]
+fn productive_maintenance_preserves_unused_budget_for_following_cleanup() {
+    with_driver(|mut driver, messages| {
+        let mut slots = [None];
+        let mut queue = messages::Queue::new(&mut slots).unwrap();
+        let mut remaining = 0;
+        macro_rules! poll {
+            () => {
+                driver
+                    .poll_maintenance_budget_with(
+                        messages,
+                        &mut queue,
+                        512,
+                        Default::default(),
+                        &mut [0; 8],
+                        &mut remaining,
+                        &mut || (),
+                        &mut |_, _, _| 255,
+                        &mut |_, _, _| Ok(None),
+                    )
+                    .unwrap()
+            };
+        }
+        assert!(matches!(poll!(), Progress::Yield));
+        assert_eq!(remaining, 0);
+        remaining = 1;
+        assert!(matches!(poll!(), Progress::Idle));
+        assert_eq!(remaining, 0);
+
+        for owner in [91, 92] {
+            let client = driver
+                .runtime
+                .endpoint(binding::Route::local(owner), clients::Location::Local)
+                .unwrap();
+            driver.runtime.release(client);
+        }
+        driver.maintenance_phase = 5;
+        driver.maintenance_index = 0;
+        remaining = 128;
+        let Progress::Server(first) = poll!() else {
+            panic!("first retired endpoint")
+        };
+        assert_eq!(
+            remaining, 127,
+            "a productive step must not consume the whole allowance"
+        );
+        let Progress::Server(second) = poll!() else {
+            panic!("second retired endpoint")
+        };
+        assert!(remaining > 0 && remaining < 127);
+        let mut owners = [first, second];
+        owners.sort_unstable();
+        assert_eq!(owners, [91, 92]);
+        let before_idle = remaining;
+        assert!(matches!(poll!(), Progress::Idle));
+        assert_eq!(remaining, before_idle - 1);
+        assert!(!driver.runtime.has_retired());
+        assert!(queue.is_empty());
+        close(driver, messages, &mut queue);
     });
 }
 

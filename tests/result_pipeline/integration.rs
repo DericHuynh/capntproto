@@ -285,17 +285,19 @@ async fn compiled_and_loaded_dynamic_servers_validate_and_publish_independent_pi
 
 struct PublishThenFail(harness::Client);
 impl harness::Server for PublishThenFail {
-    async fn pending(
+    fn pending(
         self: Rc<Self>,
-        _: harness::PendingParams,
-        mut results: harness::PendingResults,
-    ) -> capnp::Result<()> {
-        let mut builder = PipelineBuilder::<harness::pending_results::Owned>::new();
-        builder.get().set_cap(self.0.clone());
-        results.set_pipeline_from(builder.build())?;
-        Err(Error::failed(
-            "published and failed during the same poll".into(),
-        ))
+        context: harness::PendingContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let mut builder = PipelineBuilder::<harness::pending_results::Owned>::new();
+            builder.get().set_cap(self.0.clone());
+            results.set_pipeline_from(builder.build())?;
+            Err(Error::failed(
+                "published and failed during the same poll".into(),
+            ))
+        })
     }
 }
 #[tokio::test(flavor = "current_thread")]
@@ -330,17 +332,19 @@ async fn publication_wins_when_driving_parent_publishes_and_fails_in_one_poll() 
 
 struct Relay(RefCell<Option<harness::Client>>, Rc<Cell<bool>>);
 impl harness::Server for Relay {
-    async fn pending(
+    fn pending(
         self: Rc<Self>,
-        _: harness::PendingParams,
-        mut results: harness::PendingResults,
-    ) -> capnp::Result<()> {
-        let downstream = self.0.borrow().as_ref().unwrap().pending_request().send();
-        results.set_pipeline_from(downstream.pipeline)?;
-        let response = downstream.promise.await?;
-        results.set(response.get()?)?;
-        self.1.set(true);
-        Ok(())
+        context: harness::PendingContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let downstream = self.0.borrow().as_ref().unwrap().pending_request().send();
+            results.set_pipeline_from(downstream.pipeline)?;
+            let response = downstream.promise.await?;
+            results.set(response.get()?)?;
+            self.1.set(true);
+            Ok(())
+        })
     }
 }
 #[tokio::test(flavor = "current_thread")]

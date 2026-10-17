@@ -1,0 +1,21 @@
+{
+  "label": "native",
+  "base": "fe843e229890d8f1a58557c8a47d02f4c1358cce",
+  "binary": "/workspace/scratch/portable-binaries/three-native20261017",
+  "binary_sha256": "1e75f739b610bd81d16d88701091927de4ed2eb32f41b02abea293db93b3e5e9",
+  "source_files": {
+    "benchmarks/rpc/Cargo.toml": "f6f5527f4b191aefc59314b0e5a1007280635c74cf22e80d2b6c593a53e47620",
+    "benchmarks/rpc/capability-borrowed.rs": "c6d9039d69952c922e4e91c25f8e077384d62501f5c360f2aeff149354249c29",
+    "benchmarks/rpc/capability-workflows.rs": "9843cd24ea51b376453b7808e9d58c4c4506aa822cf7aa63fefa26012b51a57d",
+    "crates/capntproto-core/src/capability.rs": "0cbc6a14d8da3c1140d5bc6f0c395d4b126417ba8b822dfc0a1218313c6a1b1f",
+    "crates/capntproto-core/src/private/capability.rs": "de70971560237fa29fe026a5dea3552ea3deddc049b03665b13ca76c8cbe0abc",
+    "crates/capntproto-rpc/src/local.rs": "03b1f8fe24d6cc67f5ba0a0dc558be33cabfac49ecd41fd0f6d2b042091f95a4",
+    "crates/capntproto-rpc/src/scoped/wire/server/results.rs": "cee9ae094201c8fe1c948f6cbb9a2be15969142f47eebd754ad161f4e1879375",
+    "crates/capntproto-rpc/src/scoped/wire/server/results/tests.rs": "58e11e2d9eff782cecf4ebd5dcdc81a6b36cd607973b476b1b994cedd767a050"
+  },
+  "patch_sha256": "65659e17ec0a7f77886b4c9a0c57b4bc0f0c0756dc18b4eeb11d5890dd2d5d14",
+  "build_args": [
+    "--features",
+    "borrowed-native"
+  ]
+}

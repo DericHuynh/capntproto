@@ -51,51 +51,63 @@ impl harness::Server for Service {
     fn _capnp_server_hooks(&self) -> Option<&dyn ServerHooks> {
         Some(self)
     }
-    async fn stream(self: Rc<Self>, _: harness::StreamParams) -> capnp::Result<()> {
-        self.0.streams.set(self.0.streams.get() + 1);
-        self.0.active.set(self.0.active.get() + 1);
-        let _running = Running(self.0.clone());
-        let gate = self.0.gates.borrow_mut().pop_front().unwrap();
-        gate.await
-            .map_err(|_| Error::failed("gate dropped".into()))?;
-        if self.0.fail {
-            Err(Error::failed("stream failed".into()))
-        } else {
+    fn stream(
+        self: Rc<Self>,
+        context: harness::StreamContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.0.streams.set(self.0.streams.get() + 1);
+            self.0.active.set(self.0.active.get() + 1);
+            let _running = Running(self.0.clone());
+            let gate = self.0.gates.borrow_mut().pop_front().unwrap();
+            gate.await
+                .map_err(|_| Error::failed("gate dropped".into()))?;
+            if self.0.fail {
+                Err(Error::failed("stream failed".into()))
+            } else {
+                Ok(())
+            }
+        })
+    }
+    fn echo(
+        self: Rc<Self>,
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.0.echoes.set(self.0.echoes.get() + 1);
+            results.get().set_value(1);
             Ok(())
-        }
+        })
     }
-    async fn echo(
+    fn pending(
         self: Rc<Self>,
-        _: harness::EchoParams,
-        mut results: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        self.0.echoes.set(self.0.echoes.get() + 1);
-        results.get().set_value(1);
-        Ok(())
-    }
-    async fn pending(
-        self: Rc<Self>,
-        _: harness::PendingParams,
-        mut results: harness::PendingResults,
-    ) -> capnp::Result<()> {
-        results
-            .get()
-            .set_cap(self.0.self_cap.get::<harness::Client>().unwrap());
-        Ok(())
+        context: harness::PendingContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            results
+                .get()
+                .set_cap(self.0.self_cap.get::<harness::Client>().unwrap());
+            Ok(())
+        })
     }
 }
 impl capntproto_test_support::cancellation_policy_capnp::policy::Server for Service {}
 
 struct Target(Rc<Cell<u32>>);
 impl harness::Server for Target {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        _: harness::EchoParams,
-        mut results: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        self.0.set(self.0.get() + 1);
-        results.get().set_value(9);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.0.set(self.0.get() + 1);
+            results.get().set_value(9);
+            Ok(())
+        })
     }
 }
 struct Drivers(Vec<tokio::task::JoinHandle<capnp::Result<()>>>);

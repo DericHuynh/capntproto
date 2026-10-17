@@ -4630,9 +4630,12 @@ impl<'a> PointerBuilder<'a> {
         &mut self,
         build: impl for<'b> FnOnce(PointerBuilder<'b>) -> Result<()>,
     ) -> Result<()> {
-        struct Staged<'a>(PointerBuilder<'a>, Option<u32>);
+        struct Staged<'a>(PointerBuilder<'a>, Option<u32>, bool);
         impl Drop for Staged<'_> {
             fn drop(&mut self) {
+                if self.2 {
+                    return;
+                }
                 self.0.clear();
                 if let Some(checkpoint) = self.1 {
                     // SAFETY: the exclusive stage owns all reservations since
@@ -4645,6 +4648,16 @@ impl<'a> PointerBuilder<'a> {
             }
         }
         let checkpoint = self.arena.allocation_checkpoint();
+        if checkpoint.is_some() && self.is_null() {
+            // A fixed arena can roll back the entire unpublished subtree.
+            // With no old value to retain, the destination itself is a staging
+            // slot: errors and unwind restore null and reclaim reservations.
+            // Success needs neither an orphan pointer word nor relocation.
+            let mut staged = Staged(self.reborrow(), checkpoint, false);
+            build(staged.0.reborrow())?;
+            staged.2 = true;
+            return Ok(());
+        }
         let (segment_id, word) = self.arena.try_allocate_anywhere(1)?;
         let (start, _) = self.arena.get_segment_mut(segment_id);
         // SAFETY: allocate_anywhere reserved one initialized word in this segment.
@@ -4657,6 +4670,7 @@ impl<'a> PointerBuilder<'a> {
                 pointer,
             },
             checkpoint,
+            false,
         );
         build(staged.0.reborrow())?;
         PointerBuilder {

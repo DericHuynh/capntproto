@@ -1355,9 +1355,9 @@ impl<S: Server> capability::Server for ServerDispatch<S> {
         self,
         interface_id: u64,
         method_id: u16,
-        params: capability::Params<any_pointer::Owned>,
-        results: capability::Results<any_pointer::Owned>,
+        context: capability::CallContext<'_, any_pointer::Owned, any_pointer::Owned>,
     ) -> capability::DispatchCallResult {
+        let (params, results) = context.into_owned();
         let found = self.schema.find_path(interface_id).and_then(|path| {
             let method = self.schema.method(&path, method_id)?;
             let streaming = method.get_proto().get_result_struct_type() == 0x995f9a3377c0b16e;

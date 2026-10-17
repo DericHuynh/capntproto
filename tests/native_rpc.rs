@@ -57,14 +57,16 @@ impl Drop for Echo {
     }
 }
 impl service::Server<Text> for Echo {
-    async fn ping(
+    fn ping(
         self: Rc<Self>,
-        params: service::PingParams<Text>,
-        mut results: service::PingResults<Text>,
-    ) -> capnp::Result<()> {
-        self.calls.set(self.calls.get() + 1);
-        results.get().set_value(params.get()?.get_value() + 1);
-        Ok(())
+        context: service::PingContext<'_, Text>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.calls.set(self.calls.get() + 1);
+            results.get().set_value(params.get()?.get_value() + 1);
+            Ok(())
+        })
     }
 }
 impl derived::Server<Text> for Echo {}

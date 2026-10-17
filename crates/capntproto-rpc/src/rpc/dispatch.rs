@@ -714,7 +714,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                                 message,
                                 caps,
                             );
-                            reference.borrow_mut().fulfill(Promise::ok(response));
+                            QuestionRef::fulfill_result(&reference, Ok(response));
                         }
                         return_::Exception(exception) => {
                             if is_tail {
@@ -722,9 +722,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                                     "tail call returned ordinary exception".into(),
                                 ));
                             }
-                            reference
-                                .borrow_mut()
-                                .reject(remote_exception_to_error(exception?));
+                            QuestionRef::reject(&reference, remote_exception_to_error(exception?));
                         }
                         return_::Canceled(()) => {
                             return Err(Error::failed(
@@ -741,9 +739,10 @@ impl<VatId: 'static> ConnectionState<VatId> {
                                 capnp::message::Builder::new_default(),
                                 vec![],
                             );
-                            reference
-                                .borrow_mut()
-                                .fulfill(Promise::ok(Response::redirected(Box::new(empty))));
+                            QuestionRef::fulfill_result(
+                                &reference,
+                                Ok(Response::redirected(Box::new(empty))),
+                            );
                         }
                         return_::TakeFromOtherQuestion(id) => {
                             let id = AnswerId::from_wire(id);
@@ -767,9 +766,10 @@ impl<VatId: 'static> ConnectionState<VatId> {
                             // Taking the response also takes ownership of its producer.
                             // Finish may release the old answer before the adopted call
                             // completes; the adopting question must keep it running.
-                            reference
-                                .borrow_mut()
-                                .fulfill(Promise::from_future(response.attach(task)));
+                            QuestionRef::fulfill(
+                                &reference,
+                                Promise::from_future(response.attach(task)),
+                            );
                             connection_state.acknowledge_redirected_answer(
                                 id,
                                 &responded.return_has_been_sent,
@@ -779,7 +779,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                             let pipeline = reference.borrow().pipeline.clone();
                             let response =
                                 answer_adoption::await_answer(&connection_state, token, pipeline);
-                            reference.borrow_mut().fulfill(response);
+                            QuestionRef::fulfill(&reference, response);
                         }
                     }
                 } else {

@@ -14,24 +14,28 @@ use support::{Endpoint, Hub};
 
 struct Grant(u32, Rc<RefCell<Vec<u32>>>);
 impl harness::Server for Grant {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        _: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        r.get().set_value(self.0);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            r.get().set_value(self.0);
+            Ok(())
+        })
     }
-    async fn bounce(
+    fn bounce(
         self: Rc<Self>,
-        p: harness::BounceParams,
-        mut r: harness::BounceResults,
-    ) -> capnp::Result<()> {
-        let cap = p.get()?.get_cap()?;
-        let observed = value(&cap).await;
-        self.1.borrow_mut().push(observed);
-        r.get().set_cap(cap);
-        Ok(())
+        context: harness::BounceContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let cap = p.get()?.get_cap()?;
+            let observed = value(&cap).await;
+            self.1.borrow_mut().push(observed);
+            r.get().set_cap(cap);
+            Ok(())
+        })
     }
 }
 #[derive(Default)]

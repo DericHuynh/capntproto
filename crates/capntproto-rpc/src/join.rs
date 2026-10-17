@@ -530,9 +530,10 @@ pub(super) fn unimplemented<VatId>(
         reference
     };
     if let Some(reference) = reference {
-        reference
-            .borrow_mut()
-            .reject(Error::unimplemented("peer does not implement Join".into()));
+        QuestionRef::reject(
+            &reference,
+            Error::unimplemented("peer does not implement Join".into()),
+        );
     }
     Ok(())
 }

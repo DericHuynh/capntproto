@@ -21,36 +21,42 @@ mod verification;
 
 struct Echo;
 impl harness::Server for Echo {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        params: harness::EchoParams,
-        mut results: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        let value = params.get()?.get_value();
-        if value == u32::MAX {
-            return Err(Error::failed("intentional failure".into()));
-        }
-        results.get().set_value(value);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let value = params.get()?.get_value();
+            if value == u32::MAX {
+                return Err(Error::failed("intentional failure".into()));
+            }
+            results.get().set_value(value);
+            Ok(())
+        })
     }
-    async fn bounce(
+    fn bounce(
         self: Rc<Self>,
-        params: harness::BounceParams,
-        mut results: harness::BounceResults,
-    ) -> capnp::Result<()> {
-        // Actually exercise authority passed in the request, then return it.
-        let cap = params.get()?.get_cap()?;
-        assert_eq!(echo(&cap, 73).await?, 73);
-        results.get().set_cap(cap);
-        Ok(())
+        context: harness::BounceContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            // Actually exercise authority passed in the request, then return it.
+            let cap = params.get()?.get_cap()?;
+            assert_eq!(echo(&cap, 73).await?, 73);
+            results.get().set_cap(cap);
+            Ok(())
+        })
     }
-    async fn generic(
+    fn generic(
         self: Rc<Self>,
-        _: harness::GenericParams,
-        mut results: harness::GenericResults,
-    ) -> capnp::Result<()> {
-        results.get().set_value(&vec![0x73; 100_000][..])?;
-        Ok(())
+        context: harness::GenericContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            results.get().set_value(&vec![0x73; 100_000][..])?;
+            Ok(())
+        })
     }
 }
 fn bootstrap() -> capnp::capability::Client {

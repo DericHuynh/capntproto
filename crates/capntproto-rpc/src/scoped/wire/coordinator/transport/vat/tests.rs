@@ -112,6 +112,105 @@ fn fixture() -> (Connection<u8>, Rc<State>) {
 fn cx() -> Context<'static> {
     Context::from_waker(Waker::noop())
 }
+
+#[test]
+fn shared_input_adoption_validates_ranges_and_falls_back_without_consuming() {
+    struct Frames {
+        bytes: std::sync::Arc<Vec<u8>>,
+        range: core::ops::Range<usize>,
+        wrong_range: bool,
+        finished: Rc<Cell<usize>>,
+    }
+    impl crate::IncomingFrameStream for Frames {
+        fn poll_frame(&mut self, _: &mut Context<'_>) -> Poll<capnp::Result<Option<&[u8]>>> {
+            Poll::Ready(Ok(self.frame()))
+        }
+        fn frame(&self) -> Option<&[u8]> {
+            (self.finished.get() == 0).then(|| &self.bytes[self.range.clone()])
+        }
+        fn share_frame(&mut self) -> Option<(std::sync::Arc<Vec<u8>>, core::ops::Range<usize>)> {
+            let mut range = self.range.clone();
+            if self.wrong_range {
+                range.end -= 1;
+            }
+            Some((self.bytes.clone(), range))
+        }
+        fn finish_frame(&mut self) {
+            self.finished.set(self.finished.get() + 1);
+        }
+    }
+    for fault in 0..5 {
+        let (connection, state) = fixture();
+        let (mut reader, _writer, _failure) = connection.into_io(NonZeroUsize::new(32).unwrap());
+        let expected = frame();
+        let mut bytes = vec![0; if fault == 1 { 256 } else { expected.len() + 7 }];
+        let start = bytes.as_ptr().align_offset(8);
+        bytes[start..start + expected.len()].copy_from_slice(&expected);
+        let bytes = std::sync::Arc::new(bytes);
+        let length = if fault == 2 { 16 } else { expected.len() };
+        let finished = Rc::new(Cell::new(0));
+        reader.input_frames = Some(Box::new(Frames {
+            bytes: bytes.clone(),
+            range: start..start + length,
+            wrong_range: fault == 4,
+            finished: finished.clone(),
+        }));
+        assert!(
+            matches!(reader.poll_frame_size(&mut cx()), Poll::Ready(Ok(Some(n))) if n == length)
+        );
+        let mut pool = messages::GrowingBuffers::new(1, 32, 39);
+        messages::with_growing_messages(
+            &mut pool,
+            capntproto_rpc_engine::connection::Growth {
+                initial: 0,
+                maximum: 0,
+            },
+            |messages| {
+                let options = capnp::message::ReaderOptions {
+                    traversal_limit_in_words: Some(if fault == 3 { 1 } else { 2 }),
+                    ..Default::default()
+                };
+                let result = reader.take_shared_frame(messages, options);
+                assert_eq!(finished.get(), 0);
+                match fault {
+                    0 => {
+                        let frame = result.unwrap().unwrap();
+                        let shared = frame.share(messages).unwrap();
+                        assert_eq!(&*shared, expected);
+                        assert_eq!(shared.as_ptr(), bytes[start..].as_ptr());
+                        frame.release(messages);
+                        reader.finish_frame();
+                        assert_eq!(&*shared, expected);
+                        assert_eq!(messages.reserve(1).unwrap_err(), messages::Error::NoBuffer);
+                        drop(shared);
+                    }
+                    1 => {
+                        assert!(result.unwrap().is_none());
+                        assert_eq!(reader.buffered_frame().unwrap(), expected);
+                        let frame = reader
+                            .take_buffered_frame(messages, options)
+                            .unwrap()
+                            .unwrap();
+                        assert_eq!(&*frame.share(messages).unwrap(), expected);
+                        frame.release(messages);
+                        reader.finish_frame();
+                    }
+                    _ => {
+                        assert!(result.is_err());
+                        assert_eq!(reader.position, 0);
+                        assert_eq!(reader.remaining, length);
+                        reader.finish_frame();
+                    }
+                }
+                assert_eq!(finished.get(), 1);
+                let writer = messages.reserve(24).unwrap();
+                messages.discard(writer);
+            },
+        )
+        .unwrap();
+        assert_eq!(state.reads.get(), 0);
+    }
+}
 fn frame() -> Vec<u8> {
     capnp::serialize::write_message_segments_to_words(&vec![vec![0u8; 16]])
 }

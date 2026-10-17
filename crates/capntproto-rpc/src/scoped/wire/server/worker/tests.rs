@@ -19,9 +19,9 @@ impl capability::Server for Server {
         self,
         _: u64,
         method: u16,
-        _: capability::Params<any_pointer::Owned>,
-        results: capability::Results<any_pointer::Owned>,
+        context: capability::CallContext<'_, any_pointer::Owned, any_pointer::Owned>,
     ) -> capability::DispatchCallResult {
+        let (_, results) = context.into_owned();
         (self.0)(method, results)
     }
 }
@@ -235,9 +235,9 @@ fn imported_metadata_is_ready_during_synchronous_server_dispatch() {
             self,
             _: u64,
             _: u16,
-            params: capability::Params<any_pointer::Owned>,
-            _: capability::Results<any_pointer::Owned>,
+            context: capability::CallContext<'_, any_pointer::Owned, any_pointer::Owned>,
         ) -> capability::DispatchCallResult {
+            let (params, _) = context.into_owned();
             let cap: capability::Client = params.get().unwrap().get_as_capability().unwrap();
             assert!(
                 cap.hook.get_fd().is_some(),
@@ -281,6 +281,8 @@ fn imported_metadata_is_ready_during_synchronous_server_dispatch() {
         let mut queue = messages::Queue::new_growing(0, 2).unwrap();
         let (fd, _other) = std::os::unix::net::UnixStream::pair().unwrap();
         let fd = Rc::new(std::os::fd::OwnedFd::from(fd));
+        let metadata = Rc::new(MetadataSource::default());
+        metadata.update(|value| value.fd = Some(fd));
         assert!(worker.accept(&mut driver).unwrap());
         for _ in 0..4 {
             assert!(matches!(
@@ -295,11 +297,7 @@ fn imported_metadata_is_ready_during_synchronous_server_dispatch() {
                     import,
                     |hooks, driver| hooks.collect_wire(
                         driver,
-                        |_| EndpointMetadata {
-                            failure: None,
-                            introduction: None,
-                            fd: Some(fd.clone())
-                        },
+                        |_| Some(metadata.clone()),
                         foreign::local_metadata
                     ),
                     |_, _, _, _| panic!("dispatch precedes publication"),

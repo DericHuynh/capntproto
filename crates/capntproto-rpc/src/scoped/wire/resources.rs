@@ -8,89 +8,88 @@ use capntproto_rpc_wire::clients::{Endpoint, Route};
 #[derive(Default)]
 pub struct Import<T = ()> {
     pub value: T,
-    // Most imports carry no hosted metadata. Keep the ordinary receipt small;
-    // allocate optional introduction/error/descriptor state only when it arrives.
-    metadata: Option<Box<EndpointMetadata>>,
+    // Allocate shared state on first metadata or subscription. A subscription
+    // preserves future changes even when no descriptor has arrived yet.
+    metadata: std::cell::OnceCell<Rc<MetadataSource>>,
 }
 impl<T> Import<T> {
     pub fn new(value: T) -> Self {
         Self {
             value,
-            metadata: None,
+            metadata: Default::default(),
         }
     }
     /// Keep the first descriptor, including one received through a later alias.
     /// A redundant descriptor is dropped without replacing existing ownership.
     #[cfg(unix)]
     pub fn attach(&mut self, fd: Rc<std::os::fd::OwnedFd>) {
-        let metadata = self.metadata_mut();
-        if metadata.fd.is_none() {
-            metadata.fd = Some(fd);
-        }
+        self.update_metadata(|metadata| {
+            if metadata.fd.is_none() {
+                metadata.fd = Some(fd);
+            }
+        });
     }
     pub fn metadata(&self) -> EndpointMetadata {
-        self.metadata.as_deref().cloned().unwrap_or_default()
+        self.metadata_if_present().unwrap_or_default()
     }
     pub(crate) fn metadata_if_present(&self) -> Option<EndpointMetadata> {
-        self.metadata.as_deref().cloned()
+        self.metadata.get().and_then(|source| source.snapshot())
     }
-    pub(crate) fn metadata_mut(&mut self) -> &mut EndpointMetadata {
-        self.metadata.get_or_insert_with(Default::default)
+    pub fn metadata_source(&self) -> Rc<MetadataSource> {
+        self.metadata
+            .get_or_init(|| Rc::new(MetadataSource::default()))
+            .clone()
+    }
+    pub(crate) fn update_metadata(&mut self, change: impl FnOnce(&mut EndpointMetadata)) {
+        self.metadata_source().update(change);
     }
     pub(crate) fn has_introduction(&self) -> bool {
-        self.metadata
+        self.metadata_if_present()
             .as_ref()
             .is_some_and(|metadata| metadata.introduction.is_some() || metadata.failure.is_some())
     }
 }
 
 impl<'id> ClientHooks<'id> {
-    /// Synchronize from exact retained routes before handing clients to user
-    /// code and on each driver turn. In particular this follows promise
-    /// resolution and observes later attachments on already-settled imports.
-    /// Local metadata must come from the original policy-preserving server hook.
+    /// Subscribe imported routes to stable revision sources before publishing
+    /// hooks. None declares no remote metadata. Local opaque hooks retain their
+    /// policy-preserving observer, since their authority cannot be unwrapped.
     pub fn collect_wire<I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>(
         &mut self,
         driver: &mut Driver<'_, 'id, '_, I, A, P, S, CAPS, PATH>,
-        mut imported: impl FnMut(&I) -> EndpointMetadata,
-        local: impl FnMut(&S) -> EndpointMetadata,
-    ) {
-        self.collect_wire_optional(driver, |owner| Some(imported(owner)), local);
-    }
-
-    #[inline(always)]
-    pub(crate) fn collect_wire_optional<
-        I,
-        A,
-        P: Copy + Eq,
-        S,
-        const CAPS: usize,
-        const PATH: usize,
-    >(
-        &mut self,
-        driver: &mut Driver<'_, 'id, '_, I, A, P, S, CAPS, PATH>,
-        mut imported: impl FnMut(&I) -> Option<EndpointMetadata>,
+        mut subscribe: impl FnMut(&I) -> Option<Rc<MetadataSource>>,
         mut local: impl FnMut(&S) -> EndpointMetadata,
     ) {
         let imports = &driver.ledgers.imports;
-        self.collect_with_optional_metadata(&mut driver.runtime, |route| match route {
-            Route::Capability(Endpoint::Imported(remote)) => {
-                imported(imports.get(remote.reference()))
-            }
-            Route::Capability(Endpoint::Local(server)) | Route::Vine(server) => Some(local(server)),
-            Route::Capability(Endpoint::Failed { kind, owner }) => {
-                let mut metadata = local(owner);
-                metadata
-                    .failure
-                    .get_or_insert_with(|| Error::from_kind(*kind));
-                Some(metadata)
-            }
-            Route::Capability(Endpoint::Broken(kind)) => Some(EndpointMetadata {
-                failure: Some(Error::from_kind(*kind)),
-                ..EndpointMetadata::default()
-            }),
-            Route::Question(_) => None,
-        });
+        self.synchronize(
+            &mut driver.runtime,
+            |route| match route {
+                Route::Capability(Endpoint::Imported(_)) => None,
+                Route::Capability(Endpoint::Local(server)) | Route::Vine(server) => {
+                    Some(local(server))
+                }
+                Route::Capability(Endpoint::Failed { kind, owner }) => {
+                    let mut metadata = local(owner);
+                    metadata
+                        .failure
+                        .get_or_insert_with(|| Error::from_kind(*kind));
+                    Some(metadata)
+                }
+                Route::Capability(Endpoint::Broken(kind)) => Some(EndpointMetadata {
+                    failure: Some(Error::from_kind(*kind)),
+                    ..EndpointMetadata::default()
+                }),
+                Route::Question(_) => None,
+            },
+            |route| match route {
+                Route::Capability(Endpoint::Imported(remote)) => {
+                    subscribe(imports.get(remote.reference()))
+                }
+                _ => None,
+            },
+            true,
+            true,
+        );
     }
 }
 
@@ -167,9 +166,11 @@ mod tests {
                     driver.ledgers.imports.release(local);
                     let mut hooks = ClientHooks::new(4, 4);
                     let client = hooks.export_client(&mut driver.runtime, &route).unwrap();
-                    hooks.collect_wire_optional(&mut driver, Import::metadata_if_present, |_| {
-                        EndpointMetadata::default()
-                    });
+                    hooks.collect_wire(
+                        &mut driver,
+                        |owner| Some(owner.metadata_source()),
+                        |_| EndpointMetadata::default(),
+                    );
                     assert!(client.hook.get_fd().is_none());
                     // A late resolution of an abandoned promise gives an existing
                     // import its first resource, without constructing another owner.
@@ -197,9 +198,11 @@ mod tests {
                         )
                         .unwrap_or_else(|e| panic!("{}", e.error));
                     assert!(attachments[0].is_none());
-                    hooks.collect_wire_optional(&mut driver, Import::metadata_if_present, |_| {
-                        EndpointMetadata::default()
-                    });
+                    hooks.collect_wire(
+                        &mut driver,
+                        |owner| Some(owner.metadata_source()),
+                        |_| EndpointMetadata::default(),
+                    );
                     let saved = client.hook.get_fd().expect("late alias resource");
                     assert!(Rc::ptr_eq(&saved, &weak.upgrade().unwrap()));
                     assert!(!driver.runtime.is_settled(&route).unwrap());
@@ -229,9 +232,11 @@ mod tests {
                             || (),
                         )
                         .unwrap_or_else(|e| panic!("{}", e.error));
-                    hooks.collect_wire_optional(&mut driver, Import::metadata_if_present, |_| {
-                        EndpointMetadata::default()
-                    });
+                    hooks.collect_wire(
+                        &mut driver,
+                        |owner| Some(owner.metadata_source()),
+                        |_| EndpointMetadata::default(),
+                    );
                     assert!(driver.runtime.is_settled(&route).unwrap());
                     assert!(Rc::ptr_eq(&saved, &client.hook.get_fd().unwrap()));
                     drop(client);

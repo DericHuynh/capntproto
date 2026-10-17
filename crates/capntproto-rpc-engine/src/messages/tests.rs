@@ -3,6 +3,40 @@ extern crate std;
 use super::*;
 
 #[test]
+fn capacity_lookahead_preserves_fixed_generations_and_live_owners() {
+    let mut bytes = [0; 16];
+    let mut buffers = [Buffer::new(&mut bytes)];
+    let usage = allocation_counter::measure(|| {
+        with_messages(&mut buffers, &mut [SendSlot::EMPTY], |messages| {
+            assert!(messages.can_reserve(16));
+            assert!(!messages.can_reserve(17));
+            assert!(!messages.can_reserve(usize::MAX));
+            assert_eq!(messages.buffers[0].generation.get(), 0);
+            let writer = messages.reserve(16).unwrap();
+            assert!(!messages.can_reserve(0));
+            let lease = messages.seal(writer, 8).unwrap();
+            let offer = messages.offer(&lease).unwrap();
+            let send = messages.accept(offer);
+            messages.release(lease);
+            assert!(!messages.can_reserve(0));
+            messages.fail_send(send).unwrap();
+            assert!(messages.can_reserve(16));
+            let lease = messages.copy_from(b"borrowed").unwrap();
+            core::mem::forget(messages.read(&lease));
+            messages.release(lease);
+            assert!(!messages.can_reserve(0));
+        })
+        .unwrap();
+    });
+    assert_eq!(usage.count_total, 0);
+    with_messages(&mut buffers, &mut [], |messages| {
+        messages.buffers[0].generation.set(u64::MAX);
+        assert!(!messages.can_reserve(0));
+    })
+    .unwrap();
+}
+
+#[test]
 fn owned_send_transfer_preserves_aliases_and_partial_write_ownership_without_allocating() {
     for retain in [false, true] {
         let mut bytes = [0; 16];

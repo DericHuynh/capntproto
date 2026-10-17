@@ -191,8 +191,8 @@
     {
       "name": "overtake-partial-frame",
       "source": "src/messages/queue.rs",
-      "from": "if complete {",
-      "to": "if true {",
+      "from": "if complete {\n            let state = policy::release",
+      "to": "if true {\n            let state = policy::release",
       "harness": "messages::queue::proofs::fifo_never_overtakes_partial_frame",
       "expected_check": "FIFO preserves oldest unsent suffix"
     },

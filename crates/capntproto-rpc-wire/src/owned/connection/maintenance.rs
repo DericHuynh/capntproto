@@ -2,22 +2,50 @@ use super::*;
 impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
     Driver<'pool, 'id, 's, I, A, P, S, CAPS, PATH>
 {
+    /// The last maintenance poll only retired references and published Finish
+    /// or Release. It performed no promise propagation or application dispatch.
+    /// Returned owners and independently notified work still need observation.
+    pub fn maintenance_published_retirement(&self) -> bool {
+        self.maintenance_published_retirement
+    }
     /// Check live ownership for an absence of immediately pollable maintenance.
     /// This bounded check calls no application hooks and changes no scan cursor.
     /// False requires normal polling; it does not necessarily mean work is ready.
     pub fn maintenance_is_idle(&self) -> bool {
-        self.disconnected.is_none() && self.call.is_none() && self.resolution.is_none()
-            && self.pipelines.vacant_within(8) && self.outgoing.is_empty()
-            && self.ledgers.exports.retirement_is_idle(8) && !self.runtime.has_retired()
+        self.disconnected.is_none()
+            && self.call.is_none()
+            && self.resolution.is_none()
+            && self.pipelines.vacant_within(8)
+            && self.outgoing_maintenance_is_idle()
+            && self.ledgers.exports.retirement_is_idle(8)
+            && !self.runtime.has_retired()
             && self.ledgers.answers.reclamation_is_idle(8)
-            // A retained bootstrap may coexist with an ordinary call. Keep
-            // this shortcut bounded independently of configured concurrency.
-            && self.exchanges.len() <= 8 && !self.exchanges.iter().any(|slot| slot.canceled)
-            && self.exported.capacity() == 0
+            && !self.canceled_exchanges
+            && self.exported.vacant_within(8)
             && !self.ledgers.questions.has_pending_finish()
             && !self.ledgers.imports.has_pending_release()
-            && self.runtime.queued() == 0 && self.barrier.is_none() && self.echo.is_none()
-            && self.tails.is_empty() && self.invocation_pipelines.is_empty()
+            && self.runtime.queued() == 0
+            && self.barrier.is_none()
+            && self.echo.is_none()
+            && self.tails.len() <= 8
+            && self.tails.iter().all(|slot| !slot.is_occupied())
+            && self.invocation_pipelines.len() <= 8
+            && self
+                .invocation_pipelines
+                .iter()
+                .all(|slot| !slot.is_occupied())
+    }
+    /// Outgoing observers can only progress against an authorized Return.
+    /// Pending questions alone do not require a scan of every observer slot.
+    /// This uses the same prerequisite as poll_outgoing, reads live state on
+    /// every check, and keeps the ordinary scan for larger exchange tables.
+    #[inline]
+    pub(super) fn outgoing_maintenance_is_idle(&self) -> bool {
+        self.outgoing.is_empty()
+            || (self.exchanges.len() <= 8
+                && !self.exchanges.iter().any(|slot| {
+                    slot.authorized && matches!(&slot.exchange, Some(Exchange::Returned(_)))
+                }))
     }
     /// Poll caller-budgeted promise propagation, deferred admission, cleanup and
     /// cancellation. The cursor advances even on resource errors so one blocked
@@ -83,7 +111,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     /// pipeline: every maintenance scan then observes it before the final result.
     /// The same caller task drives application futures, IO and these callbacks.
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-    #[inline(never)]
+    #[inline(always)]
     pub fn poll_maintenance_with<R: Default>(
         &mut self,
         messages: &mut messages::Messages<'pool, '_, '_>,
@@ -107,8 +135,54 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             pipelines::Error,
         >,
     ) -> Result<Progress<I, A, S>, Error> {
+        self.poll_maintenance_budget_with(
+            messages,
+            queue,
+            minimum,
+            options,
+            scratch,
+            &mut budget.get(),
+            resources,
+            attach,
+            resolve,
+        )
+    }
+    /// Poll maintenance and subtract only visited work from a shared budget.
+    /// A productive transition may stop before exhausting the allowance. The
+    /// caller can spend the remainder on more ready work before flushing output.
+    /// An idle certificate costs one step; a zero budget performs no work.
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    #[inline(never)]
+    pub fn poll_maintenance_budget_with<R: Default>(
+        &mut self,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        queue: &mut messages::Queue<'pool, '_, R>,
+        minimum: usize,
+        options: capnp::message::ReaderOptions,
+        scratch: &mut [u32],
+        budget: &mut usize,
+        resources: &mut impl FnMut() -> R,
+        attach: &mut impl FnMut(
+            &binding::Route<'id, P, S, PATH>,
+            &imports::Imports<'id, '_, I>,
+            &mut R,
+        ) -> u8,
+        resolve: &mut impl FnMut(
+            &A,
+            pipeline::Path<'_>,
+            &mut Runtime<'pool, 'id, 's, I, P, S, CAPS, PATH>,
+        ) -> Result<
+            Option<Result<clients::Client<'id>, capnp::ErrorKind>>,
+            pipelines::Error,
+        >,
+    ) -> Result<Progress<I, A, S>, Error> {
+        self.maintenance_published_retirement = false;
         self.check_live()?;
+        if *budget == 0 {
+            return Ok(Progress::Yield);
+        }
         if self.maintenance_is_idle() {
+            *budget -= 1;
             self.scan_remaining = self.maintenance_total;
             return Ok(Progress::Idle);
         }
@@ -141,8 +215,9 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             self.maintenance_total = total;
             self.scan_remaining = total;
         }
-        let mut remaining = budget.get();
-        while remaining != 0 {
+        let mut advanced = false;
+        let mut retired_burst = 0;
+        while *budget != 0 {
             let phase = self.maintenance_phase;
             let index = self.maintenance_index;
             // Keep empty lanes out of the ownership-bearing transition call.
@@ -152,21 +227,27 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             let empty = match phase {
                 0 => self.call.is_none(),
                 1 => self.resolution.is_none(),
-                2 => self.pipelines.capacity() == 0,
-                3 => self.outgoing.is_empty(),
-                4 => self.ledgers.exports.capacity() == 0,
+                2 => self.pipelines.vacant_within(8),
+                3 => self.outgoing_maintenance_is_idle(),
+                4 => self.ledgers.exports.retirement_is_idle(8),
                 5 => !self.runtime.has_retired(),
-                6 => self.ledgers.answers.capacity() == 0,
-                7 => self.exchanges.is_empty(),
-                8 => self.exported.capacity() == 0,
+                6 => self.ledgers.answers.reclamation_is_idle(8),
+                7 => !self.canceled_exchanges,
+                8 => self.exported.vacant_within(8),
                 9 => !self.ledgers.questions.has_pending_finish(),
                 10 => !self.ledgers.imports.has_pending_release(),
                 11 => self.call.is_none() && self.runtime.queued() == 0,
                 12 | 17 => self.runtime.queued() == 0,
                 13 => self.barrier.is_none(),
                 14 => self.echo.is_none(),
-                15 => self.tails.is_empty(),
-                16 => self.invocation_pipelines.is_empty(),
+                15 => self.tails.len() <= 8 && self.tails.iter().all(|slot| !slot.is_occupied()),
+                16 => {
+                    self.invocation_pipelines.len() <= 8
+                        && self
+                            .invocation_pipelines
+                            .iter()
+                            .all(|slot| !slot.is_occupied())
+                }
                 _ => false,
             };
             // An empty lane cannot change until a transition/callback runs.
@@ -174,12 +255,12 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             // but skip its remaining vacant capacity with one cursor update.
             let visited = if empty {
                 (self.maintenance_sizes[phase] - index)
-                    .min(remaining)
+                    .min(*budget)
                     .min(self.scan_remaining)
             } else {
                 1
             };
-            remaining -= visited;
+            *budget -= visited;
             self.maintenance_index += visited;
             if self.maintenance_index == self.maintenance_sizes[phase] {
                 self.maintenance_index = 0;
@@ -198,20 +279,46 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 )
             };
             match result {
+                Ok(Some(Progress::Advanced)) if matches!(phase, 4 | 5) => {
+                    // Export/endpoint retirement publishes no frame and returns
+                    // no application owner. Complete its bounded reference-drop
+                    // cascade here, rather than rebuilding every application
+                    // lane between adjacent cleanup steps. Other progress,
+                    // including returned owners and output, still stops here.
+                    advanced = true;
+                    self.scan_remaining = self.maintenance_total;
+                    if phase == 5 {
+                        retired_burst += 1;
+                        if retired_burst < 8 && *budget != 0 && self.runtime.has_retired() {
+                            self.maintenance_phase = 5;
+                            self.maintenance_index = 0;
+                        }
+                    }
+                }
                 Ok(None) => {
                     self.scan_remaining -= visited;
                     if self.scan_remaining == 0 {
                         self.scan_remaining = self.maintenance_total;
-                        return Ok(Progress::Idle);
+                        return Ok(if advanced {
+                            Progress::Advanced
+                        } else {
+                            Progress::Idle
+                        });
                     }
                 }
                 outcome => {
                     self.scan_remaining = self.maintenance_total;
+                    self.maintenance_published_retirement =
+                        matches!(phase, 9 | 10) && outcome.is_ok();
                     return outcome.map(|progress| progress.unwrap());
                 }
             }
         }
-        Ok(Progress::Yield)
+        Ok(if advanced {
+            Progress::Advanced
+        } else {
+            Progress::Yield
+        })
     }
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     fn maintenance_step<R: Default>(

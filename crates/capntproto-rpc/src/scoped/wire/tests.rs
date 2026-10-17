@@ -6,6 +6,12 @@ use capntproto_rpc_engine::{
 };
 use capntproto_rpc_wire::{clients::Route, owned::Frame, rpc_capnp};
 
+#[derive(Clone, Copy)]
+enum PayloadKind {
+    Params,
+    Results,
+}
+
 type Peer<'p, 'id, 's> = Driver<'p, 'id, 's, (), (), u8, u32, 4, 4>;
 
 #[test]
@@ -59,11 +65,22 @@ fn data_payloads_share_validated_frames_and_outlive_the_driver_scope() {
                         };
                         let pointer = content.get_as::<capnp::data::Reader>().unwrap().as_ptr();
                         content.validate_capability_indices(0).unwrap();
+                        let mut foreign = capnp::message::Builder::new_default();
+                        foreign
+                            .set_root::<capnp::data::Owned>(&b"shared payload"[..])
+                            .unwrap();
+                        let error = Payload::retain_admitted_or_copy(
+                            foreign.get_root_as_reader().unwrap(),
+                            frame.share(messages),
+                            Vec::new(),
+                        )
+                        .err()
+                        .expect("foreign content cannot acquire this frame");
+                        assert_eq!(error.kind, capnp::ErrorKind::TypeMismatch);
                         let payload = Payload::retain_admitted_or_copy(
                             content,
                             frame.share(messages),
-                            kind,
-                            0,
+                            Vec::new(),
                         )
                         .unwrap();
                         assert!(matches!(payload.body, PayloadBody::Shared { .. }));
@@ -124,6 +141,129 @@ fn data_payloads_share_validated_frames_and_outlive_the_driver_scope() {
             }
         };
         assert_eq!(content, b"shared payload");
+    }
+}
+
+#[test]
+fn admitted_capability_payloads_keep_slot_identity_and_outlive_their_frame() {
+    use rpc_capnp::api::{Call, CapDescriptor, Message, Payload as WirePayload, Return};
+    for kind in [PayloadKind::Params, PayloadKind::Results] {
+        for shared in [false, true] {
+            let mut pool = messages::GrowingBuffers::new(1, 256, 263);
+            let payload = messages::with_growing_messages(
+                &mut pool,
+                storage::Growth {
+                    initial: 0,
+                    maximum: 0,
+                },
+                |messages| {
+                    let frame = Frame::build(messages, 256, Default::default(), |builder| {
+                        let root = builder.try_init_root::<Message>()?;
+                        let mut payload = match kind {
+                            PayloadKind::Params => root
+                                .into_field(Message::CALL)
+                                .init()?
+                                .into_field(Call::PARAMS)
+                                .init()?,
+                            PayloadKind::Results => root
+                                .into_field(Message::RETURN)
+                                .init()?
+                                .into_field(Return::RESULTS)
+                                .init()?,
+                        };
+                        payload
+                            .field(WirePayload::CONTENT)
+                            .set_capability_index(1)?;
+                        let mut caps = payload.field(WirePayload::CAP_TABLE).init(2)?;
+                        caps.get_mut(0).unwrap().void(CapDescriptor::NONE).set();
+                        caps.get_mut(1)
+                            .unwrap()
+                            .scalar(CapDescriptor::SENDER_HOSTED)
+                            .set(77);
+                        Ok(())
+                    })
+                    .unwrap();
+                    let payload = frame
+                        .with(messages, |root| {
+                            let content = match root.which().unwrap() {
+                                rpc_capnp::message::Call(call) => {
+                                    call.unwrap().get_params().unwrap().get_content()
+                                }
+                                rpc_capnp::message::Return(returned) => {
+                                    let rpc_capnp::return_::Results(payload) =
+                                        returned.unwrap().which().unwrap()
+                                    else {
+                                        panic!()
+                                    };
+                                    payload.unwrap().get_content()
+                                }
+                                _ => panic!(),
+                            };
+                            content.validate_capability_indices(2).unwrap();
+                            Payload::retain_admitted_or_copy(
+                                content,
+                                shared.then(|| frame.share(messages).unwrap()),
+                                vec![
+                                    None,
+                                    Some(crate::broken::new_cap(Error::failed(
+                                        "original admitted hook".into(),
+                                    ))),
+                                ],
+                            )
+                            .unwrap()
+                        })
+                        .unwrap();
+                    frame.release(messages);
+                    if shared {
+                        assert_eq!(
+                            messages.reserve(256).unwrap_err(),
+                            messages::Error::NoBuffer
+                        );
+                        assert_eq!(payload.reader().unwrap().capability_index().unwrap(), 1);
+                    }
+                    payload
+                },
+            )
+            .unwrap();
+            drop(pool);
+            // Both shared and copied admitted payloads keep their exact hooks
+            // through a completed pipeline, after the frame/pool are gone.
+            let payload = Rc::new(payload);
+            let original = payload.reader().unwrap().get_pipelined_cap(&[]).unwrap();
+            let pipeline = PayloadPipeline(payload.clone());
+            let retained = pipeline.add_ref();
+            drop(pipeline);
+            let projected = retained.get_pipelined_cap(&[PipelineOp::Noop]);
+            assert_eq!(projected.get_ptr(), original.get_ptr());
+            let invalid = retained.get_pipelined_cap(&[PipelineOp::GetPointerField(0)]);
+            assert!(
+                futures::executor::block_on(invalid.new_call(0, 0, None).send().promise).is_err()
+            );
+            drop(retained);
+            let payload = Rc::try_unwrap(payload)
+                .ok()
+                .expect("pipeline released payload");
+            let capability = match kind {
+                PayloadKind::Params => payload
+                    .into_params()
+                    .get()
+                    .unwrap()
+                    .get_as_capability::<capability::Client>()
+                    .unwrap(),
+                PayloadKind::Results => payload
+                    .into_response()
+                    .get()
+                    .unwrap()
+                    .get_as_capability::<capability::Client>()
+                    .unwrap(),
+            };
+            let request = capability.hook.new_call(0, 0, None).send();
+            let error = match futures::executor::block_on(request.promise) {
+                Err(error) => error,
+                Ok(_) => panic!("the retained hook must preserve its failure"),
+            };
+            assert_eq!(error.extra, "original admitted hook");
+        }
     }
 }
 
@@ -834,6 +974,50 @@ fn pipeline_only_interest_retains_parent_until_final_pipeline_drop() {
 }
 
 #[test]
+fn projection_cache_normalizes_noops_and_preserves_capacity_across_inline_spill() {
+    let mut cache = ProjectionCache::default();
+    let first = crate::broken::new_cap(Error::failed("first".into()));
+    let second = crate::broken::new_cap(Error::disconnected("second".into()));
+    cache
+        .remember(vec![PipelineOp::GetPointerField(3)], &*first, 2)
+        .unwrap();
+    cache
+        .remember(
+            vec![
+                PipelineOp::Noop,
+                PipelineOp::GetPointerField(3),
+                PipelineOp::Noop,
+            ],
+            &*second,
+            2,
+        )
+        .unwrap();
+    assert_eq!(cache.len(), 1);
+    assert_eq!(
+        cache
+            .get(&[PipelineOp::GetPointerField(3)])
+            .unwrap()
+            .get_failure()
+            .unwrap()
+            .kind,
+        capnp::ErrorKind::Failed
+    );
+    let long: Vec<_> = (0..12).map(PipelineOp::GetPointerField).collect();
+    cache.remember(long.clone(), &*second, 2).unwrap();
+    assert_eq!(cache.len(), 2);
+    assert_eq!(
+        cache.get(&long).unwrap().get_failure().unwrap().kind,
+        capnp::ErrorKind::Disconnected
+    );
+    assert!(cache
+        .remember(vec![PipelineOp::GetPointerField(7)], &*first, 2)
+        .is_err());
+    assert!(cache.get(&[PipelineOp::GetPointerField(7)]).is_none());
+    cache.remember(long, &*first, 2).unwrap();
+    assert_eq!(cache.len(), 2);
+}
+
+#[test]
 fn pipeline_drop_releases_interest_before_synchronous_wake() {
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
@@ -858,7 +1042,7 @@ fn pipeline_drop_releases_interest_before_synchronous_wake() {
         used: Cell::new(false),
         adopted: RefCell::default(),
         cached: RefCell::default(),
-        _credit: None,
+        _credit: Cell::new(None),
         waiting: RefCell::new(VecDeque::new()),
         finished: RefCell::new(None),
         inbox: Rc::downgrade(&hooks.inbox),
@@ -870,8 +1054,26 @@ fn pipeline_drop_releases_interest_before_synchronous_wake() {
     assert!(hooks
         .poll_next(&mut Context::from_waker(&waker))
         .is_pending());
-    drop(WirePipeline(PipelineRef(Some(pipeline.clone()))));
+    let last = WirePipeline(PipelineRef(Some(pipeline.clone()), None));
+    drop(WirePipeline(PipelineRef(Some(pipeline.clone()), None)));
+    assert_eq!(observe.0.load(Ordering::SeqCst), usize::MAX);
+    drop(last);
     assert_eq!(observe.0.load(Ordering::SeqCst), 1);
+    pipeline.finish(Box::new(crate::broken::Pipeline::new(Error::failed(
+        "finished".into(),
+    ))));
+    observe.0.store(usize::MAX, Ordering::SeqCst);
+    assert!(hooks
+        .poll_next(&mut Context::from_waker(&waker))
+        .is_pending());
+    drop(WirePipeline(PipelineRef(Some(pipeline.clone()), None)));
+    assert_eq!(observe.0.load(Ordering::SeqCst), usize::MAX);
+    // Custom hooks can release a pipeline during publication. A borrowed
+    // completion cell must preserve the conservative wake without panicking.
+    let borrowed = pipeline.finished.borrow_mut();
+    drop(WirePipeline(PipelineRef(Some(pipeline.clone()), None)));
+    assert_eq!(observe.0.load(Ordering::SeqCst), 1);
+    drop(borrowed);
     OBSERVED.with(|slot| slot.borrow_mut().take());
 }
 
@@ -1278,6 +1480,39 @@ fn hosted_hook_bridge_exceeds_inline_capability_capacity_in_both_directions() {
 fn retained_plain_params_keep_segments_and_outlive_the_connection() {
     use capntproto_rpc_engine::ids::ExportId;
     use capntproto_rpc_wire::clients as binding;
+    #[derive(Clone)]
+    struct Suspended;
+    impl capability::Server for Suspended {
+        fn dispatch_call(
+            self,
+            _: u64,
+            _: u16,
+            context: capability::CallContext<'_, any_pointer::Owned, any_pointer::Owned>,
+        ) -> capability::DispatchCallResult {
+            let (params, mut results) = context.into_owned();
+            let mut first = true;
+            capability::DispatchCallResult::new(
+                Promise::from_future(async move {
+                    futures::future::poll_fn(|cx| {
+                        if std::mem::take(&mut first) {
+                            cx.waker().wake_by_ref();
+                            Poll::Pending
+                        } else {
+                            Poll::Ready(())
+                        }
+                    })
+                    .await;
+                    let bytes = params.get()?.get_as::<capnp::data::Reader>()?;
+                    assert_eq!(bytes, b"retained parameters");
+                    results.get().set_as::<capnp::data::Owned>(bytes)
+                }),
+                true,
+            )
+        }
+        fn as_ptr(&self) -> usize {
+            self as *const Self as usize
+        }
+    }
     fn prepare<'p>(
         messages: &mut messages::Messages<'p, '_, '_>,
         segmented: bool,
@@ -1397,6 +1632,13 @@ fn retained_plain_params_keep_segments_and_outlive_the_connection() {
                     .unwrap(),
                 b"retained parameters"
             );
+            // Transfer the retained reader into a suspended application after
+            // the original request, graph and pool have all been destroyed.
+            let results = server::Results::new();
+            let work = payload
+                .execute(&crate::local::Client::new(Suspended), &results, None)
+                .unwrap();
+            futures::executor::block_on(work).unwrap();
         }
     }
 }

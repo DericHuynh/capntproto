@@ -9,6 +9,65 @@ The transport and capability layers are the foundation for future higher-level
 runtimes. This workspace no longer includes an actor runtime, activation
 scheduler or placement service.
 
+## Generated service dispatch
+
+Regenerate hosted bindings after the October 17 service API change. Generated
+methods now take one `MethodContext<'_>` and return `Promise<(), Error>`. The
+old `async fn method(self: Rc<Self>, Params, Results)` signature is removed.
+Clients, schemas and wire messages retain their existing contracts. Bounded
+`no_std` services keep their separate caller-backed interfaces.
+
+A synchronous handler borrows the original call storage:
+
+```rust
+fn echo(self: Rc<Self>, context: base::EchoContext<'_>)
+    -> capnp::capability::Promise<(), capnp::Error>
+{
+    context.complete(|params, mut results| {
+        results.set_value(params.get_value());
+        Ok(())
+    })
+}
+```
+
+A handler that needs to suspend explicitly transfers ownership before creating
+its future:
+
+```rust
+fn echo(self: Rc<Self>, context: base::EchoContext<'_>)
+    -> capnp::capability::Promise<(), capnp::Error>
+{
+    let (params, mut results) = context.into_owned();
+    capnp::capability::Promise::from_future(async move {
+        let value = self.lookup(params.get()?.get_value()).await?;
+        results.get().set_value(value);
+        Ok(())
+    })
+}
+```
+
+The second example uses ordinary mutable results. With `structured_replies`,
+`into_owned()` instead returns `(Params, Reply)`, preserving the affine reply
+stages below. `complete()` consumes either kind of context, and borrowed readers
+and builders cannot escape it. Streaming barriers, cancellation policy,
+revocation, early pipelines and result lifetimes remain runtime obligations.
+Generated non-cancellable methods use the runtime's existing immediate-poll
+permission only when the result sink also supplies an executor. This lets admitted
+non-streaming wire calls borrow their contexts. Ordinary local calls and opaque
+wrappers defer application entry, preserving rejection before side effects when
+the executor is missing or stopped. Streaming methods defer until their ordering
+barrier is installed. Pending protected calls still transfer to the executor.
+Dynamic reflection adapters explicitly take ownership for their asynchronous
+call interfaces.
+
+The portable integration API also changes: `Control::poll`, `received` and
+`shutdown` receive `ControlContext`, and `preserves_idle(Activity)` replaces the
+old per-event methods. No public compatibility callback exposes the coordinator.
+Output adapters implement `metadata_source` instead of snapshot polling. Return
+a stable `Rc<MetadataSource>` even before metadata arrives and publish changes
+through `update`; `None` declares that the import has no metadata. The built-in
+vat and descriptor adapters implement this contract.
+
 ## One connection
 
 Wrap a configured transport driver with `Connection::spawn`:
@@ -242,7 +301,7 @@ capnpc::codegen::CodeGenerationCommand::new()
 `capnpc::CompilerCommand` exposes the same option. It changes generated server
 `FooResults` aliases to `capnp::capability::Reply<T>`. The wire schema, client
 methods, inheritance, generic result brands and cancellation policy are unchanged.
-Existing modules keep their legacy signatures until regenerated with the option.
+Regeneration is required for the new context signature in either mode.
 
 Each reply owns its context exclusively and exposes only operations valid for
 its current stage:
@@ -256,11 +315,11 @@ its current stage:
 For a simple server response:
 
 ```rust
-async fn echo(self: Rc<Self>, p: base::EchoParams, reply: base::EchoResults)
-    -> capnp::Result<()>
+fn echo(self: Rc<Self>, context: base::EchoContext<'_>)
+    -> capnp::capability::Promise<(), capnp::Error>
 {
-    reply.complete(|mut out| {
-        out.set_value(p.get()?.get_value());
+    context.complete(|params, mut out| {
+        out.set_value(params.get_value());
         Ok(())
     })
 }

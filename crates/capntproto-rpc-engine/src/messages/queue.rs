@@ -10,6 +10,8 @@ pub struct QueueEntry<'pool, R = ()> {
     resources: R,
 }
 enum QueuedMessage<'pool> {
+    #[cfg(feature = "alloc")]
+    Parts(SharedParts),
     Tracked(SendKey<'pool>),
     Owned {
         lease: Lease<'pool>,
@@ -129,8 +131,19 @@ impl<'pool, 'storage, R> Queue<'pool, 'storage, R> {
         if self.is_empty() {
             return Ok(None);
         }
+        #[cfg(feature = "alloc")]
+        if let QueuedMessage::Parts(parts) = &self.slots[self.head].as_ref().unwrap().message {
+            let parts = parts.clone();
+            return Ok(Some(QueueWindow {
+                position: parts.position(),
+                queue: self,
+                body: WindowBody::Parts(parts),
+            }));
+        }
         let (tracked, buffer, bytes, position) =
             match &self.slots[self.head].as_ref().unwrap().message {
+                #[cfg(feature = "alloc")]
+                QueuedMessage::Parts(_) => unreachable!("handled above"),
                 QueuedMessage::Tracked(key) => {
                     let SendWindow {
                         send,
@@ -153,9 +166,11 @@ impl<'pool, 'storage, R> Queue<'pool, 'storage, R> {
             };
         Ok(Some(QueueWindow {
             queue: self,
-            tracked,
-            buffer,
-            bytes,
+            body: WindowBody::Buffer {
+                tracked,
+                buffer,
+                bytes,
+            },
             position,
         }))
     }
@@ -244,25 +259,58 @@ impl<'pool, R> QueueSlot<'_, 'pool, '_, R> {
         });
         self.queue.len += 1;
     }
+
+    /// Transfer a charged scatter/gather owner into the same ordered FIFO.
+    /// Its charge follows all transport aliases through partial writes/flush.
+    #[cfg(feature = "alloc")]
+    pub fn accept_parts(self, parts: SharedParts) {
+        let index = policy::ring_offset(self.queue.head, self.queue.len, self.queue.slots.len());
+        self.queue.slots[index] = Some(QueueEntry {
+            message: QueuedMessage::Parts(parts),
+            resources: self.resources,
+        });
+        self.queue.len += 1;
+    }
 }
 
 pub struct QueueWindow<'a, 'pool, 'queue, 'buffers, 'bytes, R = ()> {
     queue: &'a mut Queue<'pool, 'queue, R>,
-    tracked: Option<&'a mut Option<Send>>,
-    buffer: &'buffers Buffer<'bytes>,
-    bytes: Ref<'buffers, [u8]>,
+    body: WindowBody<'a, 'buffers, 'bytes>,
     position: usize,
+}
+enum WindowBody<'a, 'buffers, 'bytes> {
+    Buffer {
+        tracked: Option<&'a mut Option<Send>>,
+        buffer: &'buffers Buffer<'bytes>,
+        bytes: Ref<'buffers, [u8]>,
+    },
+    #[cfg(feature = "alloc")]
+    Parts(SharedParts),
 }
 impl<R> QueueWindow<'_, '_, '_, '_, '_, R> {
     pub fn bytes(&self) -> &[u8] {
-        &self.bytes
+        match &self.body {
+            WindowBody::Buffer { bytes, .. } => bytes,
+            #[cfg(feature = "alloc")]
+            WindowBody::Parts(parts) => parts.first_remaining(),
+        }
     }
     #[cfg(feature = "alloc")]
     pub fn share(&self) -> Option<SharedBytes> {
-        self.buffer
-            .bytes
-            .borrow()
-            .share(self.position..self.position + self.bytes.len())
+        match &self.body {
+            WindowBody::Buffer { buffer, bytes, .. } => buffer
+                .bytes
+                .borrow()
+                .share(self.position..self.position + bytes.len()),
+            WindowBody::Parts(_) => None,
+        }
+    }
+    #[cfg(feature = "alloc")]
+    pub fn share_parts(&self) -> Option<SharedParts> {
+        match &self.body {
+            WindowBody::Parts(parts) => Some(parts.clone()),
+            WindowBody::Buffer { .. } => None,
+        }
     }
     /// Resources are offered only with the first byte. After any positive
     /// accepted write this returns None, even if the frame remains incomplete.
@@ -273,20 +321,56 @@ impl<R> QueueWindow<'_, '_, '_, '_, '_, R> {
     /// Complete the oldest frame before allowing access to its successor.
     /// Invalid counts preserve both byte progress and attachment eligibility.
     pub fn advance(self, count: usize) -> Result<bool, Error> {
-        let (next, complete) = policy::advance(self.position, self.bytes.len(), count)?;
-        drop(self.bytes);
+        if count > self.bytes().len() {
+            return Err(Error::InvalidWriteCount);
+        }
+        self.advance_inner(count)
+    }
+    /// Commit an adapter's acceptance from the complete shared portions, which
+    /// may span more bytes than the first borrowed slice exposed by bytes().
+    #[cfg(feature = "alloc")]
+    pub fn advance_parts(self, count: usize) -> Result<bool, Error> {
+        if !matches!(&self.body, WindowBody::Parts(_)) {
+            return Err(Error::InvalidWriteCount);
+        }
+        self.advance_inner(count)
+    }
+    fn advance_inner(self, count: usize) -> Result<bool, Error> {
+        let (tracked, buffer, bytes) = match self.body {
+            WindowBody::Buffer {
+                tracked,
+                buffer,
+                bytes,
+            } => (tracked, buffer, bytes),
+            #[cfg(feature = "alloc")]
+            WindowBody::Parts(_) => {
+                let QueuedMessage::Parts(parts) =
+                    &mut self.queue.slots[self.queue.head].as_mut().unwrap().message
+                else {
+                    unreachable!("parts window")
+                };
+                let complete = parts.advance(count)?;
+                if complete {
+                    self.queue.pop();
+                }
+                return Ok(complete);
+            }
+        };
+        let (next, complete) = policy::advance(self.position, bytes.len(), count)?;
+        drop(bytes);
         if complete {
-            let state = policy::release(self.buffer.state.get(), self.tracked.is_some());
-            self.buffer.state.set(if policy::reclaimable(state) {
+            let state = policy::release(buffer.state.get(), tracked.is_some());
+            buffer.state.set(if policy::reclaimable(state) {
                 State::Free
             } else {
                 state
             });
-            if let Some(send) = self.tracked {
+            buffer.release_received();
+            if let Some(send) = tracked {
                 send.take();
             }
             self.queue.pop();
-        } else if let Some(send) = self.tracked {
+        } else if let Some(send) = tracked {
             send.as_mut().expect("live window").position = next;
         } else {
             let QueuedMessage::Owned { position, .. } =

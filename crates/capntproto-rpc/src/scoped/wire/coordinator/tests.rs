@@ -1,8 +1,10 @@
 use super::*;
+mod cleanup;
 mod lifecycle;
 mod network;
 mod plain;
 mod policy;
+mod worker;
 use capntproto_rpc_engine::{connection as storage, ids::WireId, imports};
 use capntproto_rpc_wire::clients::Route;
 use std::sync::{
@@ -58,26 +60,32 @@ fn reclaimed(messages: &mut messages::Messages<'_, '_, '_>) {
 }
 #[derive(Default)]
 struct Policy {
+    scoped_wake: bool,
     stopped: bool,
     polls: usize,
     wake: Option<Waker>,
     wake_during_poll: bool,
     publish_on_poll: bool,
     preserve_plain: bool,
+    direct_returns: bool,
     notify_receive: bool,
     idle_transitions: Vec<bool>,
 }
 impl<'p, 'id, 's> Control<'p, 'id, 's, (), u8, 8, 8> for Policy {
-    fn plain_call_preserves_idle(&self) -> bool {
-        self.preserve_plain
+    fn accepts_direct_plain_return(&self) -> bool {
+        self.direct_returns
     }
-    fn direct_publication_preserves_idle(&self) -> bool {
-        self.preserve_plain
+    fn preserves_idle(&self, activity: Activity) -> bool {
+        if activity == Activity::PlainReturn {
+            self.direct_returns
+        } else {
+            self.preserve_plain
+        }
     }
     fn received(
         &mut self,
         event: connection::Received<'id, server::Results>,
-        _: &mut TestCoordinator<'p, 'id, 's>,
+        _: &mut ControlContext<'_, 'p, 'id, 's, (), u8, 8, 8>,
         _: &mut messages::Messages<'p, '_, '_>,
         _: &mut messages::Queue<'p, '_>,
     ) -> capnp::Result<()> {
@@ -95,13 +103,19 @@ impl<'p, 'id, 's> Control<'p, 'id, 's, (), u8, 8, 8> for Policy {
     }
     fn poll(
         &mut self,
-        _: &mut TestCoordinator<'p, 'id, 's>,
+        _: &mut ControlContext<'_, 'p, 'id, 's, (), u8, 8, 8>,
         messages: &mut messages::Messages<'p, '_, '_>,
         queue: &mut messages::Queue<'p, '_>,
         _: &mut [u32],
         _: &NoResources,
         cx: &mut Context<'_>,
     ) -> Poll<capnp::Result<bool>> {
+        if self.scoped_wake {
+            self.polls += 1;
+            assert!(self.polls < 16, "control-only self-wake must yield");
+            cx.waker().wake_by_ref();
+            return Poll::Pending;
+        }
         self.polls += 1;
         self.wake = Some(cx.waker().clone());
         if std::mem::take(&mut self.publish_on_poll) {
@@ -122,11 +136,50 @@ impl<'p, 'id, 's> Control<'p, 'id, 's, (), u8, 8, 8> for Policy {
     }
     fn shutdown(
         &mut self,
-        _: &mut TestCoordinator<'p, 'id, 's>,
+        _: &mut ControlContext<'_, 'p, 'id, 's, (), u8, 8, 8>,
         _: &mut messages::Messages<'p, '_, '_>,
     ) {
         self.stopped = true;
     }
+}
+
+#[test]
+fn restricted_control_self_wake_yields_without_restarting_application_scans() {
+    with_peer(|driver, messages| {
+        let mut coordinator = Coordinator::new(
+            driver,
+            ClientHooks::new(8, 8),
+            NonZeroUsize::new(4).unwrap(),
+            None,
+            options(),
+        )
+        .unwrap();
+        coordinator.schedule.active = WorkSet::NONE;
+        let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+        let mut writer = Writer(Rc::default());
+        let mut control = Policy {
+            scoped_wake: true,
+            ..Default::default()
+        };
+        let waker = Waker::from(Arc::new(WakeCount::default()));
+        let mut cx = Context::from_waker(&waker);
+        for expected in 1..=2 {
+            assert!(!coordinator
+                .poll_io_work::<(), _, _>(
+                    messages,
+                    &mut queue,
+                    &mut transport::Writer(&mut writer),
+                    &mut [0; 8],
+                    &NoResources,
+                    &mut control,
+                    &mut cx
+                )
+                .unwrap());
+            assert_eq!(control.polls, expected);
+            assert_eq!(coordinator.schedule.active, WorkSet::NONE);
+            assert!(!coordinator.control_idle);
+        }
+    });
 }
 
 #[test]
@@ -402,9 +455,9 @@ impl capability::Server for Echo {
         self,
         _: u64,
         _: u16,
-        params: capability::Params<any_pointer::Owned>,
-        mut results: capability::Results<any_pointer::Owned>,
+        context: capability::CallContext<'_, any_pointer::Owned, any_pointer::Owned>,
     ) -> capability::DispatchCallResult {
+        let (params, mut results) = context.into_owned();
         self.0.set(self.0.get() + 1);
         let result = params.get().and_then(|params| results.get().set_as(params));
         capability::DispatchCallResult {
@@ -472,9 +525,9 @@ fn hook_collection_reactivates_already_idle_maintenance() {
         drop(client);
         // Reproduce a rotation where maintenance went idle before hook
         // collection observes the final application owner disappearing.
-        coordinator.active = 1;
-        coordinator.cursor = 0;
-        coordinator.wake.changed.store(0, Ordering::Release);
+        coordinator.schedule.active = WorkSet::FOREIGN;
+        coordinator.schedule.cursor = Lane::Foreign;
+        coordinator.notifications.take(cx.waker());
         for _ in 0..256 {
             let result =
                 coordinator.poll_work(messages, &mut queue, &mut scratch, &NoResources, &mut cx);
@@ -485,7 +538,8 @@ fn hook_collection_reactivates_already_idle_maintenance() {
                 break;
             }
             assert_ne!(
-                coordinator.active, 0,
+                coordinator.schedule.active,
+                WorkSet::NONE,
                 "retired import must keep cleanup runnable"
             );
         }
@@ -559,7 +613,10 @@ fn published_direct_call_sleeps_until_cancellation_or_new_admission() {
                 Poll::Ready(Ok(()))
             ));
             assert_eq!(queue.len(), 1);
-            assert_eq!(coordinator.active & (1 << 2), 0);
+            assert_eq!(
+                coordinator.schedule.active & (WorkSet::CALLS),
+                WorkSet::NONE
+            );
             {
                 let window = queue.window(messages).unwrap().unwrap();
                 let size = window.bytes().len();
@@ -571,20 +628,20 @@ fn published_direct_call_sleeps_until_cancellation_or_new_admission() {
                 {
                     result.unwrap();
                 }
-                if coordinator.active == 0 {
+                if coordinator.schedule.active == WorkSet::NONE {
                     break;
                 }
             }
-            assert_eq!(coordinator.active, 0);
+            assert_eq!(coordinator.schedule.active, WorkSet::NONE);
             assert!(queue.is_empty());
-            assert_eq!(coordinator.wake.changed.load(Ordering::Acquire), 0);
+            assert_eq!(coordinator.notifications.pending(), WorkSet::NONE);
             let second = if cancel {
                 drop(request.take());
                 None
             } else {
                 Some(call())
             };
-            assert_ne!(coordinator.wake.changed.load(Ordering::Acquire), 0);
+            assert_ne!(coordinator.notifications.pending(), WorkSet::NONE);
             for _ in 0..256 {
                 if let Poll::Ready(result) =
                     coordinator.poll_work(messages, &mut queue, &mut scratch, &NoResources, &mut cx)
@@ -697,14 +754,14 @@ fn empty_application_lanes_need_no_output_slot_but_ready_calls_do() {
         // The other lanes have certified idle. Empty application/command
         // lanes cannot publish, so output backpressure must not hide their
         // idle certificates or turn an empty poll into a capacity failure.
-        coordinator.active = (1 << 2) | (1 << 3) | (1 << 5);
+        coordinator.schedule.active = (WorkSet::CALLS) | (WorkSet::WORKER) | (WorkSet::COMMANDS);
         let mut queue = messages::Queue::new_growing(0, 0).unwrap();
         let mut scratch = [0; 32];
         let mut cx = Context::from_waker(Waker::noop());
         assert!(coordinator
             .poll_work(messages, &mut queue, &mut scratch, &NoResources, &mut cx,)
             .is_pending());
-        assert_eq!(coordinator.active, 0);
+        assert_eq!(coordinator.schedule.active, WorkSet::NONE);
         let request = client
             .new_call::<any_pointer::Owned, any_pointer::Owned>(7, 0, None)
             .send();
@@ -1360,19 +1417,23 @@ fn foreign_resolution_invalidates_an_idle_lane_during_an_unfinished_scan() {
             {
                 result.unwrap();
             }
-            if coordinator.active & 1 == 0
-                && coordinator.active != 0
+            if coordinator.schedule.active & WorkSet::FOREIGN == WorkSet::NONE
+                && coordinator.schedule.active != WorkSet::NONE
                 && ready.wake.borrow().is_some()
             {
                 break;
             }
         }
         assert_eq!(
-            coordinator.active & 1,
-            0,
+            coordinator.schedule.active & WorkSet::FOREIGN,
+            WorkSet::NONE,
             "promise lane completed its pending scan"
         );
-        assert_ne!(coordinator.active, 0, "other lanes are still scanning");
+        assert_ne!(
+            coordinator.schedule.active,
+            WorkSet::NONE,
+            "other lanes are still scanning"
+        );
         ready.stop();
         if let Poll::Ready(result) =
             coordinator.poll_work(messages, &mut queue, &mut scratch, &NoResources, &mut cx)
@@ -1380,8 +1441,8 @@ fn foreign_resolution_invalidates_an_idle_lane_during_an_unfinished_scan() {
             result.unwrap();
         }
         assert_ne!(
-            coordinator.active & 1,
-            0,
+            coordinator.schedule.active & WorkSet::FOREIGN,
+            WorkSet::NONE,
             "application wake invalidates the idle certificate immediately"
         );
         let mut completed = false;
@@ -1482,7 +1543,7 @@ fn bootstrap_exception_details_survive_full_fifo_without_repeating_factory() {
         <TwoParty<'_, _> as Control<'_, '_, '_, (), u8, 8, 8>>::received(
             &mut control,
             received,
-            &mut coordinator,
+            &mut ControlContext::new(&mut coordinator),
             messages,
             &mut queue,
         )
@@ -1501,7 +1562,7 @@ fn bootstrap_exception_details_survive_full_fifo_without_repeating_factory() {
         for _ in 0..5 {
             assert!(control
                 .poll(
-                    &mut coordinator,
+                    &mut ControlContext::new(&mut coordinator),
                     messages,
                     &mut queue,
                     &mut [0; 32],
@@ -1516,7 +1577,7 @@ fn bootstrap_exception_details_survive_full_fifo_without_repeating_factory() {
         window.advance(size).unwrap();
         assert!(matches!(
             control.poll(
-                &mut coordinator,
+                &mut ControlContext::new(&mut coordinator),
                 messages,
                 &mut queue,
                 &mut [0; 32],
@@ -1553,7 +1614,7 @@ fn bootstrap_exception_details_survive_full_fifo_without_repeating_factory() {
         window.advance(size).unwrap();
         assert!(control
             .poll(
-                &mut coordinator,
+                &mut ControlContext::new(&mut coordinator),
                 messages,
                 &mut queue,
                 &mut [0; 32],
@@ -1824,49 +1885,4 @@ fn newly_published_output_cannot_report_idle_before_physical_flush() {
         assert_eq!(control.idle_transitions, [false, true]);
         reclaimed(messages);
     });
-}
-
-#[test]
-fn outgoing_notification_coalesces_without_losing_general_work() {
-    use std::sync::atomic::AtomicUsize;
-    struct Count(AtomicUsize);
-    impl std::task::Wake for Count {
-        fn wake(self: Arc<Self>) {
-            self.0.fetch_add(1, Ordering::SeqCst);
-        }
-    }
-    let state = Arc::<WorkWake>::default();
-    let outgoing = EnqueueWake(state.clone());
-    let general = Waker::from(state.clone());
-    let first = Arc::new(Count(AtomicUsize::new(0)));
-    let second = Arc::new(Count(AtomicUsize::new(0)));
-    for outgoing_first in [true, false] {
-        state.parent.register(&Waker::from(first.clone()));
-        state.changed.store(0, Ordering::Release);
-        let before = first.0.load(Ordering::SeqCst);
-        if outgoing_first {
-            outgoing.notify();
-        } else {
-            general.wake_by_ref();
-        }
-        assert_eq!(
-            state.changed.load(Ordering::Acquire),
-            if outgoing_first { 4 } else { 0x3f }
-        );
-        if outgoing_first {
-            general.wake_by_ref();
-        } else {
-            outgoing.notify();
-        }
-        assert_eq!(state.changed.load(Ordering::Acquire), 0x3f);
-        assert_eq!(first.0.load(Ordering::SeqCst), before + 1);
-        // The consumer registers before consuming the pending mask. A later
-        // outgoing-only notification must reach the new task, not the old one.
-        state.parent.register(&Waker::from(second.clone()));
-        assert_eq!(state.changed.swap(0, Ordering::AcqRel), 0x3f);
-        outgoing.notify();
-        assert_eq!(state.changed.load(Ordering::Acquire), 4);
-        assert_eq!(first.0.load(Ordering::SeqCst), before + 1);
-    }
-    assert_eq!(second.0.load(Ordering::SeqCst), 2);
 }

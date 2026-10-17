@@ -9,20 +9,22 @@ use capntproto_rpc_engine::clients::Capabilities;
 use capntproto_rpc_engine::completion::{Delivery, Sender};
 use core::task::Context;
 
-// Completed responses retain affine capability and adoption owners inline.
+// Only local completions wait here for pipeline observers. Remote responses
+// are delivered directly from Sent after take_output resolves their observers.
+// Local results retain their affine capability owners inline.
 // Boxing this variant would require an allocator in the fixed-storage profile.
 #[allow(clippy::large_enum_variant)]
-enum Stage<'pool, 'id, I, const CAPS: usize> {
+enum Stage<'pool, 'id, const CAPS: usize> {
     Queued,
     Sent(questions::Key<'id>),
     Running,
-    Completed(CallResult<'pool, 'id, I, CAPS>),
+    Completed(Result<LocalResult<'pool, 'id, CAPS>, capnp::ErrorKind>),
     Delivered,
 }
 struct Entry<'wait, 'pool, 'id, I, const CAPS: usize> {
     task: dispatch::TaskKey<'id>,
     delivery: Delivery<'wait, CallResult<'pool, 'id, I, CAPS>>,
-    stage: Stage<'pool, 'id, I, CAPS>,
+    stage: Stage<'pool, 'id, CAPS>,
     pipeline: usize,
     pipeline_remaining: usize,
     allows_pipeline: bool,
@@ -312,6 +314,49 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
         Ok(task)
     }
 
+    /// Attach a completion owner to an existing, still-queued invocation. This
+    /// permits a caller which normally consumes remote results directly to
+    /// acquire the local completion machinery only if its target resolves
+    /// locally. The exact task generation must still own a Call, and a task
+    /// cannot acquire a second binding. Rejection leaves both owners intact.
+    #[allow(clippy::result_large_err)]
+    pub fn bind_queued<A, P: Copy + Eq, S, const PATH: usize>(
+        &mut self,
+        driver: &Driver<'pool, 'id, '_, I, A, P, S, CAPS, PATH>,
+        messages: &messages::Messages<'pool, '_, '_>,
+        task: dispatch::TaskKey<'id>,
+        sender: Sender<'wait, CallResult<'pool, 'id, I, CAPS>>,
+    ) -> Result<(), RejectedInvocation<'wait, 'pool, 'id, I, CAPS>> {
+        let allowed = (|| {
+            driver.check_live()?;
+            if self
+                .slots
+                .iter()
+                .any(|slot| slot.entry.as_ref().is_some_and(|entry| entry.task == task))
+            {
+                return Err(Error::UnknownInvocation);
+            }
+            let (_, owner) = (0..driver.runtime.task_capacity())
+                .find_map(|index| {
+                    driver
+                        .runtime
+                        .queued_at(index)
+                        .filter(|(key, _)| *key == task)
+                })
+                .ok_or(Error::UnknownInvocation)?;
+            let Task::Invoke(invocation) = owner else {
+                return Err(Error::UnknownInvocation);
+            };
+            invocation.allows_pipeline(messages).map_err(Error::Input)
+        })();
+        let allows_pipeline = match allowed {
+            Ok(allowed) => allowed,
+            Err(error) => return Err(RejectedInvocation { error, sender }),
+        };
+        self.enqueue_with(sender, allows_pipeline, || Ok(task))
+            .map(|_| ())
+    }
+
     /// Resolve a late projection against the invocation's actual stage. An
     /// executing local call can acquire observers before its result is ready;
     /// completion settles them before delivering the parent reply.
@@ -350,10 +395,7 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
                 capnp::ErrorKind::Unimplemented,
             )));
         }
-        if matches!(
-            entry.stage,
-            Stage::Running | Stage::Completed(Ok(CallOutput::Local(_)) | Err(_))
-        ) {
+        if matches!(entry.stage, Stage::Running | Stage::Completed(_)) {
             if let Some(client) = resolve(task, path, &mut driver.runtime)? {
                 return Ok(client);
             }
@@ -362,7 +404,7 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
             Stage::Queued => driver.invocation_pipeline(task, path, messages),
             Stage::Sent(question) => driver.pipeline(*question, path),
             Stage::Running => driver.observe_invocation(task, path),
-            Stage::Completed(Ok(CallOutput::Local(result))) => result
+            Stage::Completed(Ok(result)) => result
                 .with(messages, |payload| match payload.pipeline(path) {
                     Ok(client) => driver.runtime.retain(client).map_err(Error::Graph),
                     Err(error) => {
@@ -384,50 +426,6 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
                 .runtime
                 .endpoint_with(clients::Location::Broken, || binding::Route::broken(*kind))
                 .map_err(Error::Graph),
-            Stage::Completed(Ok(CallOutput::Remote(response))) => response
-                .with(messages, |reply| match reply {
-                    super::super::Reply::Results(payload) => {
-                        let capability = match payload.pipeline(path) {
-                            Ok(capability) => capability,
-                            // A completed payload cannot gain another field on
-                            // retry. Match preexisting pipeline propagation by
-                            // breaking this projection, while keeping allocation
-                            // failures below retryable.
-                            Err(_) => {
-                                return driver
-                                    .runtime
-                                    .endpoint_with(clients::Location::Broken, || {
-                                        binding::Route::broken(capnp::ErrorKind::Failed)
-                                    })
-                                    .map_err(Error::Graph)
-                            }
-                        };
-                        driver
-                            .imports
-                            .bind_capability(
-                                capability,
-                                &mut driver.runtime,
-                                &mut driver.ledgers.imports,
-                                &driver.ledgers.exports,
-                                &mut driver.ledgers.answers,
-                                &mut driver.pipelines,
-                            )
-                            .map(|bound| bound.into_client())
-                            .map_err(|error| Error::Outgoing(outgoing::Error::Binding(error)))
-                    }
-                    super::super::Reply::Exception(error) => {
-                        let kind =
-                            super::super::controls::abort_reason(error).map_err(Error::Input)?;
-                        driver
-                            .runtime
-                            .endpoint_with(clients::Location::Broken, || {
-                                binding::Route::broken(kind)
-                            })
-                            .map_err(Error::Graph)
-                    }
-                    _ => Err(Error::PendingResponse),
-                })
-                .map_err(Error::Input)?,
             Stage::Delivered => Err(Error::PendingResponse),
         }
     }
@@ -594,7 +592,7 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
             }
         }
         call.release(driver, messages);
-        entry.stage = Stage::Completed(result.map(CallOutput::Local));
+        entry.stage = Stage::Completed(result);
         Ok(())
     }
 
@@ -760,16 +758,13 @@ impl<'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'_, 'wait, 'pool, 'id,
                         return Ok(CallProgress::Advanced);
                     }
                     match result {
-                        Ok(CallOutput::Local(result)) => {
+                        Ok(result) => {
                             driver.poll_local_result(index, entry.task, result, messages)?;
                         }
                         Err(kind) => {
                             driver.poll_local_invocation_pipeline(index, entry.task, |_, _| {
                                 Err(*kind)
                             })?;
-                        }
-                        Ok(CallOutput::Remote(_)) => {
-                            unreachable!("remote response already waited for observers")
                         }
                     }
                     return Ok(CallProgress::Advanced);
@@ -795,7 +790,7 @@ impl<'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'_, 'wait, 'pool, 'id,
         else {
             unreachable!()
         };
-        Self::deliver_result(slot, driver, messages, result)
+        Self::deliver_result(slot, driver, messages, result.map(CallOutput::Local))
     }
 
     #[inline]
@@ -843,7 +838,9 @@ impl<'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'_, 'wait, 'pool, 'id,
                     let _ = driver.cancel(question);
                 }
                 Stage::Running => running += 1,
-                Stage::Completed(Ok(output)) => driver.release_output(output, messages),
+                Stage::Completed(Ok(output)) => {
+                    driver.release_output(CallOutput::Local(output), messages)
+                }
                 Stage::Completed(Err(_)) | Stage::Delivered => (),
             }
         }

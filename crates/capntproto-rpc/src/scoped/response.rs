@@ -1,6 +1,6 @@
 //! One completion for both operation status and result ownership. A successful
 //! operation can finish before its ResultsHook is dropped; both are required.
-//! This is the hosted no-pipeline request adapter, not a second wire ledger.
+//! This is the hosted request adapter, not a second wire ledger.
 use super::*;
 use crate::local::ResultsDoneHook;
 
@@ -31,13 +31,13 @@ pub(super) fn notify_closed(state: &Rc<State>) {
     }
 }
 
-/// One empty completion allocation per hook inbox. Only the last owner may
-/// recycle it, so a canceled or retained operation can never observe reuse.
+/// Retain two empty completions for overlapping parent/child requests. Only the
+/// last owner may recycle a state, so retained operations cannot observe reuse.
 #[derive(Default)]
-pub(super) struct Cache(Cell<Option<Rc<State>>>);
+pub(super) struct Cache([Cell<Option<Rc<State>>>; 2]);
 impl Cache {
     fn acquire(&self) -> Rc<State> {
-        let cached = self.0.take();
+        let cached = self.0[0].take().or_else(|| self.0[1].take());
         match cached {
             Some(state) => {
                 debug_assert_eq!(Rc::strong_count(&state), 1, "exclusive cached completion");
@@ -58,8 +58,14 @@ impl Cache {
     fn recycle(&self, state: &Rc<State>) {
         if Rc::strong_count(state) == 1 {
             // No callbacks occur while the existing cache is temporarily out.
-            let cached = self.0.take();
-            self.0.set(Some(cached.unwrap_or_else(|| state.clone())));
+            for slot in &self.0 {
+                let cached = slot.take();
+                let occupied = cached.is_some();
+                slot.set(Some(cached.unwrap_or_else(|| state.clone())));
+                if !occupied {
+                    break;
+                }
+            }
         }
     }
 }
@@ -221,6 +227,26 @@ impl Results {
                 Some(hook) => hook.finish_admitted_response(payload),
                 None => Err(payload),
             },
+        }
+    }
+
+    // A plain reply has no capability imports or pipeline publication to
+    // coordinate. Exact local sinks can retain its admission proof; opaque
+    // result hooks still receive their ordinary validating set_response call.
+    pub(super) fn finish_plain(&mut self, payload: wire::Payload) -> capnp::Result<()> {
+        let payload = match self.finish_admitted(payload) {
+            Ok(()) => return Ok(()),
+            Err(payload) => Rc::new(payload),
+        };
+        let results = self.hook();
+        if let Some(local) = results
+            .as_any_mut()
+            .and_then(|sink| sink.downcast_mut::<crate::local::Results>())
+        {
+            local.set_admitted_response(payload);
+            Ok(())
+        } else {
+            results.set_response(payload)
         }
     }
 }
@@ -455,6 +481,7 @@ pub(crate) fn available(client: &dyn ClientHook) -> bool {
     client
         .as_any()
         .and_then(|client| client.downcast_ref::<Hook>())
+        .or_else(|| wire::direct_response_hook(client))
         .is_some_and(|hook| hook.introduced().is_none())
 }
 pub(crate) fn request(
@@ -462,14 +489,16 @@ pub(crate) fn request(
     interface: u64,
     method: u16,
     hints: CallHints,
-    params: Box<dyn ParamsHook>,
+    params: Box<crate::local::Request>,
     context: Option<Rc<dyn std::any::Any>>,
 ) -> capability::RemotePromise<any_pointer::Owned> {
     let hook = client
         .as_any()
-        .and_then(|client| client.downcast_ref::<Hook>())
-        .expect("private scoped request hook");
-    request_scoped(hook, interface, method, hints, params, context)
+        .and_then(|client| client.downcast_ref::<Hook>());
+    match hook {
+        Some(hook) => request_scoped(hook, interface, method, hints, params, context),
+        None => wire::request_projected(client, interface, method, hints, params, context),
+    }
 }
 
 pub(crate) fn request_scoped(
@@ -477,7 +506,7 @@ pub(crate) fn request_scoped(
     interface: u64,
     method: u16,
     hints: CallHints,
-    params: Box<dyn ParamsHook>,
+    params: Box<crate::local::Request>,
     context: Option<Rc<dyn std::any::Any>>,
 ) -> capability::RemotePromise<any_pointer::Owned> {
     let state = hook
@@ -487,7 +516,15 @@ pub(crate) fn request_scoped(
         .map_or_else(Rc::default, |inbox| inbox.completion_cache.acquire());
     let results = Results::direct(ResultsSender(state.clone()), context);
     let completion = CallCompletion::Response(Completion(state.clone()));
-    let admitted = hook.enqueue(interface, method, params, results, hints, None, completion);
+    let admitted = hook.enqueue(
+        interface,
+        method,
+        CallParams::owned_request(params),
+        results,
+        hints,
+        None,
+        completion,
+    );
     let promise = match admitted {
         Ok(inbox) => state.promise(inbox),
         Err(error) => Promise::err(*error),
@@ -516,6 +553,70 @@ pub(super) fn request_prepared(
     capability::RemotePromise {
         promise,
         pipeline: any_pointer::Pipeline::new(Box::new(crate::broken::DisabledPipeline)),
+    }
+}
+
+// Keep the ordinary split/pipeline interests and early set_pipeline semantics,
+// but join operation status and result ownership in the same direct completion
+// as non-pipelined requests. The prepared request also keeps its wire envelope.
+pub(super) fn request_pipelined_prepared(
+    mut call: Box<Call>,
+) -> capability::RemotePromise<any_pointer::Owned> {
+    use futures::FutureExt;
+    let inbox = call.endpoint.inbox.upgrade();
+    let state = inbox
+        .as_ref()
+        .map_or_else(Rc::default, |inbox| inbox.completion_cache.acquire());
+    // Publish the eventual wire queue now, avoiding an intermediate queued
+    // pipeline and a second projection transfer when the call is admitted.
+    let pipeline = wire::PipelineState::prepared(inbox.as_ref());
+    let sender = crate::queued::PipelineInnerSender::wire(&pipeline);
+    call.results = Results::Hook(Box::new(crate::local::Results::direct_pipelined(
+        ResultsSender(state.clone()),
+        sender,
+    )));
+    call.completion = CallCompletion::Response(Completion(state.clone()));
+    let promise = match call.enqueue_owned(inbox) {
+        Ok(inbox) => state.promise(inbox),
+        Err(error) => Promise::err(*error),
+    };
+    // The response and pipeline share one driver. Store the non-Clone response
+    // separately so completion can be observed by both interests without a
+    // second shared future around the pipeline's unit result.
+    let result = Rc::new(Cell::new(None));
+    let output = result.clone();
+    let pending = Rc::downgrade(&pipeline);
+    let driver = Promise::from_future(async move {
+        let response = match promise.await {
+            Ok(response) => response,
+            Err(error) => {
+                if let Some(pending) = pending.upgrade() {
+                    pending
+                        .finish_pending(|| Box::new(crate::broken::Pipeline::new(error.clone())));
+                }
+                return Err(error);
+            }
+        };
+        let mut response = Some(response);
+        if let Some(pending) = pending.upgrade() {
+            pending.finish_pending(|| {
+                let (shared, pipeline) =
+                    crate::local::Pipeline::share_response(response.take().unwrap());
+                response = Some(shared);
+                pipeline
+            });
+        }
+        output.set(response);
+        Ok(())
+    })
+    .shared();
+    let pipeline = pipeline.driven(driver.clone());
+    capability::RemotePromise {
+        promise: Promise::from_future(async move {
+            driver.await?;
+            Ok(result.take().expect("completed pipelined response"))
+        }),
+        pipeline: any_pointer::Pipeline::new(pipeline),
     }
 }
 
@@ -580,7 +681,12 @@ mod tests {
         );
         drop(promise);
         assert!(completion.is_observed());
-        assert!(!has_value(&hooks.inbox.completion_cache.0));
+        assert!(hooks
+            .inbox
+            .completion_cache
+            .0
+            .iter()
+            .all(|slot| !has_value(slot)));
     }
     #[test]
     fn completion_cache_reuses_only_exclusive_empty_state() {
@@ -590,7 +696,7 @@ mod tests {
         state.observed.set(true);
         let pending_owner = state.clone();
         cache.recycle(&state);
-        assert!(!has_value(&cache.0));
+        assert!(cache.0.iter().all(|slot| !has_value(slot)));
         drop(pending_owner);
         cache.recycle(&state);
         drop(state);
@@ -606,6 +712,35 @@ mod tests {
         let first = cache.acquire();
         assert_eq!(Rc::as_ptr(&first), address);
         assert!(!Rc::ptr_eq(&first, &other));
+    }
+
+    #[test]
+    fn completion_cache_reuses_two_states_and_releases_overflow() {
+        let cache = Cache::default();
+        let first = cache.acquire();
+        let second = cache.acquire();
+        let overflow = cache.acquire();
+        let addresses = [Rc::as_ptr(&first), Rc::as_ptr(&second)];
+        let overflow_owner = Rc::downgrade(&overflow);
+        cache.recycle(&first);
+        cache.recycle(&second);
+        cache.recycle(&overflow);
+        drop((first, second, overflow));
+        assert!(overflow_owner.upgrade().is_none());
+        for _ in 0..4 {
+            let first = cache.acquire();
+            let second = cache.acquire();
+            assert_eq!([Rc::as_ptr(&first), Rc::as_ptr(&second)], addresses);
+            assert!(!Rc::ptr_eq(&first, &second));
+            // A second interest prevents either slot from recycling this
+            // completion, including when the other slot remains available.
+            let retained = second.clone();
+            cache.recycle(&first);
+            cache.recycle(&second);
+            assert!(!has_value(&cache.0[1]));
+            drop(retained);
+            cache.recycle(&second);
+        }
     }
 
     #[test]

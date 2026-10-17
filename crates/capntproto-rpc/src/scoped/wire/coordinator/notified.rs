@@ -1,7 +1,10 @@
 //! Poll terminal futures only after their own notification. IO readiness and
 //! cooperative work yields do not require polling unrelated shutdown futures.
-use super::{Arc, Context, Future, Ordering, Pin, Poll, Waker};
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::atomic::AtomicBool;
+use std::sync::{atomic::Ordering, Arc};
+use std::task::{Context, Poll, Waker};
 
 struct Wake {
     ready: AtomicBool,

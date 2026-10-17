@@ -1,0 +1,17 @@
+{
+  "label": "metadata",
+  "base": "fe843e229890d8f1a58557c8a47d02f4c1358cce",
+  "binary": "/workspace/scratch/portable-binaries/three-metadata20261017",
+  "binary_sha256": "3f3af6aeda8590a1dc0cbea29e63e746786905f508dab553613f11ddcd9f14ad",
+  "source_files": {
+    "crates/capntproto-rpc/src/scoped.rs": "b8bf840b835ea3a2eb17f0279c192d5bfdc6ca3f67168d1f9ceb96931f44520a",
+    "crates/capntproto-rpc/src/scoped/metadata.rs": "79171a8bc648c30d8be47c8a4cd7800c27b1346474d5f4e6bb33f58b4534862c",
+    "crates/capntproto-rpc/src/scoped/tests.rs": "e52a872abcd090e6341391b9a62326ff6652a72f70ab1642af8f146b717b6e44",
+    "crates/capntproto-rpc/src/scoped/wire/coordinator/transport.rs": "17a04b0d1b33b77dae24c9d67100a7905163d29e2a9306164bb24443943d972d",
+    "crates/capntproto-rpc/src/scoped/wire/coordinator/transport/vat.rs": "d44240f395f704187e21936c02caeb7a1d9beb7466c146c7e350f393d55a04db",
+    "crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs": "839379ca816540f959818f70b250384b3a7f1d41a5dcddd6b766a004d5d45ab7",
+    "crates/capntproto-rpc/src/scoped/wire/resources.rs": "4fc97e03148736514ee71c7270990b9d7a3db1ac08ec5db8879480c6428833f6"
+  },
+  "patch_sha256": "7f01d3343f19d2a1bf5549006bda43e3f50db5e0accb59620b569fd62fd1da01",
+  "build_args": []
+}

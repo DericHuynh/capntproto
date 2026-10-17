@@ -53,6 +53,77 @@ fn frame(text: &str) -> (crate::OutgoingFrame, Vec<u8>) {
 }
 
 #[test]
+fn optional_stream_methods_preserve_legacy_transport_behavior() {
+    use crate::{IncomingFrameStream as _, IncomingMessage as _, OutgoingMessageStream as _};
+    struct Input(Vec<u8>);
+    impl crate::IncomingFrameStream for Input {
+        fn poll_frame(&mut self, _: &mut Context<'_>) -> Poll<capnp::Result<Option<&[u8]>>> {
+            Poll::Ready(Ok(self.frame()))
+        }
+        fn frame(&self) -> Option<&[u8]> {
+            (!self.0.is_empty()).then_some(self.0.as_slice())
+        }
+        fn finish_frame(&mut self) {
+            self.0.clear();
+        }
+    }
+    struct Message(capnp::message::Reader<capnp::serialize::OwnedSegments>);
+    impl crate::IncomingMessage for Message {
+        fn size_in_words(&self) -> usize {
+            self.0.get_segments().as_ref().len() / 8
+        }
+        fn get_body(&self) -> capnp::Result<capnp::any_pointer::Reader<'_>> {
+            self.0.get_root()
+        }
+    }
+    #[derive(Default)]
+    struct Sink(Vec<crate::OutgoingFrame>);
+    impl crate::OutgoingMessageStream for Sink {
+        fn send(&mut self, frame: crate::OutgoingFrame) -> capnp::Result<()> {
+            self.0.push(frame);
+            Ok(())
+        }
+        fn poll_flush(&mut self, _: &mut Context<'_>) -> Poll<capnp::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+    let (outgoing, bytes) = frame("legacy transport");
+    let mut input = Input(bytes.clone());
+    let mut cx = Context::from_waker(Waker::noop());
+    assert!(!input.has_buffered_next_frame());
+    assert!(input.share_frame().is_none());
+    assert_eq!(
+        input.poll_frame_size(&mut cx).map(|r| r.unwrap()),
+        Poll::Ready(Some(bytes.len()))
+    );
+    assert!(
+        matches!(input.poll_read_frame(&mut cx, &mut [0; 8]), Poll::Ready(Err(error)) if error.kind == capnp::ErrorKind::Unimplemented)
+    );
+    assert_eq!(input.frame(), Some(bytes.as_slice()));
+    input.finish_frame();
+    assert_eq!(
+        input.poll_frame_size(&mut cx).map(|r| r.unwrap()),
+        Poll::Ready(None)
+    );
+    let message =
+        Message(capnp::serialize::read_message(bytes.as_slice(), Default::default()).unwrap());
+    assert!(message.get_segments().is_none());
+    assert!(message.size_in_words() > 0);
+    assert_eq!(
+        message
+            .get_body()
+            .unwrap()
+            .get_as::<capnp::text::Reader>()
+            .unwrap(),
+        "legacy transport"
+    );
+    let mut sink = Sink::default();
+    sink.send_buffered(outgoing).unwrap();
+    assert_eq!(sink.0.len(), 1);
+    assert!(sink.poll_flush(&mut cx).is_ready());
+}
+
+#[test]
 fn tail_transfer_requires_explicit_peer_support_on_standard_streams() {
     let mut network = VatNetwork::new(
         futures::io::Cursor::new(Vec::<u8>::new()),
@@ -308,6 +379,72 @@ fn return_templates_preserve_payloads_and_invalidate_selections_after_root_edits
 }
 
 #[test]
+fn pipeline_and_finish_batch_with_the_next_terminal_call_or_network_poll() {
+    let output = Rc::new(Output::default());
+    output.allowed.set(usize::MAX);
+    output.flushed.set(true);
+    let mut network = VatNetwork::new(
+        futures::io::Cursor::new(Vec::<u8>::new()),
+        Writer(output.clone()),
+        VatId::Client,
+        Default::default(),
+    );
+    let mut connection = network.connection.take().unwrap();
+    let mut cx = Context::from_waker(Waker::noop());
+    assert!(network._output_driver.poll_network(&mut cx).is_pending());
+    connection
+        .new_outgoing_finish(7, true)
+        .unwrap()
+        .send_detached_and_drive();
+    let mut parent = connection.new_outgoing_call(64).unwrap();
+    parent.get_call().unwrap().set_question_id(8);
+    parent.send_detached_and_drive();
+    assert!(output.bytes.borrow().is_empty());
+    assert_eq!(network.outgoing_queue().snapshot().message_count, 2);
+    let mut child = connection.new_outgoing_call(64).unwrap();
+    child.get_call().unwrap().set_question_id(9);
+    child.get_call().unwrap().set_no_promise_pipelining(true);
+    child.send_detached_and_drive();
+    let bytes = output.bytes.borrow();
+    let mut cursor = bytes.as_slice();
+    let finish = capnp::serialize::read_message(&mut cursor, Default::default()).unwrap();
+    let crate::rpc_capnp::message::Finish(finish) = finish
+        .get_root::<crate::rpc_capnp::message::Reader>()
+        .unwrap()
+        .which()
+        .unwrap()
+    else {
+        panic!("Finish must precede reused questions")
+    };
+    assert_eq!(finish.unwrap().get_question_id(), 7);
+    for id in [8, 9] {
+        let message = capnp::serialize::read_message(&mut cursor, Default::default()).unwrap();
+        let crate::rpc_capnp::message::Call(call) = message
+            .get_root::<crate::rpc_capnp::message::Reader>()
+            .unwrap()
+            .which()
+            .unwrap()
+        else {
+            panic!("ordered Call")
+        };
+        assert_eq!(call.unwrap().get_question_id(), id);
+    }
+    assert!(cursor.is_empty());
+    drop(bytes);
+    let before = output.bytes.borrow().len();
+    connection
+        .new_outgoing_call(64)
+        .unwrap()
+        .send_detached_and_drive();
+    assert_eq!(output.bytes.borrow().len(), before);
+    assert!(network._output_driver.poll_network(&mut cx).is_pending());
+    assert!(
+        output.bytes.borrow().len() > before,
+        "a parent without a child still progresses"
+    );
+}
+
+#[test]
 fn detached_drive_writes_immediately_but_keeps_ownership_until_flush() {
     struct Guard(Rc<Cell<usize>>);
     impl Drop for Guard {
@@ -406,6 +543,77 @@ fn borrowed_frames_hold_exact_input_until_finished_and_end_on_truncation() {
     assert!(matches!(input.poll_frame(&mut cx), Poll::Ready(Err(_))));
     input.finish_frame();
     assert!(matches!(input.poll_frame(&mut cx), Poll::Ready(Err(_))));
+}
+
+#[test]
+fn buffered_stream_publication_preserves_pending_flush_resources_and_fifo() {
+    let output = Rc::new(Output::default());
+    output.allowed.set(usize::MAX);
+    let mut network = VatNetwork::new(
+        futures::io::Cursor::new(Vec::<u8>::new()),
+        Writer(output.clone()),
+        VatId::Client,
+        Default::default(),
+    );
+    let mut connection = network.connection.take().unwrap();
+    let mut stream = connection.take_outgoing_stream().unwrap();
+    let mut cx = Context::from_waker(Waker::noop());
+    assert!(network._output_driver.poll_network(&mut cx).is_pending());
+    let admission = crate::admission::Admission::new(1);
+    let (mut first, mut expected) = frame("buffered first");
+    first.credit = Some(admission.reserve().unwrap());
+    stream.send_buffered(first).unwrap();
+    let (second, bytes) = frame("buffered second");
+    expected.extend(bytes);
+    stream.send_buffered(second).unwrap();
+    assert!(output.bytes.borrow().is_empty());
+    assert!(stream.poll_flush(&mut cx).is_pending());
+    assert_eq!(*output.bytes.borrow(), expected);
+    assert_eq!(admission.used(), 1);
+    let (third, bytes) = frame("behind pending physical flush");
+    expected.extend(bytes);
+    stream.send_buffered(third).unwrap();
+    assert!(stream.poll_flush(&mut cx).is_pending());
+    assert!(output.bytes.borrow().len() < expected.len());
+    drop(stream);
+    output.flushed.set(true);
+    let mut pump = connection.output_driver().unwrap();
+    assert!(Pin::new(&mut pump).poll(&mut cx).is_pending());
+    assert_eq!(*output.bytes.borrow(), expected);
+    assert_eq!(admission.used(), 0);
+    let mut successor = connection.take_outgoing_stream().unwrap();
+    assert!(matches!(successor.poll_flush(&mut cx), Poll::Ready(Ok(()))));
+}
+
+#[test]
+fn reusable_output_sends_first_frame_eagerly_and_flushes_a_following_burst() {
+    let output = Rc::new(Output::default());
+    output.allowed.set(usize::MAX);
+    output.flushed.set(true);
+    let mut network = VatNetwork::new(
+        futures::io::Cursor::new(Vec::<u8>::new()),
+        Writer(output.clone()),
+        VatId::Client,
+        Default::default(),
+    );
+    let mut connection = network.connection.take().unwrap();
+    let mut stream = connection.take_outgoing_stream().unwrap();
+    let mut cx = Context::from_waker(Waker::noop());
+    assert!(network._output_driver.poll_network(&mut cx).is_pending());
+    let (first, mut expected) = frame("first");
+    stream.send(first).unwrap();
+    assert_eq!(*output.bytes.borrow(), expected);
+    let (second, bytes) = frame("second");
+    stream.send(second).unwrap();
+    assert_eq!(*output.bytes.borrow(), expected);
+    expected.extend(bytes);
+    assert!(matches!(stream.poll_flush(&mut cx), Poll::Ready(Ok(()))));
+    assert_eq!(*output.bytes.borrow(), expected);
+    let (third, bytes) = frame("first after flush");
+    stream.send(third).unwrap();
+    expected.extend(bytes);
+    assert_eq!(*output.bytes.borrow(), expected);
+    assert!(matches!(stream.poll_flush(&mut cx), Poll::Ready(Ok(()))));
 }
 
 #[test]
@@ -535,6 +743,141 @@ fn cooperative_output_preserves_fifo_partial_writes_and_flush_receipts() {
         Poll::Ready(Ok(()))
     ));
     // Neither Connection nor its opportunistic observer owns the network task.
+    drop(network);
+    assert!(matches!(
+        Pin::new(&mut pump).poll(&mut cx),
+        Poll::Ready(Err(_))
+    ));
+}
+
+#[test]
+fn retained_segments_survive_bytewise_output_and_release_the_pool_charge() {
+    use capntproto_rpc_engine::{connection::Growth, messages};
+    struct Parts {
+        header: Vec<u8>,
+        segments: Vec<Vec<capnp::Word>>,
+    }
+    impl messages::Parts for Parts {
+        fn count(&self) -> usize {
+            1 + self.segments.len()
+        }
+        fn part(&self, index: usize) -> &[u8] {
+            if index == 0 {
+                &self.header
+            } else {
+                capnp::Word::words_to_bytes(&self.segments[index - 1])
+            }
+        }
+        fn retained_capacity(&self) -> usize {
+            self.header.capacity()
+                + self
+                    .segments
+                    .iter()
+                    .map(|p| p.capacity() * 8)
+                    .sum::<usize>()
+        }
+    }
+    let mut builder =
+        capnp::message::Builder::new(capnp::message::HeapAllocator::new().first_segment_words(1));
+    builder
+        .set_root("far payload retained through every byte and flush")
+        .unwrap();
+    let expected_first = capnp::serialize::write_message_to_words(&builder);
+    let segments = builder.get_segments_for_output();
+    assert!(segments.len() > 1);
+    let table_len = (segments.len() / 2 + 1) * 8;
+    let mut source = Parts {
+        header: expected_first[..table_len].to_vec(),
+        segments: segments
+            .iter()
+            .map(|s| {
+                let mut words = capnp::Word::allocate_zeroed_vec(s.len() / 8);
+                capnp::Word::words_to_bytes_mut(&mut words).copy_from_slice(s);
+                words
+            })
+            .collect(),
+    };
+    let mut pool = messages::GrowingBuffers::new(1, 1024, 2048);
+    // A framed owner must reject a mismatched declared segment extent.
+    source.header[4..8].copy_from_slice(&u32::MAX.to_le_bytes());
+    messages::with_growing_messages(
+        &mut pool,
+        Growth {
+            initial: 0,
+            maximum: 0,
+        },
+        |messages| {
+            let bad = messages.retain_parts(Rc::new(source)).unwrap().unwrap();
+            assert!(crate::OutgoingFrame::from_parts(bad).is_err());
+        },
+    )
+    .unwrap();
+    assert_eq!(pool.retained_bytes(), 0);
+    let source = Parts {
+        header: expected_first[..table_len].to_vec(),
+        segments: segments
+            .iter()
+            .map(|s| {
+                let mut words = capnp::Word::allocate_zeroed_vec(s.len() / 8);
+                capnp::Word::words_to_bytes_mut(&mut words).copy_from_slice(s);
+                words
+            })
+            .collect(),
+    };
+    let first = messages::with_growing_messages(
+        &mut pool,
+        Growth {
+            initial: 0,
+            maximum: 0,
+        },
+        |messages| {
+            crate::OutgoingFrame::from_parts(
+                messages.retain_parts(Rc::new(source)).unwrap().unwrap(),
+            )
+            .unwrap()
+        },
+    )
+    .unwrap();
+    assert!(pool.retained_bytes() >= expected_first.len());
+    let output = Rc::new(Output::default());
+    let mut network = VatNetwork::new(
+        futures::io::Cursor::new(Vec::<u8>::new()),
+        Writer(output.clone()),
+        VatId::Client,
+        Default::default(),
+    );
+    let mut connection = network.connection.take().unwrap();
+    let mut pump = connection.output_driver().unwrap();
+    let (second, second_bytes) = frame("successor");
+    let mut expected = expected_first;
+    expected.extend_from_slice(&second_bytes);
+    let mut first_receipt = connection.send_frame(first);
+    let mut second_receipt = connection.send_frame(second);
+    let mut cx = Context::from_waker(Waker::noop());
+    for index in 0..expected.len() {
+        output.allowed.set(1);
+        if let Some(wake) = output.wake.borrow_mut().take() {
+            wake.wake();
+        }
+        assert!(Pin::new(&mut pump).poll(&mut cx).is_pending());
+        assert!(Pin::new(&mut first_receipt).poll(&mut cx).is_pending());
+        assert!(Pin::new(&mut second_receipt).poll(&mut cx).is_pending());
+        assert_eq!(&*output.bytes.borrow(), &expected[..index + 1]);
+    }
+    output.flushed.set(true);
+    if let Some(wake) = output.wake.borrow_mut().take() {
+        wake.wake();
+    }
+    assert!(Pin::new(&mut pump).poll(&mut cx).is_pending());
+    assert!(matches!(
+        Pin::new(&mut first_receipt).poll(&mut cx),
+        Poll::Ready(Ok(()))
+    ));
+    assert!(matches!(
+        Pin::new(&mut second_receipt).poll(&mut cx),
+        Poll::Ready(Ok(()))
+    ));
+    assert_eq!(pool.retained_bytes(), 0);
     drop(network);
     assert!(matches!(
         Pin::new(&mut pump).poll(&mut cx),

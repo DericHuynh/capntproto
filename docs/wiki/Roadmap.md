@@ -30,6 +30,132 @@ The [RPC research](RPC-Research.md) preserves its protocol probes and ordered
 acceptance criteria. [RPC applications](RPC-Applications.md) documents the APIs
 already available.
 
+## Legacy RPC performance gap
+
+**Open: [gap #15](https://github.com/DericHuynh/capntproto/issues/15).**
+The active October 17 work has returned to the legacy driver. The benchmark
+frontend again selects legacy by default; `CAPNTPROTO_BENCH_PORTABLE=1` explicitly
+selects portable. The production `RpcSystem` already defaults to legacy.
+Tokio remains the host, and the earlier portable work remains available.
+
+The new target is **candidate pooled p50 <= 0.5 × frozen legacy pooled p50**
+in each of the twelve RPC workflows and, separately, all four loopback payloads.
+The before control is legacy at `6e37505d701df4dbea52a92e0691b6037f7f1922`;
+C++ remains an additional comparison. Preserve fixtures, payload validation,
+sampling budgets, p95/p99, throughput and all failed as well as passing trials.
+Local results do not qualify a dedicated remote topology.
+
+The [legacy optimization report](../../research/reports/legacy-performance/2026-10-17/README.md)
+records receive-storage reuse, direct ordinary pipeline settlement and batching
+of pipeline parents and Finish messages. The 2× goal remains open. Continue from
+the measured remaining costs rather than interpreting an instruction reduction
+or one fast payload as completion of the whole target.
+
+## Portable RPC performance gap
+
+**Open: [gap #11](https://github.com/DericHuynh/capntproto/issues/11), recorded October 15, 2026.**
+The earlier October 17 goal was to make portable the fastest implementation in every
+matched cell: **portable pooled p50 < min(legacy p50, C++ p50)**. The existing
+**1.05 × min(legacy p50, C++ p50)** gate remains an intermediate milestone. Compare
+all peers in the same campaign with matched fixtures, release settings, CPU
+placement and sampling budgets. Faster portable results pass without slowing
+either reference. Apply the target to all twelve remote application workflows
+and separately to the four loopback payloads; never combine those topologies.
+Retain p95/p99, throughput, CPU, RSS and every sample alongside the p50 decision.
+The existing empty-call instruction qualification is a separate contract.
+
+The [frozen baseline](../../research/reports/portable-performance/2026-10-15/baseline.json)
+comes from [run 38763852450](https://github.com/DericHuynh/capntproto/actions/runs/38763852450)
+at `2c9548c998fb`. All 350 remote trials and 120 loopback trials were checked
+against the published percentiles. Seven remote workflows exceed the new target:
+
+| Workflow | Portable p50 | Faster reference p50 | Portable/reference |
+| --- | ---: | ---: | ---: |
+| 32 concurrent 1-KiB calls | 1,041.810 µs | C++ 769.963 µs | 1.353× |
+| Dependent capability read | 284.675 µs | Legacy 259.339 µs | 1.098× |
+| Pipelined capability read | 193.436 µs | Legacy 167.097 µs | 1.158× |
+| Callback | 278.755 µs | Legacy 242.305 µs | 1.150× |
+| 256-KiB echo | 1,348.376 µs | Legacy 1,093.015 µs | 1.234× |
+| 1-MiB echo | 4,549.966 µs | Legacy 4,233.197 µs | 1.075× |
+| 4-MiB echo | 19,493.488 µs | C++ 18,188.989 µs | 1.072× |
+
+Investigate batching/syscall frequency under fan-out, capability-bearing call
+and result paths, and large-frame copying/allocation/polling. Whole-client
+resource logs also show roughly twice legacy's CPU consumption at 4 MiB;
+they include setup and warmup and are not a hot-function profile. Keep lifecycle,
+admission, cancellation, FIFO, partial-write and shutdown guarantees intact.
+Local experiments guide changes; closing this gap requires a fresh dedicated
+campaign with every applicable cell passing, not an empty-call result alone.
+
+The latest independently verified dedicated campaign at `d56aae2081ae`,
+[run 39008671050](https://github.com/DericHuynh/capntproto/actions/runs/39008671050),
+passes 9 of 16 cells at 5% and is fastest in only 2: fanout-32 and bulk-256k.
+Remote unary-1k, pipelined reads, callbacks and all four loopback payloads miss
+the intermediate milestone. All 350 remote and 60 loopback trials validate;
+build/runtime manifests and cleanup also validate. Earlier campaigns used
+different hosts and timing; their pass counts are historical observations
+rather than a progression score. Neither performance goal is complete.
+
+The subsequent [publication ownership changes](../../research/reports/portable-performance/2026-10-17-publication/README.md)
+remove two allocations per pipelined child and avoid retaining a complete
+single-capability request frame until Return. Local profiles show pipeline
+client instructions down 0.564% and callback client instructions down 0.312%,
+with unchanged before/after wire writes. The local production build meets 8/16
+cells at 5% and is fastest in 4/16. Broader latency improvement is not established;
+a fresh dedicated campaign must measure this source independently.
+
+Earlier on October 17 the work shifted to the
+[portable hosted architecture](Architecture.md#portable-hosted-execution-boundaries).
+Typed scheduling, centralized notification ownership, an explicit control-activity
+contract and separated execution/IO/lifecycle modules establish boundaries for
+integration and further optimization. Unqualified response-sharing and worker
+experiments are archived separately. The 5% target remains open; architectural
+refactoring and local profiling do not replace a complete dedicated campaign.
+
+The [ownership and integration review](Architecture.md#portable-ownership-and-integration-review)
+separates explicit endpoint retirement from promise settlement and metadata
+refresh. The [three architecture experiments](../../research/reports/portable-performance/2026-10-17-architecture/README.md)
+are retained as historical evidence. The current implementation makes restricted
+control contexts, revision-backed metadata and generated borrowed service
+contexts mandatory, with an explicit ownership transfer for asynchronous work.
+This deliberately breaks the unreleased Rust APIs. The
+[renewed architecture review](Architecture.md#mandatory-integration-contracts-and-c-reassessment)
+identifies the remaining parameter/execution ownership, registry scans and broad
+readiness invalidation. These contracts enable further work; their presence alone
+does not establish the 5% goal.
+
+Tokio is the selected host for continuing portable optimization. The
+[runtime comparison](../../benchmarks/rpc-compio/README.md) retains Compio behind
+the opt-in `compio-experiment` feature to reproduce the existing measurements.
+Prepared call/result readers now reuse the selected payload location, following
+C++ ownership and access patterns. The [measured port](../../research/reports/portable-performance/2026-10-17-cpp-readers/README.md)
+reduces pipeline-server instructions by 1.04% and callback-client instructions by
+0.46%; it does not establish the 5% latency target. An inline parameter owner
+saved allocations but increased instructions and was rejected.
+Portable follow-up remains focused on CPU overhead and matching Tokio/C++ publication
+turns, after the active legacy work. A Compio transport migration is no longer an active roadmap item; the
+recorded Poll results do not establish io_uring performance.
+
+The first optimization slice indexes immediate reply owners beyond eight calls,
+checking the full question generation before delivery, and copies two-segment
+prepared Returns without first clearing the destination. Small-call lookup,
+reader validation, resource limits and generic protocol paths remain intact.
+Remote reports now show the faster reference and an exact inclusive 5% decision
+for each workflow; the report remains advisory while this gap is open. See the
+[optimization evidence](Quality-and-Benchmarks.md#portable-workflow-gap-october-15-2026)
+for measurements and remaining work.
+
+Related audit findings remain separate: native QUIC's 64-KiB loopback p50 is
+211.442 µs versus legacy TCP's 84.101 µs, with encryption/architecture differences;
+the serialization decode fixture includes a full byte-validation scan; storage
+research points to durability amortization and ORM worker integration. These do
+not change the portable plaintext target or justify removing fixture validation.
+
+[The earlier October 16 dedicated checkpoint](Quality-and-Benchmarks.md#dedicated-checkpoint-and-scheduling-follow-up-october-16-2026)
+passed seven of twelve remote workflows and three of four loopback payloads.
+The later twelve-cell checkpoint above supersedes its status; all earlier misses
+and samples remain retained. The gap remains open.
+
 ## Storage and ORM
 
 - Integrate the bounded worker with ORM facets while preserving execution-time

@@ -1,6 +1,7 @@
 use crate::{echo_capnp::workflows, Result};
 use capnp_rpc::rpc_twoparty_capnp::Side;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::time::timeout;
 
 #[path = "../../rpc/capability-workflows.rs"]
 mod capability;

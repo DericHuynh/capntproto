@@ -27,6 +27,10 @@ use capnp::serialize::{BufferSegments, OwnedSegments, SegmentLengthsBuilder};
 use capnp::{message, Error, OutputSegments, Result};
 use futures_util::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
+// Linux supports at least 1024 iovecs. Keep stack metadata bounded to 64 there;
+// other targets retain the POSIX minimum of 16 and the scalar fallback.
+const MAX_IO_SLICES: usize = if cfg!(target_os = "linux") { 64 } else { 16 };
+
 mod leased;
 pub use leased::{poll_queued_message, write_queued_message, SendError};
 
@@ -383,7 +387,7 @@ where
     M: AsOutputSegments,
 {
     if let Some(bytes) = message.framed_bytes() {
-        writer.write_all(bytes).await?;
+        write_framed(&mut writer, bytes).await?;
         return Ok(());
     }
     let segments = message.as_output_segments();
@@ -417,7 +421,7 @@ where
     if messages.len() == 1 {
         let message = messages.clone().next().unwrap();
         if let Some(bytes) = message.framed_bytes() {
-            writer.write_all(bytes).await?;
+            write_framed(&mut writer, bytes).await?;
             return Ok(());
         }
         let segments = message.as_output_segments();
@@ -432,6 +436,28 @@ where
             ];
             return write_buffers(&mut writer, &mut buffers).await;
         }
+    }
+    if messages
+        .clone()
+        .all(|message| message.framed_bytes().is_some())
+    {
+        // Retained frames already include their segment tables. Rebuilding a
+        // table for each frame both allocates and spends an extra iovec per
+        // message. Keep bounded scatter/gather metadata on the stack instead.
+        let mut messages = messages;
+        while messages.len() != 0 {
+            let mut buffers = [std::io::IoSlice::new(&[]); MAX_IO_SLICES];
+            let mut count = 0;
+            for message in messages.by_ref().take(MAX_IO_SLICES) {
+                let bytes = message.framed_bytes().expect("complete frame");
+                if !bytes.is_empty() {
+                    buffers[count] = std::io::IoSlice::new(bytes);
+                    count += 1;
+                }
+            }
+            write_buffers(&mut writer, &mut buffers[..count]).await?;
+        }
+        return Ok(());
     }
     if messages.len() <= 2 {
         let mut small = messages.clone();
@@ -484,13 +510,32 @@ where
     write_buffers(&mut writer, &mut buffers).await
 }
 
+// Keep the one-frame scatter/gather metadata on the poll stack. The future
+// retains only the writer and unsent suffix across partial writes or Pending.
+pub(crate) async fn write_framed<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    mut bytes: &[u8],
+) -> Result<()> {
+    while !bytes.is_empty() {
+        let written = core::future::poll_fn(|cx| {
+            core::pin::Pin::new(&mut *writer)
+                .poll_write_vectored(cx, &[std::io::IoSlice::new(bytes)])
+        })
+        .await?;
+        if written == 0 {
+            return Err(std::io::Error::from(std::io::ErrorKind::WriteZero).into());
+        }
+        bytes = &bytes[written..];
+    }
+    Ok(())
+}
+
 async fn write_buffers<W: AsyncWrite + Unpin>(
     writer: &mut W,
     mut remaining: &mut [std::io::IoSlice<'_>],
 ) -> Result<()> {
     while !remaining.is_empty() {
-        // Stay below platform iovec limits, including POSIX's minimum of 16.
-        let count = remaining.len().min(16);
+        let count = remaining.len().min(MAX_IO_SLICES);
         let written = writer.write_vectored(&remaining[..count]).await?;
         if written == 0 {
             return Err(std::io::Error::from(std::io::ErrorKind::WriteZero).into());
@@ -676,6 +721,55 @@ pub mod test {
             segment_lengths.to_segment_indices()
         );
         buf.clear();
+    }
+
+    #[test]
+    fn complete_frame_batches_preserve_order_without_reencoding_tables() {
+        struct Frame(Vec<u8>);
+        impl AsOutputSegments for Frame {
+            fn as_output_segments(&self) -> OutputSegments<'_> {
+                panic!("a retained frame needs no segment table reconstruction")
+            }
+            fn framed_bytes(&self) -> Option<&[u8]> {
+                Some(&self.0)
+            }
+        }
+        futures::executor::block_on(async {
+            for length in [
+                0,
+                1,
+                2,
+                16,
+                17,
+                32,
+                35,
+                super::MAX_IO_SLICES,
+                super::MAX_IO_SLICES + 1,
+            ] {
+                let mut frames = Vec::new();
+                for index in 0..length {
+                    let mut message = capnp::message::Builder::new_default();
+                    message
+                        .initn_root::<capnp::data::Builder>((index * 8) as u32)
+                        .fill(index as u8);
+                    frames.push(Frame(capnp::serialize::write_message_to_words(&message)));
+                }
+                let expected: Vec<_> = frames
+                    .iter()
+                    .flat_map(|frame| frame.0.iter().copied())
+                    .collect();
+                for fragment in [7, 23, 4096] {
+                    let mut output = BlockingWrite::new(Vec::new(), fragment);
+                    super::write_messages(&mut output, &frames).await.unwrap();
+                    assert_eq!(output.into_writer(), expected);
+                }
+            }
+            let mut output = Vec::new();
+            super::write_messages(&mut output, &[Frame(Vec::new()), Frame(Vec::new())])
+                .await
+                .unwrap();
+            assert!(output.is_empty());
+        });
     }
 
     #[test]
@@ -1057,6 +1151,63 @@ pub mod test {
                         assert_eq!(output.into_writer(), expected);
                     }
                 }
+            }
+        });
+    }
+
+    #[test]
+    fn batched_writer_reports_transport_failure_after_a_partial_frame() {
+        struct FailingWrite {
+            bytes: Vec<u8>,
+            zero: bool,
+        }
+        impl AsyncWrite for FailingWrite {
+            fn poll_write(
+                mut self: Pin<&mut Self>,
+                _: &mut Context<'_>,
+                bytes: &[u8],
+            ) -> Poll<io::Result<usize>> {
+                if self.bytes.is_empty() {
+                    let count = bytes.len().min(3);
+                    self.bytes.extend_from_slice(&bytes[..count]);
+                    Poll::Ready(Ok(count))
+                } else if self.zero {
+                    Poll::Ready(Ok(0))
+                } else {
+                    Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()))
+                }
+            }
+            fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+                Poll::Ready(Ok(()))
+            }
+            fn poll_close(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+                Poll::Ready(Ok(()))
+            }
+        }
+        futures::executor::block_on(async {
+            let messages = [
+                vec![vec![capnp::word(1, 2, 3, 4, 5, 6, 7, 8)]],
+                vec![vec![]],
+            ];
+            let mut expected = Vec::new();
+            super::write_messages(&mut expected, &messages)
+                .await
+                .unwrap();
+            for zero in [false, true] {
+                let mut output = FailingWrite {
+                    bytes: Vec::new(),
+                    zero,
+                };
+                let error = super::write_messages(&mut output, &messages)
+                    .await
+                    .unwrap_err();
+                let expected_error = capnp::Error::from(io::Error::from(if zero {
+                    io::ErrorKind::WriteZero
+                } else {
+                    io::ErrorKind::BrokenPipe
+                }));
+                assert_eq!(error.kind, expected_error.kind);
+                assert_eq!(output.bytes, expected[..3]);
             }
         });
     }

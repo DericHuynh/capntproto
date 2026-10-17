@@ -56,38 +56,44 @@ struct Service {
     provider: RefCell<Option<provisioner::Client>>,
 }
 impl harness::Server for Service {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        params: harness::EchoParams,
-        mut results: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        results.get().set_value(params.get()?.get_value());
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            results.get().set_value(params.get()?.get_value());
+            Ok(())
+        })
     }
-    async fn bounce(
+    fn bounce(
         self: Rc<Self>,
-        params: harness::BounceParams,
-        mut results: harness::BounceResults,
-    ) -> capnp::Result<()> {
-        let cap = params.get()?.get_cap()?;
-        *self.stored.borrow_mut() = Some(cap.clone());
-        results.get().set_cap(cap);
-        Ok(())
+        context: harness::BounceContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let cap = params.get()?.get_cap()?;
+            *self.stored.borrow_mut() = Some(cap.clone());
+            results.get().set_cap(cap);
+            Ok(())
+        })
     }
-    async fn opaque(
+    fn opaque(
         self: Rc<Self>,
-        _: harness::OpaqueParams,
-        mut results: harness::OpaqueResults,
-    ) -> capnp::Result<()> {
-        results.get().init_value().set_as_capability(
-            self.provider
-                .borrow()
-                .as_ref()
-                .unwrap()
-                .clone()
-                .into_client_hook(),
-        );
-        Ok(())
+        context: harness::OpaqueContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            results.get().init_value().set_as_capability(
+                self.provider
+                    .borrow()
+                    .as_ref()
+                    .unwrap()
+                    .clone()
+                    .into_client_hook(),
+            );
+            Ok(())
+        })
     }
 }
 async fn echo(cap: &harness::Client, value: u32) {
@@ -309,16 +315,18 @@ struct DelayedProvider {
     issued: Rc<Cell<bool>>,
 }
 impl provisioner::Server for DelayedProvider {
-    async fn reserve(
+    fn reserve(
         self: Rc<Self>,
-        _: provisioner::ReserveParams,
-        mut results: provisioner::ReserveResults,
-    ) -> capnp::Result<()> {
-        let response = self.inner.reserve_request().send().promise.await?;
-        results.get().set_ticket(response.get()?.get_ticket()?)?;
-        results.get().set_lease(response.get()?.get_lease()?);
-        self.issued.set(true);
-        futures::future::pending().await
+        context: provisioner::ReserveContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let response = self.inner.reserve_request().send().promise.await?;
+            results.get().set_ticket(response.get()?.get_ticket()?)?;
+            results.get().set_lease(response.get()?.get_lease()?);
+            self.issued.set(true);
+            futures::future::pending().await
+        })
     }
 }
 #[tokio::test(flavor = "current_thread")]

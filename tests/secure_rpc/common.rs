@@ -84,34 +84,40 @@ pub async fn local(future: impl Future<Output = ()>) {
 
 pub struct Echo;
 impl harness::Server for Echo {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        params: harness::EchoParams,
-        results: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        results.complete(|mut r| {
-            r.set_value(params.get()?.get_value());
-            Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            results.complete(|mut r| {
+                r.set_value(params.get()?.get_value());
+                Ok(())
+            })
         })
     }
-    async fn bounce(
+    fn bounce(
         self: Rc<Self>,
-        params: harness::BounceParams,
-        results: harness::BounceResults,
-    ) -> capnp::Result<()> {
-        let cap = params.get()?.get_cap()?;
-        assert_eq!(echo(&cap, 73).await?, 73);
-        results.complete(|mut r| {
-            r.set_cap(cap);
-            Ok(())
+        context: harness::BounceContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let cap = params.get()?.get_cap()?;
+            assert_eq!(echo(&cap, 73).await?, 73);
+            results.complete(|mut r| {
+                r.set_cap(cap);
+                Ok(())
+            })
         })
     }
-    async fn generic(
+    fn generic(
         self: Rc<Self>,
-        _: harness::GenericParams,
-        results: harness::GenericResults,
-    ) -> capnp::Result<()> {
-        results.complete(|mut r| r.set_value(&vec![0x73; 100_000][..]))
+        context: harness::GenericContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            results.complete(|mut r| r.set_value(&vec![0x73; 100_000][..]))
+        })
     }
 }
 

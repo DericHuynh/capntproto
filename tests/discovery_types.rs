@@ -14,13 +14,15 @@ fn local() -> SocketAddr {
 }
 struct PendingProvider(Rc<Cell<usize>>);
 impl provisioner::Server for PendingProvider {
-    async fn reserve(
+    fn reserve(
         self: Rc<Self>,
-        _: provisioner::ReserveParams,
-        _: provisioner::ReserveResults,
-    ) -> capnp::Result<()> {
-        self.0.set(self.0.get() + 1);
-        std::future::pending().await
+        context: provisioner::ReserveContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.0.set(self.0.get() + 1);
+            std::future::pending().await
+        })
     }
 }
 struct Advertised {
@@ -31,21 +33,23 @@ struct Advertised {
     provider: provisioner::Client,
 }
 impl directory::Server for Advertised {
-    async fn resolve(
+    fn resolve(
         self: Rc<Self>,
-        _: directory::ResolveParams,
-        mut out: directory::ResolveResults,
-    ) -> capnp::Result<()> {
-        self.calls.set(self.calls.get() + 1);
-        let mut r = out.get().init_record();
-        r.set_host(&self.host);
-        r.set_recipient(&self.recipient);
-        r.set_address("127.0.0.1:9000");
-        r.set_context(b"validated");
-        r.set_generation(self.generation);
-        r.set_remaining_millis(60_000);
-        r.set_provider(self.provider.clone());
-        Ok(())
+        context: directory::ResolveContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.calls.set(self.calls.get() + 1);
+            let mut r = out.get().init_record();
+            r.set_host(&self.host);
+            r.set_recipient(&self.recipient);
+            r.set_address("127.0.0.1:9000");
+            r.set_context(b"validated");
+            r.set_generation(self.generation);
+            r.set_remaining_millis(60_000);
+            r.set_provider(self.provider.clone());
+            Ok(())
+        })
     }
 }
 
@@ -173,13 +177,15 @@ async fn captured_bindings_connect_their_original_authenticated_hosts_after_rota
     use capntproto_test_support::runtime_test_capnp::harness;
     struct Echo;
     impl harness::Server for Echo {
-        async fn echo(
+        fn echo(
             self: Rc<Self>,
-            p: harness::EchoParams,
-            mut r: harness::EchoResults,
-        ) -> capnp::Result<()> {
-            r.get().set_value(p.get()?.get_value());
-            Ok(())
+            context: harness::EchoContext<'_>,
+        ) -> capnp::capability::Promise<(), capnp::Error> {
+            let (p, mut r) = context.into_owned();
+            capnp::capability::Promise::from_future(async move {
+                r.get().set_value(p.get()?.get_value());
+                Ok(())
+            })
         }
     }
     tokio::task::LocalSet::new()

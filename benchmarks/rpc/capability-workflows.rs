@@ -1,5 +1,5 @@
 //! Identical application work, compiled against each benchmark's own RPC crates.
-use super::{cases, connect, implementation, VERSION};
+use super::{cases, connect, implementation, timeout, VERSION};
 use crate::{
     echo_capnp::{callback, cell, workflows},
     Result,
@@ -12,94 +12,101 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(capntproto_upstream_api)]
+#[path = "capability-upstream.rs"]
+mod upstream;
+
 pub(super) struct Service;
 struct Cell(RefCell<(u64, Vec<u8>)>);
 struct Sink {
     payload: Vec<u8>,
     calls: Rc<std::cell::Cell<u64>>,
 }
+#[cfg(not(capntproto_upstream_api))]
 impl workflows::Server for Service {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        params: workflows::EchoParams,
-        mut results: workflows::EchoResults,
-    ) -> capnp::Result<()> {
-        let params = params.get()?;
-        let mut results = results.get();
-        results.set_sequence(params.get_sequence());
-        results.set_payload(params.get_payload()?);
-        Ok(())
+        context: workflows::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        context.complete(|params, mut results| {
+            results.set_sequence(params.get_sequence());
+            results.set_payload(params.get_payload()?);
+            Ok(())
+        })
     }
-    async fn open(
+    fn open(
         self: Rc<Self>,
-        params: workflows::OpenParams,
-        mut results: workflows::OpenResults,
-    ) -> capnp::Result<()> {
-        let client: cell::Client = capnp_rpc::new_client(Cell(RefCell::new((
-            0,
-            params.get()?.get_payload()?.to_vec(),
-        ))));
-        results.get().set_cell(client);
-        Ok(())
+        context: workflows::OpenContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        context.complete(|params, mut results| {
+            let client: cell::Client =
+                capnp_rpc::new_client(Cell(RefCell::new((0, params.get_payload()?.to_vec()))));
+            results.set_cell(client);
+            Ok(())
+        })
     }
-    async fn callback(
+    fn callback(
         self: Rc<Self>,
-        params: workflows::CallbackParams,
-        mut results: workflows::CallbackResults,
-    ) -> capnp::Result<()> {
-        let params = params.get()?;
-        let mut request = params.get_sink()?.notify_request();
-        request.get().set_sequence(params.get_sequence());
-        request.get().set_payload(params.get_payload()?);
-        let response = request.send().promise.await?;
-        results.get().set_sequence(response.get()?.get_sequence());
-        Ok(())
+        context: workflows::CallbackContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let params = params.get()?;
+            let mut request = params.get_sink()?.notify_request();
+            request.get().set_sequence(params.get_sequence());
+            request.get().set_payload(params.get_payload()?);
+            let response = request.send().promise.await?;
+            results.get().set_sequence(response.get()?.get_sequence());
+            Ok(())
+        })
     }
 }
+#[cfg(not(capntproto_upstream_api))]
 impl cell::Server for Cell {
-    async fn read(
+    fn read(
         self: Rc<Self>,
-        _: cell::ReadParams,
-        mut results: cell::ReadResults,
-    ) -> capnp::Result<()> {
-        let state = self.0.borrow();
-        let mut results = results.get();
-        results.set_version(state.0);
-        results.set_payload(&state.1);
-        Ok(())
+        context: cell::ReadContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        context.complete(|_, mut results| {
+            let state = self.0.borrow();
+            results.set_version(state.0);
+            results.set_payload(&state.1);
+            Ok(())
+        })
     }
-    async fn write(
+    fn write(
         self: Rc<Self>,
-        params: cell::WriteParams,
-        mut results: cell::WriteResults,
-    ) -> capnp::Result<()> {
-        let params = params.get()?;
-        let mut state = self.0.borrow_mut();
-        if params.get_expected_version() != state.0 {
-            return Err(capnp::Error::failed("version mismatch".into()));
-        }
-        state.0 = state
-            .0
-            .checked_add(1)
-            .ok_or_else(|| capnp::Error::failed("version overflow".into()))?;
-        state.1 = params.get_payload()?.to_vec();
-        results.get().set_version(state.0);
-        Ok(())
+        context: cell::WriteContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        context.complete(|params, mut results| {
+            let mut state = self.0.borrow_mut();
+            if params.get_expected_version() != state.0 {
+                return Err(capnp::Error::failed("version mismatch".into()));
+            }
+            state.0 = state
+                .0
+                .checked_add(1)
+                .ok_or_else(|| capnp::Error::failed("version overflow".into()))?;
+            state.1 = params.get_payload()?.to_vec();
+            results.set_version(state.0);
+            Ok(())
+        })
     }
 }
+#[cfg(not(capntproto_upstream_api))]
 impl callback::Server for Sink {
-    async fn notify(
+    fn notify(
         self: Rc<Self>,
-        params: callback::NotifyParams,
-        mut results: callback::NotifyResults,
-    ) -> capnp::Result<()> {
-        let params = params.get()?;
-        if params.get_payload()? != self.payload || params.get_sequence() != self.calls.get() {
-            return Err(capnp::Error::failed("callback payload mismatch".into()));
-        }
-        self.calls.set(self.calls.get() + 1);
-        results.get().set_sequence(params.get_sequence());
-        Ok(())
+        context: callback::NotifyContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        context.complete(|params, mut results| {
+            if params.get_payload()? != self.payload || params.get_sequence() != self.calls.get() {
+                return Err(capnp::Error::failed("callback payload mismatch".into()));
+            }
+            self.calls.set(self.calls.get() + 1);
+            results.set_sequence(params.get_sequence());
+            Ok(())
+        })
     }
 }
 
@@ -190,11 +197,11 @@ pub async fn measure(args: &[String]) -> Result<()> {
     let payload: Vec<_> = (0..case["payload_bytes"].as_u64().unwrap())
         .map(|i| (i % 251) as u8)
         .collect();
-    let client = tokio::time::timeout(Duration::from_secs(10), connect(&args[0])).await??;
+    let client = timeout(Duration::from_secs(10), connect(&args[0])).await??;
     // Resolve bootstrap, construct reusable state, and validate connectivity outside timing.
     let mut request = client.open_request();
     request.get().set_payload(&payload);
-    let response = tokio::time::timeout(Duration::from_secs(10), request.send().promise).await??;
+    let response = timeout(Duration::from_secs(10), request.send().promise).await??;
     let state = response.get()?.get_cell()?;
     drop(response);
     let callbacks = Rc::new(std::cell::Cell::new(0));
@@ -203,7 +210,7 @@ pub async fn measure(args: &[String]) -> Result<()> {
         calls: callbacks.clone(),
     });
     for sequence in 0..warmup {
-        tokio::time::timeout(
+        timeout(
             Duration::from_secs(10),
             operation(
                 &client, &state, &sink, &callbacks, &args[1], sequence, &payload,
@@ -215,7 +222,7 @@ pub async fn measure(args: &[String]) -> Result<()> {
     let start = Instant::now();
     for sequence in warmup..warmup + iterations {
         let before = Instant::now();
-        tokio::time::timeout(
+        timeout(
             Duration::from_secs(10),
             operation(
                 &client, &state, &sink, &callbacks, &args[1], sequence, &payload,

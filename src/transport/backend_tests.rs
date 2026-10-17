@@ -282,13 +282,15 @@ async fn native_network_runs_capability_rpc_on_every_backend() {
     use std::rc::Rc;
     struct Echo;
     impl harness::Server for Echo {
-        async fn echo(
+        fn echo(
             self: Rc<Self>,
-            p: harness::EchoParams,
-            mut r: harness::EchoResults,
-        ) -> capnp::Result<()> {
-            r.get().set_value(p.get()?.get_value());
-            Ok(())
+            context: harness::EchoContext<'_>,
+        ) -> capnp::capability::Promise<(), capnp::Error> {
+            let (p, mut r) = context.into_owned();
+            capnp::capability::Promise::from_future(async move {
+                r.get().set_value(p.get()?.get_value());
+                Ok(())
+            })
         }
     }
     tokio::task::LocalSet::new()

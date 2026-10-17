@@ -127,16 +127,54 @@ impl<VatId> QuestionRef<VatId> {
             pipeline: None,
         }
     }
-    fn fulfill(&mut self, response: Promise<Response<VatId>, Error>) {
-        if let Some(fulfiller) = self.fulfiller.take() {
-            let _ = fulfiller.send(response);
+    fn fulfill(reference: &Rc<RefCell<Self>>, mut response: Promise<Response<VatId>, Error>) {
+        let (fulfiller, pipeline) = Self::take_completion(reference);
+        let Some(fulfiller) = fulfiller else { return };
+        if let Some(state) = pipeline {
+            // Only redirected/adopted answers need an asynchronous second
+            // completion stage. Keep it alive for pipeline-only interest and
+            // settle pipeline clients before exposing the application response.
+            let fork = response.shared();
+            Pipeline::drive(&state, Promise::from_future(fork.clone()));
+            let resolved = Pipeline { state }.when_resolved();
+            response = Promise::from_future(resolved.map(|_| ()).then(move |()| fork));
         }
+        let _ = fulfiller.send(response);
     }
 
-    fn reject(&mut self, err: Error) {
-        if let Some(fulfiller) = self.fulfiller.take() {
-            let _ = fulfiller.send(Promise::err(err));
+    fn fulfill_result(reference: &Rc<RefCell<Self>>, response: capnp::Result<Response<VatId>>) {
+        let (fulfiller, pipeline) = Self::take_completion(reference);
+        let Some(fulfiller) = fulfiller else { return };
+        if let Some(pipeline) = pipeline {
+            // Like C++ QuestionRef, receipt owns settlement. No background
+            // shared-future task or waiter is needed for an ordinary Return.
+            PipelineState::resolve(&pipeline, response.clone());
         }
+        let _ = fulfiller.send(match response {
+            Ok(response) => Promise::ok(response),
+            Err(error) => Promise::err(error),
+        });
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn take_completion(
+        reference: &Rc<RefCell<Self>>,
+    ) -> (
+        Option<oneshot::Sender<Promise<Response<VatId>, Error>>>,
+        Option<Rc<RefCell<PipelineState<VatId>>>>,
+    ) {
+        let mut reference = reference.borrow_mut();
+        let fulfiller = reference.fulfiller.take();
+        let pipeline = reference
+            .pipeline
+            .as_ref()
+            .and_then(Weak::upgrade)
+            .filter(|state| state.borrow().resolves_on_return);
+        (fulfiller, pipeline)
+    }
+
+    fn reject(reference: &Rc<RefCell<Self>>, err: Error) {
+        Self::fulfill_result(reference, Err(err));
     }
 }
 
@@ -720,9 +758,8 @@ impl<VatId> ConnectionState<VatId> {
         let questions = mem::replace(&mut *self.questions.borrow_mut(), LocalTable::new());
         for question in questions.iter() {
             if let Some(reference) = question.self_ref.as_ref().and_then(Weak::upgrade) {
-                let mut reference = reference.borrow_mut();
-                reference.connection_state.take();
-                reference.reject(network_error.clone());
+                reference.borrow_mut().connection_state.take();
+                QuestionRef::reject(&reference, network_error.clone());
             }
         }
         let answers_to_release = mem::take(&mut self.answers.borrow_mut().slots);
@@ -1222,9 +1259,11 @@ where
         cap_table: &[Option<Box<dyn ClientHook>>],
         is_tail_call: bool,
         permit: Rc<crate::admission::Permit>,
+        pipelined: bool,
     ) -> capnp::Result<(
         Rc<RefCell<QuestionRef<VatId>>>,
         impl Future<Output = capnp::Result<Response<VatId>>> + 'static,
+        Option<Pipeline<VatId>>,
     )> {
         // Build the cap table.
         let mut fds = OutgoingFds::default();
@@ -1290,11 +1329,12 @@ where
             drop(response_owner);
             result
         };
+        let pipeline = pipelined.then(|| Pipeline::direct(connection_state, question_ref.clone()));
         // Install the response owner before invoking transport code. A custom
         // sender may deliver a response synchronously during publication.
         fds.attach(&mut *message);
         connection_state.send_call(message, permit);
-        Ok((question_ref, promise))
+        Ok((question_ref, promise, pipeline))
     }
 
     fn send_streaming_internal(
@@ -1549,49 +1589,30 @@ impl<VatId> RequestHook for Request<VatId> {
             }
             call_builder.get_no_promise_pipelining()
         };
-        let (question_ref, promise) =
-            match Self::send_internal(&connection_state, message, &cap_table, false, permit) {
-                Ok(sent) => sent,
-                Err(error) => {
-                    return capnp::capability::RemotePromise {
-                        promise: Promise::err(error.clone()),
-                        pipeline: any_pointer::Pipeline::new(Box::new(broken::Pipeline::new(
-                            error,
-                        ))),
-                    }
-                }
-            };
-        if disabled {
-            return capnp::capability::RemotePromise {
-                promise: Promise::from_future(
-                    promise.map_ok(|response| capnp::capability::Response::new(Box::new(response))),
-                ),
-                pipeline: any_pointer::Pipeline::new(Box::new(broken::DisabledPipeline)),
-            };
-        }
-
-        let forked_promise1 = promise.shared();
-        let forked_promise2 = forked_promise1.clone();
-
-        // The pipeline must get notified of resolution before the app does to maintain ordering.
-        let pipeline = Pipeline::new(
+        let (_question_ref, promise, pipeline) = match Self::send_internal(
             &connection_state,
-            question_ref,
-            Some(Promise::from_future(forked_promise1)),
-        );
-
-        let resolved = pipeline.when_resolved();
-
-        let forked_promise2 = resolved.map(|_| Ok(())).and_then(|()| forked_promise2);
-
-        let app_promise = Promise::from_future(
-            forked_promise2
-                .map_ok(|response| ::capnp::capability::Response::new(Box::new(response))),
-        );
-
+            message,
+            &cap_table,
+            false,
+            permit,
+            !disabled,
+        ) {
+            Ok(sent) => sent,
+            Err(error) => {
+                return capnp::capability::RemotePromise {
+                    promise: Promise::err(error.clone()),
+                    pipeline: any_pointer::Pipeline::new(Box::new(broken::Pipeline::new(error))),
+                }
+            }
+        };
         ::capnp::capability::RemotePromise {
-            promise: app_promise,
-            pipeline: any_pointer::Pipeline::new(Box::new(pipeline)),
+            promise: Promise::from_future(
+                promise.map_ok(|response| capnp::capability::Response::new(Box::new(response))),
+            ),
+            pipeline: any_pointer::Pipeline::new(match pipeline {
+                Some(pipeline) => Box::new(pipeline),
+                None => Box::new(broken::DisabledPipeline),
+            }),
         }
     }
     fn send_streaming(self: Box<Self>) -> Promise<(), Error> {
@@ -1664,13 +1685,14 @@ impl<VatId> RequestHook for Request<VatId> {
         };
 
         let disabled = get_call(&mut message).unwrap().get_no_promise_pipelining();
-        let (question_ref, promise) = match write_target_result {
+        let (question_ref, promise, _) = match write_target_result {
             Some(_redirect) => {
                 return None;
             }
             // No question ID was published if descriptor admission failed.
             None => {
-                Self::send_internal(&connection_state, message, &cap_table, true, permit).ok()?
+                Self::send_internal(&connection_state, message, &cap_table, true, permit, false)
+                    .ok()?
             }
         };
 
@@ -1709,10 +1731,11 @@ where
 {
     variant: PipelineVariant<VatId>,
     redirect_later: Option<RefCell<futures::future::Shared<Promise<Response<VatId>, Error>>>>,
+    resolves_on_return: bool,
     connection_state: Rc<ConnectionState<VatId>>,
 
     #[allow(dead_code)]
-    resolve_self_promise: Promise<(), Error>,
+    resolve_self_promise: Option<Promise<(), Error>>,
 
     promise_clients_to_resolve: RefCell<
         crate::sender_queue::SenderQueue<
@@ -1814,27 +1837,41 @@ impl<VatId> Pipeline<VatId> {
             variant: PipelineVariant::Waiting(question_ref),
             connection_state: connection_state.clone(),
             redirect_later: None,
-            resolve_self_promise: Promise::from_future(future::pending()),
+            resolves_on_return: false,
+            resolve_self_promise: None,
             promise_clients_to_resolve: RefCell::new(crate::sender_queue::SenderQueue::new()),
             resolution_waiters: crate::sender_queue::SenderQueue::new(),
         }));
         reference.borrow_mut().pipeline = Some(Rc::downgrade(&state));
         if let Some(redirect_later_promise) = redirect_later {
-            let fork = redirect_later_promise.shared();
-            let this = Rc::downgrade(&state);
-            let resolve_self_promise =
-                connection_state.eagerly_evaluate(fork.clone().then(move |response| {
-                    let Some(state) = this.upgrade() else {
-                        return Promise::err(Error::failed("dangling reference to this".into()));
-                    };
-                    PipelineState::resolve(&state, response);
-                    Promise::ok(())
-                }));
-
-            state.borrow_mut().resolve_self_promise = resolve_self_promise;
-            state.borrow_mut().redirect_later = Some(RefCell::new(fork));
+            Self::drive(&state, redirect_later_promise);
         }
         Self { state }
+    }
+
+    fn direct(
+        connection_state: &Rc<ConnectionState<VatId>>,
+        reference: Rc<RefCell<QuestionRef<VatId>>>,
+    ) -> Self {
+        let pipeline = Self::new(connection_state, reference, None);
+        pipeline.state.borrow_mut().resolves_on_return = true;
+        pipeline
+    }
+
+    fn drive(state: &Rc<RefCell<PipelineState<VatId>>>, response: Promise<Response<VatId>, Error>) {
+        let fork = response.shared();
+        let this = Rc::downgrade(state);
+        let connection = state.borrow().connection_state.clone();
+        let resolve = connection.eagerly_evaluate(fork.clone().then(move |response| {
+            if let Some(state) = this.upgrade() {
+                PipelineState::resolve(&state, response);
+            }
+            Promise::ok(())
+        }));
+        let mut state = state.borrow_mut();
+        state.resolves_on_return = false;
+        state.resolve_self_promise = Some(resolve);
+        state.redirect_later = Some(RefCell::new(fork));
     }
 
     fn when_resolved(&self) -> Promise<(), Error> {
@@ -1856,7 +1893,8 @@ impl<VatId> Pipeline<VatId> {
             variant: PipelineVariant::Waiting(question_ref),
             connection_state,
             redirect_later: None,
-            resolve_self_promise: Promise::from_future(future::pending()),
+            resolves_on_return: false,
+            resolve_self_promise: None,
             promise_clients_to_resolve: RefCell::new(crate::sender_queue::SenderQueue::new()),
             resolution_waiters: crate::sender_queue::SenderQueue::new(),
         }));
@@ -1880,6 +1918,7 @@ impl<VatId> PipelineHook for Pipeline<VatId> {
                 variant: PipelineVariant::Waiting(ref question_ref),
                 ref connection_state,
                 ref redirect_later,
+                resolves_on_return,
                 ref promise_clients_to_resolve,
                 ..
             } => {
@@ -1887,8 +1926,8 @@ impl<VatId> PipelineHook for Pipeline<VatId> {
                 let pipeline_client =
                     PipelineClient::new(connection_state, question_ref.clone(), ops.clone());
 
-                match redirect_later {
-                    Some(_r) => {
+                match redirect_later.is_some() || resolves_on_return {
+                    true => {
                         let client: Client<VatId> = pipeline_client.into();
                         let promise_client =
                             PromiseClient::new(connection_state, Box::new(client), None);
@@ -1904,7 +1943,7 @@ impl<VatId> PipelineHook for Pipeline<VatId> {
                         let result: Client<VatId> = promise_client.into();
                         Box::new(result)
                     }
-                    None => {
+                    false => {
                         // Oh, this pipeline will never get redirected, so just return the PipelineClient.
                         let client: Client<VatId> = pipeline_client.into();
                         Box::new(client)

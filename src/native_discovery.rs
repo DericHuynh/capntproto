@@ -230,27 +230,31 @@ impl Reader {
     }
 }
 impl directory::Server for Reader {
-    async fn lookup(
+    fn lookup(
         self: Rc<Self>,
-        params: directory::LookupParams,
-        mut results: directory::LookupResults,
-    ) -> capnp::Result<()> {
-        let host = params.get()?.get_host()?;
-        if host.len() != 32 {
-            return Err(failed("invalid discovery host"));
-        }
-        self.read(|_, e| e.binding.host == host, results.get().init_record())
+        context: directory::LookupContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let host = params.get()?.get_host()?;
+            if host.len() != 32 {
+                return Err(failed("invalid discovery host"));
+            }
+            self.read(|_, e| e.binding.host == host, results.get().init_record())
+        })
     }
-    async fn resolve(
+    fn resolve(
         self: Rc<Self>,
-        params: directory::ResolveParams,
-        mut results: directory::ResolveResults,
-    ) -> capnp::Result<()> {
-        let name = params.get()?.get_name()?.to_str()?;
-        if !name_ok(name) {
-            return Err(failed("invalid discovery name"));
-        }
-        self.read(|k, _| k.0 == name, results.get().init_record())
+        context: directory::ResolveContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let name = params.get()?.get_name()?.to_str()?;
+            if !name_ok(name) {
+                return Err(failed("invalid discovery name"));
+            }
+            self.read(|k, _| k.0 == name, results.get().init_record())
+        })
     }
 }
 

@@ -125,35 +125,37 @@ impl<T: capnp::traits::Owned + Unpin + 'static> crate::store_capnp::handoff::Ser
 where
     for<'a> T::Reader<'a>: capnp::traits::SetterInput<T> + capnp::traits::HasTypeId,
 {
-    async fn accept(
+    fn accept(
         self: std::rc::Rc<Self>,
-        params: crate::store_capnp::handoff::AcceptParams<T>,
-        mut results: crate::store_capnp::handoff::AcceptResults<T>,
-    ) -> capnp::Result<()> {
-        let id = params.get()?.get_id()?;
-        let grant = {
-            let mut intro = self.introduction.borrow_mut();
-            if id != self.id || intro.id != self.id || !intro.accept() {
-                return Err(capnp::Error::failed(
-                    "invalid or revoked introduction".into(),
-                ));
+        context: crate::store_capnp::handoff::AcceptContext<'_, T>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let id = params.get()?.get_id()?;
+            let grant = {
+                let mut intro = self.introduction.borrow_mut();
+                if id != self.id || intro.id != self.id || !intro.accept() {
+                    return Err(capnp::Error::failed(
+                        "invalid or revoked introduction".into(),
+                    ));
+                }
+                if intro.state.phase() == HandoffPhase::Embargoed {
+                    intro.lift_embargo();
+                }
+                intro
+                    .direct_grant()
+                    .ok_or_else(|| capnp::Error::failed("old route has not drained".into()))?
+            };
+            let mut cached = self.cached.borrow_mut();
+            if cached.is_none() {
+                *cached = Some(crate::orm::ObjectServer::<T>::client(
+                    self.object.clone(),
+                    grant,
+                )?);
             }
-            if intro.state.phase() == HandoffPhase::Embargoed {
-                intro.lift_embargo();
-            }
-            intro
-                .direct_grant()
-                .ok_or_else(|| capnp::Error::failed("old route has not drained".into()))?
-        };
-        let mut cached = self.cached.borrow_mut();
-        if cached.is_none() {
-            *cached = Some(crate::orm::ObjectServer::<T>::client(
-                self.object.clone(),
-                grant,
-            )?);
-        }
-        results.get().set_object(cached.as_ref().unwrap().clone());
-        Ok(())
+            results.get().set_object(cached.as_ref().unwrap().clone());
+            Ok(())
+        })
     }
 }
 

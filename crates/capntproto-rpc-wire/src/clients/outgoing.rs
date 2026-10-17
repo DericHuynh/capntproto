@@ -153,6 +153,13 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
     pub fn capacity(&self) -> usize {
         self.slots.len()
     }
+    pub(crate) fn question(&self, index: usize) -> Option<questions::Key<'id>> {
+        self.slots
+            .get(index)?
+            .entry
+            .as_ref()
+            .map(|entry| entry.question)
+    }
     pub fn new(slots: &'s mut [Slot<'id, PATH>], peer: P) -> Result<Self, Error> {
         Self::from_storage(SlotStorage::borrowed(slots), peer)
     }

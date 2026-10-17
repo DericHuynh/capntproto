@@ -50,6 +50,10 @@ pub trait Write: Flush {
 /// Async completion belongs inside this adapter; report bytes only when IO has
 /// accepted them, never merely because an operation has been started.
 pub trait WriteResources<R>: Flush {
+    /// Hint the bounded number of queued frames before the next flush poll.
+    /// The actual writes can stop early on partial IO or backpressure. This is
+    /// not acceptance: all byte, resource and flush obligations remain in force.
+    fn start_batch(&mut self, _frames: usize) {}
     /// Opt into retaining allocating message buffers through asynchronous IO.
     /// Fixed providers continue to use borrowed writes. Retained bytes consume
     /// the pool's capacity until this adapter releases them.
@@ -67,6 +71,22 @@ pub trait WriteResources<R>: Flush {
         resources: Option<&R>,
     ) -> Poll<Result<usize, IoError<Self::Error>>> {
         self.poll_write_resources(cx, &bytes, resources)
+    }
+    /// Consume some or all remaining portions. The default borrows just the
+    /// first remaining part; retaining adapters may accept the complete owner.
+    /// Pending/error must drop the supplied alias, just like poll_write_shared.
+    #[cfg(feature = "alloc")]
+    fn accepts_parts(&self) -> bool {
+        false
+    }
+    #[cfg(feature = "alloc")]
+    fn poll_write_parts(
+        &mut self,
+        cx: &mut Context<'_>,
+        parts: messages::SharedParts,
+        resources: Option<&R>,
+    ) -> Poll<Result<usize, IoError<Self::Error>>> {
+        self.poll_write_resources(cx, parts.first_remaining(), resources)
     }
     fn poll_write_resources(
         &mut self,
@@ -141,15 +161,34 @@ pub fn poll_queue_resources<'pool, R, W: WriteResources<R>>(
                 #[cfg(feature = "alloc")]
                 let shared = writer.accepts_shared().then(|| window.share()).flatten();
                 #[cfg(feature = "alloc")]
-                let result = match shared {
-                    Some(bytes) => writer.poll_write_shared(cx, bytes, window.resources()),
-                    None => writer.poll_write_resources(cx, window.bytes(), window.resources()),
+                let parts = writer
+                    .accepts_parts()
+                    .then(|| window.share_parts())
+                    .flatten();
+                #[cfg(feature = "alloc")]
+                let accepts_parts = parts.is_some();
+                #[cfg(feature = "alloc")]
+                let result = match parts {
+                    Some(parts) => writer.poll_write_parts(cx, parts, window.resources()),
+                    None => match shared {
+                        Some(bytes) => writer.poll_write_shared(cx, bytes, window.resources()),
+                        None => writer.poll_write_resources(cx, window.bytes(), window.resources()),
+                    },
                 };
                 #[cfg(not(feature = "alloc"))]
                 let result = writer.poll_write_resources(cx, window.bytes(), window.resources());
                 match result {
                     Poll::Pending => return Poll::Pending,
-                    Poll::Ready(Ok(count)) => window.advance(count).map_err(SendError::State),
+                    Poll::Ready(Ok(count)) => {
+                        #[cfg(feature = "alloc")]
+                        if accepts_parts {
+                            window.advance_parts(count).map_err(SendError::State)
+                        } else {
+                            window.advance(count).map_err(SendError::State)
+                        }
+                        #[cfg(not(feature = "alloc"))]
+                        window.advance(count).map_err(SendError::State)
+                    }
                     Poll::Ready(Err(IoError::Interrupted)) => continue,
                     Poll::Ready(Err(IoError::Failed(e))) => Err(SendError::Io(e)),
                 }

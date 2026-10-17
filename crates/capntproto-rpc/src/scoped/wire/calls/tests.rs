@@ -28,9 +28,9 @@ impl capability::Server for Server {
         self,
         _: u64,
         method: u16,
-        params: capability::Params<any_pointer::Owned>,
-        results: capability::Results<any_pointer::Owned>,
+        context: capability::CallContext<'_, any_pointer::Owned, any_pointer::Owned>,
     ) -> capability::DispatchCallResult {
+        let (params, results) = context.into_owned();
         (self.0)(method, params, results)
     }
 }
@@ -690,12 +690,12 @@ fn large_remote_call_retries_output_and_preserves_exception_diagnostics() {
                 calls.entries.iter().flatten().count() + usize::from(calls.pending.is_some()),
                 1
             );
+            assert_eq!(
+                calls.invocations.capacity(),
+                0,
+                "settled remote calls need no completion channel"
+            );
             if no_pipeline {
-                assert_eq!(
-                    calls.invocations.capacity(),
-                    0,
-                    "direct calls need no completion channel"
-                );
                 assert!(
                     calls.pending.is_some(),
                     "failed immediate output preserves the request"
@@ -751,8 +751,386 @@ fn large_remote_call_retries_output_and_preserves_exception_diagnostics() {
 }
 
 #[test]
+fn publication_resolves_waiting_children_before_the_parent_flushes() {
+    for no_pipeline in [false, true] {
+        with_peer(|mut driver, messages| {
+            driver.use_owned_output_queues(true);
+            let mut hooks = ClientHooks::new(24, 24);
+            let client = remote(&mut driver, &mut hooks);
+            let parent = request(&client, 1).send();
+            let child = capability::Client::new(parent.pipeline.hook.get_pipelined_cap(&[]));
+            let mut child_request = request(&child, 2);
+            child_request.hook.set_hints(capability::CallHints {
+                no_promise_pipelining: no_pipeline,
+                ..Default::default()
+            });
+            let child_reply = child_request.send();
+            let mut calls = Calls::new(8, None).unwrap();
+            let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+            assert_eq!(hooks.inbox.queue.borrow().len(), 1);
+            let progress = tick(
+                &mut calls,
+                &mut hooks,
+                &mut driver,
+                messages,
+                &mut queue,
+                &mut Context::from_waker(Waker::noop()),
+            );
+            assert!(matches!(progress, Poll::Ready(Ok(Progress::Published))));
+            assert_eq!(queue.len(), 1, "the parent has not been flushed");
+            assert_eq!(
+                hooks.inbox.queue.borrow().len(),
+                1,
+                "publication must route the already-waiting child"
+            );
+            drop(parent);
+            drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+            assert_eq!(queue.len(), 2, "both calls can share one transport batch");
+            assert!(
+                calls.entries[0]
+                    .as_mut()
+                    .unwrap()
+                    .wire
+                    .poll_canceled(&mut Context::from_waker(Waker::noop()))
+                    .is_pending(),
+                "the adopted child retains the parent after its public promise is dropped"
+            );
+            let bytes = drain(&mut queue, messages);
+            let mut remaining = bytes.as_slice();
+            let first = capnp::serialize::read_message(&mut remaining, Default::default()).unwrap();
+            let rpc_capnp::message::Call(first) = first
+                .get_root::<rpc_capnp::message::Reader>()
+                .unwrap()
+                .which()
+                .unwrap()
+            else {
+                panic!("parent Call")
+            };
+            let first = first.unwrap();
+            assert_eq!(first.get_method_id(), 1);
+            let second =
+                capnp::serialize::read_message(&mut remaining, Default::default()).unwrap();
+            let rpc_capnp::message::Call(second) = second
+                .get_root::<rpc_capnp::message::Reader>()
+                .unwrap()
+                .which()
+                .unwrap()
+            else {
+                panic!("child Call")
+            };
+            let second = second.unwrap();
+            assert_eq!(second.get_method_id(), 2);
+            let rpc_capnp::message_target::PromisedAnswer(target) =
+                second.get_target().unwrap().which().unwrap()
+            else {
+                panic!("promised answer")
+            };
+            assert_eq!(target.unwrap().get_question_id(), first.get_question_id());
+            assert!(remaining.is_empty());
+            drop((child_reply, child, client));
+            teardown(calls, hooks, driver, messages, &mut queue);
+        });
+    }
+}
+
+#[test]
+fn direct_remote_projections_keep_the_parent_question_before_and_after_publication() {
+    for project_before_send in [false, true] {
+        with_peer(|mut driver, messages| {
+            let mut hooks = ClientHooks::new(24, 24);
+            let client = remote(&mut driver, &mut hooks);
+            let older = project_before_send.then(|| {
+                let target = driver.runtime.promise(&mut None).unwrap();
+                let task = driver
+                    .enqueue_dynamic(
+                        &target,
+                        DynamicCall::default(),
+                        &[],
+                        messages,
+                        128,
+                        Default::default(),
+                        |_| Ok(()),
+                    )
+                    .unwrap();
+                (target, task)
+            });
+            let mut parent = request(&client, 1).send();
+            let mut calls = Calls::new(8, None).unwrap();
+            let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+            let Poll::Ready(Ok(progress)) = tick(
+                &mut calls,
+                &mut hooks,
+                &mut driver,
+                messages,
+                &mut queue,
+                &mut Context::from_waker(Waker::noop()),
+            ) else {
+                panic!("admit parent")
+            };
+            assert_eq!(
+                progress,
+                if project_before_send {
+                    Progress::Advanced
+                } else {
+                    Progress::Published
+                }
+            );
+            if !project_before_send {
+                drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+            }
+            let child = capability::Client::new(parent.pipeline.hook.get_pipelined_cap(&[]));
+            if project_before_send {
+                calls.entries[0]
+                    .as_mut()
+                    .unwrap()
+                    .wire
+                    .poll_pipelines(&mut hooks, &mut driver, &mut calls.invocations, messages)
+                    .unwrap();
+            } else {
+                drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+            }
+            assert_eq!(calls.invocations.capacity(), 0);
+            drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+            let Some(DirectStage::Sent(question)) = calls.entries[0].as_ref().unwrap().wire.direct
+            else {
+                panic!("published direct parent")
+            };
+            let parent_bytes = drain(&mut queue, messages);
+            let decoded =
+                capnp::serialize::read_message(parent_bytes.as_slice(), Default::default())
+                    .unwrap();
+            let rpc_capnp::message::Call(parent_call) = decoded
+                .get_root::<rpc_capnp::message::Reader>()
+                .unwrap()
+                .which()
+                .unwrap()
+            else {
+                panic!("parent Call")
+            };
+            assert!(!parent_call.unwrap().get_no_promise_pipelining());
+            for _ in 0..64 {
+                driver
+                    .poll_maintenance(
+                        messages,
+                        &mut queue,
+                        128,
+                        Default::default(),
+                        &mut [0; 24],
+                        NonZeroUsize::new(8).unwrap(),
+                    )
+                    .unwrap();
+                hooks.collect(&mut driver.runtime);
+            }
+            let child_reply = request(&child, 2).send();
+            drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+            if !project_before_send {
+                assert!(calls
+                    .entries
+                    .iter()
+                    .flatten()
+                    .all(|entry| entry.wire.task.is_none()));
+            }
+            let bytes = drain(&mut queue, messages);
+            let mut remaining = bytes.as_slice();
+            let decoded =
+                capnp::serialize::read_message(&mut remaining, Default::default()).unwrap();
+            assert!(remaining.is_empty());
+            let rpc_capnp::message::Call(call) = decoded
+                .get_root::<rpc_capnp::message::Reader>()
+                .unwrap()
+                .which()
+                .unwrap()
+            else {
+                panic!("child Call")
+            };
+            let call = call.unwrap();
+            assert_eq!(call.get_method_id(), 2);
+            let rpc_capnp::message_target::PromisedAnswer(target) =
+                call.get_target().unwrap().which().unwrap()
+            else {
+                panic!("promised-answer route")
+            };
+            assert_eq!(target.unwrap().get_question_id(), question.id().to_wire());
+            let reply = Frame::build(messages, 512, Default::default(), |builder| {
+                calls::exception(
+                    builder,
+                    capntproto_rpc_engine::ids::AnswerId::from_wire(question.id().to_wire()),
+                    capnp::ErrorKind::Overloaded,
+                    "parent rejected",
+                )
+            })
+            .unwrap();
+            driver
+                .receive(reply, messages, &mut [0; 24], |_| (), || ())
+                .unwrap_or_else(|_| panic!("parent Return"));
+            // Return must propagate to existing wire projections before the
+            // parent result owner can release its question.
+            for _ in 0..64 {
+                driver
+                    .poll_maintenance(
+                        messages,
+                        &mut queue,
+                        128,
+                        Default::default(),
+                        &mut [0; 24],
+                        NonZeroUsize::new(8).unwrap(),
+                    )
+                    .unwrap();
+                hooks.collect(&mut driver.runtime);
+                drain(&mut queue, messages);
+            }
+            drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+            let error = ready(&mut parent.promise).err().expect("parent exception");
+            assert_eq!(error.extra, "remote exception: parent rejected");
+            let late = capability::Client::new(parent.pipeline.hook.get_pipelined_cap(&[]));
+            let mut late_reply = request(&late, 3).send();
+            let error = ready(&mut late_reply.promise)
+                .err()
+                .expect("late projection exception");
+            assert_eq!(error.extra, "remote exception: parent rejected");
+            drop((late_reply, late, child_reply, child, parent, client));
+            if let Some((target, task)) = older {
+                assert!(driver.cancel_invocation(task, messages));
+                driver.runtime.release(target);
+            }
+            teardown(calls, hooks, driver, messages, &mut queue);
+        });
+    }
+}
+
+#[test]
+fn queued_pipeline_sink_failure_reclaims_its_unpublished_task() {
+    with_peer(|mut driver, messages| {
+        let mut hooks = ClientHooks::new(24, 24);
+        let client = remote(&mut driver, &mut hooks);
+        let older = driver.runtime.promise(&mut None).unwrap();
+        let task = driver
+            .enqueue_dynamic(
+                &older,
+                DynamicCall::default(),
+                &[],
+                messages,
+                128,
+                Default::default(),
+                |_| Ok(()),
+            )
+            .unwrap();
+        let response = request(&client, 1).send();
+        hooks
+            .inbox
+            .queue
+            .borrow_mut()
+            .front_mut()
+            .unwrap()
+            .results
+            .hook()
+            .set_pipeline_from(Box::new(crate::broken::Pipeline::new(Error::failed(
+                "earlier pipeline".into(),
+            ))))
+            .unwrap();
+        let mut calls = Calls::new(8, None).unwrap();
+        let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+        let Poll::Ready(Err(error)) = tick(
+            &mut calls,
+            &mut hooks,
+            &mut driver,
+            messages,
+            &mut queue,
+            &mut Context::from_waker(Waker::noop()),
+        ) else {
+            panic!("pipeline sink rejection")
+        };
+        assert_eq!(error.extra, "set_pipeline() called twice");
+        assert_eq!(driver.runtime.queued(), 1, "only the older task remains");
+        assert!(driver.runtime.next_ready().unwrap().is_none());
+        assert!(queue.is_empty());
+        assert_eq!(calls.invocations.capacity(), 0);
+        assert!(driver.cancel_invocation(task, messages));
+        driver.runtime.release(older);
+        drop((response, client));
+        teardown(calls, hooks, driver, messages, &mut queue);
+    });
+}
+
+#[test]
+fn immediate_pipeline_sink_failure_cancels_the_published_question() {
+    with_peer(|mut driver, messages| {
+        let mut hooks = ClientHooks::new(24, 24);
+        let client = remote(&mut driver, &mut hooks);
+        let mut response = request(&client, 1).send();
+        // An independently supplied early pipeline makes this sink reject a
+        // second publication. The accepted wire Call must still be flushed and
+        // retained for late-Return cleanup, without leaking a hosted owner.
+        hooks
+            .inbox
+            .queue
+            .borrow_mut()
+            .front_mut()
+            .unwrap()
+            .results
+            .hook()
+            .set_pipeline_from(Box::new(crate::broken::Pipeline::new(Error::failed(
+                "earlier pipeline".into(),
+            ))))
+            .unwrap();
+        let mut calls = Calls::new(8, None).unwrap();
+        let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+        assert!(matches!(
+            tick(
+                &mut calls,
+                &mut hooks,
+                &mut driver,
+                messages,
+                &mut queue,
+                &mut Context::from_waker(Waker::noop())
+            ),
+            Poll::Ready(Ok(Progress::Published))
+        ));
+        assert!(calls.is_empty());
+        let error = ready(&mut response.promise)
+            .err()
+            .expect("pipeline sink failure");
+        assert_eq!(error.extra, "set_pipeline() called twice");
+        let bytes = drain(&mut queue, messages);
+        let message = capnp::serialize::read_message(bytes.as_slice(), Default::default()).unwrap();
+        let rpc_capnp::message::Call(call) = message
+            .get_root::<rpc_capnp::message::Reader>()
+            .unwrap()
+            .which()
+            .unwrap()
+        else {
+            panic!("published Call")
+        };
+        let id = call.unwrap().get_question_id();
+        let frame = Frame::build(messages, 128, Default::default(), |builder| {
+            calls::acknowledge(builder, capntproto_rpc_engine::ids::AnswerId::from_wire(id))
+        })
+        .unwrap();
+        driver
+            .receive(frame, messages, &mut [0; 24], |_| (), || ())
+            .unwrap_or_else(|_| panic!("late Return"));
+        for _ in 0..128 {
+            driver
+                .poll_maintenance(
+                    messages,
+                    &mut queue,
+                    128,
+                    Default::default(),
+                    &mut [0; 24],
+                    NonZeroUsize::new(8).unwrap(),
+                )
+                .unwrap();
+            drain(&mut queue, messages);
+        }
+        assert!(driver.ledgers.questions.is_empty());
+        drop((response, client));
+        teardown(calls, hooks, driver, messages, &mut queue);
+    });
+}
+
+#[test]
 fn direct_remote_cancellation_reclaims_queued_and_late_return_owners() {
-    for sent in [false, true] {
+    for (sent, no_pipeline) in [(false, false), (false, true), (true, false), (true, true)] {
         with_peer(|mut driver, messages| {
             let mut hooks = ClientHooks::new(24, 24);
             let client = remote(&mut driver, &mut hooks);
@@ -773,7 +1151,7 @@ fn direct_remote_cancellation_reclaims_queued_and_late_return_owners() {
                 .unwrap();
             let mut request = request(&client, 1);
             request.hook.set_hints(CallHints {
-                no_promise_pipelining: true,
+                no_promise_pipelining: no_pipeline,
                 ..Default::default()
             });
             let response = request.send();
@@ -840,6 +1218,217 @@ fn direct_remote_cancellation_reclaims_queued_and_late_return_owners() {
                 assert!(driver.ledgers.questions.is_empty());
             } else {
                 assert!(queue.is_empty());
+            }
+            drop(client);
+            teardown(calls, hooks, driver, messages, &mut queue);
+        });
+    }
+}
+
+#[test]
+fn burst_admission_keeps_older_cancellation_fair_when_capacity_fills() {
+    with_peer(|mut driver, messages| {
+        let mut hooks = ClientHooks::new(24, 24);
+        let client = remote(&mut driver, &mut hooks);
+        let mut calls = Calls::new(16, None).unwrap();
+        let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+        let mut responses = Vec::new();
+        for index in 0..24 {
+            let mut request = request(&client, 1);
+            request.hook.set_hints(CallHints {
+                no_promise_pipelining: true,
+                ..Default::default()
+            });
+            responses.push(Some(request.send()));
+            if index < 9 {
+                drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+                drain(&mut queue, messages);
+            }
+        }
+        let Some(DirectStage::Sent(first)) = calls.entries[0].as_ref().unwrap().wire.direct else {
+            panic!("direct call")
+        };
+        drop(responses[0].take());
+        let mut retired = false;
+        for _ in 0..64 {
+            if let Poll::Ready(result) = calls.poll(
+                &mut hooks,
+                &mut driver,
+                messages,
+                &mut queue,
+                128,
+                Default::default(),
+                &mut [0; 24],
+                &mut Context::from_waker(Waker::noop()),
+                NonZeroUsize::new(8).unwrap(),
+                import,
+            ) {
+                result.unwrap();
+            }
+            drain(&mut queue, messages);
+            if calls.immediate_receiver(first).is_none() {
+                retired = true;
+                break;
+            }
+        }
+        assert!(
+            retired,
+            "new admissions must not starve an older cancellation"
+        );
+        assert!(
+            !hooks.inbox.queue.borrow().is_empty(),
+            "exercise cancellation while newer requests still wait"
+        );
+        drop((responses, client));
+        teardown(calls, hooks, driver, messages, &mut queue);
+    });
+}
+
+#[test]
+fn immediate_reply_index_survives_bursts_cancellation_and_question_reuse() {
+    for budget in [1, 8] {
+        with_peer(|mut driver, messages| {
+            let mut hooks = ClientHooks::new(24, 24);
+            let client = remote(&mut driver, &mut hooks);
+            let mut calls = Calls::new(16, None).unwrap();
+            let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+            let mut previous = Vec::new();
+            for round in 0..3 {
+                let mut responses = Vec::new();
+                for _ in 0..12 {
+                    let mut request = request(&client, 1);
+                    request.hook.set_hints(CallHints {
+                        no_promise_pipelining: true,
+                        ..Default::default()
+                    });
+                    responses.push(Some(request.send()));
+                    let mut published = false;
+                    for _ in 0..256 {
+                        if let Poll::Ready(result) = calls.poll(
+                            &mut hooks,
+                            &mut driver,
+                            messages,
+                            &mut queue,
+                            128,
+                            Default::default(),
+                            &mut [0; 24],
+                            &mut Context::from_waker(Waker::noop()),
+                            NonZeroUsize::new(budget).unwrap(),
+                            import,
+                        ) {
+                            if result.unwrap() == Progress::Published {
+                                published = true;
+                                break;
+                            }
+                        }
+                    }
+                    assert!(published);
+                    drain(&mut queue, messages);
+                }
+                let questions: Vec<_> = calls
+                    .entries
+                    .iter()
+                    .flatten()
+                    .map(|entry| {
+                        let Some(DirectStage::Sent(key)) = entry.wire.direct else {
+                            panic!("immediate call")
+                        };
+                        key
+                    })
+                    .collect();
+                assert_eq!(calls.reply_owners.len(), 12);
+                for old in &previous {
+                    assert!(
+                        calls.plain_receiver(*old).is_none(),
+                        "stale generation selected a new owner"
+                    );
+                    assert!(calls.immediate_receiver(*old).is_none());
+                }
+                if round != 0 {
+                    assert!(
+                        previous
+                            .iter()
+                            .any(|old| questions.iter().any(|key| old.id() == key.id())),
+                        "exercise question ID reuse"
+                    );
+                    drop(responses[1].take());
+                    assert!(calls.plain_receiver(questions[1]).is_none());
+                }
+                // Replies arrive in reverse order, with a canceled reply mixed in.
+                for index in (0..12).rev() {
+                    let key = questions[index];
+                    let reply = Frame::build(messages, 128, Default::default(), |builder| {
+                        use rpc_capnp::api::{Message, Return};
+                        let root = builder.try_init_root::<Message>()?;
+                        let mut result = root.into_field(Message::RETURN).init()?;
+                        result.scalar(Return::ANSWER_ID).set(key.id().to_wire());
+                        result.scalar(Return::RELEASE_PARAM_CAPS).set(false);
+                        result.scalar(Return::NO_FINISH_NEEDED).set(true);
+                        result.into_field(Return::RESULTS).init()?;
+                        Ok(())
+                    })
+                    .unwrap();
+                    if round == 0 && index % 2 == 0 {
+                        // An owned return admitted through the general reader uses
+                        // the same indexed owner and full generation check.
+                        match driver.receive(reply, messages, &mut [0; 24], |_| (), || ()) {
+                            Ok(connection::Received::Returned(returned)) => {
+                                assert_eq!(returned, key)
+                            }
+                            _ => panic!("ordinary return admission"),
+                        }
+                        assert_eq!(
+                            calls
+                                .returned(
+                                    key,
+                                    &mut hooks,
+                                    &mut driver,
+                                    messages,
+                                    &mut Context::from_waker(Waker::noop()),
+                                    |hooks, driver| { hooks.collect(&mut driver.runtime) }
+                                )
+                                .unwrap(),
+                            Some(true)
+                        );
+                        let mut response = responses[index].take().unwrap();
+                        ready(&mut response.promise).unwrap();
+                        continue;
+                    }
+                    let received = match driver
+                        .try_receive_plain_owned(reply, messages, |key| calls.plain_receiver(key))
+                    {
+                        Ok(received) => received,
+                        Err((error, _)) => panic!("plain return: {error:?}"),
+                    };
+                    match received {
+                        connection::PlainReceived::Delivered(owner, message) => {
+                            assert!(responses[index].is_some());
+                            calls.deliver_plain(owner, message);
+                            assert!(calls.plain_receiver(key).is_none());
+                            let mut response = responses[index].take().unwrap();
+                            ready(&mut response.promise).unwrap();
+                        }
+                        connection::PlainReceived::Deferred(frame) => {
+                            assert!(
+                                responses[index].is_none(),
+                                "live immediate reply missed its index"
+                            );
+                            if let Err(rejected) =
+                                driver.receive(frame, messages, &mut [0; 24], |_| (), || ())
+                            {
+                                panic!("canceled return: {:?}", rejected.error);
+                            }
+                            drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+                        }
+                    }
+                }
+                assert!(calls.is_empty());
+                assert!(
+                    calls.reply_owners.is_empty(),
+                    "retirement must release every index entry"
+                );
+                previous = questions;
+                drop(responses);
             }
             drop(client);
             teardown(calls, hooks, driver, messages, &mut queue);
@@ -960,6 +1549,69 @@ fn disconnect_prevents_admission_and_termination_recovers_running_requests() {
         drop((response, client));
         teardown(calls, hooks, driver, messages, &mut queue);
     });
+}
+
+#[test]
+fn immediate_single_capability_calls_keep_only_reachable_grants() {
+    for reachable in [false, true] {
+        with_peer(|mut driver, messages| {
+            let mut hooks = ClientHooks::new(24, 24);
+            let client = remote(&mut driver, &mut hooks);
+            let cap = capability::Client::new(server(|_, _, _| ok()).add_ref());
+            let mut req = request(&client, 1);
+            req.get().set_as_capability(cap.hook.add_ref());
+            if !reachable {
+                req.get().set_as::<capnp::text::Owned>("data only").unwrap();
+            }
+            let response = req.send();
+            let mut calls = Calls::new(8, None).unwrap();
+            let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+            for _ in 0..128 {
+                if let Poll::Ready(result) = tick(
+                    &mut calls,
+                    &mut hooks,
+                    &mut driver,
+                    messages,
+                    &mut queue,
+                    &mut Context::from_waker(Waker::noop()),
+                ) {
+                    result.unwrap();
+                }
+                if !queue.is_empty() {
+                    break;
+                }
+            }
+            assert_eq!(queue.len(), 1);
+            let entry = calls.entries.iter().flatten().next().unwrap();
+            assert!(
+                entry.wire.task.is_none(),
+                "settled publication creates no temporary queued task"
+            );
+            assert!(matches!(entry.wire.direct, Some(DirectStage::Sent(_))));
+            let bytes = drain(&mut queue, messages);
+            let reader =
+                capnp::serialize::read_message(bytes.as_slice(), Default::default()).unwrap();
+            let root = reader.get_root::<rpc_capnp::message::Reader>().unwrap();
+            let rpc_capnp::message::Call(call) = root.which().unwrap() else {
+                panic!("Call")
+            };
+            let params = call.unwrap().get_params().unwrap();
+            assert_eq!(params.get_cap_table().unwrap().len(), u32::from(reachable));
+            if reachable {
+                assert_eq!(params.get_content().capability_index().unwrap(), 0);
+            } else {
+                assert_eq!(
+                    params
+                        .get_content()
+                        .get_as::<capnp::text::Reader>()
+                        .unwrap(),
+                    "data only"
+                );
+            }
+            drop((response, client, cap));
+            teardown(calls, hooks, driver, messages, &mut queue);
+        });
+    }
 }
 
 #[test]
@@ -1224,4 +1876,233 @@ fn calls_before_and_after_foreign_resolution_keep_original_order() {
         foreign.terminate();
         teardown(calls, hooks, driver, messages, &mut queue);
     });
+}
+
+#[test]
+fn unprojected_reply_delivers_directly_and_preserves_late_capabilities() {
+    use capntproto_rpc_wire::rpc_capnp::api::{CapDescriptor, Message, Payload, Return};
+    for project_early in [false, true] {
+        with_peer(|mut driver, messages| {
+            let mut hooks = ClientHooks::new(24, 24);
+            let client = remote(&mut driver, &mut hooks);
+            let capability::RemotePromise {
+                mut promise,
+                pipeline,
+            } = request(&client, 1).send();
+            let early = project_early
+                .then(|| capability::Client::new(pipeline.hook.get_pipelined_cap(&[])));
+            let mut calls = Calls::new(8, None).unwrap();
+            let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+            drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+            let entry = calls.entries.iter().flatten().next().unwrap();
+            assert!(entry.wire.pipeline.is_some());
+            let Some(DirectStage::Sent(question)) = entry.wire.direct else {
+                panic!("published parent")
+            };
+            assert_eq!(calls.immediate_receiver(question).is_some(), !project_early);
+            drain(&mut queue, messages);
+            let reply = Frame::build(messages, 256, Default::default(), |builder| {
+                calls::dynamic_results(
+                    builder,
+                    capntproto_rpc_engine::ids::AnswerId::from_wire(question.id().to_wire()),
+                    |content| content.set_capability_index(0),
+                )?;
+                let mut root = builder.try_get_root::<Message>()?;
+                let mut result = root.field(Message::RETURN).edit()?;
+                let mut payload = result.field(Return::RESULTS).edit()?;
+                payload
+                    .field(Payload::CAP_TABLE)
+                    .init(1)?
+                    .get_mut(0)
+                    .unwrap()
+                    .scalar(CapDescriptor::SENDER_HOSTED)
+                    .set(73);
+                Ok(())
+            })
+            .unwrap();
+            driver
+                .receive(reply, messages, &mut [0; 24], |_| (), || ())
+                .unwrap_or_else(|rejected| panic!("Return: {:?}", rejected.error));
+            let completed = calls
+                .returned(
+                    question,
+                    &mut hooks,
+                    &mut driver,
+                    messages,
+                    &mut Context::from_waker(Waker::noop()),
+                    |hooks, driver| hooks.collect(&mut driver.runtime),
+                )
+                .unwrap();
+            assert_eq!(completed, (!project_early).then_some(false));
+            if project_early {
+                for _ in 0..64 {
+                    driver
+                        .poll_maintenance(
+                            messages,
+                            &mut queue,
+                            128,
+                            Default::default(),
+                            &mut [0; 24],
+                            NonZeroUsize::new(8).unwrap(),
+                        )
+                        .unwrap();
+                    hooks.collect(&mut driver.runtime);
+                }
+                drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+            }
+            let response = ready(&mut promise).unwrap();
+            let returned: capability::Client = response.get().unwrap().get_as_capability().unwrap();
+            let late = capability::Client::new(pipeline.hook.get_pipelined_cap(&[]));
+            drop((response, promise, pipeline, early));
+            hooks.collect(&mut driver.runtime);
+            drain(&mut queue, messages);
+            let child = request(&late, 2).send();
+            drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+            let bytes = drain(&mut queue, messages);
+            let message =
+                capnp::serialize::read_message(bytes.as_slice(), Default::default()).unwrap();
+            let rpc_capnp::message::Call(call) = message
+                .get_root::<rpc_capnp::message::Reader>()
+                .unwrap()
+                .which()
+                .unwrap()
+            else {
+                panic!("call through retained result capability")
+            };
+            let call = call.unwrap();
+            assert_eq!(call.get_method_id(), 2);
+            let rpc_capnp::message_target::ImportedCap(id) =
+                call.get_target().unwrap().which().unwrap()
+            else {
+                panic!("returned imported capability")
+            };
+            assert_eq!(id, 73);
+            drop((child, returned, late, client));
+            teardown(calls, hooks, driver, messages, &mut queue);
+        });
+    }
+}
+
+#[test]
+fn queued_child_keeps_parent_until_output_acceptance_or_cancellation() {
+    for canceled in [false, true] {
+        with_peer(|mut driver, messages| {
+            let mut hooks = ClientHooks::new(24, 24);
+            let client = remote(&mut driver, &mut hooks);
+            let parent = request(&client, 1).send();
+            let child = capability::Client::new(parent.pipeline.hook.get_pipelined_cap(&[]));
+            let mut child_request = request(&child, 2);
+            child_request.hook.set_hints(CallHints {
+                no_promise_pipelining: true,
+                ..Default::default()
+            });
+            let mut child_reply = child_request.send();
+            let mut calls = Calls::new(8, None).unwrap();
+            let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+            assert!(matches!(
+                tick(
+                    &mut calls,
+                    &mut hooks,
+                    &mut driver,
+                    messages,
+                    &mut queue,
+                    &mut Context::from_waker(Waker::noop())
+                ),
+                Poll::Ready(Ok(Progress::Published))
+            ));
+            assert_eq!(queue.len(), 1);
+            drop((parent, child));
+            // Observe forwarding so its temporary queued client no longer
+            // supplies an accidental parent interest. Only the unsent request
+            // and the protocol's own owners may keep the target alive now.
+            assert!(Pin::new(&mut child_reply.promise)
+                .poll(&mut Context::from_waker(Waker::noop()))
+                .is_pending());
+            for _ in 0..64 {
+                if let Poll::Ready(Err(error)) = tick(
+                    &mut calls,
+                    &mut hooks,
+                    &mut driver,
+                    messages,
+                    &mut queue,
+                    &mut Context::from_waker(Waker::noop()),
+                ) {
+                    assert!(error.extra.contains("NoSendSlot"), "{error}");
+                }
+            }
+            assert!(
+                calls.pending.is_some(),
+                "full output must preserve the child request"
+            );
+            assert!(
+                driver.ledgers.questions.pending_finish().is_none(),
+                "Finish cannot overtake an unsent child"
+            );
+            let bytes = drain(&mut queue, messages);
+            let decoded =
+                capnp::serialize::read_message(bytes.as_slice(), Default::default()).unwrap();
+            let rpc_capnp::message::Call(parent) = decoded
+                .get_root::<rpc_capnp::message::Reader>()
+                .unwrap()
+                .which()
+                .unwrap()
+            else {
+                panic!("parent Call")
+            };
+            let parent_id = parent.unwrap().get_question_id();
+            // The application call may retire, but the child's target authority
+            // must still prevent the protocol question from publishing Finish.
+            for _ in 0..64 {
+                driver
+                    .poll_maintenance(
+                        messages,
+                        &mut queue,
+                        128,
+                        Default::default(),
+                        &mut [0; 24],
+                        NonZeroUsize::new(1).unwrap(),
+                    )
+                    .unwrap();
+            }
+            assert!(queue.is_empty(), "parent Finish before child publication");
+
+            let child_reply = if canceled {
+                drop(child_reply);
+                None
+            } else {
+                Some(child_reply)
+            };
+            drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+            if canceled {
+                assert!(
+                    queue.is_empty(),
+                    "canceled unsent child must never appear on the wire"
+                );
+            } else {
+                let bytes = drain(&mut queue, messages);
+                let mut remaining = bytes.as_slice();
+                let decoded =
+                    capnp::serialize::read_message(&mut remaining, Default::default()).unwrap();
+                let rpc_capnp::message::Call(child) = decoded
+                    .get_root::<rpc_capnp::message::Reader>()
+                    .unwrap()
+                    .which()
+                    .unwrap()
+                else {
+                    panic!("child must precede Finish")
+                };
+                let child = child.unwrap();
+                assert_eq!(child.get_method_id(), 2);
+                let rpc_capnp::message_target::PromisedAnswer(target) =
+                    child.get_target().unwrap().which().unwrap()
+                else {
+                    panic!("promised answer")
+                };
+                assert_eq!(target.unwrap().get_question_id(), parent_id);
+                assert!(remaining.is_empty());
+            }
+            drop((child_reply, client));
+            teardown(calls, hooks, driver, messages, &mut queue);
+        });
+    }
 }

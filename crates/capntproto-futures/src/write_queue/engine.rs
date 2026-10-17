@@ -137,14 +137,14 @@ where
         loop {
             match receiver.next(&mut batch).await {
                 Batch::Messages(through) => {
-                    // A complete contiguous frame needs no segment-table or
-                    // vectored-write future. Keep that larger state machine on
-                    // the segmented/batched branch, preserving the same flush
-                    // watermark and message lifetime on partial writes.
+                    // A complete contiguous frame needs one iovec, constructed
+                    // on the poll stack. Keep segmented/batched metadata out of
+                    // this future while retaining the same flush watermark and
+                    // message lifetime on partial writes.
                     if let Some(bytes) = (batch.len() == 1)
                         .then(|| batch.front().unwrap().0.framed_bytes()).flatten()
                     {
-                        writer.write_all(bytes).await?;
+                        crate::serialize::write_framed(&mut writer, bytes).await?;
                     } else {
                         crate::serialize::write_message_refs(
                             &mut writer,
@@ -280,6 +280,7 @@ impl<M: AsOutputSegments> Sender<M> {
         Some(ObservedSender {
             sender: self.clone(),
             through: 0,
+            deferred: false,
         })
     }
 
@@ -324,10 +325,21 @@ impl<M: AsOutputSegments> Sender<M> {
 pub struct ObservedSender<M: AsOutputSegments> {
     sender: Sender<M>,
     through: u64,
+    deferred: bool,
 }
 impl<M: AsOutputSegments> ObservedSender<M> {
     pub fn send(&mut self, message: M) -> Result<(), Error> {
         self.through = self.sender.enqueue(message, None, true)?;
+        self.deferred = false;
+        Ok(())
+    }
+    /// Accept a bounded batch without scheduling its driver for every frame.
+    /// The caller must poll `poll_flush` after publication. That poll, or dropping
+    /// this observer, notifies any output not already consumed cooperatively.
+    /// Accepted messages retain their ordinary FIFO order and cancellation rules.
+    pub fn send_buffered(&mut self, message: M) -> Result<(), Error> {
+        self.through = self.sender.enqueue(message, None, false)?;
+        self.deferred = true;
         Ok(())
     }
     /// Offer the driver an immediate poll before scheduling it. If the callback
@@ -338,10 +350,14 @@ impl<M: AsOutputSegments> ObservedSender<M> {
         // Commit the watermark before calling the driver, including when the
         // callback unwinds after accepting a frame but before flushing it.
         self.through = self.sender.enqueue(message, None, false)?;
+        self.deferred = false;
         self.sender.drive_queued(drive);
         Ok(())
     }
     pub fn poll_flush(&mut self, cx: &mut std::task::Context<'_>) -> Poll<Result<(), Error>> {
+        if core::mem::take(&mut self.deferred) {
+            self.sender.drive_queued(|| {});
+        }
         let status = || {
             let queue = self.sender.shared.queue.lock().unwrap();
             if queue.flushed >= self.through {
@@ -369,5 +385,7 @@ impl<M: AsOutputSegments> Drop for ObservedSender<M> {
         let wake = self.sender.shared.flushed.take();
         self.sender.shared.observing.store(false, Ordering::Release);
         drop(wake);
+        // Dropping the Sender field wakes accepted output, including if the
+        // caller's flush-waker destructor unwinds before reaching this point.
     }
 }

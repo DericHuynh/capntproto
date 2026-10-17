@@ -77,22 +77,26 @@ struct Callback {
     reached: Cell<u32>,
 }
 impl wire::substream_callback::Server for Callback {
-    async fn ended(
+    fn ended(
         self: Rc<Self>,
-        p: wire::substream_callback::EndedParams,
-        _: wire::substream_callback::EndedResults,
-    ) -> Result<()> {
-        self.ended.set(Some(p.get()?.get_byte_count()));
-        Ok(())
+        context: wire::substream_callback::EndedContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.ended.set(Some(p.get()?.get_byte_count()));
+            Ok(())
+        })
     }
-    async fn reached_limit(
+    fn reached_limit(
         self: Rc<Self>,
-        _: wire::substream_callback::ReachedLimitParams,
-        mut r: wire::substream_callback::ReachedLimitResults,
-    ) -> Result<()> {
-        self.reached.set(self.reached.get() + 1);
-        r.get().set_next(self.next.clone());
-        Ok(())
+        context: wire::substream_callback::ReachedLimitContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.reached.set(self.reached.get() + 1);
+            r.get().set_next(self.next.clone());
+            Ok(())
+        })
     }
 }
 #[test]

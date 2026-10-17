@@ -30,17 +30,8 @@ impl Commands {
             maximum,
         }
     }
-    pub(super) fn register(&self, waker: &Waker) {
-        if self
-            .wake
-            .borrow()
-            .as_ref()
-            .is_some_and(|old| old.will_wake(waker))
-        {
-            return;
-        }
-        let waker = waker.clone();
-        let previous = self.wake.borrow_mut().replace(waker);
+    pub(super) fn register(&self, waker: Waker) {
+        let previous = self.wake.replace(Some(waker));
         drop(previous);
     }
     pub(super) fn take(&self) -> Option<Completion> {
@@ -110,7 +101,9 @@ impl Handle {
             let client = crate::queued::Client::new(None);
             queue.push_back(Completion(Rc::downgrade(&client.inner)));
             drop(queue);
-            let wake = commands.wake.borrow_mut().take();
+            // The stable coordinator notifier remains registered across
+            // commands. End the borrow before invoking a reentrant task waker.
+            let wake = commands.wake.borrow().clone();
             if let Some(wake) = wake {
                 wake.wake();
             }

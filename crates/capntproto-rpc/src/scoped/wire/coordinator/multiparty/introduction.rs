@@ -47,14 +47,21 @@ impl Handle {
         if id.len() > commands.bytes.saturating_sub(128) {
             return Err(Error::overloaded("embargo exceeds frame budget".into()));
         }
+        // The marker's FIFO publication is not the remote acceptance fence.
+        // Keep the forwarding vine until Accept completes, so its Provide
+        // cannot finish while the destination is still dispatching the marker.
+        let accepting_vine = target.add_ref();
         commands.markers.borrow_mut().push_back(Marker {
             target,
             id,
             _permit: permit,
         });
         commands.notify();
-        let client: capability::Client =
-            crate::new_future_client(async move { future.await.map(capability::Client::new) });
+        let client: capability::Client = crate::new_future_client(async move {
+            let result = future.await;
+            drop(accepting_vine);
+            result.map(capability::Client::new)
+        });
         Ok(client.hook)
     }
 }

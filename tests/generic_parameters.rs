@@ -6,43 +6,49 @@ use std::rc::Rc;
 // generator. Three distinct types expose swapped aliases at compile time.
 struct Service;
 impl service::Server<data::Owned, text::Owned, harness::Owned> for Service {
-    async fn exchange(
+    fn exchange(
         self: Rc<Self>,
-        params: service::ExchangeParams<data::Owned, harness::Owned>,
-        mut results: service::ExchangeResults<data::Owned, text::Owned>,
-    ) -> capnp::Result<()> {
-        let params = params.get()?;
-        let cap = params.get_first()?;
-        let reply = cap.echo_request().send().promise.await?;
-        assert_eq!(reply.get()?.get_value(), 73);
-        results.get().set_first("text response")?;
-        results.get().set_second(params.get_second()?)?;
-        Ok(())
+        context: service::ExchangeContext<'_, data::Owned, text::Owned, harness::Owned>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let params = params.get()?;
+            let cap = params.get_first()?;
+            let reply = cap.echo_request().send().promise.await?;
+            assert_eq!(reply.get()?.get_value(), 73);
+            results.get().set_first("text response")?;
+            results.get().set_second(params.get_second()?)?;
+            Ok(())
+        })
     }
-    async fn repeat(
+    fn repeat(
         self: Rc<Self>,
-        params: service::RepeatParams<data::Owned, harness::Owned>,
-        mut results: service::RepeatResults<data::Owned>,
-    ) -> capnp::Result<()> {
-        // The inherited A parameter is used by Pair's containing generic scope,
-        // even where both explicit field arguments use C.
-        let params = params.get()?;
-        params.get_first()?.echo_request().send().promise.await?;
-        params.get_second()?.echo_request().send().promise.await?;
-        results.get().set_first(&b"one"[..])?;
-        results.get().set_second(&b"two"[..])?;
-        Ok(())
+        context: service::RepeatContext<'_, data::Owned, harness::Owned>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            // The inherited A parameter is used by Pair's containing generic scope,
+            // even where both explicit field arguments use C.
+            let params = params.get()?;
+            params.get_first()?.echo_request().send().promise.await?;
+            params.get_second()?.echo_request().send().promise.await?;
+            results.get().set_first(&b"one"[..])?;
+            results.get().set_second(&b"two"[..])?;
+            Ok(())
+        })
     }
 }
 struct Echo;
 impl harness::Server for Echo {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        _: harness::EchoParams,
-        mut results: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        results.get().set_value(73);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            results.get().set_value(73);
+            Ok(())
+        })
     }
 }
 #[tokio::test(flavor = "current_thread")]
@@ -172,9 +178,16 @@ fn exhaustive_generic_parameter_usage_preserves_lexical_order() {
             let usage = format!("M{i}{suffix}<{params}>");
             assert_eq!(
                 generated.matches(&usage).count(),
-                2,
-                "declaration and server argument {usage}"
+                1,
+                "owned alias declaration {usage}"
             );
+        }
+        let context_params = params.trim_end_matches(',');
+        for expected in [
+            format!("pub type M{i}Context<'call, {context_params}> ="),
+            format!("_: M{i}Context<'_, {context_params}>"),
+        ] {
+            assert!(generated.contains(&expected), "missing {expected}");
         }
     }
 }

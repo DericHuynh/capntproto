@@ -703,20 +703,22 @@ struct RestoreServer {
     peer: PeerKey,
 }
 impl wire::restorer::Server for RestoreServer {
-    async fn restore(
+    fn restore(
         self: Rc<Self>,
-        params: wire::restorer::RestoreParams,
-        mut results: wire::restorer::RestoreResults,
-    ) -> capnp::Result<()> {
-        let reference = SturdyRef::read(params.get()?.get_reference()?)?;
-        let realm = Realm(self.realm.upgrade().ok_or_else(unavailable)?);
-        let pending = realm.restore(reference, self.peer);
-        drop(realm);
-        drop(params);
-        results
-            .get()
-            .get_cap()
-            .set_as_capability(pending.await?.hook);
-        Ok(())
+        context: wire::restorer::RestoreContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let reference = SturdyRef::read(params.get()?.get_reference()?)?;
+            let realm = Realm(self.realm.upgrade().ok_or_else(unavailable)?);
+            let pending = realm.restore(reference, self.peer);
+            drop(realm);
+            drop(params);
+            results
+                .get()
+                .get_cap()
+                .set_as_capability(pending.await?.hook);
+            Ok(())
+        })
     }
 }

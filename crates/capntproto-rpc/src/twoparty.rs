@@ -85,6 +85,22 @@ impl<T: AsyncRead + Unpin> crate::IncomingMessageStream for OwnedIncomingStream<
     }
 }
 impl<T: AsyncRead + Unpin> crate::IncomingFrameStream for IncomingStream<T> {
+    fn has_buffered_next_frame(&self) -> bool {
+        self.input.has_buffered_next_frame()
+    }
+    fn poll_frame_size(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<capnp::Result<Option<usize>>> {
+        self.input.poll_stream_frame_size(cx)
+    }
+    fn poll_read_frame(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+        bytes: &mut [u8],
+    ) -> std::task::Poll<capnp::Result<usize>> {
+        self.input.poll_stream_frame(cx, bytes)
+    }
     fn poll_frame(
         &mut self,
         cx: &mut std::task::Context<'_>,
@@ -93,6 +109,9 @@ impl<T: AsyncRead + Unpin> crate::IncomingFrameStream for IncomingStream<T> {
     }
     fn frame(&self) -> Option<&[u8]> {
         self.input.borrowed_frame()
+    }
+    fn share_frame(&mut self) -> Option<(std::sync::Arc<Vec<u8>>, core::ops::Range<usize>)> {
+        self.input.share_borrowed_frame()
     }
     fn finish_frame(&mut self) {
         self.input.finish_borrowed_frame();
@@ -385,6 +404,22 @@ impl crate::OutgoingMessage for OutgoingMessage {
         // Transfer the original allocation to the writer. Remove its sender
         // first so queued output cannot retain its own queue in a cycle.
         let sender = self.sender.take().expect("unsent message has sender");
+        // Let a pipeline's parent and the preceding Finish join its next child
+        // in one FIFO batch. The network driver is notified even when no child
+        // follows. Terminal calls and Returns can still drive ready IO inline.
+        let defer = match &mut self.message {
+            MessageBuilder::Call(call) => call
+                .get_as::<crate::rpc_capnp::call::Owned>()
+                .is_ok_and(|call| !call.get_no_promise_pipelining()),
+            MessageBuilder::Root(message) => message
+                .get_root_as_reader::<crate::rpc_capnp::message::Reader<'_>>()
+                .is_ok_and(|root| matches!(root.which(), Ok(crate::rpc_capnp::message::Finish(_)))),
+            MessageBuilder::Return(_) => false,
+        };
+        if defer {
+            sender.send_detached(QueuedMessage::Owned(self));
+            return;
+        }
         let driver = self.driver.clone();
         let _ = sender.send_detached_and_drive(QueuedMessage::Owned(self), || {
             if let Some(driver) = driver.upgrade() {
@@ -502,8 +537,21 @@ where
 struct OutgoingStream {
     sender: capnp_futures::LocalObservedSender<QueuedMessage>,
     driver: Weak<OutputDriver>,
+    sent: bool,
+    deferred: bool,
 }
 impl crate::OutgoingMessageStream for OutgoingStream {
+    fn send_buffered(&mut self, frame: crate::OutgoingFrame) -> capnp::Result<()> {
+        #[cfg(unix)]
+        let frame = {
+            let mut frame = frame;
+            drop(frame.take_fds());
+            frame
+        };
+        self.sent = true;
+        self.deferred = true;
+        self.sender.send_buffered(QueuedMessage::Frame(frame))
+    }
     fn send(&mut self, frame: crate::OutgoingFrame) -> capnp::Result<()> {
         #[cfg(unix)]
         let frame = {
@@ -511,6 +559,11 @@ impl crate::OutgoingMessageStream for OutgoingStream {
             drop(frame.take_fds());
             frame
         };
+        if self.sent {
+            self.deferred = true;
+            return self.sender.send_buffered(QueuedMessage::Frame(frame));
+        }
+        self.sent = true;
         let driver = &self.driver;
         self.sender.send_and_drive(QueuedMessage::Frame(frame), || {
             if let Some(driver) = driver.upgrade() {
@@ -522,7 +575,17 @@ impl crate::OutgoingMessageStream for OutgoingStream {
         &mut self,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<capnp::Result<()>> {
-        self.sender.poll_flush(cx)
+        if self.deferred {
+            if let Some(driver) = self.driver.upgrade() {
+                driver.drive_ready();
+            }
+        }
+        let result = self.sender.poll_flush(cx);
+        if result.is_ready() {
+            self.sent = false;
+            self.deferred = false;
+        }
+        result
     }
 }
 
@@ -604,6 +667,8 @@ where
             Box::new(OutgoingStream {
                 sender,
                 driver: inner.output_driver.clone(),
+                sent: false,
+                deferred: false,
             }) as Box<dyn crate::OutgoingMessageStream>
         })
     }

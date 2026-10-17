@@ -541,12 +541,12 @@ async fn history_requires_authority_and_shares_the_subscription_quota() {
             let mut streams = vec![];
             struct Observer;
             impl capntproto::store_capnp::observer::Server<document::Owned> for Observer {
-                async fn changed(
+                fn changed(
                     self: Rc<Self>,
-                    _: capntproto::store_capnp::observer::ChangedParams<document::Owned>,
-                    _: capntproto::store_capnp::observer::ChangedResults<document::Owned>,
-                ) -> capnp::Result<()> {
-                    Ok(())
+                    context: capntproto::store_capnp::observer::ChangedContext<'_, document::Owned>,
+                ) -> capnp::capability::Promise<(), capnp::Error> {
+                    let (_, _) = context.into_owned();
+                    capnp::capability::Promise::from_future(async move { Ok(()) })
                 }
             }
             let mut subscribe = f.object.subscribe_request();

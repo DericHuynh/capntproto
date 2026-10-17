@@ -1,12 +1,20 @@
 //! Outgoing owned calls and local execution over one portable invocation ledger.
 use super::*;
 use capntproto_rpc_engine::clients::{Destination, Location};
+use capntproto_rpc_engine::ids::WireId;
 use capntproto_rpc_wire::clients::{Endpoint, Route};
+use std::collections::HashMap;
 use std::num::NonZeroUsize;
 
 type Peer<'p, 'id, 's, I, A, P, const C: usize, const H: usize> =
     Driver<'p, 'id, 's, I, A, P, Rc<dyn ClientHook>, C, H>;
 type Local<'p, 'id, I, const C: usize, const H: usize> = connection::LocalCall<'p, 'id, I, C, H>;
+
+// Use one callback type for immediate, scanned and locally executed returns.
+// Their wire completion logic is identical and should share generated code.
+fn retain_local_hook(hook: &Rc<dyn ClientHook>) -> Option<Box<dyn ClientHook>> {
+    Some(hook.add_ref())
+}
 enum Stage {
     Prepare,
     Execute(server::Execution),
@@ -19,6 +27,9 @@ struct Execution<'p, 'id, I, const C: usize, const H: usize> {
 struct Entry<'p, 'id, I, const C: usize, const H: usize> {
     wire: WireCall<'p, 'id, I, C>,
     local: Option<Box<Execution<'p, 'id, I, C, H>>>,
+    // Survives completion/cancellation taking WireCall::direct, so retirement
+    // always removes its lookup owner before this application slot is reused.
+    reply_id: Option<u32>,
 }
 
 pub(super) enum Publication<'a, 'id> {
@@ -29,6 +40,7 @@ pub(super) enum Publication<'a, 'id> {
         target: &'a Client<'id>,
         method: DynamicCall,
         params: &'a connection::ImmediateParams<'a>,
+        capability: Option<&'a Client<'id>>,
     },
 }
 pub(super) enum Published<'id> {
@@ -60,14 +72,22 @@ pub enum Progress {
 pub struct Calls<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> {
     invocations: connection::Invocations<'s, 'wait, 'p, 'id, I, C>,
     entries: Vec<Option<Entry<'p, 'id, I, C, H>>>,
+    // An owner lookup, not a protocol ledger. Only immediate calls are indexed;
+    // the entry's full branded/generational key remains authoritative. Allocate
+    // lazily beyond the small-call scan, and remove owners on every retirement.
+    reply_owners: HashMap<u32, usize>,
     pending: Option<Box<Call>>,
     maximum: usize,
     cursor: usize,
     remaining: usize,
     scan_size: usize,
+    admission_streak: u8,
     executor: Option<Rc<dyn capability::CallExecutor>>,
 }
 impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p, 'id, I, C, H> {
+    pub(super) fn has_pending_admission(&self) -> bool {
+        self.pending.is_some()
+    }
     pub fn new(
         maximum: usize,
         executor: Option<Rc<dyn capability::CallExecutor>>,
@@ -75,11 +95,13 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         Ok(Self {
             invocations: connection::Invocations::new_growing(0, maximum).map_err(wire_error)?,
             entries: Vec::new(),
+            reply_owners: HashMap::new(),
             pending: None,
             maximum,
             cursor: 0,
             remaining: 0,
             scan_size: 0,
+            admission_streak: 0,
             executor,
         })
     }
@@ -91,6 +113,19 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
     pub(super) fn invalidate_scan(&mut self) {
         self.remaining = 0;
     }
+    pub(super) fn has_indexed_replies(&self) -> bool {
+        !self.reply_owners.is_empty()
+    }
+    pub(super) fn has_plain_receivers(&self) -> bool {
+        if self.entries.len() > 8 {
+            !self.reply_owners.is_empty()
+        } else {
+            self.entries
+                .iter()
+                .flatten()
+                .any(|entry| entry.reply_id.is_some())
+        }
+    }
     /// Immediately after publication, a lone direct call can only progress on
     /// input or an application wake (including cancellation). Do not apply this
     /// certificate to older entries, queued invocations or pipeline work. Call
@@ -100,8 +135,8 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
     pub(super) fn idle_after_publication(&self) -> bool {
         self.entries.len() == 1 && self.invocations.is_empty()
     }
-    /// Deliver an already-admitted reply to its immediate owner. Bound the
-    /// lookup; mixed/pipelined workloads continue through the rotating scanner.
+    /// Deliver an already-admitted reply to its immediate owner. Large bursts
+    /// use the owner index; mixed/pipelined work retains the rotating scanner.
     /// The caller yields after completion and resumes ordinary maintenance
     /// before reading another frame, preserving cooperative fairness.
     #[inline(always)]
@@ -112,14 +147,9 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         driver: &mut Peer<'p, 'id, '_, I, A, P, C, H>,
         messages: &mut messages::Messages<'p, '_, '_>,
         cx: &mut Context<'_>,
-        refresh: impl FnMut(&mut ClientHooks<'id>, &mut Peer<'p, 'id, '_, I, A, P, C, H>),
+        mut refresh: impl FnMut(&mut ClientHooks<'id>, &mut Peer<'p, 'id, '_, I, A, P, C, H>),
     ) -> capnp::Result<Option<bool>> {
-        if self.entries.len() > 8 {
-            return Ok(None);
-        }
-        let Some(index) = self.entries.iter().position(|entry| entry.as_ref().is_some_and(|entry|
-            entry.local.is_none() && entry.wire.task.is_none() && entry.wire.pipeline.is_none()
-                && matches!(entry.wire.direct, Some(DirectStage::Sent(question)) if question == key))) else {
+        let Some(index) = self.immediate_receiver(key) else {
             return Ok(None);
         };
         if self.entries[index]
@@ -128,7 +158,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             .wire
             .complete_plain(key, driver, messages)?
         {
-            self.entries[index] = None;
+            self.retire_entry(index);
             return Ok(Some(true));
         }
         match self.entries[index].as_mut().unwrap().wire.poll_using(
@@ -137,13 +167,13 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             messages,
             cx,
             true,
-            refresh,
-            |hook| Some(hook.add_ref()),
+            &mut refresh,
+            retain_local_hook,
         ) {
             Poll::Pending => Ok(None),
             Poll::Ready(result) => {
                 result?;
-                self.entries[index] = None;
+                self.retire_entry(index);
                 Ok(Some(false))
             }
         }
@@ -153,14 +183,19 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         &self,
         key: capntproto_rpc_engine::questions::Key<'id>,
     ) -> Option<usize> {
-        if self.entries.len() > 8 {
-            return None;
-        }
-        self.entries.iter().position(|entry| {
+        let accepts = |entry: &Option<Entry<'p, 'id, I, C, H>>| {
             entry
                 .as_ref()
                 .is_some_and(|entry| entry.local.is_none() && entry.wire.accepts_plain(key))
-        })
+        };
+        if self.entries.len() <= 8 {
+            self.entries.iter().position(accepts)
+        } else {
+            self.reply_owners
+                .get(&key.id().to_wire())
+                .copied()
+                .filter(|&index| self.entries.get(index).is_some_and(accepts))
+        }
     }
     #[inline(always)]
     pub(super) fn deliver_plain(
@@ -170,6 +205,61 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
     ) {
         let entry = self.entries[index].as_mut().expect("selected reply owner");
         entry.wire.deliver_plain(message);
+        self.retire_entry(index);
+    }
+    #[inline(always)]
+    fn immediate_receiver(&self, key: capntproto_rpc_engine::questions::Key<'id>) -> Option<usize> {
+        let matches = |entry: &Option<Entry<'p, 'id, I, C, H>>| {
+            entry.as_ref().is_some_and(|entry| {
+                entry.local.is_none()
+                    && entry.wire.task.is_none()
+                    // An unused pipeline has no outgoing projections to settle
+                    // before taking its parent result. Keep the normal pipeline
+                    // completion so later projections still see the response.
+                    && entry.wire.pipeline.as_ref().is_none_or(|state| !state.used.get())
+                    && matches!(entry.wire.direct, Some(DirectStage::Sent(question)) if question == key)
+            })
+        };
+        if self.entries.len() <= 8 {
+            self.entries.iter().position(matches)
+        } else {
+            self.reply_owners
+                .get(&key.id().to_wire())
+                .copied()
+                .filter(|&index| self.entries.get(index).is_some_and(matches))
+        }
+    }
+    #[inline(always)]
+    fn prepare_reply_index(&mut self, index: usize) -> capnp::Result<bool> {
+        if self.entries.len().max(index + 1) <= 8 {
+            return Ok(false);
+        }
+        if self.reply_owners.capacity() == 0 {
+            self.reply_owners
+                .try_reserve(self.entries.len() + 1)
+                .map_err(wire_error)?;
+            for (index, entry) in self.entries.iter().enumerate() {
+                if let Some(id) = entry.as_ref().and_then(|entry| entry.reply_id) {
+                    self.reply_owners.insert(id, index);
+                }
+            }
+        } else {
+            self.reply_owners.try_reserve(1).map_err(wire_error)?;
+        }
+        Ok(true)
+    }
+    #[inline(always)]
+    fn retire_entry(&mut self, index: usize) {
+        if !self.reply_owners.is_empty() {
+            if let Some(id) = self.entries[index]
+                .as_ref()
+                .and_then(|entry| entry.reply_id)
+            {
+                if self.reply_owners.get(&id) == Some(&index) {
+                    self.reply_owners.remove(&id);
+                }
+            }
+        }
         self.entries[index] = None;
     }
     pub(crate) fn has_unpublished(&self) -> bool {
@@ -189,12 +279,14 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         pipeline: Box<dyn PipelineHook>,
     ) {
         for entry in self.entries.iter().flatten() {
-            if entry
-                .wire
-                .task
-                .and_then(|task| self.invocations.question_for(task))
-                == Some(key)
-            {
+            let question = match entry.wire.direct {
+                Some(DirectStage::Sent(question)) => Some(question),
+                _ => entry
+                    .wire
+                    .task
+                    .and_then(|task| self.invocations.question_for(task)),
+            };
+            if question == Some(key) {
                 // Once any path has been used, preserve the original ordering
                 // route. An independent-path Join fence can shorten it later.
                 if let Some(state) = &entry.wire.pipeline {
@@ -239,7 +331,29 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         target,
                         method,
                         params,
+                        capability,
                     } => {
+                        if let Some(capability) = capability {
+                            let connection::ImmediateParams::Content(params) = params else {
+                                unreachable!("capability-bearing content")
+                            };
+                            return driver
+                                .try_send_immediate_with_capability(
+                                    target,
+                                    method,
+                                    *params,
+                                    capability,
+                                    messages,
+                                    queue,
+                                    minimum,
+                                    options,
+                                    scratch,
+                                    R::default(),
+                                    |_, _, _| u8::MAX,
+                                )
+                                .map(|key| key.map(Published::Immediate))
+                                .map_err(wire_error);
+                        }
                         return driver
                             .try_send_immediate_borrowed(
                                 target,
@@ -252,7 +366,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                                 R::default(),
                             )
                             .map(|key| key.map(Published::Immediate))
-                            .map_err(wire_error)
+                            .map_err(wire_error);
                     }
                     Publication::Queued { direct } => direct,
                 };
@@ -306,7 +420,13 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         target,
                         method,
                         params,
+                        capability,
                     } => {
+                        // The fixed attachment adapter retains its ordinary
+                        // queued descriptor transaction for capability tables.
+                        if capability.is_some() {
+                            return Ok(None);
+                        }
                         return driver
                             .try_send_immediate_borrowed(
                                 target,
@@ -319,7 +439,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                                 capntproto_rpc_wire::attachments::Sender::new(capacity),
                             )
                             .map(|key| key.map(Published::Immediate))
-                            .map_err(wire_error)
+                            .map_err(wire_error);
                     }
                     Publication::Queued { direct } => direct,
                 };
@@ -389,7 +509,16 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             // publication or completion to scan. Admission is the only source
             // of work; it still registers the inbox waker before returning idle.
             refresh(hooks, driver);
-            match self.admit(hooks, driver, messages, options, cx, &mut import, &mut send)? {
+            match self.admit(
+                hooks,
+                driver,
+                messages,
+                options,
+                cx,
+                &mut import,
+                &mut send,
+                &mut refresh,
+            )? {
                 Some(Progress::Advanced) => {
                     // Queued/pipelined calls still need preparation and
                     // publication. Spend the rest of this same quantum on
@@ -441,21 +570,47 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             Publication<'_, 'id>,
         ) -> capnp::Result<Option<Published<'id>>>,
     ) -> Poll<Result<Progress, Box<Error>>> {
-        // Immediate settled calls have no queued dispatch, projection, local
-        // execution or internal completion channel. Visit only their actual
-        // owners and admission, retaining a rotating cursor and the caller's
-        // budget. Bound the eligibility check itself; larger/mixed workloads
-        // keep the general resumable scan below.
+        // A burst need not rescan every outstanding question before publishing
+        // its next request. At most eight admissions precede an ordinary scan
+        // quantum; that scan retains its cursor, including cancellation and
+        // older local/pipelined work. Reserve a step for it on blocked admission.
+        if !advanced
+            && remaining_budget > 1
+            && self.entries.len() > 8
+            && self.admission_streak < 8
+            && !hooks.inbox.queue.borrow().is_empty()
+        {
+            self.admission_streak += 1;
+            remaining_budget -= 1;
+            refresh(hooks, driver);
+            match self.admit(
+                hooks,
+                driver,
+                messages,
+                options,
+                cx,
+                &mut import,
+                &mut send,
+                &mut refresh,
+            )? {
+                Some(Progress::Published) => return Poll::Ready(Ok(Progress::Published)),
+                Some(_) => advanced = true,
+                None => (),
+            }
+        } else {
+            self.admission_streak = 0;
+        }
+        // Published direct calls have no remaining queued dispatch, local
+        // execution or internal completion channel. Visit their owners and
+        // pending projections plus admission, retaining a rotating cursor and
+        // the caller's budget. Larger/mixed workloads keep the general scan.
         if !advanced
             && self.entries.len() <= 8
             && budget.get() > self.entries.len()
             && self.invocations.is_empty()
             && driver.runtime.queued() == 0
             && self.entries.iter().flatten().all(|entry| {
-                entry.local.is_none()
-                    && entry.wire.task.is_none()
-                    && entry.wire.pipeline.is_none()
-                    && matches!(entry.wire.direct, Some(DirectStage::Sent(_)))
+                entry.local.is_none() && matches!(entry.wire.direct, Some(DirectStage::Sent(_)))
             })
         {
             let size = self.entries.len() + 1;
@@ -465,9 +620,16 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 self.cursor = (index + 1) % size;
                 if index == 0 {
                     refresh(hooks, driver);
-                    if let Some(progress) =
-                        self.admit(hooks, driver, messages, options, cx, &mut import, &mut send)?
-                    {
+                    if let Some(progress) = self.admit(
+                        hooks,
+                        driver,
+                        messages,
+                        options,
+                        cx,
+                        &mut import,
+                        &mut send,
+                        &mut refresh,
+                    )? {
                         if progress != Progress::Advanced {
                             return Poll::Ready(Ok(progress));
                         }
@@ -479,6 +641,16 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         break;
                     }
                 } else if let Some(entry) = self.entries[index - 1].as_mut() {
+                    if entry.wire.pipeline.is_some() {
+                        entry.wire.poll_pipelines_using(
+                            hooks,
+                            driver,
+                            &mut self.invocations,
+                            messages,
+                            |_, _, _, _| Ok(None),
+                            &mut refresh,
+                        )?;
+                    }
                     if let Poll::Ready(result) = entry.wire.poll_using(
                         hooks,
                         driver,
@@ -486,10 +658,10 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         cx,
                         true,
                         &mut refresh,
-                        |hook| Some(hook.add_ref()),
+                        retain_local_hook,
                     ) {
                         result?;
-                        self.entries[index - 1] = None;
+                        self.retire_entry(index - 1);
                         return Poll::Ready(Ok(Progress::Completed));
                     }
                 }
@@ -515,10 +687,19 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             let result = match index {
                 0 => {
                     refresh(hooks, driver);
-                    self.admit(hooks, driver, messages, options, cx, &mut import, &mut send)
-                        .map_err(|error| *error)
+                    self.admit(
+                        hooks,
+                        driver,
+                        messages,
+                        options,
+                        cx,
+                        &mut import,
+                        &mut send,
+                        &mut refresh,
+                    )
+                    .map_err(|error| *error)
                 }
-                1 => self.accept_local(driver),
+                1 => self.accept_local(driver, messages),
                 2 => self.send_next(driver, messages, &mut send),
                 // Resolve wire completions before polling their hosted
                 // receivers. Otherwise every reply takes an extra full scan
@@ -541,7 +722,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                                 &mut refresh,
                             );
                             if matches!(result, Ok(Some(Progress::Completed))) {
-                                self.entries[index] = None;
+                                self.retire_entry(index);
                             }
                             result
                         }
@@ -704,6 +885,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
     fn accept_local<A, P: Copy + Eq>(
         &mut self,
         driver: &mut Peer<'p, 'id, '_, I, A, P, C, H>,
+        messages: &messages::Messages<'p, '_, '_>,
     ) -> capnp::Result<Option<Progress>> {
         let Some(ready) = driver.runtime.next_ready().map_err(wire_error)? else {
             return Ok(None);
@@ -730,6 +912,14 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         else {
             return Ok(None);
         };
+        if matches!(entry.wire.direct, Some(DirectStage::Queued)) {
+            let (sender, receiver) = shared::channel();
+            self.invocations
+                .bind_queued(driver, messages, task, sender.into())
+                .map_err(|rejected| wire_error(rejected.error))?;
+            entry.wire.receiver = Some(receiver);
+            entry.wire.direct = None;
+        }
         let Some(call) = self.invocations.accept_local(driver).map_err(wire_error)? else {
             return Ok(None);
         };
@@ -741,7 +931,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         Ok(Some(Progress::Advanced))
     }
     #[allow(clippy::too_many_arguments)]
-    #[inline(always)]
+    #[inline(never)]
     fn admit<A, P: Copy + Eq>(
         &mut self,
         hooks: &mut ClientHooks<'id>,
@@ -760,6 +950,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             Option<Rc<crate::admission::Permit>>,
             Publication<'_, 'id>,
         ) -> capnp::Result<Option<Published<'id>>>,
+        refresh: &mut impl FnMut(&mut ClientHooks<'id>, &mut Peer<'p, 'id, '_, I, A, P, C, H>),
     ) -> Result<Option<Progress>, Box<Error>> {
         if self.pending.is_none() {
             self.pending = match hooks.poll_owned_next(cx) {
@@ -796,14 +987,17 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         }
         let call = self.pending.as_ref().expect("pending call");
         let target = hooks.target(call)?;
-        if call.hints.no_promise_pipelining
-            && !call.hints.only_promise_pipeline
+        if !call.hints.only_promise_pipeline
             && call.third_party.is_none()
             && call.endpoint.remote.get()
         {
+            // Reserve only for immediate calls, before publication can commit
+            // their question. Queued/local calls need no reply-owner index.
+            let indexed = self.prepare_reply_index(index)?;
+            let call = self.pending.as_ref().expect("pending call");
             // This is only a refreshed routing hint. The driver's exclusive
-            // immediate ticket validates settlement, ordering, exact import
-            // authority and peer identity before publishing any bytes.
+            // immediate ticket validates routability, ordering, exact import
+            // or question authority and peer identity before publishing bytes.
             let credit = match call
                 .credit
                 .as_ref()
@@ -819,7 +1013,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             let method = DynamicCall {
                 interface: call.interface,
                 method: call.method,
-                no_promise_pipelining: true,
+                no_promise_pipelining: call.hints.no_promise_pipelining,
                 only_promise_pipeline: false,
             };
             let encoded = call
@@ -833,18 +1027,42 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 Some(encoded) => connection::ImmediateParams::EncodedCall(encoded),
                 None => connection::ImmediateParams::Content(call.params()?),
             };
+            // A private one-slot table preserves its exact capability mapping.
+            // Import through the ordinary authority/membrane path, then retain
+            // that branded owner until transactional publication has finished.
+            let retained = match (&params, call.params.single_capability_table()) {
+                (connection::ImmediateParams::Content(content), Some([Some(hook)]))
+                    if content.target_size()?.cap_count != 0 =>
+                {
+                    Some(match hooks.try_retain(&mut driver.runtime, &**hook)? {
+                        Some(client) => client,
+                        None => import(&mut driver.runtime, &**hook)?,
+                    })
+                }
+                _ => None,
+            };
+            let progress = if retained.is_some() {
+                Progress::Advanced
+            } else {
+                Progress::Published
+            };
             let publication = Publication::Immediate {
                 target,
                 method,
                 params: &params,
+                capability: retained.as_ref(),
             };
-            if let Some(published) = send(
+            let published = send(
                 &mut self.invocations,
                 driver,
                 messages,
                 credit.clone(),
                 publication,
-            )? {
+            );
+            if let Some(capability) = retained {
+                driver.runtime.release(capability);
+            }
+            if let Some(published) = published? {
                 let Published::Immediate(question) = published else {
                     unreachable!("immediate publication")
                 };
@@ -855,24 +1073,69 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         .retain_credit(question, credit)
                         .map_err(wire_error)?;
                 }
+                let mut call = self.pending.take().expect("published call");
+                if let CallParams::OwnedRequest(request, _) = &mut call.params {
+                    // Like C++ RpcRequest's target, this interest protects the
+                    // request through send(). The child now owns its question
+                    // and FIFO frame, so a parent Finish cannot overtake it.
+                    request.publication_committed();
+                }
+                let pipeline = match hooks.attach_pipeline(&mut call) {
+                    Ok(pipeline) => pipeline,
+                    Err(error) => {
+                        driver.cancel(question).map_err(wire_error)?;
+                        call.complete_boxed(Err(error));
+                        // The accepted Call still needs its FIFO flush, and its
+                        // canceled question retains ordinary late-Return cleanup.
+                        return Ok(Some(progress));
+                    }
+                };
                 let entry = Some(Entry {
                     wire: WireCall {
-                        call: self.pending.take(),
+                        call: Some(call),
                         task: None,
                         receiver: None,
                         direct: Some(DirectStage::Sent(question)),
-                        pipeline: None,
+                        pipeline,
                         local_results: None,
                         tail_response: None,
                     },
                     local: None,
+                    reply_id: Some(question.id().to_wire()),
                 });
                 if index == self.entries.len() {
                     self.entries.push(entry);
                 } else {
                     self.entries[index] = entry;
                 }
-                return Ok(Some(Progress::Published));
+                if indexed {
+                    self.reply_owners.insert(question.id().to_wire(), index);
+                }
+                // Publication committed this question and its authority. Resolve
+                // already-requested projections now, allowing their forwarded
+                // calls to join the parent's pending transport batch. Retain the
+                // owner above before callbacks, including on projection failure.
+                if self.entries[index]
+                    .as_ref()
+                    .unwrap()
+                    .wire
+                    .pipeline
+                    .is_some()
+                {
+                    self.entries[index]
+                        .as_mut()
+                        .unwrap()
+                        .wire
+                        .poll_pipelines_using(
+                            hooks,
+                            driver,
+                            &mut self.invocations,
+                            messages,
+                            |_, _, _, _| Ok(None),
+                            refresh,
+                        )?;
+                }
+                return Ok(Some(progress));
             }
         }
         self.admit_queued(index, hooks, driver, messages, options, import)
@@ -894,7 +1157,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
     ) -> capnp::Result<Option<Progress>> {
         let call = self.pending.take().expect("pending call");
         let wire = match hooks.enqueue_wire_using(
-            *call,
+            call,
             driver,
             &mut self.invocations,
             messages,
@@ -904,11 +1167,15 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         ) {
             Ok(wire) => wire,
             Err(rejected) => {
-                self.pending = Some(Box::new(rejected.call));
+                self.pending = Some(rejected.call);
                 return Err(rejected.error);
             }
         };
-        let entry = Some(Entry { wire, local: None });
+        let entry = Some(Entry {
+            wire,
+            local: None,
+            reply_id: None,
+        });
         if index == self.entries.len() {
             self.entries.push(entry);
         } else {
@@ -993,18 +1260,21 @@ fn step<'p, 'id, I, A, P: Copy + Eq, const C: usize, const H: usize>(
         |hooks, _, path, runtime| resolve(hooks, results.as_ref(), path, runtime, import),
         &mut *refresh,
     )?;
-    let completed =
-        match entry
-            .wire
-            .poll_using(hooks, driver, messages, cx, true, &mut *refresh, |hook| {
-                Some(hook.add_ref())
-            }) {
-            Poll::Pending => false,
-            Poll::Ready(result) => {
-                result?;
-                true
-            }
-        };
+    let completed = match entry.wire.poll_using(
+        hooks,
+        driver,
+        messages,
+        cx,
+        true,
+        &mut *refresh,
+        retain_local_hook,
+    ) {
+        Poll::Pending => false,
+        Poll::Ready(result) => {
+            result?;
+            true
+        }
+    };
     let Some(local) = entry.local.as_mut() else {
         return Ok(completed.then_some(Progress::Completed));
     };

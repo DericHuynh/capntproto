@@ -16,16 +16,57 @@ pub struct OutgoingFrame {
 enum Body {
     Copied(capnp::serialize::OwnedSegments),
     Shared(capnp::serialize::NoAllocBufferSegments<capntproto_rpc_engine::messages::SharedBytes>),
+    Parts(PartsSegments),
+}
+struct PartsSegments(capntproto_rpc_engine::messages::SharedParts);
+impl ReaderSegments for PartsSegments {
+    fn get_segment(&self, id: u32) -> Option<&[u8]> {
+        let index = (id as usize).checked_add(1)?;
+        (index < self.0.count()).then(|| self.0.part(index))
+    }
+    fn len(&self) -> usize {
+        self.0.count() - 1
+    }
 }
 impl Body {
     fn segments(&self) -> &dyn ReaderSegments {
         match self {
             Self::Copied(segments) => segments,
             Self::Shared(segments) => segments,
+            Self::Parts(segments) => segments,
         }
     }
 }
 impl OutgoingFrame {
+    pub(crate) fn from_parts(
+        parts: capntproto_rpc_engine::messages::SharedParts,
+    ) -> capnp::Result<Self> {
+        if parts.position() != 0 || parts.count() < 2 {
+            return Err(Error::failed("incomplete outgoing segment owner".into()));
+        }
+        let table = parts.part(0);
+        let header = capnp::serialize::SegmentTableHeader::parse(table)?;
+        if header.table_bytes() != table.len() || header.segment_count() != parts.count() - 1 {
+            return Err(Error::failed("outgoing segment table mismatch".into()));
+        }
+        for index in 0..header.segment_count() {
+            let at = (index + 1) * 4;
+            let words = u32::from_le_bytes(table[at..at + 4].try_into().unwrap()) as usize;
+            let segment = parts.part(index + 1);
+            if words.checked_mul(8) != Some(segment.len()) || segment.as_ptr().align_offset(8) != 0
+            {
+                return Err(Error::failed(
+                    "outgoing segment extent or alignment mismatch".into(),
+                ));
+            }
+        }
+        Ok(Self {
+            credit: None,
+            body: Body::Parts(PartsSegments(parts)),
+            #[cfg(unix)]
+            fds: Vec::new(),
+        })
+    }
     /// Copy exactly one standard (unpacked) stream frame. Validate its complete
     /// extent before allocating, so a truncated size header cannot cause a large
     /// allocation. This operation does not extract capability hooks.
@@ -124,3 +165,6 @@ impl OutgoingFrame {
         std::mem::take(&mut self.fds)
     }
 }
+
+#[cfg(test)]
+mod tests;

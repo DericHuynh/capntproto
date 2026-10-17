@@ -1,0 +1,31 @@
+[package]
+name = "capntproto-rpc-runtime-bench"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[features]
+default = []
+compio-experiment = ["dep:compio"]
+
+[dependencies]
+capnp = { package = "capntproto-core", path = "../../crates/capntproto-core" }
+capnp-rpc = { package = "capntproto-rpc", path = "../../crates/capntproto-rpc" }
+compio = { version = "=0.19.2", optional = true, features = ["net", "time", "polling", "io-compat"] }
+futures = "0.3"
+serde_json = "1"
+socket2 = "0.6"
+tokio = { version = "1", features = ["rt", "macros", "net", "time", "io-util"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+
+[build-dependencies]
+capnpc = { package = "capntproto-codegen", path = "../../crates/capntproto-codegen" }
+
+[dev-dependencies]
+capnp-futures = { package = "capntproto-futures", path = "../../crates/capntproto-futures" }
+
+[profile.release]
+debug = 1
+overflow-checks = true

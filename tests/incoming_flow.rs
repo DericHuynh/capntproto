@@ -26,42 +26,46 @@ impl Drop for Running {
 }
 struct Service(Rc<RefCell<Control>>);
 impl harness::Server for Service {
-    async fn pending(
+    fn pending(
         self: Rc<Self>,
-        p: harness::PendingParams,
-        r: harness::PendingResults,
-    ) -> capnp::Result<()> {
-        let (index, gate) = {
-            let mut c = self.0.borrow_mut();
-            let index = c.started;
-            c.started += 1;
-            (index, c.gates.pop_front().unwrap())
-        };
-        let _running = Running(self.0.clone(), index);
-        let results = if p.get()?.get_hold_context() {
-            self.0.borrow_mut().held = Some(r);
-            None
-        } else {
-            Some(r)
-        };
-        drop(p); // Parameter release must not release flow credit.
-        gate.await.unwrap();
-        self.0.borrow_mut().completed[index] = true;
-        if index == 0 && self.0.borrow().fail_first {
-            return Err(capnp::Error::failed("test failure".into()));
-        }
-        let mut results = results.or_else(|| self.0.borrow_mut().held.take()).unwrap();
-        let cap: harness::Client = capnp_rpc::new_client_from_rc(self.clone());
-        results.get().set_cap(cap);
-        Ok(())
+        context: harness::PendingContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let (index, gate) = {
+                let mut c = self.0.borrow_mut();
+                let index = c.started;
+                c.started += 1;
+                (index, c.gates.pop_front().unwrap())
+            };
+            let _running = Running(self.0.clone(), index);
+            let results = if p.get()?.get_hold_context() {
+                self.0.borrow_mut().held = Some(r);
+                None
+            } else {
+                Some(r)
+            };
+            drop(p); // Parameter release must not release flow credit.
+            gate.await.unwrap();
+            self.0.borrow_mut().completed[index] = true;
+            if index == 0 && self.0.borrow().fail_first {
+                return Err(capnp::Error::failed("test failure".into()));
+            }
+            let mut results = results.or_else(|| self.0.borrow_mut().held.take()).unwrap();
+            let cap: harness::Client = capnp_rpc::new_client_from_rc(self.clone());
+            results.get().set_cap(cap);
+            Ok(())
+        })
     }
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        _: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        r.get().set_value(7);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            r.get().set_value(7);
+            Ok(())
+        })
     }
 }
 fn pending(m: message::Builder<'_>, id: u32, export: u32, hold: bool) {

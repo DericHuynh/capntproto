@@ -225,7 +225,9 @@ pub fn bounded_generic_fields() -> Result<()> {
             .reborrow()
             .typed()
             .copy_from(source.get_root_as_reader()?);
-        if capacity < base + 2 {
+        // The null union pointer itself is the unpublished staging slot. Its
+        // one-word text value needs no additional orphan pointer word.
+        if capacity < base + 1 {
             assert!(matches!(
                 result.err().unwrap().kind,
                 ErrorKind::InsufficientCapacity { .. }
@@ -241,6 +243,7 @@ pub fn bounded_generic_fields() -> Result<()> {
                     .get_as::<capnp::text::Reader<'_>>()?,
                 "copied"
             );
+            assert_eq!(dest.size_in_words(), base + 1);
         }
     }
     let mut words = [ZERO; 96];

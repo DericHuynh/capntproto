@@ -144,4 +144,30 @@ mod tests {
         assert_eq!(&bytes[..3], b"abc");
         assert_eq!(reader.read(&mut bytes).await.unwrap(), 0);
     }
+
+    #[tokio::test]
+    async fn scalar_writes_preserve_partial_progress_backpressure_and_disconnect() {
+        let (writer, mut reader) = tokio::io::duplex(1);
+        let mut writer = TokioIo(writer);
+        assert_eq!(writer.write(b"ab").await.unwrap(), 1);
+        let mut pending = Box::pin(writer.write(b"b"));
+        assert!(futures::poll!(pending.as_mut()).is_pending());
+        let mut byte = [0];
+        tokio::io::AsyncReadExt::read_exact(&mut reader, &mut byte)
+            .await
+            .unwrap();
+        assert_eq!(byte, *b"a");
+        assert_eq!(pending.await.unwrap(), 1);
+        tokio::io::AsyncReadExt::read_exact(&mut reader, &mut byte)
+            .await
+            .unwrap();
+        assert_eq!(byte, *b"b");
+        writer.flush().await.unwrap();
+        drop(reader);
+        assert_eq!(
+            writer.write(b"c").await.unwrap_err().kind(),
+            io::ErrorKind::BrokenPipe
+        );
+        writer.close().await.unwrap();
+    }
 }

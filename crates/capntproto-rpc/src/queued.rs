@@ -37,34 +37,42 @@ use crate::{broken, local};
 // A published pipeline can resolve a queued client before the call which drives
 // it completes. Stop driving that call once forwarding/resolution is delivered:
 // its later failure must not replace the independently published capability.
-fn drive_until_ready<T: 'static>(
-    promise: Promise<T, Error>,
+async fn drive_until_ready<T>(
+    promise: impl Future<Output = Result<T, Error>> + Unpin,
     driver: futures::future::Shared<Promise<(), Error>>,
-) -> Promise<T, Error> {
-    Promise::from_future(async move {
-        match futures::future::select(promise, driver).await {
-            futures::future::Either::Left((result, _)) => result,
-            futures::future::Either::Right((Ok(()), promise)) => promise.await,
-            futures::future::Either::Right((Err(error), mut promise)) => {
-                // Polling the driver may itself have published the pipeline
-                // before failing. Give that publication precedence as well.
-                (&mut promise).now_or_never().unwrap_or(Err(error))
-            }
+) -> Result<T, Error> {
+    match futures::future::select(promise, driver).await {
+        futures::future::Either::Left((result, _)) => result,
+        futures::future::Either::Right((Ok(()), promise)) => promise.await,
+        futures::future::Either::Right((Err(error), mut promise)) => {
+            // Polling the driver may itself have published the pipeline
+            // before failing. Give that publication precedence as well.
+            (&mut promise).now_or_never().unwrap_or(Err(error))
         }
-    })
+    }
 }
 
 pub(crate) struct PipelineInner {
     // Once the promise resolves, this will become non-null and point to the underlying object.
     redirect: Option<Box<dyn PipelineHook>>,
 
-    promise_to_drive: futures::future::Shared<Promise<(), Error>>,
+    promise_to_drive: Option<futures::future::Shared<Promise<(), Error>>>,
 
     clients_to_resolve: SenderQueue<(Weak<RefCell<ClientInner>>, Vec<PipelineOp>), ()>,
 }
 
 impl PipelineInner {
     fn resolve(this: &Rc<RefCell<Self>>, result: Result<Box<dyn PipelineHook>, Error>) {
+        Self::resolve_with(this, result, |pipeline, client, ops| {
+            ClientInner::resolve(client, Ok(pipeline.get_pipelined_cap_move(ops)));
+        });
+    }
+
+    fn resolve_with(
+        this: &Rc<RefCell<Self>>,
+        result: Result<Box<dyn PipelineHook>, Error>,
+        mut resolve: impl FnMut(&dyn PipelineHook, &Rc<RefCell<ClientInner>>, Vec<PipelineOp>),
+    ) {
         if this.borrow().redirect.is_some() {
             // Already resolved, probably by set_pipeline().
             return;
@@ -80,8 +88,7 @@ impl PipelineInner {
         let pending = this.borrow_mut().clients_to_resolve.drain();
         for ((weak_client, ops), waiter) in pending {
             if let Some(client) = weak_client.upgrade() {
-                let clienthook = pipeline.get_pipelined_cap_move(ops);
-                ClientInner::resolve(&client, Ok(clienthook));
+                resolve(&*pipeline, &client, ops);
             }
             let _ = waiter.send(());
         }
@@ -89,10 +96,7 @@ impl PipelineInner {
         // Dropping the last driver fork can destroy its PipelineInnerSender,
         // which resolves this pipeline again. Publish the redirect and detach
         // the old driver before running that destructor.
-        let old_driver = std::mem::replace(
-            &mut this.borrow_mut().promise_to_drive,
-            Promise::ok(()).shared(),
-        );
+        let old_driver = this.borrow_mut().promise_to_drive.take();
         drop(old_driver);
     }
 }
@@ -100,15 +104,29 @@ impl PipelineInner {
 pub(crate) struct PipelineInnerSender {
     inner: Option<Weak<RefCell<PipelineInner>>>,
     resolve_on_drop: bool,
+    // A prepared hosted request already owns the wire projection queue.
+    // This weak sender never keeps a canceled public pipeline alive.
+    wire: Option<Weak<crate::scoped::wire::PipelineState>>,
 }
 
 impl PipelineInnerSender {
+    pub(crate) fn wire(pipeline: &Rc<crate::scoped::wire::PipelineState>) -> Self {
+        Self {
+            inner: None,
+            resolve_on_drop: false,
+            wire: Some(Rc::downgrade(pipeline)),
+        }
+    }
+    pub(crate) fn take_wire(&mut self) -> Option<Option<Rc<crate::scoped::wire::PipelineState>>> {
+        self.wire.take().map(|pipeline| pipeline.upgrade())
+    }
     // Preserve the single-use set_pipeline contract even when the caller
     // explicitly promises not to pipeline on this answer.
     pub(crate) fn disabled() -> Self {
         Self {
             inner: None,
             resolve_on_drop: false,
+            wire: None,
         }
     }
 
@@ -116,6 +134,7 @@ impl PipelineInnerSender {
         Self {
             inner: self.inner.clone(),
             resolve_on_drop: false,
+            wire: self.wire.clone(),
         }
     }
 }
@@ -138,14 +157,42 @@ impl Drop for PipelineInnerSender {
 }
 
 impl PipelineInnerSender {
+    // The hosted wire adapter can adopt existing unresolved clients instead of
+    // manufacturing another queued client for each projection. Publication of
+    // the redirect and detachment of the driver retain the ordinary ordering.
+    pub(crate) fn complete_with_clients(
+        mut self,
+        pipeline: Box<dyn PipelineHook>,
+        mut adopt: impl FnMut(&Rc<RefCell<ClientInner>>, Vec<PipelineOp>),
+    ) {
+        if let Some(wire) = self.wire.take() {
+            if let Some(wire) = wire.upgrade() {
+                wire.publish(pipeline);
+            }
+            return;
+        }
+        if let Some(inner) = self.inner.take().and_then(|weak| weak.upgrade()) {
+            PipelineInner::resolve_with(&inner, Ok(pipeline), |_, client, ops| adopt(client, ops));
+        }
+    }
+
     pub(crate) fn complete(self, pipeline: Box<dyn PipelineHook>) {
         self.complete_with(|| pipeline);
     }
 
     pub(crate) fn complete_with(mut self, pipeline: impl FnOnce() -> Box<dyn PipelineHook>) {
+        if let Some(wire) = self.wire.take() {
+            if let Some(wire) = wire.upgrade().filter(|wire| wire.unresolved()) {
+                wire.publish(pipeline());
+            }
+            return;
+        }
         if let Some(weak_queued) = self.inner.take() {
             if let Some(pipeline_inner) = weak_queued.upgrade() {
-                crate::queued::PipelineInner::resolve(&pipeline_inner, Ok(pipeline()));
+                let resolved = pipeline_inner.borrow().redirect.is_some();
+                if !resolved {
+                    crate::queued::PipelineInner::resolve(&pipeline_inner, Ok(pipeline()));
+                }
             }
         }
     }
@@ -159,7 +206,7 @@ impl Pipeline {
     pub(crate) fn new() -> (PipelineInnerSender, Self) {
         let inner = Rc::new(RefCell::new(PipelineInner {
             redirect: None,
-            promise_to_drive: Promise::ok(()).shared(),
+            promise_to_drive: None,
             clients_to_resolve: SenderQueue::new(),
         }));
 
@@ -167,6 +214,7 @@ impl Pipeline {
             PipelineInnerSender {
                 inner: Some(Rc::downgrade(&inner)),
                 resolve_on_drop: true,
+                wire: None,
             },
             Self { inner },
         )
@@ -176,12 +224,15 @@ impl Pipeline {
     where
         F: Future<Output = Result<(), Error>> + 'static + Unpin,
     {
-        let new = Promise::from_future(
-            futures::future::try_join(self.inner.borrow_mut().promise_to_drive.clone(), promise)
-                .map_ok(|_| ()),
-        )
+        let previous = self.inner.borrow().promise_to_drive.clone();
+        let new = match previous {
+            Some(previous) => {
+                Promise::from_future(futures::future::try_join(previous, promise).map_ok(|_| ()))
+            }
+            None => Promise::from_future(promise),
+        }
         .shared();
-        let old_driver = std::mem::replace(&mut self.inner.borrow_mut().promise_to_drive, new);
+        let old_driver = self.inner.borrow_mut().promise_to_drive.replace(new);
         drop(old_driver);
     }
 }
@@ -207,8 +258,11 @@ impl PipelineHook for Pipeline {
             return p.get_pipelined_cap_move(ops);
         }
 
-        let mut queued_client = Client::new(Some(self.inner.clone()));
-        queued_client.drive(self.inner.borrow().promise_to_drive.clone());
+        let queued_client = Client::new(Some(self.inner.clone()));
+        // This driver is already shared. Retain its fork directly instead of
+        // allocating another boxed future and shared state around that fork.
+        queued_client.inner.borrow_mut().promise_to_drive =
+            self.inner.borrow().promise_to_drive.clone();
         let weak_queued = Rc::downgrade(&queued_client.inner);
         let admitted = self
             .inner
@@ -225,31 +279,46 @@ impl PipelineHook for Pipeline {
     }
 }
 
+enum PipelineOwner {
+    Queued {
+        _pipeline: Rc<RefCell<PipelineInner>>,
+    },
+    Wire {
+        _pipeline: Rc<crate::scoped::wire::PipelineState>,
+    },
+}
+
+enum PendingCall {
+    Hook(
+        u64,
+        u16,
+        Box<dyn ParamsHook>,
+        Box<dyn ResultsHook>,
+        CallHints,
+    ),
+    Request(Box<local::Request>),
+}
+enum ForwardedCall {
+    Hook(Promise<(), Error>),
+    Response(Promise<capnp::capability::Response<any_pointer::Owned>, Error>),
+}
+
 pub(crate) struct ClientInner {
     // Once the promise resolves, this will become non-null and point to the underlying object.
     // A resolved target is immutable. Clone its owner without allocating a new
     // hook or retaining a cell borrow across application callbacks.
     redirect: Option<Rc<dyn ClientHook>>,
 
-    // The queued::PipelineInner that this client is derived from, if any. We need to hold on
-    // to a reference to it so that it doesn't get canceled before the client is resolved.
-    pipeline_inner: Option<Rc<RefCell<PipelineInner>>>,
+    // Keep the originating pipeline alive until forwarding publishes a target.
+    // Wire projections already have a queue and need no queued PipelineInner.
+    pipeline_owner: Option<PipelineOwner>,
 
     promise_to_drive: Option<futures::future::Shared<Promise<(), Error>>>,
 
     // When this promise resolves, each queued call will be forwarded to the real client.  This needs
     // to occur *before* any 'whenMoreResolved()' promises resolve, because we want to make sure
     // previously-queued calls are delivered before any new calls made in response to the resolution.
-    call_forwarding_queue: SenderQueue<
-        (
-            u64,
-            u16,
-            Box<dyn ParamsHook>,
-            Box<dyn ResultsHook>,
-            CallHints,
-        ),
-        Promise<(), Error>,
-    >,
+    call_forwarding_queue: SenderQueue<PendingCall, ForwardedCall>,
 
     // whenMoreResolved() returns forks of this promise.  These must resolve *after* queued calls
     // have been initiated (so that any calls made in the whenMoreResolved() handler are correctly
@@ -262,18 +331,32 @@ pub(crate) struct ClientInner {
 
 impl ClientInner {
     pub(crate) fn resolve(state: &Rc<RefCell<Self>>, result: Result<Box<dyn ClientHook>, Error>) {
+        Self::resolve_shared(state, result.map(Rc::from));
+    }
+
+    pub(crate) fn resolve_shared(
+        state: &Rc<RefCell<Self>>,
+        result: Result<Rc<dyn ClientHook>, Error>,
+    ) {
         assert!(state.borrow().redirect.is_none());
-        let client: Rc<dyn ClientHook> = Rc::from(match result {
+        let client = match result {
             Ok(clienthook) => clienthook,
-            Err(e) => broken::new_cap(e),
-        });
+            Err(e) => Rc::from(broken::new_cap(e)),
+        };
         state.borrow_mut().redirect = Some(client.clone());
         let pending = state.borrow_mut().call_forwarding_queue.drain();
         for (args, waiter) in pending {
-            let (interface_id, method_id, params, results, hints) = args;
-            let result_promise =
-                client.call_with_hints(interface_id, method_id, params, results, hints);
-            let _ = waiter.send(result_promise);
+            let forwarded = match args {
+                PendingCall::Hook(interface, method, params, results, hints) => {
+                    ForwardedCall::Hook(
+                        client.call_with_hints(interface, method, params, results, hints),
+                    )
+                }
+                PendingCall::Request(request) => {
+                    ForwardedCall::Response(request.send_to(&*client).promise)
+                }
+            };
+            let _ = waiter.send(forwarded);
         }
 
         let pending = state.borrow_mut().client_resolution_queue.drain();
@@ -282,7 +365,7 @@ impl ClientInner {
         }
         let (driver, pipeline) = {
             let mut state = state.borrow_mut();
-            (state.promise_to_drive.take(), state.pipeline_inner.take())
+            (state.promise_to_drive.take(), state.pipeline_owner.take())
         };
         drop((driver, pipeline));
     }
@@ -293,10 +376,60 @@ pub(crate) struct Client {
 }
 
 impl Client {
+    pub(crate) fn pending_wire(&self) -> Option<Self> {
+        matches!(
+            self.inner.borrow().pipeline_owner,
+            Some(PipelineOwner::Wire { .. })
+        )
+        .then(|| Self {
+            inner: self.inner.clone(),
+        })
+    }
+
+    pub(crate) fn send_request(
+        &self,
+        request: Box<local::Request>,
+    ) -> capnp::capability::RemotePromise<any_pointer::Owned> {
+        let forwarded = self
+            .inner
+            .borrow_mut()
+            .call_forwarding_queue
+            .push_future(PendingCall::Request(request))
+            .attach(self.inner.clone());
+        let driver = self.inner.borrow().promise_to_drive.clone();
+        capnp::capability::RemotePromise {
+            promise: Promise::from_future(async move {
+                let forwarded = match driver {
+                    Some(driver) => drive_until_ready(forwarded, driver).await?,
+                    None => forwarded.await?,
+                };
+                let ForwardedCall::Response(response) = forwarded else {
+                    unreachable!("queued request completion")
+                };
+                response.await
+            }),
+            pipeline: any_pointer::Pipeline::new(Box::new(broken::DisabledPipeline)),
+        }
+    }
+
+    pub(crate) fn wire(
+        pipeline: Rc<crate::scoped::wire::PipelineState>,
+        driver: Option<futures::future::Shared<Promise<(), Error>>>,
+    ) -> Self {
+        let client = Self::new(None);
+        {
+            let mut inner = client.inner.borrow_mut();
+            inner.pipeline_owner = Some(PipelineOwner::Wire {
+                _pipeline: pipeline,
+            });
+            inner.promise_to_drive = driver;
+        }
+        client
+    }
     pub(crate) fn new(pipeline_inner: Option<Rc<RefCell<PipelineInner>>>) -> Self {
         let inner = Rc::new(RefCell::new(ClientInner {
             promise_to_drive: None,
-            pipeline_inner,
+            pipeline_owner: pipeline_inner.map(|_pipeline| PipelineOwner::Queued { _pipeline }),
             redirect: None,
             call_forwarding_queue: SenderQueue::new(),
             client_resolution_queue: SenderQueue::new(),
@@ -314,6 +447,9 @@ impl Client {
 }
 
 impl ClientHook for Client {
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
     fn debug_info(&self, chain: &mut capnp::private::capability::DebugInfo) {
         let Ok(state) = self.inner.try_borrow() else {
             chain.push("promise(busy)");
@@ -403,17 +539,28 @@ impl ClientHook for Client {
             .inner
             .borrow_mut()
             .call_forwarding_queue
-            .push((interface_id, method_id, params, results, hints))
+            .push_future(PendingCall::Hook(
+                interface_id,
+                method_id,
+                params,
+                results,
+                hints,
+            ))
             .attach(inner_clone);
 
         // Drive until the call is forwarded, not until the forwarded call
         // finishes. The latter may depend on a different, still-pending promise.
-        let forwarded = Promise::from_future(forwarded);
-        let forwarded = match &self.inner.borrow().promise_to_drive {
-            Some(driver) => drive_until_ready(forwarded, driver.clone()),
-            None => forwarded,
-        };
-        Promise::from_future(forwarded.and_then(|call| call))
+        let driver = self.inner.borrow().promise_to_drive.clone();
+        Promise::from_future(async move {
+            let call = match driver {
+                Some(driver) => drive_until_ready(forwarded, driver).await?,
+                None => forwarded.await?,
+            };
+            let ForwardedCall::Hook(call) = call else {
+                unreachable!("queued hook completion")
+            };
+            call.await
+        })
     }
 
     fn get_ptr(&self) -> usize {
@@ -441,17 +588,19 @@ impl ClientHook for Client {
             return Some(Promise::ok(client.add_ref()));
         }
 
-        let promise = Promise::from_future(
-            self.inner
-                .borrow_mut()
-                .client_resolution_queue
-                .push(())
-                .attach(self.inner.clone()),
-        );
-        match &self.inner.borrow().promise_to_drive {
-            Some(p) => Some(drive_until_ready(promise, p.clone())),
-            None => Some(promise),
-        }
+        let promise = self
+            .inner
+            .borrow_mut()
+            .client_resolution_queue
+            .push_future(())
+            .attach(self.inner.clone());
+        let driver = self.inner.borrow().promise_to_drive.clone();
+        Some(Promise::from_future(async move {
+            match driver {
+                Some(driver) => drive_until_ready(promise, driver).await,
+                None => promise.await,
+            }
+        }))
     }
 
     fn when_resolved(&self) -> Promise<(), Error> {
@@ -478,6 +627,151 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn direct_pipeline_field_getters_preserve_paths_and_owners() {
+        for depth in [0u16, 1, 7, 8, 32] {
+            let (sender, pipeline) = Pipeline::new();
+            let mut pipeline = any_pointer::Pipeline::new(Box::new(pipeline));
+            for field in 0..depth {
+                pipeline = pipeline.get_pointer_field(field);
+            }
+            let first = pipeline.get_pointer_field_as_cap(41);
+            let second = pipeline.noop().get_pointer_field_as_cap(42);
+            drop(pipeline);
+            let mut adopted = Vec::new();
+            sender.complete_with_clients(
+                Box::new(broken::Pipeline::new(Error::failed("completed".into()))),
+                |client, path| {
+                    adopted.push((client.clone(), path));
+                },
+            );
+            assert_eq!(adopted.len(), 2, "projections retain their parent");
+            for ((client, path), last) in adopted.into_iter().zip([41, 42]) {
+                let fields: Vec<_> = path
+                    .iter()
+                    .map(|op| match op {
+                        PipelineOp::GetPointerField(field) => *field,
+                        PipelineOp::Noop => panic!("unexpected extra operation"),
+                    })
+                    .collect();
+                assert_eq!(fields, (0..depth).chain([last]).collect::<Vec<_>>());
+                ClientInner::resolve(&client, Err(Error::failed(format!("field {last}"))));
+            }
+            assert_eq!(
+                first.get_resolved().unwrap().get_failure().unwrap().extra,
+                "field 41"
+            );
+            assert_eq!(
+                second.get_resolved().unwrap().get_failure().unwrap().extra,
+                "field 42"
+            );
+        }
+    }
+    #[test]
+    fn adopting_pipeline_clients_preserves_identity_and_ignores_canceled_projections() {
+        let (sender, pipeline) = Pipeline::new();
+        let first = pipeline.get_pipelined_cap(&[PipelineOp::GetPointerField(1)]);
+        let canceled = pipeline.get_pipelined_cap(&[PipelineOp::GetPointerField(2)]);
+        let last = pipeline.get_pipelined_cap(&[PipelineOp::GetPointerField(3)]);
+        drop(canceled);
+        let mut adopted = Vec::new();
+        sender.complete_with_clients(
+            Box::new(broken::Pipeline::new(Error::failed(
+                "published redirect".into(),
+            ))),
+            |client, path| {
+                assert!(pipeline.inner.try_borrow_mut().unwrap().redirect.is_some());
+                adopted.push((client.clone(), path));
+            },
+        );
+        assert_eq!(adopted.len(), 2);
+        assert_eq!(adopted[0].0.as_ptr() as usize, first.get_ptr());
+        assert_eq!(adopted[1].0.as_ptr() as usize, last.get_ptr());
+        assert!(matches!(
+            adopted[0].1.as_slice(),
+            [PipelineOp::GetPointerField(1)]
+        ));
+        assert!(matches!(
+            adopted[1].1.as_slice(),
+            [PipelineOp::GetPointerField(3)]
+        ));
+        assert_eq!(
+            pipeline.get_pipelined_cap(&[]).get_failure().unwrap().extra,
+            "published redirect"
+        );
+        for (client, _) in adopted {
+            ClientInner::resolve(&client, Err(Error::failed("adopted result".into())));
+        }
+        assert_eq!(
+            first.get_resolved().unwrap().get_failure().unwrap().extra,
+            "adopted result"
+        );
+        assert_eq!(
+            last.get_resolved().unwrap().get_failure().unwrap().extra,
+            "adopted result"
+        );
+    }
+    #[test]
+    fn optional_pipeline_drivers_keep_dependencies_and_reentrant_cleanup() {
+        for failing in [0, 1] {
+            let (_sender, mut pipeline) = Pipeline::new();
+            for index in 0..2 {
+                pipeline.drive(if index == failing {
+                    Promise::err(Error::failed(format!("driver {index}")))
+                } else {
+                    Promise::ok(())
+                });
+            }
+            let client = pipeline.get_pipelined_cap(&[]);
+            let error = futures::executor::block_on(client.when_resolved()).unwrap_err();
+            assert_eq!(error.extra, format!("driver {failing}"));
+        }
+        struct ReenterDrop(Weak<RefCell<PipelineInner>>, Rc<std::cell::Cell<bool>>);
+        impl Drop for ReenterDrop {
+            fn drop(&mut self) {
+                let inner = self.0.upgrade().unwrap();
+                {
+                    let state = inner
+                        .try_borrow_mut()
+                        .expect("driver drops outside the pipeline borrow");
+                    assert!(state.redirect.is_some());
+                }
+                PipelineInner::resolve(&inner, Err(Error::failed("late driver failure".into())));
+                self.1.set(true);
+            }
+        }
+        let (sender, mut pipeline) = Pipeline::new();
+        let dropped = Rc::new(std::cell::Cell::new(false));
+        let probe = ReenterDrop(Rc::downgrade(&pipeline.inner), dropped.clone());
+        pipeline.drive(futures::future::pending::<Result<(), Error>>().attach(probe));
+        sender.complete(Box::new(broken::Pipeline::new(Error::failed(
+            "published".into(),
+        ))));
+        assert!(dropped.get());
+        let target = pipeline.get_pipelined_cap(&[]);
+        assert_eq!(
+            futures::executor::block_on(target.when_resolved())
+                .unwrap_err()
+                .extra,
+            "published"
+        );
+
+        // A pipeline with no driving future still forwards its waiting clients.
+        let (sender, pipeline) = Pipeline::new();
+        let client = pipeline.get_pipelined_cap(&[]);
+        let mut resolved = client.when_resolved();
+        assert!(Pin::new(&mut resolved)
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending());
+        sender.complete(Box::new(broken::Pipeline::new(Error::failed(
+            "no driver".into(),
+        ))));
+        assert_eq!(
+            futures::executor::block_on(resolved).unwrap_err().extra,
+            "no driver"
+        );
+    }
+
     #[test]
     fn resolution_wakes_after_releasing_the_queued_client() {
         let client = Client::new(None);

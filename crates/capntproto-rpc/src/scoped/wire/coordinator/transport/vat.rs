@@ -108,6 +108,7 @@ impl<V> Connection<V> {
                 output_driver,
                 output_stream,
                 stream_pending: 0,
+                buffer_batch: false,
             },
             Failure { finished, closing },
         )
@@ -246,16 +247,16 @@ impl<V> Reader<V> {
             return Poll::Ready(Ok(true));
         }
         if let Some(stream) = &mut self.input_frames {
-            let Some(bytes) = ready!(stream.poll_frame(cx))? else {
+            let Some(length) = ready!(stream.poll_frame_size(cx))? else {
                 self.ended = true;
                 return Poll::Ready(Ok(false));
             };
-            if bytes.len() > self.maximum {
+            if length > self.maximum {
                 return Poll::Ready(Err(Error::from_kind(
                     capnp::ErrorKind::BufferNotLargeEnough,
                 )));
             }
-            self.remaining = bytes.len();
+            self.remaining = length;
             self.position = 0;
             self.borrowed_frame = true;
             return Poll::Ready(Ok(true));
@@ -303,6 +304,21 @@ impl<V> Reader<V> {
         if let Some(frame) = frame {
             let count = bytes.len().min(frame.len() - self.position);
             bytes[..count].copy_from_slice(&frame[self.position..self.position + count]);
+            self.position += count;
+            self.remaining -= count;
+            return Poll::Ready(Ok(count));
+        }
+        if self.borrowed_frame {
+            let count = ready!(self
+                .input_frames
+                .as_mut()
+                .unwrap()
+                .poll_read_frame(cx, bytes))?;
+            if count > self.remaining || count > bytes.len() {
+                return Poll::Ready(Err(Error::failed(
+                    "stream exceeded its prepared frame".into(),
+                )));
+            }
             self.position += count;
             self.remaining -= count;
             return Poll::Ready(Ok(count));
@@ -366,8 +382,8 @@ impl<V> ImportReceiver<resources::Import> for Reader<V> {
             Ok(Rc::new(body))
         })();
         match result {
-            Ok(body) => owner.metadata_mut().introduction = Some(body),
-            Err(error) => owner.metadata_mut().failure = Some(error),
+            Ok(body) => owner.update_metadata(|metadata| metadata.introduction = Some(body)),
+            Err(error) => owner.update_metadata(|metadata| metadata.failure = Some(error)),
         }
     }
     fn attach(&mut self, owner: Option<&mut resources::Import>, index: u8) {
@@ -387,6 +403,14 @@ impl<V> ImportReceiver<resources::Import> for Reader<V> {
     }
 }
 impl<V> Input<resources::Import> for Reader<V> {
+    fn has_buffered_next_frame(&self) -> bool {
+        !self.borrowed_frame
+            && !self.ended
+            && self
+                .input_frames
+                .as_ref()
+                .is_some_and(|stream| stream.has_buffered_next_frame())
+    }
     fn buffered_frame(&self) -> Option<&[u8]> {
         if self.borrowed_frame && self.position == 0 {
             self.input_frames.as_ref().and_then(|stream| stream.frame())
@@ -406,11 +430,9 @@ impl<V> Input<resources::Import> for Reader<V> {
         options: capnp::message::ReaderOptions,
     ) -> Result<Option<Frame<'p>>, capntproto_rpc_wire::owned::Error> {
         if self.borrowed_frame && self.position == 0 {
-            let bytes = self
-                .input_frames
-                .as_ref()
-                .and_then(|stream| stream.frame())
-                .ok_or(capntproto_rpc_wire::owned::Error::WrongMessage)?;
+            let Some(bytes) = self.input_frames.as_ref().and_then(|stream| stream.frame()) else {
+                return Ok(None);
+            };
             let frame = Frame::copy_from(messages, bytes, options)?;
             self.position = bytes.len();
             self.remaining = 0;
@@ -431,6 +453,43 @@ impl<V> Input<resources::Import> for Reader<V> {
             return Err(capntproto_rpc_wire::owned::Error::WrongMessage);
         }
         self.position = bytes.len();
+        self.remaining = 0;
+        Ok(Some(frame))
+    }
+
+    fn take_shared_frame<'p>(
+        &mut self,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        options: capnp::message::ReaderOptions,
+    ) -> Result<Option<Frame<'p>>, capntproto_rpc_wire::owned::Error> {
+        if !self.borrowed_frame || self.position != 0 {
+            return Ok(None);
+        }
+        let Some((allocation, range)) = self
+            .input_frames
+            .as_mut()
+            .and_then(|stream| stream.share_frame())
+        else {
+            return Ok(None);
+        };
+        if range.len() != self.remaining {
+            return Err(capntproto_rpc_wire::owned::Error::WrongMessage);
+        }
+        let lease = match messages.adopt_received(allocation, range) {
+            Ok(Some(lease)) => lease,
+            // A larger prefetched allocation may not fit even when copying its
+            // single used frame would. Leave the ordinary path available.
+            Ok(None) | Err(messages::Error::NoBuffer | messages::Error::GenerationExhausted) => {
+                return Ok(None)
+            }
+            Err(error) => return Err(capntproto_rpc_wire::owned::Error::Storage(error)),
+        };
+        let frame = Frame::new(lease, options);
+        if let Err(error) = frame.size_in_words(messages) {
+            frame.release(messages);
+            return Err(error);
+        }
+        self.position = self.remaining;
         self.remaining = 0;
         Ok(Some(frame))
     }
@@ -481,8 +540,9 @@ pub struct Writer<V> {
     output_driver: Option<Promise<(), Error>>,
     output_stream: Option<Box<dyn crate::OutgoingMessageStream>>,
     stream_pending: usize,
+    buffer_batch: bool,
 }
-const MAXIMUM_RECEIPTS: usize = 8;
+const MAXIMUM_RECEIPTS: usize = 32;
 impl<V> Drop for Writer<V> {
     fn drop(&mut self) {
         if !self.closing.replace(true) {
@@ -547,6 +607,7 @@ impl<V> io::Flush for Writer<V> {
                 return Poll::Ready(Err(IoError::Failed(error)));
             }
         }
+        self.buffer_batch = false;
         Poll::Ready(Ok(()))
     }
 }
@@ -576,6 +637,24 @@ pub struct Bundle {
 }
 
 impl<V> io::WriteResources<Bundle> for Writer<V> {
+    fn accepts_parts(&self) -> bool {
+        true
+    }
+    fn poll_write_parts(
+        &mut self,
+        cx: &mut Context<'_>,
+        parts: messages::SharedParts,
+        resources: Option<&Bundle>,
+    ) -> Poll<Result<usize, IoError<Error>>> {
+        ready!(self.poll_capacity(cx))?;
+        let length = parts.len();
+        let frame = crate::OutgoingFrame::from_parts(parts).map_err(IoError::Failed)?;
+        self.enqueue(frame, resources)?;
+        Poll::Ready(Ok(length))
+    }
+    fn start_batch(&mut self, frames: usize) {
+        self.buffer_batch = frames > 1;
+    }
     fn accepts_shared(&self) -> bool {
         true
     }
@@ -645,7 +724,12 @@ impl<V> Writer<V> {
             // OutgoingMessageStream retains the frame and its resources until
             // physical completion, even if this observer is dropped. The frame
             // already owns admission credit; a second owner/list is redundant.
-            stream.send(frame).map_err(IoError::Failed)?;
+            if self.buffer_batch {
+                stream.send_buffered(frame)
+            } else {
+                stream.send(frame)
+            }
+            .map_err(IoError::Failed)?;
             self.stream_pending += 1;
             return Ok(());
         }
@@ -741,11 +825,8 @@ impl Output<resources::Import> for Resources {
             u8::MAX
         }
     }
-    fn metadata(&self, owner: &resources::Import) -> EndpointMetadata {
-        owner.metadata()
-    }
-    fn metadata_if_present(&self, owner: &resources::Import) -> Option<EndpointMetadata> {
-        owner.metadata_if_present()
+    fn metadata_source(&self, owner: &resources::Import) -> Option<Rc<MetadataSource>> {
+        Some(owner.metadata_source())
     }
 }
 

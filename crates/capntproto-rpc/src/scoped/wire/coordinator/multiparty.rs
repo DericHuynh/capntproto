@@ -690,10 +690,14 @@ impl<
                     }
                 }
                 5 => {
-                    if let Poll::Ready(result) =
-                        self.bootstrap
-                            .poll(coordinator, messages, queue, scratch, output, cx)
-                    {
+                    if let Poll::Ready(result) = self.bootstrap.poll(
+                        &mut ControlContext::new(coordinator),
+                        messages,
+                        queue,
+                        scratch,
+                        output,
+                        cx,
+                    ) {
                         return Poll::Ready(result);
                     }
                 }
@@ -1036,74 +1040,9 @@ impl<
         F: FnMut() -> capnp::Result<capability::Client>,
         const C: usize,
         const H: usize,
-    > Control<'p, 'id, 's, resources::Import, (), C, H, vat::Resources>
-    for NetworkControl<'p, 'id, V, F, C, H>
+    > NetworkControl<'p, 'id, V, F, C, H>
 {
-    fn observes_hooks(&self, event: &connection::Received<'id, server::Results>) -> bool {
-        !matches!(
-            event,
-            connection::Received::Queued(_)
-                | connection::Received::DeferredCall(_)
-                | connection::Received::Returned(_)
-        )
-    }
-    fn accepts_direct_plain_return(&self) -> bool {
-        true
-    }
-    fn direct_publication_preserves_idle(&self) -> bool {
-        self.plain_return_preserves_idle()
-    }
-    fn plain_call_preserves_idle(&self) -> bool {
-        self.plain_return_preserves_idle()
-    }
-    #[inline(always)]
-    fn plain_return_preserves_idle(&self) -> bool {
-        <TwoParty<'id, F> as Control<'p, 'id, 's, resources::Import, (), C, H, vat::Resources>>::plain_return_preserves_idle(&self.bootstrap)
-            && self.pending.is_empty()
-            && self.sent.is_empty()
-            && self.local.is_empty()
-            && self.handoffs.is_empty()
-            && self.provided.is_empty()
-            && self.barriers.is_empty()
-            && self.produced.is_empty()
-            && self.commands.adoptions.borrow().is_empty()
-            && self.commands.queue.borrow().is_empty()
-            && self.commands.provisions.borrow().is_empty()
-            && self.commands.forwarding.borrow().is_empty()
-            && self.commands.markers.borrow().is_empty()
-    }
-    fn set_idle(&mut self, idle: bool) {
-        let idle = idle
-            && self.pending.is_empty()
-            && self.sent.is_empty()
-            && self.local.is_empty()
-            && self.handoffs.is_empty()
-            && self.provided.is_empty()
-            && self.barriers.is_empty()
-            && self.produced.is_empty()
-            && self.commands.adoptions.borrow().is_empty()
-            && self.commands.queue.borrow().is_empty()
-            && self.commands.provisions.borrow().is_empty()
-            && self.commands.forwarding.borrow().is_empty()
-            && self.commands.markers.borrow().is_empty();
-        <TwoParty<'id, F> as Control<'p, 'id, 's, resources::Import, (), C, H, vat::Resources>>::set_idle(&mut self.bootstrap, idle);
-    }
-    fn received(
-        &mut self,
-        event: connection::Received<'id, server::Results>,
-        coordinator: &mut Coordinator<'p, 'id, 's, resources::Import, (), C, H>,
-        messages: &mut messages::Messages<'p, '_, '_>,
-        queue: &mut messages::Queue<'p, '_, vat::Bundle>,
-    ) -> capnp::Result<()> {
-        if matches!(
-            event,
-            connection::Received::Network | connection::Received::QueuedNetwork
-        ) {
-            return Ok(());
-        }
-        <TwoParty<'id, F> as Control<'p, 'id, 's, resources::Import, (), C, H, vat::Resources>>::received(&mut self.bootstrap, event, coordinator, messages, queue)
-    }
-    fn poll(
+    fn poll_network(
         &mut self,
         coordinator: &mut Coordinator<'p, 'id, 's, resources::Import, (), C, H>,
         messages: &mut messages::Messages<'p, '_, '_>,
@@ -1153,17 +1092,139 @@ impl<
             && !coordinator.driver.has_network()
             && coordinator.worker.pending_redirect().is_none()
         {
-            return self
-                .bootstrap
-                .poll(coordinator, messages, queue, scratch, output, cx);
+            return self.bootstrap.poll(
+                &mut ControlContext::new(coordinator),
+                messages,
+                queue,
+                scratch,
+                output,
+                cx,
+            );
         }
         self.poll_active(coordinator, messages, queue, scratch, output, cx)
     }
+}
+
+impl<
+        'p,
+        'id,
+        's,
+        V: 'static,
+        F: FnMut() -> capnp::Result<capability::Client>,
+        const C: usize,
+        const H: usize,
+    > Control<'p, 'id, 's, resources::Import, (), C, H, vat::Resources>
+    for NetworkControl<'p, 'id, V, F, C, H>
+{
+    fn poll(
+        &mut self,
+        context: &mut ControlContext<'_, 'p, 'id, 's, resources::Import, (), C, H>,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        queue: &mut messages::Queue<'p, '_, vat::Bundle>,
+        scratch: &mut [u32],
+        output: &vat::Resources,
+        cx: &mut Context<'_>,
+    ) -> Poll<capnp::Result<bool>> {
+        // The restricted path certifies absence of authenticated network work.
+        // Active authenticated handoffs affect several protocol owners; their
+        // private operation records those effects even when a future suspends.
+        if context.network_idle()
+            && self.pending.is_empty()
+            && self.sent.is_empty()
+            && self.local.is_empty()
+            && self.handoffs.is_empty()
+            && self.provided.is_empty()
+            && self.barriers.is_empty()
+            && self.produced.is_empty()
+            && self.commands.queue.borrow().is_empty()
+            && self.commands.markers.borrow().is_empty()
+            && self.commands.adoptions.borrow().is_empty()
+            && self.commands.provisions.borrow().is_empty()
+            && self.commands.forwarding.borrow().is_empty()
+        {
+            context.allow_answer_handoff(self.connection.borrow().supports_third_party_answers());
+            if self
+                .commands
+                .wake
+                .borrow()
+                .as_ref()
+                .is_none_or(|wake| !wake.will_wake(cx.waker()))
+            {
+                let previous = self.commands.wake.borrow_mut().replace(cx.waker().clone());
+                drop(previous);
+            }
+            self.bootstrap
+                .poll(context, messages, queue, scratch, output, cx)
+        } else {
+            self.poll_network(context.network(), messages, queue, scratch, output, cx)
+        }
+    }
+    fn observes_hooks(&self, event: &connection::Received<'id, server::Results>) -> bool {
+        !matches!(
+            event,
+            connection::Received::Queued(_)
+                | connection::Received::DeferredCall(_)
+                | connection::Received::Returned(_)
+        )
+    }
+    fn accepts_direct_plain_return(&self) -> bool {
+        true
+    }
+
+    #[inline(always)]
+    fn preserves_idle(&self, activity: Activity) -> bool {
+        <TwoParty<'id, F> as Control<'p, 'id, 's, resources::Import, (), C, H, vat::Resources>>::preserves_idle(&self.bootstrap, activity)
+            && self.pending.is_empty()
+            && self.sent.is_empty()
+            && self.local.is_empty()
+            && self.handoffs.is_empty()
+            && self.provided.is_empty()
+            && self.barriers.is_empty()
+            && self.produced.is_empty()
+            && self.commands.adoptions.borrow().is_empty()
+            && self.commands.queue.borrow().is_empty()
+            && self.commands.provisions.borrow().is_empty()
+            && self.commands.forwarding.borrow().is_empty()
+            && self.commands.markers.borrow().is_empty()
+    }
+    fn set_idle(&mut self, idle: bool) {
+        let idle = idle
+            && self.pending.is_empty()
+            && self.sent.is_empty()
+            && self.local.is_empty()
+            && self.handoffs.is_empty()
+            && self.provided.is_empty()
+            && self.barriers.is_empty()
+            && self.produced.is_empty()
+            && self.commands.adoptions.borrow().is_empty()
+            && self.commands.queue.borrow().is_empty()
+            && self.commands.provisions.borrow().is_empty()
+            && self.commands.forwarding.borrow().is_empty()
+            && self.commands.markers.borrow().is_empty();
+        <TwoParty<'id, F> as Control<'p, 'id, 's, resources::Import, (), C, H, vat::Resources>>::set_idle(&mut self.bootstrap, idle);
+    }
+    fn received(
+        &mut self,
+        event: connection::Received<'id, server::Results>,
+        context: &mut ControlContext<'_, 'p, 'id, 's, resources::Import, (), C, H>,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        queue: &mut messages::Queue<'p, '_, vat::Bundle>,
+    ) -> capnp::Result<()> {
+        if matches!(
+            event,
+            connection::Received::Network | connection::Received::QueuedNetwork
+        ) {
+            return Ok(());
+        }
+        <TwoParty<'id, F> as Control<'p, 'id, 's, resources::Import, (), C, H, vat::Resources>>::received(&mut self.bootstrap, event, context, messages, queue)
+    }
+
     fn shutdown(
         &mut self,
-        coordinator: &mut Coordinator<'p, 'id, 's, resources::Import, (), C, H>,
+        context: &mut ControlContext<'_, 'p, 'id, 's, resources::Import, (), C, H>,
         messages: &mut messages::Messages<'p, '_, '_>,
     ) {
+        let coordinator = context.network();
         self.commands.close(closed());
         self.local.clear();
         self.produced.clear();
@@ -1191,7 +1252,7 @@ impl<
         for job in self.pending.drain(..) {
             coordinator.driver.release_network(job.request, messages);
         }
-        <TwoParty<'id, F> as Control<'p, 'id, 's, resources::Import, (), C, H, vat::Resources>>::shutdown(&mut self.bootstrap, coordinator, messages);
+        <TwoParty<'id, F> as Control<'p, 'id, 's, resources::Import, (), C, H, vat::Resources>>::shutdown(&mut self.bootstrap, &mut ControlContext::new(coordinator), messages);
     }
 }
 

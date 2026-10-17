@@ -11,31 +11,41 @@ struct Echo {
     streams: Rc<Cell<u64>>,
 }
 impl service::Server for Echo {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        params: service::EchoParams,
-        mut results: service::EchoResults,
-    ) -> capnp::Result<()> {
-        results
-            .get()
-            .into_api()
-            .person()
-            .copy_from(params.get()?.into_api().person()?)
+        context: service::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            results
+                .get()
+                .into_api()
+                .person()
+                .copy_from(params.get()?.into_api().person()?)
+        })
     }
-    async fn make(
+    fn make(
         self: Rc<Self>,
-        _: service::MakeParams,
-        mut results: service::MakeResults,
-    ) -> capnp::Result<()> {
-        results
-            .get()
-            .into_api()
-            .cap()
-            .copy_from(self.returned.as_ref().unwrap().clone())
+        context: service::MakeContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            results
+                .get()
+                .into_api()
+                .cap()
+                .copy_from(self.returned.as_ref().unwrap().clone())
+        })
     }
-    async fn stream(self: Rc<Self>, params: service::StreamParams) -> capnp::Result<()> {
-        self.streams.set(params.get()?.into_api().person()?.id());
-        Ok(())
+    fn stream(
+        self: Rc<Self>,
+        context: service::StreamContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.streams.set(params.get()?.into_api().person()?.id());
+            Ok(())
+        })
     }
 }
 struct Drivers(Vec<tokio::task::JoinHandle<capnp::Result<()>>>);

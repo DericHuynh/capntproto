@@ -177,7 +177,7 @@ fn archive_data(content: Vec<u8>) -> Result<Value> {
     );
     let mut entry = archive.by_index(0)?;
     ensure!(
-        entry.name() == "publication.json"
+        entry.name()? == "publication.json"
             && entry.size() <= MAX_ARTIFACT
             && entry.is_file()
             && entry.unix_mode().is_none_or(|m| m & 0o170000 != 0o120000),

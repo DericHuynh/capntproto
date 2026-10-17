@@ -27,6 +27,9 @@ pub enum Action {
 #[derive(Parser)]
 pub struct Args {
     pub action: Action,
+    /// Collect syscall and paired CPU/wall diagnostics after untraced measurements.
+    #[arg(long)]
+    pub trace_io: bool,
     #[arg(long)]
     pub bundle: Option<PathBuf>,
     #[arg(long)]
@@ -843,6 +846,7 @@ pub fn run(args: Args) -> Result<()> {
             &owner,
             &cancel,
             &SystemCommands,
+            args.trace_io,
         ),
         Action::Run => benchmark(
             &api,

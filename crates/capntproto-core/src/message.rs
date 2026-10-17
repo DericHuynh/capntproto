@@ -837,6 +837,27 @@ impl<A: Allocator> SelectedBuilder<A> {
         pointer.validate_capability_indices(count)
     }
 
+    /// Read the selected pointer without traversing its immutable ancestors.
+    /// Uses the same reader policy as `Builder::get_root_as_reader`; the result
+    /// borrows this owner, so it cannot overlap edits or outlive its storage.
+    #[inline]
+    pub fn get_reader(&self) -> Result<any_pointer::Reader<'_>> {
+        let (start, _) = self.message.arena.get_segment(self.segment)?;
+        // SAFETY: selection checked this pointer word in the owning arena.
+        // Only descendants can be edited, so its allocation remains present.
+        // Resolve the base again after moves and let get_root check the extent,
+        // as Builder::get_root_as_reader does for the message's root word.
+        let pointer = unsafe {
+            layout::PointerReader::get_root(
+                self.message.arena.as_reader(),
+                self.segment,
+                start.wrapping_add(self.offset),
+                i32::MAX,
+            )?
+        };
+        Ok(any_pointer::Reader::new(pointer))
+    }
+
     /// Borrow the selected pointer. Changing its contents, including allocating
     /// additional segments or replacing it with another type, is permitted.
     pub fn get(&mut self) -> any_pointer::Builder<'_> {
@@ -999,6 +1020,14 @@ where
         self.arena.get_segments_for_output()
     }
 
+    /// Total allocator-reported segment capacity in bytes, including unused
+    /// words. Returns None on overflow or when an externally borrowed range
+    /// cannot reveal its owner's complete capacity. This excludes bounded arena
+    /// metadata and is useful when retaining segments in a byte-budgeted queue.
+    pub fn retained_segment_bytes(&self) -> Option<usize> {
+        self.arena.retained_segment_bytes()
+    }
+
     pub fn into_reader(self) -> Reader<Self> {
         Reader::new(
             self,
@@ -1029,11 +1058,11 @@ where
     A: Allocator,
 {
     fn get_segment(&self, id: u32) -> Option<&[u8]> {
-        self.get_segments_for_output().get(id as usize).copied()
+        self.arena.segment_for_output(id)
     }
 
     fn len(&self) -> usize {
-        self.get_segments_for_output().len()
+        self.arena.len()
     }
 }
 
@@ -1241,14 +1270,18 @@ unsafe impl Allocator for HeapAllocator {
         }
         let layout =
             alloc::alloc::Layout::from_size_align(size as usize * BYTES_PER_WORD, 8).unwrap();
-        #[cfg(feature = "std")]
-        let cached = self.pool.as_ref().and_then(|pool| pool.take(size));
-        #[cfg(not(feature = "std"))]
-        let cached: Option<*mut u8> = None;
-        let ptr = cached.unwrap_or_else(|| {
+        let allocate = || {
             // SAFETY: size is nonzero and the checked layout has alignment 8.
             unsafe { alloc::alloc::alloc_zeroed(layout) }
-        });
+        };
+        #[cfg(feature = "std")]
+        let ptr = self
+            .pool
+            .as_ref()
+            .and_then(|pool| pool.take(size))
+            .unwrap_or_else(allocate);
+        #[cfg(not(feature = "std"))]
+        let ptr = allocate();
         if ptr.is_null() {
             alloc::alloc::handle_alloc_error(layout);
         }

@@ -1,4 +1,39 @@
 use super::*;
+
+#[test]
+fn capacity_lookahead_observes_growth_limits_and_shared_owners() {
+    let mut pool = GrowingBuffers::new(1, 64, 71);
+    with_growing_messages(&mut pool, sends(0), |messages| {
+        assert!(messages.can_reserve(64));
+        assert!(!messages.can_reserve(65));
+        assert!(!messages.can_reserve(usize::MAX));
+        let first = messages.copy_from(b"small").unwrap();
+        assert!(!messages.can_reserve(0));
+        let shared = messages.share(&first).unwrap();
+        messages.release(first);
+        assert!(!messages.can_reserve(0));
+        drop(shared);
+        assert!(messages.can_reserve(64));
+        assert_eq!(messages.buffers[0].generation.get(), 1);
+        let second = messages.reserve(64).unwrap();
+        messages.discard(second);
+        assert!(messages.can_reserve(64));
+        messages.buffers[0].generation.set(u64::MAX);
+        assert!(!messages.can_reserve(0));
+    })
+    .unwrap();
+    let mut limited = GrowingBuffers::new(2, 64, 15);
+    with_growing_messages(&mut limited, sends(0), |messages| {
+        assert!(!messages.can_reserve(9));
+        assert!(messages.can_reserve(8));
+        let writer = messages.reserve(8).unwrap();
+        assert!(!messages.can_reserve(0));
+        messages.discard(writer);
+        assert!(messages.can_reserve(8));
+        assert!(!messages.can_reserve(9));
+    })
+    .unwrap();
+}
 use crate::connection::Growth;
 use core::{
     future::Future,
@@ -10,6 +45,129 @@ fn sends(maximum: usize) -> Growth {
         initial: 0,
         maximum,
     }
+}
+
+#[test]
+#[cfg(target_has_atomic = "ptr")]
+fn received_allocations_keep_exact_ranges_and_charge_escaping_owners() {
+    use alloc::sync::Arc;
+    let mut source = Arc::new(b"prefix-payload-suffix".to_vec());
+    let charged = source.capacity();
+    let mut pool = GrowingBuffers::new(1, 7, charged);
+    let shared = with_growing_messages(&mut pool, sends(1), |messages| {
+        let lease = messages
+            .adopt_received(source.clone(), 7..14)
+            .unwrap()
+            .unwrap();
+        assert_eq!(&*messages.read(&lease), b"payload");
+        assert_eq!(messages.read(&lease).as_ptr(), source[7..].as_ptr());
+        let offer = messages.offer(&lease).unwrap();
+        let key = messages.accept(offer);
+        messages.release(lease);
+        assert!(!messages.send_window(key).unwrap().advance(2).unwrap());
+        let window = messages.send_window(key).unwrap();
+        let shared = window.share().unwrap();
+        assert_eq!(&*shared, b"yload");
+        assert!(window.advance(5).unwrap());
+        assert_eq!(messages.reserve(1).unwrap_err(), Error::NoBuffer);
+        assert_eq!(
+            messages.adopt_received(source.clone(), 0..1).unwrap_err(),
+            Error::NoBuffer
+        );
+        shared
+    })
+    .unwrap();
+    assert_eq!(pool.retained_bytes(), charged);
+    assert_eq!(pool.len(), 1);
+    assert!(Arc::get_mut(&mut source).is_none());
+    let retained = shared.clone();
+    drop(shared);
+    with_growing_messages(&mut pool, sends(0), |messages| {
+        assert_eq!(&*retained, b"yload");
+        assert_eq!(messages.reserve(1).unwrap_err(), Error::NoBuffer);
+        drop(retained);
+        assert!(Arc::get_mut(&mut source).is_some());
+        let lease = messages
+            .adopt_received(source.clone(), 7..14)
+            .unwrap()
+            .unwrap();
+        messages.release(lease);
+        assert!(Arc::get_mut(&mut source).is_some());
+        let writer = messages.reserve_exact(7).unwrap();
+        assert_eq!(&*messages.write(&writer), &[0; 7]);
+        messages.discard(writer);
+    })
+    .unwrap();
+    assert_eq!(pool.retained_bytes(), 14);
+}
+
+#[test]
+#[cfg(target_has_atomic = "ptr")]
+fn received_admission_rejects_capacity_and_ranges_without_consuming_slots() {
+    use alloc::sync::Arc;
+    let source = Arc::new(alloc::vec![0xa5; 32]);
+    for (buffers, maximum, bytes, range, error) in [
+        (0, 32, 32, 0..8, Error::NoBuffer),
+        (1, 7, 32, 0..8, Error::NoBuffer),
+        (1, 32, 31, 0..8, Error::NoBuffer),
+        (1, 32, 32, 32..33, Error::InvalidLength),
+        (
+            1,
+            32,
+            32,
+            core::ops::Range { start: 9, end: 8 },
+            Error::InvalidLength,
+        ),
+    ] {
+        let mut pool = GrowingBuffers::new(buffers, maximum, bytes);
+        with_growing_messages(&mut pool, sends(0), |messages| {
+            assert_eq!(
+                messages.adopt_received(source.clone(), range).unwrap_err(),
+                error
+            );
+        })
+        .unwrap();
+        assert_eq!(pool.len(), 0);
+        assert_eq!(pool.retained_bytes(), 0);
+        assert_eq!(Arc::strong_count(&source), 1);
+    }
+    let mut pool = GrowingBuffers::new(5, 32, 160);
+    with_growing_messages(&mut pool, sends(0), |messages| {
+        let leases: Vec<_> = (0..5)
+            .map(|_| {
+                messages
+                    .adopt_received(source.clone(), 1..9)
+                    .unwrap()
+                    .unwrap()
+            })
+            .collect();
+        assert_eq!(
+            messages.adopt_received(source.clone(), 1..9).unwrap_err(),
+            Error::NoBuffer
+        );
+        for lease in leases {
+            messages.release(lease);
+        }
+        for index in 0..5 {
+            messages.buffers[index].generation.set(u64::MAX);
+        }
+        assert_eq!(
+            messages.adopt_received(source.clone(), 1..9).unwrap_err(),
+            Error::GenerationExhausted
+        );
+    })
+    .unwrap();
+    assert_eq!(pool.retained_bytes(), 0);
+    assert_eq!(Arc::strong_count(&source), 1);
+    let mut bytes = [0x5a; 16];
+    with_messages(&mut [Buffer::new(&mut bytes)], &mut [], |messages| {
+        assert!(messages
+            .adopt_received(source.clone(), 1..9)
+            .unwrap()
+            .is_none());
+    })
+    .unwrap();
+    assert_eq!(bytes, [0x5a; 16]);
 }
 
 #[test]

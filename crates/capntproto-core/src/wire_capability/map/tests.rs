@@ -92,6 +92,37 @@ fn identity_mapping_checks_bounds_without_materializing_an_index_table() {
         0
     );
 }
+
+#[test]
+fn empty_mapped_copy_rewinds_after_a_nested_invalid_capability() {
+    let source = source();
+    let segments = [Word::words_to_bytes(&source)];
+    let reader = Reader::new(&segments[..], ReaderOptions::new());
+    let content = reader.get_root::<any_pointer::Reader<'_>>().unwrap();
+    let mut buffer = words([0; 10]);
+    let mut output = FixedBuilder::new(&mut buffer).unwrap();
+    // Two valid capability pointers precede the invalid index in the final
+    // nested struct. Each failed attempt must reclaim the partially copied tree.
+    for _ in 0..3 {
+        let error = output
+            .try_copy_root_with_capabilities(content, IndexMap::identity(2))
+            .unwrap_err();
+        assert_eq!(
+            error.kind,
+            ErrorKind::MessageContainsInvalidCapabilityPointer
+        );
+        assert_eq!(output.size_in_words(), 1);
+        assert!(output
+            .get_root_as_reader::<any_pointer::Reader<'_>>()
+            .unwrap()
+            .is_null());
+    }
+    output
+        .try_copy_root_with_capabilities(content, IndexMap::new(&[2, 0, 1], 3).unwrap())
+        .unwrap();
+    assert_eq!(output.size_in_words(), 10);
+    check(output.get_root_as_reader().unwrap());
+}
 fn check(content: any_pointer::Reader<'_>) {
     let root = content.reader.get_struct(None).unwrap();
     assert_eq!(root.get_data_field::<u64>(0), 42);

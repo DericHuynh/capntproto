@@ -38,7 +38,22 @@ impl Output {
         if !self.flushing && queue.is_empty() {
             return Poll::Ready(Ok(()));
         }
+        self.poll_pending(writer, queue, messages, cx, budget)
+    }
+
+    // Keep the clean-output checks inline, while sharing the write/flush state
+    // machine between the coordinator's polls before and after publication.
+    #[inline(never)]
+    fn poll_pending<'pool, R, W: WriteResources<R>>(
+        &mut self,
+        writer: &mut W,
+        queue: &mut Queue<'pool, '_, R>,
+        messages: &mut Messages<'pool, '_, '_>,
+        cx: &mut Context<'_>,
+        budget: NonZeroUsize,
+    ) -> Poll<Result<(), SendError<W::Error>>> {
         if !self.flushing {
+            writer.start_batch(queue.len().min(budget.get()));
             let mut tracked = Tracking {
                 writer,
                 accepted: &mut self.flushing,
@@ -94,6 +109,23 @@ impl<W: Flush> Flush for Tracking<'_, W> {
     }
 }
 impl<R, W: WriteResources<R>> WriteResources<R> for Tracking<'_, W> {
+    #[cfg(feature = "alloc")]
+    fn accepts_parts(&self) -> bool {
+        self.writer.accepts_parts()
+    }
+    #[cfg(feature = "alloc")]
+    fn poll_write_parts(
+        &mut self,
+        cx: &mut Context<'_>,
+        parts: messages::SharedParts,
+        resources: Option<&R>,
+    ) -> Poll<Result<usize, IoError<Self::Error>>> {
+        let result = self.writer.poll_write_parts(cx, parts, resources);
+        if matches!(result, Poll::Ready(Ok(count)) if count > 0) {
+            *self.accepted = true;
+        }
+        result
+    }
     #[cfg(feature = "alloc")]
     fn accepts_shared(&self) -> bool {
         self.writer.accepts_shared()

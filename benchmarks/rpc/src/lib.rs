@@ -10,6 +10,7 @@ use std::{io::Write, rc::Rc, time::Duration};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
 
+#[allow(dead_code)]
 mod echo_capnp {
     include!(concat!(env!("OUT_DIR"), "/echo_capnp.rs"));
 }
@@ -25,16 +26,15 @@ const MEASUREMENT_VERSION: u32 = 2;
 
 struct Echo;
 impl echo_capnp::echo::Server for Echo {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        params: echo_capnp::echo::EchoParams,
-        mut results: echo_capnp::echo::EchoResults,
-    ) -> capnp::Result<()> {
-        let params = params.get()?;
-        let mut results = results.get();
-        results.set_sequence(params.get_sequence());
-        results.set_payload(params.get_payload()?);
-        Ok(())
+        context: echo_capnp::echo::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        context.complete(|params, mut results| {
+            results.set_sequence(params.get_sequence());
+            results.set_payload(params.get_payload()?);
+            Ok(())
+        })
     }
 }
 #[tonic::async_trait]
@@ -285,6 +285,12 @@ pub fn run(protocol: Option<&str>) -> Result<()> {
             std::path::Path::new(&args[2]),
         );
     }
+    if args.first().map(String::as_str) == Some("compare-portable") && args.len() == 3 {
+        return driver::portable::compare(
+            std::path::Path::new(&args[1]),
+            std::path::Path::new(&args[2]),
+        );
+    }
     if matches!(
         args.first().map(String::as_str),
         Some("workflow-host" | "workflow-client")
@@ -342,8 +348,8 @@ pub mod driver;
 
 pub(crate) fn tcp_driver() -> Result<&'static str> {
     match std::env::var("CAPNTPROTO_BENCH_PORTABLE").as_deref() {
-        Ok("1") | Err(std::env::VarError::NotPresent) => Ok("portable"),
-        Ok("0") => Ok("legacy"),
+        Ok("1") => Ok("portable"),
+        Ok("0") | Err(std::env::VarError::NotPresent) => Ok("legacy"),
         _ => Err("CAPNTPROTO_BENCH_PORTABLE must be 0 or 1".into()),
     }
 }

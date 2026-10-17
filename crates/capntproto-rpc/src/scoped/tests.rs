@@ -7,6 +7,183 @@ use std::sync::{
 };
 
 type Remote = capability::RemotePromise<any_pointer::Owned>;
+
+#[test]
+fn metadata_revisions_preserve_late_changes_and_dynamic_projection() {
+    clients::with_growing_graph::<Rc<MetadataSource>, u8, _>(0, 8, |graph| {
+        let source = Rc::new(MetadataSource::default());
+        let route = graph
+            .endpoint(source.clone(), Location::Local)
+            .unwrap_or_else(|_| panic!("endpoint capacity"));
+        let mut hooks = ClientHooks::new(8, 1);
+        let client = hooks.export_snapshot(graph, &route).unwrap();
+        let reads = Cell::new(0);
+        for _ in 0..100 {
+            hooks.synchronize(
+                graph,
+                |owner| owner.snapshot(),
+                |owner| {
+                    reads.set(reads.get() + 1);
+                    Some(owner.clone())
+                },
+                true,
+                true,
+            );
+        }
+        assert_eq!(reads.get(), 1, "stable imports project metadata once");
+        assert!(client.hook.get_failure().is_none());
+        source
+            .update(|metadata| metadata.failure = Some(Error::overloaded("late metadata".into())));
+        hooks.synchronize(
+            graph,
+            |_| panic!("subscribed owner needs no graph projection"),
+            |_| unreachable!(),
+            true,
+            true,
+        );
+        assert_eq!(client.hook.get_failure().unwrap().extra, "late metadata");
+        hooks.collect_with_metadata(graph, |_| EndpointMetadata {
+            failure: Some(Error::failed("dynamic override".into())),
+            ..Default::default()
+        });
+        assert_eq!(client.hook.get_failure().unwrap().extra, "dynamic override");
+        hooks.synchronize(
+            graph,
+            |owner| owner.snapshot(),
+            |owner| Some(owner.clone()),
+            true,
+            true,
+        );
+        assert_eq!(client.hook.get_failure().unwrap().extra, "late metadata");
+        source.update(|metadata| metadata.failure = Some(Error::failed("later revision".into())));
+        hooks.synchronize(graph, |_| unreachable!(), |_| unreachable!(), true, true);
+        assert_eq!(client.hook.get_failure().unwrap().extra, "later revision");
+        #[cfg(all(unix, not(miri)))]
+        {
+            let (resource, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
+            let fd = Rc::new(std::os::fd::OwnedFd::from(resource));
+            assert!(client.hook.get_fd().is_none());
+            source.update(|metadata| metadata.fd = Some(fd.clone()));
+            hooks.synchronize(graph, |_| unreachable!(), |_| unreachable!(), true, true);
+            assert!(Rc::ptr_eq(&fd, &client.hook.get_fd().unwrap()));
+        }
+        drop(client);
+        hooks.collect(graph);
+        graph.release(route);
+        assert!(graph.take_retired().is_some());
+    })
+    .unwrap();
+}
+
+#[test]
+fn release_journal_tracks_final_owners_without_growing_on_drop() {
+    clients::with_growing_graph::<usize, u8, _>(0, 64, |graph| {
+        let mut hooks = ClientHooks::new(64, 1);
+        let mut owners = Vec::new();
+        for value in 0..64 {
+            let route = graph.endpoint(value, Location::Local).unwrap();
+            let client = hooks.export_snapshot(graph, &route).unwrap();
+            let alias = hooks.export_snapshot(graph, &route).unwrap();
+            graph.release(route);
+            drop(alias);
+            owners.push(client);
+        }
+        assert!(hooks.inbox.released.borrow().is_empty());
+        let capacity = hooks.inbox.released.borrow().capacity();
+        // No collection between drops: every published slot needs a record.
+        while let Some(owner) = owners.pop() {
+            drop(owner);
+            assert_eq!(hooks.inbox.released.borrow().capacity(), capacity);
+        }
+        assert!(graph.take_retired().is_none());
+        hooks.reclaim_released(graph);
+        for value in (0..64).rev() {
+            assert_eq!(graph.take_retired(), Some(value));
+        }
+        assert!(graph.is_empty());
+        // Reuse every index after consuming its old notification. A later
+        // notification must only retire the new endpoint that owns that slot.
+        for value in 64..128 {
+            let route = graph.endpoint(value, Location::Local).unwrap();
+            owners.push(hooks.export_snapshot(graph, &route).unwrap());
+            graph.release(route);
+        }
+        let last = owners.pop().unwrap();
+        drop(last);
+        hooks.reclaim_released(graph);
+        assert_eq!(graph.take_retired(), Some(127));
+        assert!(graph.take_retired().is_none());
+        for owner in owners {
+            drop(owner);
+        }
+        hooks.reclaim_released(graph);
+        for value in 64..127 {
+            assert_eq!(graph.take_retired(), Some(value));
+        }
+        assert!(graph.is_empty());
+    })
+    .unwrap();
+}
+
+#[test]
+fn release_processing_does_not_publish_promise_resolution() {
+    clients::with_growing_graph::<(), u8, _>(0, 3, |graph| {
+        let route = graph.promise(&mut None).unwrap();
+        let mut hooks = ClientHooks::new(1, 1);
+        let client = hooks.export_client(graph, &route).unwrap();
+        let mut resolved = client.hook.when_resolved();
+        let mut broken = Some(graph.endpoint((), Location::Broken).unwrap());
+        graph
+            .resolve(route.key(), &mut broken, clients::Source::Direct)
+            .unwrap();
+        hooks.reclaim_released(graph);
+        assert!(Pin::new(&mut resolved)
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending());
+        hooks.collect_with_metadata(graph, |_| EndpointMetadata {
+            failure: Some(Error::overloaded(
+                "specific failure before notification".into(),
+            )),
+            ..EndpointMetadata::default()
+        });
+        let failure = ready(&mut resolved).unwrap_err();
+        assert_eq!(failure.kind, capnp::ErrorKind::Overloaded);
+        assert_eq!(failure.extra, "specific failure before notification");
+        assert_eq!(hooks.unsettled, 0);
+        graph.release(route);
+        drop((resolved, client));
+        hooks.reclaim_released(graph);
+        assert_eq!(graph.take_retired(), Some(()));
+        assert!(graph.is_empty());
+    })
+    .unwrap();
+}
+
+#[test]
+fn metadata_callback_can_release_another_endpoint_during_collection() {
+    clients::with_growing_graph::<u32, u8, _>(0, 2, |graph| {
+        let mut hooks = ClientHooks::new(2, 1);
+        let first = graph.endpoint(1, Location::Local).unwrap();
+        let second = graph.endpoint(2, Location::Local).unwrap();
+        let client = hooks.export_snapshot(graph, &first).unwrap();
+        let mut other = Some(hooks.export_snapshot(graph, &second).unwrap());
+        graph.release(first);
+        graph.release(second);
+        hooks.collect_with_metadata(graph, |owner| {
+            assert_eq!(*owner, 1);
+            drop(other.take());
+            EndpointMetadata::default()
+        });
+        assert_eq!(graph.take_retired(), Some(2));
+        assert!(graph.take_retired().is_none());
+        drop(client);
+        hooks.reclaim_released(graph);
+        assert_eq!(graph.take_retired(), Some(1));
+        assert!(graph.is_empty());
+    })
+    .unwrap();
+}
+
 fn request(client: &capability::Client, method: u16) -> Remote {
     client
         .new_call::<any_pointer::Owned, any_pointer::Owned>(47, method, None)
@@ -34,6 +211,45 @@ struct Wakes(AtomicUsize);
 impl std::task::Wake for Wakes {
     fn wake(self: Arc<Self>) {
         self.0.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+#[test]
+fn only_an_unfinished_reply_drop_wakes_the_inbox() {
+    for state in 0..4 {
+        let mut hooks = ClientHooks::new(1, 1);
+        let (sender, receiver) = shared::channel();
+        let mut sender = Some(sender);
+        let mut reply = Reply {
+            receiver: Some(receiver),
+            shutdown: hooks.inbox.shutdown.clone(),
+            inbox: Rc::downgrade(&hooks.inbox),
+        };
+        if state == 1 || state == 2 {
+            let result = if state == 1 {
+                Ok(())
+            } else {
+                Err(Error::failed("rejected".into()))
+            };
+            sender.take().unwrap().send(result).unwrap();
+        } else if state == 3 {
+            drop(sender.take());
+        }
+        let result = Pin::new(&mut reply).poll(&mut Context::from_waker(Waker::noop()));
+        assert_eq!(result.is_pending(), state == 0);
+        if let Poll::Ready(result) = result {
+            assert_eq!(result.is_ok(), state == 1);
+        }
+        let wakes = Arc::new(Wakes(AtomicUsize::new(0)));
+        let waker = Waker::from(wakes.clone());
+        assert!(hooks
+            .poll_next(&mut Context::from_waker(&waker))
+            .is_pending());
+        drop(reply);
+        assert_eq!(wakes.0.load(Ordering::Relaxed), usize::from(state == 0));
+        if let Some(sender) = sender {
+            assert!(sender.is_closed());
+        }
     }
 }
 
@@ -255,6 +471,121 @@ fn live_import_promise_waits_for_reflected_barrier_but_snapshot_stays_remote() {
         assert!(graph.is_empty());
     })
     .unwrap();
+}
+
+#[test]
+fn unobserved_promise_routes_settle_before_the_first_resolution_waiter() {
+    for broken in [false, true] {
+        clients::with_growing_graph::<u32, u8, _>(0, 2, |graph| {
+            let pending = graph.promise(&mut None).unwrap();
+            let mut hooks = ClientHooks::new(1, 1);
+            let client = hooks.export_client(graph, &pending).unwrap();
+            let endpoint = hooks.entries[0]
+                .as_ref()
+                .unwrap()
+                .endpoint
+                .upgrade()
+                .unwrap();
+            assert!(endpoint.resolution.borrow().is_none());
+            let location = if broken {
+                Location::Broken
+            } else {
+                Location::Local
+            };
+            let mut replacement = Some(graph.endpoint(7, location).unwrap());
+            assert!(graph
+                .resolve(pending.key(), &mut replacement, clients::Source::Direct)
+                .unwrap()
+                .is_none());
+            hooks.collect(graph);
+            assert!(endpoint.settled.get());
+            assert!(endpoint.resolution.borrow().is_none());
+            assert_eq!(ready(&mut client.hook.when_resolved()).is_err(), broken);
+            drop((endpoint, client));
+            graph.release(pending);
+            hooks.collect(graph);
+            assert_eq!(graph.take_retired(), Some(7));
+            assert!(graph.is_empty());
+        })
+        .unwrap();
+    }
+}
+
+#[test]
+fn resolution_observers_retain_routes_and_wake_after_detachment() {
+    clients::with_growing_graph::<u32, u8, _>(0, 2, |graph| {
+        let pending = graph.promise(&mut None).unwrap();
+        let mut hooks = ClientHooks::new(1, 1);
+        let client = hooks.export_client(graph, &pending).unwrap();
+        let endpoint = hooks.entries[0].as_ref().unwrap().endpoint.clone();
+        let mut polled = client.hook.when_resolved();
+        let mut unpolled = client.hook.when_resolved();
+        let observed = Rc::new(Cell::new(false));
+        REENTER.with(|slot| {
+            let endpoint = endpoint.clone();
+            let observed = observed.clone();
+            *slot.borrow_mut() = Some(Box::new(move || {
+                let endpoint = endpoint.upgrade().unwrap();
+                assert!(endpoint.settled.get());
+                assert!(endpoint.resolution.try_borrow_mut().unwrap().is_none());
+                ready(&mut Hook(endpoint, None).when_resolved()).unwrap();
+                observed.set(true);
+            }));
+        });
+        let waker = Waker::from(Arc::new(Reenter));
+        assert!(Pin::new(&mut polled)
+            .poll(&mut Context::from_waker(&waker))
+            .is_pending());
+        drop(client);
+        hooks.collect(graph);
+        assert!(endpoint.upgrade().is_some());
+        let mut replacement = Some(graph.endpoint(7, Location::Local).unwrap());
+        assert!(graph
+            .resolve(pending.key(), &mut replacement, clients::Source::Direct)
+            .unwrap()
+            .is_none());
+        hooks.collect(graph);
+        assert!(observed.get());
+        ready(&mut polled).unwrap();
+        ready(&mut unpolled).unwrap();
+        drop((polled, unpolled));
+        assert!(endpoint.upgrade().is_none());
+        graph.release(pending);
+        hooks.collect(graph);
+        assert_eq!(graph.take_retired(), Some(7));
+        assert!(graph.is_empty());
+    })
+    .unwrap();
+}
+
+#[test]
+fn resolution_observers_disconnect_when_the_bridge_is_dropped() {
+    for poll_first in [false, true] {
+        clients::with_growing_graph::<u32, u8, _>(0, 1, |graph| {
+            let pending = graph.promise(&mut None).unwrap();
+            let mut hooks = ClientHooks::new(1, 1);
+            let client = hooks.export_client(graph, &pending).unwrap();
+            let endpoint = hooks.entries[0].as_ref().unwrap().endpoint.clone();
+            let mut waiter = client.hook.when_resolved();
+            let wakes = Arc::new(Wakes(AtomicUsize::new(0)));
+            let waker = Waker::from(wakes.clone());
+            if poll_first {
+                assert!(Pin::new(&mut waiter)
+                    .poll(&mut Context::from_waker(&waker))
+                    .is_pending());
+            }
+            drop(client);
+            graph.release(pending);
+            drop(hooks);
+            assert_eq!(wakes.0.load(Ordering::Relaxed) > 0, poll_first);
+            let failure = error(ready(&mut waiter));
+            assert_eq!(failure.kind, capnp::ErrorKind::Disconnected);
+            assert_eq!(failure.extra, "scoped ClientHook driver dropped");
+            drop(waiter);
+            assert!(endpoint.upgrade().is_none());
+        })
+        .unwrap();
+    }
 }
 
 #[test]
@@ -499,6 +830,310 @@ fn early_pipeline_and_capability_params_survive_parent_failure() {
         assert!(graph.is_empty());
     })
     .unwrap();
+}
+
+#[test]
+fn prepared_pipeline_interest_survives_response_drop_before_admission() {
+    for plain in [false, true] {
+        for early in [false, true] {
+            for fail in [false, true] {
+                clients::with_growing_graph::<u32, u8, _>(0, 2, |graph| {
+                    let route = graph.endpoint(7, Location::Local).unwrap();
+                    let target = graph.endpoint(8, Location::Local).unwrap();
+                    let mut hooks = ClientHooks::new(2, 3);
+                    let client = hooks.export_snapshot(graph, &route).unwrap();
+                    let cap = hooks.export_snapshot(graph, &target).unwrap();
+                    let parent = request(&client, 1);
+                    let projected = capability::Client::new(parent.pipeline.as_cap());
+                    drop(parent);
+                    let mut request =
+                        projected.new_call::<any_pointer::Owned, any_pointer::Owned>(47, 2, None);
+                    request.hook.set_hints(CallHints {
+                        no_promise_pipelining: plain,
+                        only_promise_pipeline: false,
+                    });
+                    let mut child = request.send();
+                    let mut call = next(&mut hooks);
+                    assert!(!call.is_canceled());
+                    call.results()
+                        .get()
+                        .unwrap()
+                        .set_as_capability(cap.hook.add_ref());
+                    if early {
+                        call.results().set_pipeline().unwrap();
+                    }
+                    call.complete(if fail {
+                        Err(Error::failed("parent failure".into()))
+                    } else {
+                        Ok(())
+                    });
+                    let result =
+                        Pin::new(&mut child.promise).poll(&mut Context::from_waker(Waker::noop()));
+                    if fail && !early {
+                        assert!(matches!(result, Poll::Ready(Err(_))));
+                        assert!(hooks
+                            .poll_next(&mut Context::from_waker(Waker::noop()))
+                            .is_pending());
+                    } else {
+                        assert!(result.is_pending());
+                        let mut child_call = next(&mut hooks);
+                        assert_eq!(hooks.target(&child_call).unwrap().key(), target.key());
+                        child_call
+                            .results()
+                            .get()
+                            .unwrap()
+                            .set_as("child result")
+                            .unwrap();
+                        child_call.complete(Ok(()));
+                        assert_eq!(
+                            ready(&mut child.promise)
+                                .unwrap()
+                                .get()
+                                .unwrap()
+                                .get_as::<capnp::text::Reader>()
+                                .unwrap(),
+                            "child result"
+                        );
+                    }
+                    drop((child, projected, cap, client));
+                    assert_eq!(hooks.inbox.live_calls.get(), 0);
+                    hooks.collect(graph);
+                    hooks.close(graph, Error::disconnected("done".into()));
+                    graph.release(route);
+                    graph.release(target);
+                    while graph.take_retired().is_some() {}
+                    assert!(graph.is_empty());
+                })
+                .unwrap();
+            }
+        }
+    }
+}
+
+#[test]
+fn prepared_pipeline_rejection_releases_credit_while_pipeline_is_retained() {
+    clients::with_growing_graph::<u32, u8, _>(0, 1, |graph| {
+        let route = graph.endpoint(7, Location::Remote(1)).unwrap();
+        let admission = crate::admission::Admission::new(1);
+        let mut hooks = ClientHooks::new(1, 0).with_admission(admission.clone());
+        let client = hooks.export_snapshot(graph, &route).unwrap();
+        let unsent = client.new_call::<any_pointer::Owned, any_pointer::Owned>(47, 1, None);
+        assert_eq!(admission.used(), 1);
+        let mut rejected = unsent.send();
+        assert_eq!(admission.used(), 0);
+        assert_eq!(
+            error(ready(&mut rejected.promise)).kind,
+            capnp::ErrorKind::Overloaded
+        );
+        drop((rejected, client));
+        hooks.close(graph, Error::disconnected("done".into()));
+        graph.release(route);
+        while graph.take_retired().is_some() {}
+        assert!(graph.is_empty());
+    })
+    .unwrap();
+}
+
+#[test]
+fn prepared_pipeline_supports_late_projection_after_response_is_consumed() {
+    clients::with_growing_graph::<u32, u8, _>(0, 2, |graph| {
+        let route = graph.endpoint(7, Location::Local).unwrap();
+        let target = graph.endpoint(8, Location::Local).unwrap();
+        let mut hooks = ClientHooks::new(2, 3);
+        let client = hooks.export_snapshot(graph, &route).unwrap();
+        let cap = hooks.export_snapshot(graph, &target).unwrap();
+        let mut parent = request(&client, 1);
+        let mut call = next(&mut hooks);
+        call.results()
+            .get()
+            .unwrap()
+            .set_as_capability(cap.hook.add_ref());
+        call.complete(Ok(()));
+        drop(ready(&mut parent.promise).unwrap());
+        drop(parent.promise);
+        let projected = capability::Client::new(parent.pipeline.as_cap());
+        drop(parent.pipeline);
+        let mut child = request(&projected, 2);
+        let child_call = next(&mut hooks);
+        assert_eq!(hooks.target(&child_call).unwrap().key(), target.key());
+        child_call.complete(Ok(()));
+        ready(&mut child.promise).unwrap();
+        drop((child, projected, cap, client));
+        assert_eq!(hooks.inbox.live_calls.get(), 0);
+        hooks.collect(graph);
+        hooks.close(graph, Error::disconnected("done".into()));
+        graph.release(route);
+        graph.release(target);
+        while graph.take_retired().is_some() {}
+        assert!(graph.is_empty());
+    })
+    .unwrap();
+}
+
+#[test]
+fn deferred_pipeline_requests_preserve_order_and_cancel_before_or_after_forwarding() {
+    clients::with_growing_graph::<u32, u8, _>(0, 2, |graph| {
+        let route = graph.endpoint(7, Location::Local).unwrap();
+        let target = graph.endpoint(8, Location::Local).unwrap();
+        let mut hooks = ClientHooks::new(2, 5);
+        let client = hooks.export_snapshot(graph, &route).unwrap();
+        let cap = hooks.export_snapshot(graph, &target).unwrap();
+        let parent = request(&client, 1);
+        let projected = capability::Client::new(parent.pipeline.as_cap());
+        let send = |method, plain| {
+            let mut call =
+                projected.new_call::<any_pointer::Owned, any_pointer::Owned>(47, method, None);
+            call.hook.set_hints(CallHints {
+                no_promise_pipelining: plain,
+                only_promise_pipeline: false,
+            });
+            call.get()
+                .set_as::<capnp::text::Owned>("retained parameter")
+                .unwrap();
+            call.send()
+        };
+        let mut first = send(2, false);
+        let mut second = send(3, true);
+        drop(send(4, true));
+        let mut last = send(5, true);
+        let mut canceled_after_forwarding = Some(send(6, true));
+        drop((parent, projected));
+        let mut call = next(&mut hooks);
+        call.results()
+            .get()
+            .unwrap()
+            .set_as_capability(cap.hook.add_ref());
+        call.complete(Ok(()));
+        assert!(Pin::new(&mut second.promise)
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending());
+        for method in [2, 3, 5, 6] {
+            let mut call = next(&mut hooks);
+            assert_eq!(call.method_id(), method);
+            assert_eq!(hooks.target(&call).unwrap().key(), target.key());
+            assert_eq!(
+                call.params()
+                    .unwrap()
+                    .get_as::<capnp::text::Reader>()
+                    .unwrap(),
+                "retained parameter"
+            );
+            if method != 2 {
+                assert!(matches!(call.completion, CallCompletion::Response(_)));
+            }
+            if method == 6 {
+                // The request has forwarded after all public parent/projected
+                // owners dropped. Its response still owns cancellation even
+                // though forwarding borrowed the resolved target hook.
+                drop(canceled_after_forwarding.take());
+                assert!(call.is_canceled());
+                call.complete(Err(Error::disconnected("canceled child".into())));
+                continue;
+            }
+            call.results()
+                .get()
+                .unwrap()
+                .set_as::<capnp::text::Owned>("reply")
+                .unwrap();
+            call.complete(Ok(()));
+        }
+        for promise in [&mut first.promise, &mut second.promise, &mut last.promise] {
+            assert_eq!(
+                ready(promise)
+                    .unwrap()
+                    .get()
+                    .unwrap()
+                    .get_as::<capnp::text::Reader>()
+                    .unwrap(),
+                "reply"
+            );
+        }
+        assert!(hooks
+            .poll_next(&mut Context::from_waker(Waker::noop()))
+            .is_pending());
+        drop((first, second, last, cap, client));
+        assert_eq!(hooks.inbox.live_calls.get(), 0);
+        hooks.collect(graph);
+        hooks.close(graph, Error::disconnected("done".into()));
+        graph.release(route);
+        graph.release(target);
+        while graph.take_retired().is_some() {}
+        assert!(graph.is_empty());
+    })
+    .unwrap();
+}
+
+#[test]
+fn prepared_pipeline_wakes_each_interest_and_cancels_after_the_last_drop() {
+    for keep_response in [false, true] {
+        clients::with_growing_graph::<u32, u8, _>(0, 2, |graph| {
+            let route = graph.endpoint(7, Location::Local).unwrap();
+            let target = graph.endpoint(8, Location::Local).unwrap();
+            let mut hooks = ClientHooks::new(2, 3);
+            let client = hooks.export_snapshot(graph, &route).unwrap();
+            let cap = hooks.export_snapshot(graph, &target).unwrap();
+            let parent = request(&client, 1);
+            let projected = capability::Client::new(parent.pipeline.as_cap());
+            let mut child = Some(request(&projected, 2));
+            let mut response = Some(parent.promise);
+            drop((parent.pipeline, projected));
+            let response_wakes = Arc::new(Wakes(AtomicUsize::new(0)));
+            let child_wakes = Arc::new(Wakes(AtomicUsize::new(0)));
+            assert!(Pin::new(response.as_mut().unwrap())
+                .poll(&mut Context::from_waker(&Waker::from(
+                    response_wakes.clone()
+                )))
+                .is_pending());
+            assert!(Pin::new(&mut child.as_mut().unwrap().promise)
+                .poll(&mut Context::from_waker(&Waker::from(child_wakes.clone())))
+                .is_pending());
+            if keep_response {
+                drop(child.take());
+            } else {
+                drop(response.take());
+            }
+            let mut call = next(&mut hooks);
+            assert!(!call.is_canceled());
+            call.results()
+                .get()
+                .unwrap()
+                .set_as_capability(cap.hook.add_ref());
+            call.complete(Ok(()));
+            if keep_response {
+                assert!(response_wakes.0.load(Ordering::Relaxed) > 0);
+                let received = ready(response.as_mut().unwrap()).unwrap();
+                let received: capability::Client =
+                    received.get().unwrap().get_as_capability().unwrap();
+                assert_eq!(received.hook.get_ptr(), cap.hook.get_ptr());
+            } else {
+                assert!(child_wakes.0.load(Ordering::Relaxed) > 0);
+                assert!(Pin::new(&mut child.as_mut().unwrap().promise)
+                    .poll(&mut Context::from_waker(Waker::noop()))
+                    .is_pending());
+                let child_call = next(&mut hooks);
+                assert_eq!(hooks.target(&child_call).unwrap().key(), target.key());
+                child_call.complete(Ok(()));
+                ready(&mut child.as_mut().unwrap().promise).unwrap();
+            }
+            drop((response, child));
+            let abandoned = request(&client, 3);
+            let abandoned_call = next(&mut hooks);
+            assert!(!abandoned_call.is_canceled());
+            drop(abandoned.promise);
+            assert!(!abandoned_call.is_canceled());
+            drop(abandoned.pipeline);
+            assert!(abandoned_call.is_canceled());
+            drop((abandoned_call, cap, client));
+            assert_eq!(hooks.inbox.live_calls.get(), 0);
+            hooks.collect(graph);
+            hooks.close(graph, Error::disconnected("done".into()));
+            graph.release(route);
+            graph.release(target);
+            while graph.take_retired().is_some() {}
+            assert!(graph.is_empty());
+        })
+        .unwrap();
+    }
 }
 
 #[test]
@@ -929,6 +1564,54 @@ fn response_context_callbacks_cannot_bypass_capacity_or_enqueue_after_close() {
         drop(client);
         hooks.close(graph, Error::disconnected("done".into()));
         graph.release(route);
+    })
+    .unwrap();
+}
+
+#[test]
+fn prepared_method_headers_preserve_parameters_after_cache_saturation() {
+    clients::with_growing_graph::<u32, u8, _>(0, 1, |graph| {
+        let route = graph.endpoint(7, Location::Remote(1)).unwrap();
+        let mut hooks = ClientHooks::new(1, 1);
+        let client = hooks.export_snapshot(graph, &route).unwrap();
+        for index in (0..8).chain((0..8).rev()) {
+            let interface = 47 + index / 3;
+            let method = (index % 3) as u16;
+            let text = format!("method {index}");
+            let mut request = client.hook.new_call(interface, method, None);
+            request.get().set_as::<capnp::text::Owned>(&text).unwrap();
+            let mut reply = request.send();
+            let call = next(&mut hooks);
+            let message = call.params.prepared_call().unwrap().message();
+            let crate::rpc_capnp::message::Call(wire) = message
+                .get_root_as_reader::<crate::rpc_capnp::message::Reader>()
+                .unwrap()
+                .which()
+                .unwrap()
+            else {
+                panic!("prepared Call");
+            };
+            let wire = wire.unwrap();
+            assert_eq!(
+                (wire.get_interface_id(), wire.get_method_id()),
+                (interface, method)
+            );
+            assert_eq!(
+                wire.get_params()
+                    .unwrap()
+                    .get_content()
+                    .get_as::<capnp::text::Reader>()
+                    .unwrap(),
+                text
+            );
+            call.complete(Ok(()));
+            ready(&mut reply.promise).unwrap();
+        }
+        drop(client);
+        graph.release(route);
+        hooks.collect(graph);
+        assert_eq!(graph.take_retired(), Some(7));
+        assert!(graph.is_empty());
     })
     .unwrap();
 }

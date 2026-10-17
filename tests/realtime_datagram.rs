@@ -311,22 +311,24 @@ async fn checked_configuration_preserves_datagram_import_bounds() {
         payload: u32,
     }
     impl datagram_snapshots::Server for Advertisement {
-        async fn describe(
+        fn describe(
             self: Rc<Self>,
-            _: datagram_snapshots::DescribeParams,
-            mut result: datagram_snapshots::DescribeResults,
-        ) -> capnp::Result<()> {
-            let mut result = result.get();
-            result.set_token(&[1; 32]);
-            let mut c: config::Builder<'_> = result.init_config();
-            c.set_clock_domain(capnp::text::Reader(&self.domain));
-            c.set_clock_skew(0);
-            c.set_keys(1);
-            c.set_capacity(1);
-            c.set_max_sequence(self.sequence);
-            c.set_max_payload_bytes(self.payload);
-            c.set_max_waiters(1);
-            Ok(())
+            context: datagram_snapshots::DescribeContext<'_>,
+        ) -> capnp::capability::Promise<(), capnp::Error> {
+            let (_, mut result) = context.into_owned();
+            capnp::capability::Promise::from_future(async move {
+                let mut result = result.get();
+                result.set_token(&[1; 32]);
+                let mut c: config::Builder<'_> = result.init_config();
+                c.set_clock_domain(capnp::text::Reader(&self.domain));
+                c.set_clock_skew(0);
+                c.set_keys(1);
+                c.set_capacity(1);
+                c.set_max_sequence(self.sequence);
+                c.set_max_payload_bytes(self.payload);
+                c.set_max_waiters(1);
+                Ok(())
+            })
         }
     }
     tokio::task::LocalSet::new()

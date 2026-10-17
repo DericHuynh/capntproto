@@ -5,7 +5,7 @@ use core::{
     pin::Pin,
     task::{ready, Context, Poll},
 };
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, Weak};
 
 use capnp::{
     message::{Reader, ReaderOptions, ReaderSegments},
@@ -16,6 +16,12 @@ use futures_util::AsyncRead;
 const DEFAULT_BUFFER_WORDS: usize = 8192;
 // Every legal segment table fits, even when a frame's body needs direct I/O.
 const MIN_BUFFER_WORDS: usize = capnp::serialize::SEGMENTS_COUNT_LIMIT / 2;
+// Borrowed frames have no escaping allocation owner. Reuse one completed spill
+// for the next frame, bounded independently of potentially unlimited readers.
+const MAX_CACHED_SPILL_WORDS: usize = 1 << 20;
+// A completed moderate borrowed frame can become the next read buffer. This
+// avoids a prefix read followed by a direct read for every repeated payload.
+const MAX_PROMOTED_BUFFER_WORDS: usize = 16 * 1024;
 
 struct Frame {
     // Like C++'s segment0, the common segment needs no tagged lookup or heap
@@ -136,15 +142,147 @@ pub struct BufferedSegments {
     frame: Frame,
 }
 enum Storage {
-    Shared(Arc<Vec<Word>>),
+    SharedWords(Arc<Vec<Word>>),
+    SharedBytes(Arc<Vec<u8>>),
     Owned(Box<[Word]>),
+    Recycled(Box<RecycledSpill>),
 }
-impl core::ops::Deref for Storage {
-    type Target = [Word];
-    fn deref(&self) -> &[Word] {
+// Only released owning frames may return storage. A weak cache reference keeps
+// retained readers independent of the stream and does not prolong its cache.
+struct RecycledSpill {
+    words: Vec<Word>,
+    cache: Weak<Mutex<Vec<Word>>>,
+}
+impl Drop for RecycledSpill {
+    fn drop(&mut self) {
+        if self.words.capacity() > MAX_CACHED_SPILL_WORDS {
+            return;
+        }
+        if let Some(cache) = self.cache.upgrade() {
+            let mut cached = cache.lock().unwrap();
+            if self.words.capacity() > cached.capacity() {
+                core::mem::swap(&mut self.words, &mut cached);
+            }
+        }
+    }
+}
+impl Storage {
+    fn bytes(&self) -> &[u8] {
         match self {
-            Self::Shared(words) => words,
-            Self::Owned(words) => words,
+            Self::SharedWords(words) => Word::words_to_bytes(words),
+            Self::SharedBytes(bytes) => bytes,
+            Self::Owned(words) => Word::words_to_bytes(words),
+            Self::Recycled(spill) => Word::words_to_bytes(&spill.words),
+        }
+    }
+}
+
+// A concrete immutable byte allocation can cross the framing/pool boundary
+// without pointer casts. Padding supplies word alignment even when Vec<u8>'s
+// allocator promises only byte alignment.
+#[derive(Clone)]
+struct AlignedBuffer {
+    allocation: Arc<Vec<u8>>,
+    offset: usize,
+    length: usize,
+}
+impl AlignedBuffer {
+    fn new(words: usize) -> Self {
+        let length = words * 8;
+        let allocation = vec![0; length + 7];
+        let offset = allocation.as_ptr().align_offset(8);
+        Self {
+            allocation: Arc::new(allocation),
+            offset,
+            length,
+        }
+    }
+    fn len(&self) -> usize {
+        self.length / 8
+    }
+    fn bytes(&self) -> &[u8] {
+        &self.allocation[self.offset..self.offset + self.length]
+    }
+    fn bytes_mut(&mut self) -> &mut [u8] {
+        &mut Arc::get_mut(&mut self.allocation).expect("exclusive receive buffer")
+            [self.offset..self.offset + self.length]
+    }
+    fn exclusive(&self) -> bool {
+        Arc::strong_count(&self.allocation) == 1 && Arc::weak_count(&self.allocation) == 0
+    }
+}
+// Ordinary owning/borrowed reads keep their existing word allocation and
+// spill promotion. Only explicit immutable byte sharing changes representation.
+enum ReceiveBuffer {
+    Words(Arc<Vec<Word>>),
+    Bytes(AlignedBuffer),
+}
+impl ReceiveBuffer {
+    fn len(&self) -> usize {
+        match self {
+            Self::Words(words) => words.len(),
+            Self::Bytes(bytes) => bytes.len(),
+        }
+    }
+    #[cfg(test)]
+    fn capacity(&self) -> usize {
+        match self {
+            Self::Words(words) => words.capacity(),
+            Self::Bytes(bytes) => (bytes.allocation.capacity() - 7) / 8,
+        }
+    }
+    fn bytes(&self) -> &[u8] {
+        match self {
+            Self::Words(words) => Word::words_to_bytes(words),
+            Self::Bytes(bytes) => bytes.bytes(),
+        }
+    }
+    fn bytes_mut(&mut self) -> &mut [u8] {
+        match self {
+            Self::Words(words) => {
+                Word::words_to_bytes_mut(Arc::get_mut(words).expect("exclusive receive buffer"))
+            }
+            Self::Bytes(bytes) => bytes.bytes_mut(),
+        }
+    }
+    fn exclusive(&self) -> bool {
+        match self {
+            Self::Words(words) => Arc::strong_count(words) == 1,
+            Self::Bytes(bytes) => bytes.exclusive(),
+        }
+    }
+    fn segments(&self, start: usize) -> (Storage, usize) {
+        match self {
+            Self::Words(words) => (Storage::SharedWords(words.clone()), start),
+            Self::Bytes(bytes) => (
+                Storage::SharedBytes(bytes.allocation.clone()),
+                bytes.offset + start,
+            ),
+        }
+    }
+    fn shared_bytes(&mut self) -> &AlignedBuffer {
+        if let Self::Words(words) = self {
+            let mut bytes = AlignedBuffer::new(words.len());
+            bytes
+                .bytes_mut()
+                .copy_from_slice(Word::words_to_bytes(words));
+            *self = Self::Bytes(bytes);
+        }
+        let Self::Bytes(bytes) = self else {
+            unreachable!()
+        };
+        bytes
+    }
+    fn promote(&mut self, spill: &mut Vec<Word>) {
+        match self {
+            Self::Words(words) => core::mem::swap(Arc::get_mut(words).unwrap(), spill),
+            Self::Bytes(bytes) => {
+                let mut promoted = AlignedBuffer::new(spill.len());
+                promoted
+                    .bytes_mut()
+                    .copy_from_slice(Word::words_to_bytes(spill));
+                *bytes = promoted;
+            }
         }
     }
 }
@@ -152,19 +290,21 @@ impl BufferedSegments {
     /// The complete immutable stream frame, including its original segment
     /// table. It remains valid for exactly the same lifetime as these segments.
     pub fn framed_bytes(&self) -> &[u8] {
-        &Word::words_to_bytes(&self.storage)[self.start..self.start + self.frame.bytes]
+        &self.storage.bytes()[self.start..self.start + self.frame.bytes]
     }
 
     /// True when this message holds the stream's reusable receive buffer.
     pub fn is_shared_buffer(&self) -> bool {
-        matches!(self.storage, Storage::Shared(_))
+        matches!(
+            self.storage,
+            Storage::SharedWords(_) | Storage::SharedBytes(_)
+        )
     }
 
     fn detach(mut self) -> Self {
         let mut storage = Word::allocate_zeroed_vec(self.frame.bytes / 8);
-        Word::words_to_bytes_mut(&mut storage).copy_from_slice(
-            &Word::words_to_bytes(&self.storage)[self.start..self.start + self.frame.bytes],
-        );
+        Word::words_to_bytes_mut(&mut storage)
+            .copy_from_slice(&self.storage.bytes()[self.start..self.start + self.frame.bytes]);
         // Detached frames have one owner. Only views into the stream's receive
         // buffer need reference counting and a separate Arc allocation.
         self.storage = Storage::Owned(storage.into_boxed_slice());
@@ -180,9 +320,11 @@ impl ReaderSegments for BufferedSegments {
             // Owned frames always start at zero (detach, spill or scratch
             // conversion). Only shared receive views need an additional offset.
             Storage::Owned(words) => &Word::words_to_bytes(words)[start..end],
-            Storage::Shared(words) => {
+            Storage::Recycled(spill) => &Word::words_to_bytes(&spill.words)[start..end],
+            Storage::SharedWords(words) => {
                 &Word::words_to_bytes(words)[self.start + start..self.start + end]
             }
+            Storage::SharedBytes(bytes) => &bytes[self.start + start..self.start + end],
         })
     }
     fn len(&self) -> usize {
@@ -242,9 +384,8 @@ impl BufferedSegments {
     fn retain(self, scratch: Option<&mut [Word]>) -> BufferedScratchSegments<'_> {
         if let Some(words) = scratch.filter(|words| words.len() >= self.frame.bytes / 8) {
             let words = &mut words[..self.frame.bytes / 8];
-            Word::words_to_bytes_mut(words).copy_from_slice(
-                &Word::words_to_bytes(&self.storage)[self.start..self.start + self.frame.bytes],
-            );
+            Word::words_to_bytes_mut(words)
+                .copy_from_slice(&self.storage.bytes()[self.start..self.start + self.frame.bytes]);
             BufferedScratchSegments(ScratchStorage::Borrowed {
                 words,
                 frame: self.frame,
@@ -260,6 +401,10 @@ struct Spill {
     filled: usize,
     frame: Frame,
 }
+struct Streaming {
+    bytes: usize,
+    position: usize,
+}
 
 /// Reads multiple frames per underlying read. Completed buffered frames are
 /// classified by the caller: short-lived messages share the buffer; others are
@@ -273,14 +418,18 @@ struct Spill {
 pub struct BufferedRead<R> {
     input: R,
     options: ReaderOptions,
-    buffer: Arc<Vec<Word>>,
+    buffer: ReceiveBuffer,
+    shared_borrowed: bool,
     begin: usize,
     end: usize,
     frame: Option<Frame>,
     spill: Option<Spill>,
+    spare: Vec<Word>,
+    owned_spare: Option<Arc<Mutex<Vec<Word>>>>,
     terminal: Option<Result<()>>,
     consumed: u64,
     borrowed: bool,
+    streaming: Option<Streaming>,
     read_ahead: fn(&R) -> bool,
 }
 impl<R: AsyncRead + Unpin> BufferedRead<R> {
@@ -292,8 +441,19 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
     /// The buffer must contain at least 256 words (2 KiB), enough for every legal
     /// segment table. The configured traversal limit is checked before allocating
     /// independent message storage, and counts payload words, excluding framing.
+    /// Borrowed-frame reads may grow this buffer to fit a completed frame up to
+    /// 128 KiB; streamed bursts can also grow it to this bound. Owning reads do
+    /// not grow it. Larger borrowed frames use a separate
+    /// reusable spill allocation, bounded as documented by `finish_borrowed_frame`.
+    /// Owning reads lazily cache one released spill of at most 8 MiB. Live
+    /// readers never share that allocation with a subsequent receive.
     pub fn with_buffer_size(input: R, options: ReaderOptions, words: usize) -> Result<Self> {
-        if words < MIN_BUFFER_WORDS || words.checked_mul(8).is_none() {
+        if words < MIN_BUFFER_WORDS
+            || words
+                .checked_mul(8)
+                .and_then(|bytes| bytes.checked_add(7))
+                .is_none()
+        {
             return Err(Error::failed(
                 "receive buffer must hold at least 256 words and fit in usize".into(),
             ));
@@ -301,14 +461,18 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
         Ok(Self {
             input,
             options,
-            buffer: Arc::new(Word::allocate_zeroed_vec(words)),
+            buffer: ReceiveBuffer::Words(Arc::new(Word::allocate_zeroed_vec(words))),
+            shared_borrowed: false,
             begin: 0,
             end: 0,
             frame: None,
             spill: None,
+            spare: Vec::new(),
+            owned_spare: None,
             terminal: None,
             consumed: 0,
             borrowed: false,
+            streaming: None,
             read_ahead: |_| true,
         })
     }
@@ -335,7 +499,17 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
     /// Whether a returned message still owns a view into the receive buffer.
     /// Such a view must be dropped before another read can begin.
     pub fn has_outstanding_short_lived_message(&self) -> bool {
-        self.borrowed || Arc::strong_count(&self.buffer) != 1
+        self.borrowed || self.streaming.is_some() || !self.buffer.exclusive()
+    }
+
+    /// Whether the next complete frame is already buffered, without reading or
+    /// transferring its ownership. Errors remain for the ordinary receive path.
+    pub fn has_buffered_next_frame(&self) -> bool {
+        if self.terminal.is_some() || self.has_outstanding_short_lived_message() {
+            return false;
+        }
+        let bytes = &self.buffer.bytes()[self.begin..self.end];
+        matches!(Frame::parse(bytes, self.options), Ok(Some(frame)) if frame.bytes <= bytes.len())
     }
 
     fn advance(&mut self, bytes: usize) -> Result<()> {
@@ -423,6 +597,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
         scratch: &mut Option<&'a mut [Word]>,
         classify: &mut Option<impl FnOnce(&Reader<BufferedSegments>) -> Result<bool>>,
     ) -> Poll<Result<Option<Reader<BufferedScratchSegments<'a>>>>> {
+        self.prepare_shared_buffer();
         if self.has_outstanding_short_lived_message() {
             return Poll::Ready(Err(Error::failed(
                 "previous short-lived message is still alive".into(),
@@ -450,14 +625,20 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
         scratch: &mut Option<&'a mut [Word]>,
         classify: &mut Option<impl FnOnce(&Reader<BufferedSegments>) -> Result<bool>>,
     ) -> Poll<Result<Option<Reader<BufferedScratchSegments<'a>>>>> {
-        if !ready!(self.poll_prepare_frame(cx))? {
+        if !ready!(self.poll_prepare_frame(cx, false, false))? {
             return Poll::Ready(Ok(None));
         }
         if let Some(spill) = self.spill.take() {
             self.advance(spill.frame.bytes)?;
+            let cache = self
+                .owned_spare
+                .get_or_insert_with(|| Arc::new(Mutex::new(Vec::new())));
             return Poll::Ready(Ok(Some(Reader::new(
                 BufferedScratchSegments(ScratchStorage::Buffered(BufferedSegments {
-                    storage: Storage::Owned(spill.storage.into_boxed_slice()),
+                    storage: Storage::Recycled(Box::new(RecycledSpill {
+                        words: spill.storage,
+                        cache: Arc::downgrade(cache),
+                    })),
                     start: 0,
                     frame: spill.frame,
                 })),
@@ -466,10 +647,11 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
         }
         let frame = self.frame.take().expect("prepared buffered frame");
         let bytes = frame.bytes;
+        let (storage, start) = self.buffer.segments(self.begin);
         let view = Reader::new(
             BufferedSegments {
-                storage: Storage::Shared(self.buffer.clone()),
-                start: self.begin,
+                storage,
+                start,
                 frame,
             },
             self.options,
@@ -501,6 +683,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
     /// receive APIs reject an outstanding borrowed frame without consuming it.
     pub fn poll_borrowed_frame(&mut self, cx: &mut Context<'_>) -> Poll<Result<Option<&[u8]>>> {
         if !self.borrowed {
+            self.prepare_shared_buffer();
             if self.has_outstanding_short_lived_message() {
                 return Poll::Ready(Err(Error::failed(
                     "previous short-lived message is still alive".into(),
@@ -509,7 +692,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
             if let Some(terminal) = &self.terminal {
                 return Poll::Ready(terminal.clone().map(|()| None));
             }
-            let result = ready!(self.poll_prepare_frame(cx)).and_then(|ready| {
+            let result = ready!(self.poll_prepare_frame(cx, true, false)).and_then(|ready| {
                 if ready {
                     let bytes = self.spill.as_ref().map_or_else(
                         || self.frame.as_ref().expect("prepared frame").bytes,
@@ -545,29 +728,204 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
             Some(spill) => &Word::words_to_bytes(&spill.storage)[..spill.frame.bytes],
             None => {
                 let bytes = self.frame.as_ref().expect("borrowed frame").bytes;
-                &Word::words_to_bytes(&self.buffer)[self.begin..self.begin + bytes]
+                &self.buffer.bytes()[self.begin..self.begin + bytes]
             }
         })
     }
 
-    /// Release a borrowed frame. Calling this without a frame leaves partial
-    /// input untouched, so canceled polls can resume normally.
-    pub fn finish_borrowed_frame(&mut self) {
-        if core::mem::take(&mut self.borrowed) && self.spill.take().is_none() {
-            let bytes = self.frame.take().expect("borrowed frame").bytes;
-            self.consume_buffered(bytes);
+    /// Retain an immutable complete frame without consuming it. This owning
+    /// API permits later reads after finish_borrowed_frame: a still-retained
+    /// allocation is detached before more bytes are read. Unconsumed successor
+    /// bytes are preserved. Ordinary short-lived readers retain their stricter
+    /// no-overlap contract. Incomplete and spill frames return None.
+    pub fn share_borrowed_frame(&mut self) -> Option<(Arc<Vec<u8>>, core::ops::Range<usize>)> {
+        if !self.borrowed || self.spill.is_some() {
+            return None;
+        }
+        let length = self.frame.as_ref()?.bytes;
+        let bytes = self.buffer.shared_bytes();
+        let start = bytes.offset + self.begin;
+        self.shared_borrowed = true;
+        Some((bytes.allocation.clone(), start..start + length))
+    }
+
+    fn prepare_shared_buffer(&mut self) {
+        if !self.borrowed && self.streaming.is_none() && self.shared_borrowed {
+            self.shared_borrowed = false;
+            if !self.buffer.exclusive() {
+                let mut replacement = AlignedBuffer::new(self.buffer.len());
+                let remaining = self.end - self.begin;
+                replacement.bytes_mut()[..remaining]
+                    .copy_from_slice(&self.buffer.bytes()[self.begin..self.end]);
+                self.buffer = ReceiveBuffer::Bytes(replacement);
+                self.begin = 0;
+                self.end = remaining;
+            }
         }
     }
 
-    // Both owning and borrowing APIs use exactly the same framing, buffering,
-    // read-ahead policy and error checks. Leave completed storage in place.
-    fn poll_prepare_frame(&mut self, cx: &mut Context<'_>) -> Poll<Result<bool>> {
+    /// Prepare one frame for caller-owned storage. Complete small frames remain
+    /// available through `borrowed_frame`; an incomplete frame above
+    /// 128 KiB exposes only its validated length, then `poll_stream_frame` copies
+    /// its buffered prefix and reads the body directly into the caller's buffer.
+    /// No spill allocation is needed. Finish before preparing another frame.
+    pub fn poll_stream_frame_size(&mut self, cx: &mut Context<'_>) -> Poll<Result<Option<usize>>> {
+        if let Some(Err(error)) = &self.terminal {
+            return Poll::Ready(Err(error.clone()));
+        }
+        if let Some(streaming) = &self.streaming {
+            return Poll::Ready(Ok(Some(streaming.bytes)));
+        }
+        if self.borrowed {
+            return Poll::Ready(Ok(self.borrowed_frame().map(<[u8]>::len)));
+        }
+        self.prepare_shared_buffer();
+        if self.has_outstanding_short_lived_message() {
+            return Poll::Ready(Err(Error::failed(
+                "previous short-lived message is still alive".into(),
+            )));
+        }
+        if let Some(terminal) = &self.terminal {
+            return Poll::Ready(terminal.clone().map(|()| None));
+        }
+        let result = ready!(self.poll_prepare_frame(cx, true, true));
+        match result {
+            Ok(true) => {
+                let bytes = self.spill.as_ref().map_or_else(
+                    || self.frame.as_ref().expect("prepared frame").bytes,
+                    |spill| spill.frame.bytes,
+                );
+                if self.spill.is_none() && self.end - self.begin < bytes {
+                    self.streaming = Some(Streaming { bytes, position: 0 });
+                } else {
+                    if let Err(error) = self.advance(bytes) {
+                        self.terminal = Some(Err(error.clone()));
+                        return Poll::Ready(Err(error));
+                    }
+                    self.borrowed = true;
+                }
+                Poll::Ready(Ok(Some(bytes)))
+            }
+            Ok(false) => {
+                self.terminal = Some(Ok(()));
+                Poll::Ready(Ok(None))
+            }
+            Err(error) => {
+                self.spill = None;
+                self.frame = None;
+                self.terminal = Some(Err(error.clone()));
+                Poll::Ready(Err(error))
+            }
+        }
+    }
+
+    /// Continue an incomplete frame prepared above, retaining progress across
+    /// Pending. Reads never cross its boundary. The caller retains all returned
+    /// bytes until the complete frame has been validated and admitted.
+    pub fn poll_stream_frame(
+        &mut self,
+        cx: &mut Context<'_>,
+        output: &mut [u8],
+    ) -> Poll<Result<usize>> {
+        if let Some(Err(error)) = &self.terminal {
+            return Poll::Ready(Err(error.clone()));
+        }
+        let Some(streaming) = &mut self.streaming else {
+            return Poll::Ready(Err(Error::failed("no streaming frame prepared".into())));
+        };
+        let remaining = streaming.bytes - streaming.position;
+        let length = remaining.min(output.len());
+        let output = &mut output[..length];
+        if output.is_empty() {
+            return Poll::Ready(Ok(0));
+        }
+        let prefix = self.end - self.begin;
+        let count = if streaming.position < prefix {
+            let count = output.len().min(prefix - streaming.position);
+            let start = self.begin + streaming.position;
+            output[..count].copy_from_slice(&self.buffer.bytes()[start..start + count]);
+            count
+        } else {
+            match ready!(Pin::new(&mut self.input).poll_read(cx, output)) {
+                Ok(0) => {
+                    let error = Error::from_kind(ErrorKind::PrematureEndOfFile);
+                    self.terminal = Some(Err(error.clone()));
+                    return Poll::Ready(Err(error));
+                }
+                Ok(count) => count,
+                Err(error) => {
+                    let error = Error::from(error);
+                    self.terminal = Some(Err(error.clone()));
+                    return Poll::Ready(Err(error));
+                }
+            }
+        };
+        streaming.position += count;
+        if streaming.position == streaming.bytes {
+            let bytes = streaming.bytes;
+            if let Err(error) = self.advance(bytes) {
+                self.terminal = Some(Err(error.clone()));
+                return Poll::Ready(Err(error));
+            }
+        }
+        Poll::Ready(Ok(count))
+    }
+
+    /// Release a borrowed or streamed frame. Abandoning a prepared stream before
+    /// its body has been consumed is terminal; an unread suffix cannot become a
+    /// new header. Calling this before either API has prepared a frame leaves
+    /// partial input untouched, so canceled preparation can resume. A completed spill
+    /// of at most 128 KiB can replace a smaller receive buffer; another allocation
+    /// of at most 8 MiB is retained for reuse until the stream is dropped. Its
+    /// contents cannot be observed until a subsequent complete read overwrites
+    /// the entire exposed frame; owning receive APIs still transfer their storage.
+    pub fn finish_borrowed_frame(&mut self) {
+        if let Some(streaming) = self.streaming.take() {
+            if streaming.position != streaming.bytes {
+                self.terminal = Some(Err(Error::failed(
+                    "incomplete streaming frame abandoned".into(),
+                )));
+            }
+            self.frame = None;
+            self.consume_buffered(self.end - self.begin);
+        }
+        if core::mem::take(&mut self.borrowed) {
+            if let Some(mut spill) = self.spill.take() {
+                if spill.storage.len() > self.buffer.len()
+                    && spill.storage.capacity() <= MAX_PROMOTED_BUFFER_WORDS
+                {
+                    // Borrowing began with an exclusive receive buffer, and no
+                    // owner can escape the borrowed-frame API. The consumed
+                    // spill starts at zero; its old bytes stay hidden until a
+                    // later complete frame has overwritten its exposed prefix.
+                    self.buffer.promote(&mut spill.storage);
+                }
+                if spill.storage.capacity() <= MAX_CACHED_SPILL_WORDS {
+                    self.spare = spill.storage;
+                }
+            } else {
+                let bytes = self.frame.take().expect("borrowed frame").bytes;
+                self.consume_buffered(bytes);
+            }
+        }
+    }
+
+    // Owning reads retain their half-buffer direct-read threshold. A borrowed
+    // frame can fill its reusable buffer because no storage owner escapes.
+    // Framing, read-ahead policy and error checks remain shared.
+    fn poll_prepare_frame(
+        &mut self,
+        cx: &mut Context<'_>,
+        borrowed: bool,
+        streaming: bool,
+    ) -> Poll<Result<bool>> {
         loop {
             if let Some(spill) = &mut self.spill {
                 if spill.filled < spill.frame.bytes {
                     let count = ready!(Pin::new(&mut self.input).poll_read(
                         cx,
-                        &mut Word::words_to_bytes_mut(&mut spill.storage)[spill.filled..],
+                        &mut Word::words_to_bytes_mut(&mut spill.storage)
+                            [spill.filled..spill.frame.bytes],
                     ))?;
                     if count == 0 {
                         return Poll::Ready(Err(Error::from_kind(ErrorKind::PrematureEndOfFile)));
@@ -578,20 +936,39 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
                 return Poll::Ready(Ok(true));
             }
             if self.frame.is_none() {
-                self.frame = Frame::parse(
-                    &Word::words_to_bytes(&self.buffer)[self.begin..self.end],
-                    self.options,
-                )?;
+                self.frame =
+                    Frame::parse(&self.buffer.bytes()[self.begin..self.end], self.options)?;
             }
             if let Some(frame) = &self.frame {
                 if self.end - self.begin >= frame.bytes {
                     return Poll::Ready(Ok(true));
                 }
-                if frame.bytes > self.buffer.len() * 4 || !(self.read_ahead)(&self.input) {
-                    let mut storage = Word::allocate_zeroed_vec(frame.bytes / 8);
+                if streaming && frame.bytes > MAX_PROMOTED_BUFFER_WORDS * 8 {
+                    return Poll::Ready(Ok(true));
+                }
+                let threshold = self.buffer.len() * if borrowed { 8 } else { 4 };
+                if frame.bytes > threshold || !(self.read_ahead)(&self.input) {
+                    let words = frame.bytes / 8;
+                    let mut storage = core::mem::take(&mut self.spare);
+                    if storage.capacity() < words {
+                        if let Some(cache) = &self.owned_spare {
+                            let cached = core::mem::take(&mut *cache.lock().unwrap());
+                            if cached.capacity() > storage.capacity() {
+                                storage = cached;
+                            }
+                        }
+                    }
+                    if storage.capacity() < words {
+                        storage = Word::allocate_zeroed_vec(words);
+                    } else if storage.len() < words {
+                        storage.resize(words, capnp::word(0, 0, 0, 0, 0, 0, 0, 0));
+                    }
+                    // Keep initialized capacity on reuse. Only the validated
+                    // frame prefix is read or exposed; stale suffix bytes must
+                    // neither consume the successor frame nor reach readers.
                     let filled = self.end - self.begin;
                     Word::words_to_bytes_mut(&mut storage)[..filled]
-                        .copy_from_slice(&Word::words_to_bytes(&self.buffer)[self.begin..self.end]);
+                        .copy_from_slice(&self.buffer.bytes()[self.begin..self.end]);
                     self.spill = Some(Spill {
                         storage,
                         filled,
@@ -602,7 +979,27 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
                     continue;
                 }
             }
-            let buffer = Word::words_to_bytes_mut(Arc::get_mut(&mut self.buffer).unwrap());
+            // A full buffer containing consumed predecessors is evidence of a
+            // burst. Grow only the streaming adapter's exclusive storage, up
+            // to the same bound as spill promotion. Copy the unread suffix,
+            // including a partial header, before the next read. A sequential
+            // caller with no prefetched predecessor retains its small buffer.
+            if streaming
+                && self.begin != 0
+                && self.end == self.buffer.len() * 8
+                && self.buffer.len() < MAX_PROMOTED_BUFFER_WORDS
+                && (self.read_ahead)(&self.input)
+            {
+                let words = (self.buffer.len() * 2).min(MAX_PROMOTED_BUFFER_WORDS);
+                let remaining = self.end - self.begin;
+                let mut replacement = AlignedBuffer::new(words);
+                replacement.bytes_mut()[..remaining]
+                    .copy_from_slice(&self.buffer.bytes()[self.begin..self.end]);
+                self.buffer = ReceiveBuffer::Bytes(replacement);
+                self.begin = 0;
+                self.end = remaining;
+            }
+            let buffer = self.buffer.bytes_mut();
             if buffer.len() - self.end < buffer.len() / 2 {
                 buffer.copy_within(self.begin..self.end, 0);
                 self.end -= self.begin;
@@ -632,6 +1029,1016 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
                 });
             }
             self.end += count;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn owning_spills_reuse_only_released_storage_and_limit_each_read() {
+        let frames: Vec<_> = [(6144, 0x91), (4096, 0x32), (3000, 0x73), (4096, 0x54)]
+            .into_iter()
+            .map(|(size, byte)| {
+                let mut message = capnp::message::Builder::new_default();
+                message.initn_root::<capnp::data::Builder>(size).fill(byte);
+                capnp::serialize::write_message_to_words(&message)
+            })
+            .collect();
+        let mut input = BufferedRead::with_buffer_size(
+            Fragmented {
+                input: futures::io::Cursor::new(frames.concat()),
+                chunk: 127,
+                pending: false,
+            },
+            Default::default(),
+            MIN_BUFFER_WORDS,
+        )
+        .unwrap();
+        let read = |input: &mut BufferedRead<_>| {
+            futures::executor::block_on(futures::future::poll_fn(|cx| {
+                input.poll_read_message(cx, |_| Ok(false))
+            }))
+            .unwrap()
+            .unwrap()
+        };
+        let retained = read(&mut input);
+        let released = read(&mut input);
+        let address = released.get_segments().framed_bytes().as_ptr();
+        assert_eq!(retained.get_segments().framed_bytes(), frames[0]);
+        assert_eq!(released.get_segments().framed_bytes(), frames[1]);
+        drop(released);
+        let reused = read(&mut input);
+        assert_eq!(reused.get_segments().framed_bytes().as_ptr(), address);
+        assert_eq!(reused.get_segments().framed_bytes(), frames[2]);
+        assert_eq!(retained.get_segments().framed_bytes(), frames[0]);
+        drop(reused);
+        let last = read(&mut input);
+        assert_eq!(last.get_segments().framed_bytes().as_ptr(), address);
+        assert_eq!(last.get_segments().framed_bytes(), frames[3]);
+        assert_eq!(
+            input.consumed_bytes(),
+            frames.iter().map(|f| f.len() as u64).sum()
+        );
+        drop(input);
+        // Reader ownership survives the stream and its weak recycling cache.
+        assert_eq!(last.get_segments().framed_bytes(), frames[3]);
+        assert_eq!(retained.get_segments().framed_bytes(), frames[0]);
+    }
+
+    #[test]
+    fn owning_spill_cache_rejects_oversized_storage() {
+        let cache = Arc::new(Mutex::new(Vec::new()));
+        let mut small = Word::allocate_zeroed_vec(16);
+        small[0] = capnp::word(1, 2, 3, 4, 5, 6, 7, 8);
+        drop(RecycledSpill {
+            words: small,
+            cache: Arc::downgrade(&cache),
+        });
+        assert_eq!(cache.lock().unwrap().len(), 16);
+        // Capacity, including an initialized but currently unused suffix, is
+        // the retention bound. An empty oversized Vec must also be rejected.
+        let oversized = Vec::with_capacity(MAX_CACHED_SPILL_WORDS + 1);
+        drop(RecycledSpill {
+            words: oversized,
+            cache: Arc::downgrade(&cache),
+        });
+        assert_eq!(cache.lock().unwrap().len(), 16);
+    }
+
+    #[test]
+    fn interrupted_spill_reads_keep_the_error_and_discard_partial_storage() {
+        struct BrokenBody(futures::io::Cursor<Vec<u8>>);
+        impl AsyncRead for BrokenBody {
+            fn poll_read(
+                mut self: Pin<&mut Self>,
+                cx: &mut Context<'_>,
+                bytes: &mut [u8],
+            ) -> Poll<std::io::Result<usize>> {
+                if self.0.position() >= 8 {
+                    return Poll::Ready(Err(std::io::ErrorKind::ConnectionReset.into()));
+                }
+                let length = bytes.len().min(8);
+                Pin::new(&mut self.0).poll_read(cx, &mut bytes[..length])
+            }
+        }
+        let mut message = capnp::message::Builder::new_default();
+        message.initn_root::<capnp::data::Builder>(4096).fill(0x5a);
+        let frame = capnp::serialize::write_message_to_words(&message);
+        for borrowed in [false, true] {
+            let mut input = BufferedRead::with_buffer_size(
+                BrokenBody(futures::io::Cursor::new(frame.clone())),
+                Default::default(),
+                MIN_BUFFER_WORDS,
+            )
+            .unwrap();
+            let mut cx = Context::from_waker(std::task::Waker::noop());
+            let first = if borrowed {
+                input.poll_borrowed_frame(&mut cx).map(|r| r.map(|_| ()))
+            } else {
+                input
+                    .poll_read_message(&mut cx, |_| Ok(true))
+                    .map(|r| r.map(|_| ()))
+            };
+            let Poll::Ready(Err(error)) = first else {
+                panic!("partial spill must report the transport error")
+            };
+            assert!(input.spill.is_none());
+            assert!(input.frame.is_none());
+            assert_eq!(input.consumed_bytes(), 0);
+            assert_eq!(input.get_ref().0.position(), 8);
+            assert_eq!(
+                input
+                    .poll_stream_frame_size(&mut cx)
+                    .map(|r| r.unwrap_err().kind),
+                Poll::Ready(error.kind)
+            );
+            assert_eq!(input.get_ref().0.position(), 8);
+        }
+    }
+
+    #[test]
+    fn read_ahead_can_be_disabled_between_prefetched_frames() {
+        // Leave only the first word of a two-segment table at the end of a
+        // full buffer. Disabling read-ahead must complete that table and body
+        // without interpreting the full buffer as permission to grow it.
+        fn exercise<R: AsyncRead + Unpin>(reader: R, first: &[u8], second: &[u8]) {
+            let mut input =
+                BufferedRead::with_buffer_size(reader, Default::default(), MIN_BUFFER_WORDS)
+                    .unwrap();
+            assert_eq!(
+                futures::executor::block_on(futures::future::poll_fn(|cx| {
+                    input
+                        .poll_borrowed_frame(cx)
+                        .map_ok(|frame| frame.map(<[u8]>::len))
+                }))
+                .unwrap(),
+                Some(first.len())
+            );
+            assert_eq!(input.borrowed_frame(), Some(first));
+            input.finish_borrowed_frame();
+            input.set_read_ahead_policy(|_| false);
+            assert_eq!(
+                futures::executor::block_on(futures::future::poll_fn(
+                    |cx| input.poll_stream_frame_size(cx)
+                ))
+                .unwrap(),
+                Some(second.len())
+            );
+            assert_eq!(input.borrowed_frame(), Some(second));
+            assert_eq!(input.buffer.len(), MIN_BUFFER_WORDS);
+            input.finish_borrowed_frame();
+            assert_eq!(input.consumed_bytes(), (first.len() + second.len()) as u64);
+            assert_eq!(
+                futures::executor::block_on(futures::future::poll_fn(
+                    |cx| input.poll_stream_frame_size(cx)
+                ))
+                .unwrap(),
+                None
+            );
+        }
+        let mut first = vec![0; MIN_BUFFER_WORDS * 8 - 8];
+        let words = (first.len() / 8 - 1) as u32;
+        first[4..8].copy_from_slice(&words.to_le_bytes());
+        let mut second = vec![0; 24];
+        second[..4].copy_from_slice(&1u32.to_le_bytes());
+        second[4..8].copy_from_slice(&1u32.to_le_bytes());
+        let source = [first.as_slice(), second.as_slice()].concat();
+        exercise(futures::io::Cursor::new(source.clone()), &first, &second);
+        exercise(
+            Fragmented {
+                input: futures::io::Cursor::new(source),
+                chunk: usize::MAX,
+                pending: false,
+            },
+            &first,
+            &second,
+        );
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore = "fills the 128 KiB burst retention bound")]
+    fn streaming_bursts_grow_bounded_storage_and_preserve_retained_frames() {
+        let frames: Vec<_> = (0..300u16)
+            .map(|index| {
+                let mut message = capnp::message::Builder::new_default();
+                let data = message.initn_root::<capnp::data::Builder>(1016);
+                data.fill(index as u8);
+                data[..2].copy_from_slice(&index.to_le_bytes());
+                capnp::serialize::write_message_to_words(&message)
+            })
+            .collect();
+        let source = frames.concat();
+        for (streaming, read_ahead, chunk) in [
+            (true, true, usize::MAX),
+            (true, true, 1029),
+            (false, true, usize::MAX),
+            (true, false, usize::MAX),
+        ] {
+            let mut input = BufferedRead::with_buffer_size(
+                Fragmented {
+                    input: futures::io::Cursor::new(source.clone()),
+                    chunk,
+                    pending: false,
+                },
+                Default::default(),
+                MIN_BUFFER_WORDS,
+            )
+            .unwrap();
+            if !read_ahead {
+                input.set_read_ahead_policy(|_| false);
+            }
+            let mut retained = None;
+            for (index, expected) in frames.iter().enumerate() {
+                let size = futures::executor::block_on(futures::future::poll_fn(|cx| {
+                    if streaming {
+                        input.poll_stream_frame_size(cx)
+                    } else {
+                        input
+                            .poll_borrowed_frame(cx)
+                            .map_ok(|frame| frame.map(<[u8]>::len))
+                    }
+                }))
+                .unwrap();
+                assert_eq!(size, Some(expected.len()));
+                assert_eq!(input.borrowed_frame().unwrap(), expected);
+                if index == 0 && read_ahead {
+                    retained = input.share_borrowed_frame();
+                    assert!(retained.is_some());
+                }
+                input.finish_borrowed_frame();
+                assert!(input.buffer.capacity() <= MAX_PROMOTED_BUFFER_WORDS);
+            }
+            assert_eq!(input.consumed_bytes(), source.len() as u64);
+            if streaming && read_ahead && chunk == usize::MAX {
+                assert_eq!(input.buffer.len(), MAX_PROMOTED_BUFFER_WORDS);
+            } else if !streaming || !read_ahead {
+                assert_eq!(input.buffer.len(), MIN_BUFFER_WORDS);
+            }
+            if let Some((owner, range)) = retained {
+                assert_eq!(&owner[range], frames[0]);
+            }
+            assert_eq!(
+                futures::executor::block_on(futures::future::poll_fn(|cx| {
+                    input.poll_stream_frame_size(cx)
+                }))
+                .unwrap(),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn shared_storage_supports_owning_reads_and_reuses_exact_spills() {
+        let mut small = capnp::message::Builder::new_default();
+        small.set_root("retained").unwrap();
+        let small = capnp::serialize::write_message_to_words(&small);
+        let mut large = capnp::message::Builder::new_default();
+        large.initn_root::<capnp::data::Builder>(4096).fill(0x5a);
+        let large = capnp::serialize::write_message_to_words(&large);
+        let mut input = BufferedRead::with_buffer_size(
+            futures::io::Cursor::new(
+                [
+                    small.as_slice(),
+                    large.as_slice(),
+                    large.as_slice(),
+                    small.as_slice(),
+                ]
+                .concat(),
+            ),
+            Default::default(),
+            MIN_BUFFER_WORDS,
+        )
+        .unwrap();
+        let mut cx = Context::from_waker(std::task::Waker::noop());
+        assert_eq!(
+            input.poll_stream_frame_size(&mut cx).map(|r| r.unwrap()),
+            Poll::Ready(Some(small.len()))
+        );
+        let (owner, range) = input.share_borrowed_frame().unwrap();
+        input.finish_borrowed_frame();
+        assert_eq!(
+            input.poll_borrowed_frame(&mut cx).map(|r| r.unwrap()),
+            Poll::Ready(Some(large.as_slice()))
+        );
+        assert!(
+            input.share_borrowed_frame().is_none(),
+            "spill remains private"
+        );
+        input.finish_borrowed_frame();
+        let capacity = input.spare.capacity();
+        input.set_read_ahead_policy(|_| false);
+        assert_eq!(
+            input.poll_borrowed_frame(&mut cx).map(|r| r.unwrap()),
+            Poll::Ready(Some(large.as_slice()))
+        );
+        input.finish_borrowed_frame();
+        assert_eq!(input.spare.capacity(), capacity);
+        input.set_read_ahead_policy(|_| true);
+        let message = futures::executor::block_on(input.try_read_message(|_| Ok(true)))
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            message.get_root::<capnp::text::Reader>().unwrap(),
+            "retained"
+        );
+        assert_eq!(message.get_segments().framed_bytes(), small);
+        assert_eq!(&owner[range], small);
+        drop(message);
+        assert_eq!(
+            input.poll_stream_frame_size(&mut cx).map(|r| r.unwrap()),
+            Poll::Ready(None)
+        );
+    }
+
+    #[test]
+    fn weak_shared_frame_owner_cannot_prevent_safe_next_read() {
+        let mut message = capnp::message::Builder::new_default();
+        message.set_root("immutable").unwrap();
+        let frame = capnp::serialize::write_message_to_words(&message);
+        let mut input = BufferedRead::new(
+            futures::io::Cursor::new([frame.as_slice(), frame.as_slice()].concat()),
+            Default::default(),
+        );
+        let mut cx = Context::from_waker(std::task::Waker::noop());
+        assert!(matches!(
+            input.poll_stream_frame_size(&mut cx),
+            Poll::Ready(Ok(Some(_)))
+        ));
+        let (owner, _) = input.share_borrowed_frame().unwrap();
+        let weak = Arc::downgrade(&owner);
+        drop(owner);
+        input.finish_borrowed_frame();
+        assert!(matches!(
+            input.poll_stream_frame_size(&mut cx),
+            Poll::Ready(Ok(Some(_)))
+        ));
+        assert_eq!(input.borrowed_frame(), Some(frame.as_slice()));
+        assert!(weak.upgrade().is_none());
+    }
+
+    #[test]
+    fn shared_frame_owners_preserve_successors_and_allow_exclusive_reuse() {
+        let mut message = capnp::message::Builder::new_default();
+        message.set_root("shared input").unwrap();
+        let frame = capnp::serialize::write_message_to_words(&message);
+        for retained in [false, true] {
+            let source = [frame.as_slice(), frame.as_slice()].concat();
+            let mut input = BufferedRead::new(futures::io::Cursor::new(source), Default::default());
+            let mut cx = Context::from_waker(std::task::Waker::noop());
+            assert!(input.share_borrowed_frame().is_none());
+            assert!(matches!(
+                input.poll_stream_frame_size(&mut cx),
+                Poll::Ready(Ok(Some(_)))
+            ));
+            let (owner, range) = input.share_borrowed_frame().unwrap();
+            assert_eq!(&owner[range.clone()], frame);
+            assert_eq!(
+                owner[range.clone()].as_ptr(),
+                input.borrowed_frame().unwrap().as_ptr()
+            );
+            assert_eq!(owner[range.clone()].as_ptr().align_offset(8), 0);
+            let address = input.buffer.bytes().as_ptr();
+            let owner = retained.then_some((owner, range));
+            input.finish_borrowed_frame();
+            assert!(matches!(
+                input.poll_stream_frame_size(&mut cx),
+                Poll::Ready(Ok(Some(_)))
+            ));
+            assert_eq!(input.borrowed_frame().unwrap(), frame);
+            if let Some((owner, range)) = &owner {
+                assert_eq!(&owner[range.clone()], frame);
+                assert_ne!(input.buffer.bytes().as_ptr(), address);
+            } else {
+                assert_eq!(input.buffer.bytes().as_ptr(), address);
+            }
+            input.finish_borrowed_frame();
+            assert!(matches!(
+                input.poll_stream_frame_size(&mut cx),
+                Poll::Ready(Ok(None))
+            ));
+            assert_eq!(input.consumed_bytes(), 2 * frame.len() as u64);
+        }
+    }
+
+    #[test]
+    fn fragmented_owned_reads_preserve_data_and_reject_truncated_headers_and_spills() {
+        for length in [31, MIN_BUFFER_WORDS * 16] {
+            let mut message = capnp::message::Builder::new_default();
+            message
+                .initn_root::<capnp::data::Builder>(length as u32)
+                .fill(0x5a);
+            let frame = capnp::serialize::write_message_to_words(&message);
+            for read_ahead in [false, true] {
+                for short_lived in [false, true] {
+                    let mut input = BufferedRead::with_buffer_size(
+                        Fragmented {
+                            input: futures::io::Cursor::new(frame.clone()),
+                            chunk: 7,
+                            pending: false,
+                        },
+                        Default::default(),
+                        MIN_BUFFER_WORDS,
+                    )
+                    .unwrap();
+                    if !read_ahead {
+                        input.set_read_ahead_policy(|_| false);
+                    }
+                    let result = futures::executor::block_on(futures::future::poll_fn(|cx| {
+                        input.poll_read_message(cx, |_| Ok(short_lived))
+                    }))
+                    .unwrap()
+                    .unwrap();
+                    assert_eq!(
+                        result.get_root::<capnp::data::Reader>().unwrap(),
+                        vec![0x5a; length]
+                    );
+                    assert_eq!(input.consumed_bytes(), frame.len() as u64);
+                    drop(result);
+                    assert!(futures::executor::block_on(futures::future::poll_fn(|cx| {
+                        input.poll_read_short_lived_message(cx)
+                    }))
+                    .unwrap()
+                    .is_none());
+                }
+                for cut in [3, frame.len() - 1] {
+                    let mut input = BufferedRead::with_buffer_size(
+                        Fragmented {
+                            input: futures::io::Cursor::new(frame[..cut].to_vec()),
+                            chunk: 7,
+                            pending: false,
+                        },
+                        Default::default(),
+                        MIN_BUFFER_WORDS,
+                    )
+                    .unwrap();
+                    if !read_ahead {
+                        input.set_read_ahead_policy(|_| false);
+                    }
+                    let error = futures::executor::block_on(futures::future::poll_fn(|cx| {
+                        input
+                            .poll_borrowed_frame(cx)
+                            .map_ok(|frame| frame.is_some())
+                    }))
+                    .unwrap_err();
+                    assert_eq!(error.kind, ErrorKind::PrematureEndOfFile);
+                    assert_eq!(input.consumed_bytes(), 0);
+                    let position = input.get_ref().input.position();
+                    assert!(futures::executor::block_on(futures::future::poll_fn(
+                        |cx| input.poll_stream_frame_size(cx)
+                    ))
+                    .is_err());
+                    assert_eq!(input.get_ref().input.position(), position);
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore = "exercises direct reads above the 128 KiB threshold")]
+    fn completed_streams_count_once_and_leave_the_successor_intact() {
+        let mut message = capnp::message::Builder::new_default();
+        message
+            .initn_root::<capnp::data::Builder>((MAX_PROMOTED_BUFFER_WORDS * 8 + 32) as u32)
+            .fill(0x5a);
+        let first = capnp::serialize::write_message_to_words(&message);
+        let mut message = capnp::message::Builder::new_default();
+        message.set_root("successor").unwrap();
+        let second = capnp::serialize::write_message_to_words(&message);
+        for chunk in [4093, first.len()] {
+            let mut input = BufferedRead::with_buffer_size(
+                futures::io::Cursor::new([first.as_slice(), second.as_slice()].concat()),
+                Default::default(),
+                MIN_BUFFER_WORDS,
+            )
+            .unwrap();
+            let mut cx = Context::from_waker(std::task::Waker::noop());
+            assert_eq!(
+                input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+                Poll::Ready(Some(first.len()))
+            );
+            let position = input.get_ref().position();
+            assert_eq!(
+                input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+                Poll::Ready(Some(first.len()))
+            );
+            assert_eq!(input.get_ref().position(), position);
+            assert_eq!(
+                input
+                    .poll_stream_frame(&mut cx, &mut [])
+                    .map(Result::unwrap),
+                Poll::Ready(0)
+            );
+            let mut output = vec![0; first.len()];
+            let mut written = 0;
+            while written < output.len() {
+                let end = (written + chunk).min(output.len());
+                let count = futures::executor::block_on(futures::future::poll_fn(|cx| {
+                    input.poll_stream_frame(cx, &mut output[written..end])
+                }))
+                .unwrap();
+                assert!(count > 0);
+                written += count;
+            }
+            assert_eq!(output, first);
+            assert_eq!(input.consumed_bytes(), first.len() as u64);
+            assert_eq!(
+                input
+                    .poll_stream_frame(&mut cx, &mut [0; 1])
+                    .map(Result::unwrap),
+                Poll::Ready(0)
+            );
+            assert_eq!(input.consumed_bytes(), first.len() as u64);
+            input.finish_borrowed_frame();
+            assert_eq!(
+                input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+                Poll::Ready(Some(second.len()))
+            );
+            assert_eq!(input.borrowed_frame(), Some(second.as_slice()));
+            input.finish_borrowed_frame();
+            assert_eq!(input.consumed_bytes(), (first.len() + second.len()) as u64);
+            assert_eq!(
+                input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+                Poll::Ready(None)
+            );
+        }
+    }
+
+    struct Fragmented {
+        input: futures::io::Cursor<Vec<u8>>,
+        chunk: usize,
+        pending: bool,
+    }
+    impl AsyncRead for Fragmented {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            bytes: &mut [u8],
+        ) -> Poll<std::io::Result<usize>> {
+            if core::mem::replace(&mut self.pending, true) {
+                self.pending = false;
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+            let length = bytes.len().min(self.chunk);
+            Pin::new(&mut self.input).poll_read(cx, &mut bytes[..length])
+        }
+    }
+
+    #[test]
+    fn buffered_successor_hint_never_reads_consumes_or_overlaps_an_owner() {
+        let mut message = capnp::message::Builder::new_default();
+        message.set_root("buffered").unwrap();
+        let frame = capnp::serialize::write_message_to_words(&message);
+        let mut source = frame.clone();
+        source.extend_from_slice(&frame);
+        source.extend_from_slice(&[0xff; 8]);
+        let mut input = BufferedRead::new(futures::io::Cursor::new(source), Default::default());
+        let mut cx = Context::from_waker(std::task::Waker::noop());
+        assert!(!input.has_buffered_next_frame());
+        assert_eq!(input.get_ref().position(), 0);
+        assert!(matches!(
+            input.poll_stream_frame_size(&mut cx),
+            Poll::Ready(Ok(Some(_)))
+        ));
+        assert!(
+            !input.has_buffered_next_frame(),
+            "current frame still borrowed"
+        );
+        input.finish_borrowed_frame();
+        let read = input.get_ref().position();
+        let consumed = input.consumed_bytes();
+        assert!(input.has_buffered_next_frame());
+        assert!(input.has_buffered_next_frame());
+        assert_eq!(input.get_ref().position(), read);
+        assert_eq!(input.consumed_bytes(), consumed);
+        assert!(matches!(
+            input.poll_stream_frame_size(&mut cx),
+            Poll::Ready(Ok(Some(_)))
+        ));
+        input.finish_borrowed_frame();
+        assert!(
+            !input.has_buffered_next_frame(),
+            "bad header remains for receive"
+        );
+        assert!(matches!(
+            input.poll_stream_frame_size(&mut cx),
+            Poll::Ready(Err(_))
+        ));
+        assert!(!input.has_buffered_next_frame());
+    }
+
+    #[test]
+    fn buffered_successor_hint_requires_a_complete_body() {
+        let mut message = capnp::message::Builder::new_default();
+        message.initn_root::<capnp::data::Builder>(16).fill(0x5a);
+        let frame = capnp::serialize::write_message_to_words(&message);
+        let mut bytes = frame.clone();
+        bytes.extend_from_slice(&frame[..8]);
+        let mut input = BufferedRead::new(futures::io::Cursor::new(bytes), Default::default());
+        let mut cx = Context::from_waker(std::task::Waker::noop());
+        assert_eq!(
+            input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+            Poll::Ready(Some(frame.len()))
+        );
+        input.finish_borrowed_frame();
+        assert!(!input.has_buffered_next_frame());
+        let position = input.get_ref().position();
+        assert!(!input.has_buffered_next_frame());
+        assert_eq!(input.get_ref().position(), position);
+        for _ in 0..2 {
+            assert!(matches!(
+                input.poll_stream_frame_size(&mut cx),
+                Poll::Ready(Err(_))
+            ));
+        }
+        assert_eq!(input.consumed_bytes(), frame.len() as u64);
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore = "exercises direct reads above the 128 KiB threshold")]
+    fn streamed_completion_counter_overflow_is_terminal() {
+        let mut message = capnp::message::Builder::new_default();
+        message
+            .initn_root::<capnp::data::Builder>((MAX_PROMOTED_BUFFER_WORDS * 8) as u32)
+            .fill(0x5a);
+        let bytes = capnp::serialize::write_message_to_words(&message);
+        let mut input = BufferedRead::with_buffer_size(
+            futures::io::Cursor::new(bytes.clone()),
+            Default::default(),
+            MIN_BUFFER_WORDS,
+        )
+        .unwrap();
+        let mut cx = Context::from_waker(std::task::Waker::noop());
+        assert_eq!(
+            input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+            Poll::Ready(Some(bytes.len()))
+        );
+        input.consumed = u64::MAX;
+        let mut output = vec![0; bytes.len()];
+        assert_eq!(
+            input
+                .poll_stream_frame(&mut cx, &mut output)
+                .map(Result::unwrap),
+            Poll::Ready(MIN_BUFFER_WORDS * 8)
+        );
+        assert!(matches!(
+            input.poll_stream_frame(&mut cx, &mut output),
+            Poll::Ready(Err(_))
+        ));
+        let position = input.get_ref().position();
+        assert_eq!(position, bytes.len() as u64);
+        assert!(matches!(
+            input.poll_stream_frame(&mut cx, &mut output),
+            Poll::Ready(Err(_))
+        ));
+        assert!(matches!(
+            input.poll_stream_frame_size(&mut cx),
+            Poll::Ready(Err(_))
+        ));
+        assert_eq!(input.get_ref().position(), position);
+        assert_eq!(input.consumed_bytes(), u64::MAX);
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore = "exercises direct reads above the 128 KiB threshold")]
+    fn streamed_frames_retain_partial_progress_and_stop_at_the_next_header() {
+        let mut message = capnp::message::Builder::new_default();
+        message
+            .initn_root::<capnp::data::Builder>((MAX_PROMOTED_BUFFER_WORDS * 8) as u32)
+            .fill(0x5a);
+        let large = capnp::serialize::write_message_to_words(&message);
+        let mut message = capnp::message::Builder::new_default();
+        message.initn_root::<capnp::data::Builder>(16).fill(0x3c);
+        let small = capnp::serialize::write_message_to_words(&message);
+        for chunk in [7, 8192] {
+            let mut source = large.clone();
+            source.extend_from_slice(&small);
+            let mut input = BufferedRead::with_buffer_size(
+                Fragmented {
+                    input: futures::io::Cursor::new(source),
+                    chunk,
+                    pending: false,
+                },
+                Default::default(),
+                MIN_BUFFER_WORDS,
+            )
+            .unwrap();
+            let length = futures::executor::block_on(core::future::poll_fn(|cx| {
+                input.poll_stream_frame_size(cx)
+            }))
+            .unwrap()
+            .unwrap();
+            assert_eq!(length, large.len());
+            assert!(input.spill.is_none());
+            assert!(input.spare.is_empty());
+            assert!(input.borrowed_frame().is_none());
+            let mut cx = Context::from_waker(std::task::Waker::noop());
+            assert!(matches!(
+                input.poll_borrowed_frame(&mut cx),
+                Poll::Ready(Err(_))
+            ));
+            assert_eq!(
+                input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+                Poll::Ready(Some(length))
+            );
+            assert_eq!(input.consumed_bytes(), 0);
+            let mut output = vec![0xa5; length + 8];
+            let mut position = 0;
+            while position < length {
+                let count = futures::executor::block_on(core::future::poll_fn(|cx| {
+                    input.poll_stream_frame(cx, &mut output[position..])
+                }))
+                .unwrap();
+                assert!(count > 0);
+                position += count;
+            }
+            assert_eq!(&output[..length], &large);
+            assert_eq!(&output[length..], &[0xa5; 8]);
+            assert_eq!(input.consumed_bytes(), length as u64);
+            assert_eq!(
+                futures::executor::block_on(core::future::poll_fn(
+                    |cx| input.poll_stream_frame(cx, &mut output)
+                ))
+                .unwrap(),
+                0
+            );
+            input.finish_borrowed_frame();
+            let size = futures::executor::block_on(core::future::poll_fn(|cx| {
+                input.poll_stream_frame_size(cx)
+            }))
+            .unwrap();
+            assert_eq!(size, Some(small.len()));
+            assert_eq!(input.borrowed_frame().unwrap(), small);
+            input.finish_borrowed_frame();
+            assert_eq!(
+                futures::executor::block_on(core::future::poll_fn(
+                    |cx| input.poll_stream_frame_size(cx)
+                ))
+                .unwrap(),
+                None
+            );
+        }
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore = "exercises direct reads above the 128 KiB threshold")]
+    fn streamed_truncation_and_abandonment_are_terminal() {
+        let mut message = capnp::message::Builder::new_default();
+        message
+            .initn_root::<capnp::data::Builder>((MAX_PROMOTED_BUFFER_WORDS * 8) as u32)
+            .fill(0x5a);
+        let bytes = capnp::serialize::write_message_to_words(&message);
+        for abandon in [false, true] {
+            let mut input = BufferedRead::with_buffer_size(
+                futures::io::Cursor::new(bytes[..bytes.len() - 1].to_vec()),
+                Default::default(),
+                MIN_BUFFER_WORDS,
+            )
+            .unwrap();
+            futures::executor::block_on(core::future::poll_fn(|cx| {
+                input.poll_stream_frame_size(cx)
+            }))
+            .unwrap();
+            if !abandon {
+                let mut output = vec![0xa5; bytes.len()];
+                loop {
+                    if futures::executor::block_on(core::future::poll_fn(|cx| {
+                        input.poll_stream_frame(cx, &mut output)
+                    }))
+                    .is_err()
+                    {
+                        break;
+                    }
+                }
+                assert!(futures::executor::block_on(core::future::poll_fn(
+                    |cx| input.poll_stream_frame_size(cx)
+                ))
+                .is_err());
+            }
+            input.finish_borrowed_frame();
+            assert!(futures::executor::block_on(core::future::poll_fn(
+                |cx| input.poll_stream_frame_size(cx)
+            ))
+            .is_err());
+            assert!(futures::executor::block_on(core::future::poll_fn(|cx| input
+                .poll_borrowed_frame(cx)
+                .map_ok(|frame| frame.is_some())))
+            .is_err());
+            assert_eq!(input.consumed_bytes(), 0);
+        }
+        let mut options = ReaderOptions::new();
+        options.traversal_limit_in_words = Some(0);
+        let mut input = BufferedRead::new(futures::io::Cursor::new(bytes), options);
+        assert!(futures::executor::block_on(core::future::poll_fn(
+            |cx| input.poll_stream_frame_size(cx)
+        ))
+        .is_err());
+        assert!(input.spill.is_none());
+        assert!(input.streaming.is_none());
+    }
+
+    #[test]
+    fn streaming_preparation_keeps_borrowed_owners_and_counter_failures_sticky() {
+        let mut message = capnp::message::Builder::new_default();
+        message.initn_root::<capnp::data::Builder>(16).fill(0x5a);
+        let bytes = capnp::serialize::write_message_to_words(&message);
+        let mut input =
+            BufferedRead::new(futures::io::Cursor::new(bytes.clone()), Default::default());
+        let mut cx = Context::from_waker(std::task::Waker::noop());
+        let mut scratch = [0; 32];
+        assert!(matches!(
+            input.poll_stream_frame(&mut cx, &mut scratch),
+            Poll::Ready(Err(_))
+        ));
+        let owned = futures::executor::block_on(input.try_read_message(|_| Ok(true)))
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            input.poll_stream_frame_size(&mut cx),
+            Poll::Ready(Err(_))
+        ));
+        drop(owned);
+        assert!(matches!(
+            input.poll_stream_frame_size(&mut cx),
+            Poll::Ready(Ok(None))
+        ));
+        assert!(matches!(
+            input.poll_stream_frame_size(&mut cx),
+            Poll::Ready(Ok(None))
+        ));
+        let mut input =
+            BufferedRead::new(futures::io::Cursor::new(bytes.clone()), Default::default());
+        assert_eq!(
+            input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+            Poll::Ready(Some(bytes.len()))
+        );
+        assert_eq!(
+            input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+            Poll::Ready(Some(bytes.len()))
+        );
+        assert_eq!(input.borrowed_frame().unwrap(), bytes);
+        assert_eq!(input.consumed_bytes(), bytes.len() as u64);
+        input.finish_borrowed_frame();
+        let mut input = BufferedRead::new(futures::io::Cursor::new(bytes), Default::default());
+        input.consumed = u64::MAX;
+        assert!(matches!(
+            input.poll_stream_frame_size(&mut cx),
+            Poll::Ready(Err(_))
+        ));
+        assert!(matches!(
+            input.poll_stream_frame_size(&mut cx),
+            Poll::Ready(Err(_))
+        ));
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore = "exercises direct reads above the 128 KiB threshold")]
+    fn streamed_io_failure_is_sticky_without_another_read() {
+        struct Failure {
+            bytes: Vec<u8>,
+            reads: usize,
+        }
+        impl AsyncRead for Failure {
+            fn poll_read(
+                mut self: Pin<&mut Self>,
+                _: &mut Context<'_>,
+                output: &mut [u8],
+            ) -> Poll<std::io::Result<usize>> {
+                self.reads += 1;
+                if self.reads > 1 {
+                    return Poll::Ready(Err(std::io::Error::other("injected")));
+                }
+                output.copy_from_slice(&self.bytes[..output.len()]);
+                Poll::Ready(Ok(output.len()))
+            }
+        }
+        let mut message = capnp::message::Builder::new_default();
+        message
+            .initn_root::<capnp::data::Builder>((MAX_PROMOTED_BUFFER_WORDS * 8) as u32)
+            .fill(0x5a);
+        let bytes = capnp::serialize::write_message_to_words(&message);
+        let mut input = BufferedRead::with_buffer_size(
+            Failure { bytes, reads: 0 },
+            Default::default(),
+            MIN_BUFFER_WORDS,
+        )
+        .unwrap();
+        let mut cx = Context::from_waker(std::task::Waker::noop());
+        assert!(matches!(
+            input.poll_stream_frame_size(&mut cx),
+            Poll::Ready(Ok(Some(_)))
+        ));
+        assert!(matches!(
+            input.poll_stream_frame(&mut cx, &mut []),
+            Poll::Ready(Ok(0))
+        ));
+        let mut output = vec![0; MAX_PROMOTED_BUFFER_WORDS * 8 + 4096];
+        let count = futures::executor::block_on(core::future::poll_fn(|cx| {
+            input.poll_stream_frame(cx, &mut output)
+        }))
+        .unwrap();
+        assert!(count > 0);
+        assert!(matches!(
+            input.poll_stream_frame(&mut cx, &mut output),
+            Poll::Ready(Err(_))
+        ));
+        assert!(matches!(
+            input.poll_stream_frame(&mut cx, &mut output),
+            Poll::Ready(Err(_))
+        ));
+        assert_eq!(input.get_ref().reads, 2);
+        assert_eq!(input.consumed_bytes(), 0);
+    }
+
+    #[test]
+    fn repeated_borrowed_frame_reuses_bounded_storage_in_one_read() {
+        struct Counted {
+            input: futures::io::Cursor<Vec<u8>>,
+            reads: usize,
+        }
+        impl AsyncRead for Counted {
+            fn poll_read(
+                mut self: Pin<&mut Self>,
+                cx: &mut Context<'_>,
+                bytes: &mut [u8],
+            ) -> Poll<std::io::Result<usize>> {
+                self.reads += 1;
+                Pin::new(&mut self.input).poll_read(cx, bytes)
+            }
+        }
+        let mut message = capnp::message::Builder::new_default();
+        message.initn_root::<capnp::data::Builder>(65536).fill(0x5a);
+        let bytes = capnp::serialize::write_message_to_words(&message);
+        for streaming in [false, true] {
+            let mut source = bytes.clone();
+            source.extend_from_slice(&bytes);
+            let mut input = BufferedRead::with_buffer_size(
+                Counted {
+                    input: futures::io::Cursor::new(source),
+                    reads: 0,
+                },
+                Default::default(),
+                MIN_BUFFER_WORDS,
+            )
+            .unwrap();
+            let mut cx = Context::from_waker(std::task::Waker::noop());
+            let mut address = core::ptr::null();
+            for iteration in 0..2 {
+                let result = if streaming {
+                    input.poll_stream_frame_size(&mut cx)
+                } else {
+                    input
+                        .poll_borrowed_frame(&mut cx)
+                        .map_ok(|frame| frame.map(<[u8]>::len))
+                };
+                assert_eq!(result.map(Result::unwrap), Poll::Ready(Some(bytes.len())));
+                let frame = input.borrowed_frame().unwrap();
+                assert_eq!(frame, bytes);
+                if iteration == 0 {
+                    address = frame.as_ptr();
+                } else {
+                    assert_eq!(frame.as_ptr(), address);
+                }
+                assert_eq!(input.get_ref().reads, 2 + iteration);
+                input.finish_borrowed_frame();
+                assert!(input.buffer.capacity() <= MAX_PROMOTED_BUFFER_WORDS);
+            }
+            assert!(matches!(
+                input.poll_borrowed_frame(&mut cx),
+                Poll::Ready(Ok(None))
+            ));
+        }
+    }
+
+    #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "exercises the 8 MiB retention boundary; small fragmented reuse is covered separately"
+    )]
+    fn borrowed_spill_cache_has_a_fixed_capacity_bound() {
+        for length in [8192, MAX_CACHED_SPILL_WORDS * 8 + 8] {
+            let mut message = capnp::message::Builder::new_default();
+            message
+                .initn_root::<capnp::data::Builder>(length as u32)
+                .fill(0x5a);
+            let bytes = capnp::serialize::write_message_to_words(&message);
+            let mut input = BufferedRead::with_buffer_size(
+                futures::io::Cursor::new(bytes.clone()),
+                Default::default(),
+                MIN_BUFFER_WORDS,
+            )
+            .unwrap();
+            let mut cx = Context::from_waker(std::task::Waker::noop());
+            assert_eq!(
+                input.poll_borrowed_frame(&mut cx).map(Result::unwrap),
+                Poll::Ready(Some(bytes.as_slice()))
+            );
+            input.finish_borrowed_frame();
+            assert!(input.spare.capacity() <= MAX_CACHED_SPILL_WORDS);
+            assert_eq!(input.spare.is_empty(), length > MAX_CACHED_SPILL_WORDS * 8);
         }
     }
 }

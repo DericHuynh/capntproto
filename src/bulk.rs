@@ -177,59 +177,67 @@ impl Receiver {
 }
 struct Service(Rc<RefCell<State>>);
 impl wire::transfer::Server for Service {
-    async fn describe(
+    fn describe(
         self: Rc<Self>,
-        _: wire::transfer::DescribeParams,
-        mut out: wire::transfer::DescribeResults,
-    ) -> capnp::Result<()> {
-        self.0.borrow().config.write(out.get().init_config());
-        Ok(())
+        context: wire::transfer::DescribeContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.0.borrow().config.write(out.get().init_config());
+            Ok(())
+        })
     }
-    async fn write(
+    fn write(
         self: Rc<Self>,
-        p: wire::transfer::WriteParams,
-        mut out: wire::transfer::WriteResults,
-    ) -> capnp::Result<()> {
-        let result = (|| {
-            let reader = p.get()?;
-            let sequence = reader.get_sequence();
-            self.0.borrow_mut().write(sequence, reader.get_data()?)?;
-            Ok(sequence)
-        })();
-        match result {
-            Ok(sequence) => {
-                out.get().set_sequence(sequence);
-                Ok(())
-            }
-            Err(error) => {
-                let mut state = self.0.borrow_mut();
-                // Malformed wire pointers poison an open transfer too.
-                if state.status() == Status::Receiving {
-                    Err(state.reject(error))
-                } else {
-                    Err(error)
+        context: wire::transfer::WriteContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let result = (|| {
+                let reader = p.get()?;
+                let sequence = reader.get_sequence();
+                self.0.borrow_mut().write(sequence, reader.get_data()?)?;
+                Ok(sequence)
+            })();
+            match result {
+                Ok(sequence) => {
+                    out.get().set_sequence(sequence);
+                    Ok(())
+                }
+                Err(error) => {
+                    let mut state = self.0.borrow_mut();
+                    // Malformed wire pointers poison an open transfer too.
+                    if state.status() == Status::Receiving {
+                        Err(state.reject(error))
+                    } else {
+                        Err(error)
+                    }
                 }
             }
-        }
+        })
     }
-    async fn done(
+    fn done(
         self: Rc<Self>,
-        _: wire::transfer::DoneParams,
-        mut out: wire::transfer::DoneResults,
-    ) -> capnp::Result<()> {
-        let summary = self.0.borrow_mut().done()?;
-        let mut r = out.get().init_summary();
-        r.set_bytes(summary.bytes);
-        r.set_chunks(summary.chunks);
-        Ok(())
+        context: wire::transfer::DoneContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let summary = self.0.borrow_mut().done()?;
+            let mut r = out.get().init_summary();
+            r.set_bytes(summary.bytes);
+            r.set_chunks(summary.chunks);
+            Ok(())
+        })
     }
-    async fn cancel(
+    fn cancel(
         self: Rc<Self>,
-        _: wire::transfer::CancelParams,
-        mut out: wire::transfer::CancelResults,
-    ) -> capnp::Result<()> {
-        out.get().set_status(self.0.borrow_mut().cancel());
-        Ok(())
+        context: wire::transfer::CancelContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            out.get().set_status(self.0.borrow_mut().cancel());
+            Ok(())
+        })
     }
 }
 

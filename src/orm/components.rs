@@ -237,46 +237,52 @@ impl<T: Owned + Unpin + 'static> component::Server<T> for ComponentServer<T>
 where
     for<'a> T::Reader<'a>: SetterInput<T> + HasTypeId,
 {
-    async fn get(
+    fn get(
         self: Rc<Self>,
-        _: component::GetParams<T>,
-        mut results: component::GetResults<T>,
-    ) -> capnp::Result<()> {
-        self.require(Rights::GET)?;
-        let value = self.state.get::<T>(self.id)?;
-        value.with_reader(|reader| results.get().set_value(reader))?;
-        results.get().set_revision(value.revision().get());
-        Ok(())
+        context: component::GetContext<'_, T>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.require(Rights::GET)?;
+            let value = self.state.get::<T>(self.id)?;
+            value.with_reader(|reader| results.get().set_value(reader))?;
+            results.get().set_revision(value.revision().get());
+            Ok(())
+        })
     }
-    async fn put(
+    fn put(
         self: Rc<Self>,
-        params: component::PutParams<T>,
-        mut results: component::PutResults<T>,
-    ) -> capnp::Result<()> {
-        self.require(Rights::PUT)?;
-        let p = params.get()?;
-        let edit = Edit::set::<T>(self.id, p.get_value()?)?;
-        let revision = self
-            .state
-            .edit(Revision::new(p.get_expected_head()), None, &[edit])?;
-        results.get().set_revision(revision.get());
-        Ok(())
+        context: component::PutContext<'_, T>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.require(Rights::PUT)?;
+            let p = params.get()?;
+            let edit = Edit::set::<T>(self.id, p.get_value()?)?;
+            let revision = self
+                .state
+                .edit(Revision::new(p.get_expected_head()), None, &[edit])?;
+            results.get().set_revision(revision.get());
+            Ok(())
+        })
     }
-    async fn commit(
+    fn commit(
         self: Rc<Self>,
-        params: component::CommitParams<T>,
-        mut results: component::CommitResults<T>,
-    ) -> capnp::Result<()> {
-        self.require(Rights::PUT)?;
-        self.require(Rights::PUBLISH)?;
-        let p = params.get()?;
-        let edit = Edit::set::<T>(self.id, p.get_value()?)?;
-        let revision = self.state.edit(
-            Revision::new(p.get_expected_head()),
-            Some(Revision::new(p.get_expected_published())),
-            &[edit],
-        )?;
-        results.get().set_revision(revision.get());
-        Ok(())
+        context: component::CommitContext<'_, T>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.require(Rights::PUT)?;
+            self.require(Rights::PUBLISH)?;
+            let p = params.get()?;
+            let edit = Edit::set::<T>(self.id, p.get_value()?)?;
+            let revision = self.state.edit(
+                Revision::new(p.get_expected_head()),
+                Some(Revision::new(p.get_expected_published())),
+                &[edit],
+            )?;
+            results.get().set_revision(revision.get());
+            Ok(())
+        })
     }
 }

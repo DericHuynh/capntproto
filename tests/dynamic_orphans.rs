@@ -7,13 +7,15 @@ use std::{cell::Cell, rc::Rc};
 
 struct Server(Rc<Cell<usize>>);
 impl harness::Server for Server {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        _: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        r.get().set_value(123);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            r.get().set_value(123);
+            Ok(())
+        })
     }
 }
 impl Drop for Server {

@@ -12,6 +12,7 @@ pub struct Question<'pool, 'q> {
 }
 enum Original<'pool> {
     Frame(Frame<'pool>),
+    Metadata(inbound::full::OriginalMetadata),
     // A checked template has no parameter grants. Retain the method and handoff
     // policy needed by Return admission, without pinning its serialized bytes.
     DataOnly {
@@ -27,6 +28,25 @@ impl<'pool> Original<'pool> {
     }
 }
 impl<'pool, 'q> Question<'pool, 'q> {
+    #[cfg(feature = "alloc")]
+    pub(super) fn publish_parts(
+        reservation: questions::Reservation<'_, 'q, '_>,
+        parts: messages::SharedParts,
+        queue: messages::QueueSlot<'_, 'pool, '_, impl Sized>,
+        method: (u64, u16),
+        allows_handoff: bool,
+    ) -> Self {
+        let local = reservation.accept();
+        queue.accept_parts(parts);
+        Self {
+            key: local.key(),
+            local: Some(local),
+            original: Original::DataOnly {
+                method,
+                allows_handoff,
+            },
+        }
+    }
     /// Internal publication of a template already checked by the invocation
     /// encoder and patched with this reservation's ID. The caller must preserve
     /// its Caller destination, empty descriptor table and reader limits. No
@@ -132,14 +152,44 @@ impl<'pool, 'q> Question<'pool, 'q> {
             local: Some(local),
         })
     }
+    /// The private one-capability encoder has already captured the exact
+    /// outgoing method and export. Like C++ Question::paramExports, retain that
+    /// metadata without pinning the serialized request through Return. The FIFO
+    /// remains the affine frame owner through partial writes and physical flush.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn send_granting_compact<E>(
+        reservation: questions::Reservation<'_, 'q, '_>,
+        batch: exports::Batch<'_, '_, '_, E>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        frame: Frame<'pool>,
+        scratch: &mut [u32],
+        queue: messages::QueueSlot<'_, 'pool, '_, impl Sized>,
+        metadata: inbound::full::OriginalMetadata,
+    ) -> Result<Self, crate::admission::Error> {
+        let local = crate::admission::granting_question(
+            reservation,
+            batch,
+            messages,
+            frame.lease,
+            scratch,
+            frame.options,
+        )?
+        .accept(queue);
+        Ok(Self {
+            original: Original::Metadata(metadata),
+            key: local.key(),
+            local: Some(local),
+        })
+    }
     pub fn key(&self) -> questions::Key<'q> {
         self.key
     }
     pub fn local(&self) -> Option<&questions::Local<'q>> {
         self.local.as_ref()
     }
-    /// A canceled call still owns its original frame until the late Return is
-    /// validated. Finish acceptance remains the connection output's obligation.
+    /// Cancellation retains the exact request metadata or original frame until
+    /// the late Return is validated. Finish acceptance remains the connection
+    /// output's obligation.
     pub fn cancel(&mut self, questions: &mut questions::Questions<'q, '_>) {
         if let Some(local) = self.local.take() {
             questions.release(local);
@@ -289,7 +339,19 @@ impl<'pool, 'q> Question<'pool, 'q> {
             return Err(Error::WrongMessage);
         }
         if !matches!(self.original, Original::DataOnly { .. }) {
-            return Ok(None);
+            // Ordinary publication already checked the original frame against
+            // this question's result destination. A descriptor-free Results
+            // which releases no parameter grants needs only that lifecycle:
+            // the peer retains every exported capability until a later Release.
+            // Redirected results and releaseParamCaps still require the complete
+            // descriptor transaction against the retained original frame.
+            if result.get_release_param_caps()
+                || questions
+                    .is_redirected(self.key.id())
+                    .map_err(|error| Error::Admission(inbound::Error::Question(error)))?
+            {
+                return Ok(None);
+            }
         }
         let pending = questions
             .prepare_receive_owned(self.key, result.get_no_finish_needed())
@@ -388,19 +450,23 @@ impl<'pool, 'q> Question<'pool, 'q> {
         capacity: Capacity,
     ) -> Result<AdmittedReturn<'i, 'e, 'a, I, N>, Error> {
         let mut descriptors = None;
-        if let rpc_capnp::return_::Results(payload) =
-            result.which().map_err(|_| Error::WrongMessage)?
-        {
-            if questions.is_live(self.key) {
-                let payload = payload?;
-                descriptors = Some(payload.get_cap_table()?);
-                receipts.initialize(payload, imports, 0, receiver, capacity)?;
+        let mut prepared = inbound::full::PreparedReturn::new(result);
+        if questions.is_live(self.key) {
+            if let Some(payload) = prepared.prepare_results().map_err(|error| match error {
+                inbound::Error::Unsupported => Error::WrongMessage,
+                inbound::Error::Wire(kind) => Error::Wire(kind),
+                error => Error::Admission(error),
+            })? {
+                let table = payload.descriptors();
+                descriptors = Some(table);
+                let count = usize::try_from(table.len()).map_err(|_| Error::Capacity)?;
+                receipts.initialize_descriptors(table, count, imports, receiver, capacity)?;
             }
         }
-        let mut admit = |original: inbound::full::Original<'_>| -> Result<_, Error> {
+        let admit = |original: inbound::full::Original<'_>| -> Result<_, Error> {
             let method = original.method;
             let pending = inbound::full::returned_prepared(
-                result,
+                prepared,
                 original,
                 questions,
                 imports,
@@ -429,9 +495,11 @@ impl<'pool, 'q> Question<'pool, 'q> {
                 method,
                 allows_handoff,
             } => admit(inbound::full::Original::data_only(*method, *allows_handoff))?,
+            Original::Metadata(metadata) => admit(metadata.original())?,
             Original::Frame(frame) => frame.with(messages, |original| {
-                let original = inbound::full::Original::read(result.get_answer_id(), original)
-                    .map_err(Error::Admission)?;
+                let original =
+                    inbound::full::Original::read_published(result.get_answer_id(), original)
+                        .map_err(Error::Admission)?;
                 admit(original)
             })??,
         };
@@ -604,16 +672,24 @@ impl<'m, 'r, 'i, 'e, 'a, I, const N: usize> Payload<'m, 'r, 'i, 'e, 'a, I, N> {
         &self,
         index: u32,
     ) -> Result<Option<reception::full::Capability<'r, 'm, 'i, 'e, 'a>>, reception::Error> {
-        if index as usize >= self.receipts.count {
+        let i = index as usize;
+        if i >= self.receipts.count {
             return Err(reception::Error::MissingCapability);
         }
-        if matches!(
-            self.payload.get_cap_table()?.get(index).which(),
-            Ok(rpc_capnp::cap_descriptor::None(()))
-        ) {
+        // Keep the checked descriptor from the null-slot test. Enumerating a
+        // result table must not decode and charge that same list a second time
+        // merely to borrow the receipt already assigned to this exact slot.
+        let descriptor = self.payload.get_cap_table()?.get(index);
+        if matches!(descriptor.which(), Ok(rpc_capnp::cap_descriptor::None(()))) {
             Ok(None)
         } else {
-            self.at(index).map(Some)
+            reception::full::descriptor_capability(
+                descriptor,
+                &self.receipts.storage.imports()[i],
+                &self.receipts.storage.exports()[i],
+                &self.receipts.storage.answers()[i],
+            )
+            .map(Some)
         }
     }
     pub fn content(&self) -> capnp::any_pointer::Reader<'m> {

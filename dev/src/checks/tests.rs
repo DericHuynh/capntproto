@@ -179,6 +179,10 @@ fn workflow_policy_rejects_missing_gates_duplicates_and_untrusted_cloud_jobs() {
             all["ci"]["concurrency"]["group"].clone(),
         ),
         ("performance", "/jobs/benchmark/if", json!("always()")),
+        ("performance", "/on/push", json!({"branches":["main"]})),
+        ("performance", "/on/push", json!({"branches":["*"]})),
+        ("performance", "/on/pull_request", Value::Null),
+        ("performance", "/on/push/paths", json!(["crates/**"])),
         (
             "performance",
             "/jobs/build/environment",

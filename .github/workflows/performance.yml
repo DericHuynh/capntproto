@@ -1,5 +1,9 @@
 name: Performance / Dedicated benchmarks
 on:
+  # Explicit qualification updates run the same dedicated campaign without
+  # waiting for the PR's longer coverage/formal verification dependency chain.
+  push:
+    branches: [codex/portable-qualification]
   workflow_call:
     secrets:
       DIGITALOCEAN_ACCESS_TOKEN:
@@ -60,7 +64,7 @@ jobs:
       - name: Test benchmark identity, validation, and CPU placement
         run: cargo nextest run --locked --manifest-path benchmarks/rpc/Cargo.toml
       - name: Exercise all six workflow implementations locally (not timing evidence)
-        run: cargo run --locked -p capntproto-dev -- digitalocean-bench smoke --bundle target/benchmark-build/bundle --output target/benchmark-build/workflow-smoke --state "$RUNNER_TEMP/workflow-smoke"
+        run: cargo run --locked -p capntproto-dev -- digitalocean-bench smoke --bundle target/benchmark-build/bundle --output "$RUNNER_TEMP/benchmark-workflow-smoke" --state "$RUNNER_TEMP/workflow-smoke"
       - name: Archive executable bundle with permissions intact
         run: tar -czf "$RUNNER_TEMP/benchmark-bundle.tar.gz" -C target/benchmark-build bundle
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -79,7 +83,7 @@ jobs:
             target/benchmark-build/evidence.json
             target/benchmark-build/logs/
             target/benchmark-build/bundle/manifest.json
-            target/benchmark-build/workflow-smoke/
+            ${{ runner.temp }}/benchmark-workflow-smoke/
           if-no-files-found: error
           retention-days: 30
       - name: Explain benchmark scope
@@ -121,18 +125,18 @@ jobs:
       - name: Require configured Actions secret and check dedicated capacity
         env:
           DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-          DO_REGION: ${{ inputs.region }}
-          DO_SIZE: ${{ inputs.size }}
+          DO_REGION: ${{ inputs.region || 'auto' }}
+          DO_SIZE: ${{ inputs.size || 'auto' }}
         run: |
           test -n "$DIGITALOCEAN_ACCESS_TOKEN"
-          cargo run --locked -p capntproto-dev -- digitalocean-bench check --output target/quality/benchmark --state "$RUNNER_TEMP/capntproto-do"
+          cargo run --locked -p capntproto-dev -- digitalocean-bench check --output "$RUNNER_TEMP/benchmark-quality/benchmark" --state "$RUNNER_TEMP/capntproto-do"
       - name: Run VPC workflows across two dedicated droplets, then loopback controls
         id: measure
         env:
           DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-          DO_REGION: ${{ inputs.region }}
-          DO_SIZE: ${{ inputs.size }}
-        run: cargo run --locked -p capntproto-dev -- digitalocean-bench run-remote --bundle target/benchmark-build/bundle --output target/quality/benchmark --state "$RUNNER_TEMP/capntproto-do"
+          DO_REGION: ${{ inputs.region || 'auto' }}
+          DO_SIZE: ${{ inputs.size || 'auto' }}
+        run: cargo run --locked -p capntproto-dev -- digitalocean-bench run-remote --trace-io --bundle target/benchmark-build/bundle --output "$RUNNER_TEMP/benchmark-quality/benchmark" --state "$RUNNER_TEMP/capntproto-do"
       - name: Always verify cleanup of both droplets and SSH keys
         if: always()
         env:
@@ -141,13 +145,13 @@ jobs:
       - name: Validate downloaded samples
         if: ${{ !cancelled() && steps.measure.outcome == 'success' }}
         run: |
-          cargo run --locked -p capntproto-quality -- benchmark target/quality/benchmark target/benchmark-build/bundle
+          cargo run --locked -p capntproto-quality -- benchmark "$RUNNER_TEMP/benchmark-quality/benchmark" target/benchmark-build/bundle
       - name: Generate validated README and comparison bar charts
         if: ${{ !cancelled() && steps.measure.outcome == 'success' }}
-        run: cargo run --locked -p capntproto-quality -- report target/quality benchmark
+        run: cargo run --locked -p capntproto-quality -- report "$RUNNER_TEMP/benchmark-quality" benchmark
       - name: Export compact README data (including failed test runs)
         if: success() || failure()
-        run: cargo run --locked -p capntproto-dev -- reports collect --input target/quality --kind benchmark --output target/readme-data/publication.json
+        run: cargo run --locked -p capntproto-dev -- reports collect --input "$RUNNER_TEMP/benchmark-quality" --kind benchmark --output target/readme-data/publication.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
@@ -161,7 +165,7 @@ jobs:
         with:
           name: dedicated-benchmark-report
           overwrite: true
-          path: target/quality/
+          path: ${{ runner.temp }}/benchmark-quality/
           if-no-files-found: error
           retention-days: 30
       - name: Job summary
@@ -169,11 +173,11 @@ jobs:
         env:
           REPORT_URL: ${{ steps.report.outputs.artifact-url }}
         run: |
-          if test -f target/quality/README.md; then
-            sed '/^## Comparison bar charts/,$d' target/quality/README.md >> "$GITHUB_STEP_SUMMARY"
+          if test -f "$RUNNER_TEMP/benchmark-quality/README.md"; then
+            sed '/^## Comparison bar charts/,$d' "$RUNNER_TEMP/benchmark-quality/README.md" >> "$GITHUB_STEP_SUMMARY"
             printf '\n## Comparison bar charts\n\n[Download the README, SVG chart suite and plotted values](%s).\n' "$REPORT_URL" >> "$GITHUB_STEP_SUMMARY"
           fi
-          if test -f target/quality/benchmark/remote/README.md; then
-            sed '/^!\[Remote workflow/d' target/quality/benchmark/remote/README.md >> "$GITHUB_STEP_SUMMARY"
+          if test -f "$RUNNER_TEMP/benchmark-quality/benchmark/remote/README.md"; then
+            sed '/^!\[Remote workflow/d' "$RUNNER_TEMP/benchmark-quality/benchmark/remote/README.md" >> "$GITHUB_STEP_SUMMARY"
             printf '\n[Download remote raw samples, host evidence and workflow graph](%s).\n' "$REPORT_URL" >> "$GITHUB_STEP_SUMMARY"
           fi

@@ -6,10 +6,17 @@ pub(super) enum Bytes<'bytes> {
     Borrowed(&'bytes mut [u8]),
     #[cfg(feature = "alloc")]
     Owned {
-        allocation: alloc::rc::Rc<alloc::vec::Vec<u8>>,
+        allocation: alloc::rc::Rc<Allocation>,
         offset: usize,
         length: usize,
     },
+    #[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+    Received {
+        owner: alloc::rc::Rc<Allocation>,
+        range: core::ops::Range<usize>,
+    },
+    #[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+    Released(alloc::rc::Weak<Allocation>),
 }
 impl Bytes<'_> {
     pub(super) fn exclusive(&self) -> bool {
@@ -17,6 +24,10 @@ impl Bytes<'_> {
             Self::Borrowed(_) => true,
             #[cfg(feature = "alloc")]
             Self::Owned { allocation, .. } => alloc::rc::Rc::strong_count(allocation) == 1,
+            #[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+            Self::Received { .. } => false,
+            #[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+            Self::Released(owner) => owner.strong_count() == 0,
         }
     }
     #[cfg(feature = "alloc")]
@@ -34,6 +45,65 @@ impl Bytes<'_> {
                     range: offset + range.start..offset + range.end,
                 })
             }
+            #[cfg(target_has_atomic = "ptr")]
+            Self::Received {
+                owner,
+                range: source,
+            } => {
+                assert!(range.start <= range.end && range.end <= source.len());
+                Some(SharedBytes {
+                    allocation: owner.clone(),
+                    range: source.start + range.start..source.start + range.end,
+                })
+            }
+            #[cfg(target_has_atomic = "ptr")]
+            Self::Released(_) => None,
+        }
+    }
+}
+
+// Pool accounting follows immutable protocol owners, including owners which
+// outlive a message scope. The transport's independent reference is not a
+// protocol lease and cannot mutate these bytes while this owner exists.
+#[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+pub(super) struct Received {
+    pub(super) allocation: alloc::sync::Arc<alloc::vec::Vec<u8>>,
+    pub(super) charged: alloc::rc::Rc<Cell<usize>>,
+}
+#[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+impl Drop for Received {
+    fn drop(&mut self) {
+        self.charged
+            .set(self.charged.get() - self.allocation.capacity());
+    }
+}
+#[cfg(feature = "alloc")]
+pub(super) enum Allocation {
+    Local(alloc::vec::Vec<u8>),
+    #[cfg(target_has_atomic = "ptr")]
+    Received(Received),
+}
+#[cfg(feature = "alloc")]
+impl Allocation {
+    pub(super) fn bytes(&self) -> &[u8] {
+        match self {
+            Self::Local(bytes) => bytes,
+            #[cfg(target_has_atomic = "ptr")]
+            Self::Received(owner) => &owner.allocation,
+        }
+    }
+    pub(super) fn capacity(&self) -> usize {
+        match self {
+            Self::Local(bytes) => bytes.capacity(),
+            #[cfg(target_has_atomic = "ptr")]
+            Self::Received(owner) => owner.allocation.capacity(),
+        }
+    }
+    fn local_mut(&mut self) -> &mut alloc::vec::Vec<u8> {
+        match self {
+            Self::Local(bytes) => bytes,
+            #[cfg(target_has_atomic = "ptr")]
+            Self::Received(_) => unreachable!("received storage is immutable"),
         }
     }
 }
@@ -45,14 +115,14 @@ impl Bytes<'_> {
 #[cfg(feature = "alloc")]
 #[derive(Clone)]
 pub struct SharedBytes {
-    allocation: alloc::rc::Rc<alloc::vec::Vec<u8>>,
+    allocation: alloc::rc::Rc<Allocation>,
     range: core::ops::Range<usize>,
 }
 #[cfg(feature = "alloc")]
 impl Deref for SharedBytes {
     type Target = [u8];
     fn deref(&self) -> &[u8] {
-        &self.allocation[self.range.clone()]
+        &self.allocation.bytes()[self.range.clone()]
     }
 }
 #[cfg(feature = "alloc")]
@@ -76,7 +146,11 @@ impl Deref for Bytes<'_> {
                 allocation,
                 offset,
                 length,
-            } => &allocation[*offset..*offset + *length],
+            } => &allocation.bytes()[*offset..*offset + *length],
+            #[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+            Self::Received { owner, range } => &owner.bytes()[range.clone()],
+            #[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+            Self::Released(_) => &[],
         }
     }
 }
@@ -91,7 +165,13 @@ impl DerefMut for Bytes<'_> {
                 length,
             } => &mut alloc::rc::Rc::get_mut(allocation)
                 .expect("a writing buffer has no shared immutable owners")
-                [*offset..*offset + *length],
+                .local_mut()[*offset..*offset + *length],
+            #[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+            Self::Received { .. } => {
+                unreachable!("received storage is immutable")
+            }
+            #[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+            Self::Released(_) => &mut [],
         }
     }
 }
@@ -144,6 +224,87 @@ pub(super) fn segment_position(index: usize) -> Option<(usize, usize)> {
     let next = index.checked_add(1)?;
     let segment = (usize::BITS - next.leading_zeros() - 1) as usize;
     Some((segment, index - ((1usize << segment) - 1)))
+}
+
+#[cfg(all(test, feature = "alloc", target_has_atomic = "ptr"))]
+mod received_tests {
+    extern crate std;
+    use super::*;
+    use alloc::{rc::Rc, sync::Arc, vec::Vec};
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    #[test]
+    fn segment_boundaries_and_maximum_index_never_wrap() {
+        assert_eq!(segment_position(usize::MAX), None);
+        for shift in 0..usize::BITS {
+            let width = 1usize << shift;
+            let start = width - 1;
+            assert_eq!(segment_position(start), Some((shift as usize, 0)));
+            let last = start + (width - 1);
+            assert_eq!(segment_position(last), Some((shift as usize, width - 1)));
+        }
+    }
+
+    #[test]
+    fn growing_buffer_view_preserves_indices_and_rejects_exhaustion() {
+        let storage = GrowingBuffers::new(2, 64, 2 * (64 + 7));
+        let buffers = Buffers::Growing(&storage);
+        assert_eq!(buffers.append(64), Some(0));
+        let first = buffers[0].bytes.borrow();
+        assert_eq!(buffers.append(64), Some(1));
+        let second = buffers[1].bytes.borrow();
+        assert_eq!(buffers.append(64), None);
+        assert_eq!(buffers.iter().count(), 2);
+        assert!(core::ptr::eq(&buffers[0], storage.at(0)));
+        assert!(core::ptr::eq(&buffers[1], storage.at(1)));
+        assert_eq!(first.len(), 64);
+        assert_eq!(second.len(), 64);
+    }
+
+    #[test]
+    fn received_ranges_stay_immutable_and_release_their_charge_once() {
+        let transport = Arc::new((0..32).collect::<Vec<u8>>());
+        let charged = Rc::new(Cell::new(transport.capacity()));
+        let mut allocation = Allocation::Received(Received {
+            allocation: transport.clone(),
+            charged: charged.clone(),
+        });
+        assert_eq!(allocation.capacity(), transport.capacity());
+        assert!(catch_unwind(AssertUnwindSafe(|| {
+            allocation.local_mut();
+        }))
+        .is_err());
+        let owner = Rc::new(allocation);
+        let mut bytes = Bytes::Received {
+            owner: owner.clone(),
+            range: 8..24,
+        };
+        assert!(!bytes.exclusive());
+        let view = bytes.share(2..6).unwrap();
+        assert_eq!(view.as_ref(), &[10, 11, 12, 13]);
+        assert!(catch_unwind(AssertUnwindSafe(|| {
+            bytes.deref_mut();
+        }))
+        .is_err());
+        assert!(catch_unwind(AssertUnwindSafe(
+            || bytes.share(core::ops::Range { start: 4, end: 3 })
+        ))
+        .is_err());
+        assert!(catch_unwind(AssertUnwindSafe(|| bytes.share(0..17))).is_err());
+        let mut released = Bytes::Released(Rc::downgrade(&owner));
+        assert!(!released.exclusive());
+        assert!(released.share(0..0).is_none());
+        assert!(released.is_empty());
+        assert!(released.deref_mut().is_empty());
+        drop((bytes, owner));
+        assert!(!released.exclusive());
+        assert_eq!(charged.get(), transport.capacity());
+        assert_eq!(view.as_ref(), &[10, 11, 12, 13]);
+        drop(view);
+        assert!(released.exclusive());
+        assert_eq!(charged.get(), 0);
+        assert_eq!(&transport[8..12], &[8, 9, 10, 11]);
+    }
 }
 
 #[cfg(kani)]

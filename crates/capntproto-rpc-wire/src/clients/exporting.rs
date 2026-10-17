@@ -62,6 +62,9 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
     pub fn capacity(&self) -> usize {
         self.slots.len()
     }
+    pub(crate) fn vacant_within(&self, maximum: usize) -> bool {
+        self.slots.len() <= maximum && self.slots.iter().all(|slot| slot.entry.is_none())
+    }
     pub fn new(slots: &'s mut [Slot<'g, 'e>]) -> Result<Self, Error> {
         Self::from_storage(SlotStorage::borrowed(slots))
     }

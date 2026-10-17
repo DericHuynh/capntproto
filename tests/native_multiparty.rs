@@ -17,23 +17,27 @@ struct Service {
     stored: Rc<RefCell<Option<harness::Client>>>,
 }
 impl harness::Server for Service {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        p: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        r.get().set_value(p.get()?.get_value());
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            r.get().set_value(p.get()?.get_value());
+            Ok(())
+        })
     }
-    async fn bounce(
+    fn bounce(
         self: Rc<Self>,
-        p: harness::BounceParams,
-        mut r: harness::BounceResults,
-    ) -> capnp::Result<()> {
-        let cap = p.get()?.get_cap()?;
-        *self.stored.borrow_mut() = Some(cap.clone());
-        r.get().set_cap(cap);
-        Ok(())
+        context: harness::BounceContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let cap = p.get()?.get_cap()?;
+            *self.stored.borrow_mut() = Some(cap.clone());
+            r.get().set_cap(cap);
+            Ok(())
+        })
     }
 }
 async fn pair(a: &Identity, b: &Identity, ah: &Handle, bh: &Handle) -> capnp::Result<()> {

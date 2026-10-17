@@ -24,19 +24,19 @@ use core::{
     task::{Context, Poll, Waker},
 };
 
-fn with_fixed_peer<'pool, R>(
+fn with_fixed_peer<'pool, const SLOTS: usize, R>(
     growing: u8,
     f: impl for<'id, 's> FnOnce(Driver<'pool, 'id, 's, (), u32, u8, u32, 4, 4>) -> R,
 ) -> R {
     connection::with_domain(|domain| {
         #[cfg(feature = "alloc")]
         if growing == 1 {
-            let mut storage = FixedStorage::<(), u32, u8, u32, 4, 4, 4, 0>::new();
+            let mut storage = FixedStorage::<(), u32, u8, u32, 4, 4, SLOTS, 0>::new();
             return f(storage.bind_growing_clients(domain, 1, 0, 12).unwrap());
         }
         #[cfg(feature = "alloc")]
         if growing == 2 {
-            let mut storage = FixedStorage::<(), u32, u8, u32, 4, 4, 4, 0, 0, 0>::new();
+            let mut storage = FixedStorage::<(), u32, u8, u32, 4, 4, SLOTS, 0, 0, 0>::new();
             let bound = connection::Growth {
                 initial: 0,
                 maximum: 4,
@@ -54,7 +54,7 @@ fn with_fixed_peer<'pool, R>(
             return f(storage.bind_growing(domain, 1, bounds).unwrap());
         }
         assert_eq!(growing, 0);
-        let mut storage = FixedStorage::<(), u32, u8, u32, 4, 4, 4, 12>::new();
+        let mut storage = FixedStorage::<(), u32, u8, u32, 4, 4, SLOTS, 12>::new();
         f(storage.bind(domain, 1).unwrap())
     })
 }
@@ -81,7 +81,7 @@ fn run(mode: u8, growing: u8) {
     super::driver::message_scope(&mut buffers, &mut [messages::SendSlot::EMPTY], |messages| {
         let mut sends = [None];
         let mut queue = super::driver::message_queue(&mut sends).unwrap();
-        with_fixed_peer(growing, |mut peer| {
+        with_fixed_peer::<4, _>(growing, |mut peer| {
             let remote_call = matches!(mode, 2 | 3 | 5);
             let target = if remote_call {
                 remote(&mut peer, ImportId::from_wire(91))
@@ -357,8 +357,10 @@ pub fn growing_ledger_cleanup() {
     super::driver::message_scope(&mut buffers, &mut [messages::SendSlot::EMPTY], |messages| {
         let mut sends = [None];
         let mut queue = super::driver::message_queue(&mut sends).unwrap();
-        with_fixed_peer(2, |mut peer| {
-            // Leave the maintenance cursor part way through an empty scan.
+        with_fixed_peer::<9, _>(2, |mut peer| {
+            // Exceed the eight-slot vacancy certificate to leave the general
+            // maintenance cursor part way through an empty scan. Ledger growth
+            // and the one-frame output bound remain the fault under test.
             assert!(matches!(
                 peer.poll_maintenance(
                     messages,

@@ -24,18 +24,24 @@ impl Drop for Running {
 }
 struct Service(Rc<State>);
 impl harness::Server for Service {
-    async fn stream(self: Rc<Self>, _: harness::StreamParams) -> capnp::Result<()> {
-        self.0.active.set(self.0.active.get() + 1);
-        self.0.started.set(self.0.started.get() + 1);
-        let _running = Running(self.0.clone());
-        let gate = self.0.gates.borrow_mut().pop_front().unwrap();
-        gate.await
-            .map_err(|_| Error::failed("gate dropped".into()))?;
-        if self.0.fail {
-            Err(Error::failed("stream failed".into()))
-        } else {
-            Ok(())
-        }
+    fn stream(
+        self: Rc<Self>,
+        context: harness::StreamContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.0.active.set(self.0.active.get() + 1);
+            self.0.started.set(self.0.started.get() + 1);
+            let _running = Running(self.0.clone());
+            let gate = self.0.gates.borrow_mut().pop_front().unwrap();
+            gate.await
+                .map_err(|_| Error::failed("gate dropped".into()))?;
+            if self.0.fail {
+                Err(Error::failed("stream failed".into()))
+            } else {
+                Ok(())
+            }
+        })
     }
 }
 type Lookup<'a> = Pin<Box<dyn Future<Output = Option<Rc<Service>>> + 'a>>;

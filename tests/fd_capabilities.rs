@@ -45,19 +45,21 @@ impl Policy for Permit {
 #[derive(Clone)]
 struct Sink(Rc<RefCell<Vec<harness::Client>>>);
 impl harness::Server for Sink {
-    async fn fd_caps(
+    fn fd_caps(
         self: Rc<Self>,
-        p: harness::FdCapsParams,
-        mut r: harness::FdCapsResults,
-    ) -> capnp::Result<()> {
-        let list = p.get()?.get_caps()?;
-        let mut result = r.get().init_caps(list.len());
-        for i in 0..list.len() {
-            let cap = list.get(i)?;
-            self.0.borrow_mut().push(cap.clone());
-            result.set(i, cap.into_client_hook());
-        }
-        Ok(())
+        context: harness::FdCapsContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let list = p.get()?.get_caps()?;
+            let mut result = r.get().init_caps(list.len());
+            for i in 0..list.len() {
+                let cap = list.get(i)?;
+                self.0.borrow_mut().push(cap.clone());
+                result.set(i, cap.into_client_hook());
+            }
+            Ok(())
+        })
     }
 }
 struct Dummy;
@@ -441,35 +443,41 @@ async fn fd_authority_and_promise_resolution() {
 async fn unix_rpc_bootstrap_resolve_call_return_and_fallback() {
     struct Files(Rc<RefCell<Vec<u32>>>);
     impl harness::Server for Files {
-        async fn echo(
+        fn echo(
             self: Rc<Self>,
-            _: harness::EchoParams,
-            mut r: harness::EchoResults,
-        ) -> capnp::Result<()> {
-            r.get().set_value(42);
-            Ok(())
+            context: harness::EchoContext<'_>,
+        ) -> capnp::capability::Promise<(), capnp::Error> {
+            let (_, mut r) = context.into_owned();
+            capnp::capability::Promise::from_future(async move {
+                r.get().set_value(42);
+                Ok(())
+            })
         }
-        async fn bounce(
+        fn bounce(
             self: Rc<Self>,
-            p: harness::BounceParams,
-            mut r: harness::BounceResults,
-        ) -> capnp::Result<()> {
-            let fd = p.get()?.get_cap()?.client.get_fd().await?;
-            self.0.borrow_mut().push(value(fd));
-            r.get().set_cap(capnp_rpc::new_fd_client(Dummy, fd_cap(10)));
-            Ok(())
+            context: harness::BounceContext<'_>,
+        ) -> capnp::capability::Promise<(), capnp::Error> {
+            let (p, mut r) = context.into_owned();
+            capnp::capability::Promise::from_future(async move {
+                let fd = p.get()?.get_cap()?.client.get_fd().await?;
+                self.0.borrow_mut().push(value(fd));
+                r.get().set_cap(capnp_rpc::new_fd_client(Dummy, fd_cap(10)));
+                Ok(())
+            })
         }
-        async fn fd_caps(
+        fn fd_caps(
             self: Rc<Self>,
-            p: harness::FdCapsParams,
-            mut r: harness::FdCapsResults,
-        ) -> capnp::Result<()> {
-            let caps = p.get()?.get_caps()?;
-            let mut out = r.get().init_caps(caps.len());
-            for i in 0..caps.len() {
-                out.set(i, caps.get(i)?.into_client_hook());
-            }
-            Ok(())
+            context: harness::FdCapsContext<'_>,
+        ) -> capnp::capability::Promise<(), capnp::Error> {
+            let (p, mut r) = context.into_owned();
+            capnp::capability::Promise::from_future(async move {
+                let caps = p.get()?.get_caps()?;
+                let mut out = r.get().init_caps(caps.len());
+                for i in 0..caps.len() {
+                    out.set(i, caps.get(i)?.into_client_hook());
+                }
+                Ok(())
+            })
         }
     }
     fn fd_cap(byte: u8) -> OwnedFd {

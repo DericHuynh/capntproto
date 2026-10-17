@@ -3,6 +3,63 @@ const ZERO: Word = crate::word(0, 0, 0, 0, 0, 0, 0, 0);
 const DIRTY: Word = crate::word(0xa5, 0xa5, 0xa5, 0xa5, 0xa5, 0xa5, 0xa5, 0xa5);
 
 #[test]
+fn empty_copy_stage_uses_exact_capacity_and_reclaims_partial_failures() {
+    let mut source_words = [ZERO; 2];
+    let mut source = FixedBuilder::new(&mut source_words).unwrap();
+    source.try_set_root_data(b"12345678").unwrap();
+    let content = source
+        .get_root_as_reader::<crate::any_pointer::Reader<'_>>()
+        .unwrap();
+    for mapped in [false, true] {
+        for capacity in [1, 2] {
+            let mut words = [DIRTY; 2];
+            let mut builder = FixedBuilder::new(&mut words[..capacity]).unwrap();
+            let result = if mapped {
+                builder.try_copy_root_with_capabilities(
+                    content,
+                    crate::wire_capability::IndexMap::identity(0),
+                )
+            } else {
+                builder.try_copy_root(content)
+            };
+            if capacity == 1 {
+                assert!(matches!(
+                    result.unwrap_err().kind,
+                    ErrorKind::InsufficientCapacity { .. }
+                ));
+                assert_eq!(builder.size_in_words(), 1);
+                assert_eq!(builder.get_segments_for_output()[0], &[0; 8]);
+            } else {
+                result.unwrap();
+                assert_eq!(builder.size_in_words(), 2);
+                assert_eq!(
+                    builder
+                        .get_root_as_reader::<crate::data::Reader<'_>>()
+                        .unwrap(),
+                    b"12345678"
+                );
+            }
+        }
+    }
+    let mut words = [DIRTY; 4];
+    let mut builder = FixedBuilder::new(&mut words).unwrap();
+    for _ in 0..3 {
+        let error = builder
+            .root()
+            .stage(|p| {
+                p.try_init_text(16)?;
+                Err(crate::Error::from_kind(ErrorKind::TypeMismatch))
+            })
+            .unwrap_err();
+        assert_eq!(error.kind, ErrorKind::TypeMismatch);
+        assert_eq!(builder.size_in_words(), 1);
+        assert_eq!(builder.get_segments_for_output()[0], &[0; 8]);
+    }
+    builder.try_copy_root(content).unwrap();
+    assert_eq!(builder.size_in_words(), 2);
+}
+
+#[test]
 fn list_sizes_reserve_exactly_and_reject_without_publication() {
     use crate::field_api::FixedElement;
     fn check<E: FixedElement>(bits: usize) {
@@ -95,31 +152,35 @@ fn inline_tag_and_word_counts_are_checked_before_reserving() {
 #[cfg(feature = "std")]
 #[test]
 fn unpublished_copy_stage_is_reclaimed_when_callback_unwinds() {
-    let mut words = [DIRTY; 16];
-    let mut builder = FixedBuilder::new(&mut words).unwrap();
-    builder.try_set_root_text("old").unwrap();
-    let before = builder.size_in_words();
-    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = builder.root().stage(|p| {
-            p.try_init_text(16)?;
-            panic!("injected unwind before publication");
-        });
-    }));
-    assert!(panic.is_err());
-    assert_eq!(builder.size_in_words(), before);
-    assert_eq!(
+    for populated in [false, true] {
+        let mut words = [DIRTY; 16];
+        let mut builder = FixedBuilder::new(&mut words).unwrap();
+        if populated {
+            builder.try_set_root_text("old").unwrap();
+        }
+        let before = builder.size_in_words();
+        let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = builder.root().stage(|p| {
+                p.try_init_text(16)?;
+                panic!("injected unwind before publication");
+            });
+        }));
+        assert!(panic.is_err());
+        assert_eq!(builder.size_in_words(), before);
+        assert_eq!(
+            builder
+                .get_root_as_reader::<crate::text::Reader<'_>>()
+                .unwrap(),
+            if populated { "old" } else { "" }
+        );
         builder
-            .get_root_as_reader::<crate::text::Reader<'_>>()
-            .unwrap(),
-        "old"
-    );
-    builder
-        .root()
-        .stage(|p| {
-            p.try_init_data(8)?;
-            Ok(())
-        })
-        .unwrap();
+            .root()
+            .stage(|p| {
+                p.try_init_data(8)?;
+                Ok(())
+            })
+            .unwrap();
+    }
 }
 
 #[test]

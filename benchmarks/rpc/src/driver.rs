@@ -1,6 +1,7 @@
 //! Runs precompiled clients and servers; never invokes a compiler on the benchmark host.
 use crate::Result;
 mod placement;
+pub mod portable;
 pub mod tail;
 pub mod workflows;
 use placement::Placement;
@@ -75,8 +76,29 @@ fn trial_with_iterations(
     placement: Option<&Placement>,
     iterations: usize,
 ) -> Result<Value> {
+    trial_for_driver(exe, protocol, bytes, placement, iterations, None)
+}
+
+fn trial_for_driver(
+    exe: &Path,
+    protocol: &str,
+    bytes: usize,
+    placement: Option<&Placement>,
+    iterations: usize,
+    driver: Option<&str>,
+) -> Result<Value> {
+    let portable = match driver {
+        Some("portable") => Some("1"),
+        Some("legacy") => Some("0"),
+        None => None,
+        _ => return Err("unknown TCP driver".into()),
+    };
+    let mut command = Placement::command(exe, placement.map(|p| p.server_cpu));
+    if let Some(portable) = portable {
+        command.env("CAPNTPROTO_BENCH_PORTABLE", portable);
+    }
     let mut server = Server(
-        Placement::command(exe, placement.map(|p| p.server_cpu))
+        command
             .arg("server")
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -96,6 +118,9 @@ fn trial_with_iterations(
         return Err("server must use loopback".into());
     }
     let mut client = Placement::command(exe, placement.map(|p| p.client_cpu));
+    if let Some(portable) = portable {
+        client.env("CAPNTPROTO_BENCH_PORTABLE", portable);
+    }
     client.args(["measure", address]);
     if protocol != "capnp-cpp" {
         client.arg(serde_json::to_string(&ready["public"])?);
@@ -404,6 +429,65 @@ pub fn compare(directory: &Path, destination: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn selected_driver_reaches_both_children_and_invalid_trials_are_rejected() {
+        use std::os::unix::fs::PermissionsExt;
+        struct Fixture(PathBuf);
+        impl Drop for Fixture {
+            fn drop(&mut self) {
+                let _ = fs::remove_dir_all(&self.0);
+            }
+        }
+        let directory = Fixture(std::env::temp_dir().join(format!(
+            "capntproto-driver-fixture-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos(),
+        )));
+        fs::create_dir(&directory.0).unwrap();
+        let executable = directory.0.join("peer");
+        let script = format!(
+            r#"#!/bin/sh
+printf '%s:%s\n' "$1" "${{CAPNTPROTO_BENCH_PORTABLE:-unset}}" >> "$0.log"
+if [ "$1" = server ]; then
+  printf '%s\n' '{{"address":"127.0.0.1:12345","public":null}}'
+else
+  printf '%s\n' '{{"measurement_version":{},"protocol":"tcp","payload_bytes":64,"warmup":10000,"iterations":1,"elapsed_ns":100,"latency_ns":[100]}}'
+fi
+"#,
+            crate::MEASUREMENT_VERSION
+        );
+        fs::write(&executable, &script).unwrap();
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
+        for (driver, expected) in [("portable", "1"), ("legacy", "0")] {
+            let trial = trial_for_driver(&executable, "tcp", 64, None, 1, Some(driver)).unwrap();
+            assert_eq!(trial["latency_ns"], json!([100]));
+            let log = fs::read_to_string(directory.0.join("peer.log")).unwrap();
+            assert!(log.ends_with(&format!("server:{expected}\nmeasure:{expected}\n")));
+        }
+        assert!(
+            trial_for_driver(&executable, "tcp", 64, None, 1, Some("unknown"))
+                .unwrap_err()
+                .to_string()
+                .contains("unknown TCP driver")
+        );
+        for (from, to, error) in [
+            (
+                "127.0.0.1:12345",
+                "192.0.2.1:12345",
+                "server must use loopback",
+            ),
+            (
+                "\"payload_bytes\":64",
+                "\"payload_bytes\":63",
+                "unexpected trial identity",
+            ),
+        ] {
+            fs::write(&executable, script.replace(from, to)).unwrap();
+            let result = trial_for_driver(&executable, "tcp", 64, None, 1, Some("portable"));
+            assert!(result.unwrap_err().to_string().contains(error));
+        }
+    }
 
     fn trials(tcp: u64, cpp: u64) -> Vec<Value> {
         let mut trials = Vec::new();

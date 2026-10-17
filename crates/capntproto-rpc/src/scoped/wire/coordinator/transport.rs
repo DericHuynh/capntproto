@@ -13,6 +13,21 @@ use capntproto_rpc_wire::{attachments::Sender, clients::Endpoint, Capacity};
 /// after admission, EOF, failure or cancellation, before any following frame.
 /// A discarded run future requires dropping this input along with its pool.
 pub trait Input<I>: io::Read + ImportReceiver<I> {
+    /// Optionally transfer a complete immutable allocation into the bounded
+    /// message pool. Rejection leaves bytes and attachments unconsumed. Success
+    /// retains attachments until finish_frame, like take_buffered_frame.
+    fn take_shared_frame<'p>(
+        &mut self,
+        _: &mut messages::Messages<'p, '_, '_>,
+        _: capnp::message::ReaderOptions,
+    ) -> Result<Option<Frame<'p>>, capntproto_rpc_wire::owned::Error> {
+        Ok(None)
+    }
+    /// A complete next frame is buffered after finishing the previous one.
+    /// Inspect only; do not read bytes or consume ancillary resources here.
+    fn has_buffered_next_frame(&self) -> bool {
+        false
+    }
     /// Borrow an untouched complete frame after poll_frame_size, without IO.
     /// A successful direct admission calls consume_buffered_frame; rejection
     /// leaves this frame and its ancillary resources available for normal input.
@@ -52,6 +67,9 @@ pub trait Input<I>: io::Read + ImportReceiver<I> {
 /// Returning 255 explicitly omits an attachment. Metadata is synchronized before
 /// exposing an imported hook to application code, including late import aliases.
 pub trait Output<I> {
+    /// Stable metadata subscription for an imported route. Every later change
+    /// must advance this source. None declares that this import has no metadata.
+    fn metadata_source(&self, owner: &I) -> Option<Rc<MetadataSource>>;
     type Bundle: Default;
     fn bundle(&self) -> Self::Bundle;
     /// Retain Call credit through frame acceptance and transport completion.
@@ -71,12 +89,6 @@ pub trait Output<I> {
         imports: &Imports<'id, '_, I>,
         bundle: &mut Self::Bundle,
     ) -> u8;
-    fn metadata(&self, owner: &I) -> EndpointMetadata;
-    /// Query on every refresh, including settled aliases. None means there is
-    /// currently nothing to copy; it never caches the absence of later metadata.
-    fn metadata_if_present(&self, owner: &I) -> Option<EndpointMetadata> {
-        Some(self.metadata(owner))
-    }
 }
 
 /// Ordinary TCP/QUIC streams do not carry ancillary resources.
@@ -92,10 +104,7 @@ impl<I> Output<I> for NoResources {
     ) -> u8 {
         u8::MAX
     }
-    fn metadata(&self, _: &I) -> EndpointMetadata {
-        EndpointMetadata::default()
-    }
-    fn metadata_if_present(&self, _: &I) -> Option<EndpointMetadata> {
+    fn metadata_source(&self, _: &I) -> Option<Rc<MetadataSource>> {
         None
     }
 }
@@ -180,10 +189,7 @@ impl<T, const N: usize> Output<resources::Import<T>> for FileDescriptors<N> {
             _ => None,
         })
     }
-    fn metadata(&self, owner: &resources::Import<T>) -> EndpointMetadata {
-        owner.metadata()
-    }
-    fn metadata_if_present(&self, owner: &resources::Import<T>) -> Option<EndpointMetadata> {
-        owner.metadata_if_present()
+    fn metadata_source(&self, owner: &resources::Import<T>) -> Option<Rc<MetadataSource>> {
+        Some(owner.metadata_source())
     }
 }

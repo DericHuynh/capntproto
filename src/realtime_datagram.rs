@@ -208,53 +208,61 @@ impl Drop for Grant {
 }
 struct Service(Rc<Grant>);
 impl wire::Server for Service {
-    async fn describe(
+    fn describe(
         self: Rc<Self>,
-        _: wire::DescribeParams,
-        mut r: wire::DescribeResults,
-    ) -> capnp::Result<()> {
-        if self.0.receiver.is_closed() {
-            return Err(failed("datagram capability closed"));
-        }
-        let mut r = r.get();
-        self.0.config.write(r.reborrow().init_config());
-        r.set_token(&self.0.token);
-        Ok(())
+        context: wire::DescribeContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            if self.0.receiver.is_closed() {
+                return Err(failed("datagram capability closed"));
+            }
+            let mut r = r.get();
+            self.0.config.write(r.reborrow().init_config());
+            r.set_token(&self.0.token);
+            Ok(())
+        })
     }
-    async fn status(
+    fn status(
         self: Rc<Self>,
-        p: wire::StatusParams,
-        mut r: wire::StatusResults,
-    ) -> capnp::Result<()> {
-        let observation = self.0.observe(p.get()?.get_sequence())?;
-        let mut r = r.get();
-        r.set_closed(observation.closed);
-        let mut status = r.init_status();
-        match observation.status {
-            Status::Unknown => status.set_unknown(()),
-            Status::Pending => status.set_pending(()),
-            Status::Terminal(outcome) => status.set_terminal(outcome),
-        }
-        Ok(())
+        context: wire::StatusContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let observation = self.0.observe(p.get()?.get_sequence())?;
+            let mut r = r.get();
+            r.set_closed(observation.closed);
+            let mut status = r.init_status();
+            match observation.status {
+                Status::Unknown => status.set_unknown(()),
+                Status::Pending => status.set_pending(()),
+                Status::Terminal(outcome) => status.set_terminal(outcome),
+            }
+            Ok(())
+        })
     }
-    async fn cancel(
+    fn cancel(
         self: Rc<Self>,
-        p: wire::CancelParams,
-        mut r: wire::CancelResults,
-    ) -> capnp::Result<()> {
-        let sequence = p.get()?.get_sequence();
-        let outcome = self.0.receiver.cancel(sequence)?;
-        self.0.fragments.borrow_mut().remove(sequence);
-        r.get().set_outcome(outcome);
-        Ok(())
+        context: wire::CancelContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let sequence = p.get()?.get_sequence();
+            let outcome = self.0.receiver.cancel(sequence)?;
+            self.0.fragments.borrow_mut().remove(sequence);
+            r.get().set_outcome(outcome);
+            Ok(())
+        })
     }
-    async fn close(
+    fn close(
         self: Rc<Self>,
-        _: wire::CloseParams,
-        _: wire::CloseResults,
-    ) -> capnp::Result<()> {
-        self.0.revoke();
-        Ok(())
+        context: wire::CloseContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.0.revoke();
+            Ok(())
+        })
     }
 }
 fn packet(token: &[u8; 32], sequence: u64, key: u32, deadline: u64, bytes: &[u8]) -> Vec<u8> {

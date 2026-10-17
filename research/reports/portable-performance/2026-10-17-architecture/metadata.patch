@@ -1,0 +1,507 @@
+diff --git a/crates/capntproto-rpc/src/scoped.rs b/crates/capntproto-rpc/src/scoped.rs
+index 76ce595..0e07795 100644
+--- a/crates/capntproto-rpc/src/scoped.rs
++++ b/crates/capntproto-rpc/src/scoped.rs
+@@ -35,6 +35,8 @@ use std::{
+ };
+ 
+ mod admission;
++mod metadata;
++pub use metadata::MetadataSource;
+ pub(crate) mod response;
+ mod shutdown;
+ pub mod wire;
+@@ -158,6 +160,7 @@ struct Entry<'id> {
+     endpoint: Weak<Endpoint>,
+     client: Client<'id>,
+     pending: bool,
++    metadata: Option<(Rc<MetadataSource>, u64)>,
+ }
+ 
+ /// Scoped graph ownership paired with ordinary owned generated clients.
+@@ -362,6 +365,7 @@ impl<'id> ClientHooks<'id> {
+             endpoint: Rc::downgrade(&endpoint),
+             client,
+             pending,
++            metadata: None,
+         });
+         self.unsettled += usize::from(pending);
+         Ok(capability::Client::new(Box::new(Hook(endpoint, None))))
+@@ -372,7 +376,7 @@ impl<'id> ClientHooks<'id> {
+     /// A retained response/pipeline may still own hooks and deliberately keeps
+     /// those entries alive. No fallible release command is enqueued by Drop.
+     pub fn collect(&mut self, graph: &mut impl Capabilities<'id>) {
+-        self.synchronize(graph, |_| None, false);
++        self.synchronize(graph, |_| None, |_| None, false, false);
+     }
+ 
+     /// Release precisely the graph references whose final hosted owner dropped.
+@@ -418,7 +422,7 @@ impl<'id> ClientHooks<'id> {
+         graph: &mut G,
+         metadata: impl FnMut(&G::Owner) -> Option<EndpointMetadata>,
+     ) {
+-        self.synchronize(graph, metadata, true);
++        self.synchronize(graph, metadata, |_| None, true, false);
+     }
+ 
+     #[inline(always)]
+@@ -426,7 +430,9 @@ impl<'id> ClientHooks<'id> {
+         &mut self,
+         graph: &mut G,
+         mut metadata: impl FnMut(&G::Owner) -> Option<EndpointMetadata>,
++        mut subscribe: impl FnMut(&G::Owner) -> Option<Rc<MetadataSource>>,
+         refresh_settled: bool,
++        subscriptions: bool,
+     ) {
+         self.reclaim_released(graph);
+         if !refresh_settled && self.unsettled == 0 {
+@@ -436,6 +442,10 @@ impl<'id> ClientHooks<'id> {
+             let Some(entry) = slot.as_mut() else {
+                 continue;
+             };
++            if refresh_settled && !subscriptions {
++                // Switching projection policy invalidates the old source.
++                entry.metadata = None;
++            }
+             if !refresh_settled && !entry.pending {
+                 continue;
+             }
+@@ -444,6 +454,18 @@ impl<'id> ClientHooks<'id> {
+             let Some(endpoint) = entry.endpoint.upgrade() else {
+                 continue;
+             };
++            if subscriptions && !entry.pending {
++                if let Some((source, revision)) = &mut entry.metadata {
++                    let next = source.revision();
++                    if next != *revision {
++                        if let Some(metadata) = source.snapshot() {
++                            endpoint.apply_metadata(metadata);
++                        }
++                        *revision = next;
++                    }
++                    continue;
++                }
++            }
+             let destination = graph.inspect(&entry.client);
+             endpoint.remote.set(matches!(
+                 destination,
+@@ -454,20 +476,17 @@ impl<'id> ClientHooks<'id> {
+             ));
+             if let Some(metadata) = destination.ok().and_then(|destination| match destination {
+                 capntproto_rpc_engine::clients::Destination::Endpoint { owner, .. } => {
++                    if subscriptions && !entry.pending {
++                        entry.metadata = subscribe(owner).map(|source| {
++                            let revision = source.revision();
++                            (source, revision)
++                        });
++                    }
+                     metadata(owner)
+                 }
+                 _ => None,
+             }) {
+-                if metadata.introduction.is_some() && endpoint.introduction.borrow().is_none() {
+-                    *endpoint.introduction.borrow_mut() = metadata.introduction;
+-                }
+-                if let Some(failure) = metadata.failure {
+-                    *endpoint.failure.borrow_mut() = Some(failure);
+-                }
+-                #[cfg(unix)]
+-                if metadata.fd.is_some() && endpoint.fd.borrow().is_none() {
+-                    *endpoint.fd.borrow_mut() = metadata.fd;
+-                }
++                endpoint.apply_metadata(metadata);
+             }
+             if entry.pending {
+                 Self::settle_endpoint(graph, entry, &endpoint, &mut self.unsettled);
+diff --git a/crates/capntproto-rpc/src/scoped/tests.rs b/crates/capntproto-rpc/src/scoped/tests.rs
+index a162d97..291d232 100644
+--- a/crates/capntproto-rpc/src/scoped/tests.rs
++++ b/crates/capntproto-rpc/src/scoped/tests.rs
+@@ -8,6 +8,73 @@ use std::sync::{
+ 
+ type Remote = capability::RemotePromise<any_pointer::Owned>;
+ 
++#[test]
++fn metadata_revisions_preserve_late_changes_and_dynamic_projection() {
++    clients::with_growing_graph::<Rc<MetadataSource>, u8, _>(0, 8, |graph| {
++        let source = Rc::new(MetadataSource::default());
++        let route = graph
++            .endpoint(source.clone(), Location::Local)
++            .unwrap_or_else(|_| panic!("endpoint capacity"));
++        let mut hooks = ClientHooks::new(8, 1);
++        let client = hooks.export_snapshot(graph, &route).unwrap();
++        let reads = Cell::new(0);
++        for _ in 0..100 {
++            hooks.synchronize(
++                graph,
++                |owner| {
++                    reads.set(reads.get() + 1);
++                    owner.snapshot()
++                },
++                |owner| Some(owner.clone()),
++                true,
++                true,
++            );
++        }
++        assert_eq!(reads.get(), 1, "stable imports project metadata once");
++        assert!(client.hook.get_failure().is_none());
++        source
++            .update(|metadata| metadata.failure = Some(Error::overloaded("late metadata".into())));
++        hooks.synchronize(
++            graph,
++            |_| panic!("subscribed owner needs no graph projection"),
++            |_| unreachable!(),
++            true,
++            true,
++        );
++        assert_eq!(client.hook.get_failure().unwrap().extra, "late metadata");
++        hooks.collect_with_metadata(graph, |_| EndpointMetadata {
++            failure: Some(Error::failed("dynamic override".into())),
++            ..Default::default()
++        });
++        assert_eq!(client.hook.get_failure().unwrap().extra, "dynamic override");
++        hooks.synchronize(
++            graph,
++            |owner| owner.snapshot(),
++            |owner| Some(owner.clone()),
++            true,
++            true,
++        );
++        assert_eq!(client.hook.get_failure().unwrap().extra, "late metadata");
++        source.update(|metadata| metadata.failure = Some(Error::failed("later revision".into())));
++        hooks.synchronize(graph, |_| unreachable!(), |_| unreachable!(), true, true);
++        assert_eq!(client.hook.get_failure().unwrap().extra, "later revision");
++        #[cfg(all(unix, not(miri)))]
++        {
++            let (resource, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
++            let fd = Rc::new(std::os::fd::OwnedFd::from(resource));
++            assert!(client.hook.get_fd().is_none());
++            source.update(|metadata| metadata.fd = Some(fd.clone()));
++            hooks.synchronize(graph, |_| unreachable!(), |_| unreachable!(), true, true);
++            assert!(Rc::ptr_eq(&fd, &client.hook.get_fd().unwrap()));
++        }
++        drop(client);
++        hooks.collect(graph);
++        graph.release(route);
++        assert!(graph.take_retired().is_some());
++    })
++    .unwrap();
++}
++
+ #[test]
+ fn release_journal_tracks_final_owners_without_growing_on_drop() {
+     clients::with_growing_graph::<usize, u8, _>(0, 64, |graph| {
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator/transport.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator/transport.rs
+index 6940925..59c50e3 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator/transport.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator/transport.rs
+@@ -67,6 +67,11 @@ pub trait Input<I>: io::Read + ImportReceiver<I> {
+ /// Returning 255 explicitly omits an attachment. Metadata is synchronized before
+ /// exposing an imported hook to application code, including late import aliases.
+ pub trait Output<I> {
++    /// Opt in to revision-backed metadata for settled imported routes. The
++    /// source must publish every later change. None preserves dynamic polling.
++    fn metadata_source(&self, _: &I) -> Option<Rc<MetadataSource>> {
++        None
++    }
+     type Bundle: Default;
+     fn bundle(&self) -> Self::Bundle;
+     /// Retain Call credit through frame acceptance and transport completion.
+@@ -201,4 +206,7 @@ impl<T, const N: usize> Output<resources::Import<T>> for FileDescriptors<N> {
+     fn metadata_if_present(&self, owner: &resources::Import<T>) -> Option<EndpointMetadata> {
+         owner.metadata_if_present()
+     }
++    fn metadata_source(&self, owner: &resources::Import<T>) -> Option<Rc<MetadataSource>> {
++        Some(owner.metadata_source())
++    }
+ }
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator/transport/vat.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator/transport/vat.rs
+index 90824b2..f007e5d 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator/transport/vat.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator/transport/vat.rs
+@@ -382,8 +382,8 @@ impl<V> ImportReceiver<resources::Import> for Reader<V> {
+             Ok(Rc::new(body))
+         })();
+         match result {
+-            Ok(body) => owner.metadata_mut().introduction = Some(body),
+-            Err(error) => owner.metadata_mut().failure = Some(error),
++            Ok(body) => owner.update_metadata(|metadata| metadata.introduction = Some(body)),
++            Err(error) => owner.update_metadata(|metadata| metadata.failure = Some(error)),
+         }
+     }
+     fn attach(&mut self, owner: Option<&mut resources::Import>, index: u8) {
+@@ -831,6 +831,9 @@ impl Output<resources::Import> for Resources {
+     fn metadata_if_present(&self, owner: &resources::Import) -> Option<EndpointMetadata> {
+         owner.metadata_if_present()
+     }
++    fn metadata_source(&self, owner: &resources::Import) -> Option<Rc<MetadataSource>> {
++        Some(owner.metadata_source())
++    }
+ }
+ 
+ #[cfg(test)]
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs
+index 996c852..5e1cdf6 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs
+@@ -634,10 +634,11 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+         driver: &mut Peer<'_, 'domain, '_, I, P, C, H>,
+         output: &O,
+     ) {
+-        hooks.collect_wire_optional(
++        hooks.collect_wire_subscribed(
+             driver,
+             |owner| output.metadata_if_present(owner),
+             foreign::local_metadata,
++            |owner| output.metadata_source(owner),
+         );
+     }
+ 
+diff --git a/crates/capntproto-rpc/src/scoped/wire/resources.rs b/crates/capntproto-rpc/src/scoped/wire/resources.rs
+index 6ab2823..80fa7ff 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/resources.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/resources.rs
+@@ -8,37 +8,43 @@ use capntproto_rpc_wire::clients::{Endpoint, Route};
+ #[derive(Default)]
+ pub struct Import<T = ()> {
+     pub value: T,
+-    // Most imports carry no hosted metadata. Keep the ordinary receipt small;
+-    // allocate optional introduction/error/descriptor state only when it arrives.
+-    metadata: Option<Box<EndpointMetadata>>,
++    // Allocate shared state on first metadata or subscription. A subscription
++    // preserves future changes even when no descriptor has arrived yet.
++    metadata: std::cell::OnceCell<Rc<MetadataSource>>,
+ }
+ impl<T> Import<T> {
+     pub fn new(value: T) -> Self {
+         Self {
+             value,
+-            metadata: None,
++            metadata: Default::default(),
+         }
+     }
+     /// Keep the first descriptor, including one received through a later alias.
+     /// A redundant descriptor is dropped without replacing existing ownership.
+     #[cfg(unix)]
+     pub fn attach(&mut self, fd: Rc<std::os::fd::OwnedFd>) {
+-        let metadata = self.metadata_mut();
+-        if metadata.fd.is_none() {
+-            metadata.fd = Some(fd);
+-        }
++        self.update_metadata(|metadata| {
++            if metadata.fd.is_none() {
++                metadata.fd = Some(fd);
++            }
++        });
+     }
+     pub fn metadata(&self) -> EndpointMetadata {
+-        self.metadata.as_deref().cloned().unwrap_or_default()
++        self.metadata_if_present().unwrap_or_default()
+     }
+     pub(crate) fn metadata_if_present(&self) -> Option<EndpointMetadata> {
+-        self.metadata.as_deref().cloned()
++        self.metadata.get().and_then(|source| source.snapshot())
++    }
++    pub fn metadata_source(&self) -> Rc<MetadataSource> {
++        self.metadata
++            .get_or_init(|| Rc::new(MetadataSource::default()))
++            .clone()
+     }
+-    pub(crate) fn metadata_mut(&mut self) -> &mut EndpointMetadata {
+-        self.metadata.get_or_insert_with(Default::default)
++    pub(crate) fn update_metadata(&mut self, change: impl FnOnce(&mut EndpointMetadata)) {
++        self.metadata_source().update(change);
+     }
+     pub(crate) fn has_introduction(&self) -> bool {
+-        self.metadata
++        self.metadata_if_present()
+             .as_ref()
+             .is_some_and(|metadata| metadata.introduction.is_some() || metadata.failure.is_some())
+     }
+@@ -67,30 +73,73 @@ impl<'id> ClientHooks<'id> {
+         const CAPS: usize,
+         const PATH: usize,
+     >(
++        &mut self,
++        driver: &mut Driver<'_, 'id, '_, I, A, P, S, CAPS, PATH>,
++        imported: impl FnMut(&I) -> Option<EndpointMetadata>,
++        local: impl FnMut(&S) -> EndpointMetadata,
++    ) {
++        self.collect_wire_using(driver, imported, local, |_| None, false);
++    }
++
++    #[inline(always)]
++    pub(crate) fn collect_wire_subscribed<
++        I,
++        A,
++        P: Copy + Eq,
++        S,
++        const CAPS: usize,
++        const PATH: usize,
++    >(
++        &mut self,
++        driver: &mut Driver<'_, 'id, '_, I, A, P, S, CAPS, PATH>,
++        imported: impl FnMut(&I) -> Option<EndpointMetadata>,
++        local: impl FnMut(&S) -> EndpointMetadata,
++        subscribe: impl FnMut(&I) -> Option<Rc<MetadataSource>>,
++    ) {
++        self.collect_wire_using(driver, imported, local, subscribe, true);
++    }
++
++    #[inline(always)]
++    fn collect_wire_using<I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>(
+         &mut self,
+         driver: &mut Driver<'_, 'id, '_, I, A, P, S, CAPS, PATH>,
+         mut imported: impl FnMut(&I) -> Option<EndpointMetadata>,
+         mut local: impl FnMut(&S) -> EndpointMetadata,
++        mut subscribe: impl FnMut(&I) -> Option<Rc<MetadataSource>>,
++        subscriptions: bool,
+     ) {
+         let imports = &driver.ledgers.imports;
+-        self.collect_with_optional_metadata(&mut driver.runtime, |route| match route {
+-            Route::Capability(Endpoint::Imported(remote)) => {
+-                imported(imports.get(remote.reference()))
+-            }
+-            Route::Capability(Endpoint::Local(server)) | Route::Vine(server) => Some(local(server)),
+-            Route::Capability(Endpoint::Failed { kind, owner }) => {
+-                let mut metadata = local(owner);
+-                metadata
+-                    .failure
+-                    .get_or_insert_with(|| Error::from_kind(*kind));
+-                Some(metadata)
+-            }
+-            Route::Capability(Endpoint::Broken(kind)) => Some(EndpointMetadata {
+-                failure: Some(Error::from_kind(*kind)),
+-                ..EndpointMetadata::default()
+-            }),
+-            Route::Question(_) => None,
+-        });
++        self.synchronize(
++            &mut driver.runtime,
++            |route| match route {
++                Route::Capability(Endpoint::Imported(remote)) => {
++                    imported(imports.get(remote.reference()))
++                }
++                Route::Capability(Endpoint::Local(server)) | Route::Vine(server) => {
++                    Some(local(server))
++                }
++                Route::Capability(Endpoint::Failed { kind, owner }) => {
++                    let mut metadata = local(owner);
++                    metadata
++                        .failure
++                        .get_or_insert_with(|| Error::from_kind(*kind));
++                    Some(metadata)
++                }
++                Route::Capability(Endpoint::Broken(kind)) => Some(EndpointMetadata {
++                    failure: Some(Error::from_kind(*kind)),
++                    ..EndpointMetadata::default()
++                }),
++                Route::Question(_) => None,
++            },
++            |route| match route {
++                Route::Capability(Endpoint::Imported(remote)) => {
++                    subscribe(imports.get(remote.reference()))
++                }
++                _ => None,
++            },
++            true,
++            subscriptions,
++        );
+     }
+ }
+ 
+@@ -167,9 +216,12 @@ mod tests {
+                     driver.ledgers.imports.release(local);
+                     let mut hooks = ClientHooks::new(4, 4);
+                     let client = hooks.export_client(&mut driver.runtime, &route).unwrap();
+-                    hooks.collect_wire_optional(&mut driver, Import::metadata_if_present, |_| {
+-                        EndpointMetadata::default()
+-                    });
++                    hooks.collect_wire_subscribed(
++                        &mut driver,
++                        Import::metadata_if_present,
++                        |_| EndpointMetadata::default(),
++                        |owner| Some(owner.metadata_source()),
++                    );
+                     assert!(client.hook.get_fd().is_none());
+                     // A late resolution of an abandoned promise gives an existing
+                     // import its first resource, without constructing another owner.
+@@ -197,9 +249,12 @@ mod tests {
+                         )
+                         .unwrap_or_else(|e| panic!("{}", e.error));
+                     assert!(attachments[0].is_none());
+-                    hooks.collect_wire_optional(&mut driver, Import::metadata_if_present, |_| {
+-                        EndpointMetadata::default()
+-                    });
++                    hooks.collect_wire_subscribed(
++                        &mut driver,
++                        Import::metadata_if_present,
++                        |_| EndpointMetadata::default(),
++                        |owner| Some(owner.metadata_source()),
++                    );
+                     let saved = client.hook.get_fd().expect("late alias resource");
+                     assert!(Rc::ptr_eq(&saved, &weak.upgrade().unwrap()));
+                     assert!(!driver.runtime.is_settled(&route).unwrap());
+@@ -229,9 +284,12 @@ mod tests {
+                             || (),
+                         )
+                         .unwrap_or_else(|e| panic!("{}", e.error));
+-                    hooks.collect_wire_optional(&mut driver, Import::metadata_if_present, |_| {
+-                        EndpointMetadata::default()
+-                    });
++                    hooks.collect_wire_subscribed(
++                        &mut driver,
++                        Import::metadata_if_present,
++                        |_| EndpointMetadata::default(),
++                        |owner| Some(owner.metadata_source()),
++                    );
+                     assert!(driver.runtime.is_settled(&route).unwrap());
+                     assert!(Rc::ptr_eq(&saved, &client.hook.get_fd().unwrap()));
+                     drop(client);
+diff --git a/crates/capntproto-rpc/src/scoped/metadata.rs b/crates/capntproto-rpc/src/scoped/metadata.rs
+new file mode 100644
+index 0000000..1d05f39
+--- /dev/null
++++ b/crates/capntproto-rpc/src/scoped/metadata.rs
+@@ -0,0 +1,41 @@
++//! Revision-backed metadata carries no capability authority or graph lifetime.
++use super::*;
++
++#[derive(Default)]
++pub struct MetadataSource {
++    revision: Cell<u64>,
++    value: RefCell<Option<EndpointMetadata>>,
++}
++impl MetadataSource {
++    pub fn revision(&self) -> u64 {
++        self.revision.get()
++    }
++    pub fn snapshot(&self) -> Option<EndpointMetadata> {
++        self.value.borrow().clone()
++    }
++    pub fn update(&self, change: impl FnOnce(&mut EndpointMetadata)) {
++        let revision = self
++            .revision
++            .get()
++            .checked_add(1)
++            .expect("metadata revision exhausted");
++        let mut value = self.value.borrow_mut();
++        self.revision.set(revision);
++        change(value.get_or_insert_with(EndpointMetadata::default));
++    }
++}
++
++impl Endpoint {
++    pub(super) fn apply_metadata(&self, metadata: EndpointMetadata) {
++        if metadata.introduction.is_some() && self.introduction.borrow().is_none() {
++            *self.introduction.borrow_mut() = metadata.introduction;
++        }
++        if let Some(failure) = metadata.failure {
++            *self.failure.borrow_mut() = Some(failure);
++        }
++        #[cfg(unix)]
++        if metadata.fd.is_some() && self.fd.borrow().is_none() {
++            *self.fd.borrow_mut() = metadata.fd;
++        }
++    }
++}

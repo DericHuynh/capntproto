@@ -89,6 +89,109 @@ fn cooperative_publication_only_schedules_unconsumed_work_and_releases_ready_wai
 }
 
 #[test]
+fn buffered_batches_preserve_output_and_notify_on_flush_drop_and_unwind() {
+    use std::{
+        sync::atomic::AtomicUsize,
+        task::{Context, Wake, Waker},
+    };
+    struct Count(AtomicUsize);
+    impl Wake for Count {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let (sender, driver) = write_queue(futures::io::sink());
+    let mut driver = Box::pin(driver);
+    let count = Arc::new(Count(AtomicUsize::new(0)));
+    let wake = Waker::from(count.clone());
+    let mut cx = Context::from_waker(&wake);
+    assert!(driver.as_mut().poll(&mut cx).is_pending());
+    let mut observed = sender.observe().unwrap();
+    for _ in 0..3 {
+        observed.send_buffered(message()).unwrap();
+    }
+    assert_eq!(sender.len(), 3);
+    assert_eq!(count.0.load(Ordering::SeqCst), 0);
+    assert!(driver.as_mut().poll(&mut cx).is_pending());
+    assert!(matches!(observed.poll_flush(&mut cx), Poll::Ready(Ok(()))));
+    assert_eq!(count.0.load(Ordering::SeqCst), 0);
+
+    observed.send_buffered(message()).unwrap();
+    assert!(observed.poll_flush(&mut cx).is_pending());
+    assert_eq!(count.0.load(Ordering::SeqCst), 1);
+    assert!(driver.as_mut().poll(&mut cx).is_pending());
+    assert!(matches!(observed.poll_flush(&mut cx), Poll::Ready(Ok(()))));
+    assert_eq!(sender.len(), 0);
+
+    let before = count.0.load(Ordering::SeqCst);
+    observed.send_buffered(message()).unwrap();
+    drop(observed);
+    assert_eq!(count.0.load(Ordering::SeqCst), before + 1);
+    assert_eq!(sender.len(), 1, "dropping the observer retains accepted output");
+    assert!(driver.as_mut().poll(&mut cx).is_pending());
+    assert_eq!(sender.len(), 0);
+
+    let before = count.0.load(Ordering::SeqCst);
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut observed = sender.observe().unwrap();
+        observed.send_buffered(message()).unwrap();
+        panic!("publication unwound before flush");
+    }))
+    .is_err());
+    assert_eq!(count.0.load(Ordering::SeqCst), before + 1);
+    assert_eq!(sender.len(), 1);
+    assert!(driver.as_mut().poll(&mut cx).is_pending());
+    assert_eq!(sender.len(), 0);
+    let mut observed = sender.observe().unwrap();
+    drop(driver);
+    assert!(observed.send_buffered(message()).is_err());
+}
+
+#[test]
+fn buffered_output_notifies_when_a_flush_waker_panics_during_observer_drop() {
+    use std::{
+        sync::atomic::AtomicUsize,
+        task::{Context, Wake, Waker},
+    };
+    struct Count(AtomicUsize);
+    impl Wake for Count {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    struct PanickingDrop;
+    // This waker deliberately owns a panicking destructor; Waker::noop cannot
+    // exercise unwinding while the queue releases a caller-owned flush waker.
+    #[allow(clippy::manual_noop_waker)]
+    impl Wake for PanickingDrop {
+        fn wake(self: Arc<Self>) {}
+    }
+    impl Drop for PanickingDrop {
+        fn drop(&mut self) {
+            panic!("flush waker destructor");
+        }
+    }
+    let (sender, driver) = write_queue(futures::io::sink());
+    let mut driver = Box::pin(driver);
+    let count = Arc::new(Count(AtomicUsize::new(0)));
+    let wake = Waker::from(count.clone());
+    let mut cx = Context::from_waker(&wake);
+    assert!(driver.as_mut().poll(&mut cx).is_pending());
+    let mut observed = sender.observe().unwrap();
+    // A pending flush observer can retain an arbitrary caller-owned waker.
+    let caller = Waker::from(Arc::new(PanickingDrop));
+    sender.shared.flushed.register(&caller);
+    drop(caller);
+    observed.send_buffered(message()).unwrap();
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(observed))).is_err());
+    assert_eq!(count.0.load(Ordering::SeqCst), 1);
+    assert_eq!(sender.len(), 1);
+    assert!(sender.observe().is_some(), "observer ownership was released");
+    assert!(driver.as_mut().poll(&mut cx).is_pending());
+    assert_eq!(sender.len(), 0, "accepted output still reaches its driver");
+}
+
+#[test]
 fn stopped_queue_discards_new_messages_and_fails_outstanding_receipts() {
     let (sender, driver) = write_queue(futures::io::sink());
     let diagnostics = sender.outgoing_queue();

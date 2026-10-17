@@ -200,37 +200,45 @@ struct Advertised {
     calls: Rc<Cell<usize>>,
 }
 impl snapshots::Server for Advertised {
-    async fn describe(
+    fn describe(
         self: Rc<Self>,
-        _: snapshots::DescribeParams,
-        mut out: snapshots::DescribeResults,
-    ) -> capnp::Result<()> {
-        self.raw.write(out.get().init_config());
-        Ok(())
+        context: snapshots::DescribeContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.raw.write(out.get().init_config());
+            Ok(())
+        })
     }
-    async fn offer(
+    fn offer(
         self: Rc<Self>,
-        _: snapshots::OfferParams,
-        _: snapshots::OfferResults,
-    ) -> capnp::Result<()> {
-        self.calls.set(self.calls.get() + 1);
-        Ok(())
+        context: snapshots::OfferContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.calls.set(self.calls.get() + 1);
+            Ok(())
+        })
     }
-    async fn cancel(
+    fn cancel(
         self: Rc<Self>,
-        _: snapshots::CancelParams,
-        _: snapshots::CancelResults,
-    ) -> capnp::Result<()> {
-        self.calls.set(self.calls.get() + 1);
-        Ok(())
+        context: snapshots::CancelContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.calls.set(self.calls.get() + 1);
+            Ok(())
+        })
     }
-    async fn close(
+    fn close(
         self: Rc<Self>,
-        _: snapshots::CloseParams,
-        _: snapshots::CloseResults,
-    ) -> capnp::Result<()> {
-        self.calls.set(self.calls.get() + 1);
-        Ok(())
+        context: snapshots::CloseContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.calls.set(self.calls.get() + 1);
+            Ok(())
+        })
     }
 }
 fn advertised(raw: Raw) -> (snapshots::Client, Rc<Cell<usize>>) {

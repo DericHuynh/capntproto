@@ -1,0 +1,19 @@
+{
+  "label": "control",
+  "base": "fe843e229890d8f1a58557c8a47d02f4c1358cce",
+  "binary": "/workspace/scratch/portable-binaries/three-control20261017",
+  "binary_sha256": "b21129355c404f54d41b14358c32c15dbc6e5661c87fff1cb89c6aeffaad378a",
+  "source_files": {
+    "crates/capntproto-rpc/src/scoped/wire/coordinator.rs": "a355443095fb1ffb922eac77f17851569cbb8bdaf49bbb219c33b1e0a6c4ac43",
+    "crates/capntproto-rpc/src/scoped/wire/coordinator/bootstrap.rs": "b7e33fa1752b69ee0f8edb0bb1af57369815dcb5b80029d9e8d57932263cfbbd",
+    "crates/capntproto-rpc/src/scoped/wire/coordinator/control.rs": "e82e8a9b761bc9adb4e2909068aa3e4294fd2ce1c65617c5155e5c3ce0345ca9",
+    "crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty.rs": "e99b3dedc8c8aa8120c69ad901954854458aaf04ad2efee68abdbc859517da3c",
+    "crates/capntproto-rpc/src/scoped/wire/coordinator/pump.rs": "af7b00baccd31de39fc40c0cb40576aed879f166095b9f9aa696df89d9ac4ce8",
+    "crates/capntproto-rpc/src/scoped/wire/coordinator/scheduler.rs": "e72eae50db8c076f1cb89759edda97d4b4f7bd9c4c126fff757e9369ca63386b",
+    "crates/capntproto-rpc/src/scoped/wire/coordinator/scheduler/tests.rs": "21a3cfe7f15fafb754c06f82a468db6cba369587abcb1e49052e20e7448c9bfc",
+    "crates/capntproto-rpc/src/scoped/wire/coordinator/tests.rs": "d0b6303b5c2d38dbf7bfb336fe6abf072ea893101488dadf7e9a749933b6754a",
+    "crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs": "959eb82351dc203f5d1d74695b3008deef3dca84083695bcb382b013d90f813c"
+  },
+  "patch_sha256": "0419ecac6de5008124e945f00ddbbb42b6aaa99c82ce0ed26daed9741af04202",
+  "build_args": []
+}

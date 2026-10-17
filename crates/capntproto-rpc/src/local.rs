@@ -76,6 +76,26 @@ pub(crate) struct Params {
 }
 
 impl Params {
+    pub(crate) fn freeze_large_params(&mut self) {
+        if self.cap_table.is_empty() {
+            self.request.freeze_large();
+        }
+    }
+
+    pub(crate) fn batch_content_bytes(&self) -> Option<usize> {
+        if !self.cap_table.is_empty() {
+            return None;
+        }
+        let size = self.get().ok()?.target_size().ok()?;
+        if size.cap_count != 0 {
+            return None;
+        }
+        usize::try_from(size.word_count).ok()?.checked_mul(8)
+    }
+    pub(crate) fn single_capability_table(&self) -> Option<&[Option<Box<dyn ClientHook>>]> {
+        matches!(self.cap_table.as_slice(), [Some(_)]).then_some(&self.cap_table)
+    }
+
     #[inline(always)]
     pub(crate) fn scoped(
         interface_id: u64,
@@ -110,6 +130,7 @@ impl Params {
         let mut result = match &mut self.request {
             RequestMessage::Root(message) => message.get_root::<any_pointer::Builder>().unwrap(),
             RequestMessage::Envelope(message) => message.params(),
+            RequestMessage::Frozen(_) => unreachable!("sent request is immutable"),
         };
         result.imbue_mut(&mut self.cap_table);
         result
@@ -144,6 +165,7 @@ impl Params {
         }
         match &self.request {
             RequestMessage::Envelope(message) => Some(message),
+            RequestMessage::Frozen(message) => Some(message),
             RequestMessage::Root(_) => None,
         }
     }
@@ -154,18 +176,17 @@ impl ParamsHook for Params {
         Some(self)
     }
     fn get(&self) -> ::capnp::Result<any_pointer::Reader<'_>> {
-        let request = match &self.request {
-            RequestMessage::Root(message) => message,
-            RequestMessage::Envelope(message) => message.message(),
-        };
-        let mut result: any_pointer::Reader = if self.envelope {
-            let root = request.get_root_as_reader::<crate::rpc_capnp::message::Reader>()?;
-            let crate::rpc_capnp::message::Call(call) = root.which()? else {
-                return Err(Error::failed("request envelope changed".into()));
-            };
-            call?.get_params()?.get_content()
-        } else {
-            request.get_root_as_reader()?
+        let mut result = match &self.request {
+            RequestMessage::Envelope(message) => message.params_reader()?,
+            RequestMessage::Frozen(message) => message.params_reader()?,
+            RequestMessage::Root(message) if self.envelope => {
+                let root = message.get_root_as_reader::<crate::rpc_capnp::message::Reader>()?;
+                let crate::rpc_capnp::message::Call(call) = root.which()? else {
+                    return Err(Error::failed("request envelope changed".into()));
+                };
+                call?.get_params()?.get_content()
+            }
+            RequestMessage::Root(message) => message.get_root_as_reader()?,
         };
         result.imbue(&self.cap_table);
         Ok(result)
@@ -220,6 +241,34 @@ impl Results {
             results_done_fulfiller: Some(ResultsFulfiller::Direct(fulfiller)),
             pipeline_sender: Some(crate::queued::PipelineInnerSender::disabled()),
         }
+    }
+    pub(crate) fn direct_pipelined(
+        fulfiller: crate::scoped::response::ResultsSender,
+        pipeline: crate::queued::PipelineInnerSender,
+    ) -> Self {
+        let mut results = Self::direct(fulfiller, None);
+        results.pipeline_sender = Some(pipeline);
+        results
+    }
+
+    pub(crate) fn take_wire_pipeline(
+        &mut self,
+    ) -> Option<Option<Rc<crate::scoped::wire::PipelineState>>> {
+        let pipeline = self.pipeline_sender.as_mut()?.take_wire()?;
+        self.pipeline_sender.take();
+        Some(pipeline)
+    }
+
+    pub(crate) fn adopt_pipeline_clients(
+        &mut self,
+        pipeline: Box<dyn PipelineHook>,
+        adopt: impl FnMut(&Rc<RefCell<crate::queued::ClientInner>>, Vec<PipelineOp>),
+    ) -> capnp::Result<()> {
+        let Some(sender) = self.pipeline_sender.take() else {
+            return Err(Error::failed("set_pipeline() called twice".into()));
+        };
+        sender.complete_with_clients(pipeline, adopt);
+        Ok(())
     }
     /// The portable payload is constructed only by validated admission or a
     /// successful owning copy. Preserve that proof instead of traversing the
@@ -529,6 +578,30 @@ impl ResponseHook for ResultsDone {
 enum RequestMessage {
     Root(message::Builder<message::HeapAllocator>),
     Envelope(capntproto_rpc_wire::owned::connection::PreparedCall<message::HeapAllocator>),
+    // Constructed only after ownership has left the public RequestHook editor.
+    Frozen(Rc<capntproto_rpc_wire::owned::connection::PreparedCall<message::HeapAllocator>>),
+}
+
+impl RequestMessage {
+    fn freeze_large(&mut self) {
+        use capnp::message::ReaderSegments;
+        let RequestMessage::Envelope(message) = &*self else {
+            return;
+        };
+        let builder = message.message();
+        if builder.len() != 2
+            || builder.get_segment(0).unwrap().len() > 4096
+            || builder.get_segment(1).unwrap().len() < 4096
+        {
+            return;
+        }
+        let RequestMessage::Envelope(message) =
+            std::mem::replace(self, RequestMessage::Root(message::Builder::new_default()))
+        else {
+            unreachable!()
+        };
+        *self = RequestMessage::Frozen(message.into_shared());
+    }
 }
 
 // Keep the private hosted endpoint inline until an opaque API needs a box.
@@ -536,6 +609,9 @@ enum RequestMessage {
 enum RequestClient {
     Hook(Box<dyn ClientHook>),
     Scoped(crate::scoped::Hook),
+    // Once the target has been resolved, the parameter owner can retain its
+    // parent pipeline in this same slot until ordered wire publication.
+    Publishing(crate::scoped::wire::PipelineRef),
 }
 impl std::ops::Deref for RequestClient {
     type Target = dyn ClientHook;
@@ -543,6 +619,7 @@ impl std::ops::Deref for RequestClient {
         match self {
             Self::Hook(hook) => &**hook,
             Self::Scoped(hook) => hook,
+            Self::Publishing(_) => unreachable!("published parameters have no request target"),
         }
     }
 }
@@ -566,15 +643,8 @@ impl ParamsHook for Request {
     fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
         let mut content = match &self.message {
             RequestMessage::Root(message) => message.get_root_as_reader()?,
-            RequestMessage::Envelope(message) => {
-                let root = message
-                    .message()
-                    .get_root_as_reader::<crate::rpc_capnp::message::Reader>()?;
-                let crate::rpc_capnp::message::Call(call) = root.which()? else {
-                    unreachable!("private Call envelope")
-                };
-                call?.get_params()?.get_content()
-            }
+            RequestMessage::Envelope(message) => message.params_reader()?,
+            RequestMessage::Frozen(message) => message.params_reader()?,
         };
         content.imbue(&self.cap_table);
         Ok(content)
@@ -582,6 +652,62 @@ impl ParamsHook for Request {
 }
 
 impl Request {
+    pub(crate) fn retain_pipeline(&mut self, parent: crate::scoped::wire::PipelineRef) {
+        debug_assert!(self.client.is_none());
+        self.client = Some(RequestClient::Publishing(parent));
+    }
+    pub(crate) fn publication_committed(&mut self) {
+        if matches!(self.client, Some(RequestClient::Publishing(_))) {
+            if let Some(RequestClient::Publishing(parent)) = self.client.take() {
+                drop(parent);
+            }
+        }
+    }
+    pub(crate) fn freeze_large_params(&mut self) {
+        if self.cap_table.is_empty() {
+            self.message.freeze_large();
+        }
+    }
+    pub(crate) fn send_to(
+        mut self: Box<Self>,
+        client: &dyn ClientHook,
+    ) -> capability::RemotePromise<any_pointer::Owned> {
+        debug_assert!(self.client.is_none());
+        if self.hints.no_promise_pipelining
+            && !self.hints.only_promise_pipeline
+            && !self.is_streaming
+            && self.third_party.is_none()
+            && crate::scoped::response::available(client)
+        {
+            // The resolved queue already owns this hook. Admission retains its
+            // exact endpoint and projected parent interest before returning;
+            // cloning temporary boxed hooks adds no ownership protection.
+            let context = self.context.take();
+            return crate::scoped::response::request(
+                client,
+                self.interface_id,
+                self.method_id,
+                self.hints,
+                self,
+                context,
+            );
+        }
+        self.client = Some(RequestClient::Hook(client.add_ref()));
+        self.send()
+    }
+    pub(crate) fn batch_content_bytes(&self) -> Option<usize> {
+        if !self.cap_table.is_empty() {
+            return None;
+        }
+        let size = self.get().ok()?.target_size().ok()?;
+        if size.cap_count != 0 {
+            return None;
+        }
+        usize::try_from(size.word_count).ok()?.checked_mul(8)
+    }
+    pub(crate) fn single_capability_table(&self) -> Option<&[Option<Box<dyn ClientHook>>]> {
+        matches!(self.cap_table.as_slice(), [Some(_)]).then_some(&self.cap_table)
+    }
     pub(crate) fn prepared_call(
         &self,
     ) -> Option<&capntproto_rpc_wire::owned::connection::PreparedCall<message::HeapAllocator>> {
@@ -590,6 +716,7 @@ impl Request {
         }
         match &self.message {
             RequestMessage::Envelope(message) => Some(message),
+            RequestMessage::Frozen(message) => Some(message),
             _ => None,
         }
     }
@@ -643,6 +770,7 @@ impl RequestHook for Request {
         let mut result: any_pointer::Builder = match &mut self.message {
             RequestMessage::Root(message) => message.get_root().unwrap(),
             RequestMessage::Envelope(message) => message.params(),
+            RequestMessage::Frozen(_) => unreachable!("sent request is immutable"),
         };
         result.imbue_mut(&mut self.cap_table);
         result
@@ -655,9 +783,30 @@ impl RequestHook for Request {
             && !self.hints.only_promise_pipeline
             && !self.is_streaming
             && self.third_party.is_none()
+        {
+            let queued = self
+                .client
+                .as_deref()
+                .expect("unsent request")
+                .as_any()
+                .and_then(|client| client.downcast_ref::<crate::queued::Client>())
+                .and_then(crate::queued::Client::pending_wire);
+            if let Some(queued) = queued {
+                // Keep the request intact until its wire projection resolves.
+                // The queue's waiter owns the client; storing it in the request
+                // too would form a cycle and delay cancellation.
+                self.client.take();
+                return queued.send_request(self);
+            }
+        }
+        if self.hints.no_promise_pipelining
+            && !self.hints.only_promise_pipeline
+            && !self.is_streaming
+            && self.third_party.is_none()
             && match self.client.as_ref().expect("unsent request") {
                 RequestClient::Scoped(hook) => hook.direct_response_available(),
                 RequestClient::Hook(hook) => crate::scoped::response::available(&**hook),
+                RequestClient::Publishing(_) => unreachable!("parameters were already sent"),
             }
         {
             // The request already owns exactly the parameter storage required
@@ -666,6 +815,7 @@ impl RequestHook for Request {
             let client = self.client.take().unwrap();
             let context = self.context.take();
             return match client {
+                RequestClient::Publishing(_) => unreachable!("parameters were already sent"),
                 RequestClient::Scoped(hook) => crate::scoped::response::request_scoped(
                     &hook,
                     self.interface_id,
@@ -698,6 +848,7 @@ impl RequestHook for Request {
         } = tmp;
         let client = client.expect("unsent request");
         let (request, envelope) = match message {
+            RequestMessage::Frozen(message) => (RequestMessage::Frozen(message), true),
             RequestMessage::Root(message) => (RequestMessage::Root(message), false),
             RequestMessage::Envelope(message)
                 if hints.no_promise_pipelining && !hints.only_promise_pipeline =>
@@ -828,6 +979,21 @@ pub(crate) struct Pipeline {
 }
 
 impl Pipeline {
+    pub(crate) fn share_response(
+        response: capability::Response<any_pointer::Owned>,
+    ) -> (
+        capability::Response<any_pointer::Owned>,
+        Box<dyn PipelineHook>,
+    ) {
+        let results = SharedResponse {
+            response: Rc::from(response.hook),
+            context: None,
+        };
+        let pipeline = Box::new(Self::new(results.add_ref()));
+        let response = capability::Response::new(Box::new(Response::new(Box::new(results))));
+        (response, pipeline)
+    }
+
     pub(crate) fn new(results: Box<dyn ResultsDoneHook>) -> Self {
         Self {
             inner: Rc::new(RefCell::new(PipelineInner { results })),
@@ -1116,6 +1282,16 @@ where
         params: Box<dyn ParamsHook>,
         results: Box<dyn ResultsHook>,
     ) -> Promise<(), Error> {
+        let mut context = capnp::private::capability::OwnedCall::new(params, results);
+        Self::dispatch_context(state, interface_id, method_id, &mut context)
+    }
+
+    fn dispatch_context(
+        state: Rc<RefCell<Self>>,
+        interface_id: u64,
+        method_id: u16,
+        context: &mut dyn capnp::private::capability::CallContextHook,
+    ) -> Promise<(), Error> {
         let inner = {
             let state_ref = state.borrow();
             if let Some(e) = &state_ref.broken_error {
@@ -1124,6 +1300,7 @@ where
             state_ref.inner.as_ref().expect("live server").clone()
         };
 
+        let results = context.results();
         let permits_immediate_poll = results.permits_immediate_poll();
         let guard = results.cancellation_context();
         let executor = state
@@ -1134,8 +1311,7 @@ where
         let mut f = inner.dispatch_call(
             interface_id,
             method_id,
-            ::capnp::capability::Params::new(params),
-            ::capnp::capability::Results::new(results),
+            ::capnp::capability::CallContext::new(context),
         );
 
         let revocation = state.borrow().revocation.clone();
@@ -1578,16 +1754,21 @@ where
         &self,
         interface_id: u64,
         method_id: u16,
-        params: Box<dyn ParamsHook>,
-        results: Box<dyn ResultsHook>,
+        context: &mut dyn capnp::private::capability::CallContextHook,
         hints: CallHints,
     ) -> Promise<(), Error> {
         if let Some(target) = self.get_resolved() {
-            return target.call_during_dispatch(interface_id, method_id, params, results, hints);
+            return target.call_during_dispatch(interface_id, method_id, context, hints);
         }
         let state = self.state.clone();
         let task = state.borrow().resolve_task.clone();
-        let call = ClientState::dispatch_or_queue(state, interface_id, method_id, params, results);
+        let blocked = state.borrow().blocked;
+        let call = if blocked {
+            let (params, results) = context.take();
+            ClientState::dispatch_or_queue(state, interface_id, method_id, params, results)
+        } else {
+            ClientState::dispatch_context(state, interface_id, method_id, context)
+        };
         match task {
             None => call,
             Some(task) => Promise::from_future(async move {

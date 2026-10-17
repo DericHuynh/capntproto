@@ -6,7 +6,77 @@ use capntproto_rpc_engine::{
     ids::{AnswerId, ExportId, WireId},
     imports,
 };
+pub(crate) use releases::prepare_checked_with_releases;
 pub use releases::{prepare_with_releases, WithReleases};
+
+/// A payload whose content has been checked against its own descriptor table.
+/// Keep both immutable readers together so later receipt preparation cannot
+/// substitute a different payload or a different capability count.
+#[derive(Clone, Copy)]
+pub(crate) struct CheckedPayload<'m> {
+    payload: rpc_capnp::payload::Reader<'m>,
+    descriptors: capnp::struct_list::Reader<'m, rpc_capnp::cap_descriptor::Owned>,
+}
+impl<'m> CheckedPayload<'m> {
+    pub(crate) fn new(payload: rpc_capnp::payload::Reader<'m>) -> capnp::Result<Self> {
+        let descriptors = payload.get_cap_table()?;
+        payload
+            .get_content()
+            .validate_capability_indices(descriptors.len())?;
+        Ok(Self {
+            payload,
+            descriptors,
+        })
+    }
+    pub(crate) fn descriptors(
+        self,
+    ) -> capnp::struct_list::Reader<'m, rpc_capnp::cap_descriptor::Owned> {
+        self.descriptors
+    }
+    pub(crate) fn payload(self) -> rpc_capnp::payload::Reader<'m> {
+        self.payload
+    }
+    fn validate_slots<I>(&self, slots: &Slots<'_, '_, '_, '_, I>) -> Result<(), Error> {
+        let count = usize::try_from(self.descriptors.len()).map_err(|_| Error::DescriptorCount)?;
+        if slots.imports.len() != count
+            || slots.exports.len() != count
+            || slots.answers.len() != count
+        {
+            return Err(Error::DescriptorCount);
+        }
+        for (index, descriptor) in self.descriptors.iter().enumerate() {
+            validate_descriptor(
+                descriptor,
+                &slots.imports[index],
+                &slots.exports[index],
+                &slots.answers[index],
+            )?;
+        }
+        Ok(())
+    }
+}
+
+/// Call admission accepts either the original immutable view or the checked
+/// view returned by receipt initialization. The payload cannot be replaced
+/// independently of its validation evidence.
+pub(crate) enum PayloadView<'m> {
+    Unchecked(rpc_capnp::payload::Reader<'m>),
+    Checked(CheckedPayload<'m>),
+}
+impl<'m> PayloadView<'m> {
+    pub(crate) fn payload(&self) -> rpc_capnp::payload::Reader<'m> {
+        match self {
+            Self::Unchecked(payload) => *payload,
+            Self::Checked(payload) => payload.payload(),
+        }
+    }
+    pub(crate) fn validate<I>(&self, slots: &Slots<'_, '_, '_, '_, I>) -> Result<(), Error> {
+        match self {
+            Self::Unchecked(payload) => validate(*payload, slots),
+            Self::Checked(payload) => payload.validate_slots(slots),
+        }
+    }
+}
 
 /// Each array has one slot per descriptor. Exactly one ownership kind is set at
 /// each index. Caller-supplied import owners remain in their receipts on failure.

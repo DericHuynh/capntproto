@@ -1754,7 +1754,7 @@ fn generate_pipeline_getter(
                 type_::Interface(_) => {
                     Ok(Branch(vec![
                         Line(format!("pub fn get_{}(&self) -> {} {{", camel_to_snake_case(name), typ.type_string(ctx, Leaf::Client)?)),
-                        indent(Line(fmt!(ctx,"{capnp}::capability::FromClientHook::new(self._typeless.get_pointer_field({}).as_cap())", reg_field.get_offset()))),
+                        indent(Line(fmt!(ctx,"{capnp}::capability::FromClientHook::new(self._typeless.get_pointer_field_as_cap({}))", reg_field.get_offset()))),
                         line("}")
                     ]))
                 }

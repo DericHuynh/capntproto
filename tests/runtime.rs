@@ -14,54 +14,62 @@ struct GatedEcho {
     first: RefCell<Option<futures::channel::oneshot::Receiver<()>>>,
 }
 impl harness::Server for GatedEcho {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        p: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        let value = p.get()?.get_value();
-        self.log.borrow_mut().push(value);
-        let gate = if value == 1 {
-            self.first.borrow_mut().take()
-        } else {
-            None
-        };
-        if let Some(gate) = gate {
-            gate.await
-                .map_err(|_| capnp::Error::disconnected("gate dropped".into()))?;
-        }
-        r.get().set_value(value);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let value = p.get()?.get_value();
+            self.log.borrow_mut().push(value);
+            let gate = if value == 1 {
+                self.first.borrow_mut().take()
+            } else {
+                None
+            };
+            if let Some(gate) = gate {
+                gate.await
+                    .map_err(|_| capnp::Error::disconnected("gate dropped".into()))?;
+            }
+            r.get().set_value(value);
+            Ok(())
+        })
     }
 }
 impl harness::Server for Echo {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        p: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        let v = p.get()?.get_value();
-        self.1.borrow_mut().push(v);
-        r.get().set_value(self.0 + v);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let v = p.get()?.get_value();
+            self.1.borrow_mut().push(v);
+            r.get().set_value(self.0 + v);
+            Ok(())
+        })
     }
-    async fn tail(
+    fn tail(
         self: Rc<Self>,
-        p: harness::TailParams,
-        r: harness::TailResults,
-    ) -> capnp::Result<()> {
-        let p = p.get()?;
-        let mut request = p.get_cap()?.echo_request();
-        request.get().set_value(p.get_value());
-        r.hook.tail_call(request.hook).await
+        context: harness::TailContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let p = p.get()?;
+            let mut request = p.get_cap()?.echo_request();
+            request.get().set_value(p.get_value());
+            r.hook.tail_call(request.hook).await
+        })
     }
-    async fn bounce(
+    fn bounce(
         self: Rc<Self>,
-        p: harness::BounceParams,
-        mut r: harness::BounceResults,
-    ) -> capnp::Result<()> {
-        r.get().set_cap(p.get()?.get_cap()?);
-        Ok(())
+        context: harness::BounceContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            r.get().set_cap(p.get()?.get_cap()?);
+            Ok(())
+        })
     }
 }
 async fn echo(c: &harness::Client, value: u32) -> u32 {
@@ -946,22 +954,22 @@ struct PersistentEntry;
 impl capnp_rpc::persistent_capnp::persistent::Server<capnp::data::Owned, capnp::data::Owned>
     for PersistentEntry
 {
-    async fn save(
+    fn save(
         self: Rc<Self>,
-        p: capnp_rpc::persistent_capnp::persistent::SaveParams<
+        context: capnp_rpc::persistent_capnp::persistent::SaveContext<
+            '_,
             capnp::data::Owned,
             capnp::data::Owned,
         >,
-        mut r: capnp_rpc::persistent_capnp::persistent::SaveResults<
-            capnp::data::Owned,
-            capnp::data::Owned,
-        >,
-    ) -> capnp::Result<()> {
-        if p.get()?.get_seal_for()? != b"authorized-owner" {
-            return Err(capnp::Error::failed("owner cannot save this object".into()));
-        }
-        r.get().set_sturdy_ref(&b"realm-owned-reference"[..])?;
-        Ok(())
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            if p.get()?.get_seal_for()? != b"authorized-owner" {
+                return Err(capnp::Error::failed("owner cannot save this object".into()));
+            }
+            r.get().set_sturdy_ref(&b"realm-owned-reference"[..])?;
+            Ok(())
+        })
     }
 }
 #[tokio::test(flavor = "current_thread")]

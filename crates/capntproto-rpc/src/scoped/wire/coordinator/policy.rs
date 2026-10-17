@@ -133,6 +133,7 @@ impl Drop for Charge {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{atomic::Ordering, Arc};
     #[derive(Default)]
     struct WakeCount(std::sync::atomic::AtomicUsize);
     impl std::task::Wake for WakeCount {

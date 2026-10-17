@@ -1,0 +1,30 @@
+[
+  {
+    "label": "native",
+    "tree": "4ed095248ae75be5582641306cb480d58dfa4829",
+    "base": "fe843e229890d8f1a58557c8a47d02f4c1358cce",
+    "patch_sha256": "65659e17ec0a7f77886b4c9a0c57b4bc0f0c0756dc18b4eeb11d5890dd2d5d14",
+    "verified_source_files": 8
+  },
+  {
+    "label": "metadata",
+    "tree": "6732ec906e7183afb6365895542a9d2763588bbf",
+    "base": "fe843e229890d8f1a58557c8a47d02f4c1358cce",
+    "patch_sha256": "7f01d3343f19d2a1bf5549006bda43e3f50db5e0accb59620b569fd62fd1da01",
+    "verified_source_files": 7
+  },
+  {
+    "label": "control",
+    "tree": "caa9be4fa402096bb7aac040c89830582e20c066",
+    "base": "fe843e229890d8f1a58557c8a47d02f4c1358cce",
+    "patch_sha256": "0419ecac6de5008124e945f00ddbbb42b6aaa99c82ce0ed26daed9741af04202",
+    "verified_source_files": 9
+  },
+  {
+    "label": "combined",
+    "tree": "ccd1aef0660c89437f9da64d3925118ea969299f",
+    "base": "fe843e229890d8f1a58557c8a47d02f4c1358cce",
+    "patch_sha256": "40de233941d3a81757d38ad65ebc418b4135b41e5e9462f00fb7737dfcc1fc78",
+    "verified_source_files": 23
+  }
+]

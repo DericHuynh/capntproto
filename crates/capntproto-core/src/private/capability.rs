@@ -222,10 +222,11 @@ pub trait ClientHook {
         &self,
         interface_id: u64,
         method_id: u16,
-        params: alloc::boxed::Box<dyn ParamsHook>,
-        results: alloc::boxed::Box<dyn ResultsHook>,
+        context: &mut dyn CallContextHook,
         hints: crate::capability::CallHints,
     ) -> Promise<(), crate::Error> {
+        // An opaque wrapper retains its normal policy path and takes ownership.
+        let (params, results) = context.take();
         self.call_with_hints(interface_id, method_id, params, results, hints)
     }
 
@@ -289,6 +290,59 @@ impl Clone for alloc::boxed::Box<dyn ClientHook> {
 pub enum CancellationGuard {
     Owned(alloc::boxed::Box<dyn core::any::Any>),
     Shared(alloc::rc::Rc<dyn core::any::Any>),
+}
+
+/// Storage behind a single dispatch invocation. Taking ownership consumes both
+/// hooks exactly once; subsequent access is a programming error. Implementations
+/// must preserve the original result producer and its cancellation context.
+pub trait CallContextHook {
+    fn borrow(&mut self) -> (&dyn ParamsHook, &mut dyn ResultsHook);
+    fn results(&self) -> &dyn ResultsHook;
+    fn take(
+        &mut self,
+    ) -> (
+        alloc::boxed::Box<dyn ParamsHook>,
+        alloc::boxed::Box<dyn ResultsHook>,
+    );
+}
+
+/// An already-owned invocation, used by queued calls and policy adapters.
+pub struct OwnedCall {
+    params: Option<alloc::boxed::Box<dyn ParamsHook>>,
+    results: Option<alloc::boxed::Box<dyn ResultsHook>>,
+}
+impl OwnedCall {
+    pub fn new(
+        params: alloc::boxed::Box<dyn ParamsHook>,
+        results: alloc::boxed::Box<dyn ResultsHook>,
+    ) -> Self {
+        Self {
+            params: Some(params),
+            results: Some(results),
+        }
+    }
+}
+impl CallContextHook for OwnedCall {
+    fn borrow(&mut self) -> (&dyn ParamsHook, &mut dyn ResultsHook) {
+        (
+            &**self.params.as_ref().expect("consumed call"),
+            &mut **self.results.as_mut().expect("consumed call"),
+        )
+    }
+    fn results(&self) -> &dyn ResultsHook {
+        &**self.results.as_ref().expect("consumed call")
+    }
+    fn take(
+        &mut self,
+    ) -> (
+        alloc::boxed::Box<dyn ParamsHook>,
+        alloc::boxed::Box<dyn ResultsHook>,
+    ) {
+        (
+            self.params.take().expect("consumed call"),
+            self.results.take().expect("consumed call"),
+        )
+    }
 }
 
 pub trait ResultsHook {

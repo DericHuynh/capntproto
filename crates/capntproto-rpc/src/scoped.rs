@@ -35,6 +35,8 @@ use std::{
 };
 
 mod admission;
+mod metadata;
+pub use metadata::MetadataSource;
 pub(crate) mod response;
 mod shutdown;
 pub mod wire;
@@ -54,20 +56,55 @@ pub struct EndpointMetadata {
 type Shutdown = shutdown::Receiver;
 struct Inbox {
     completion_cache: response::Cache,
-    call_template:
-        std::cell::OnceCell<capntproto_rpc_wire::owned::connection::PreparedCallTemplate>,
+    call_templates: [std::cell::OnceCell<Box<CallTemplate>>; 4],
     message_pool: Option<capnp::message::SegmentPool>,
     admission: Option<Rc<crate::admission::Admission>>,
     joins: Option<wire::coordinator::multiparty::Handle>,
     queue: RefCell<VecDeque<Box<Call>>>,
+    // One pre-reserved release record per registry slot. Endpoint destruction
+    // never allocates or borrows the graph; only the driver consumes records.
+    released: RefCell<VecDeque<usize>>,
     wake: RefCell<Option<Waker>>,
     enqueue_wake: RefCell<Option<Rc<wire::coordinator::EnqueueWake>>>,
     shutdown: Shutdown,
     closed: Cell<bool>,
     live_calls: Cell<usize>,
     maximum_calls: usize,
+    maximum_clients: usize,
+}
+struct CallTemplate {
+    interface: u64,
+    method: u16,
+    template: capntproto_rpc_wire::owned::connection::PreparedCallTemplate,
 }
 impl Inbox {
+    fn call_template(
+        &self,
+        interface: u64,
+        method: u16,
+    ) -> &capntproto_rpc_wire::owned::connection::PreparedCallTemplate {
+        // A connection commonly alternates methods. Retain a small, bounded
+        // set of headers so those requests need no builder traversal merely
+        // to change their method. Further methods use the ordinary fallback.
+        for slot in &self.call_templates {
+            let entry = slot.get_or_init(|| {
+                Box::new(CallTemplate {
+                    interface,
+                    method,
+                    template: capntproto_rpc_wire::owned::connection::PreparedCallTemplate::new(
+                        interface, method,
+                    ),
+                })
+            });
+            if entry.interface == interface && entry.method == method {
+                return &entry.template;
+            }
+        }
+        &self.call_templates[0]
+            .get()
+            .expect("initialized template")
+            .template
+    }
     fn notify_enqueue(&self) {
         let wake = self.enqueue_wake.borrow().clone();
         match wake {
@@ -100,13 +137,21 @@ struct Endpoint {
     index: usize,
     settled: Cell<bool>,
     failure: RefCell<Option<Error>>,
-    resolution: Shared<shared::Receiver<capnp::Result<()>>>,
+    resolution: RefCell<Option<Resolution>>,
     #[cfg(unix)]
     fd: RefCell<Option<Rc<std::os::fd::OwnedFd>>>,
+}
+struct Resolution {
+    sender: shared::Sender<capnp::Result<()>>,
+    receiver: Shared<shared::Receiver<capnp::Result<()>>>,
 }
 impl Drop for Endpoint {
     fn drop(&mut self) {
         if let Some(inbox) = self.inbox.upgrade() {
+            let mut released = inbox.released.borrow_mut();
+            debug_assert!(released.len() < released.capacity());
+            released.push_back(self.index);
+            drop(released);
             inbox.notify();
         }
     }
@@ -114,7 +159,8 @@ impl Drop for Endpoint {
 struct Entry<'id> {
     endpoint: Weak<Endpoint>,
     client: Client<'id>,
-    resolution: Option<shared::Sender<capnp::Result<()>>>,
+    pending: bool,
+    metadata: Option<(Rc<MetadataSource>, u64)>,
 }
 
 /// Scoped graph ownership paired with ordinary owned generated clients.
@@ -126,6 +172,7 @@ struct Entry<'id> {
 pub struct ClientHooks<'id> {
     inbox: Rc<Inbox>,
     entries: Vec<Option<Entry<'id>>>,
+    unsettled: usize,
     maximum_clients: usize,
 }
 impl<'id> ClientHooks<'id> {
@@ -139,19 +186,22 @@ impl<'id> ClientHooks<'id> {
         Self {
             inbox: Rc::new(Inbox {
                 completion_cache: response::Cache::default(),
-                call_template: std::cell::OnceCell::new(),
+                call_templates: std::array::from_fn(|_| std::cell::OnceCell::new()),
                 message_pool: None,
                 admission: None,
                 joins: None,
                 queue: RefCell::new(VecDeque::new()),
+                released: RefCell::new(VecDeque::new()),
                 wake: RefCell::new(None),
                 enqueue_wake: RefCell::new(None),
                 shutdown: shutdown::Receiver::new(),
                 closed: Cell::new(false),
                 live_calls: Cell::new(0),
                 maximum_calls,
+                maximum_clients,
             }),
             entries: Vec::new(),
+            unsettled: 0,
             maximum_clients,
         }
     }
@@ -184,7 +234,7 @@ impl<'id> ClientHooks<'id> {
         let (client, pending) = graph
             .snapshot_for_export(client)
             .map_err(|e| Error::failed(e.to_string()))?;
-        self.export_retained(graph, client, pending)
+        self.export_retained(graph, client, pending, true)
     }
 
     /// Export a live application client, following imported/pipelined promise
@@ -195,7 +245,8 @@ impl<'id> ClientHooks<'id> {
         graph: &mut impl Capabilities<'id>,
         client: &Client<'id>,
     ) -> capnp::Result<capability::Client> {
-        self.export_client_with_metadata(graph, client, |_| EndpointMetadata::default())
+        self.collect(graph);
+        self.export_after_collect(graph, client)
     }
 
     /// Export and publish hosted diagnostics before any resolution waiter can
@@ -207,15 +258,35 @@ impl<'id> ClientHooks<'id> {
         mut metadata: impl FnMut(&G::Owner) -> EndpointMetadata,
     ) -> capnp::Result<capability::Client> {
         self.collect_with_metadata(graph, &mut metadata);
+        let exported = self.export_after_collect(graph, client)?;
+        self.collect_with_metadata(graph, metadata);
+        Ok(exported)
+    }
+
+    // Wire completion refreshes metadata before publishing capabilities to
+    // application observers. Reclaim dead entries once before reserving the
+    // endpoint; its caller performs the following metadata-aware refresh.
+    fn export_before_wire_refresh(
+        &mut self,
+        graph: &mut impl Capabilities<'id>,
+        client: &Client<'id>,
+    ) -> capnp::Result<capability::Client> {
+        self.collect(graph);
+        self.export_after_collect(graph, client)
+    }
+
+    fn export_after_collect(
+        &mut self,
+        graph: &mut impl Capabilities<'id>,
+        client: &Client<'id>,
+    ) -> capnp::Result<capability::Client> {
         let pending = !graph
             .is_settled(client)
             .map_err(|e| Error::failed(e.to_string()))?;
         let client = graph
             .retain_key(client.key())
             .map_err(|e| Error::failed(e.to_string()))?;
-        let exported = self.export_retained(graph, client, pending)?;
-        self.collect_with_metadata(graph, metadata);
-        Ok(exported)
+        self.export_retained(graph, client, pending, false)
     }
 
     fn export_retained(
@@ -223,6 +294,7 @@ impl<'id> ClientHooks<'id> {
         graph: &mut impl Capabilities<'id>,
         client: Client<'id>,
         pending: bool,
+        refresh: bool,
     ) -> capnp::Result<capability::Client> {
         if self.inbox.closed.get() {
             graph.release(client);
@@ -230,7 +302,9 @@ impl<'id> ClientHooks<'id> {
                 "scoped ClientHook driver closed".into(),
             ));
         }
-        self.collect(graph);
+        if refresh {
+            self.collect(graph);
+        }
         for entry in self.entries.iter().flatten() {
             if entry.client.key() == client.key() {
                 if let Some(endpoint) = entry.endpoint.upgrade() {
@@ -249,9 +323,18 @@ impl<'id> ClientHooks<'id> {
                 graph.release(client);
                 return Err(Error::overloaded("scoped client capacity exhausted".into()));
             }
+            // Pending records plus live endpoints can never exceed the slot
+            // count. Reserve before publication so Drop cannot reject a release.
+            let mut released = self.inbox.released.borrow_mut();
+            let additional = index + 1 - released.len();
+            if released.try_reserve(additional).is_err() {
+                graph.release(client);
+                return Err(Error::overloaded(
+                    "scoped release capacity exhausted".into(),
+                ));
+            }
             self.entries.push(None);
         }
-        let (resolution, resolved) = shared::channel();
         let endpoint = Rc::new(Endpoint {
             introduction: RefCell::default(),
             introduced: RefCell::default(),
@@ -274,15 +357,17 @@ impl<'id> ClientHooks<'id> {
                 )),
                 _ => None,
             }),
-            resolution: resolved.shared(),
+            resolution: RefCell::default(),
             #[cfg(unix)]
             fd: RefCell::new(None),
         });
         self.entries[index] = Some(Entry {
             endpoint: Rc::downgrade(&endpoint),
             client,
-            resolution: pending.then_some(resolution),
+            pending,
+            metadata: None,
         });
+        self.unsettled += usize::from(pending);
         Ok(capability::Client::new(Box::new(Hook(endpoint, None))))
     }
 
@@ -291,7 +376,33 @@ impl<'id> ClientHooks<'id> {
     /// A retained response/pipeline may still own hooks and deliberately keeps
     /// those entries alive. No fallible release command is enqueued by Drop.
     pub fn collect(&mut self, graph: &mut impl Capabilities<'id>) {
-        self.collect_with_metadata(graph, |_| EndpointMetadata::default());
+        self.synchronize(graph, |_| None, |_| None, false, false);
+    }
+
+    /// Release precisely the graph references whose final hosted owner dropped.
+    /// This does not inspect live routes, publish promise readiness, refresh
+    /// metadata, or send protocol messages. The driver's ordinary maintenance
+    /// still owns Finish/Release ordering and backpressure.
+    #[inline(always)]
+    pub fn reclaim_released(&mut self, graph: &mut impl Capabilities<'id>) {
+        // Most synchronization points have no releases. Keep that test at the
+        // call site instead of entering the graph-release loop on every turn.
+        if !self.inbox.released.borrow().is_empty() {
+            self.drain_released(graph);
+        }
+    }
+
+    #[inline(never)]
+    fn drain_released(&mut self, graph: &mut impl Capabilities<'id>) {
+        loop {
+            // Release the queue borrow before touching graph ownership.
+            let index = self.inbox.released.borrow_mut().pop_front();
+            let Some(index) = index else { break };
+            let entry = self.entries[index].take().expect("unreclaimed endpoint");
+            debug_assert_eq!(entry.endpoint.strong_count(), 0);
+            self.unsettled -= usize::from(entry.pending);
+            graph.release(entry.client);
+        }
     }
 
     /// Refresh owned metadata before publishing promise readiness. Call on each
@@ -309,88 +420,130 @@ impl<'id> ClientHooks<'id> {
     fn collect_with_optional_metadata<G: Capabilities<'id>>(
         &mut self,
         graph: &mut G,
-        mut metadata: impl FnMut(&G::Owner) -> Option<EndpointMetadata>,
+        metadata: impl FnMut(&G::Owner) -> Option<EndpointMetadata>,
     ) {
+        self.synchronize(graph, metadata, |_| None, true, false);
+    }
+
+    #[inline(always)]
+    fn synchronize<G: Capabilities<'id>>(
+        &mut self,
+        graph: &mut G,
+        mut metadata: impl FnMut(&G::Owner) -> Option<EndpointMetadata>,
+        mut subscribe: impl FnMut(&G::Owner) -> Option<Rc<MetadataSource>>,
+        refresh_settled: bool,
+        subscriptions: bool,
+    ) {
+        self.reclaim_released(graph);
+        if !refresh_settled && self.unsettled == 0 {
+            return;
+        }
         for slot in &mut self.entries {
-            if slot
-                .as_ref()
-                .is_some_and(|entry| entry.endpoint.strong_count() == 0)
-            {
-                graph.release(slot.take().unwrap().client);
+            let Some(entry) = slot.as_mut() else {
+                continue;
+            };
+            if refresh_settled && !subscriptions {
+                // Switching projection policy invalidates the old source.
+                entry.metadata = None;
+            }
+            if !refresh_settled && !entry.pending {
                 continue;
             }
-            if let Some(entry) = slot.as_ref() {
-                if let Some(endpoint) = entry.endpoint.upgrade() {
-                    let destination = graph.inspect(&entry.client);
-                    endpoint.remote.set(matches!(
-                        destination,
-                        Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
-                            location: capntproto_rpc_engine::clients::Location::Remote(_),
-                            ..
-                        })
-                    ));
-                    if let Some(metadata) =
-                        destination.ok().and_then(|destination| match destination {
-                            capntproto_rpc_engine::clients::Destination::Endpoint {
-                                owner, ..
-                            } => metadata(owner),
-                            _ => None,
-                        })
-                    {
-                        if metadata.introduction.is_some()
-                            && endpoint.introduction.borrow().is_none()
-                        {
-                            *endpoint.introduction.borrow_mut() = metadata.introduction;
-                        }
-                        if let Some(failure) = metadata.failure {
-                            *endpoint.failure.borrow_mut() = Some(failure);
-                        }
-                        #[cfg(unix)]
-                        if metadata.fd.is_some() && endpoint.fd.borrow().is_none() {
-                            *endpoint.fd.borrow_mut() = metadata.fd;
-                        }
+            // A settled import's revision can be checked without retaining its
+            // endpoint. Destruction is already journaled independently above;
+            // unchanged metadata needs no Weak upgrade or matching Rc drop.
+            if subscriptions && !entry.pending {
+                if let Some((source, revision)) = &entry.metadata {
+                    if source.revision() == *revision {
+                        continue;
                     }
                 }
             }
-            if let Some(entry) = slot.as_mut().filter(|entry| entry.resolution.is_some()) {
-                // Export inspection does not accept a call or mark the promise
-                // used. In particular, a reflected resolution remains pending
-                // until its original-route loopback has completed.
-                if let Ok(true) = graph.is_settled(&entry.client) {
-                    // Once every promise and reflected-ordering barrier has
-                    // settled, its terminal endpoint is immutable. Retain that
-                    // endpoint directly, like a resolved upstream ClientHook,
-                    // instead of walking and retaining the completed promise
-                    // chain on every subsequent call. In particular a settled
-                    // bootstrap need not pin its question for the client's life.
-                    if let Ok((client, pending)) = graph.snapshot_for_export(&entry.client) {
-                        if pending {
-                            graph.release(client);
-                        } else {
-                            graph.release(core::mem::replace(&mut entry.client, client));
+            // Retain through metadata and resolution publication. Reentrant
+            // notification may drop another endpoint; its release is journaled.
+            let Some(endpoint) = entry.endpoint.upgrade() else {
+                continue;
+            };
+            if subscriptions && !entry.pending {
+                if let Some((source, revision)) = &mut entry.metadata {
+                    let next = source.revision();
+                    if let Some(metadata) = source.snapshot() {
+                        endpoint.apply_metadata(metadata);
+                    }
+                    *revision = next;
+                    continue;
+                }
+            }
+            let destination = graph.inspect(&entry.client);
+            endpoint.remote.set(matches!(
+                destination,
+                Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
+                    location: capntproto_rpc_engine::clients::Location::Remote(_),
+                    ..
+                })
+            ));
+            if let Some(metadata) = destination.ok().and_then(|destination| match destination {
+                capntproto_rpc_engine::clients::Destination::Endpoint { owner, .. } => {
+                    if subscriptions {
+                        if let Some(source) = subscribe(owner) {
+                            let snapshot = source.snapshot();
+                            if !entry.pending {
+                                entry.metadata = Some((source.clone(), source.revision()));
+                            }
+                            return snapshot;
                         }
                     }
-                    let result = match graph.inspect(&entry.client) {
-                        Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
-                            location: capntproto_rpc_engine::clients::Location::Broken,
-                            ..
-                        }) => Err(entry
-                            .endpoint
-                            .upgrade()
-                            .and_then(|endpoint| endpoint.failure.borrow().clone())
-                            .unwrap_or_else(|| {
-                                Error::failed("capability resolved to a broken endpoint".into())
-                            })),
-                        _ => Ok(()),
-                    };
-                    if let Some(endpoint) = entry.endpoint.upgrade() {
-                        *endpoint.failure.borrow_mut() = result.as_ref().err().cloned();
-                        endpoint.settled.set(true);
-                    }
-                    if let Some(sender) = entry.resolution.take() {
-                        let _ = sender.send(result);
-                    }
+                    metadata(owner)
                 }
+                _ => None,
+            }) {
+                endpoint.apply_metadata(metadata);
+            }
+            if entry.pending {
+                Self::settle_endpoint(graph, entry, &endpoint, &mut self.unsettled);
+            }
+        }
+        self.reclaim_released(graph);
+    }
+
+    // Metadata on settled imports still refreshes on every collection. Keep
+    // first settlement and its notification work outside that repeated walk.
+    #[inline(never)]
+    fn settle_endpoint<G: Capabilities<'id>>(
+        graph: &mut G,
+        entry: &mut Entry<'id>,
+        endpoint: &Endpoint,
+        unsettled: &mut usize,
+    ) {
+        // Export inspection does not accept a call or mark the promise used.
+        // A reflected resolution waits for its original-route loopback.
+        if let Ok(true) = graph.is_settled(&entry.client) {
+            // A settled terminal endpoint is immutable. Retain it directly so
+            // completed promise chains do not remain pinned by public hooks.
+            if let Ok((client, pending)) = graph.snapshot_for_export(&entry.client) {
+                if pending {
+                    graph.release(client);
+                } else {
+                    graph.release(core::mem::replace(&mut entry.client, client));
+                }
+            }
+            let result = match graph.inspect(&entry.client) {
+                Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
+                    location: capntproto_rpc_engine::clients::Location::Broken,
+                    ..
+                }) => Err(endpoint.failure.borrow().clone().unwrap_or_else(|| {
+                    Error::failed("capability resolved to a broken endpoint".into())
+                })),
+                _ => Ok(()),
+            };
+            *endpoint.failure.borrow_mut() = result.as_ref().err().cloned();
+            endpoint.settled.set(true);
+            entry.pending = false;
+            *unsettled -= 1;
+            // Detach observer state before notification can invoke a waker.
+            let resolution = endpoint.resolution.borrow_mut().take();
+            if let Some(resolution) = resolution {
+                let _ = resolution.sender.send(result);
             }
         }
     }
@@ -565,9 +718,49 @@ pub struct Call {
 }
 enum CallParams {
     Request(crate::local::Params),
-    Hook(Box<dyn ParamsHook>),
+    OwnedRequest(Box<crate::local::Request>, Option<usize>),
+    Hook(Box<dyn ParamsHook>, Option<usize>),
 }
 impl CallParams {
+    fn owned_request(mut request: Box<crate::local::Request>) -> Self {
+        // This private request keeps its original parameter allocation through
+        // forwarding. Retain its concrete type for admission and wire encoding.
+        let bytes = request.batch_content_bytes();
+        request.freeze_large_params();
+        Self::OwnedRequest(request, bytes)
+    }
+    fn hook(params: Box<dyn ParamsHook>) -> Self {
+        // Inspect hooks before entering the inbox. The scheduling lookahead
+        // below never invokes application code while borrowing that queue.
+        let bytes = params.as_any().and_then(|value| {
+            value
+                .downcast_ref::<crate::local::Params>()
+                .and_then(crate::local::Params::batch_content_bytes)
+                .or_else(|| {
+                    value
+                        .downcast_ref::<crate::local::Request>()
+                        .and_then(crate::local::Request::batch_content_bytes)
+                })
+        });
+        Self::Hook(params, bytes)
+    }
+    fn single_capability_table(&self) -> Option<&[Option<Box<dyn ClientHook>>]> {
+        match self {
+            Self::Request(request) => request.single_capability_table(),
+            Self::OwnedRequest(request, _) => request.single_capability_table(),
+            Self::Hook(hook, _) => hook.as_any().and_then(|params| {
+                params
+                    .downcast_ref::<crate::local::Request>()
+                    .and_then(crate::local::Request::single_capability_table)
+                    .or_else(|| {
+                        params
+                            .downcast_ref::<crate::local::Params>()
+                            .and_then(crate::local::Params::single_capability_table)
+                    })
+            }),
+        }
+    }
+
     #[inline(always)]
     fn prepared_call(
         &self,
@@ -575,7 +768,8 @@ impl CallParams {
     {
         match self {
             Self::Request(request) => request.prepared_call(),
-            Self::Hook(hook) => hook.as_any().and_then(|params| {
+            Self::OwnedRequest(request, _) => request.prepared_call(),
+            Self::Hook(hook, _) => hook.as_any().and_then(|params| {
                 params
                     .downcast_ref::<crate::local::Request>()
                     .and_then(crate::local::Request::prepared_call)
@@ -590,7 +784,8 @@ impl CallParams {
     fn into_hook(self) -> Box<dyn ParamsHook> {
         match self {
             Self::Request(request) => Box::new(request),
-            Self::Hook(hook) => hook,
+            Self::OwnedRequest(request, _) => request,
+            Self::Hook(hook, _) => hook,
         }
     }
     fn request_mut(&mut self) -> &mut crate::local::Params {
@@ -605,7 +800,8 @@ impl std::ops::Deref for CallParams {
     fn deref(&self) -> &Self::Target {
         match self {
             Self::Request(request) => request,
-            Self::Hook(hook) => &**hook,
+            Self::OwnedRequest(request, _) => &**request,
+            Self::Hook(hook, _) => &**hook,
         }
     }
 }
@@ -636,17 +832,17 @@ impl capnp::private::capability::RequestHook for Call {
         Ok(())
     }
     fn send(self: Box<Self>) -> capability::RemotePromise<any_pointer::Owned> {
-        if self.hints.no_promise_pipelining
-            && !self.hints.only_promise_pipeline
-            && self.third_party.is_none()
-            && {
-                let unintroduced = self.endpoint.introduced.borrow().is_none()
-                    && self.endpoint.introduction.borrow().is_none();
-                unintroduced
-                    || Hook(self.endpoint.clone(), self.credit.clone()).direct_response_available()
-            }
-        {
-            return response::request_prepared(self);
+        if !self.hints.only_promise_pipeline && self.third_party.is_none() && {
+            let unintroduced = self.endpoint.introduced.borrow().is_none()
+                && self.endpoint.introduction.borrow().is_none();
+            unintroduced
+                || Hook(self.endpoint.clone(), self.credit.clone()).direct_response_available()
+        } {
+            return if self.hints.no_promise_pipelining {
+                response::request_prepared(self)
+            } else {
+                response::request_pipelined_prepared(self)
+            };
         }
         self.into_request().send()
     }
@@ -714,10 +910,13 @@ impl Call {
         self.credit = credit;
         // Requests built by this hook already retain this exact shutdown state.
         // General incoming ParamsHook calls acquire it only at admission.
-        if matches!(self.params, CallParams::Hook(_)) {
+        if !matches!(self.params, CallParams::Request(_)) {
             self.shutdown = inbox.shutdown.clone();
         }
         self._permit = permit;
+        if let CallParams::Request(params) = &mut self.params {
+            params.freeze_large_params();
+        }
         inbox.queue.borrow_mut().push_back(self);
         inbox.notify_enqueue();
         Ok(inbox)
@@ -876,7 +1075,7 @@ impl Hook {
         match self.enqueue(
             interface,
             method,
-            params,
+            CallParams::hook(params),
             response::Results::Hook(results),
             hints,
             third_party,
@@ -897,7 +1096,7 @@ impl Hook {
         &self,
         interface: u64,
         method: u16,
-        params: Box<dyn ParamsHook>,
+        params: CallParams,
         results: response::Results,
         hints: CallHints,
         third_party: Option<Rc<capnp::message::Builder<capnp::message::HeapAllocator>>>,
@@ -910,7 +1109,7 @@ impl Hook {
             interface,
             method,
             hints,
-            params: CallParams::Hook(params),
+            params,
             results,
             completion,
             shutdown: Shutdown::new(),
@@ -1028,13 +1227,9 @@ impl ClientHook for Hook {
             None => allocator,
         };
         let template = self.0.remote.get().then(|| {
-            inbox.as_ref().map(|inbox| {
-                inbox.call_template.get_or_init(|| {
-                    capntproto_rpc_wire::owned::connection::PreparedCallTemplate::new(
-                        interface, method,
-                    )
-                })
-            })
+            inbox
+                .as_ref()
+                .map(|inbox| inbox.call_template(interface, method))
         });
         // Allocate before constructing the arena, allowing the compiler to write
         // the large request directly into its final box without a second owner.
@@ -1136,8 +1331,23 @@ impl ClientHook for Hook {
         };
         let endpoint = self.0.clone();
         let shutdown = inbox.shutdown.clone();
+        let resolved = endpoint
+            .resolution
+            .borrow_mut()
+            .get_or_insert_with(|| {
+                let (sender, receiver) = shared::channel();
+                Resolution {
+                    sender,
+                    receiver: receiver.shared(),
+                }
+            })
+            .receiver
+            .clone();
         Promise::from_future(async move {
-            match futures::future::select(shutdown, endpoint.resolution.clone()).await {
+            // The waiter retains its graph route. Bridge close/drop wakes it
+            // through shutdown even though notification state is endpoint-owned.
+            let _endpoint = endpoint;
+            match futures::future::select(shutdown, resolved).await {
                 futures::future::Either::Right((result, _)) => result
                     .map_err(crate::canceled_to_error)
                     .and_then(core::convert::identity),
@@ -1163,13 +1373,18 @@ impl Future for Reply {
                 Error::disconnected("scoped ClientHook driver dropped".into())
             })));
         }
-        Pin::new(
+        let result = Pin::new(
             self.receiver
                 .as_mut()
                 .expect("reply polled after completion"),
         )
-        .poll(cx)
-        .map(|result| {
+        .poll(cx);
+        if result.is_ready() {
+            // Completion already notified its tracked observer. A later drop
+            // cannot cancel this call or enable another coordinator scan.
+            drop(self.receiver.take());
+        }
+        result.map(|result| {
             result
                 .map_err(crate::canceled_to_error)
                 .and_then(|result| result)
@@ -1180,9 +1395,11 @@ impl Drop for Reply {
     fn drop(&mut self) {
         // First close the receiver, then wake the dispatcher to prune queued
         // cancellation even when no IO or application operation is ready.
-        drop(self.receiver.take());
-        if let Some(inbox) = self.inbox.upgrade() {
-            inbox.notify();
+        if let Some(receiver) = self.receiver.take() {
+            drop(receiver);
+            if let Some(inbox) = self.inbox.upgrade() {
+                inbox.notify();
+            }
         }
     }
 }

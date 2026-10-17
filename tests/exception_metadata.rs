@@ -11,12 +11,14 @@ use support::{Endpoint, Hub};
 
 struct Forward(Rc<RefCell<Option<Error>>>);
 impl harness::Server for Forward {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        _: harness::EchoParams,
-        _: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        Err(self.0.borrow().as_ref().unwrap().clone())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            Err(self.0.borrow().as_ref().unwrap().clone())
+        })
     }
 }
 struct Fixture {

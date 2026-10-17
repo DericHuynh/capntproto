@@ -190,6 +190,13 @@ fn selected_template_keeps_its_pointer_after_parent_owner_is_dropped() {
     for (copy, expected) in [(first, "first"), (second, "second")] {
         copy.validate_capability_indices(0, message::ReaderOptions::new())
             .unwrap();
+        assert_eq!(
+            copy.get_reader()
+                .unwrap()
+                .get_as::<capnp::text::Reader>()
+                .unwrap(),
+            expected
+        );
         let message = copy.into_inner();
         let list = message
             .get_root_as_reader::<any_pointer_list::Reader>()
@@ -221,6 +228,7 @@ fn selected_pointer_survives_moves_replacement_and_additional_segments() {
         })
         .unwrap();
     let mut selected = Box::new(selected);
+    assert!(selected.get_reader().unwrap().is_null());
     selected
         .get()
         .set_as::<capnp::data::Owned>(&[7; 8192][..])
@@ -242,21 +250,26 @@ fn selected_pointer_survives_moves_replacement_and_additional_segments() {
         capnp::ErrorKind::ReadLimitExceeded
     );
     assert_eq!(
-        selected.get().get_as::<capnp::data::Builder>().unwrap(),
+        selected
+            .get_reader()
+            .unwrap()
+            .get_as::<capnp::data::Reader>()
+            .unwrap(),
         &[7; 8192]
     );
     selected
         .get()
         .set_as::<capnp::text::Owned>("replacement")
         .unwrap();
-    let mut selected = *selected;
+    let selected = *selected;
     selected
         .validate_capability_indices(0, message::ReaderOptions::new())
         .unwrap();
     assert_eq!(
         selected
-            .get()
-            .get_as::<capnp::text::Builder>()
+            .get_reader()
+            .unwrap()
+            .get_as::<capnp::text::Reader>()
             .unwrap()
             .to_str()
             .unwrap(),

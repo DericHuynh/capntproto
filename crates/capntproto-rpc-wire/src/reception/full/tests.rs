@@ -9,7 +9,9 @@ use rpc_capnp::api::{CapDescriptor, Payload};
 #[test]
 fn mixed_descriptors_acquire_all_owners_or_none_without_allocation() {
     let measured = allocation_counter::measure(|| {
-        for variant in 0..5 {
+        for variant in 0..10 {
+            let checked = variant >= 5;
+            let variant = variant % 5;
             let mut imports_storage = [imports::Slot::EMPTY];
             let mut exports_storage = [exports::Slot::EMPTY];
             let mut answers_storage = [const { answers::Slot::EMPTY }; 2];
@@ -82,19 +84,29 @@ fn mixed_descriptors_acquire_all_owners_or_none_without_allocation() {
                             answers::PipelineSlot::none(),
                             answers::PipelineSlot::new(answer_id),
                         ];
-                        let prepared = prepare(
-                            reader.get_root().unwrap(),
-                            imports,
-                            exports,
-                            answers,
-                            Slots {
-                                imports: &mut imported,
-                                exports: &mut local,
-                                answers: &mut pipelines,
-                            },
-                        );
+                        let slots = Slots {
+                            imports: &mut imported,
+                            exports: &mut local,
+                            answers: &mut pipelines,
+                        };
+                        let mut release_scratch = [0];
+                        let prepared = if checked {
+                            let payload = CheckedPayload::new(reader.get_root().unwrap()).unwrap();
+                            let releases = exports
+                                .prepare_releases(&mut release_scratch)
+                                .unwrap()
+                                .finish()
+                                .unwrap();
+                            prepare_checked_with_releases(
+                                payload, imports, releases, answers, slots,
+                            )
+                            .map(WithReleases::accept)
+                        } else {
+                            prepare(reader.get_root().unwrap(), imports, exports, answers, slots)
+                                .map(Prepared::accept)
+                        };
                         if matches!(variant, 0 | 4) {
-                            let received = prepared.unwrap().accept();
+                            let received = prepared.unwrap();
                             let Capability::Remote(remote) = received.at(0).unwrap() else {
                                 unreachable!()
                             };

@@ -575,6 +575,21 @@ impl<A> BuilderArenaImpl<A>
 where
     A: Allocator,
 {
+    pub fn retained_segment_bytes(&self) -> Option<usize> {
+        self.inner
+            .segments
+            .iter()
+            .try_fold(0usize, |bytes, segment| {
+                #[cfg(feature = "alloc")]
+                if segment.external.is_some() {
+                    // An external range does not describe its owner's full allocation.
+                    return None;
+                }
+                (segment.capacity as usize)
+                    .checked_mul(8)?
+                    .checked_add(bytes)
+            })
+    }
     pub fn new(allocator: A) -> Self {
         Self {
             inner: BuilderArenaImplInner {
@@ -626,6 +641,18 @@ where
 
     pub fn len(&self) -> usize {
         self.inner.segments.len()
+    }
+
+    pub fn segment_for_output(&self, id: u32) -> Option<&[u8]> {
+        if id as usize >= self.len() {
+            return None;
+        }
+        let segment = &self.inner.segments[id as usize];
+        // SAFETY: the allocator owns this initialized prefix. Borrowing the
+        // arena immutably prevents mutation or deallocation for the slice's life.
+        Some(unsafe {
+            slice::from_raw_parts(segment.ptr, segment.allocated as usize * BYTES_PER_WORD)
+        })
     }
 
     pub fn is_empty(&self) -> bool {

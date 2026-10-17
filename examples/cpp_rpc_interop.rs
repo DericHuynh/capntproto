@@ -18,34 +18,40 @@ impl Drop for Peer {
 }
 struct Callback;
 impl harness::Server for Callback {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        p: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        if p.get()?.get_value() == 999 {
-            return Err(capnp::Error::overloaded("callback failed".into()));
-        }
-        r.get().set_value(200 + p.get()?.get_value());
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            if p.get()?.get_value() == 999 {
+                return Err(capnp::Error::overloaded("callback failed".into()));
+            }
+            r.get().set_value(200 + p.get()?.get_value());
+            Ok(())
+        })
     }
-    async fn bounce(
+    fn bounce(
         self: Rc<Self>,
-        p: harness::BounceParams,
-        mut r: harness::BounceResults,
-    ) -> capnp::Result<()> {
-        r.get().set_cap(p.get()?.get_cap()?);
-        Ok(())
+        context: harness::BounceContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            r.get().set_cap(p.get()?.get_cap()?);
+            Ok(())
+        })
     }
-    async fn tail(
+    fn tail(
         self: Rc<Self>,
-        p: harness::TailParams,
-        r: harness::TailResults,
-    ) -> capnp::Result<()> {
-        let params = p.get()?;
-        let mut request = params.get_cap()?.echo_request();
-        request.get().set_value(params.get_value());
-        r.hook.tail_call(request.hook).await
+        context: harness::TailContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let params = p.get()?;
+            let mut request = params.get_cap()?.echo_request();
+            request.get().set_value(params.get_value());
+            r.hook.tail_call(request.hook).await
+        })
     }
 }
 #[tokio::main(flavor = "current_thread")]

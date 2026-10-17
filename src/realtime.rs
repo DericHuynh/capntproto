@@ -442,49 +442,57 @@ impl Receiver {
 }
 struct Service(Rc<Inner>);
 impl wire::snapshots::Server for Service {
-    async fn describe(
+    fn describe(
         self: Rc<Self>,
-        _: wire::snapshots::DescribeParams,
-        mut r: wire::snapshots::DescribeResults,
-    ) -> capnp::Result<()> {
-        self.0.state.borrow().config.write(r.get().init_config());
-        Ok(())
+        context: wire::snapshots::DescribeContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.0.state.borrow().config.write(r.get().init_config());
+            Ok(())
+        })
     }
-    async fn offer(
+    fn offer(
         self: Rc<Self>,
-        p: wire::snapshots::OfferParams,
-        mut r: wire::snapshots::OfferResults,
-    ) -> capnp::Result<()> {
-        let receipt = {
-            let reader = p.get()?;
-            offer(
-                &self.0,
-                reader.get_sequence(),
-                reader.get_key(),
-                reader.get_not_after(),
-                reader.get_snapshot()?,
-            )
-        };
-        drop(p);
-        r.get().set_outcome(receipt.await?);
-        Ok(())
+        context: wire::snapshots::OfferContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let receipt = {
+                let reader = p.get()?;
+                offer(
+                    &self.0,
+                    reader.get_sequence(),
+                    reader.get_key(),
+                    reader.get_not_after(),
+                    reader.get_snapshot()?,
+                )
+            };
+            drop(p);
+            r.get().set_outcome(receipt.await?);
+            Ok(())
+        })
     }
-    async fn cancel(
+    fn cancel(
         self: Rc<Self>,
-        p: wire::snapshots::CancelParams,
-        mut r: wire::snapshots::CancelResults,
-    ) -> capnp::Result<()> {
-        r.get()
-            .set_outcome(cancel(&self.0, p.get()?.get_sequence())?);
-        Ok(())
+        context: wire::snapshots::CancelContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            r.get()
+                .set_outcome(cancel(&self.0, p.get()?.get_sequence())?);
+            Ok(())
+        })
     }
-    async fn close(
+    fn close(
         self: Rc<Self>,
-        _: wire::snapshots::CloseParams,
-        _: wire::snapshots::CloseResults,
-    ) -> capnp::Result<()> {
-        self.0.close();
-        Ok(())
+        context: wire::snapshots::CloseContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.0.close();
+            Ok(())
+        })
     }
 }
 /// Clones share a sequence allocator and close barrier. Create one Sender for

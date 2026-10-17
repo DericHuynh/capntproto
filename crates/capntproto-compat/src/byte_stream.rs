@@ -191,66 +191,86 @@ impl wire::Server for StreamServer {
     fn _capnp_server_hooks(&self) -> Option<&dyn ServerHooks> {
         Some(self)
     }
-    async fn write(self: Rc<Self>, params: wire::WriteParams) -> Result<()> {
-        let mut operation = self.operation()?;
-        self.output.write(params.get()?.get_bytes()?).await?;
-        operation.complete = true;
-        Ok(())
-    }
-    async fn end(self: Rc<Self>, _: wire::EndParams, _: wire::EndResults) -> Result<()> {
-        let mut operation = self.operation()?;
-        self.output.end().await?;
-        self.ended.set(true);
-        operation.complete = true;
-        Ok(())
-    }
-    async fn start_tls(self: Rc<Self>, params: wire::StartTlsParams) -> Result<()> {
-        let mut operation = self.operation()?;
-        self.output
-            .start_tls(params.get()?.get_expected_server_hostname()?.to_str()?)
-            .await?;
-        operation.complete = true;
-        Ok(())
-    }
-    async fn get_substream(
+    fn write(
         self: Rc<Self>,
-        params: wire::GetSubstreamParams,
-        mut results: wire::GetSubstreamResults,
-    ) -> Result<()> {
-        self.ready()?;
-        let params = params.get()?;
-        let callback = params.get_callback()?;
-        let limit = params.get_limit();
-        self.busy.set(true);
-        let (tx, rx) = futures::channel::oneshot::channel::<Result<wire::Client>>();
-        let shortened = async move {
-            rx.await
-                .map_err(|_| capnp::Error::disconnected("substream dropped".into()))?
-        }
-        .boxed_local()
-        .shared();
-        let sub = Rc::new(Substream {
-            parent: self.clone(),
-            callback,
-            limit,
-            state: Mutex::new(SubState {
-                count: 0,
-                next: None,
-                ended: false,
-                failed: false,
-            }),
-            released: Cell::new(false),
-            resolve: RefCell::new(Some(tx)),
-            shortened,
-        });
-        let client = self.factory.from_output(sub.clone());
-        results.get().set_substream(client);
-        results.set_pipeline()?;
-        if limit == 0 {
-            let mut state = sub.state.lock().await;
-            sub.redirect(&mut state).await?;
-        }
-        Ok(())
+        context: wire::WriteContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let mut operation = self.operation()?;
+            self.output.write(params.get()?.get_bytes()?).await?;
+            operation.complete = true;
+            Ok(())
+        })
+    }
+    fn end(
+        self: Rc<Self>,
+        context: wire::EndContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let mut operation = self.operation()?;
+            self.output.end().await?;
+            self.ended.set(true);
+            operation.complete = true;
+            Ok(())
+        })
+    }
+    fn start_tls(
+        self: Rc<Self>,
+        context: wire::StartTlsContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let mut operation = self.operation()?;
+            self.output
+                .start_tls(params.get()?.get_expected_server_hostname()?.to_str()?)
+                .await?;
+            operation.complete = true;
+            Ok(())
+        })
+    }
+    fn get_substream(
+        self: Rc<Self>,
+        context: wire::GetSubstreamContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.ready()?;
+            let params = params.get()?;
+            let callback = params.get_callback()?;
+            let limit = params.get_limit();
+            self.busy.set(true);
+            let (tx, rx) = futures::channel::oneshot::channel::<Result<wire::Client>>();
+            let shortened = async move {
+                rx.await
+                    .map_err(|_| capnp::Error::disconnected("substream dropped".into()))?
+            }
+            .boxed_local()
+            .shared();
+            let sub = Rc::new(Substream {
+                parent: self.clone(),
+                callback,
+                limit,
+                state: Mutex::new(SubState {
+                    count: 0,
+                    next: None,
+                    ended: false,
+                    failed: false,
+                }),
+                released: Cell::new(false),
+                resolve: RefCell::new(Some(tx)),
+                shortened,
+            });
+            let client = self.factory.from_output(sub.clone());
+            results.get().set_substream(client);
+            results.set_pipeline()?;
+            if limit == 0 {
+                let mut state = sub.state.lock().await;
+                sub.redirect(&mut state).await?;
+            }
+            Ok(())
+        })
     }
 }
 struct LocalOutput {

@@ -19,6 +19,7 @@ use support::{Endpoint, Hub};
 struct State {
     gate: RefCell<Option<oneshot::Receiver<()>>>,
     started: Cell<bool>,
+    synchronous: bool,
     completed: Cell<bool>,
     running: Cell<bool>,
     alive: Cell<bool>,
@@ -37,13 +38,15 @@ impl Drop for Value {
     }
 }
 impl harness::Server for Value {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        _: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        r.get().set_value(42);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            r.get().set_value(42);
+            Ok(())
+        })
     }
 }
 struct Service(Rc<State>);
@@ -80,51 +83,67 @@ impl Service {
     }
 }
 impl policy::Server for Service {
-    async fn pending(
+    fn pending(
         self: Rc<Self>,
-        p: policy::PendingParams,
-        r: policy::PendingResults,
-    ) -> capnp::Result<()> {
-        let early = p.get()?.get_early_drop();
-        self.work(early, r.hook).await
+        context: policy::PendingContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        if self.0.synchronous {
+            return context.complete(|_, _| {
+                self.0.started.set(true);
+                Ok(())
+            });
+        }
+        let (p, r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let early = p.get()?.get_early_drop();
+            self.work(early, r.hook).await
+        })
     }
-    async fn cancellable(
+    fn cancellable(
         self: Rc<Self>,
-        p: policy::CancellableParams,
-        r: policy::CancellableResults,
-    ) -> capnp::Result<()> {
-        let early = p.get()?.get_early_drop();
-        self.work(early, r.hook).await
+        context: policy::CancellableContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let early = p.get()?.get_early_drop();
+            self.work(early, r.hook).await
+        })
     }
 }
 impl allowed::Server for Service {
-    async fn pending(
+    fn pending(
         self: Rc<Self>,
-        p: allowed::PendingParams,
-        r: allowed::PendingResults,
-    ) -> capnp::Result<()> {
-        let early = p.get()?.get_early_drop();
-        self.work(early, r.hook).await
+        context: allowed::PendingContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let early = p.get()?.get_early_drop();
+            self.work(early, r.hook).await
+        })
     }
 }
 impl derived::Server for Service {
-    async fn pending_own(
+    fn pending_own(
         self: Rc<Self>,
-        p: derived::PendingOwnParams,
-        r: derived::PendingOwnResults,
-    ) -> capnp::Result<()> {
-        let early = p.get()?.get_early_drop();
-        self.work(early, r.hook).await
+        context: derived::PendingOwnContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let early = p.get()?.get_early_drop();
+            self.work(early, r.hook).await
+        })
     }
 }
 impl harness::Server for Service {
-    async fn pending(
+    fn pending(
         self: Rc<Self>,
-        p: harness::PendingParams,
-        r: harness::PendingResults,
-    ) -> capnp::Result<()> {
-        let early = p.get()?.get_hold_context();
-        self.work(early, r.hook).await
+        context: harness::PendingContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let early = p.get()?.get_hold_context();
+            self.work(early, r.hook).await
+        })
     }
 }
 async fn settle() {
@@ -527,8 +546,11 @@ async fn local_executor_owns_protected_calls_after_caller_drop() {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn missing_or_stopped_local_executor_fails_before_application_dispatch() {
-    for stopped in [false, true] {
-        let state = Rc::new(State::default());
+    for (stopped, synchronous) in [(false, false), (true, false), (false, true), (true, true)] {
+        let state = Rc::new(State {
+            synchronous,
+            ..Default::default()
+        });
         let client: policy::Client = if stopped {
             let (executor, driver) = capnp_rpc::new_call_executor();
             drop(driver);

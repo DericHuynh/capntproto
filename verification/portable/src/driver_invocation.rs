@@ -163,6 +163,10 @@ pub fn encoded_immediate_return(chunk: usize) {
 }
 
 pub fn immediate_publication(chunk: usize) {
+    immediate_publication_case(chunk, false);
+    immediate_publication_case(chunk, true);
+}
+fn immediate_publication_case(chunk: usize, no_promise_pipelining: bool) {
     let mut words = [[ZERO; 97]; 12];
     let mut buffers = words
         .each_mut()
@@ -182,7 +186,7 @@ pub fn immediate_publication(chunk: usize) {
             let method = calls::DynamicCall {
                 interface: 47,
                 method: 3,
-                no_promise_pipelining: true,
+                no_promise_pipelining,
                 only_promise_pipeline: false,
             };
             let pending = peer.runtime.promise(&mut None).unwrap();
@@ -284,7 +288,7 @@ pub fn immediate_publication(chunk: usize) {
                     assert_eq!(call.get_question_id(), key.id().to_wire());
                     assert_eq!(call.get_interface_id(), 47);
                     assert_eq!(call.get_method_id(), 3);
-                    assert!(call.get_no_promise_pipelining());
+                    assert_eq!(call.get_no_promise_pipelining(), no_promise_pipelining);
                     assert!(call.get_params().unwrap().get_content().is_null());
                 })
                 .unwrap();

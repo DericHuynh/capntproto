@@ -33,19 +33,83 @@ pub enum Reply<'r, 'm, 'i, 'e, 'a, I> {
     Discarded,
 }
 
-/// Metadata from the exact retained request. The data-only constructor is used
-/// only after private template publication has validated the complete payload
-/// and proved its descriptor table empty.
+/// A checked result view can only be obtained from this exact Return. Owned
+/// reception uses it before import factories and then transfers it into the
+/// transactional admission, retaining the original message's traversal checks.
+pub(crate) struct PreparedReturn<'m> {
+    result: rpc_capnp::return_::Reader<'m>,
+    results: Option<capabilities::CheckedPayload<'m>>,
+}
+impl<'m> PreparedReturn<'m> {
+    pub(crate) fn new(result: rpc_capnp::return_::Reader<'m>) -> Self {
+        Self {
+            result,
+            results: None,
+        }
+    }
+    pub(crate) fn prepare_results(
+        &mut self,
+    ) -> Result<Option<capabilities::CheckedPayload<'m>>, Error> {
+        if self.results.is_none() {
+            if let rpc_capnp::return_::Results(payload) =
+                self.result.which().map_err(|_| Error::Unsupported)?
+            {
+                self.results = Some(capabilities::CheckedPayload::new(payload?)?);
+            }
+        }
+        Ok(self.results)
+    }
+}
+
+/// The private one-capability encoder's exact outgoing grant and Return policy.
+#[derive(Clone, Copy)]
+pub(crate) struct OriginalMetadata {
+    method: (u64, u16),
+    redirected: bool,
+    allows_handoff: bool,
+    export: Option<ExportId>,
+}
+impl OriginalMetadata {
+    // Only the private single-capability encoder constructs this metadata. Its
+    // immutable Call contains this exact method, handoff policy and export;
+    // ordinary publication still validates the complete frame and grant batch.
+    pub(crate) fn single_export(
+        method: (u64, u16),
+        allows_handoff: bool,
+        export: ExportId,
+    ) -> Self {
+        Self {
+            method,
+            redirected: false,
+            allows_handoff,
+            export: Some(export),
+        }
+    }
+    pub(crate) fn original(&self) -> Original<'_> {
+        Original {
+            params: Parameters::Export(self.export),
+            redirected: self.redirected,
+            allows_handoff: self.allows_handoff,
+            method: Some(self.method),
+        }
+    }
+}
+enum Parameters<'m> {
+    Unchecked(Option<rpc_capnp::payload::Reader<'m>>),
+    Published(rpc_capnp::payload::Reader<'m>),
+    Export(Option<ExportId>),
+}
 pub(crate) struct Original<'m> {
-    params: Option<rpc_capnp::payload::Reader<'m>>,
+    params: Parameters<'m>,
     redirected: bool,
     allows_handoff: bool,
     pub(crate) method: Option<(u64, u16)>,
 }
 impl<'m> Original<'m> {
+    // Only validated template publication may prove the descriptor table empty.
     pub(crate) fn data_only(method: (u64, u16), allows_handoff: bool) -> Self {
         Self {
-            params: None,
+            params: Parameters::Export(None),
             redirected: false,
             allows_handoff,
             method: Some(method),
@@ -94,11 +158,25 @@ impl<'m> Original<'m> {
             return Err(Error::Mismatch);
         }
         Ok(Self {
-            params,
+            params: Parameters::Unchecked(params),
             redirected,
             allows_handoff,
             method,
         })
+    }
+    // Only the owning Question may use this proof: publication checked the
+    // complete immutable request and its exact grants before accepting output.
+    pub(crate) fn read_published(
+        id: u32,
+        root: rpc_capnp::message::Reader<'m>,
+    ) -> Result<Self, Error> {
+        let mut original = Self::read(id, root)?;
+        original.params = match original.params {
+            Parameters::Unchecked(Some(params)) => Parameters::Published(params),
+            Parameters::Unchecked(None) => Parameters::Export(None),
+            _ => unreachable!(),
+        };
+        Ok(original)
     }
 }
 
@@ -118,13 +196,20 @@ pub fn returned<'b, 's, 'r, 'm, 'q, 'i, 'e, 'a, 'qs, 'is, 'es, 'as_, I, E, A>(
 ) -> Result<Returned<'b, 's, 'r, 'm, 'q, 'i, 'e, 'a, 'qs, 'is, 'es, 'as_, I, E, A>, Error> {
     let original = Original::read(result.get_answer_id(), original)?;
     returned_prepared(
-        result, original, questions, imports, exports, answers, slots, scratch,
+        PreparedReturn::new(result),
+        original,
+        questions,
+        imports,
+        exports,
+        answers,
+        slots,
+        scratch,
     )
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub(crate) fn returned_prepared<'b, 's, 'r, 'm, 'q, 'i, 'e, 'a, 'qs, 'is, 'es, 'as_, I, E, A>(
-    result: rpc_capnp::return_::Reader<'m>,
+    prepared: PreparedReturn<'m>,
     original: Original<'_>,
     questions: &'b mut questions::Questions<'q, 'qs>,
     imports: &'b mut imports::Imports<'i, 'is, I>,
@@ -133,6 +218,7 @@ pub(crate) fn returned_prepared<'b, 's, 'r, 'm, 'q, 'i, 'e, 'a, 'qs, 'is, 'es, '
     slots: Slots<'r, 'i, 'e, 'a, I>,
     scratch: &'s mut [u32],
 ) -> Result<Returned<'b, 's, 'r, 'm, 'q, 'i, 'e, 'a, 'qs, 'is, 'es, 'as_, I, E, A>, Error> {
+    let result = prepared.result;
     let id = result.get_answer_id();
     let redirected = questions
         .is_redirected(QuestionId::from_wire(id))
@@ -145,7 +231,19 @@ pub(crate) fn returned_prepared<'b, 's, 'r, 'm, 'q, 'i, 'e, 'a, 'qs, 'is, 'es, '
         .map_err(Error::Question)?;
     let mut releases = exports.prepare_releases(scratch).map_err(Error::Release)?;
     if result.get_release_param_caps() {
-        super::super::returns::record_params(&mut releases, original.params)?;
+        match original.params {
+            Parameters::Unchecked(params) => {
+                super::super::returns::record_params(&mut releases, params)?
+            }
+            Parameters::Published(params) => super::super::returns::record_param_descriptors(
+                &mut releases,
+                params.get_cap_table()?,
+            )?,
+            Parameters::Export(Some(export)) => {
+                releases.record(export, 1).map_err(Error::Release)?
+            }
+            Parameters::Export(None) => (),
+        }
     }
     let releases = releases.finish().map_err(Error::Release)?;
     let discard = question.delivery() == Delivery::Discard;
@@ -165,8 +263,15 @@ pub(crate) fn returned_prepared<'b, 's, 'r, 'm, 'q, 'i, 'e, 'a, 'qs, 'is, 'es, '
                 Pending::Discarded(releases)
             } else {
                 Pending::Results(
-                    capabilities::prepare_with_releases(payload, imports, releases, answers, slots)
-                        .map_err(Error::Reception)?,
+                    match prepared.results {
+                        Some(checked) => capabilities::prepare_checked_with_releases(
+                            checked, imports, releases, answers, slots,
+                        ),
+                        None => capabilities::prepare_with_releases(
+                            payload, imports, releases, answers, slots,
+                        ),
+                    }
+                    .map_err(Error::Reception)?,
                 )
             }
         }

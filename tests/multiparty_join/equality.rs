@@ -4,13 +4,15 @@ use futures::{channel::oneshot, FutureExt};
 
 struct Destination(Rc<Cell<u32>>);
 impl harness::Server for Destination {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        _: harness::EchoParams,
-        _: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        self.0.set(self.0.get() + 1);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.0.set(self.0.get() + 1);
+            Ok(())
+        })
     }
 }
 
@@ -18,17 +20,19 @@ impl harness::Server for Destination {
 // apparent behavior must never make it identical to the inner capability.
 struct Forwarder(harness::Client, Rc<Cell<u32>>);
 impl harness::Server for Forwarder {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        p: harness::EchoParams,
-        r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        if p.get()?.get_value() == 20 {
-            self.1.set(self.1.get() + 1);
-            Ok(())
-        } else {
-            r.hook.tail_call(self.0.echo_request().hook).await
-        }
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            if p.get()?.get_value() == 20 {
+                self.1.set(self.1.get() + 1);
+                Ok(())
+            } else {
+                r.hook.tail_call(self.0.echo_request().hook).await
+            }
+        })
     }
 }
 
@@ -225,15 +229,17 @@ async fn joining_shortened_authority_does_not_depend_on_its_former_owner() {
 
 struct Ordered(Rc<RefCell<Vec<u32>>>);
 impl harness::Server for Ordered {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        p: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        let value = p.get()?.get_value();
-        self.0.borrow_mut().push(value);
-        r.get().set_value(value);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let value = p.get()?.get_value();
+            self.0.borrow_mut().push(value);
+            r.get().set_value(value);
+            Ok(())
+        })
     }
 }
 

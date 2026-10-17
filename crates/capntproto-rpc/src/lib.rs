@@ -42,14 +42,14 @@
 //! // Rust server defining an implementation of Foo.
 //! struct FooImpl;
 //! impl foo::Server for FooImpl {
-//!     async fn identity(
+//!     fn identity(
 //!         self: Rc<Self>,
-//!         params: foo::IdentityParams,
-//!         mut results: foo::IdentityResults
-//!     ) -> Result<(), ::capnp::Error> {
-//!         let x = params.get()?.get_x();
-//!         results.get().set_y(x);
-//!         Ok(())
+//!         context: foo::IdentityContext<'_>,
+//!     ) -> capnp::capability::Promise<(), capnp::Error> {
+//!         context.complete(|params, mut results| {
+//!             results.set_y(params.get_x());
+//!             Ok(())
+//!         })
 //!     }
 //! }
 //! ```
@@ -414,8 +414,33 @@ pub trait IncomingMessageStream {
 /// Dropping the stream ends reception. Partial progress survives Pending.
 #[cfg(feature = "std")]
 pub trait IncomingFrameStream {
+    /// A complete next frame is available without IO or transferring ownership.
+    /// This hint permits bounded reply batching; false always remains valid.
+    fn has_buffered_next_frame(&self) -> bool {
+        false
+    }
     fn poll_frame(&mut self, cx: &mut Context<'_>) -> Poll<capnp::Result<Option<&[u8]>>>;
     fn frame(&self) -> Option<&[u8]>;
+    /// Retain the current frame's immutable byte allocation and exact range.
+    /// The allocation may contain other bytes; consumers must charge its full
+    /// capacity. No input is consumed. After finish_frame the stream must keep
+    /// this owner immutable and detach before any conflicting read or edit.
+    fn share_frame(&mut self) -> Option<(std::sync::Arc<Vec<u8>>, core::ops::Range<usize>)> {
+        None
+    }
+    /// Prepare a complete frame or a validated streaming length. The default
+    /// retains complete-frame behavior. Streaming implementations expose no
+    /// frame slice until complete and implement `poll_read_frame` below.
+    fn poll_frame_size(&mut self, cx: &mut Context<'_>) -> Poll<capnp::Result<Option<usize>>> {
+        self.poll_frame(cx).map_ok(|frame| frame.map(<[u8]>::len))
+    }
+    /// Read an incomplete prepared frame into caller-owned storage, without
+    /// crossing its boundary. Pending must retain progress and register a wake.
+    fn poll_read_frame(&mut self, _: &mut Context<'_>, _: &mut [u8]) -> Poll<capnp::Result<usize>> {
+        Poll::Ready(Err(Error::unimplemented(
+            "stream does not support partial frames".into(),
+        )))
+    }
     /// Release the current frame. An adapter abandoning incomplete input must
     /// stop polling this stream and retain it until output drain has finished.
     fn finish_frame(&mut self);
@@ -428,6 +453,12 @@ pub trait IncomingFrameStream {
 /// that completion and never cancel accepted writes when this handle is dropped.
 pub trait OutgoingMessageStream {
     fn send(&mut self, frame: OutgoingFrame) -> Result<(), Error>;
+    /// Accept a frame whose caller will poll `poll_flush` after its bounded
+    /// publication batch. Transports may defer an eager drive until that poll;
+    /// ownership, FIFO order and physical completion remain identical to send.
+    fn send_buffered(&mut self, frame: OutgoingFrame) -> Result<(), Error> {
+        self.send(frame)
+    }
     fn poll_flush(
         &mut self,
         cx: &mut core::task::Context<'_>,

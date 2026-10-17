@@ -27,6 +27,10 @@ pub struct Rejected {
     pub error: Error,
     pub call: Call,
 }
+pub(super) struct RejectedOwner<T> {
+    error: Error,
+    call: T,
+}
 
 /// An owned message whose cap table is independent of scoped wire receipts.
 pub(crate) struct Payload {
@@ -40,22 +44,14 @@ enum PayloadBody {
     Shared { message: Box<SharedPayload> },
 }
 struct SharedPayload {
-    message: capnp::message::CheckedStructReader<
+    message: capnp::message::CheckedPointerReader<
         capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
     >,
 }
 impl capnp::private::capability::ResponseHook for SharedPayload {
     fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
-        Ok(
-            capntproto_rpc_wire::rpc_capnp::payload::Reader::from(self.message.root())
-                .get_content(),
-        )
+        Ok(self.message.root())
     }
-}
-#[derive(Clone, Copy)]
-enum PayloadKind {
-    Params,
-    Results,
 }
 impl Payload {
     pub(crate) fn retain_plain_context(
@@ -76,7 +72,7 @@ impl Payload {
                 debug_assert!(self.caps.is_empty());
                 message
             }
-            PayloadBody::Shared { message } => {
+            PayloadBody::Shared { message } if self.caps.is_empty() => {
                 debug_assert!(self.caps.is_empty());
                 message
             }
@@ -105,73 +101,65 @@ impl Payload {
     fn retain_admitted_or_copy(
         reader: any_pointer::Reader<'_>,
         bytes: Option<messages::SharedBytes>,
-        kind: PayloadKind,
-        descriptor_count: usize,
+        caps: Vec<Option<Box<dyn ClientHook>>>,
     ) -> capnp::Result<Self> {
         // Both callers use the content and receipts of an admitted immutable
         // Call/Return. Admission already traversed this entire graph under its
-        // original limits and validated every capability index. With no
-        // descriptors, that proves the shared payload contains no capabilities;
-        // another target_size traversal cannot establish any additional fact.
-        // Nonempty tables still copy/remap through their admitted hook owners.
-        if descriptor_count == 0 {
-            if let Some(bytes) = bytes {
-                return Self::from_admitted_bytes(bytes, kind);
-            }
+        // original limits and validated every capability index. Each supplied
+        // slot is already bound through that frame's exact admission receipt.
+        // Retain those hooks in the original slot order alongside the immutable
+        // frame; no payload copy or capability-index remapping is required.
+        if let Some(bytes) = bytes {
+            let options = Self::admitted_reader_options();
+            let segments = capnp::serialize::NoAllocBufferSegments::from_buffer(bytes, options)?;
+            // Retain the already selected content pointer instead of decoding
+            // Call/Return and Payload ancestors again. The checked owner verifies
+            // every segment's identity and extent before keeping these offsets.
+            let message = capnp::message::CheckedPointerReader::retain(reader, segments, options)?;
+            return Ok(Self {
+                body: PayloadBody::Shared {
+                    message: Box::new(SharedPayload { message }),
+                },
+                caps,
+            });
         }
+        let mut reader = reader;
+        reader.imbue(&caps);
         Self::copy(reader)
     }
-    #[inline(always)]
-    fn from_admitted_bytes(bytes: messages::SharedBytes, kind: PayloadKind) -> capnp::Result<Self> {
-        let options = capnp::message::ReaderOptions {
+    fn admitted_reader_options() -> capnp::message::ReaderOptions {
+        capnp::message::ReaderOptions {
             traversal_limit_in_words: None,
-            // Match owned builder readers after validation with the
-            // source's nesting limit; no unvalidated graph is exposed.
+            // Admission traversed the full immutable graph under its original
+            // limits. Match owned builder readers for subsequent application reads.
             nesting_limit: i32::MAX,
-        };
+        }
+    }
+    #[inline(always)]
+    fn from_admitted_result_bytes(bytes: messages::SharedBytes) -> capnp::Result<Self> {
+        let options = Self::admitted_reader_options();
         let segments = capnp::serialize::NoAllocBufferSegments::from_buffer(bytes, options)?;
+        let (message, ()) = capnp::message::Reader::new(segments, options)
+            .try_select_pointer(options, |root| {
+                let root = root.get_as::<capntproto_rpc_wire::rpc_capnp::message::Reader>()?;
+                let capntproto_rpc_wire::rpc_capnp::message::Return(result) = root
+                    .which()
+                    .map_err(|_| Error::from_kind(capnp::ErrorKind::Failed))?
+                else {
+                    return Err(Error::failed("shared response is not a Return".into()));
+                };
+                let capntproto_rpc_wire::rpc_capnp::return_::Results(payload) = result?
+                    .which()
+                    .map_err(|_| Error::from_kind(capnp::ErrorKind::Failed))?
+                else {
+                    return Err(Error::failed("shared response is not results".into()));
+                };
+                Ok::<_, Error>(Some((payload?.get_content(), ())))
+            })?
+            .expect("result selector returns a pointer or an error");
         Ok(Self {
             body: PayloadBody::Shared {
-                message: Box::new(SharedPayload {
-                    message: capnp::message::CheckedStructReader::select(
-                        capnp::message::Reader::new(segments, options),
-                        |root| {
-                            use capnp::traits::IntoInternalStructReader;
-                            let root = capntproto_rpc_wire::rpc_capnp::message::Reader::from(root);
-                            let payload = match (
-                                kind,
-                                root.which()
-                                    .map_err(|_| Error::from_kind(capnp::ErrorKind::Failed))?,
-                            ) {
-                                (
-                                    PayloadKind::Params,
-                                    capntproto_rpc_wire::rpc_capnp::message::Call(call),
-                                ) => call?.get_params()?,
-                                (
-                                    PayloadKind::Results,
-                                    capntproto_rpc_wire::rpc_capnp::message::Return(result),
-                                ) => {
-                                    let capntproto_rpc_wire::rpc_capnp::return_::Results(payload) =
-                                        result?.which().map_err(|_| {
-                                            Error::from_kind(capnp::ErrorKind::Failed)
-                                        })?
-                                    else {
-                                        return Err(Error::failed(
-                                            "shared response is not results".into(),
-                                        ));
-                                    };
-                                    payload?
-                                }
-                                _ => {
-                                    return Err(Error::failed(
-                                        "shared payload message kind mismatch".into(),
-                                    ))
-                                }
-                            };
-                            Ok(payload.into_internal_struct_reader())
-                        },
-                    )?,
-                }),
+                message: Box::new(SharedPayload { message }),
             },
             caps: Vec::new(),
         })
@@ -191,9 +179,7 @@ impl Payload {
         Ok(root)
     }
     fn into_pipeline(self) -> Box<dyn PipelineHook> {
-        Box::new(crate::local::Pipeline::new(Box::new(PayloadDone(Rc::new(
-            self,
-        )))))
+        Box::new(PayloadPipeline(Rc::new(self)))
     }
 }
 impl capnp::private::capability::ResponseHook for Payload {
@@ -201,13 +187,22 @@ impl capnp::private::capability::ResponseHook for Payload {
         self.reader()
     }
 }
-struct PayloadDone(Rc<Payload>);
-impl crate::local::ResultsDoneHook for PayloadDone {
-    fn add_ref(&self) -> Box<dyn crate::local::ResultsDoneHook> {
+// A completed wire payload is immutable. Its pipeline can retain it directly;
+// there is no mutable local result state to synchronize with another owner.
+struct PayloadPipeline(Rc<Payload>);
+impl PipelineHook for PayloadPipeline {
+    fn add_ref(&self) -> Box<dyn PipelineHook> {
         Box::new(Self(self.0.clone()))
     }
-    fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
-        self.0.reader()
+    fn get_pipelined_cap(&self, ops: &[PipelineOp]) -> Box<dyn ClientHook> {
+        match self
+            .0
+            .reader()
+            .and_then(|reader| reader.get_pipelined_cap(ops))
+        {
+            Ok(client) => client,
+            Err(error) => Box::new(crate::broken::Client::new(error, true, 0)),
+        }
     }
 }
 
@@ -252,12 +247,17 @@ impl<'id> ClientHooks<'id> {
             false,
             &mut import,
         )
+        .map_err(|rejected| Rejected {
+            error: rejected.error,
+            call: rejected.call,
+        })
     }
     #[allow(clippy::too_many_arguments, clippy::result_large_err)]
     #[inline(never)]
     pub(super) fn enqueue_wire_using<
         'pool,
         'storage,
+        B: core::borrow::BorrowMut<Call> + Into<Box<Call>>,
         I,
         A,
         P: Copy + Eq,
@@ -266,7 +266,7 @@ impl<'id> ClientHooks<'id> {
         const PATH: usize,
     >(
         &mut self,
-        mut call: Call,
+        mut owner: B,
         driver: &mut Driver<'pool, 'id, 'storage, I, A, P, S, CAPS, PATH>,
         invocations: &mut connection::Invocations<'_, '_, 'pool, 'id, I, CAPS>,
         messages: &mut messages::Messages<'pool, '_, '_>,
@@ -276,41 +276,39 @@ impl<'id> ClientHooks<'id> {
             &mut Runtime<'pool, 'id, 'storage, I, P, S, CAPS, PATH>,
             &dyn ClientHook,
         ) -> capnp::Result<Client<'id>>,
-    ) -> Result<WireCall<'pool, 'id, I, CAPS>, Rejected> {
+    ) -> Result<WireCall<'pool, 'id, I, CAPS>, RejectedOwner<B>> {
+        // The hosted inbox already owns a Box<Call>. Keep that same allocation
+        // through admission, retries and completion; the public by-value API
+        // boxes only after successful admission.
+        let call = owner.borrow_mut();
         let mut receiver = None;
         let mut direct_stage = None;
         let outcome = (|| {
-            let target = self.target(&call)?;
-            // A settled imported endpoint cannot become a local producer or
-            // acquire a new promise pipeline. Its hosted owner can consume the
-            // driver's result directly, without another completion channel and
-            // polling ledger. Dispatch ordering and question ownership remain
-            // in the same portable driver as every other invocation.
-            let direct = direct
-                && call.hints.no_promise_pipelining
-                && call.third_party.is_none()
-                && driver.runtime.is_settled(target).map_err(wire_error)?
-                && matches!(
-                    driver.runtime.inspect(target).map_err(wire_error)?,
-                    capntproto_rpc_engine::clients::Destination::Endpoint {
-                        owner: capntproto_rpc_wire::clients::Route::Capability(
-                            capntproto_rpc_wire::clients::Endpoint::Imported(_)
-                        ),
-                        location: capntproto_rpc_engine::clients::Location::Remote(_),
-                        ..
-                    }
-                );
+            let target = self.target(call)?;
+            // Remote completion needs no second channel or polling ledger.
+            // Keep unresolved calls direct too: Calls binds a completion owner
+            // before accepting one locally. Both paths retain the same queued
+            // task, cancellation and pipeline identities.
+            let direct = direct && call.third_party.is_none();
             let params = call.params()?;
             let size = params.target_size()?;
+            // A private one-slot table with a reachable capability already has
+            // the identity mapping. Its original hook still passes through the
+            // ordinary import/membrane path below. Larger or foreign tables
+            // retain the copy which collects and remaps reachable capabilities.
+            let direct_caps = (size.cap_count != 0)
+                .then(|| call.params.single_capability_table())
+                .flatten();
             // Data-only parameters already have the identity wire cap mapping.
             // Keep their caller-owned reader through the transactional copy
             // instead of allocating and copying a second hosted message first.
-            let payload = if size.cap_count == 0 {
+            let payload = if size.cap_count == 0 || direct_caps.is_some() {
                 None
             } else {
                 Some(Payload::copy(params)?)
             };
-            let caps = payload.as_ref().map_or(&[][..], |payload| &payload.caps);
+            let caps = direct_caps
+                .unwrap_or_else(|| payload.as_ref().map_or(&[][..], |payload| &payload.caps));
             if caps.len() > driver.capability_capacity() {
                 return Err(Error::overloaded(
                     "wire capability capacity exhausted".into(),
@@ -415,31 +413,21 @@ impl<'id> ClientHooks<'id> {
         })();
         let task = match outcome {
             Ok(task) => task,
-            Err(error) => return Err(Rejected { error, call }),
+            Err(error) => return Err(RejectedOwner { error, call: owner }),
         };
-        let pipeline = (!call.hints.no_promise_pipelining).then(|| {
-            Rc::new(PipelineState {
-                used: Cell::new(false),
-                adopted: RefCell::default(),
-                cached: RefCell::default(),
-                _credit: call.credit.clone(),
-                waiting: RefCell::new(VecDeque::new()),
-                finished: RefCell::new(None),
-                inbox: Rc::downgrade(&self.inbox),
-                maximum: self.maximum_clients,
-            })
-        });
-        if let Some(pipeline) = &pipeline {
-            if let Err(error) = call
-                .results
-                .hook()
-                .set_pipeline_from(Box::new(WirePipeline(PipelineRef(Some(pipeline.clone())))))
-            {
-                return Err(Rejected { error, call });
+        let pipeline = match self.attach_pipeline(call) {
+            Ok(pipeline) => pipeline,
+            Err(error) => {
+                // Direct owners have no invocation binding whose canceled
+                // receiver would reclaim this unpublished task.
+                if direct_stage.is_some() {
+                    driver.cancel_invocation(task, messages);
+                }
+                return Err(RejectedOwner { error, call: owner });
             }
-        }
+        };
         Ok(WireCall {
-            call: Some(Box::new(call)),
+            call: Some(owner.into()),
             task: Some(task),
             receiver,
             direct: direct_stage,
@@ -447,6 +435,67 @@ impl<'id> ClientHooks<'id> {
             local_results: None,
             tail_response: None,
         })
+    }
+    fn attach_pipeline(&self, call: &mut Call) -> capnp::Result<Option<Rc<PipelineState>>> {
+        if call.hints.no_promise_pipelining {
+            return Ok(None);
+        }
+        if let Some(local) = call
+            .results
+            .hook()
+            .as_any_mut()
+            .and_then(|hook| hook.downcast_mut::<crate::local::Results>())
+        {
+            // Reuse projections queued before admission. A dropped public
+            // pipeline needs no replacement state.
+            if let Some(pipeline) = local.take_wire_pipeline() {
+                if let Some(pipeline) = &pipeline {
+                    pipeline._credit.set(call.credit.clone());
+                }
+                return Ok(pipeline);
+            }
+        }
+        let pipeline = (!call.hints.no_promise_pipelining).then(|| {
+            Rc::new(PipelineState {
+                used: Cell::new(false),
+                adopted: RefCell::default(),
+                cached: RefCell::default(),
+                _credit: Cell::new(call.credit.clone()),
+                waiting: RefCell::new(VecDeque::new()),
+                finished: RefCell::new(None),
+                inbox: Rc::downgrade(&self.inbox),
+                maximum: self.maximum_clients,
+            })
+        });
+        if let Some(pipeline) = &pipeline {
+            let published = Box::new(WirePipeline(PipelineRef(Some(pipeline.clone()), None)));
+            let results = call.results.hook();
+            if let Some(local) = results
+                .as_any_mut()
+                .and_then(|hook| hook.downcast_mut::<crate::local::Results>())
+            {
+                local.adopt_pipeline_clients(published, |client, path| {
+                    pipeline.used.set(true);
+                    let mut waiting = pipeline.waiting.borrow_mut();
+                    if waiting.len() >= pipeline.maximum || waiting.try_reserve(1).is_err() {
+                        drop(waiting);
+                        crate::queued::ClientInner::resolve(
+                            client,
+                            Err(Error::overloaded("wire pipeline capacity exhausted".into())),
+                        );
+                    } else {
+                        waiting.push_back(Projection {
+                            path,
+                            client: Rc::downgrade(client),
+                            retain_pipeline: true,
+                        });
+                    }
+                })?;
+            } else {
+                results.set_pipeline_from(published)?;
+            }
+        }
+        Ok(pipeline)
     }
 }
 
@@ -530,15 +579,8 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
             let Some(client) = projection.client.upgrade() else {
                 continue;
             };
-            let fields = projection
-                .path
-                .iter()
-                .filter_map(|op| match op {
-                    PipelineOp::Noop => None,
-                    PipelineOp::GetPointerField(field) => Some(*field),
-                })
-                .collect::<Vec<_>>();
-            if fields.len() > driver.path_capacity() {
+            let field_count = pipeline_fields(&projection.path).count();
+            if field_count > driver.path_capacity() {
                 crate::queued::ClientInner::resolve(
                     &client,
                     Err(Error::overloaded(
@@ -547,9 +589,35 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                 );
                 continue;
             }
-            let path = pipeline::Path::new(&fields);
+            // Keep short paths on the stack. The original operation vector
+            // moves into the cache after routing instead of allocating a second
+            // owned path for every projected capability.
+            let mut inline_fields = [0; 8];
+            let mut long_fields = Vec::new();
+            let fields = if field_count <= inline_fields.len() {
+                for (slot, field) in inline_fields
+                    .iter_mut()
+                    .zip(pipeline_fields(&projection.path))
+                {
+                    *slot = field;
+                }
+                &inline_fields[..field_count]
+            } else {
+                long_fields.extend(pipeline_fields(&projection.path));
+                &long_fields
+            };
+            let path = pipeline::Path::new(fields);
             let routed = if let Some(response) = &self.tail_response {
                 driver.tail_pipeline(response, path, messages)
+            } else if let Some(stage) = self.direct {
+                match stage {
+                    DirectStage::Queued => driver.invocation_pipeline(
+                        self.task.expect("queued direct task"),
+                        path,
+                        messages,
+                    ),
+                    DirectStage::Sent(question) => driver.pipeline(question, path),
+                }
             } else {
                 invocations.pipeline_with(
                     driver,
@@ -571,15 +639,27 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                 }
             };
             let result = {
-                let result = hooks.export_client(&mut driver.runtime, &cap);
+                let result = hooks.export_before_wire_refresh(&mut driver.runtime, &cap);
                 driver.runtime.release(cap);
                 result.map(|client| client.hook)
             };
             refresh(hooks, driver);
             if let Ok(hook) = &result {
-                pipeline.remember(fields, &**hook)?;
+                pipeline.remember(projection.path, &**hook)?;
             }
-            crate::queued::ClientInner::resolve(&client, result);
+            let result = result.map(|inner| {
+                if projection.retain_pipeline {
+                    // Queued resolution retains a shared owner. Build it in
+                    // that allocation instead of boxing and moving it again.
+                    Rc::new(Projected {
+                        inner,
+                        pipeline: PipelineRef(Some(pipeline.clone()), None),
+                    }) as Rc<dyn ClientHook>
+                } else {
+                    Rc::from(inner)
+                }
+            });
+            crate::queued::ClientInner::resolve_shared(&client, result);
         }
         Ok(())
     }
@@ -764,7 +844,6 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
             && self.call.as_ref().is_some_and(|call| {
                 call.third_party.is_none()
                     && matches!(self.direct, Some(DirectStage::Sent(question)) if question == key)
-                    && matches!(call.results, response::Results::Direct(_))
                     && !call.is_canceled()
             })
     }
@@ -775,12 +854,11 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
             credit.received();
         }
         if let Err(message) = call.results.complete_plain(&call.completion, message) {
-            let result = call.results.finish_admitted(Payload {
+            let result = call.results.finish_plain(Payload {
                 body: PayloadBody::Admitted(message),
                 caps: Vec::new(),
             });
-            debug_assert!(result.is_ok());
-            call.complete_boxed(Ok(()));
+            call.complete_boxed(result);
         }
     }
     #[inline(always)]
@@ -796,7 +874,6 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
         if self.pipeline.is_some()
             || call.third_party.is_some()
             || !matches!(self.direct, Some(DirectStage::Sent(question)) if question == key)
-            || !matches!(call.results, response::Results::Direct(_))
             || call.is_canceled()
         {
             return Ok(false);
@@ -827,12 +904,13 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
         local_hook: impl FnMut(&S) -> Option<Box<dyn ClientHook>>,
     ) -> capnp::Result<()> {
         // The admitted reader already owns the immutable, capability-free
-        // payload. Transfer it straight to a direct result sink; preserve the
+        // payload. Transfer it straight to the result sink; preserve the
         // same credit, metadata refresh and wire cleanup as general completion.
         if self.pipeline.is_none()
-            && self.call.as_ref().is_some_and(|call| {
-                call.third_party.is_none() && matches!(call.results, response::Results::Direct(_))
-            })
+            && self
+                .call
+                .as_ref()
+                .is_some_and(|call| call.third_party.is_none())
         {
             if let Ok(CallOutput::Remote(remote)) = &mut output {
                 if let Some(message) = remote.take_plain_results() {
@@ -843,12 +921,11 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                     refresh(hooks, driver);
                     driver.release_output(output.expect("remote output"), messages);
                     let mut call = self.call.take().expect("wire completion once");
-                    let result = call.results.finish_admitted(Payload {
+                    let result = call.results.finish_plain(Payload {
                         body: PayloadBody::Admitted(message),
                         caps: Vec::new(),
                     });
-                    debug_assert!(result.is_ok());
-                    call.complete_boxed(Ok(()));
+                    call.complete_boxed(result);
                     return Ok(());
                 }
             }
@@ -924,7 +1001,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                                         }
                                     }
                                     hooks
-                                        .export_client(&mut driver.runtime, cap)
+                                        .export_before_wire_refresh(&mut driver.runtime, cap)
                                         .map(|c| c.hook)
                                 })
                                 .transpose()
@@ -940,7 +1017,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                 if let Some(message) = remote.take_plain_results() {
                     Ok(Payload { body: PayloadBody::Admitted(message), caps: Vec::new() })
                 } else if let Some(bytes) = remote.share_plain_results(messages) {
-                    Payload::from_admitted_bytes(bytes, PayloadKind::Results)
+                    Payload::from_admitted_result_bytes(bytes)
                 } else { remote
                 .with(messages, |reply| match reply {
                     owned::Reply::Results(payload) => {
@@ -962,16 +1039,14 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                                         )
                                         .map_err(wire_error)?
                                         .into_client();
-                                    let result = hooks.export_client(&mut driver.runtime, &cap);
+                                    let result = hooks.export_before_wire_refresh(&mut driver.runtime, &cap);
                                     driver.runtime.release(cap);
                                     Some(result?.hook)
                                 }
                             };
                             caps.push(cap);
                         }
-                        let mut content = payload.content();
-                        content.imbue(&caps);
-                        Payload::retain_admitted_or_copy(content, remote.share_results(messages), PayloadKind::Results, payload.capability_count())
+                        Payload::retain_admitted_or_copy(payload.content(), remote.share_results(messages), caps)
                     }
                     owned::Reply::Exception(error) => {
                         Err(crate::rpc::remote_exception_to_error(error))
@@ -1001,11 +1076,10 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                     payload
                 };
                 let payload = Rc::new(payload);
-                let pipeline = self.pipeline.as_ref().map(|_| {
-                    Box::new(crate::local::Pipeline::new(Box::new(PayloadDone(
-                        payload.clone(),
-                    )))) as Box<dyn PipelineHook>
-                });
+                let pipeline = self
+                    .pipeline
+                    .as_ref()
+                    .map(|_| Box::new(PayloadPipeline(payload.clone())) as Box<dyn PipelineHook>);
                 let results = &mut self
                     .call
                     .as_mut()
@@ -1052,29 +1126,117 @@ impl<I, const CAPS: usize> Drop for WireCall<'_, '_, I, CAPS> {
 struct Projection {
     path: Vec<PipelineOp>,
     client: Weak<RefCell<crate::queued::ClientInner>>,
+    // Adopted outer queued clients have no Projected wrapper yet. Install one
+    // at resolution to retain the same parent cancellation interest.
+    retain_pipeline: bool,
 }
-struct PipelineState {
+fn pipeline_fields(path: &[PipelineOp]) -> impl Iterator<Item = u16> + '_ {
+    path.iter().filter_map(|op| match op {
+        PipelineOp::Noop => None,
+        PipelineOp::GetPointerField(field) => Some(*field),
+    })
+}
+type CachedProjection = (Vec<PipelineOp>, Box<dyn ClientHook>);
+#[derive(Default)]
+struct ProjectionCache {
+    first: Option<CachedProjection>,
+    rest: Vec<CachedProjection>,
+}
+impl ProjectionCache {
+    fn len(&self) -> usize {
+        usize::from(self.first.is_some()) + self.rest.len()
+    }
+    fn get(&self, path: &[PipelineOp]) -> Option<&dyn ClientHook> {
+        self.first
+            .iter()
+            .chain(self.rest.iter())
+            .find(|(key, _)| pipeline_fields(key).eq(pipeline_fields(path)))
+            .map(|(_, hook)| &**hook)
+    }
+    fn remember(
+        &mut self,
+        path: Vec<PipelineOp>,
+        hook: &dyn ClientHook,
+        maximum: usize,
+    ) -> capnp::Result<()> {
+        if self.get(&path).is_some() {
+            return Ok(());
+        }
+        if self.len() >= maximum {
+            return Err(Error::overloaded("wire pipeline cache exhausted".into()));
+        }
+        if self.first.is_none() {
+            self.first = Some((path, hook.add_ref()));
+        } else {
+            self.rest.try_reserve(1).map_err(wire_error)?;
+            self.rest.push((path, hook.add_ref()));
+        }
+        Ok(())
+    }
+}
+pub(crate) struct PipelineState {
     used: Cell<bool>,
     adopted: RefCell<Option<Box<dyn PipelineHook>>>,
-    cached: RefCell<Vec<(Vec<u16>, Rc<dyn ClientHook>)>>,
-    _credit: Option<Rc<admission::Credit>>,
+    cached: RefCell<ProjectionCache>,
+    _credit: Cell<Option<Rc<admission::Credit>>>,
     waiting: RefCell<VecDeque<Projection>>,
     finished: RefCell<Option<Box<dyn PipelineHook>>>,
     inbox: Weak<Inbox>,
     maximum: usize,
 }
 impl PipelineState {
-    fn remember(&self, path: Vec<u16>, hook: &dyn ClientHook) -> capnp::Result<()> {
-        let mut cache = self.cached.borrow_mut();
-        if cache.iter().any(|(fields, _)| *fields == path) {
-            return Ok(());
+    pub(super) fn prepared(inbox: Option<&Rc<Inbox>>) -> Rc<Self> {
+        Rc::new(Self {
+            used: Cell::new(false),
+            adopted: RefCell::default(),
+            cached: RefCell::default(),
+            // Admission owns the credit until the wire call takes this state.
+            // Rejected requests must release it even if their pipeline lives.
+            _credit: Cell::new(None),
+            waiting: RefCell::default(),
+            finished: RefCell::default(),
+            inbox: inbox.map_or_else(Weak::new, Rc::downgrade),
+            maximum: inbox.map_or(0, |inbox| inbox.maximum_clients),
+        })
+    }
+    pub(super) fn driven(
+        self: &Rc<Self>,
+        driver: futures::future::Shared<Promise<(), Error>>,
+    ) -> Box<dyn PipelineHook> {
+        Box::new(WirePipeline(PipelineRef(Some(self.clone()), Some(driver))))
+    }
+    pub(crate) fn unresolved(&self) -> bool {
+        self.adopted.borrow().is_none() && self.finished.borrow().is_none()
+    }
+    // Local forwarding may publish a pipeline before its operation completes.
+    // That publication remains valid even if the later operation fails.
+    pub(crate) fn publish(&self, pipeline: Box<dyn PipelineHook>) {
+        if !self.unresolved() {
+            return;
         }
-        if cache.len() >= self.maximum {
-            return Err(Error::overloaded("wire pipeline cache exhausted".into()));
+        let published = pipeline.add_ref();
+        if !self.unresolved() {
+            return;
         }
-        cache.try_reserve(1).map_err(wire_error)?;
-        cache.push((path, Rc::from(hook.add_ref())));
-        Ok(())
+        let old = self.adopted.replace(Some(published));
+        drop(old);
+        let waiting = std::mem::take(&mut *self.waiting.borrow_mut());
+        for projection in waiting {
+            if let Some(client) = projection.client.upgrade() {
+                crate::queued::ClientInner::resolve(
+                    &client,
+                    Ok(pipeline.get_pipelined_cap(&projection.path)),
+                );
+            }
+        }
+    }
+    pub(super) fn finish_pending(&self, pipeline: impl FnOnce() -> Box<dyn PipelineHook>) {
+        if self.unresolved() {
+            self.finish(pipeline());
+        }
+    }
+    fn remember(&self, path: Vec<PipelineOp>, hook: &dyn ClientHook) -> capnp::Result<()> {
+        self.cached.borrow_mut().remember(path, hook, self.maximum)
     }
     fn finish(&self, pipeline: Box<dyn PipelineHook>) {
         let pipeline_ref = pipeline.add_ref();
@@ -1095,7 +1257,12 @@ impl PipelineState {
     }
 }
 #[derive(Clone)]
-struct PipelineRef(Option<Rc<PipelineState>>);
+pub(crate) struct PipelineRef(
+    Option<Rc<PipelineState>>,
+    // Only public interests retain the response driver. The wire owner holds
+    // a plain Rc<PipelineState>, so it cannot keep its own call alive.
+    Option<futures::future::Shared<Promise<(), Error>>>,
+);
 impl std::ops::Deref for PipelineRef {
     type Target = Rc<PipelineState>;
     fn deref(&self) -> &Self::Target {
@@ -1107,6 +1274,17 @@ impl Drop for PipelineRef {
         let inbox = self
             .0
             .as_ref()
+            // The driver holds at most one reference. Dropping an additional
+            // public clone cannot remove the last cancellation interest while
+            // two other owners remain. Endpoint drops notify independently.
+            .filter(|pipeline| {
+                Rc::strong_count(pipeline) <= 2
+                    // A completed pipeline cannot cancel its call. Releasing
+                    // its payload still notifies through the final endpoints.
+                    // A reentrant hook may hold the cell: retain the ordinary
+                    // notification in that case rather than borrowing again.
+                    && !pipeline.finished.try_borrow().is_ok_and(|done| done.is_some())
+            })
             .and_then(|pipeline| pipeline.inbox.upgrade());
         // A synchronous wake may poll cancellation immediately. Release the
         // interest first so that poll cannot observe the soon-to-die owner and
@@ -1123,20 +1301,7 @@ impl PipelineHook for WirePipeline {
         Box::new(Self(self.0.clone()))
     }
     fn get_pipelined_cap(&self, path: &[PipelineOp]) -> Box<dyn ClientHook> {
-        let fields: Vec<_> = path
-            .iter()
-            .filter_map(|op| match op {
-                PipelineOp::Noop => None,
-                PipelineOp::GetPointerField(field) => Some(*field),
-            })
-            .collect();
-        let cached = self
-            .0
-            .cached
-            .borrow()
-            .iter()
-            .find(|(key, _)| *key == fields)
-            .map(|(_, hook)| hook.add_ref());
+        let cached = self.0.cached.borrow().get(path).map(|hook| hook.add_ref());
         if let Some(inner) = cached {
             return Box::new(Projected {
                 inner,
@@ -1152,7 +1317,10 @@ impl PipelineHook for WirePipeline {
         if let Some(pipeline) = finished {
             return pipeline.get_pipelined_cap(path);
         }
-        let client = crate::queued::Client::new(None);
+        // Retain the originating state inside the unresolved client, as queued
+        // pipelines do. Its ordinary request can then forward directly; only
+        // the published wire target needs a Projected lifetime wrapper.
+        let client = crate::queued::Client::wire(Rc::clone(&self.0), self.0 .1.clone());
         let mut waiting = self.0.waiting.borrow_mut();
         waiting.retain(|entry| entry.client.strong_count() != 0);
         if waiting.len().saturating_add(self.0.cached.borrow().len()) >= self.0.maximum
@@ -1165,22 +1333,54 @@ impl PipelineHook for WirePipeline {
         waiting.push_back(Projection {
             path: path.to_vec(),
             client: Rc::downgrade(&client.inner),
+            retain_pipeline: true,
         });
         drop(waiting);
         if let Some(inbox) = self.0.inbox.upgrade() {
             inbox.notify();
         }
-        Box::new(Projected {
-            inner: Box::new(client),
-            pipeline: self.0.clone(),
-        })
+        Box::new(client)
     }
 }
 struct Projected {
     inner: Box<dyn ClientHook>,
     pipeline: PipelineRef,
 }
+pub(super) fn direct_response_hook(client: &dyn ClientHook) -> Option<&Hook> {
+    client
+        .as_any()?
+        .downcast_ref::<Projected>()?
+        .inner
+        .as_any()?
+        .downcast_ref::<Hook>()
+}
+
+pub(super) fn request_projected(
+    client: &dyn ClientHook,
+    interface: u64,
+    method: u16,
+    hints: CallHints,
+    mut params: Box<crate::local::Request>,
+    context: Option<Rc<dyn std::any::Any>>,
+) -> capability::RemotePromise<any_pointer::Owned> {
+    let projected = client
+        .as_any()
+        .and_then(|client| client.downcast_ref::<Projected>())
+        .expect("private projected request");
+    params.retain_pipeline(projected.pipeline.clone());
+    response::request_scoped(
+        direct_response_hook(client).expect("private projected endpoint"),
+        interface,
+        method,
+        hints,
+        params,
+        context,
+    )
+}
 impl ClientHook for Projected {
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
     fn get_failure(&self) -> Option<Error> {
         self.inner.get_failure()
     }

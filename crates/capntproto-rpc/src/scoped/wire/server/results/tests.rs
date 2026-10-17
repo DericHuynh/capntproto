@@ -1,6 +1,203 @@
 use super::*;
 
 #[test]
+fn protected_context_borrows_only_with_executor_and_immediate_permission() {
+    use capnp::private::capability::CallContextHook;
+    struct Tracked {
+        inner: InboundCall,
+        takes: Rc<Cell<usize>>,
+    }
+    impl CallContextHook for Tracked {
+        fn borrow(&mut self) -> (&dyn ParamsHook, &mut dyn ResultsHook) {
+            self.inner.borrow()
+        }
+        fn results(&self) -> &dyn ResultsHook {
+            self.inner.results()
+        }
+        fn take(&mut self) -> (Box<dyn ParamsHook>, Box<dyn ResultsHook>) {
+            self.takes.set(self.takes.get() + 1);
+            self.inner.take()
+        }
+    }
+    for executor in [false, true] {
+        for streaming in [false, true] {
+            let takes = Rc::new(Cell::new(0));
+            let called = Rc::new(Cell::new(false));
+            let mut tracked = Tracked {
+                inner: InboundCall {
+                    params: Some(prepared().params),
+                    results: Some(Hook {
+                        results: Results::new(),
+                        message: None,
+                        caps: vec![],
+                        executor: executor.then(|| {
+                            Rc::new(Executor::default()) as Rc<dyn capability::CallExecutor>
+                        }),
+                    }),
+                },
+                takes: takes.clone(),
+            };
+            let context = capability::CallContext::<any_pointer::Owned, any_pointer::Owned>::new(
+                &mut tracked,
+            );
+            let seen = called.clone();
+            let method =
+                move |_: capability::CallContext<'_, any_pointer::Owned, any_pointer::Owned>| {
+                    seen.set(true);
+                    Promise::ok(())
+                };
+            // Generated streaming methods always defer until their ordering
+            // barrier is installed. Non-streaming protected methods use the
+            // same permission as the runtime's existing immediate first poll.
+            let promise = if streaming {
+                context.defer(method)
+            } else {
+                context.dispatch_protected(method)
+            };
+            let immediate = executor && !streaming;
+            assert_eq!(called.get(), immediate);
+            assert_eq!(takes.get(), usize::from(!immediate));
+            futures::executor::block_on(promise).unwrap();
+            assert!(called.get());
+        }
+    }
+}
+
+#[test]
+fn call_context_preserves_borrowed_and_suspended_results() {
+    #[derive(Clone)]
+    struct Native(Rc<Cell<usize>>, Rc<Cell<usize>>);
+    impl capability::Server for Native {
+        fn dispatch_call(
+            self,
+            _: u64,
+            method: u16,
+            mut context: capability::CallContext<'_, any_pointer::Owned, any_pointer::Owned>,
+        ) -> capability::DispatchCallResult {
+            let promise = if method == 0 {
+                self.0.set(self.0.get() + 1);
+                Promise::from(context.get().map(|(_, mut root)| {
+                    root.set_as_capability(crate::broken::new_cap(Error::failed(
+                        "borrowed result".into(),
+                    )));
+                }))
+            } else {
+                self.1.set(self.1.get() + 1);
+                let (_params, results) = context.into_owned();
+                Promise::from_future(async move {
+                    drop(results);
+                    Ok(())
+                })
+            };
+            capability::DispatchCallResult::new(promise, false)
+        }
+        fn as_ptr(&self) -> usize {
+            Rc::as_ptr(&self.0) as usize
+        }
+    }
+    let native = Rc::new(Cell::new(0));
+    let owned = Rc::new(Cell::new(0));
+    let client = crate::local::Client::new(Native(native.clone(), owned.clone()));
+    for (method, immediate) in [(0, true), (1, true), (0, false)] {
+        let results = Results::new();
+        let prepared = Prepared {
+            method: DynamicCall {
+                method,
+                ..Default::default()
+            },
+            params: Payload::owned(Default::default(), vec![]).into_params(),
+        };
+        let work = prepared
+            .execute_using(&client, &results, None, immediate)
+            .unwrap();
+        assert!(results.pipeline(pipeline::Path::new(&[])).is_none());
+        futures::executor::block_on(work).unwrap();
+        if method == 0 && immediate {
+            let retained = results.pipeline(pipeline::Path::new(&[])).unwrap();
+            drop(results);
+            assert_eq!(retained.get_failure().unwrap().extra, "borrowed result");
+        }
+    }
+    assert_eq!(native.get(), 2);
+    assert_eq!(owned.get(), 1);
+}
+
+#[test]
+fn pipeline_paths_preserve_early_precedence_and_retained_result_capabilities() {
+    #[derive(Clone)]
+    struct Early(Rc<RefCell<Vec<Vec<u16>>>>);
+    impl PipelineHook for Early {
+        fn add_ref(&self) -> Box<dyn PipelineHook> {
+            Box::new(self.clone())
+        }
+        fn get_pipelined_cap(&self, ops: &[PipelineOp]) -> Box<dyn ClientHook> {
+            self.0.borrow_mut().push(
+                ops.iter()
+                    .map(|op| match op {
+                        PipelineOp::GetPointerField(field) => *field,
+                        PipelineOp::Noop => panic!("normalized path has no no-op"),
+                    })
+                    .collect(),
+            );
+            crate::broken::new_cap(Error::failed("early result".into()))
+        }
+    }
+    for depth in [0, 1, 8, 9, 32] {
+        let fields = vec![0; depth];
+        let path = pipeline::Path::new(&fields);
+        let results = Results::new();
+        assert!(results.pipeline(path).is_none());
+        let mut hook = Hook {
+            results: results.clone(),
+            message: None,
+            caps: vec![],
+            executor: None,
+        };
+        let mut pointer = hook.get_with_size_hint(None).unwrap();
+        for _ in 0..depth {
+            pointer = pointer
+                .init_as::<rpc_capnp::payload::Builder<'_>>()
+                .get_content();
+        }
+        pointer.set_as_capability(crate::broken::new_cap(Error::failed("final result".into())));
+        drop(hook);
+        assert!(
+            results.pipeline(path).is_none(),
+            "returned builder still waits for execution"
+        );
+        results.0.complete(Ok(()));
+        let retained = results.pipeline(path).unwrap();
+        assert_eq!(retained.get_failure().unwrap().extra, "final result");
+        let invalid = vec![u16::MAX; depth + 1];
+        assert!(results
+            .pipeline(pipeline::Path::new(&invalid))
+            .unwrap()
+            .get_failure()
+            .is_some());
+        results.fail(Error::failed("method failed".into()));
+        assert_eq!(
+            results.pipeline(path).unwrap().get_failure().unwrap().extra,
+            "method failed"
+        );
+        let observed = Rc::new(RefCell::new(Vec::new()));
+        *results.0.pipeline.borrow_mut() = Some(Rc::new(Early(observed.clone())));
+        let early_fields: Vec<_> = (0..depth as u16).collect();
+        assert_eq!(
+            results
+                .pipeline(pipeline::Path::new(&early_fields))
+                .unwrap()
+                .get_failure()
+                .unwrap()
+                .extra,
+            "early result"
+        );
+        assert_eq!(*observed.borrow(), vec![early_fields]);
+        drop(results);
+        assert_eq!(retained.get_failure().unwrap().extra, "final result");
+    }
+}
+
+#[test]
 fn cached_results_clear_state_and_never_reuse_retained_owners() {
     let cache = Cache::default();
     let first = cache.acquire(None, None);
@@ -90,9 +287,9 @@ impl capability::Server for Server {
         self,
         _: u64,
         _: u16,
-        _: capability::Params<any_pointer::Owned>,
-        results: capability::Results<any_pointer::Owned>,
+        context: capability::CallContext<'_, any_pointer::Owned, any_pointer::Owned>,
     ) -> capability::DispatchCallResult {
+        let (_, results) = context.into_owned();
         (self.0)(results)
     }
 }
@@ -337,6 +534,148 @@ fn prepared_return_rejects_capability_content_before_reserving_storage() {
 }
 
 #[test]
+fn prepared_capability_results_preserve_indices_limits_and_retry_ownership() {
+    for first_segment_words in [8, 64] {
+        let mut source = connection::PreparedReturn::from_template(
+            &connection::PreparedReturnTemplate::default(),
+            capnp::message::HeapAllocator::new().first_segment_words(first_segment_words),
+        );
+        // Keep index zero unused; the copied capability must remain index one.
+        let mut caps = vec![None];
+        let mut root = source.results();
+        root.imbue_mut(&mut caps);
+        let mut values = root.initn_as::<capnp::any_pointer_list::Builder>(2);
+        values
+            .reborrow()
+            .get(0)
+            .set_as_capability(crate::broken::new_cap(Error::failed(
+                "source hook is never invoked by wire copying".into(),
+            )));
+        values
+            .get(1)
+            .set_as::<capnp::data::Owned>(&b"retained bytes"[..])
+            .unwrap();
+        with_driver(|mut driver, messages| {
+            let (call, target) = request(&mut driver, messages, Results::new());
+            let value = driver
+                .runtime
+                .endpoint(Route::local(73), clients::Location::Local)
+                .unwrap();
+            for references in [
+                &[Some(&value)][..],
+                &[None, Some(&value), None, None, None][..],
+            ] {
+                assert!(driver
+                    .local_answer_prepared_with_capabilities(
+                        call.answer(),
+                        7,
+                        9,
+                        &source,
+                        references,
+                        messages,
+                        Default::default(),
+                    )
+                    .is_err());
+            }
+            let references = [None, Some(&value)];
+            assert!(driver
+                .local_answer_prepared_with_capabilities(
+                    call.answer(),
+                    7,
+                    9,
+                    &source,
+                    &references,
+                    messages,
+                    capnp::message::ReaderOptions {
+                        nesting_limit: 0,
+                        ..Default::default()
+                    },
+                )
+                .is_err());
+            assert!(driver
+                .local_answer_prepared_with_capabilities(
+                    call.answer(),
+                    7,
+                    9,
+                    &source,
+                    &references,
+                    messages,
+                    capnp::message::ReaderOptions {
+                        traversal_limit_in_words: Some(1),
+                        ..Default::default()
+                    },
+                )
+                .unwrap()
+                .is_none());
+            let mut reserved = vec![];
+            while let Ok(writer) = messages.reserve(4096) {
+                reserved.push(writer);
+            }
+            assert!(driver
+                .local_answer_prepared_with_capabilities(
+                    call.answer(),
+                    7,
+                    9,
+                    &source,
+                    &references,
+                    messages,
+                    Default::default(),
+                )
+                .is_err());
+            for writer in reserved {
+                messages.discard(writer);
+            }
+            for _ in 0..3 {
+                let result = driver
+                    .local_answer_prepared_with_capabilities(
+                        call.answer(),
+                        7,
+                        9,
+                        &source,
+                        &references,
+                        messages,
+                        Default::default(),
+                    )
+                    .unwrap()
+                    .unwrap();
+                result
+                    .with(messages, |payload| {
+                        assert_eq!(payload.capabilities().len(), 2);
+                        assert!(payload.capabilities()[0].is_none());
+                        assert!(payload.capabilities()[1].is_some());
+                        let values = payload
+                            .content()
+                            .get_as::<capnp::any_pointer_list::Reader>()
+                            .unwrap();
+                        assert_eq!(values.get(0).capability_index().unwrap(), 1);
+                        assert_eq!(
+                            values.get(1).get_as::<capnp::data::Reader>().unwrap(),
+                            b"retained bytes"
+                        );
+                    })
+                    .unwrap();
+                result.release(messages, &mut driver.runtime);
+                assert!(driver.ledgers.answers.prepare_return(call.answer()).is_ok());
+            }
+            driver.runtime.release(value);
+            driver.runtime.release(target);
+            driver.release_call(call, messages);
+            let mut slots = [None];
+            let mut queue = messages::Queue::new(&mut slots).unwrap();
+            close(driver, messages, &mut queue);
+            let mut reserved = vec![];
+            while let Ok(writer) = messages.reserve(4096) {
+                reserved.push(writer);
+            }
+            assert_eq!(reserved.len(), 12, "every temporary frame was reclaimed");
+            for writer in reserved {
+                messages.discard(writer);
+            }
+        });
+    }
+}
+
+#[test]
 fn exception_trace_is_sized_once_and_reentrant_policy_changes_apply_to_next_result() {
     use rpc_capnp::api::{Message, Return};
     let policy = coordinator::policy::Policy::new();
@@ -480,6 +819,10 @@ fn close<'p>(
 
 #[test]
 fn hosted_reply_preserves_early_pipeline_and_retries_portable_publication() {
+    check_hosted_reply(false);
+    check_hosted_reply(true);
+}
+fn check_hosted_reply(use_prepared: bool) {
     with_driver(|mut driver, messages| {
         let results = Results::new();
         let (call, target) = request(&mut driver, messages, results.clone());
@@ -548,11 +891,12 @@ fn hosted_reply_preserves_early_pipeline_and_retries_portable_publication() {
             reserved.push(writer);
         }
         assert!(hooks
-            .collect_server_results(
+            .collect_server_output(
                 &results,
                 &mut driver,
                 messages,
                 Default::default(),
+                use_prepared.then_some(call.answer()),
                 |_, _| panic!("foreign")
             )
             .is_err());
@@ -560,11 +904,12 @@ fn hosted_reply_preserves_early_pipeline_and_retries_portable_publication() {
             messages.discard(writer);
         }
         let output = hooks
-            .collect_server_results(
+            .collect_server_output(
                 &results,
                 &mut driver,
                 messages,
                 Default::default(),
+                use_prepared.then_some(call.answer()),
                 |_, _| panic!("foreign"),
             )
             .unwrap();

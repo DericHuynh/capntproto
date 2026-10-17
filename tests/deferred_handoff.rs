@@ -12,25 +12,29 @@ struct Service {
     calls: Rc<RefCell<Vec<u32>>>,
 }
 impl harness::Server for Service {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        p: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        let value = p.get()?.get_value();
-        self.calls.borrow_mut().push(value);
-        r.get().set_value(value);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let value = p.get()?.get_value();
+            self.calls.borrow_mut().push(value);
+            r.get().set_value(value);
+            Ok(())
+        })
     }
-    async fn bounce(
+    fn bounce(
         self: Rc<Self>,
-        p: harness::BounceParams,
-        mut r: harness::BounceResults,
-    ) -> capnp::Result<()> {
-        let cap = p.get()?.get_cap()?;
-        *self.slot.borrow_mut() = Some(cap.clone());
-        r.get().set_cap(cap);
-        Ok(())
+        context: harness::BounceContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let cap = p.get()?.get_cap()?;
+            *self.slot.borrow_mut() = Some(cap.clone());
+            r.get().set_cap(cap);
+            Ok(())
+        })
     }
 }
 async fn drain() {

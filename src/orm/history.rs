@@ -75,56 +75,29 @@ impl<T: Owned + Unpin + 'static> history::Server<T> for History<T>
 where
     for<'a> T::Reader<'a>: SetterInput<T> + HasTypeId,
 {
-    async fn next(
+    fn next(
         self: Rc<Self>,
-        params: history::NextParams<T>,
-        mut results: history::NextResults<T>,
-    ) -> capnp::Result<()> {
-        self.check()?;
-        let after = params.get()?.get_after();
-        if self.busy.replace(true) {
-            return Err(failure("history stream already has a pending next call"));
-        }
-        let _pending = Pending(&self.busy);
-        // Subscribe before reading to avoid losing a publication between the
-        // lookup and the wait. Store notifications also cover other ObjectStates.
-        let mut changes = self.state.store.borrow().watch_publications();
-        let mut closed = self.closed.subscribe();
-        let cursor = match self
-            .state
-            .store
-            .borrow()
-            .publication_cursor(ObjectKey::from(self.state.object), after)
-        {
-            Ok(cursor) => cursor,
-            Err(StorageError::HistoryExpired { floor }) => {
-                let mut result = results.get().init_result();
-                result.set_floor(floor.get());
-                result.set_gap(());
-                return self.check();
-            }
-            Err(error) => return Err(failure(error)),
-        };
-        loop {
+        context: history::NextContext<'_, T>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
             self.check()?;
-            changes.borrow_and_update();
-            let next = self.state.store.borrow().publication_after(&cursor);
-            match next {
-                Ok(Some(publication)) => {
-                    write_event::<T>(publication.snapshot(), &mut results)?;
-                    results.get().get_result()?.set_floor(
-                        (self
-                            .state
-                            .store
-                            .borrow()
-                            .history_bounds(ObjectKey::from(self.state.object))
-                            .map_err(failure)?
-                            .0)
-                            .get(),
-                    );
-                    self.check()?;
-                    return Ok(());
-                }
+            let after = params.get()?.get_after();
+            if self.busy.replace(true) {
+                return Err(failure("history stream already has a pending next call"));
+            }
+            let _pending = Pending(&self.busy);
+            // Subscribe before reading to avoid losing a publication between the
+            // lookup and the wait. Store notifications also cover other ObjectStates.
+            let mut changes = self.state.store.borrow().watch_publications();
+            let mut closed = self.closed.subscribe();
+            let cursor = match self
+                .state
+                .store
+                .borrow()
+                .publication_cursor(ObjectKey::from(self.state.object), after)
+            {
+                Ok(cursor) => cursor,
                 Err(StorageError::HistoryExpired { floor }) => {
                     let mut result = results.get().init_result();
                     result.set_floor(floor.get());
@@ -132,22 +105,53 @@ where
                     return self.check();
                 }
                 Err(error) => return Err(failure(error)),
-                Ok(None) => (),
+            };
+            loop {
+                self.check()?;
+                changes.borrow_and_update();
+                let next = self.state.store.borrow().publication_after(&cursor);
+                match next {
+                    Ok(Some(publication)) => {
+                        write_event::<T>(publication.snapshot(), &mut results)?;
+                        results.get().get_result()?.set_floor(
+                            (self
+                                .state
+                                .store
+                                .borrow()
+                                .history_bounds(ObjectKey::from(self.state.object))
+                                .map_err(failure)?
+                                .0)
+                                .get(),
+                        );
+                        self.check()?;
+                        return Ok(());
+                    }
+                    Err(StorageError::HistoryExpired { floor }) => {
+                        let mut result = results.get().init_result();
+                        result.set_floor(floor.get());
+                        result.set_gap(());
+                        return self.check();
+                    }
+                    Err(error) => return Err(failure(error)),
+                    Ok(None) => (),
+                }
+                tokio::select! {
+                    _ = self.grant.when_revoked() => { self.close(); return Err(failure("capability revoked")); }
+                    _ = closed.changed() => return Err(failure("history stream canceled")),
+                    result = changes.changed() => { result.map_err(failure)?; }
+                }
             }
-            tokio::select! {
-                _ = self.grant.when_revoked() => { self.close(); return Err(failure("capability revoked")); }
-                _ = closed.changed() => return Err(failure("history stream canceled")),
-                result = changes.changed() => { result.map_err(failure)?; }
-            }
-        }
+        })
     }
-    async fn cancel(
+    fn cancel(
         self: Rc<Self>,
-        _: history::CancelParams<T>,
-        _: history::CancelResults<T>,
-    ) -> capnp::Result<()> {
-        self.close();
-        Ok(())
+        context: history::CancelContext<'_, T>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, _) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            self.close();
+            Ok(())
+        })
     }
 }
 fn write_event<T: Owned>(

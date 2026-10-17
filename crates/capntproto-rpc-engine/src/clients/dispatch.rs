@@ -207,7 +207,7 @@ pub struct Ready<'a, 'id, 's, T, P, C> {
     queued: &'a mut usize,
 }
 
-/// A settled call admitted without an intermediate queued task. This is only
+/// A routable call admitted without an intermediate queued task. This is only
 /// offered when the dispatch queue is empty. Keep the ticket until output has
 /// accepted the call; dropping it changes no ordering or promise-use state.
 #[must_use]
@@ -239,8 +239,8 @@ impl<'id, T, P: Copy + Eq> Immediate<'_, 'id, '_, T, P> {
     pub fn accept_published(self) {
         self.call.graph.dispatch_sequence += 1;
         let mut current = self.call.start;
-        // prepare_immediate validated a settled endpoint. Only ancestors can
-        // be promises, and the exclusive ticket keeps the path unchanged.
+        // Preflight reached an endpoint. Only ancestors can be promises,
+        // and the exclusive ticket keeps the original route unchanged.
         while current != self.call.end {
             let Kind::Promise {
                 called,
@@ -252,7 +252,7 @@ impl<'id, T, P: Copy + Eq> Immediate<'_, 'id, '_, T, P> {
                 .unwrap()
                 .kind
             else {
-                unreachable!("validated settled route")
+                unreachable!("validated endpoint route")
             };
             *called = true;
             current = *next;
@@ -410,6 +410,32 @@ impl<'id, 's, T: 's, P: Copy + Eq + 's, C, G: GraphStorage<'id, 's, T, P>>
         else {
             return Ok(None);
         };
+        if sequence_exhausted {
+            return Err(DispatchError::SequencesExhausted);
+        }
+        Ok(Some(Immediate { call }))
+    }
+    /// Offer direct dispatch along a currently callable route, including an
+    /// unresolved remote promise's original route. Acceptance marks its promise
+    /// ancestors used, so subsequent reflected resolution still needs its
+    /// ordering barrier. Waiting routes and older queued tasks defer unchanged.
+    /// The exclusive ticket must survive until the exact output is accepted.
+    pub fn prepare_immediate_routed(
+        &mut self,
+        target: &Client<'id>,
+    ) -> Result<Option<Immediate<'_, 'id, 's, T, P>>, DispatchError> {
+        if self.queued != 0 {
+            return Ok(None);
+        }
+        let sequence_exhausted = self.graph.graph().dispatch_sequence == u64::MAX;
+        let call = self
+            .graph
+            .graph_mut()
+            .prepare_call(target)
+            .map_err(DispatchError::Graph)?;
+        if call.waiting {
+            return Ok(None);
+        }
         if sequence_exhausted {
             return Err(DispatchError::SequencesExhausted);
         }

@@ -192,17 +192,19 @@ fn compiler_schema_graph_includes_brands_methods_and_annotations() {
 }
 struct WrongRevision;
 impl wire::catalog::Server for WrongRevision {
-    async fn get(
+    fn get(
         self: Rc<Self>,
-        _: wire::catalog::GetParams,
-        mut out: wire::catalog::GetResults,
-    ) -> capnp::Result<()> {
-        let mut found = out.get().init_result().init_found();
-        let mut key = found.reborrow().init_key();
-        key.set_id(1);
-        key.set_revision(2);
-        found.set_node(definition(1, 2, &[]).bytes());
-        Ok(())
+        context: wire::catalog::GetContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let mut found = out.get().init_result().init_found();
+            let mut key = found.reborrow().init_key();
+            key.set_id(1);
+            key.set_revision(2);
+            found.set_node(definition(1, 2, &[]).bytes());
+            Ok(())
+        })
     }
 }
 #[tokio::test(flavor = "current_thread")]
@@ -241,30 +243,35 @@ struct Gates {
         Rc<RefCell<std::collections::BTreeMap<u64, futures::channel::oneshot::Receiver<bool>>>>,
 }
 impl wire::catalog::Server for Gates {
-    async fn get(
+    fn get(
         self: Rc<Self>,
-        p: wire::catalog::GetParams,
-        mut out: wire::catalog::GetResults,
-    ) -> capnp::Result<()> {
-        let k = p.get()?.get_key()?;
-        let k = key(k.get_id(), k.get_revision());
-        let receive = self.receivers.borrow_mut().remove(&k.id).unwrap();
-        let wrong = receive
-            .await
-            .map_err(|_| capnp::Error::disconnected("cancelled schema reply".into()))?;
-        let mut result = out.get().init_result();
-        let catalog = self.catalog.borrow();
-        match catalog.get(k) {
-            Some(d) => {
-                if wrong {
-                    write_definition(&definition(k.id, 3 - k.revision, &[]), result.init_found());
-                } else {
-                    write_definition(d, result.init_found());
+        context: wire::catalog::GetContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut out) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let k = p.get()?.get_key()?;
+            let k = key(k.get_id(), k.get_revision());
+            let receive = self.receivers.borrow_mut().remove(&k.id).unwrap();
+            let wrong = receive
+                .await
+                .map_err(|_| capnp::Error::disconnected("cancelled schema reply".into()))?;
+            let mut result = out.get().init_result();
+            let catalog = self.catalog.borrow();
+            match catalog.get(k) {
+                Some(d) => {
+                    if wrong {
+                        write_definition(
+                            &definition(k.id, 3 - k.revision, &[]),
+                            result.init_found(),
+                        );
+                    } else {
+                        write_definition(d, result.init_found());
+                    }
                 }
+                None => result.set_missing(()),
             }
-            None => result.set_missing(()),
-        }
-        Ok(())
+            Ok(())
+        })
     }
 }
 struct Tasks(Vec<tokio::task::JoinHandle<capnp::Result<()>>>);

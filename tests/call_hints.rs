@@ -435,48 +435,52 @@ struct Gated {
     alive: Rc<Cell<bool>>,
 }
 impl harness::Server for Gated {
-    async fn pending(
+    fn pending(
         self: Rc<Self>,
-        _: harness::PendingParams,
-        mut results: harness::PendingResults,
-    ) -> capnp::Result<()> {
-        struct Value(Rc<Cell<bool>>);
-        impl Drop for Value {
-            fn drop(&mut self) {
-                self.0.set(false);
+        context: harness::PendingContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            struct Value(Rc<Cell<bool>>);
+            impl Drop for Value {
+                fn drop(&mut self) {
+                    self.0.set(false);
+                }
             }
-        }
-        impl harness::Server for Value {
-            async fn echo(
-                self: Rc<Self>,
-                _: harness::EchoParams,
-                mut r: harness::EchoResults,
-            ) -> capnp::Result<()> {
-                r.get().set_value(42);
+            impl harness::Server for Value {
+                fn echo(
+                    self: Rc<Self>,
+                    context: harness::EchoContext<'_>,
+                ) -> capnp::capability::Promise<(), capnp::Error> {
+                    let (_, mut r) = context.into_owned();
+                    capnp::capability::Promise::from_future(async move {
+                        r.get().set_value(42);
+                        Ok(())
+                    })
+                }
+            }
+            self.alive.set(true);
+            results
+                .get()
+                .set_cap(capnp_rpc::new_client(Value(self.alive.clone())));
+            let retained = if self.hold {
+                *self.held.borrow_mut() = Some(results);
+                None
+            } else {
+                Some(results)
+            };
+            let complete = self.complete.borrow_mut().take().unwrap();
+            let _ = self.started.borrow_mut().take().unwrap().send(());
+            complete
+                .await
+                .map_err(|_| capnp::Error::failed("gate dropped".into()))?;
+            drop(retained);
+            if self.fail {
+                Err(capnp::Error::failed("deliberate failure".into()))
+            } else {
                 Ok(())
             }
-        }
-        self.alive.set(true);
-        results
-            .get()
-            .set_cap(capnp_rpc::new_client(Value(self.alive.clone())));
-        let retained = if self.hold {
-            *self.held.borrow_mut() = Some(results);
-            None
-        } else {
-            Some(results)
-        };
-        let complete = self.complete.borrow_mut().take().unwrap();
-        let _ = self.started.borrow_mut().take().unwrap().send(());
-        complete
-            .await
-            .map_err(|_| capnp::Error::failed("gate dropped".into()))?;
-        drop(retained);
-        if self.fail {
-            Err(capnp::Error::failed("deliberate failure".into()))
-        } else {
-            Ok(())
-        }
+        })
     }
 }
 struct Incoming {

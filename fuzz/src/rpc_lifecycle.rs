@@ -75,93 +75,103 @@ impl Drop for PromiseOwner {
     }
 }
 impl worker::Server for Service {
-    async fn create(
+    fn create(
         self: Rc<Self>,
-        _: worker::CreateParams,
-        mut results: worker::CreateResults,
-    ) -> capnp::Result<()> {
-        results.get().set_cap(Self::client(&self.state));
-        Ok(())
+        context: worker::CreateContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            results.get().set_cap(Self::client(&self.state));
+            Ok(())
+        })
     }
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        params: worker::EchoParams,
-        mut results: worker::EchoResults,
-    ) -> capnp::Result<()> {
-        let value = params.get()?.get_value();
-        self.state.borrow_mut().calls.push((self.object, value));
-        results.get().set_value(value);
-        Ok(())
+        context: worker::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let value = params.get()?.get_value();
+            self.state.borrow_mut().calls.push((self.object, value));
+            results.get().set_value(value);
+            Ok(())
+        })
     }
-    async fn retain(
+    fn retain(
         self: Rc<Self>,
-        _: worker::RetainParams,
-        mut results: worker::RetainResults,
-    ) -> capnp::Result<()> {
-        results.get().set_cap(capnp_rpc::new_client_from_rc(self));
-        Ok(())
+        context: worker::RetainContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            results.get().set_cap(capnp_rpc::new_client_from_rc(self));
+            Ok(())
+        })
     }
-    async fn wait(
+    fn wait(
         self: Rc<Self>,
-        params: worker::WaitParams,
-        mut results: worker::WaitResults,
-    ) -> capnp::Result<()> {
-        let token = params.get()?.get_token();
-        let (send, receive) = oneshot::channel();
-        {
-            let mut state = self.state.borrow_mut();
-            if state.gates.contains_key(&token) || state.completed.contains(&token) {
-                return Err(capnp::Error::failed("duplicate fixture token".into()));
-            }
-            state.running.insert(token);
-            state.gates.insert(token, send);
-        }
-        let _running = Running {
-            token,
-            state: self.state.clone(),
-        };
-        let success = receive
-            .await
-            .map_err(|_| capnp::Error::failed("closed gate".into()))?;
-        assert!(self.state.borrow_mut().completed.insert(token));
-        if !success {
-            return Err(capnp::Error::failed("fixture wait rejected".into()));
-        }
-        results.get().set_value(token);
-        results.get().set_cap(capnp_rpc::new_client_from_rc(self));
-        Ok(())
-    }
-    async fn promise(
-        self: Rc<Self>,
-        params: worker::PromiseParams,
-        mut results: worker::PromiseResults,
-    ) -> capnp::Result<()> {
-        let token = params.get()?.get_token();
-        let (send, receive) = oneshot::channel();
-        {
-            let mut state = self.state.borrow_mut();
-            if state.promise_gates.contains_key(&token) || state.promises.contains(&token) {
-                return Err(capnp::Error::failed(
-                    "duplicate fixture promise token".into(),
-                ));
-            }
-            state.promise_gates.insert(token, send);
-            assert!(state.promises.insert(token));
-        }
-        let owner = PromiseOwner {
-            token,
-            state: self.state.clone(),
-        };
-        results
-            .get()
-            .set_cap(capnp_rpc::new_future_client(async move {
-                let _owner = owner;
-                match receive.await {
-                    Ok(true) => Ok(capnp_rpc::new_client_from_rc(self)),
-                    _ => Err(capnp::Error::failed("fixture promise rejected".into())),
+        context: worker::WaitContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let token = params.get()?.get_token();
+            let (send, receive) = oneshot::channel();
+            {
+                let mut state = self.state.borrow_mut();
+                if state.gates.contains_key(&token) || state.completed.contains(&token) {
+                    return Err(capnp::Error::failed("duplicate fixture token".into()));
                 }
-            }));
-        Ok(())
+                state.running.insert(token);
+                state.gates.insert(token, send);
+            }
+            let _running = Running {
+                token,
+                state: self.state.clone(),
+            };
+            let success = receive
+                .await
+                .map_err(|_| capnp::Error::failed("closed gate".into()))?;
+            assert!(self.state.borrow_mut().completed.insert(token));
+            if !success {
+                return Err(capnp::Error::failed("fixture wait rejected".into()));
+            }
+            results.get().set_value(token);
+            results.get().set_cap(capnp_rpc::new_client_from_rc(self));
+            Ok(())
+        })
+    }
+    fn promise(
+        self: Rc<Self>,
+        context: worker::PromiseContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let token = params.get()?.get_token();
+            let (send, receive) = oneshot::channel();
+            {
+                let mut state = self.state.borrow_mut();
+                if state.promise_gates.contains_key(&token) || state.promises.contains(&token) {
+                    return Err(capnp::Error::failed(
+                        "duplicate fixture promise token".into(),
+                    ));
+                }
+                state.promise_gates.insert(token, send);
+                assert!(state.promises.insert(token));
+            }
+            let owner = PromiseOwner {
+                token,
+                state: self.state.clone(),
+            };
+            results
+                .get()
+                .set_cap(capnp_rpc::new_future_client(async move {
+                    let _owner = owner;
+                    match receive.await {
+                        Ok(true) => Ok(capnp_rpc::new_client_from_rc(self)),
+                        _ => Err(capnp::Error::failed("fixture promise rejected".into())),
+                    }
+                }));
+            Ok(())
+        })
     }
 }
 

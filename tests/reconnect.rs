@@ -18,44 +18,48 @@ struct Server {
     disconnected: bool,
 }
 impl harness::Server for Server {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        p: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        let value = p.get()?.get_value();
-        if value < 2 {
-            self.calls.set(self.calls.get() + 1);
-            let gate = self.gates.borrow_mut()[value as usize]
-                .take()
-                .expect("request must not replay");
-            gate.await.unwrap();
-            return Err(if self.disconnected {
-                Error::disconnected("original failure".into())
-            } else {
-                Error::failed("original failure".into())
-            });
-        }
-        r.get().set_value(self.identity);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let value = p.get()?.get_value();
+            if value < 2 {
+                self.calls.set(self.calls.get() + 1);
+                let gate = self.gates.borrow_mut()[value as usize]
+                    .take()
+                    .expect("request must not replay");
+                gate.await.unwrap();
+                return Err(if self.disconnected {
+                    Error::disconnected("original failure".into())
+                } else {
+                    Error::failed("original failure".into())
+                });
+            }
+            r.get().set_value(self.identity);
+            Ok(())
+        })
     }
 }
 // A local forwarding capability preserves completion-based send_streaming
 // semantics while the operation itself traverses a real RPC connection.
 struct Forwarder(harness::Client);
 impl harness::Server for Forwarder {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        p: harness::EchoParams,
-        mut r: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        // This fixture models an application awaiting a response. A transparent
-        // tail-call proxy now preserves streaming readiness before that response.
-        let mut request = self.0.echo_request();
-        request.get().set_value(p.get()?.get_value());
-        let response = request.send().promise.await?;
-        r.get().set_value(response.get()?.get_value());
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (p, mut r) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            // This fixture models an application awaiting a response. A transparent
+            // tail-call proxy now preserves streaming readiness before that response.
+            let mut request = self.0.echo_request();
+            request.get().set_value(p.get()?.get_value());
+            let response = request.send().promise.await?;
+            r.get().set_value(response.get()?.get_value());
+            Ok(())
+        })
     }
 }
 async fn settle() {
@@ -329,16 +333,18 @@ async fn remote_streaming_credit_precedes_ack_and_late_error_reconnects() {
 
 struct Identity(u32);
 impl harness::Server for Identity {
-    async fn echo(
+    fn echo(
         self: Rc<Self>,
-        _: harness::EchoParams,
-        mut results: harness::EchoResults,
-    ) -> capnp::Result<()> {
-        if self.0 == 0 {
-            return Err(Error::disconnected("reconnect now".into()));
-        }
-        results.get().set_value(self.0);
-        Ok(())
+        context: harness::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            if self.0 == 0 {
+                return Err(Error::disconnected("reconnect now".into()));
+            }
+            results.get().set_value(self.0);
+            Ok(())
+        })
     }
 }
 
