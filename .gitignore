@@ -115,6 +115,11 @@ _apalache-tmp/
 !/research/reports/legacy-performance/2026-10-17/README.md
 !/research/reports/legacy-performance/2026-10-17/report.json
 !/research/reports/legacy-performance/2026-10-17/source.patch
+!/research/reports/legacy-performance/2026-10-17-tracing/
+/research/reports/legacy-performance/2026-10-17-tracing/*
+!/research/reports/legacy-performance/2026-10-17-tracing/README.md
+!/research/reports/legacy-performance/2026-10-17-tracing/report.json
+!/research/reports/legacy-performance/2026-10-17-tracing/source.patch
 
 # Locally discovered fuzz inputs; checked-in upstream corpora remain included.
 /fuzz/artifacts/

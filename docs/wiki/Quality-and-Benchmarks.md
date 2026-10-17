@@ -1,5 +1,25 @@
 # Quality checks and benchmark reports
 
+## Legacy tracing and batching follow-up, October 17, 2026
+
+The [tracing report](../../research/reports/legacy-performance/2026-10-17-tracing/README.md)
+compares all twelve workflows and four separate loopback payloads with C++, on
+both peers. It retains complete payload traces, socket wall/thread-CPU journals,
+Callgrind profiles and uninstrumented timing campaigns. The final diagnostic
+pass measures current legacy, the candidate and C++ together case by case.
+
+Ordinary bursts now share output polls while Calls and Returns retain independent
+immediate allowances, so an outgoing call does not defer an incoming callback's
+reply. Input waits replenish those allowances. A larger small-segment cache keeps
+the same 128 KiB payload bound. General batches use one shared segment-table
+array and one scatter/gather array, following C++ `writeMessagesImpl`.
+
+The 2× target remains open against frozen legacy at `6e37505d`. See the report
+for all cells, p95/p99, throughput, repeated timing modes, rejected experiments
+and source-bound verification. Instrumented timings do not qualify performance,
+and follow-ups do not replace failed full-campaign cells. No fixture, coverage
+floor or performance threshold is relaxed.
+
 ## Legacy 2× optimization, October 17, 2026
 
 The active performance work has returned to legacy. The benchmark frontend now

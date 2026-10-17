@@ -491,14 +491,30 @@ where
         }
     }
     let segments: Vec<_> = messages.map(AsOutputSegments::as_output_segments).collect();
-    let mut tables = Vec::with_capacity(segments.len());
+    // Like C++ writeMessagesImpl, allocate one shared segment-table array and
+    // one pieces array for the whole batch. A Vec per message defeats batching
+    // by adding an allocation (and async cursor writes) for every small frame.
+    let table_bytes = segments.iter().map(|s| (s.len() / 2 + 1) * 8).sum();
+    let piece_count = segments
+        .iter()
+        .map(|s| 1 + s.iter().filter(|segment| !segment.is_empty()).count())
+        .sum();
+    let mut tables = vec![0; table_bytes];
+    let mut remaining = tables.as_mut_slice();
     for message in &segments {
-        let mut table = futures_util::io::Cursor::new(Vec::new());
-        write_segment_table(&mut table, message).await?;
-        tables.push(table.into_inner());
+        let table_len = (message.len() / 2 + 1) * 8;
+        let (table, tail) = remaining.split_at_mut(table_len);
+        table[..4].copy_from_slice(&(message.len() as u32 - 1).to_le_bytes());
+        for (i, bytes) in message.iter().enumerate() {
+            table[4 + i * 4..8 + i * 4].copy_from_slice(&((bytes.len() / 8) as u32).to_le_bytes());
+        }
+        remaining = tail;
     }
-    let mut buffers = Vec::new();
-    for (table, message) in tables.iter().zip(&segments) {
+    let mut buffers = Vec::with_capacity(piece_count);
+    let mut remaining = tables.as_slice();
+    for message in &segments {
+        let table_len = (message.len() / 2 + 1) * 8;
+        let (table, tail) = remaining.split_at(table_len);
         buffers.push(std::io::IoSlice::new(table));
         buffers.extend(
             message
@@ -506,6 +522,7 @@ where
                 .filter(|s| !s.is_empty())
                 .map(|s| std::io::IoSlice::new(s)),
         );
+        remaining = tail;
     }
     write_buffers(&mut writer, &mut buffers).await
 }
@@ -1156,6 +1173,35 @@ pub mod test {
     }
 
     #[test]
+    fn shared_batch_tables_match_individual_frames_across_iovec_boundaries() {
+        futures::executor::block_on(async {
+            for count in [3, 33, 65] {
+                let messages: Vec<Vec<Vec<capnp::Word>>> = (0..count)
+                    .map(|index| {
+                        (0..[1, 2, 3, 5][index % 4])
+                            .map(|segment| {
+                                vec![
+                                    capnp::word(index as u8, segment as u8, 2, 3, 4, 5, 6, 7);
+                                    (index + segment) % 4
+                                ]
+                            })
+                            .collect()
+                    })
+                    .collect();
+                let mut expected = Vec::new();
+                for message in &messages {
+                    write_message(&mut expected, message).await.unwrap();
+                }
+                for fragment in [7, 113] {
+                    let mut output = BlockingWrite::new(Vec::new(), fragment);
+                    super::write_messages(&mut output, &messages).await.unwrap();
+                    assert_eq!(output.into_writer(), expected);
+                }
+            }
+        });
+    }
+
+    #[test]
     fn batched_writer_reports_transport_failure_after_a_partial_frame() {
         struct FailingWrite {
             bytes: Vec<u8>,
@@ -1188,26 +1234,25 @@ pub mod test {
             let messages = [
                 vec![vec![capnp::word(1, 2, 3, 4, 5, 6, 7, 8)]],
                 vec![vec![]],
+                vec![vec![capnp::word(8, 7, 6, 5, 4, 3, 2, 1)]],
             ];
-            let mut expected = Vec::new();
-            super::write_messages(&mut expected, &messages)
-                .await
-                .unwrap();
-            for zero in [false, true] {
-                let mut output = FailingWrite {
-                    bytes: Vec::new(),
-                    zero,
-                };
-                let error = super::write_messages(&mut output, &messages)
-                    .await
-                    .unwrap_err();
-                let expected_error = capnp::Error::from(io::Error::from(if zero {
-                    io::ErrorKind::WriteZero
-                } else {
-                    io::ErrorKind::BrokenPipe
-                }));
-                assert_eq!(error.kind, expected_error.kind);
-                assert_eq!(output.bytes, expected[..3]);
+            for batch in [&messages[..2], &messages[..]] {
+                let mut expected = Vec::new();
+                super::write_messages(&mut expected, batch).await.unwrap();
+                for zero in [false, true] {
+                    let mut output = FailingWrite {
+                        bytes: Vec::new(),
+                        zero,
+                    };
+                    let error = super::write_messages(&mut output, batch).await.unwrap_err();
+                    let expected_error = capnp::Error::from(io::Error::from(if zero {
+                        io::ErrorKind::WriteZero
+                    } else {
+                        io::ErrorKind::BrokenPipe
+                    }));
+                    assert_eq!(error.kind, expected_error.kind);
+                    assert_eq!(output.bytes, expected[..3]);
+                }
             }
         });
     }

@@ -445,6 +445,185 @@ fn pipeline_and_finish_batch_with_the_next_terminal_call_or_network_poll() {
 }
 
 #[test]
+fn calls_and_returns_share_separate_inline_polls_and_retain_guards_until_flush() {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    #[derive(Default)]
+    struct WakeCount(AtomicUsize);
+    impl std::task::Wake for WakeCount {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    struct Guard(Rc<Cell<usize>>);
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+    let output = Rc::new(Output::default());
+    output.allowed.set(usize::MAX);
+    output.flushed.set(true);
+    let mut network = VatNetwork::new(
+        futures::io::Cursor::new(Vec::<u8>::new()),
+        Writer(output.clone()),
+        VatId::Client,
+        Default::default(),
+    );
+    let mut connection = network.connection.take().unwrap();
+    let wakes = Arc::new(WakeCount::default());
+    let waker = Waker::from(wakes.clone());
+    let mut cx = Context::from_waker(&waker);
+    let drops = Rc::new(Cell::new(0));
+    assert!(network._output_driver.poll_network(&mut cx).is_pending());
+    let mut first_bytes = 0;
+    let mut first_wakes = 0;
+    for id in 0..32 {
+        let mut message = if id % 2 == 0 {
+            let mut message = connection.new_outgoing_call(64).unwrap();
+            let mut call = message.get_call().unwrap();
+            call.set_question_id(id);
+            call.set_no_promise_pipelining(true);
+            message
+        } else {
+            let mut message = connection.new_outgoing_return(64).unwrap();
+            message.get_return().unwrap().set_answer_id(id);
+            message
+        };
+        assert!(message
+            .retain_until_sent(Rc::new(Guard(drops.clone())))
+            .is_ok());
+        message.send_detached_and_drive();
+        if id == 0 {
+            first_bytes = output.bytes.borrow().len();
+            assert!(first_bytes > 0, "a lone call still writes inline");
+        } else if id == 1 {
+            assert!(
+                output.bytes.borrow().len() > first_bytes,
+                "an outgoing call must not defer its incoming callback's reply"
+            );
+            first_bytes = output.bytes.borrow().len();
+            first_wakes = wakes.0.load(Ordering::Relaxed);
+        } else {
+            assert_eq!(output.bytes.borrow().len(), first_bytes);
+            assert_eq!(drops.get(), 2, "queued messages retain their guards");
+        }
+    }
+    assert!(wakes.0.load(Ordering::Relaxed) > first_wakes);
+    assert_eq!(network.outgoing_queue().snapshot().message_count, 30);
+    output.flushed.set(false);
+    assert!(network._output_driver.poll_network(&mut cx).is_pending());
+    assert_eq!(
+        drops.get(),
+        2,
+        "written bytes do not complete a blocked flush"
+    );
+    let bytes = output.bytes.borrow();
+    let mut cursor = bytes.as_slice();
+    for id in 0..32 {
+        let message = capnp::serialize::read_message(&mut cursor, Default::default()).unwrap();
+        let root = message
+            .get_root::<crate::rpc_capnp::message::Reader>()
+            .unwrap();
+        match root.which().unwrap() {
+            crate::rpc_capnp::message::Call(call) if id % 2 == 0 => {
+                assert_eq!(call.unwrap().get_question_id(), id);
+            }
+            crate::rpc_capnp::message::Return(ret) if id % 2 == 1 => {
+                assert_eq!(ret.unwrap().get_answer_id(), id);
+            }
+            _ => panic!("FIFO call/return order"),
+        }
+    }
+    assert!(cursor.is_empty());
+    drop(bytes);
+    output.flushed.set(true);
+    assert!(network._output_driver.poll_network(&mut cx).is_pending());
+    assert_eq!(drops.get(), 32);
+    let before = output.bytes.borrow().len();
+    let mut message = connection.new_outgoing_call(64).unwrap();
+    message.get_call().unwrap().set_no_promise_pipelining(true);
+    message.send_detached_and_drive();
+    assert!(
+        output.bytes.borrow().len() > before,
+        "network polling replenishes the allowance"
+    );
+}
+
+#[test]
+fn input_wait_replenishes_inline_poll_but_buffered_messages_do_not() {
+    struct PendingTail(futures::io::Cursor<Vec<u8>>);
+    impl AsyncRead for PendingTail {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            bytes: &mut [u8],
+        ) -> Poll<std::io::Result<usize>> {
+            if self.0.position() as usize == self.0.get_ref().len() {
+                Poll::Pending
+            } else {
+                Pin::new(&mut self.0).poll_read(cx, bytes)
+            }
+        }
+    }
+    for owned in [true, false] {
+        let mut incoming = Vec::new();
+        for id in 0..2 {
+            let mut message = capnp::message::Builder::new_default();
+            let mut call = message
+                .init_root::<crate::rpc_capnp::message::Builder>()
+                .init_call();
+            call.set_question_id(id);
+            call.set_no_promise_pipelining(true);
+            incoming.extend(capnp::serialize::write_message_to_words(&message));
+        }
+        let output = Rc::new(Output::default());
+        output.allowed.set(usize::MAX);
+        output.flushed.set(true);
+        let mut network = VatNetwork::new(
+            PendingTail(futures::io::Cursor::new(incoming)),
+            Writer(output.clone()),
+            VatId::Client,
+            Default::default(),
+        );
+        let mut connection = network.connection.take().unwrap();
+        let mut input = if owned {
+            connection.take_owned_incoming_stream().unwrap()
+        } else {
+            connection.take_incoming_stream().unwrap()
+        };
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(network._output_driver.poll_network(&mut cx).is_pending());
+        let send = |connection: &mut dyn crate::Connection<VatId>| {
+            let mut call = connection.new_outgoing_call(64).unwrap();
+            call.get_call().unwrap().set_no_promise_pipelining(true);
+            call.send_detached_and_drive();
+        };
+        send(&mut connection);
+        let first = output.bytes.borrow().len();
+        assert!(first > 0);
+        for _ in 0..2 {
+            let Poll::Ready(Ok(Some(message))) = input.poll_receive(&mut cx) else {
+                panic!("both incoming messages must be buffered")
+            };
+            drop(message);
+            send(&mut connection);
+            assert_eq!(output.bytes.borrow().len(), first);
+        }
+        assert_eq!(network.outgoing_queue().snapshot().message_count, 2);
+        assert!(input.poll_receive(&mut cx).is_pending());
+        send(&mut connection);
+        assert!(
+            output.bytes.borrow().len() > first,
+            "input wait replenishes without an output-task poll"
+        );
+        assert_eq!(network.outgoing_queue().snapshot().message_count, 0);
+    }
+}
+
+#[test]
 fn detached_drive_writes_immediately_but_keeps_ownership_until_flush() {
     struct Guard(Rc<Cell<usize>>);
     impl Drop for Guard {

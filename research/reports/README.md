@@ -45,6 +45,13 @@ storage reuse, direct pipeline settlement and output batching. Its target is
 2× in every RPC workflow and separate loopback payload. All trial summaries,
 profiles, source hashes and rejected intermediate results remain retained.
 
+The [legacy tracing follow-up](legacy-performance/2026-10-17-tracing/README.md)
+captures every workflow and loopback payload for legacy and C++, on both peers.
+It follows C++'s shared batch-header layout, bounds immediate writes while
+preserving callback progress, and reuses more small segments within the same
+payload-cache budget. Complete traces, profiles, rejected experiments and
+repeated timing comparisons remain separate from the unchanged 2× gate.
+
 Historical logs and model-checker output referenced by older design documents
 are local archives and are not included in this repository. Model source and
 verification fixtures remain under `research/baseline/`, `verification/`, and

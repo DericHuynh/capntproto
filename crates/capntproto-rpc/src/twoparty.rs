@@ -27,7 +27,7 @@ use capnp::message::ReaderOptions;
 use capntproto_rpc_engine::completion::shared as oneshot;
 use futures::{AsyncRead, AsyncWrite, Future, FutureExt, TryFutureExt};
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
 
 pub use capnp_futures::{OutgoingQueue, OutputSnapshot, QueueSnapshot};
@@ -54,11 +54,13 @@ enum IncomingPayload {
 
 struct IncomingStream<T> {
     input: Box<capnp_futures::BufferedRead<T>>,
+    output_driver: Weak<OutputDriver>,
 }
 
 struct OwnedIncomingStream<T> {
     input: Option<Box<capnp_futures::BufferedRead<T>>>,
     return_to: Rc<RefCell<Option<Box<capnp_futures::BufferedRead<T>>>>>,
+    output_driver: Weak<OutputDriver>,
 }
 impl<T> Drop for OwnedIncomingStream<T> {
     fn drop(&mut self) {
@@ -71,17 +73,18 @@ impl<T: AsyncRead + Unpin> crate::IncomingMessageStream for OwnedIncomingStream<
         &mut self,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<capnp::Result<Option<Box<dyn crate::IncomingMessage>>>> {
-        self.input
+        let result = self
+            .input
             .as_mut()
             .expect("live input owner")
             .poll_read_message(cx, |message| {
                 crate::is_short_lived_rpc_message(message.get_root()?)
+            });
+        OutputDriver::finish_read_turn(&self.output_driver, result).map_ok(|message| {
+            message.map(|message| {
+                Box::new(IncomingMessage::new(message)) as Box<dyn crate::IncomingMessage>
             })
-            .map_ok(|message| {
-                message.map(|message| {
-                    Box::new(IncomingMessage::new(message)) as Box<dyn crate::IncomingMessage>
-                })
-            })
+        })
     }
 }
 impl<T: AsyncRead + Unpin> crate::IncomingFrameStream for IncomingStream<T> {
@@ -122,13 +125,12 @@ impl<T: AsyncRead + Unpin> crate::IncomingMessageStream for IncomingStream<T> {
         &mut self,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<capnp::Result<Option<Box<dyn crate::IncomingMessage>>>> {
-        self.input
-            .poll_read_short_lived_message(cx)
-            .map_ok(|message| {
-                message.map(|message| {
-                    Box::new(IncomingMessage::new(message)) as Box<dyn crate::IncomingMessage>
-                })
+        let result = self.input.poll_read_short_lived_message(cx);
+        OutputDriver::finish_read_turn(&self.output_driver, result).map_ok(|message| {
+            message.map(|message| {
+                Box::new(IncomingMessage::new(message)) as Box<dyn crate::IncomingMessage>
             })
+        })
     }
 }
 
@@ -406,7 +408,9 @@ impl crate::OutgoingMessage for OutgoingMessage {
         let sender = self.sender.take().expect("unsent message has sender");
         // Let a pipeline's parent and the preceding Finish join its next child
         // in one FIFO batch. The network driver is notified even when no child
-        // follows. Terminal calls and Returns can still drive ready IO inline.
+        // follows. Calls and Returns each get one inline poll per turn; a
+        // callback reply need not wait behind its initiating outgoing call.
+        // Later messages join the next network-driven batch.
         let defer = match &mut self.message {
             MessageBuilder::Call(call) => call
                 .get_as::<crate::rpc_capnp::call::Owned>()
@@ -421,9 +425,10 @@ impl crate::OutgoingMessage for OutgoingMessage {
             return;
         }
         let driver = self.driver.clone();
+        let is_return = matches!(&self.message, MessageBuilder::Return(_));
         let _ = sender.send_detached_and_drive(QueuedMessage::Owned(self), || {
             if let Some(driver) = driver.upgrade() {
-                driver.drive_ready();
+                driver.drive_first(is_return);
             }
         });
     }
@@ -455,9 +460,26 @@ struct OutputDriver {
     task: RefCell<Option<Promise<(), capnp::Error>>>,
     result: RefCell<Option<capnp::Result<()>>>,
     network: RefCell<Option<std::task::Waker>>,
+    inline_ready: Cell<bool>,
+    return_ready: Cell<bool>,
 }
 impl OutputDriver {
+    fn finish_read_turn<T>(driver: &Weak<Self>, result: std::task::Poll<T>) -> std::task::Poll<T> {
+        // A fully inline write need not wake the output task. Replenish when
+        // input exhausts its ready work as well, so sequential request/reply
+        // traffic does not alternate between inline and deferred writes.
+        // Buffered messages do not replenish: a receive burst still batches.
+        if result.is_pending() {
+            if let Some(driver) = driver.upgrade() {
+                driver.inline_ready.set(true);
+                driver.return_ready.set(true);
+            }
+        }
+        result
+    }
     fn poll_network(&self, cx: &mut std::task::Context<'_>) -> std::task::Poll<capnp::Result<()>> {
+        self.inline_ready.set(true);
+        self.return_ready.set(true);
         if self
             .network
             .borrow()
@@ -505,6 +527,19 @@ impl OutputDriver {
         let wake = self.network.borrow().clone();
         if let Some(wake) = wake {
             let _ = self.poll_inner(&mut std::task::Context::from_waker(&wake));
+        }
+    }
+    fn drive_first(&self, is_return: bool) {
+        // Keep a lone request's immediate write, but let a burst accumulate as
+        // it does with KJ's evalLast. Enqueue still wakes the network task when
+        // this allowance is exhausted. Explicit stream flushes bypass it.
+        let allowance = if is_return {
+            &self.return_ready
+        } else {
+            &self.inline_ready
+        };
+        if allowance.replace(false) {
+            self.drive_ready();
         }
     }
 }
@@ -646,9 +681,10 @@ where
                 write_finished,
                 output_closed,
                 output_driver,
-                // Includes a 64 KiB body plus framing/envelope growth, while
-                // bounding retained storage independently of live messages.
-                segments: capnp::message::SegmentPool::new(16 * 1024, 16),
+                // Cache a turn's burst of small segments and control envelopes
+                // without increasing the 128 KiB retained-word budget. Includes
+                // a 64 KiB body plus framing/envelope growth.
+                segments: capnp::message::SegmentPool::new(16 * 1024, 64),
                 call_template: None,
                 return_template: None,
                 finish_template: None,
@@ -857,8 +893,12 @@ where
     }
 
     fn take_incoming_stream(&mut self) -> Option<Box<dyn crate::IncomingMessageStream>> {
-        let input = self.inner.borrow().input_stream.borrow_mut().take()?;
-        Some(Box::new(IncomingStream { input }))
+        let inner = self.inner.borrow();
+        let input = inner.input_stream.borrow_mut().take()?;
+        Some(Box::new(IncomingStream {
+            input,
+            output_driver: inner.output_driver.clone(),
+        }))
     }
 
     fn take_owned_incoming_stream(&mut self) -> Option<Box<dyn crate::IncomingMessageStream>> {
@@ -867,12 +907,17 @@ where
         Some(Box::new(OwnedIncomingStream {
             input: Some(input),
             return_to,
+            output_driver: self.inner.borrow().output_driver.clone(),
         }))
     }
 
     fn take_incoming_frames(&mut self) -> Option<Box<dyn crate::IncomingFrameStream>> {
-        let input = self.inner.borrow().input_stream.borrow_mut().take()?;
-        Some(Box::new(IncomingStream { input }))
+        let inner = self.inner.borrow();
+        let input = inner.input_stream.borrow_mut().take()?;
+        Some(Box::new(IncomingStream {
+            input,
+            output_driver: inner.output_driver.clone(),
+        }))
     }
 
     fn new_stream(&mut self) -> (Box<dyn crate::FlowController>, Promise<(), capnp::Error>) {
@@ -920,17 +965,20 @@ impl<T: AsyncRead + Unpin> Connection<T> {
 
         let maybe_input_stream = inner.input_stream.borrow_mut().take();
         let return_it_here = inner.input_stream.clone();
+        let output_driver = inner.output_driver.clone();
         match maybe_input_stream {
             Some(mut s) => Promise::from_future(async move {
-                let result = s
-                    .try_read_message(|message| {
+                let result = std::future::poll_fn(|cx| {
+                    let result = s.poll_read_message(cx, |message| {
                         if short_lived {
                             Ok(true)
                         } else {
                             crate::is_short_lived_rpc_message(message.get_root()?)
                         }
-                    })
-                    .await;
+                    });
+                    OutputDriver::finish_read_turn(&output_driver, result)
+                })
+                .await;
                 *return_it_here.borrow_mut() = Some(s);
                 Ok(result?.map(|message| {
                     Box::new(IncomingMessage::new(message)) as Box<dyn crate::IncomingMessage>
@@ -1148,6 +1196,8 @@ where
             task: RefCell::new(Some(execution)),
             result: RefCell::new(None),
             network: RefCell::new(None),
+            inline_ready: Cell::new(true),
+            return_ready: Cell::new(true),
         });
         let network_driver = output_driver.clone();
         let execution_driver = Promise::from_future(std::future::poll_fn(move |cx| {

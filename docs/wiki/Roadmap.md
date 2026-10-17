@@ -51,6 +51,13 @@ of pipeline parents and Finish messages. The 2× goal remains open. Continue fro
 the measured remaining costs rather than interpreting an instruction reduction
 or one fast payload as completion of the whole target.
 
+The [tracing follow-up](../../research/reports/legacy-performance/2026-10-17-tracing/README.md)
+compares all sixteen cases with C++ on both peers. It batches ordinary bursts,
+keeps independent immediate Call/Return allowances for callbacks, and uses one
+shared segment-table allocation per batch, following C++. Small-segment reuse
+retains the same 128 KiB payload budget. The remaining scheduling and copy costs,
+variable timing modes and every failed cell remain part of gap #15.
+
 ## Portable RPC performance gap
 
 **Open: [gap #11](https://github.com/DericHuynh/capntproto/issues/11), recorded October 15, 2026.**
