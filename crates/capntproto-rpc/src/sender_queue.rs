@@ -106,13 +106,22 @@ where
     /// `value` is consumed on the other end of the queue. If the returned promised
     /// is dropped, then `value` is removed from the queue.
     pub(crate) fn push(&mut self, value: In) -> Promise<Out, Error> {
+        Promise::from_future(self.push_future(value))
+    }
+
+    /// Keep the queue receiver inside an existing continuation. The public
+    /// hook still returns a boxed Promise, but forwarding needs no second box.
+    pub(crate) fn push_future(
+        &mut self,
+        value: In,
+    ) -> impl core::future::Future<Output = Result<Out, Error>> + Unpin + 'static {
         let (id, rx) = match self.enqueue(value, true) {
             Ok(admitted) => admitted,
             Err(value) => {
                 drop(value);
-                return Promise::err(Error::overloaded(
-                    "sender queue identities exhausted".into(),
-                ));
+                return futures::future::Either::Left(futures::future::ready(Err(
+                    Error::overloaded("sender queue identities exhausted".into()),
+                )));
             }
         };
         let remover = Remover {
@@ -120,7 +129,7 @@ where
             inner: Rc::downgrade(self.inner.as_ref().expect("admitted queue")),
         };
 
-        Promise::from_future(
+        futures::future::Either::Right(
             rx.expect("observed queue entry")
                 .map_err(|_| Error::failed("SenderQueue canceled".into()))
                 .map(move |out| {

@@ -1,5 +1,27 @@
 # Quality checks and benchmark reports
 
+## Publication ownership and forwarding October 17, 2026
+
+The [publication report](../../research/reports/portable-performance/2026-10-17-publication/README.md)
+records three C++-aligned changes: parent interest retained through child
+publication, compact parameter-grant metadata, and inline queue receivers.
+Pipeline client instructions fall 0.564% and callback client instructions fall
+0.312%. Two allocations per pipelined child disappear. All six before/after
+peer comparisons retain identical write bytes and groups.
+
+The final production build passes 8/12 local workflows and 0/4 separate loopback
+cells at the 5% milestone; it is fastest in 4/16. A twenty-repetition follow-up
+retains variable timing modes and does not replace failed initial cells. All
+1,680,000 samples, six rejected approaches and thirty final peer journals are
+retained. The independently verified dedicated campaign at the preceding
+`d56aae2081ae` commit passes 9/16 at 5% and is fastest in 2/16. Neither goal is met.
+
+308 RPC tests, 147 wire tests, 300 mixed-peer combinations, six focused Miri
+tests, strict Clippy and ARM alloc/no-alloc checks pass. New regressions exercise
+output backpressure, cancellation, frame reclamation before Return and atomic
+grant refunds. No unsafe code, benchmark fixtures, coverage floors or acceptance
+thresholds change. The preceding CI's coverage failure remains unresolved.
+
 ## C++ selected-payload readers October 17, 2026
 
 The [selected-reader port](../../research/reports/portable-performance/2026-10-17-cpp-readers/README.md)

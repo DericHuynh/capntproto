@@ -32,8 +32,10 @@ already available.
 
 ## Portable RPC performance gap
 
-**Open: [gap #11](https://github.com/DericHuynh/capntproto/issues/11), recorded October 15, 2026.** For each matching plaintext TCP workload,
-portable pooled p50 must be at most **1.05 × min(legacy p50, C++ p50)**. Compare
+**Open: [gap #11](https://github.com/DericHuynh/capntproto/issues/11), recorded October 15, 2026.**
+The October 17 goal is to make portable the fastest implementation in every
+matched cell: **portable pooled p50 < min(legacy p50, C++ p50)**. The existing
+**1.05 × min(legacy p50, C++ p50)** gate remains an intermediate milestone. Compare
 all peers in the same campaign with matched fixtures, release settings, CPU
 placement and sampling budgets. Faster portable results pass without slowing
 either reference. Apply the target to all twelve remote application workflows
@@ -64,10 +66,22 @@ admission, cancellation, FIFO, partial-write and shutdown guarantees intact.
 Local experiments guide changes; closing this gap requires a fresh dedicated
 campaign with every applicable cell passing, not an empty-call result alone.
 
-The latest completed dedicated campaign at `866610259cf5` passes 11 of 16 cells:
-remote pipelined reads, callbacks and 64-KiB echo, plus empty and 64-byte loopback,
-remain above the limit. Earlier campaigns used different hosts and timing;
-their pass counts are historical observations rather than a progression score.
+The latest independently verified dedicated campaign at `d56aae2081ae`,
+[run 39008671050](https://github.com/DericHuynh/capntproto/actions/runs/39008671050),
+passes 9 of 16 cells at 5% and is fastest in only 2: fanout-32 and bulk-256k.
+Remote unary-1k, pipelined reads, callbacks and all four loopback payloads miss
+the intermediate milestone. All 350 remote and 60 loopback trials validate;
+build/runtime manifests and cleanup also validate. Earlier campaigns used
+different hosts and timing; their pass counts are historical observations
+rather than a progression score. Neither performance goal is complete.
+
+The subsequent [publication ownership changes](../../research/reports/portable-performance/2026-10-17-publication/README.md)
+remove two allocations per pipelined child and avoid retaining a complete
+single-capability request frame until Return. Local profiles show pipeline
+client instructions down 0.564% and callback client instructions down 0.312%,
+with unchanged before/after wire writes. The local production build meets 8/16
+cells at 5% and is fastest in 4/16. Broader latency improvement is not established;
+a fresh dedicated campaign must measure this source independently.
 
 On October 17 the active work shifted to the
 [portable hosted architecture](Architecture.md#portable-hosted-execution-boundaries).

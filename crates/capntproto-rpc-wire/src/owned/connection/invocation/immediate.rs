@@ -157,9 +157,20 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             frame.release(messages);
             return Ok(None);
         }
-        let question =
-            Question::send_granting(reservation, batch, messages, frame, scratch, output)
-                .map_err(|error| Error::Input(super::super::super::Error::Output(error)))?;
+        let question = Question::send_granting_compact(
+            reservation,
+            batch,
+            messages,
+            frame,
+            scratch,
+            output,
+            crate::inbound::full::OriginalMetadata::single_export(
+                (method.interface, method.method),
+                self.allow_answer_handoff,
+                id,
+            ),
+        )
+        .map_err(|error| Error::Input(super::super::super::Error::Output(error)))?;
         let key = question.key();
         slot.exchange = Some(Exchange::Pending(question));
         slot.canceled = false;

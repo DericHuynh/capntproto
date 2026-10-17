@@ -1982,3 +1982,127 @@ fn unprojected_reply_delivers_directly_and_preserves_late_capabilities() {
         });
     }
 }
+
+#[test]
+fn queued_child_keeps_parent_until_output_acceptance_or_cancellation() {
+    for canceled in [false, true] {
+        with_peer(|mut driver, messages| {
+            let mut hooks = ClientHooks::new(24, 24);
+            let client = remote(&mut driver, &mut hooks);
+            let parent = request(&client, 1).send();
+            let child = capability::Client::new(parent.pipeline.hook.get_pipelined_cap(&[]));
+            let mut child_request = request(&child, 2);
+            child_request.hook.set_hints(CallHints {
+                no_promise_pipelining: true,
+                ..Default::default()
+            });
+            let mut child_reply = child_request.send();
+            let mut calls = Calls::new(8, None).unwrap();
+            let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+            assert!(matches!(
+                tick(
+                    &mut calls,
+                    &mut hooks,
+                    &mut driver,
+                    messages,
+                    &mut queue,
+                    &mut Context::from_waker(Waker::noop())
+                ),
+                Poll::Ready(Ok(Progress::Published))
+            ));
+            assert_eq!(queue.len(), 1);
+            drop((parent, child));
+            // Observe forwarding so its temporary queued client no longer
+            // supplies an accidental parent interest. Only the unsent request
+            // and the protocol's own owners may keep the target alive now.
+            assert!(Pin::new(&mut child_reply.promise)
+                .poll(&mut Context::from_waker(Waker::noop()))
+                .is_pending());
+            for _ in 0..64 {
+                if let Poll::Ready(Err(error)) = tick(
+                    &mut calls,
+                    &mut hooks,
+                    &mut driver,
+                    messages,
+                    &mut queue,
+                    &mut Context::from_waker(Waker::noop()),
+                ) {
+                    assert!(error.extra.contains("NoSendSlot"), "{error}");
+                }
+            }
+            assert!(
+                calls.pending.is_some(),
+                "full output must preserve the child request"
+            );
+            assert!(
+                driver.ledgers.questions.pending_finish().is_none(),
+                "Finish cannot overtake an unsent child"
+            );
+            let bytes = drain(&mut queue, messages);
+            let decoded =
+                capnp::serialize::read_message(bytes.as_slice(), Default::default()).unwrap();
+            let rpc_capnp::message::Call(parent) = decoded
+                .get_root::<rpc_capnp::message::Reader>()
+                .unwrap()
+                .which()
+                .unwrap()
+            else {
+                panic!("parent Call")
+            };
+            let parent_id = parent.unwrap().get_question_id();
+            // The application call may retire, but the child's target authority
+            // must still prevent the protocol question from publishing Finish.
+            for _ in 0..64 {
+                driver
+                    .poll_maintenance(
+                        messages,
+                        &mut queue,
+                        128,
+                        Default::default(),
+                        &mut [0; 24],
+                        NonZeroUsize::new(1).unwrap(),
+                    )
+                    .unwrap();
+            }
+            assert!(queue.is_empty(), "parent Finish before child publication");
+
+            let child_reply = if canceled {
+                drop(child_reply);
+                None
+            } else {
+                Some(child_reply)
+            };
+            drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+            if canceled {
+                assert!(
+                    queue.is_empty(),
+                    "canceled unsent child must never appear on the wire"
+                );
+            } else {
+                let bytes = drain(&mut queue, messages);
+                let mut remaining = bytes.as_slice();
+                let decoded =
+                    capnp::serialize::read_message(&mut remaining, Default::default()).unwrap();
+                let rpc_capnp::message::Call(child) = decoded
+                    .get_root::<rpc_capnp::message::Reader>()
+                    .unwrap()
+                    .which()
+                    .unwrap()
+                else {
+                    panic!("child must precede Finish")
+                };
+                let child = child.unwrap();
+                assert_eq!(child.get_method_id(), 2);
+                let rpc_capnp::message_target::PromisedAnswer(target) =
+                    child.get_target().unwrap().which().unwrap()
+                else {
+                    panic!("promised answer")
+                };
+                assert_eq!(target.unwrap().get_question_id(), parent_id);
+                assert!(remaining.is_empty());
+            }
+            drop((child_reply, client));
+            teardown(calls, hooks, driver, messages, &mut queue);
+        });
+    }
+}

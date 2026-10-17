@@ -61,19 +61,55 @@ impl<'m> PreparedReturn<'m> {
     }
 }
 
-/// Metadata from the exact retained request. The data-only constructor is used
-/// only after private template publication has validated the complete payload
-/// and proved its descriptor table empty.
+/// The private one-capability encoder's exact outgoing grant and Return policy.
+#[derive(Clone, Copy)]
+pub(crate) struct OriginalMetadata {
+    method: (u64, u16),
+    redirected: bool,
+    allows_handoff: bool,
+    export: Option<ExportId>,
+}
+impl OriginalMetadata {
+    // Only the private single-capability encoder constructs this metadata. Its
+    // immutable Call contains this exact method, handoff policy and export;
+    // ordinary publication still validates the complete frame and grant batch.
+    pub(crate) fn single_export(
+        method: (u64, u16),
+        allows_handoff: bool,
+        export: ExportId,
+    ) -> Self {
+        Self {
+            method,
+            redirected: false,
+            allows_handoff,
+            export: Some(export),
+        }
+    }
+    pub(crate) fn original(&self) -> Original<'_> {
+        Original {
+            params: Parameters::Export(self.export),
+            redirected: self.redirected,
+            allows_handoff: self.allows_handoff,
+            method: Some(self.method),
+        }
+    }
+}
+enum Parameters<'m> {
+    Unchecked(Option<rpc_capnp::payload::Reader<'m>>),
+    Published(rpc_capnp::payload::Reader<'m>),
+    Export(Option<ExportId>),
+}
 pub(crate) struct Original<'m> {
-    params: Option<rpc_capnp::payload::Reader<'m>>,
+    params: Parameters<'m>,
     redirected: bool,
     allows_handoff: bool,
     pub(crate) method: Option<(u64, u16)>,
 }
 impl<'m> Original<'m> {
+    // Only validated template publication may prove the descriptor table empty.
     pub(crate) fn data_only(method: (u64, u16), allows_handoff: bool) -> Self {
         Self {
-            params: None,
+            params: Parameters::Export(None),
             redirected: false,
             allows_handoff,
             method: Some(method),
@@ -122,11 +158,25 @@ impl<'m> Original<'m> {
             return Err(Error::Mismatch);
         }
         Ok(Self {
-            params,
+            params: Parameters::Unchecked(params),
             redirected,
             allows_handoff,
             method,
         })
+    }
+    // Only the owning Question may use this proof: publication checked the
+    // complete immutable request and its exact grants before accepting output.
+    pub(crate) fn read_published(
+        id: u32,
+        root: rpc_capnp::message::Reader<'m>,
+    ) -> Result<Self, Error> {
+        let mut original = Self::read(id, root)?;
+        original.params = match original.params {
+            Parameters::Unchecked(Some(params)) => Parameters::Published(params),
+            Parameters::Unchecked(None) => Parameters::Export(None),
+            _ => unreachable!(),
+        };
+        Ok(original)
     }
 }
 
@@ -181,7 +231,19 @@ pub(crate) fn returned_prepared<'b, 's, 'r, 'm, 'q, 'i, 'e, 'a, 'qs, 'is, 'es, '
         .map_err(Error::Question)?;
     let mut releases = exports.prepare_releases(scratch).map_err(Error::Release)?;
     if result.get_release_param_caps() {
-        super::super::returns::record_params(&mut releases, original.params)?;
+        match original.params {
+            Parameters::Unchecked(params) => {
+                super::super::returns::record_params(&mut releases, params)?
+            }
+            Parameters::Published(params) => super::super::returns::record_param_descriptors(
+                &mut releases,
+                params.get_cap_table()?,
+            )?,
+            Parameters::Export(Some(export)) => {
+                releases.record(export, 1).map_err(Error::Release)?
+            }
+            Parameters::Export(None) => (),
+        }
     }
     let releases = releases.finish().map_err(Error::Release)?;
     let discard = question.delivery() == Delivery::Discard;

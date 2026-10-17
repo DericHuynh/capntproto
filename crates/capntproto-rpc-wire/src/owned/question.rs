@@ -12,6 +12,7 @@ pub struct Question<'pool, 'q> {
 }
 enum Original<'pool> {
     Frame(Frame<'pool>),
+    Metadata(inbound::full::OriginalMetadata),
     // A checked template has no parameter grants. Retain the method and handoff
     // policy needed by Return admission, without pinning its serialized bytes.
     DataOnly {
@@ -151,14 +152,44 @@ impl<'pool, 'q> Question<'pool, 'q> {
             local: Some(local),
         })
     }
+    /// The private one-capability encoder has already captured the exact
+    /// outgoing method and export. Like C++ Question::paramExports, retain that
+    /// metadata without pinning the serialized request through Return. The FIFO
+    /// remains the affine frame owner through partial writes and physical flush.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn send_granting_compact<E>(
+        reservation: questions::Reservation<'_, 'q, '_>,
+        batch: exports::Batch<'_, '_, '_, E>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        frame: Frame<'pool>,
+        scratch: &mut [u32],
+        queue: messages::QueueSlot<'_, 'pool, '_, impl Sized>,
+        metadata: inbound::full::OriginalMetadata,
+    ) -> Result<Self, crate::admission::Error> {
+        let local = crate::admission::granting_question(
+            reservation,
+            batch,
+            messages,
+            frame.lease,
+            scratch,
+            frame.options,
+        )?
+        .accept(queue);
+        Ok(Self {
+            original: Original::Metadata(metadata),
+            key: local.key(),
+            local: Some(local),
+        })
+    }
     pub fn key(&self) -> questions::Key<'q> {
         self.key
     }
     pub fn local(&self) -> Option<&questions::Local<'q>> {
         self.local.as_ref()
     }
-    /// A canceled call still owns its original frame until the late Return is
-    /// validated. Finish acceptance remains the connection output's obligation.
+    /// Cancellation retains the exact request metadata or original frame until
+    /// the late Return is validated. Finish acceptance remains the connection
+    /// output's obligation.
     pub fn cancel(&mut self, questions: &mut questions::Questions<'q, '_>) {
         if let Some(local) = self.local.take() {
             questions.release(local);
@@ -464,9 +495,11 @@ impl<'pool, 'q> Question<'pool, 'q> {
                 method,
                 allows_handoff,
             } => admit(inbound::full::Original::data_only(*method, *allows_handoff))?,
+            Original::Metadata(metadata) => admit(metadata.original())?,
             Original::Frame(frame) => frame.with(messages, |original| {
-                let original = inbound::full::Original::read(result.get_answer_id(), original)
-                    .map_err(Error::Admission)?;
+                let original =
+                    inbound::full::Original::read_published(result.get_answer_id(), original)
+                        .map_err(Error::Admission)?;
                 admit(original)
             })??,
         };

@@ -1074,6 +1074,12 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         .map_err(wire_error)?;
                 }
                 let mut call = self.pending.take().expect("published call");
+                if let CallParams::OwnedRequest(request, _) = &mut call.params {
+                    // Like C++ RpcRequest's target, this interest protects the
+                    // request through send(). The child now owns its question
+                    // and FIFO frame, so a parent Finish cannot overtake it.
+                    request.publication_committed();
+                }
                 let pipeline = match hooks.attach_pipeline(&mut call) {
                     Ok(pipeline) => pipeline,
                     Err(error) => {

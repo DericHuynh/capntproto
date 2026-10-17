@@ -1257,7 +1257,7 @@ impl PipelineState {
     }
 }
 #[derive(Clone)]
-struct PipelineRef(
+pub(crate) struct PipelineRef(
     Option<Rc<PipelineState>>,
     // Only public interests retain the response driver. The wire owner holds
     // a plain Rc<PipelineState>, so it cannot keep its own call alive.
@@ -1360,25 +1360,22 @@ pub(super) fn request_projected(
     interface: u64,
     method: u16,
     hints: CallHints,
-    params: Box<crate::local::Request>,
+    mut params: Box<crate::local::Request>,
     context: Option<Rc<dyn std::any::Any>>,
 ) -> capability::RemotePromise<any_pointer::Owned> {
-    use crate::attach::Attach;
     let projected = client
         .as_any()
         .and_then(|client| client.downcast_ref::<Projected>())
         .expect("private projected request");
-    let mut response = response::request_scoped(
+    params.retain_pipeline(projected.pipeline.clone());
+    response::request_scoped(
         direct_response_hook(client).expect("private projected endpoint"),
         interface,
         method,
         hints,
         params,
         context,
-    );
-    // Preserve the same parent interest as call_with_hints until completion.
-    response.promise = Promise::from_future(response.promise.attach(projected.pipeline.clone()));
-    response
+    )
 }
 impl ClientHook for Projected {
     fn as_any(&self) -> Option<&dyn std::any::Any> {

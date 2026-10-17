@@ -183,23 +183,31 @@ pub(super) fn record_params<E>(
         params
             .get_content()
             .validate_capability_indices(table.len())?;
-        for descriptor in table {
-            match descriptor.which().map_err(|_| Error::Unsupported)? {
-                rpc_capnp::cap_descriptor::None(())
-                | rpc_capnp::cap_descriptor::ReceiverHosted(_)
-                | rpc_capnp::cap_descriptor::ReceiverAnswer(_) => (),
-                rpc_capnp::cap_descriptor::SenderHosted(id)
-                | rpc_capnp::cap_descriptor::SenderPromise(id) => releases
-                    .record(ExportId::from_wire(id), 1)
-                    .map_err(Error::Release)?,
-                rpc_capnp::cap_descriptor::ThirdPartyHosted(cap) => releases
-                    .record(ExportId::from_wire(cap?.get_vine_id()), 1)
-                    .map_err(Error::Release)?,
-            }
+        record_param_descriptors(releases, table)?;
+    }
+    Ok(())
+}
+pub(super) fn record_param_descriptors<E>(
+    releases: &mut exports::ReleaseBatch<'_, '_, '_, '_, E>,
+    table: capnp::struct_list::Reader<'_, rpc_capnp::cap_descriptor::Owned>,
+) -> Result<(), Error> {
+    for descriptor in table {
+        match descriptor.which().map_err(|_| Error::Unsupported)? {
+            rpc_capnp::cap_descriptor::None(())
+            | rpc_capnp::cap_descriptor::ReceiverHosted(_)
+            | rpc_capnp::cap_descriptor::ReceiverAnswer(_) => (),
+            rpc_capnp::cap_descriptor::SenderHosted(id)
+            | rpc_capnp::cap_descriptor::SenderPromise(id) => releases
+                .record(ExportId::from_wire(id), 1)
+                .map_err(Error::Release)?,
+            rpc_capnp::cap_descriptor::ThirdPartyHosted(cap) => releases
+                .record(ExportId::from_wire(cap?.get_vine_id()), 1)
+                .map_err(Error::Release)?,
         }
     }
     Ok(())
 }
+
 impl<'receipts, 'message, 'question, 'import, E, I>
     Returned<'_, '_, 'receipts, 'message, 'question, '_, 'import, '_, '_, '_, E, I>
 {

@@ -5,7 +5,7 @@ mod returns;
 use crate::reception::full::{self as capabilities, Slots};
 pub use resolution::{resolve, Resolution, Resolved};
 pub use returns::{returned, Reply, Returned};
-pub(crate) use returns::{returned_prepared, Original, PreparedReturn};
+pub(crate) use returns::{returned_prepared, Original, OriginalMetadata, PreparedReturn};
 
 /// Imported receipts have one entry per payload descriptor. Export/answer
 /// receipts add one final entry for the call target. All wire identities must

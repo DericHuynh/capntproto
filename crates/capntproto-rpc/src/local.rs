@@ -609,6 +609,9 @@ impl RequestMessage {
 enum RequestClient {
     Hook(Box<dyn ClientHook>),
     Scoped(crate::scoped::Hook),
+    // Once the target has been resolved, the parameter owner can retain its
+    // parent pipeline in this same slot until ordered wire publication.
+    Publishing(crate::scoped::wire::PipelineRef),
 }
 impl std::ops::Deref for RequestClient {
     type Target = dyn ClientHook;
@@ -616,6 +619,7 @@ impl std::ops::Deref for RequestClient {
         match self {
             Self::Hook(hook) => &**hook,
             Self::Scoped(hook) => hook,
+            Self::Publishing(_) => unreachable!("published parameters have no request target"),
         }
     }
 }
@@ -648,6 +652,17 @@ impl ParamsHook for Request {
 }
 
 impl Request {
+    pub(crate) fn retain_pipeline(&mut self, parent: crate::scoped::wire::PipelineRef) {
+        debug_assert!(self.client.is_none());
+        self.client = Some(RequestClient::Publishing(parent));
+    }
+    pub(crate) fn publication_committed(&mut self) {
+        if matches!(self.client, Some(RequestClient::Publishing(_))) {
+            if let Some(RequestClient::Publishing(parent)) = self.client.take() {
+                drop(parent);
+            }
+        }
+    }
     pub(crate) fn freeze_large_params(&mut self) {
         if self.cap_table.is_empty() {
             self.message.freeze_large();
@@ -791,6 +806,7 @@ impl RequestHook for Request {
             && match self.client.as_ref().expect("unsent request") {
                 RequestClient::Scoped(hook) => hook.direct_response_available(),
                 RequestClient::Hook(hook) => crate::scoped::response::available(&**hook),
+                RequestClient::Publishing(_) => unreachable!("parameters were already sent"),
             }
         {
             // The request already owns exactly the parameter storage required
@@ -799,6 +815,7 @@ impl RequestHook for Request {
             let client = self.client.take().unwrap();
             let context = self.context.take();
             return match client {
+                RequestClient::Publishing(_) => unreachable!("parameters were already sent"),
                 RequestClient::Scoped(hook) => crate::scoped::response::request_scoped(
                     &hook,
                     self.interface_id,

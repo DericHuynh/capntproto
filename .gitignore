@@ -103,6 +103,11 @@ _apalache-tmp/
 !/research/reports/portable-performance/2026-10-17-cpp-readers/README.md
 !/research/reports/portable-performance/2026-10-17-cpp-readers/report.json
 !/research/reports/portable-performance/2026-10-17-cpp-readers/source.patch
+!/research/reports/portable-performance/2026-10-17-publication/
+/research/reports/portable-performance/2026-10-17-publication/*
+!/research/reports/portable-performance/2026-10-17-publication/README.md
+!/research/reports/portable-performance/2026-10-17-publication/report.json
+!/research/reports/portable-performance/2026-10-17-publication/source.patch
 
 # Locally discovered fuzz inputs; checked-in upstream corpora remain included.
 /fuzz/artifacts/

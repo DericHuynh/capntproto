@@ -394,7 +394,7 @@ impl Client {
             .inner
             .borrow_mut()
             .call_forwarding_queue
-            .push(PendingCall::Request(request))
+            .push_future(PendingCall::Request(request))
             .attach(self.inner.clone());
         let driver = self.inner.borrow().promise_to_drive.clone();
         capnp::capability::RemotePromise {
@@ -539,7 +539,7 @@ impl ClientHook for Client {
             .inner
             .borrow_mut()
             .call_forwarding_queue
-            .push(PendingCall::Hook(
+            .push_future(PendingCall::Hook(
                 interface_id,
                 method_id,
                 params,
@@ -592,7 +592,7 @@ impl ClientHook for Client {
             .inner
             .borrow_mut()
             .client_resolution_queue
-            .push(())
+            .push_future(())
             .attach(self.inner.clone());
         let driver = self.inner.borrow().promise_to_drive.clone();
         Some(Promise::from_future(async move {
