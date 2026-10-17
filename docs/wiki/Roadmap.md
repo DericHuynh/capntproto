@@ -77,6 +77,14 @@ integration and further optimization. Unqualified response-sharing and worker
 experiments are archived separately. The 5% target remains open; architectural
 refactoring and local profiling do not replace a complete dedicated campaign.
 
+The [ownership and integration review](Architecture.md#portable-ownership-and-integration-review)
+separates explicit endpoint retirement from promise settlement and metadata
+refresh. Next, replace broad invalidation with a measured effect-reporting
+control context and revisioned metadata contract; preserve a conservative
+adapter for integrations that expose arbitrary mutations. A native generated
+service ABI is a separate decision requiring evidence that removing owned-hook
+adaptation improves latency while preserving early pipelines and cancellation.
+
 The first optimization slice indexes immediate reply owners beyond eight calls,
 checking the full question generation before delivery, and copies two-segment
 prepared Returns without first clearing the destination. Small-call lookup,

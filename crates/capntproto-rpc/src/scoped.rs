@@ -59,6 +59,9 @@ struct Inbox {
     admission: Option<Rc<crate::admission::Admission>>,
     joins: Option<wire::coordinator::multiparty::Handle>,
     queue: RefCell<VecDeque<Box<Call>>>,
+    // One pre-reserved release record per registry slot. Endpoint destruction
+    // never allocates or borrows the graph; only the driver consumes records.
+    released: RefCell<VecDeque<usize>>,
     wake: RefCell<Option<Waker>>,
     enqueue_wake: RefCell<Option<Rc<wire::coordinator::EnqueueWake>>>,
     shutdown: Shutdown,
@@ -143,6 +146,10 @@ struct Resolution {
 impl Drop for Endpoint {
     fn drop(&mut self) {
         if let Some(inbox) = self.inbox.upgrade() {
+            let mut released = inbox.released.borrow_mut();
+            debug_assert!(released.len() < released.capacity());
+            released.push_back(self.index);
+            drop(released);
             inbox.notify();
         }
     }
@@ -150,6 +157,7 @@ impl Drop for Endpoint {
 struct Entry<'id> {
     endpoint: Weak<Endpoint>,
     client: Client<'id>,
+    pending: bool,
 }
 
 /// Scoped graph ownership paired with ordinary owned generated clients.
@@ -161,6 +169,7 @@ struct Entry<'id> {
 pub struct ClientHooks<'id> {
     inbox: Rc<Inbox>,
     entries: Vec<Option<Entry<'id>>>,
+    unsettled: usize,
     maximum_clients: usize,
 }
 impl<'id> ClientHooks<'id> {
@@ -179,6 +188,7 @@ impl<'id> ClientHooks<'id> {
                 admission: None,
                 joins: None,
                 queue: RefCell::new(VecDeque::new()),
+                released: RefCell::new(VecDeque::new()),
                 wake: RefCell::new(None),
                 enqueue_wake: RefCell::new(None),
                 shutdown: shutdown::Receiver::new(),
@@ -188,6 +198,7 @@ impl<'id> ClientHooks<'id> {
                 maximum_clients,
             }),
             entries: Vec::new(),
+            unsettled: 0,
             maximum_clients,
         }
     }
@@ -231,7 +242,8 @@ impl<'id> ClientHooks<'id> {
         graph: &mut impl Capabilities<'id>,
         client: &Client<'id>,
     ) -> capnp::Result<capability::Client> {
-        self.export_client_with_metadata(graph, client, |_| EndpointMetadata::default())
+        self.collect(graph);
+        self.export_after_collect(graph, client)
     }
 
     /// Export and publish hosted diagnostics before any resolution waiter can
@@ -308,6 +320,16 @@ impl<'id> ClientHooks<'id> {
                 graph.release(client);
                 return Err(Error::overloaded("scoped client capacity exhausted".into()));
             }
+            // Pending records plus live endpoints can never exceed the slot
+            // count. Reserve before publication so Drop cannot reject a release.
+            let mut released = self.inbox.released.borrow_mut();
+            let additional = index + 1 - released.len();
+            if released.try_reserve(additional).is_err() {
+                graph.release(client);
+                return Err(Error::overloaded(
+                    "scoped release capacity exhausted".into(),
+                ));
+            }
             self.entries.push(None);
         }
         let endpoint = Rc::new(Endpoint {
@@ -339,7 +361,9 @@ impl<'id> ClientHooks<'id> {
         self.entries[index] = Some(Entry {
             endpoint: Rc::downgrade(&endpoint),
             client,
+            pending,
         });
+        self.unsettled += usize::from(pending);
         Ok(capability::Client::new(Box::new(Hook(endpoint, None))))
     }
 
@@ -348,7 +372,33 @@ impl<'id> ClientHooks<'id> {
     /// A retained response/pipeline may still own hooks and deliberately keeps
     /// those entries alive. No fallible release command is enqueued by Drop.
     pub fn collect(&mut self, graph: &mut impl Capabilities<'id>) {
-        self.collect_with_metadata(graph, |_| EndpointMetadata::default());
+        self.synchronize(graph, |_| None, false);
+    }
+
+    /// Release precisely the graph references whose final hosted owner dropped.
+    /// This does not inspect live routes, publish promise readiness, refresh
+    /// metadata, or send protocol messages. The driver's ordinary maintenance
+    /// still owns Finish/Release ordering and backpressure.
+    #[inline(always)]
+    pub fn reclaim_released(&mut self, graph: &mut impl Capabilities<'id>) {
+        // Most synchronization points have no releases. Keep that test at the
+        // call site instead of entering the graph-release loop on every turn.
+        if !self.inbox.released.borrow().is_empty() {
+            self.drain_released(graph);
+        }
+    }
+
+    #[inline(never)]
+    fn drain_released(&mut self, graph: &mut impl Capabilities<'id>) {
+        loop {
+            // Release the queue borrow before touching graph ownership.
+            let index = self.inbox.released.borrow_mut().pop_front();
+            let Some(index) = index else { break };
+            let entry = self.entries[index].take().expect("unreclaimed endpoint");
+            debug_assert_eq!(entry.endpoint.strong_count(), 0);
+            self.unsettled -= usize::from(entry.pending);
+            graph.release(entry.client);
+        }
     }
 
     /// Refresh owned metadata before publishing promise readiness. Call on each
@@ -366,16 +416,32 @@ impl<'id> ClientHooks<'id> {
     fn collect_with_optional_metadata<G: Capabilities<'id>>(
         &mut self,
         graph: &mut G,
-        mut metadata: impl FnMut(&G::Owner) -> Option<EndpointMetadata>,
+        metadata: impl FnMut(&G::Owner) -> Option<EndpointMetadata>,
     ) {
+        self.synchronize(graph, metadata, true);
+    }
+
+    #[inline(always)]
+    fn synchronize<G: Capabilities<'id>>(
+        &mut self,
+        graph: &mut G,
+        mut metadata: impl FnMut(&G::Owner) -> Option<EndpointMetadata>,
+        refresh_settled: bool,
+    ) {
+        self.reclaim_released(graph);
+        if !refresh_settled && self.unsettled == 0 {
+            return;
+        }
         for slot in &mut self.entries {
             let Some(entry) = slot.as_mut() else {
                 continue;
             };
-            // One retained hook covers metadata and resolution publication.
-            // A dead weak owner releases its graph reference immediately.
+            if !refresh_settled && !entry.pending {
+                continue;
+            }
+            // Retain through metadata and resolution publication. Reentrant
+            // notification may drop another endpoint; its release is journaled.
             let Some(endpoint) = entry.endpoint.upgrade() else {
-                graph.release(slot.take().unwrap().client);
                 continue;
             };
             let destination = graph.inspect(&entry.client);
@@ -403,10 +469,11 @@ impl<'id> ClientHooks<'id> {
                     *endpoint.fd.borrow_mut() = metadata.fd;
                 }
             }
-            if !endpoint.settled.get() {
-                Self::settle_endpoint(graph, entry, &endpoint);
+            if entry.pending {
+                Self::settle_endpoint(graph, entry, &endpoint, &mut self.unsettled);
             }
         }
+        self.reclaim_released(graph);
     }
 
     // Metadata on settled imports still refreshes on every collection. Keep
@@ -416,6 +483,7 @@ impl<'id> ClientHooks<'id> {
         graph: &mut G,
         entry: &mut Entry<'id>,
         endpoint: &Endpoint,
+        unsettled: &mut usize,
     ) {
         // Export inspection does not accept a call or mark the promise used.
         // A reflected resolution waits for its original-route loopback.
@@ -440,6 +508,8 @@ impl<'id> ClientHooks<'id> {
             };
             *endpoint.failure.borrow_mut() = result.as_ref().err().cloned();
             endpoint.settled.set(true);
+            entry.pending = false;
+            *unsettled -= 1;
             // Detach observer state before notification can invoke a waker.
             let resolution = endpoint.resolution.borrow_mut().take();
             if let Some(resolution) = resolution {

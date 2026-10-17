@@ -7,6 +7,116 @@ use std::sync::{
 };
 
 type Remote = capability::RemotePromise<any_pointer::Owned>;
+
+#[test]
+fn release_journal_tracks_final_owners_without_growing_on_drop() {
+    clients::with_growing_graph::<usize, u8, _>(0, 64, |graph| {
+        let mut hooks = ClientHooks::new(64, 1);
+        let mut owners = Vec::new();
+        for value in 0..64 {
+            let route = graph.endpoint(value, Location::Local).unwrap();
+            let client = hooks.export_snapshot(graph, &route).unwrap();
+            let alias = hooks.export_snapshot(graph, &route).unwrap();
+            graph.release(route);
+            drop(alias);
+            owners.push(client);
+        }
+        assert!(hooks.inbox.released.borrow().is_empty());
+        let capacity = hooks.inbox.released.borrow().capacity();
+        // No collection between drops: every published slot needs a record.
+        while let Some(owner) = owners.pop() {
+            drop(owner);
+            assert_eq!(hooks.inbox.released.borrow().capacity(), capacity);
+        }
+        assert!(graph.take_retired().is_none());
+        hooks.reclaim_released(graph);
+        for value in (0..64).rev() {
+            assert_eq!(graph.take_retired(), Some(value));
+        }
+        assert!(graph.is_empty());
+        // Reuse every index after consuming its old notification. A later
+        // notification must only retire the new endpoint that owns that slot.
+        for value in 64..128 {
+            let route = graph.endpoint(value, Location::Local).unwrap();
+            owners.push(hooks.export_snapshot(graph, &route).unwrap());
+            graph.release(route);
+        }
+        let last = owners.pop().unwrap();
+        drop(last);
+        hooks.reclaim_released(graph);
+        assert_eq!(graph.take_retired(), Some(127));
+        assert!(graph.take_retired().is_none());
+        for owner in owners {
+            drop(owner);
+        }
+        hooks.reclaim_released(graph);
+        for value in 64..127 {
+            assert_eq!(graph.take_retired(), Some(value));
+        }
+        assert!(graph.is_empty());
+    })
+    .unwrap();
+}
+
+#[test]
+fn release_processing_does_not_publish_promise_resolution() {
+    clients::with_growing_graph::<(), u8, _>(0, 3, |graph| {
+        let route = graph.promise(&mut None).unwrap();
+        let mut hooks = ClientHooks::new(1, 1);
+        let client = hooks.export_client(graph, &route).unwrap();
+        let mut resolved = client.hook.when_resolved();
+        let mut broken = Some(graph.endpoint((), Location::Broken).unwrap());
+        graph
+            .resolve(route.key(), &mut broken, clients::Source::Direct)
+            .unwrap();
+        hooks.reclaim_released(graph);
+        assert!(Pin::new(&mut resolved)
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending());
+        hooks.collect_with_metadata(graph, |_| EndpointMetadata {
+            failure: Some(Error::overloaded(
+                "specific failure before notification".into(),
+            )),
+            ..EndpointMetadata::default()
+        });
+        let failure = ready(&mut resolved).unwrap_err();
+        assert_eq!(failure.kind, capnp::ErrorKind::Overloaded);
+        assert_eq!(failure.extra, "specific failure before notification");
+        assert_eq!(hooks.unsettled, 0);
+        graph.release(route);
+        drop((resolved, client));
+        hooks.reclaim_released(graph);
+        assert_eq!(graph.take_retired(), Some(()));
+        assert!(graph.is_empty());
+    })
+    .unwrap();
+}
+
+#[test]
+fn metadata_callback_can_release_another_endpoint_during_collection() {
+    clients::with_growing_graph::<u32, u8, _>(0, 2, |graph| {
+        let mut hooks = ClientHooks::new(2, 1);
+        let first = graph.endpoint(1, Location::Local).unwrap();
+        let second = graph.endpoint(2, Location::Local).unwrap();
+        let client = hooks.export_snapshot(graph, &first).unwrap();
+        let mut other = Some(hooks.export_snapshot(graph, &second).unwrap());
+        graph.release(first);
+        graph.release(second);
+        hooks.collect_with_metadata(graph, |owner| {
+            assert_eq!(*owner, 1);
+            drop(other.take());
+            EndpointMetadata::default()
+        });
+        assert_eq!(graph.take_retired(), Some(2));
+        assert!(graph.take_retired().is_none());
+        drop(client);
+        hooks.reclaim_released(graph);
+        assert_eq!(graph.take_retired(), Some(1));
+        assert!(graph.is_empty());
+    })
+    .unwrap();
+}
+
 fn request(client: &capability::Client, method: u16) -> Remote {
     client
         .new_call::<any_pointer::Owned, any_pointer::Owned>(47, method, None)

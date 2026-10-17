@@ -93,6 +93,108 @@ and general paths on the same scheduler and frame/output owners. The response
 ownership bridge itself has not been replaced in this change, and the new
 boundaries do not constitute a claim of 5% performance parity.
 
+## Portable ownership and integration review
+
+The follow-up to `ea6ed2d8d974` examines the ownership path itself. Separating
+coordinator modules did not remove the work performed between a socket read and
+the next write. The C++ implementation's `ImportClient` directly owns its import
+identity and descriptor; its destructor removes that import and emits Release.
+`QuestionRef` directly owns response interest and emits Finish before allowing
+question-ID reuse (`vendor/capnproto/c++/src/capnp/rpc.c++`). The portable engine
+correctly keeps those protocol obligations in branded, generational tables,
+but its hosted adapter has additional ownership and synchronization boundaries.
+
+The frozen `ea6ed2d8d974` local whole-process pipeline profile attributes
+2,463,558 of 75,637,856 client instructions (3.26%) directly to `collect_hooks`.
+Other synchronization is inlined into callers, and these totals include setup
+and warmup. This is a useful target, but removing that one function's self cost
+cannot by itself explain the much larger latency gap. The review therefore
+also covers execution ownership and integration contracts rather than assuming
+that reclamation alone will reach parity.
+
+| Boundary | Current cost or constraint | Architectural direction |
+| --- | --- | --- |
+| Hosted endpoint to graph route | `ClientHooks` owns a graph reference while generated hooks own an `Rc<Endpoint>`. Previously every collection discovered releases by upgrading every weak endpoint. Export also triggered those collections. | Record final-owner release explicitly; consume records without inspecting unrelated live routes. Keep protocol retirement in the engine. |
+| Graph route to hosted readiness | Pending hooks must follow resolution and reflected ordering barriers, then retain the settled endpoint before notifying observers. | Keep settlement separate from reclamation. A future graph change feed must identify dependent promises and barrier openings, including indirect aliases. |
+| Import owner to hosted metadata | `Output::metadata_if_present()` is a polling callback. A settled import can receive its first descriptor through a later alias. Local hooks can also change their diagnostics. | Add an explicit metadata revision/subscription contract before eliminating polling. Caching an absent descriptor or treating settlement as metadata immutability is incorrect. |
+| Hosted call to portable invocation | `Call`, `Calls::Entry`, `WireCall`, optional local execution, response state and pipeline observers carry different interest and cancellation lifetimes. | Introduce one execution owner with separate response and pipeline interests before removing adapters. Keep early pipelines, tail adoption, membranes and protected execution in the design. |
+| Readiness to execution | `Calls` and `Worker` use rotating slot scans; a general wake invalidates multiple idle certificates. High-water table capacity can outlive a burst. | Use generation-checked ready tokens for individual execution owners, with an allocation-free bounded overflow/full-rescan path and explicit fairness. Merely adding a live count does not establish a latency gain. |
+| Network policy to coordinator | `Control` receives `&mut Coordinator`; `driver`, `hooks` and `foreign` are public. Arbitrary mutations have no complete effect record. | Give optimized controls a restricted turn context whose operations record readiness, metadata and lifecycle effects. Legacy arbitrary mutation must retain conservative invalidation. |
+| Parameters/results to physical output | Plain payloads already use admitted shared storage and prepared output. Capability-bearing payloads still build owned hook tables. | Preserve admitted storage and exact receipts through execution; measure capability-table construction separately from byte copying. Do not add another generic message wrapper. |
+
+The first implemented step is an endpoint release journal in the hosted bridge.
+Each registry slot reserves room for one release record before an endpoint is
+published. The last `Endpoint` owner records its private slot and then notifies
+the driver, after releasing the journal borrow. Drop does not allocate, release
+graph authority, invoke application code under a table borrow, or send a frame.
+A slot cannot be reused until its record has been consumed. The private slot is
+only a retirement notification; authenticated lookup still checks the inbox and
+exact `Rc` identity, and graph authority remains branded and generational.
+
+`ClientHooks::reclaim_released()` consumes only those records. `collect()` adds
+promise settlement and skips the route walk when no unsettled endpoint exists.
+`collect_with_metadata()` and wire collection still refresh live metadata before
+publishing readiness, including already-settled imports. The unsettled count and
+entry state are committed before resolution callbacks. Collection also consumes
+releases caused by metadata/resolution callbacks without holding the journal
+borrow across graph operations. Normal maintenance still sends Finish/Release
+under the same ordering and output-backpressure rules. Storage grows with the
+registry's admitted high-water slot count, not its configured maximum.
+
+This change is additive: generated clients, server traits, schemas, `Control`
+implementations, and transport implementations retain their APIs. It does not
+make all collection constant-time: metadata refresh still scans live entries,
+pending settlement scans the table when needed, and export identity lookup and
+free-slot selection remain linear. Those costs should not be confused with the
+now-explicit final-owner release path.
+
+### Decisions about breaking changes
+
+The useful breaking change is at the **integration contract**, if the project
+chooses to make precise event reporting mandatory. Replacing whole-coordinator
+mutation in `Control` with a restricted context would break custom controls and
+code accessing the public fields. Replacing polling metadata with revisioned
+ownership would break custom `Output`/import adapters. These changes enable the
+driver to know exactly which routes and lanes need work. They can also be
+introduced as opt-in interfaces with conservative adapters for existing code;
+breaking every integration is therefore not a prerequisite for a faster default
+driver. Do not change the current signatures without implementing and measuring
+the event-driven consumer they are meant to enable.
+
+Removing `ClientHook`/`ParamsHook`/`ResultsHook` from the native execution path is
+a larger, separate option. An opt-in generated portable service ABI could borrow
+admitted parameters and publish results through a single execution owner, while
+an adapter supports existing owned services. Making it the only ABI would break
+generated server code, custom hooks, membranes and result-context integrations.
+The lifetime mismatch is fundamental to the current interfaces: an owned
+generated client may outlive its connection, but a branded graph `Client` cannot
+escape its generative scope. The private endpoint registry bridges those two
+contracts. Removing it requires a different lifetime/ownership interface or a
+different hosted state owner; moving the same conversions into another module
+does not remove their cost. Borrowed native dispatch is therefore a meaningful
+API experiment, whereas exposing raw graph IDs to existing owned hooks is not
+an acceptable shortcut.
+The earlier response-sharing experiment saved allocations without establishing
+a general latency gain, so allocation counts alone do not justify that break.
+It needs a complete cancellation, early-pipeline, tail-transfer and resource
+ownership model, plus matched end-to-end measurements.
+
+No evidence calls for changing the Cap'n Proto wire format, schema semantics,
+the generative authority model, or the allocation-free engine profile. Copying
+C++'s direct connection access into arbitrary Rust destructors would undermine
+the scoped borrowing and bounded-output design. Explicit lifecycle records give
+the hosted driver comparable information while retaining those contracts.
+
+The existing fixtures also limit conclusions. Pipelined-read deliberately sends
+the child call before awaiting the parent and retains parent response interest;
+dependent-read retains the parent response while awaiting the child. Callback
+checks bidirectional execution, and fanout-32 stresses concurrent calls, but
+none is a large live-capability registry scaling test. Follow-up qualification
+should add separate diagnostics for many settled hooks, sparse pending aliases,
+late descriptors and a burst followed by one call. Keep the existing 12 remote
+and four loopback acceptance cells unchanged. Use phase timing and operation
+counts to attribute improvements, then qualify on uninstrumented paired runs.
+
 ## Route ownership
 
 `transport::Identity` owns an immutable, construction-checked Ed25519 pair.

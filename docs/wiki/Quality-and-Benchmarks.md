@@ -1,5 +1,84 @@
 # Quality checks and benchmark reports
 
+## Portable endpoint lifecycle October 17, 2026
+
+The [ownership and integration review](Architecture.md#portable-ownership-and-integration-review)
+continues from `ea6ed2d8d974`. C++ imports and questions directly own their
+protocol lifetime; the hosted portable bridge previously discovered final-hook
+release by scanning weak endpoints during synchronization and export. The new
+release journal reserves capacity before publishing each registry slot and
+records its final-owner drop without allocating. Reclamation, promise settlement
+and metadata refresh are separate operations. Settled imports still receive
+metadata refreshes, including late descriptors, and normal engine maintenance
+still owns wire retirement and backpressure.
+
+This is an additive API change. The review identifies whole-coordinator mutation
+and polling metadata as obstacles to precise change-driven scheduling. Replacing
+those integration contracts could be breaking, or could use conservative
+compatibility adapters. A generated portable service ABI is a separate option
+requiring evidence and a complete cancellation/pipeline ownership model; this
+change does not remove the existing generated hook API.
+
+The first journal implementation passed 302 RPC tests, 92 integration tests,
+72 mixed-peer workflows, three Miri tests and Clippy. Its whole-process pipeline
+instructions nevertheless rose 0.936% client and 0.837% server. Calls into an
+empty journal drain accounted for 749,708 and 511,038 instructions respectively.
+All evidence, including the exact source and all timing samples, is retained in
+`target/endpoint-lifecycle-initial-20261017/` (699 files plus checksums).
+Its executable SHA-256 is
+`8217da849124a575f6443e01be2e4a8690313ace14a8f33bab3671c6ec050b40`.
+The final implementation puts the empty check at the call site and enters the
+graph-release loop only when a release record exists.
+
+The final source passes 302 RPC unit tests, 92 integration tests, 72 mixed-peer
+workflow cases, three lifecycle tests under Miri, RPC all-target Clippy,
+formatting and documentation checks. The tests cover a full 64-slot release
+journal without growth during drops, exact last-owner retirement and slot reuse,
+metadata callbacks dropping another endpoint, and release processing that does
+not prematurely publish a promise's resolution or lose its specific error.
+
+Whole-process instruction profiles use the same 100 warmup and 1,000 measured
+operations as the frozen local `ea6ed2d8d974` executable:
+
+| Workflow / peer | Previous architecture | Explicit lifecycle | Change |
+| --- | ---: | ---: | ---: |
+| Pipeline client | 75,637,856 | 75,733,953 | +0.127% |
+| Pipeline server | 65,084,816 | 65,177,705 | +0.143% |
+| Empty unary client | 19,059,489 | 19,058,298 | -0.006% |
+| Empty unary server | 17,298,769 | 17,313,580 | +0.086% |
+
+The remaining small instruction increase is retained as a cost of the explicit
+lifecycle boundary; this is not a demonstrated throughput optimization. Eighty
+instrumented paired runs cover pipeline, dependent-read, callback and empty
+unary, with five rotating repetitions for portable baseline/current, legacy
+and C++. Pipeline processing CPU p50 is 12,173/8,692.5 ns client/server versus
+12,208/8,503 ns baseline. Several workflows and references have slower timing
+modes; all samples and per-repetition results are retained.
+
+Forty separate uninstrumented pipeline runs retain all 40,000 latency samples.
+Pooled p50 is 43,869.5 ns current versus 43,784.5 ns baseline (+0.194%); p95 is
+107,739 versus 106,697 ns. The matched legacy/C++ p50 values are 37,475.5 and
+31,246 ns, so current portable is 1.404 times the faster reference and misses
+the 5% target in this diagnostic. This is not the dedicated 16-cell campaign.
+Eighteen decoded syscall journals show identical baseline/current write groups,
+frame kinds, lengths and decoded fields for all three traced workflows in both
+directions. Pipeline steady-state grouping still matches C++.
+
+The final executable SHA-256 is
+`6508cfcb17d579a9fb26467766917580aed8c779283d8990bef4df952c241567`.
+Exact source, scripts, logs, raw profiles and paired samples are preserved in
+`target/portable-endpoint-lifecycle-20261017/` with verified checksums. The
+architecture review documents remaining scans and the additional memory for
+release records; it does not claim that the ownership bridge is removed.
+
+The preceding full [CI run 38985835133](https://github.com/DericHuynh/capntproto/actions/runs/38985835133)
+completed with tests and other executed verification jobs passing; coverage
+reported 53 floor misses, including three aggregate coordinator metrics and the
+legacy root-file branch comparison after extraction. These are reported metric
+misses, not 53 newly introduced defects. No coverage baseline or tolerance is
+changed here. Full-tree coverage and all sixteen faster-reference latency
+targets remain open requirements.
+
 ## Portable architecture reset October 17, 2026
 
 The active work has shifted from local tuning to the
