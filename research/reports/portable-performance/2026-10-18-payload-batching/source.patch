@@ -1,0 +1,126 @@
+diff --git a/crates/capntproto-rpc-wire/src/calls.rs b/crates/capntproto-rpc-wire/src/calls.rs
+index 70bc17a..fe338ee 100644
+--- a/crates/capntproto-rpc-wire/src/calls.rs
++++ b/crates/capntproto-rpc-wire/src/calls.rs
+@@ -366,6 +366,21 @@ pub(crate) fn dynamic_call_with_handoff(
+     fill: impl FnOnce(
+         capnp::field_api::FixedField<'_, capnp::field_api::Generic<capnp::any_pointer::Owned>>,
+     ) -> capnp::Result<()>,
++) -> capnp::Result<()> {
++    dynamic_call_payload(output, id, target, method, allow_handoff, |payload| {
++        fill(payload.into_field(Payload::CONTENT))
++    })
++}
++
++/// Construct the header once and let the publisher fill content and descriptors
++/// through the same payload handle. No mutable envelope is reopened after copy.
++pub(crate) fn dynamic_call_payload(
++    output: &mut FixedBuilder<'_>,
++    id: QuestionId,
++    target: Target<'_>,
++    method: DynamicCall,
++    allow_handoff: bool,
++    fill: impl FnOnce(FixedStruct<'_, Payload>) -> capnp::Result<()>,
+ ) -> capnp::Result<()> {
+     let root = output.try_init_root::<Message>()?;
+     let mut call = root.into_field(Message::CALL).init()?;
+@@ -379,11 +394,7 @@ pub(crate) fn dynamic_call_with_handoff(
+     call.scalar(Call::ALLOW_THIRD_PARTY_TAIL_CALL)
+         .set(allow_handoff);
+     write_target(call.field(Call::TARGET).init()?, target)?;
+-    fill(
+-        call.into_field(Call::PARAMS)
+-            .init()?
+-            .into_field(Payload::CONTENT),
+-    )
++    fill(call.into_field(Call::PARAMS).init()?)
+ }
+ fn encode_call<P: Schema>(
+     output: &mut FixedBuilder<'_>,
+diff --git a/crates/capntproto-rpc-wire/src/owned/connection/invocation/immediate.rs b/crates/capntproto-rpc-wire/src/owned/connection/invocation/immediate.rs
+index 4f5cef7..dd43f1c 100644
+--- a/crates/capntproto-rpc-wire/src/owned/connection/invocation/immediate.rs
++++ b/crates/capntproto-rpc-wire/src/owned/connection/invocation/immediate.rs
+@@ -115,26 +115,23 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+             )
+             .ok_or(Error::Input(super::super::super::Error::Capacity))?;
+         let frame = Frame::build(messages, minimum, options, |builder| {
+-            calls::dynamic_call_with_handoff(
++            calls::dynamic_call_payload(
+                 builder,
+                 reservation.id(),
+                 calls::Target::Imported(remote),
+                 method,
+                 self.allow_answer_handoff,
+-                |field| {
+-                    field.copy_with_capabilities(
++                |mut payload| {
++                    payload.field(WirePayload::CONTENT).copy_with_capabilities(
+                         params,
+                         capnp::wire_capability::IndexMap::identity(1),
+-                    )
++                    )?;
++                    let mut descriptors = payload.field(WirePayload::CAP_TABLE).init(1)?;
++                    let mut descriptor = descriptors.get_mut(0).unwrap();
++                    descriptor.scalar(CapDescriptor::ATTACHED_FD).set(attached);
++                    self.descriptors.describe(owner, id, promise, descriptor)
+                 },
+-            )?;
+-            let mut root = builder.try_get_root::<Message>()?;
+-            let mut call = root.field(Message::CALL).edit()?;
+-            let mut payload = call.field(WireCall::PARAMS).edit()?;
+-            let mut descriptors = payload.field(WirePayload::CAP_TABLE).init(1)?;
+-            let mut descriptor = descriptors.get_mut(0).unwrap();
+-            descriptor.scalar(CapDescriptor::ATTACHED_FD).set(attached);
+-            self.descriptors.describe(owner, id, promise, descriptor)
++            )
+         })
+         .map_err(Error::Input)?;
+         // Export staging needs the graph, so reacquire its exclusive dispatch
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator/transport/vat.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator/transport/vat.rs
+index 5adf53d..9bee271 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator/transport/vat.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator/transport/vat.rs
+@@ -542,7 +542,10 @@ pub struct Writer<V> {
+     stream_pending: usize,
+     buffer_batch: bool,
+ }
+-const MAXIMUM_RECEIPTS: usize = 32;
++// Leave room for retirement/control frames alongside an application burst.
++// This count bounds retained frame/receipt overhead independently of the
++// message pool's byte budget and application admission credits.
++const MAXIMUM_RECEIPTS: usize = 64;
+ impl<V> Drop for Writer<V> {
+     fn drop(&mut self) {
+         if !self.closing.replace(true) {
+diff --git a/docs/wiki/Architecture.md b/docs/wiki/Architecture.md
+index fa77c64..37f7bb2 100644
+--- a/docs/wiki/Architecture.md
++++ b/docs/wiki/Architecture.md
+@@ -2203,8 +2203,9 @@ has not yet migrated to these ledgers and wire bindings.
+    An owning writer can explicitly permit bounded queue admission during a pending
+    flush through `WriteResources::can_write_while_flushing`. The hosted adapter
+    retains accepted bytes, attachments and admission credit until physical
+-   completion, and admits at most 32 outstanding frames. This lets ready protocol
+-   work extend the transport batch without waiting for a previous frame's write.
++   completion, and admits at most 64 outstanding frames, allowing control traffic
++   alongside application bursts within the existing byte/credit budgets. This lets
++   ready protocol work extend the transport batch without waiting for a previous frame's write.
+    Flush and idle still certify completion of every accepted frame; queue
+    admission alone cannot complete shutdown.
+    Calls and pipeline work use their own transactional capacity checks instead
+diff --git a/verification/kani.json b/verification/kani.json
+index abc9921..7b17f1d 100644
+--- a/verification/kani.json
++++ b/verification/kani.json
+@@ -207,8 +207,8 @@
+     {
+       "name": "reuse-before-finish-acceptance",
+       "source": "src/questions.rs",
+-      "from": "self.references == 0 && self.finish.is_none() && !self.lifecycle.is_awaiting_return()",
+-      "to": "self.references == 0 && !self.lifecycle.is_awaiting_return()",
++      "from": "self.references == 0\n            && self.owner.is_none()\n            && self.finish.is_none()\n            && !self.lifecycle.is_awaiting_return()",
++      "to": "self.references == 0\n            && self.owner.is_none()\n            && !self.lifecycle.is_awaiting_return()",
+       "harness": "questions::proofs::question_cleanup_requires_return_and_accepted_finish",
+       "expected_check": "pending Finish retains question ID"
+     },

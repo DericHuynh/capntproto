@@ -2203,8 +2203,9 @@ has not yet migrated to these ledgers and wire bindings.
    An owning writer can explicitly permit bounded queue admission during a pending
    flush through `WriteResources::can_write_while_flushing`. The hosted adapter
    retains accepted bytes, attachments and admission credit until physical
-   completion, and admits at most 32 outstanding frames. This lets ready protocol
-   work extend the transport batch without waiting for a previous frame's write.
+   completion, and admits at most 64 outstanding frames, allowing control traffic
+   alongside application bursts within the existing byte/credit budgets. This lets
+   ready protocol work extend the transport batch without waiting for a previous frame's write.
    Flush and idle still certify completion of every accepted frame; queue
    admission alone cannot complete shutdown.
    Calls and pipeline work use their own transactional capacity checks instead

@@ -207,8 +207,8 @@
     {
       "name": "reuse-before-finish-acceptance",
       "source": "src/questions.rs",
-      "from": "self.references == 0 && self.finish.is_none() && !self.lifecycle.is_awaiting_return()",
-      "to": "self.references == 0 && !self.lifecycle.is_awaiting_return()",
+      "from": "self.references == 0\n            && self.owner.is_none()\n            && self.finish.is_none()\n            && !self.lifecycle.is_awaiting_return()",
+      "to": "self.references == 0\n            && self.owner.is_none()\n            && !self.lifecycle.is_awaiting_return()",
       "harness": "questions::proofs::question_cleanup_requires_return_and_accepted_finish",
       "expected_check": "pending Finish retains question ID"
     },

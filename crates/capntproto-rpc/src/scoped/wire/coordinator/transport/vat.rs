@@ -542,7 +542,10 @@ pub struct Writer<V> {
     stream_pending: usize,
     buffer_batch: bool,
 }
-const MAXIMUM_RECEIPTS: usize = 32;
+// Leave room for retirement/control frames alongside an application burst.
+// This count bounds retained frame/receipt overhead independently of the
+// message pool's byte budget and application admission credits.
+const MAXIMUM_RECEIPTS: usize = 64;
 impl<V> Drop for Writer<V> {
     fn drop(&mut self) {
         if !self.closing.replace(true) {

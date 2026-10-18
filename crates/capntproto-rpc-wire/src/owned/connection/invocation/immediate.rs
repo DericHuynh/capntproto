@@ -115,26 +115,23 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             )
             .ok_or(Error::Input(super::super::super::Error::Capacity))?;
         let frame = Frame::build(messages, minimum, options, |builder| {
-            calls::dynamic_call_with_handoff(
+            calls::dynamic_call_payload(
                 builder,
                 reservation.id(),
                 calls::Target::Imported(remote),
                 method,
                 self.allow_answer_handoff,
-                |field| {
-                    field.copy_with_capabilities(
+                |mut payload| {
+                    payload.field(WirePayload::CONTENT).copy_with_capabilities(
                         params,
                         capnp::wire_capability::IndexMap::identity(1),
-                    )
+                    )?;
+                    let mut descriptors = payload.field(WirePayload::CAP_TABLE).init(1)?;
+                    let mut descriptor = descriptors.get_mut(0).unwrap();
+                    descriptor.scalar(CapDescriptor::ATTACHED_FD).set(attached);
+                    self.descriptors.describe(owner, id, promise, descriptor)
                 },
-            )?;
-            let mut root = builder.try_get_root::<Message>()?;
-            let mut call = root.field(Message::CALL).edit()?;
-            let mut payload = call.field(WireCall::PARAMS).edit()?;
-            let mut descriptors = payload.field(WirePayload::CAP_TABLE).init(1)?;
-            let mut descriptor = descriptors.get_mut(0).unwrap();
-            descriptor.scalar(CapDescriptor::ATTACHED_FD).set(attached);
-            self.descriptors.describe(owner, id, promise, descriptor)
+            )
         })
         .map_err(Error::Input)?;
         // Export staging needs the graph, so reacquire its exclusive dispatch

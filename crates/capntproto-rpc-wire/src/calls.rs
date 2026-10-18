@@ -367,6 +367,21 @@ pub(crate) fn dynamic_call_with_handoff(
         capnp::field_api::FixedField<'_, capnp::field_api::Generic<capnp::any_pointer::Owned>>,
     ) -> capnp::Result<()>,
 ) -> capnp::Result<()> {
+    dynamic_call_payload(output, id, target, method, allow_handoff, |payload| {
+        fill(payload.into_field(Payload::CONTENT))
+    })
+}
+
+/// Construct the header once and let the publisher fill content and descriptors
+/// through the same payload handle. No mutable envelope is reopened after copy.
+pub(crate) fn dynamic_call_payload(
+    output: &mut FixedBuilder<'_>,
+    id: QuestionId,
+    target: Target<'_>,
+    method: DynamicCall,
+    allow_handoff: bool,
+    fill: impl FnOnce(FixedStruct<'_, Payload>) -> capnp::Result<()>,
+) -> capnp::Result<()> {
     let root = output.try_init_root::<Message>()?;
     let mut call = root.into_field(Message::CALL).init()?;
     call.scalar(Call::QUESTION_ID).set(id.to_wire());
@@ -379,11 +394,7 @@ pub(crate) fn dynamic_call_with_handoff(
     call.scalar(Call::ALLOW_THIRD_PARTY_TAIL_CALL)
         .set(allow_handoff);
     write_target(call.field(Call::TARGET).init()?, target)?;
-    fill(
-        call.into_field(Call::PARAMS)
-            .init()?
-            .into_field(Payload::CONTENT),
-    )
+    fill(call.into_field(Call::PARAMS).init()?)
 }
 fn encode_call<P: Schema>(
     output: &mut FixedBuilder<'_>,
