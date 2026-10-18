@@ -422,9 +422,9 @@ the two `unsafe_op_in_unsafe_fn` diagnostics in `data.rs`. The 32-bit Miri lane
 includes the selected-reader and immediate-promise ownership regressions. These
 changes do not reclassify inherited unsafe documentation debt as verified code.
 
-The memory qualification inventory now includes 31 ownership tests and 14 wire,
-orphan, generated-API and schema tests. All 45 run with aligned and unaligned
-storage under both Stacked Borrows and Tree Borrows: 180 interpreted executions,
+The memory qualification inventory now includes 33 ownership tests and 14 wire,
+orphan, generated-API and schema tests. The workflow runs all 47 with aligned and unaligned
+storage under both Stacked Borrows and Tree Borrows: 188 interpreted executions,
 plus a deliberate freed-pointer control that must fail. The pinned inventory
-was updated for the six added selected-reader regressions; no test was filtered
+was updated for the selected-reader regressions, including the two owning-cache tests; no test was filtered
 out to accommodate the count change.

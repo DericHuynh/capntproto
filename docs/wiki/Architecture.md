@@ -1686,10 +1686,15 @@ its sender-owned replacement grant while retaining any already admitted call
 lease. An Unimplemented response to a required RPC message is terminal. The wire
 codecs also construct bounded Abort and capability-free Unimplemented controls.
 
-`Messages::write_owned` transfers a writable reservation into a caller-pinned
-receive or build task. The pool stays available while that task is Pending.
-Receive writes directly into its final buffer; async generated replies are built
-directly after the framing header. Completion recovers/seals the reservation.
+`Messages::receive` reserves receive-only storage without clearing reused bytes.
+Its `Receiving` owner exposes only the prefix committed by the read adapter;
+the decoder cannot inspect previous contents. A buffer-independent `FrameCursor`
+shares framing validation with the borrowed `FrameReceiver`. The wire task seals
+only complete frames, and discards EOF, errors and explicit cancellation.
+`Messages::write_owned` transfers a cleared builder reservation into a caller-pinned
+build task. Both paths leave the pool available while Pending. Receive writes
+directly into its final buffer; async generated replies are built directly after
+the framing header. Existing `reserve` and `reserve_exact` still clear storage.
 Dropping an incomplete IO task is terminal connection teardown, not a new frame
 boundary. The owning conversation fixture combines bootstrap, graph dispatch,
 generated async calls, typed returns, cancellation and cleanup with partial,
@@ -2164,8 +2169,9 @@ has not yet migrated to these ledgers and wire bindings.
    completion. Validated data-only parameters and replies share input buffers;
    fixed borrowed storage and capability-bearing hosted payloads keep the copy
    path. Shared owners pin their charged buffer against reuse, including after
-   the driver scope ends. Exact receive/control reservations clear only their
-   exposed prefix, and sealing cannot reveal the unused capacity. These changes
+   the driver scope ends. Receive reservations publish only the prefix committed
+   by IO; control builders clear their exposed prefix. Neither can seal unused
+   capacity. These changes
    do not yet establish benchmark acceptance.
    The opt-in `portable::RpcSystem` now owns the connection tasks and automatic
    VatNetwork dialing/acceptance. Each task owns growing storage and runs the
@@ -2206,8 +2212,8 @@ has not yet migrated to these ledgers and wire bindings.
    unregisters provisions and cancels unmatched Accept waiters. Membrane batch
    authorization remains mandatory; a returned direct capability survives relay
    disconnection. Input adapters can report validated frame sizes before pool
-   reservation, avoiding maximum-sized clears on small messages while retaining
-   size checks and zeroed storage.
+   reservation, bounding receive capacity before IO. Receive-only reservations
+   avoid redundant clears while retaining framing, size and ownership checks.
    Automatic introductions now publish Call/Return/Resolve descriptors with
    exact export grants. Forwarding vines retain their Provide and order acceptance
    markers after older calls have been dispatched. Incoming answer adoption

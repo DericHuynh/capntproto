@@ -56,7 +56,10 @@ impl Options {
             message_bytes,
             retained_bytes,
             cached_message_words: (retained_bytes.get() / 8).min(16 * 1024),
-            cached_message_segments: entries.get().min(16),
+            // Match the two-party builder cache's segment bound. A separate
+            // word limit still caps retained bytes; the former 16-segment cap
+            // discarded small buffers while most of that byte budget was free.
+            cached_message_segments: entries.get().min(64),
             output_queue: entries,
             poll_budget: NonZeroUsize::new(128).unwrap(),
             reader: Default::default(),

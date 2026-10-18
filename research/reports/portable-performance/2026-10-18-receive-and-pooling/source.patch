@@ -1,0 +1,1279 @@
+diff --git a/.github/workflows/verification-extended.yml b/.github/workflows/verification-extended.yml
+index 5d7d367..c714896 100644
+--- a/.github/workflows/verification-extended.yml
++++ b/.github/workflows/verification-extended.yml
+@@ -96,7 +96,7 @@ jobs:
+           {
+             # Markdown backticks in the format string are literal.
+             # shellcheck disable=SC2016
+-            printf '# Extended Miri\n\nCommit: `%s`\n\nResult: **%s**. The ordinary 45-test memory suite covers aligned/unaligned readers and both aliasing models. The extension runs six wire tests with seeds 2–5 on x86-64 and big-endian s390x: 48 additional interpreted executions. Only recorded executions are qualified; this is not native s390x platform support.\n\n[Source-bound results and log paths](checked.json). A failed run does not retain a prior checked.json.\n' "$GITHUB_SHA" "$RESULT"
++            printf '# Extended Miri\n\nCommit: `%s`\n\nResult: **%s**. The ordinary 47-test memory suite covers aligned/unaligned readers and both aliasing models. The extension runs six wire tests with seeds 2–5 on x86-64 and big-endian s390x: 48 additional interpreted executions. Only recorded executions are qualified; this is not native s390x platform support.\n\n[Source-bound results and log paths](checked.json). A failed run does not retain a prior checked.json.\n' "$GITHUB_SHA" "$RESULT"
+             printf '\nAllocation-free readers on 32-bit Miri: **%s**. Checks cover frame-length overflow, caller-indexed segment lookup and unchanged input/metadata after rejected frames. [Execution log](reader-32.log); JUnit reports are included in the artifact.\n' "$PORTABLE"
+             printf '\nAllocation-free generated views, builders, framing and RPC tables: **%s**. Thirty-eight interpreted tests cover editing and reuse, defaults, unions, malformed pointers, invalid UTF-8, caller-owned diagnostics, bounded peer/local-ID tables, handoff revocation/draining, resumable framing and fallible fixed-buffer publication. Framing, lists, recursive copying, struct upgrades, wire reference counts and bounded import/export ownership and leased message sends and bound RPC publication, generated call/return/cancellation conversations, wire capability indices, typed pipeline paths, streaming acknowledgements and suspended readers/results during nested output, promise resolution, loopback embargo ordering and reflected local/answer descriptors in calls, returns and promise resolution, plus same-connection tail adoption, owning async task conversations and terminal IO faults also run on 32-bit Miri. [Native-width log](generated-views.log); [32-bit log](bounded-32.log); fixture JUnit reports are included in the artifact.\n' "$VIEWS"
+             printf '\nShared RPC ownership: **%s**. Heap-owned and caller-owned replies share the same transitions. [32-bit ownership and growing storage log](shared-replies-32.log), [queue and flow reentrancy log](flow-wakeups.log), [selected reader provenance, bounds and promise ownership](selected-readers-32.log), [session wakeups](session-wakeups-32.log), [growing graph and ledger RPC cleanup](growing-graph-32.log), [growing provider protocol replay](growing-ledger-replay-32.log); JUnit reports are included in the artifact.\n' "$REPLIES"
+diff --git a/crates/capntproto-core/src/serialize.rs b/crates/capntproto-core/src/serialize.rs
+index f584f11..1b6ec7d 100644
+--- a/crates/capntproto-core/src/serialize.rs
++++ b/crates/capntproto-core/src/serialize.rs
+@@ -26,7 +26,7 @@
+ 
+ mod indexed_segments;
+ mod receiver;
+-pub use receiver::{FrameReceiver, ReadWindow, SegmentTableHeader};
++pub use receiver::{FrameCursor, FrameReceiver, ReadWindow, SegmentTableHeader};
+ pub(crate) mod no_alloc_buffer_segments;
+ pub use indexed_segments::{IndexedSliceSegments, SegmentOffset};
+ pub use no_alloc_buffer_segments::{
+diff --git a/crates/capntproto-core/src/serialize/receiver.rs b/crates/capntproto-core/src/serialize/receiver.rs
+index 36a2a8d..b1e2b11 100644
+--- a/crates/capntproto-core/src/serialize/receiver.rs
++++ b/crates/capntproto-core/src/serialize/receiver.rs
+@@ -51,33 +51,12 @@ enum Phase {
+     Failed(ErrorKind),
+ }
+ 
+-/// Resumable, allocation-free receiver for one standard stream frame at a time.
+-///
+-/// Supply aligned storage including space for the segment table. Each input
+-/// window is exactly the remaining header, table or body; no read can prefetch
+-/// the next message. Drop an uncommitted window when IO is pending. Commit every
+-/// completed read, including zero for EOF, before polling again. Dropping a
+-/// window does not change progress. IO errors may be recorded with [`Self::abort`].
+-///
+-/// After completion, [`Self::message`] lends a reader and [`Self::next_message`]
+-/// reuses storage once every view is gone. Errors are terminal for this receiver;
+-/// constructing another receiver is appropriate only at a known frame boundary.
+-/// No method allocates, even when the core's `alloc` feature is enabled.
+-///
+-/// A live reader prevents reusing its buffer:
+-/// ```compile_fail,E0502
+-/// use capnp::{serialize::FrameReceiver, Word};
+-/// let mut words = [capnp::word(0,0,0,0,0,0,0,0); 2];
+-/// let mut receiver = FrameReceiver::new(Word::words_to_bytes_mut(&mut words), Default::default()).unwrap();
+-/// let mut input = receiver.input().unwrap().unwrap();
+-/// input.bytes().fill(0);
+-/// input.commit(8).unwrap();
+-/// let message = receiver.message().unwrap().unwrap();
+-/// receiver.next_message().unwrap();
+-/// let _ = message.get_root::<capnp::any_pointer::Reader<'_>>();
+-/// ```
+-pub struct FrameReceiver<'buffer> {
+-    buffer: &'buffer mut [u8],
++/// Framing progress independent of buffer ownership. Supply only the prefix
++/// initialized by committed IO to `advance`; the parser never reads beyond it.
++/// This permits receive pools to retain initialized backing without clearing it.
++/// The capacity and alignment must describe the storage used for the whole frame.
++pub struct FrameCursor {
++    capacity: usize,
+     options: message::ReaderOptions,
+     phase: Phase,
+     position: usize,
+@@ -85,17 +64,13 @@ pub struct FrameReceiver<'buffer> {
+     count: usize,
+     table_bytes: usize,
+ }
+-
+-impl<'buffer> FrameReceiver<'buffer> {
+-    pub fn new(buffer: &'buffer mut [u8], options: message::ReaderOptions) -> Result<Self> {
+-        if buffer.len() < 8 {
++impl FrameCursor {
++    pub fn new(capacity: usize, options: message::ReaderOptions) -> Result<Self> {
++        if capacity < 8 {
+             return Err(Error::from_kind(ErrorKind::BufferNotLargeEnough));
+         }
+-        if !cfg!(feature = "unaligned") && !(buffer.as_ptr() as usize).is_multiple_of(8) {
+-            return Err(Error::from_kind(ErrorKind::UnalignedSegment));
+-        }
+         Ok(Self {
+-            buffer,
++            capacity,
+             options,
+             phase: Phase::Header,
+             position: 0,
+@@ -104,76 +79,39 @@ impl<'buffer> FrameReceiver<'buffer> {
+             table_bytes: 0,
+         })
+     }
+-
+-    /// Bytes committed for the current frame, including its segment table.
+     pub const fn received_bytes(&self) -> usize {
+         self.position
+     }
+-
+-    /// The next bounded IO destination. `None` means complete frame or clean EOF.
+-    pub fn input(&mut self) -> Result<Option<ReadWindow<'_, 'buffer>>> {
+-        match self.phase {
+-            Phase::Complete | Phase::End => Ok(None),
+-            Phase::Failed(kind) => Err(Error::from_kind(kind)),
+-            _ => Ok(Some(ReadWindow { receiver: self })),
+-        }
+-    }
+-
+-    /// Preserve the first transport/framing failure; a failed receiver cannot resume.
+-    pub fn abort(&mut self, kind: ErrorKind) {
+-        if !matches!(self.phase, Phase::Failed(_)) {
+-            self.phase = Phase::Failed(kind);
++    /// Check the buffer's start address using the core crate's alignment mode.
++    /// An empty received prefix is sufficient: no byte is read by this check.
++    pub fn check_alignment(&self, start: &[u8]) -> Result<()> {
++        if !cfg!(feature = "unaligned") && !(start.as_ptr() as usize).is_multiple_of(8) {
++            return Err(Error::from_kind(ErrorKind::UnalignedSegment));
+         }
++        Ok(())
+     }
+-
+-    /// Return the current frame, or `None` at clean EOF. Incomplete data is never exposed.
+-    pub fn message(&self) -> Result<Option<message::Reader<NoAllocSliceSegments<'_>>>> {
++    /// Absolute end of the next bounded read, or None at completion/clean EOF.
++    pub fn next_read_end(&self) -> Result<Option<usize>> {
+         match self.phase {
+-            Phase::Complete => Ok(Some(message::Reader::new(
+-                NoAllocSliceSegments::from_segment_table_info(
+-                    &self.buffer[..self.end],
+-                    self.info(),
+-                ),
+-                self.options,
+-            ))),
+-            Phase::End => Ok(None),
++            Phase::Complete | Phase::End => Ok(None),
+             Phase::Failed(kind) => Err(Error::from_kind(kind)),
+-            _ => Err(Error::from_kind(ErrorKind::IncompleteFill)),
++            _ => Ok(Some(self.end)),
+         }
+     }
+-
+-    /// Consume the receiver while keeping its backing storage borrowed by the message.
+-    pub fn into_message(self) -> Result<Option<message::Reader<NoAllocSliceSegments<'buffer>>>> {
++    /// True for a complete frame, false for clean EOF, error while incomplete.
++    pub fn complete(&self) -> Result<bool> {
+         match self.phase {
+-            Phase::Complete => {
+-                let info = self.info();
+-                Ok(Some(message::Reader::new(
+-                    NoAllocSliceSegments::from_segment_table_info(&self.buffer[..self.end], info),
+-                    self.options,
+-                )))
+-            }
+-            Phase::End => Ok(None),
++            Phase::Complete => Ok(true),
++            Phase::End => Ok(false),
+             Phase::Failed(kind) => Err(Error::from_kind(kind)),
+             _ => Err(Error::from_kind(ErrorKind::IncompleteFill)),
+         }
+     }
+-
+-    /// Begin another frame after completion. Borrowing prevents live readers from being overwritten.
+-    pub fn next_message(&mut self) -> Result<()> {
+-        match self.phase {
+-            Phase::Complete => {
+-                self.phase = Phase::Header;
+-                self.position = 0;
+-                self.end = 8;
+-                self.count = 0;
+-                self.table_bytes = 0;
+-                Ok(())
+-            }
+-            Phase::Failed(kind) => Err(Error::from_kind(kind)),
+-            _ => Err(Error::from_kind(ErrorKind::IncompleteFill)),
++    pub fn abort(&mut self, kind: ErrorKind) {
++        if !matches!(self.phase, Phase::Failed(_)) {
++            self.phase = Phase::Failed(kind);
+         }
+     }
+-
+     fn info(&self) -> NoAllocSegmentTableInfo {
+         NoAllocSegmentTableInfo {
+             segments_count: self.count,
+@@ -181,11 +119,16 @@ impl<'buffer> FrameReceiver<'buffer> {
+             total_segments_length_bytes: self.end - self.table_bytes,
+         }
+     }
+-
+-    fn advance(&mut self, count: usize) -> Result<()> {
++    /// Commit exactly one read, including zero for EOF. Invalid counts, short
++    /// initialized prefixes, and malformed framing make the cursor terminal.
++    pub fn advance(&mut self, received: &[u8], count: usize) -> Result<()> {
++        self.next_read_end()?
++            .ok_or_else(|| Error::from_kind(ErrorKind::IncompleteFill))?;
+         let available = self.end - self.position;
+         if count > available {
+             self.abort(ErrorKind::InvalidReadCount(count, available));
++        } else if received.len() < self.position + count {
++            self.abort(ErrorKind::IncompleteFill);
+         } else if count == 0 {
+             if self.position == 0 {
+                 self.phase = Phase::End;
+@@ -195,7 +138,7 @@ impl<'buffer> FrameReceiver<'buffer> {
+         } else {
+             self.position += count;
+             if self.position == self.end {
+-                if let Err(error) = self.complete_part() {
++                if let Err(error) = self.complete_part(received) {
+                     self.abort(error.kind);
+                 }
+             }
+@@ -207,19 +150,19 @@ impl<'buffer> FrameReceiver<'buffer> {
+         }
+     }
+ 
+-    fn complete_part(&mut self) -> Result<()> {
++    fn complete_part(&mut self, received: &[u8]) -> Result<()> {
+         if self.phase == Phase::Header {
+-            let header = SegmentTableHeader::parse(&self.buffer[..8])?;
++            let header = SegmentTableHeader::parse(&received[..8])?;
+             self.count = header.segment_count();
+             self.table_bytes = header.table_bytes();
+-            if self.table_bytes > self.buffer.len() {
++            if self.table_bytes > self.capacity {
+                 return Err(Error::from_kind(ErrorKind::BufferNotLargeEnough));
+             }
+             self.end = self.table_bytes;
+             self.phase = Phase::Table;
+         }
+         if self.phase == Phase::Table && self.position == self.end {
+-            let words = self.buffer[4..4 + self.count * 4]
++            let words = received[4..4 + self.count * 4]
+                 .as_chunks::<4>()
+                 .0
+                 .iter()
+@@ -241,7 +184,7 @@ impl<'buffer> FrameReceiver<'buffer> {
+                 .checked_mul(8)
+                 .and_then(|bytes| self.table_bytes.checked_add(bytes))
+                 .ok_or_else(|| Error::from_kind(ErrorKind::MessageSizeOverflow))?;
+-            if end > self.buffer.len() {
++            if end > self.capacity {
+                 return Err(Error::from_kind(ErrorKind::BufferNotLargeEnough));
+             }
+             self.end = end;
+@@ -254,6 +197,120 @@ impl<'buffer> FrameReceiver<'buffer> {
+     }
+ }
+ 
++/// Resumable, allocation-free receiver for one standard stream frame at a time.
++///
++/// Supply aligned storage including space for the segment table. Each input
++/// window is exactly the remaining header, table or body; no read can prefetch
++/// the next message. Drop an uncommitted window when IO is pending. Commit every
++/// completed read, including zero for EOF, before polling again. Dropping a
++/// window does not change progress. IO errors may be recorded with [`Self::abort`].
++///
++/// After completion, [`Self::message`] lends a reader and [`Self::next_message`]
++/// reuses storage once every view is gone. Errors are terminal for this receiver;
++/// constructing another receiver is appropriate only at a known frame boundary.
++/// No method allocates, even when the core's `alloc` feature is enabled.
++///
++/// A live reader prevents reusing its buffer:
++/// ```compile_fail,E0502
++/// use capnp::{serialize::FrameReceiver, Word};
++/// let mut words = [capnp::word(0,0,0,0,0,0,0,0); 2];
++/// let mut receiver = FrameReceiver::new(Word::words_to_bytes_mut(&mut words), Default::default()).unwrap();
++/// let mut input = receiver.input().unwrap().unwrap();
++/// input.bytes().fill(0);
++/// input.commit(8).unwrap();
++/// let message = receiver.message().unwrap().unwrap();
++/// receiver.next_message().unwrap();
++/// let _ = message.get_root::<capnp::any_pointer::Reader<'_>>();
++/// ```
++pub struct FrameReceiver<'buffer> {
++    buffer: &'buffer mut [u8],
++    cursor: FrameCursor,
++}
++
++impl<'buffer> FrameReceiver<'buffer> {
++    pub fn new(buffer: &'buffer mut [u8], options: message::ReaderOptions) -> Result<Self> {
++        let cursor = FrameCursor::new(buffer.len(), options)?;
++        cursor.check_alignment(buffer)?;
++        Ok(Self { buffer, cursor })
++    }
++
++    /// Bytes committed for the current frame, including its segment table.
++    pub const fn received_bytes(&self) -> usize {
++        self.cursor.position
++    }
++
++    /// The next bounded IO destination. `None` means complete frame or clean EOF.
++    pub fn input(&mut self) -> Result<Option<ReadWindow<'_, 'buffer>>> {
++        match self.cursor.phase {
++            Phase::Complete | Phase::End => Ok(None),
++            Phase::Failed(kind) => Err(Error::from_kind(kind)),
++            _ => Ok(Some(ReadWindow { receiver: self })),
++        }
++    }
++
++    /// Preserve the first transport/framing failure; a failed receiver cannot resume.
++    pub fn abort(&mut self, kind: ErrorKind) {
++        if !matches!(self.cursor.phase, Phase::Failed(_)) {
++            self.cursor.phase = Phase::Failed(kind);
++        }
++    }
++
++    /// Return the current frame, or `None` at clean EOF. Incomplete data is never exposed.
++    pub fn message(&self) -> Result<Option<message::Reader<NoAllocSliceSegments<'_>>>> {
++        match self.cursor.phase {
++            Phase::Complete => Ok(Some(message::Reader::new(
++                NoAllocSliceSegments::from_segment_table_info(
++                    &self.buffer[..self.cursor.end],
++                    self.info(),
++                ),
++                self.cursor.options,
++            ))),
++            Phase::End => Ok(None),
++            Phase::Failed(kind) => Err(Error::from_kind(kind)),
++            _ => Err(Error::from_kind(ErrorKind::IncompleteFill)),
++        }
++    }
++
++    /// Consume the receiver while keeping its backing storage borrowed by the message.
++    pub fn into_message(self) -> Result<Option<message::Reader<NoAllocSliceSegments<'buffer>>>> {
++        match self.cursor.phase {
++            Phase::Complete => {
++                let info = self.info();
++                Ok(Some(message::Reader::new(
++                    NoAllocSliceSegments::from_segment_table_info(
++                        &self.buffer[..self.cursor.end],
++                        info,
++                    ),
++                    self.cursor.options,
++                )))
++            }
++            Phase::End => Ok(None),
++            Phase::Failed(kind) => Err(Error::from_kind(kind)),
++            _ => Err(Error::from_kind(ErrorKind::IncompleteFill)),
++        }
++    }
++
++    /// Begin another frame after completion. Borrowing prevents live readers from being overwritten.
++    pub fn next_message(&mut self) -> Result<()> {
++        match self.cursor.phase {
++            Phase::Complete => {
++                self.cursor.phase = Phase::Header;
++                self.cursor.position = 0;
++                self.cursor.end = 8;
++                self.cursor.count = 0;
++                self.cursor.table_bytes = 0;
++                Ok(())
++            }
++            Phase::Failed(kind) => Err(Error::from_kind(kind)),
++            _ => Err(Error::from_kind(ErrorKind::IncompleteFill)),
++        }
++    }
++
++    fn info(&self) -> NoAllocSegmentTableInfo {
++        self.cursor.info()
++    }
++}
++
+ /// An exclusive destination for exactly one caller IO operation. Committing
+ /// consumes the window; it cannot be committed twice or reused after advancement.
+ pub struct ReadWindow<'receiver, 'buffer> {
+@@ -261,10 +318,10 @@ pub struct ReadWindow<'receiver, 'buffer> {
+ }
+ impl ReadWindow<'_, '_> {
+     pub fn bytes(&mut self) -> &mut [u8] {
+-        &mut self.receiver.buffer[self.receiver.position..self.receiver.end]
++        &mut self.receiver.buffer[self.receiver.cursor.position..self.receiver.cursor.end]
+     }
+     pub fn commit(self, count: usize) -> Result<()> {
+-        self.receiver.advance(count)
++        self.receiver.cursor.advance(self.receiver.buffer, count)
+     }
+ }
+ 
+diff --git a/crates/capntproto-core/src/serialize/receiver/tests.rs b/crates/capntproto-core/src/serialize/receiver/tests.rs
+index d47c491..5d1edbf 100644
+--- a/crates/capntproto-core/src/serialize/receiver/tests.rs
++++ b/crates/capntproto-core/src/serialize/receiver/tests.rs
+@@ -222,3 +222,21 @@ fn segment_tables_accept_even_odd_and_maximum_counts_with_empty_segments() {
+         }
+     }
+ }
++#[test]
++fn cursor_rejects_short_committed_prefix_and_preserves_terminal_failure() {
++    let mut cursor = super::FrameCursor::new(16, Default::default()).unwrap();
++    assert_eq!(
++        cursor.advance(&[0; 7], 8).unwrap_err().kind,
++        ErrorKind::IncompleteFill
++    );
++    assert_eq!(
++        cursor.advance(&[0; 16], 8).unwrap_err().kind,
++        ErrorKind::IncompleteFill
++    );
++    assert_eq!(cursor.received_bytes(), 0);
++    let mut cursor = super::FrameCursor::new(16, Default::default()).unwrap();
++    cursor.advance(&[], 0).unwrap();
++    assert!(!cursor.complete().unwrap());
++    assert!(cursor.advance(&[0; 16], 8).is_err());
++    assert!(!cursor.complete().unwrap());
++}
+diff --git a/crates/capntproto-rpc-engine/src/messages.rs b/crates/capntproto-rpc-engine/src/messages.rs
+index e0e5383..b04e587 100644
+--- a/crates/capntproto-rpc-engine/src/messages.rs
++++ b/crates/capntproto-rpc-engine/src/messages.rs
+@@ -3,7 +3,8 @@
+ //!
+ //! Writers are exclusive; sealing exposes only an immutable used prefix. Read
+ //! leases and offered/accepted sends independently retain that prefix. A buffer
+-//! is reusable only after both counts reach zero. Reservation clears old bytes.
++//! is reusable only after both counts reach zero. Builder reservations clear old
++//! bytes; receive reservations expose only bytes committed by the IO adapter.
+ //! The caller chooses buffer alignment, sizes, send capacity and polling order.
+ //!
+ //! Scoped tokens cannot escape or cross pools. Dropped/forgotten writer, reader
+@@ -52,9 +53,11 @@ pub use growing::{with_growing_messages, with_growing_messages_async, GrowingBuf
+ #[cfg(feature = "alloc")]
+ mod parts;
+ mod queue;
++mod receiving;
+ #[cfg(feature = "alloc")]
+ pub use parts::{Parts, SharedParts};
+ pub use queue::{Queue, QueueEntry, QueueSlot, QueueWindow};
++pub use receiving::{ReceiveReadError, Receiving};
+ 
+ type Brand<'id> = PhantomData<fn(&'id ()) -> &'id ()>;
+ 
+@@ -307,7 +310,7 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
+     /// Reserve the first reusable buffer which fits, clearing its whole capacity
+     /// before exposing it. Exhausted generations are never reused.
+     pub fn reserve(&mut self, minimum: usize) -> Result<Writer<'id>, Error> {
+-        self.reserve_length(minimum, false)
++        self.reserve_length(minimum, false, true)
+     }
+     /// Inspect configured capacity without reserving or changing generations.
+     /// Used to flush accepted output before admitting another buffered request.
+@@ -334,7 +337,20 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
+     /// buffer. All writer views and sealing are limited to that prefix. Bytes
+     /// beyond it remain inaccessible until a later reservation clears them.
+     pub fn reserve_exact(&mut self, length: usize) -> Result<Writer<'id>, Error> {
+-        self.reserve_length(length, true)
++        self.reserve_length(length, true, true)
++    }
++    /// Reserve receive capacity without clearing previous contents. Only the IO
++    /// adapter can access unwritten bytes; readers and sealing are restricted to
++    /// the prefix it commits. Dropping this owner reserves storage until teardown.
++    pub fn receive(&mut self, capacity: usize) -> Result<Receiving<'id, 'storage>, Error> {
++        let writer = self.reserve_length(capacity, true, false)?;
++        match self.write_owned(writer) {
++            Ok(writing) => Ok(Receiving::new(writing)),
++            Err(rejected) => {
++                self.discard(rejected.writer);
++                Err(rejected.error)
++            }
++        }
+     }
+     /// Copy a complete message into reusable storage in one exclusive borrow.
+     /// The entire exposed prefix is overwritten before sealing; no mutable
+@@ -459,7 +475,12 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
+             brand: PhantomData,
+         })
+     }
+-    fn reserve_length(&mut self, minimum: usize, exact: bool) -> Result<Writer<'id>, Error> {
++    fn reserve_length(
++        &mut self,
++        minimum: usize,
++        exact: bool,
++        clear: bool,
++    ) -> Result<Writer<'id>, Error> {
+         let mut exhausted = false;
+         for (index, buffer) in self.buffers.iter().enumerate() {
+             if buffer.state.get() != State::Free || buffer.capacity.get() < minimum {
+@@ -482,7 +503,9 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
+             } else {
+                 buffer.capacity.get()
+             };
+-            bytes[..length].fill(0);
++            if clear {
++                bytes[..length].fill(0);
++            }
+             buffer.generation.set(buffer.generation.get() + 1);
+             buffer.state.set(State::Writing);
+             return Ok(Writer {
+@@ -506,7 +529,9 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
+         } else {
+             buffer.capacity.get()
+         };
+-        buffer.bytes.borrow_mut()[..length].fill(0);
++        if clear {
++            buffer.bytes.borrow_mut()[..length].fill(0);
++        }
+         buffer.state.set(State::Writing);
+         Ok(Writer {
+             length,
+diff --git a/crates/capntproto-rpc-engine/src/messages/growing/tests.rs b/crates/capntproto-rpc-engine/src/messages/growing/tests.rs
+index e88e3f7..441de87 100644
+--- a/crates/capntproto-rpc-engine/src/messages/growing/tests.rs
++++ b/crates/capntproto-rpc-engine/src/messages/growing/tests.rs
+@@ -1,5 +1,24 @@
+ use super::*;
+ 
++#[test]
++fn receive_reservations_respect_escaping_owners_and_generation_exhaustion() {
++    let mut pool = GrowingBuffers::new(1, 64, 71);
++    with_growing_messages(&mut pool, sends(0), |messages| {
++        let first = messages.copy_from(b"retained").unwrap();
++        let shared = messages.share(&first).unwrap();
++        messages.release(first);
++        assert_eq!(messages.receive(8).err(), Some(Error::NoBuffer));
++        assert_eq!(&*shared, b"retained");
++        drop(shared);
++        let receiving = messages.receive(64).unwrap();
++        assert!(receiving.received().is_empty());
++        receiving.discard(messages);
++        messages.buffers[0].generation.set(u64::MAX);
++        assert_eq!(messages.receive(64).err(), Some(Error::GenerationExhausted));
++    })
++    .unwrap();
++}
++
+ #[test]
+ fn capacity_lookahead_observes_growth_limits_and_shared_owners() {
+     let mut pool = GrowingBuffers::new(1, 64, 71);
+diff --git a/crates/capntproto-rpc-engine/src/messages/receiving.rs b/crates/capntproto-rpc-engine/src/messages/receiving.rs
+new file mode 100644
+index 0000000..b2619c7
+--- /dev/null
++++ b/crates/capntproto-rpc-engine/src/messages/receiving.rs
+@@ -0,0 +1,164 @@
++//! Receive-only ownership: previous contents never become a builder or lease.
++use super::{Error, Lease, Messages, Writing};
++use crate::io::{IoError, Read};
++use core::task::{Context, Poll};
++
++#[derive(Debug, PartialEq, Eq)]
++pub enum ReceiveReadError<E> {
++    Io(IoError<E>),
++    InvalidCount { count: usize, available: usize },
++    InvalidEnd,
++}
++
++/// Exclusive receive storage, with an independently tracked committed prefix.
++/// The IO adapter must initialize every byte it reports, as for ordinary reads.
++/// No API exposes previous contents to a decoder, builder, or outgoing send.
++#[must_use = "seal or discard the receive, or terminate the pool scope"]
++pub struct Receiving<'id, 'storage> {
++    writing: Writing<'id, 'storage>,
++    position: usize,
++}
++
++impl<'id, 'storage> Receiving<'id, 'storage> {
++    pub(super) fn new(writing: Writing<'id, 'storage>) -> Self {
++        Self {
++            writing,
++            position: 0,
++        }
++    }
++    /// Start receiving into an existing cleared builder reservation.
++    pub fn from_writing(writing: Writing<'id, 'storage>) -> Self {
++        Self::new(writing)
++    }
++    pub fn capacity(&self) -> usize {
++        self.writing.view.len()
++    }
++    /// Only the bytes this IO operation has initialized, even after reuse.
++    pub fn received(&self) -> &[u8] {
++        &self.writing.view[..self.position]
++    }
++    /// Read up to the decoder's next boundary, without prefetching beyond it.
++    /// Pending and Interrupted preserve progress; an invalid count is rejected
++    /// before changing the committed prefix. Zero denotes EOF, not completion.
++    pub fn poll_read<R: Read>(
++        &mut self,
++        reader: &mut R,
++        end: usize,
++        cx: &mut Context<'_>,
++    ) -> Poll<Result<usize, ReceiveReadError<R::Error>>> {
++        if end <= self.position || end > self.capacity() {
++            return Poll::Ready(Err(ReceiveReadError::InvalidEnd));
++        }
++        let available = end - self.position;
++        match reader.poll_read(cx, &mut self.writing.view[self.position..end]) {
++            Poll::Ready(Ok(count)) if count <= available => {
++                self.position += count;
++                Poll::Ready(Ok(count))
++            }
++            Poll::Ready(Ok(count)) => {
++                Poll::Ready(Err(ReceiveReadError::InvalidCount { count, available }))
++            }
++            result => result.map_err(ReceiveReadError::Io),
++        }
++    }
++    /// Publish exactly the received prefix. Framing/semantic validation belongs
++    /// to the decoder, which must call this only after a complete valid frame.
++    pub fn seal(self, messages: &mut Messages<'id, '_, '_>) -> Result<Lease<'id>, Error> {
++        match messages.seal(self.writing.into_writer(), self.position) {
++            Ok(lease) => Ok(lease),
++            Err(rejected) => {
++                messages.discard(rejected.writer);
++                Err(rejected.error)
++            }
++        }
++    }
++    pub fn discard(self, messages: &mut Messages<'id, '_, '_>) {
++        messages.discard(self.writing.into_writer());
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use crate::messages::{with_messages, Buffer};
++    use core::task::Waker;
++
++    struct Source;
++    impl Read for Source {
++        type Error = ();
++        fn poll_read(
++            &mut self,
++            _: &mut Context<'_>,
++            bytes: &mut [u8],
++        ) -> Poll<Result<usize, IoError<()>>> {
++            // The adapter alone sees retained storage; no clearing preceded IO.
++            assert_eq!(bytes, &[0xa5; 4]);
++            bytes[..2].copy_from_slice(b"ok");
++            Poll::Ready(Ok(2))
++        }
++    }
++    #[test]
++    fn reused_storage_exposes_only_committed_prefix_and_builders_still_clear() {
++        let usage = allocation_counter::measure(|| {
++            let mut bytes = [0xa5; 16];
++            let mut buffers = [Buffer::new(&mut bytes)];
++            with_messages(&mut buffers, &mut [], |messages| {
++                let mut receiving = messages.receive(8).unwrap();
++                assert!(receiving.received().is_empty());
++                assert_eq!(receiving.capacity(), 8);
++                assert!(!messages.can_reserve(0));
++                assert_eq!(
++                    receiving.poll_read(&mut Source, 4, &mut Context::from_waker(Waker::noop())),
++                    Poll::Ready(Ok(2))
++                );
++                assert_eq!(receiving.received(), b"ok");
++                let lease = receiving.seal(messages).unwrap();
++                assert_eq!(&*messages.read(&lease), b"ok");
++                messages.release(lease);
++                let receiving = messages.receive(8).unwrap();
++                assert!(receiving.received().is_empty());
++                receiving.discard(messages);
++                let writer = messages.reserve(8).unwrap();
++                assert_eq!(&*messages.write(&writer), &[0; 16]);
++                messages.discard(writer);
++            })
++            .unwrap();
++        });
++        assert_eq!(usage.count_total, 0);
++    }
++    #[test]
++    fn invalid_adapter_count_cannot_expose_previous_contents_and_drop_pins_storage() {
++        struct Invalid;
++        impl Read for Invalid {
++            type Error = ();
++            fn poll_read(
++                &mut self,
++                _: &mut Context<'_>,
++                bytes: &mut [u8],
++            ) -> Poll<Result<usize, IoError<()>>> {
++                Poll::Ready(Ok(bytes.len() + 1))
++            }
++        }
++        let mut bytes = [0xa5; 16];
++        let mut buffers = [Buffer::new(&mut bytes)];
++        with_messages(&mut buffers, &mut [], |messages| {
++            let mut receiving = messages.receive(8).unwrap();
++            let mut cx = Context::from_waker(Waker::noop());
++            assert_eq!(
++                receiving.poll_read(&mut Invalid, 8, &mut cx),
++                Poll::Ready(Err(ReceiveReadError::InvalidCount {
++                    count: 9,
++                    available: 8
++                }))
++            );
++            assert_eq!(
++                receiving.poll_read(&mut Invalid, 9, &mut cx),
++                Poll::Ready(Err(ReceiveReadError::InvalidEnd))
++            );
++            assert!(receiving.received().is_empty());
++            drop(receiving);
++            assert!(!messages.can_reserve(0));
++        })
++        .unwrap();
++    }
++}
+diff --git a/crates/capntproto-rpc-wire/src/owned/tasks.rs b/crates/capntproto-rpc-wire/src/owned/tasks.rs
+index 039598e..1483381 100644
+--- a/crates/capntproto-rpc-wire/src/owned/tasks.rs
++++ b/crates/capntproto-rpc-wire/src/owned/tasks.rs
+@@ -10,28 +10,26 @@ pub enum ReceiveError<E> {
+     Storage(messages::Error),
+ }
+ #[must_use = "finish this receive to recover its reserved buffer"]
+-pub struct Received<'pool, E> {
+-    writer: messages::Writer<'pool>,
+-    outcome: Result<Option<usize>, crate::io::ReceiveError<E>>,
++pub struct Received<'pool, 'storage, E> {
++    receiving: messages::Receiving<'pool, 'storage>,
++    outcome: Result<bool, crate::io::ReceiveError<E>>,
+     options: capnp::message::ReaderOptions,
+ }
+-impl<'pool, E> Received<'pool, E> {
+-    /// Only a complete frame can be sealed. EOF and every error recover the
+-    /// writer. A framing/transport error still requires connection teardown.
++impl<'pool, E> Received<'pool, '_, E> {
++    /// Only a complete frame can be sealed. EOF, cancellation and every error
++    /// discard the reservation, including bytes read before the failure.
+     pub fn finish(
+         self,
+         messages: &mut messages::Messages<'pool, '_, '_>,
+     ) -> Result<Option<Frame<'pool>>, ReceiveError<E>> {
+         match self.outcome {
+-            Ok(Some(length)) => match messages.seal(self.writer, length) {
+-                Ok(lease) => Ok(Some(Frame::new(lease, self.options))),
+-                Err(rejected) => {
+-                    messages.discard(rejected.writer);
+-                    Err(ReceiveError::Storage(rejected.error))
+-                }
+-            },
++            Ok(true) => self
++                .receiving
++                .seal(messages)
++                .map(|lease| Some(Frame::new(lease, self.options)))
++                .map_err(ReceiveError::Storage),
+             outcome => {
+-                messages.discard(self.writer);
++                self.receiving.discard(messages);
+                 outcome.map(|_| None).map_err(ReceiveError::Input)
+             }
+         }
+@@ -42,13 +40,13 @@ impl<'pool, E> Received<'pool, E> {
+ /// future alive across Pending; dropping it mid-frame is terminal connection
+ /// teardown, and its reservation remains unavailable until the pool scope ends.
+ /// Other input/output/application tasks may continue using the pool meanwhile.
+-pub async fn receive<'pool, R: Read>(
+-    writing: messages::Writing<'pool, '_>,
++pub async fn receive<'pool, 'storage, R: Read>(
++    receiving: messages::Receiving<'pool, 'storage>,
+     reader: &mut R,
+     options: capnp::message::ReaderOptions,
+     budget: NonZeroUsize,
+-) -> Received<'pool, R::Error> {
+-    receive_until(writing, reader, options, budget, |_| {
++) -> Received<'pool, 'storage, R::Error> {
++    receive_until(receiving, reader, options, budget, |_| {
+         core::task::Poll::Pending
+     })
+     .await
+@@ -61,28 +59,71 @@ pub async fn receive<'pool, R: Read>(
+ /// Cancellation wins over readable input in the same poll; no further IO is
+ /// performed after stop becomes ready. This function needs neither allocation
+ /// nor an executor, and the receive future can stay pinned on the caller's stack.
+-pub async fn receive_until<'pool, R: Read>(
+-    mut writing: messages::Writing<'pool, '_>,
++pub async fn receive_until<'pool, 'storage, R: Read>(
++    mut receiving: messages::Receiving<'pool, 'storage>,
+     reader: &mut R,
+     options: capnp::message::ReaderOptions,
+     budget: NonZeroUsize,
+     mut stop: impl FnMut(&mut core::task::Context<'_>) -> core::task::Poll<capnp::ErrorKind>,
+-) -> Received<'pool, R::Error> {
++) -> Received<'pool, 'storage, R::Error> {
++    use crate::io::ReceiveError as InputError;
++    use capntproto_rpc_engine::{io::IoError, messages::ReceiveReadError};
++    use core::task::Poll;
+     let outcome = async {
+-        let mut receiver = capnp::serialize::FrameReceiver::new(writing.bytes(), options)
+-            .map_err(|e| crate::io::ReceiveError::Wire(e.kind))?;
+-        let complete = core::future::poll_fn(|cx| {
+-            if let core::task::Poll::Ready(kind) = stop(cx) {
+-                return core::task::Poll::Ready(Err(crate::io::ReceiveError::Wire(kind)));
++        let mut cursor = capnp::serialize::FrameCursor::new(receiving.capacity(), options)
++            .map_err(|e| InputError::Wire(e.kind))?;
++        cursor
++            .check_alignment(receiving.received())
++            .map_err(|e| InputError::Wire(e.kind))?;
++        core::future::poll_fn(|cx| {
++            if let Poll::Ready(kind) = stop(cx) {
++                return Poll::Ready(Err(InputError::Wire(kind)));
++            }
++            for _ in 0..budget.get() {
++                let end = match cursor.next_read_end() {
++                    Ok(Some(end)) => end,
++                    Ok(None) => {
++                        return Poll::Ready(cursor.complete().map_err(|e| InputError::Wire(e.kind)))
++                    }
++                    Err(error) => return Poll::Ready(Err(InputError::Wire(error.kind))),
++                };
++                match receiving.poll_read(reader, end, cx) {
++                    Poll::Pending => return Poll::Pending,
++                    Poll::Ready(Ok(count)) => {
++                        if let Err(error) = cursor.advance(receiving.received(), count) {
++                            return Poll::Ready(Err(InputError::Wire(error.kind)));
++                        }
++                    }
++                    Poll::Ready(Err(ReceiveReadError::Io(IoError::Interrupted))) => (),
++                    Poll::Ready(Err(ReceiveReadError::Io(IoError::Failed(error)))) => {
++                        return Poll::Ready(Err(InputError::Io(error)));
++                    }
++                    Poll::Ready(Err(ReceiveReadError::InvalidCount { count, available })) => {
++                        return Poll::Ready(Err(InputError::Wire(
++                            capnp::ErrorKind::InvalidReadCount(count, available),
++                        )));
++                    }
++                    Poll::Ready(Err(ReceiveReadError::InvalidEnd)) => {
++                        return Poll::Ready(Err(InputError::Wire(
++                            capnp::ErrorKind::BufferNotLargeEnough,
++                        )));
++                    }
++                }
++            }
++            match cursor.complete() {
++                Ok(complete) => Poll::Ready(Ok(complete)),
++                Err(error) if error.kind == capnp::ErrorKind::IncompleteFill => {
++                    cx.waker().wake_by_ref();
++                    Poll::Pending
++                }
++                Err(error) => Poll::Ready(Err(InputError::Wire(error.kind))),
+             }
+-            crate::io::poll_receive(reader, &mut receiver, cx, budget)
+         })
+-        .await?;
+-        Ok(complete.then_some(receiver.received_bytes()))
++        .await
+     }
+     .await;
+     Received {
+-        writer: writing.into_writer(),
++        receiving,
+         outcome,
+         options,
+     }
+@@ -192,14 +233,11 @@ mod tests {
+             // One-segment frame, one word, suspended at every incomplete prefix.
+             let frame = [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+             for prefix in 0..frame.len() {
+-                let mut bytes = [word(0, 0, 0, 0, 0, 0, 0, 0); 8];
++                let mut bytes = [word(0xa5, 0xa5, 0xa5, 0xa5, 0xa5, 0xa5, 0xa5, 0xa5); 8];
+                 let mut buffers = [messages::Buffer::new(Word::words_to_bytes_mut(&mut bytes))];
+                 let mut sends = [];
+                 messages::with_messages(&mut buffers, &mut sends, |messages| {
+-                    let writer = messages.reserve(64).unwrap();
+-                    let writing = messages
+-                        .write_owned(writer)
+-                        .unwrap_or_else(|_| panic!("fresh writer"));
++                    let receiving = messages.receive(64).unwrap();
+                     let mut source = Source {
+                         bytes: &frame[..prefix],
+                         calls: 0,
+@@ -207,7 +245,7 @@ mod tests {
+                     let stop = Cell::new(prefix == 0);
+                     {
+                         let mut receive = core::pin::pin!(receive_until(
+-                            writing,
++                            receiving,
+                             &mut source,
+                             Default::default(),
+                             NonZeroUsize::new(8).unwrap(),
+@@ -238,6 +276,7 @@ mod tests {
+                         assert_eq!(source.calls, 0);
+                     }
+                     let writer = messages.reserve(64).unwrap();
++                    assert!(messages.write(&writer).iter().all(|byte| *byte == 0));
+                     messages.discard(writer);
+                 })
+                 .unwrap();
+@@ -245,4 +284,119 @@ mod tests {
+         });
+         assert_eq!(measured.count_total, 0);
+     }
++
++    #[test]
++    fn receive_alignment_uses_the_core_feature_even_when_enabled_by_another_dependency() {
++        let mut words = [word(0, 0, 0, 0, 0, 0, 0, 0); 4];
++        let bytes = &mut Word::words_to_bytes_mut(&mut words)[1..17];
++        let expected = capnp::serialize::FrameReceiver::new(bytes, Default::default())
++            .err()
++            .map(|error| error.kind);
++        let mut buffers = [messages::Buffer::new(bytes)];
++        messages::with_messages(&mut buffers, &mut [], |messages| {
++            let mut source = Source { bytes: &[0; 8], calls: 0 };
++            let outcome = {
++                let mut task = core::pin::pin!(receive(messages.receive(16).unwrap(), &mut source, Default::default(), NonZeroUsize::new(2).unwrap()));
++                let Poll::Ready(received) = task.as_mut().poll(&mut Context::from_waker(Waker::noop())) else { panic!("complete buffered header") };
++                received.finish(messages)
++            };
++            if let Some(kind) = expected {
++                assert!(matches!(outcome, Err(ReceiveError::Input(crate::io::ReceiveError::Wire(actual))) if actual == kind));
++                assert_eq!(source.calls, 0);
++            } else {
++                outcome.unwrap().unwrap().release(messages);
++                assert_eq!(source.calls, 1);
++            }
++            messages.receive(16).unwrap().discard(messages);
++        }).unwrap();
++    }
++
++    #[test]
++    fn receive_reuse_handles_fragmented_tables_eof_and_never_prefetches() {
++        struct Fragments<'a> {
++            bytes: &'a [u8],
++            chunk: usize,
++            polls: usize,
++        }
++        impl Read for Fragments<'_> {
++            type Error = ();
++            fn poll_read(
++                &mut self,
++                cx: &mut Context<'_>,
++                output: &mut [u8],
++            ) -> Poll<Result<usize, IoError<()>>> {
++                self.polls += 1;
++                if self.polls.is_multiple_of(7) {
++                    return Poll::Ready(Err(IoError::Interrupted));
++                }
++                if self.polls.is_multiple_of(3) {
++                    cx.waker().wake_by_ref();
++                    return Poll::Pending;
++                }
++                let count = self.chunk.min(output.len()).min(self.bytes.len());
++                output[..count].copy_from_slice(&self.bytes[..count]);
++                self.bytes = &self.bytes[count..];
++                Poll::Ready(Ok(count))
++            }
++        }
++        // Two segments, nonzero padding, followed by an empty frame. Every
++        // truncated prefix must discard rather than publishing old pool bytes.
++        let frame = [
++            word(1, 0, 0, 0, 1, 0, 0, 0),
++            word(1, 0, 0, 0, 9, 8, 7, 6),
++            word(0, 0, 0, 0, 0, 0, 0, 0),
++            word(0, 0, 0, 0, 0, 0, 0, 0),
++            word(0, 0, 0, 0, 0, 0, 0, 0),
++        ];
++        let frame = Word::words_to_bytes(&frame);
++        for chunk in 1..=16 {
++            for length in 0..=frame.len() {
++                let mut bytes = [word(0xa5, 0xa5, 0xa5, 0xa5, 0xa5, 0xa5, 0xa5, 0xa5); 8];
++                let mut buffers = [messages::Buffer::new(Word::words_to_bytes_mut(&mut bytes))];
++                messages::with_messages(&mut buffers, &mut [], |messages| {
++                    let mut source = Fragments {
++                        bytes: &frame[..length],
++                        chunk,
++                        polls: 0,
++                    };
++                    let outcome = {
++                        let mut task = core::pin::pin!(receive(
++                            messages.receive(64).unwrap(),
++                            &mut source,
++                            Default::default(),
++                            NonZeroUsize::new(2).unwrap()
++                        ));
++                        let mut cx = Context::from_waker(Waker::noop());
++                        let mut ready = None;
++                        for _ in 0..128 {
++                            if let Poll::Ready(received) = task.as_mut().poll(&mut cx) {
++                                ready = Some(received.finish(messages));
++                                break;
++                            }
++                        }
++                        ready.expect("bounded fragmented receive")
++                    };
++                    if length == 0 {
++                        assert!(outcome.unwrap().is_none());
++                    } else if length < 32 {
++                        assert!(matches!(
++                            outcome,
++                            Err(ReceiveError::Input(crate::io::ReceiveError::Wire(
++                                capnp::ErrorKind::PrematureEndOfFile
++                            )))
++                        ));
++                    } else {
++                        let received = outcome.unwrap().unwrap();
++                        assert_eq!(source.bytes, &frame[32..length]);
++                        assert_eq!(received.size_in_words(messages).unwrap(), 2);
++                        received.release(messages);
++                    }
++                    let receiving = messages.receive(64).unwrap();
++                    assert!(receiving.received().is_empty());
++                    receiving.discard(messages);
++                })
++                .unwrap();
++            }
++        }
++    }
+ }
+diff --git a/crates/capntproto-rpc/src/portable/options.rs b/crates/capntproto-rpc/src/portable/options.rs
+index 516614a..8673c9e 100644
+--- a/crates/capntproto-rpc/src/portable/options.rs
++++ b/crates/capntproto-rpc/src/portable/options.rs
+@@ -56,7 +56,10 @@ impl Options {
+             message_bytes,
+             retained_bytes,
+             cached_message_words: (retained_bytes.get() / 8).min(16 * 1024),
+-            cached_message_segments: entries.get().min(16),
++            // Match the two-party builder cache's segment bound. A separate
++            // word limit still caps retained bytes; the former 16-segment cap
++            // discarded small buffers while most of that byte budget was free.
++            cached_message_segments: entries.get().min(64),
+             output_queue: entries,
+             poll_budget: NonZeroUsize::new(128).unwrap(),
+             reader: Default::default(),
+diff --git a/crates/capntproto-rpc/src/scoped/wire/calls.rs b/crates/capntproto-rpc/src/scoped/wire/calls.rs
+index 01a50ab..fab2408 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/calls.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/calls.rs
+@@ -3,9 +3,11 @@ use super::*;
+ use capntproto_rpc_engine::clients::{Destination, Location};
+ use capntproto_rpc_engine::ids::WireId;
+ use capntproto_rpc_wire::clients::{Endpoint, Route};
+-use std::collections::HashMap;
+ use std::num::NonZeroUsize;
+ 
++mod reply_index;
++use reply_index::ReplyOwners;
++
+ type Peer<'p, 'id, 's, I, A, P, const C: usize, const H: usize> =
+     Driver<'p, 'id, 's, I, A, P, Rc<dyn ClientHook>, C, H>;
+ type Local<'p, 'id, I, const C: usize, const H: usize> = connection::LocalCall<'p, 'id, I, C, H>;
+@@ -75,7 +77,7 @@ pub struct Calls<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> {
+     // An owner lookup, not a protocol ledger. Only immediate calls are indexed;
+     // the entry's full branded/generational key remains authoritative. Allocate
+     // lazily beyond the small-call scan, and remove owners on every retirement.
+-    reply_owners: HashMap<u32, usize>,
++    reply_owners: ReplyOwners,
+     pending: Option<Box<Call>>,
+     maximum: usize,
+     cursor: usize,
+@@ -95,7 +97,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
+         Ok(Self {
+             invocations: connection::Invocations::new_growing(0, maximum).map_err(wire_error)?,
+             entries: Vec::new(),
+-            reply_owners: HashMap::new(),
++            reply_owners: ReplyOwners::default(),
+             pending: None,
+             maximum,
+             cursor: 0,
+@@ -255,8 +257,12 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
+                 .as_ref()
+                 .and_then(|entry| entry.reply_id)
+             {
+-                if self.reply_owners.get(&id) == Some(&index) {
+-                    self.reply_owners.remove(&id);
++                if let std::collections::hash_map::Entry::Occupied(owner) =
++                    self.reply_owners.entry(id)
++                {
++                    if *owner.get() == index {
++                        owner.remove();
++                    }
+                 }
+             }
+         }
+diff --git a/crates/capntproto-rpc/src/scoped/wire/calls/reply_index.rs b/crates/capntproto-rpc/src/scoped/wire/calls/reply_index.rs
+new file mode 100644
+index 0000000..56d0dcf
+--- /dev/null
++++ b/crates/capntproto-rpc/src/scoped/wire/calls/reply_index.rs
+@@ -0,0 +1,27 @@
++//! Owner lookup for locally allocated outgoing question IDs. Peers cannot
++//! insert keys: the branded question ledger admits every indexed publication.
++//! Keep sparse storage (including high ID ranges) without hashing these trusted
++//! integers with SipHash. Equality and the full generational key still decide
++//! ownership; this index grants no protocol authority.
++use std::{
++    collections::HashMap,
++    hash::{BuildHasherDefault, Hasher},
++};
++
++pub(super) type ReplyOwners = HashMap<u32, usize, BuildHasherDefault<LocalIdHasher>>;
++
++#[derive(Default)]
++pub(super) struct LocalIdHasher(u64);
++impl Hasher for LocalIdHasher {
++    fn finish(&self) -> u64 {
++        self.0
++    }
++    fn write_u32(&mut self, id: u32) {
++        // Spread consecutive IDs into both bucket and fingerprint bits. Unlike
++        // identity hashing, small IDs do not all have the same high fingerprint.
++        self.0 = u64::from(id).wrapping_mul(0x9e37_79b9_7f4a_7c15);
++    }
++    fn write(&mut self, bytes: &[u8]) {
++        self.write_u32(u32::from_ne_bytes(bytes.try_into().expect("u32 reply ID")));
++    }
++}
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator/lifecycle.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator/lifecycle.rs
+index 71f1ca7..8ba051c 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator/lifecycle.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator/lifecycle.rs
+@@ -317,19 +317,12 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+             .await?;
+             let Some(size) = prepared else { return Ok(()) };
+             let frame = {
+-                let reservation = messages
+-                    .reserve_exact(size)
++                let receiving = messages
++                    .receive(size)
+                     .map_err(|e| Cause::Protocol(wire_error(e)))?;
+-                let writing = match messages.write_owned(reservation) {
+-                    Ok(writing) => writing,
+-                    Err(rejected) => {
+-                        messages.discard(rejected.writer);
+-                        return Err(Box::new(Cause::Protocol(wire_error(rejected.error))));
+-                    }
+-                };
+                 let cancel = Cell::new(None);
+                 let receive = tasks::receive_until(
+-                    writing,
++                    receiving,
+                     reader,
+                     self.options.reader,
+                     self.options.budget,
+diff --git a/crates/capntproto-rpc/src/scoped/wire/server/worker/tests.rs b/crates/capntproto-rpc/src/scoped/wire/server/worker/tests.rs
+index 82d5fd4..fb36b9f 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/server/worker/tests.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/server/worker/tests.rs
+@@ -137,10 +137,9 @@ fn incoming<'p, 'id>(
+         position: 0,
+         polls: 0,
+     };
+-    let writer = messages.reserve(512).unwrap();
+     let frame = {
+         let receive = owned::tasks::receive(
+-            messages.write_owned(writer).unwrap(),
++            messages.receive(512).unwrap(),
+             &mut source,
+             Default::default(),
+             NonZeroUsize::new(2).unwrap(),
+diff --git a/docs/wiki/Architecture.md b/docs/wiki/Architecture.md
+index ab3d1d1..871f696 100644
+--- a/docs/wiki/Architecture.md
++++ b/docs/wiki/Architecture.md
+@@ -1686,10 +1686,15 @@ its sender-owned replacement grant while retaining any already admitted call
+ lease. An Unimplemented response to a required RPC message is terminal. The wire
+ codecs also construct bounded Abort and capability-free Unimplemented controls.
+ 
+-`Messages::write_owned` transfers a writable reservation into a caller-pinned
+-receive or build task. The pool stays available while that task is Pending.
+-Receive writes directly into its final buffer; async generated replies are built
+-directly after the framing header. Completion recovers/seals the reservation.
++`Messages::receive` reserves receive-only storage without clearing reused bytes.
++Its `Receiving` owner exposes only the prefix committed by the read adapter;
++the decoder cannot inspect previous contents. A buffer-independent `FrameCursor`
++shares framing validation with the borrowed `FrameReceiver`. The wire task seals
++only complete frames, and discards EOF, errors and explicit cancellation.
++`Messages::write_owned` transfers a cleared builder reservation into a caller-pinned
++build task. Both paths leave the pool available while Pending. Receive writes
++directly into its final buffer; async generated replies are built directly after
++the framing header. Existing `reserve` and `reserve_exact` still clear storage.
+ Dropping an incomplete IO task is terminal connection teardown, not a new frame
+ boundary. The owning conversation fixture combines bootstrap, graph dispatch,
+ generated async calls, typed returns, cancellation and cleanup with partial,
+@@ -2164,8 +2169,9 @@ has not yet migrated to these ledgers and wire bindings.
+    completion. Validated data-only parameters and replies share input buffers;
+    fixed borrowed storage and capability-bearing hosted payloads keep the copy
+    path. Shared owners pin their charged buffer against reuse, including after
+-   the driver scope ends. Exact receive/control reservations clear only their
+-   exposed prefix, and sealing cannot reveal the unused capacity. These changes
++   the driver scope ends. Receive reservations publish only the prefix committed
++   by IO; control builders clear their exposed prefix. Neither can seal unused
++   capacity. These changes
+    do not yet establish benchmark acceptance.
+    The opt-in `portable::RpcSystem` now owns the connection tasks and automatic
+    VatNetwork dialing/acceptance. Each task owns growing storage and runs the
+@@ -2206,8 +2212,8 @@ has not yet migrated to these ledgers and wire bindings.
+    unregisters provisions and cancels unmatched Accept waiters. Membrane batch
+    authorization remains mandatory; a returned direct capability survives relay
+    disconnection. Input adapters can report validated frame sizes before pool
+-   reservation, avoiding maximum-sized clears on small messages while retaining
+-   size checks and zeroed storage.
++   reservation, bounding receive capacity before IO. Receive-only reservations
++   avoid redundant clears while retaining framing, size and ownership checks.
+    Automatic introductions now publish Call/Return/Resolve descriptors with
+    exact export grants. Forwarding vines retain their Provide and order acceptance
+    markers after older calls have been dispatched. Incoming answer adoption
+diff --git a/docs/wiki/Testing.md b/docs/wiki/Testing.md
+index def366b..a784658 100644
+--- a/docs/wiki/Testing.md
++++ b/docs/wiki/Testing.md
+@@ -422,9 +422,9 @@ the two `unsafe_op_in_unsafe_fn` diagnostics in `data.rs`. The 32-bit Miri lane
+ includes the selected-reader and immediate-promise ownership regressions. These
+ changes do not reclassify inherited unsafe documentation debt as verified code.
+ 
+-The memory qualification inventory now includes 31 ownership tests and 14 wire,
+-orphan, generated-API and schema tests. All 45 run with aligned and unaligned
+-storage under both Stacked Borrows and Tree Borrows: 180 interpreted executions,
++The memory qualification inventory now includes 33 ownership tests and 14 wire,
++orphan, generated-API and schema tests. The workflow runs all 47 with aligned and unaligned
++storage under both Stacked Borrows and Tree Borrows: 188 interpreted executions,
+ plus a deliberate freed-pointer control that must fail. The pinned inventory
+-was updated for the six added selected-reader regressions; no test was filtered
++was updated for the selected-reader regressions, including the two owning-cache tests; no test was filtered
+ out to accommodate the count change.
+diff --git a/examples/bounded_cpp_interop.rs b/examples/bounded_cpp_interop.rs
+index 4c3376b..7cbb39d 100644
+--- a/examples/bounded_cpp_interop.rs
++++ b/examples/bounded_cpp_interop.rs
+@@ -98,9 +98,8 @@ fn flush<'p>(
+     panic!("output did not drain");
+ }
+ fn receive<'p>(io: &mut Socket, messages: &mut messages::Messages<'p, '_, '_>) -> Frame<'p> {
+-    let writer = messages.reserve(BYTES).unwrap();
+-    let writing = messages.write_owned(writer).unwrap();
+-    let mut future = core::pin::pin!(tasks::receive(writing, io, Default::default(), budget()));
++    let receiving = messages.receive(BYTES).unwrap();
++    let mut future = core::pin::pin!(tasks::receive(receiving, io, Default::default(), budget()));
+     let mut cx = Context::from_waker(Waker::noop());
+     for _ in 0..65536 {
+         if let Poll::Ready(result) = future.as_mut().poll(&mut cx) {
+diff --git a/tests/memory_safety.rs b/tests/memory_safety.rs
+index 3b8f120..0500690 100644
+--- a/tests/memory_safety.rs
++++ b/tests/memory_safety.rs
+@@ -11,7 +11,7 @@ const NIGHTLY: &str = "+nightly-2026-08-29";
+ const MANIFEST: &str = "verification/miri/Cargo.toml";
+ const TARGET: &str = "x86_64-unknown-linux-gnu";
+ const SUITES: &[(&str, usize)] = &[
+-    ("ownership", 31),
++    ("ownership", 33),
+     ("wire", 6),
+     ("orphan_types", 4),
+     ("generated", 2),
+diff --git a/verification/portable/src/owning.rs b/verification/portable/src/owning.rs
+index 75aab87..b17e96a 100644
+--- a/verification/portable/src/owning.rs
++++ b/verification/portable/src/owning.rs
+@@ -63,9 +63,13 @@ pub(super) fn exchange<'pool>(
+         }
+         assert!(attempt < 4095, "output poll bound");
+     }
+-    let writer = messages.reserve(97 * 8).unwrap();
+-    let writing = messages.write_owned(writer).unwrap();
+-    let mut future = core::pin::pin!(tasks::receive(writing, &mut io, Default::default(), budget));
++    let receiving = messages.receive(97 * 8).unwrap();
++    let mut future = core::pin::pin!(tasks::receive(
++        receiving,
++        &mut io,
++        Default::default(),
++        budget
++    ));
+     for _ in 0..4096 {
+         if let Poll::Ready(outcome) = future.as_mut().poll(&mut cx) {
+             return outcome.finish(messages).unwrap().unwrap();
+diff --git a/verification/portable/src/owning_failures.rs b/verification/portable/src/owning_failures.rs
+index 8c4287a..7968a56 100644
+--- a/verification/portable/src/owning_failures.rs
++++ b/verification/portable/src/owning_failures.rs
+@@ -74,7 +74,7 @@ pub fn owned_task_failures() -> Result<()> {
+             let writing = messages.write_owned(writer).unwrap();
+             let outcome = {
+                 let mut task = core::pin::pin!(tasks::receive(
+-                    writing,
++                    messages::Receiving::from_writing(writing),
+                     &mut input,
+                     Default::default(),
+                     NonZeroUsize::new(2).unwrap()
+@@ -173,7 +173,7 @@ pub fn owned_task_failures() -> Result<()> {
+         };
+         {
+             let mut task = core::pin::pin!(tasks::receive(
+-                writing,
++                messages::Receiving::from_writing(writing),
+                 &mut input,
+                 Default::default(),
+                 NonZeroUsize::new(2).unwrap()

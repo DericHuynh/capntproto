@@ -3,8 +3,10 @@ use super::*;
 use capntproto_rpc_engine::clients::{Destination, Location};
 use capntproto_rpc_engine::ids::WireId;
 use capntproto_rpc_wire::clients::{Endpoint, Route};
-use std::collections::HashMap;
 use std::num::NonZeroUsize;
+
+mod reply_index;
+use reply_index::ReplyOwners;
 
 type Peer<'p, 'id, 's, I, A, P, const C: usize, const H: usize> =
     Driver<'p, 'id, 's, I, A, P, Rc<dyn ClientHook>, C, H>;
@@ -75,7 +77,7 @@ pub struct Calls<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> {
     // An owner lookup, not a protocol ledger. Only immediate calls are indexed;
     // the entry's full branded/generational key remains authoritative. Allocate
     // lazily beyond the small-call scan, and remove owners on every retirement.
-    reply_owners: HashMap<u32, usize>,
+    reply_owners: ReplyOwners,
     pending: Option<Box<Call>>,
     maximum: usize,
     cursor: usize,
@@ -95,7 +97,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         Ok(Self {
             invocations: connection::Invocations::new_growing(0, maximum).map_err(wire_error)?,
             entries: Vec::new(),
-            reply_owners: HashMap::new(),
+            reply_owners: ReplyOwners::default(),
             pending: None,
             maximum,
             cursor: 0,
@@ -255,8 +257,12 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 .as_ref()
                 .and_then(|entry| entry.reply_id)
             {
-                if self.reply_owners.get(&id) == Some(&index) {
-                    self.reply_owners.remove(&id);
+                if let std::collections::hash_map::Entry::Occupied(owner) =
+                    self.reply_owners.entry(id)
+                {
+                    if *owner.get() == index {
+                        owner.remove();
+                    }
                 }
             }
         }

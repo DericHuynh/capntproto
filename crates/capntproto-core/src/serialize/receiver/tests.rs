@@ -222,3 +222,21 @@ fn segment_tables_accept_even_odd_and_maximum_counts_with_empty_segments() {
         }
     }
 }
+#[test]
+fn cursor_rejects_short_committed_prefix_and_preserves_terminal_failure() {
+    let mut cursor = super::FrameCursor::new(16, Default::default()).unwrap();
+    assert_eq!(
+        cursor.advance(&[0; 7], 8).unwrap_err().kind,
+        ErrorKind::IncompleteFill
+    );
+    assert_eq!(
+        cursor.advance(&[0; 16], 8).unwrap_err().kind,
+        ErrorKind::IncompleteFill
+    );
+    assert_eq!(cursor.received_bytes(), 0);
+    let mut cursor = super::FrameCursor::new(16, Default::default()).unwrap();
+    cursor.advance(&[], 0).unwrap();
+    assert!(!cursor.complete().unwrap());
+    assert!(cursor.advance(&[0; 16], 8).is_err());
+    assert!(!cursor.complete().unwrap());
+}

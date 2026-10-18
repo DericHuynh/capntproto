@@ -26,7 +26,7 @@
 
 mod indexed_segments;
 mod receiver;
-pub use receiver::{FrameReceiver, ReadWindow, SegmentTableHeader};
+pub use receiver::{FrameCursor, FrameReceiver, ReadWindow, SegmentTableHeader};
 pub(crate) mod no_alloc_buffer_segments;
 pub use indexed_segments::{IndexedSliceSegments, SegmentOffset};
 pub use no_alloc_buffer_segments::{

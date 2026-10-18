@@ -317,19 +317,12 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             .await?;
             let Some(size) = prepared else { return Ok(()) };
             let frame = {
-                let reservation = messages
-                    .reserve_exact(size)
+                let receiving = messages
+                    .receive(size)
                     .map_err(|e| Cause::Protocol(wire_error(e)))?;
-                let writing = match messages.write_owned(reservation) {
-                    Ok(writing) => writing,
-                    Err(rejected) => {
-                        messages.discard(rejected.writer);
-                        return Err(Box::new(Cause::Protocol(wire_error(rejected.error))));
-                    }
-                };
                 let cancel = Cell::new(None);
                 let receive = tasks::receive_until(
-                    writing,
+                    receiving,
                     reader,
                     self.options.reader,
                     self.options.budget,

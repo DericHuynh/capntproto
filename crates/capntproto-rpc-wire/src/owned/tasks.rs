@@ -10,28 +10,26 @@ pub enum ReceiveError<E> {
     Storage(messages::Error),
 }
 #[must_use = "finish this receive to recover its reserved buffer"]
-pub struct Received<'pool, E> {
-    writer: messages::Writer<'pool>,
-    outcome: Result<Option<usize>, crate::io::ReceiveError<E>>,
+pub struct Received<'pool, 'storage, E> {
+    receiving: messages::Receiving<'pool, 'storage>,
+    outcome: Result<bool, crate::io::ReceiveError<E>>,
     options: capnp::message::ReaderOptions,
 }
-impl<'pool, E> Received<'pool, E> {
-    /// Only a complete frame can be sealed. EOF and every error recover the
-    /// writer. A framing/transport error still requires connection teardown.
+impl<'pool, E> Received<'pool, '_, E> {
+    /// Only a complete frame can be sealed. EOF, cancellation and every error
+    /// discard the reservation, including bytes read before the failure.
     pub fn finish(
         self,
         messages: &mut messages::Messages<'pool, '_, '_>,
     ) -> Result<Option<Frame<'pool>>, ReceiveError<E>> {
         match self.outcome {
-            Ok(Some(length)) => match messages.seal(self.writer, length) {
-                Ok(lease) => Ok(Some(Frame::new(lease, self.options))),
-                Err(rejected) => {
-                    messages.discard(rejected.writer);
-                    Err(ReceiveError::Storage(rejected.error))
-                }
-            },
+            Ok(true) => self
+                .receiving
+                .seal(messages)
+                .map(|lease| Some(Frame::new(lease, self.options)))
+                .map_err(ReceiveError::Storage),
             outcome => {
-                messages.discard(self.writer);
+                self.receiving.discard(messages);
                 outcome.map(|_| None).map_err(ReceiveError::Input)
             }
         }
@@ -42,13 +40,13 @@ impl<'pool, E> Received<'pool, E> {
 /// future alive across Pending; dropping it mid-frame is terminal connection
 /// teardown, and its reservation remains unavailable until the pool scope ends.
 /// Other input/output/application tasks may continue using the pool meanwhile.
-pub async fn receive<'pool, R: Read>(
-    writing: messages::Writing<'pool, '_>,
+pub async fn receive<'pool, 'storage, R: Read>(
+    receiving: messages::Receiving<'pool, 'storage>,
     reader: &mut R,
     options: capnp::message::ReaderOptions,
     budget: NonZeroUsize,
-) -> Received<'pool, R::Error> {
-    receive_until(writing, reader, options, budget, |_| {
+) -> Received<'pool, 'storage, R::Error> {
+    receive_until(receiving, reader, options, budget, |_| {
         core::task::Poll::Pending
     })
     .await
@@ -61,28 +59,71 @@ pub async fn receive<'pool, R: Read>(
 /// Cancellation wins over readable input in the same poll; no further IO is
 /// performed after stop becomes ready. This function needs neither allocation
 /// nor an executor, and the receive future can stay pinned on the caller's stack.
-pub async fn receive_until<'pool, R: Read>(
-    mut writing: messages::Writing<'pool, '_>,
+pub async fn receive_until<'pool, 'storage, R: Read>(
+    mut receiving: messages::Receiving<'pool, 'storage>,
     reader: &mut R,
     options: capnp::message::ReaderOptions,
     budget: NonZeroUsize,
     mut stop: impl FnMut(&mut core::task::Context<'_>) -> core::task::Poll<capnp::ErrorKind>,
-) -> Received<'pool, R::Error> {
+) -> Received<'pool, 'storage, R::Error> {
+    use crate::io::ReceiveError as InputError;
+    use capntproto_rpc_engine::{io::IoError, messages::ReceiveReadError};
+    use core::task::Poll;
     let outcome = async {
-        let mut receiver = capnp::serialize::FrameReceiver::new(writing.bytes(), options)
-            .map_err(|e| crate::io::ReceiveError::Wire(e.kind))?;
-        let complete = core::future::poll_fn(|cx| {
-            if let core::task::Poll::Ready(kind) = stop(cx) {
-                return core::task::Poll::Ready(Err(crate::io::ReceiveError::Wire(kind)));
+        let mut cursor = capnp::serialize::FrameCursor::new(receiving.capacity(), options)
+            .map_err(|e| InputError::Wire(e.kind))?;
+        cursor
+            .check_alignment(receiving.received())
+            .map_err(|e| InputError::Wire(e.kind))?;
+        core::future::poll_fn(|cx| {
+            if let Poll::Ready(kind) = stop(cx) {
+                return Poll::Ready(Err(InputError::Wire(kind)));
             }
-            crate::io::poll_receive(reader, &mut receiver, cx, budget)
+            for _ in 0..budget.get() {
+                let end = match cursor.next_read_end() {
+                    Ok(Some(end)) => end,
+                    Ok(None) => {
+                        return Poll::Ready(cursor.complete().map_err(|e| InputError::Wire(e.kind)))
+                    }
+                    Err(error) => return Poll::Ready(Err(InputError::Wire(error.kind))),
+                };
+                match receiving.poll_read(reader, end, cx) {
+                    Poll::Pending => return Poll::Pending,
+                    Poll::Ready(Ok(count)) => {
+                        if let Err(error) = cursor.advance(receiving.received(), count) {
+                            return Poll::Ready(Err(InputError::Wire(error.kind)));
+                        }
+                    }
+                    Poll::Ready(Err(ReceiveReadError::Io(IoError::Interrupted))) => (),
+                    Poll::Ready(Err(ReceiveReadError::Io(IoError::Failed(error)))) => {
+                        return Poll::Ready(Err(InputError::Io(error)));
+                    }
+                    Poll::Ready(Err(ReceiveReadError::InvalidCount { count, available })) => {
+                        return Poll::Ready(Err(InputError::Wire(
+                            capnp::ErrorKind::InvalidReadCount(count, available),
+                        )));
+                    }
+                    Poll::Ready(Err(ReceiveReadError::InvalidEnd)) => {
+                        return Poll::Ready(Err(InputError::Wire(
+                            capnp::ErrorKind::BufferNotLargeEnough,
+                        )));
+                    }
+                }
+            }
+            match cursor.complete() {
+                Ok(complete) => Poll::Ready(Ok(complete)),
+                Err(error) if error.kind == capnp::ErrorKind::IncompleteFill => {
+                    cx.waker().wake_by_ref();
+                    Poll::Pending
+                }
+                Err(error) => Poll::Ready(Err(InputError::Wire(error.kind))),
+            }
         })
-        .await?;
-        Ok(complete.then_some(receiver.received_bytes()))
+        .await
     }
     .await;
     Received {
-        writer: writing.into_writer(),
+        receiving,
         outcome,
         options,
     }
@@ -192,14 +233,11 @@ mod tests {
             // One-segment frame, one word, suspended at every incomplete prefix.
             let frame = [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
             for prefix in 0..frame.len() {
-                let mut bytes = [word(0, 0, 0, 0, 0, 0, 0, 0); 8];
+                let mut bytes = [word(0xa5, 0xa5, 0xa5, 0xa5, 0xa5, 0xa5, 0xa5, 0xa5); 8];
                 let mut buffers = [messages::Buffer::new(Word::words_to_bytes_mut(&mut bytes))];
                 let mut sends = [];
                 messages::with_messages(&mut buffers, &mut sends, |messages| {
-                    let writer = messages.reserve(64).unwrap();
-                    let writing = messages
-                        .write_owned(writer)
-                        .unwrap_or_else(|_| panic!("fresh writer"));
+                    let receiving = messages.receive(64).unwrap();
                     let mut source = Source {
                         bytes: &frame[..prefix],
                         calls: 0,
@@ -207,7 +245,7 @@ mod tests {
                     let stop = Cell::new(prefix == 0);
                     {
                         let mut receive = core::pin::pin!(receive_until(
-                            writing,
+                            receiving,
                             &mut source,
                             Default::default(),
                             NonZeroUsize::new(8).unwrap(),
@@ -238,11 +276,127 @@ mod tests {
                         assert_eq!(source.calls, 0);
                     }
                     let writer = messages.reserve(64).unwrap();
+                    assert!(messages.write(&writer).iter().all(|byte| *byte == 0));
                     messages.discard(writer);
                 })
                 .unwrap();
             }
         });
         assert_eq!(measured.count_total, 0);
+    }
+
+    #[test]
+    fn receive_alignment_uses_the_core_feature_even_when_enabled_by_another_dependency() {
+        let mut words = [word(0, 0, 0, 0, 0, 0, 0, 0); 4];
+        let bytes = &mut Word::words_to_bytes_mut(&mut words)[1..17];
+        let expected = capnp::serialize::FrameReceiver::new(bytes, Default::default())
+            .err()
+            .map(|error| error.kind);
+        let mut buffers = [messages::Buffer::new(bytes)];
+        messages::with_messages(&mut buffers, &mut [], |messages| {
+            let mut source = Source { bytes: &[0; 8], calls: 0 };
+            let outcome = {
+                let mut task = core::pin::pin!(receive(messages.receive(16).unwrap(), &mut source, Default::default(), NonZeroUsize::new(2).unwrap()));
+                let Poll::Ready(received) = task.as_mut().poll(&mut Context::from_waker(Waker::noop())) else { panic!("complete buffered header") };
+                received.finish(messages)
+            };
+            if let Some(kind) = expected {
+                assert!(matches!(outcome, Err(ReceiveError::Input(crate::io::ReceiveError::Wire(actual))) if actual == kind));
+                assert_eq!(source.calls, 0);
+            } else {
+                outcome.unwrap().unwrap().release(messages);
+                assert_eq!(source.calls, 1);
+            }
+            messages.receive(16).unwrap().discard(messages);
+        }).unwrap();
+    }
+
+    #[test]
+    fn receive_reuse_handles_fragmented_tables_eof_and_never_prefetches() {
+        struct Fragments<'a> {
+            bytes: &'a [u8],
+            chunk: usize,
+            polls: usize,
+        }
+        impl Read for Fragments<'_> {
+            type Error = ();
+            fn poll_read(
+                &mut self,
+                cx: &mut Context<'_>,
+                output: &mut [u8],
+            ) -> Poll<Result<usize, IoError<()>>> {
+                self.polls += 1;
+                if self.polls.is_multiple_of(7) {
+                    return Poll::Ready(Err(IoError::Interrupted));
+                }
+                if self.polls.is_multiple_of(3) {
+                    cx.waker().wake_by_ref();
+                    return Poll::Pending;
+                }
+                let count = self.chunk.min(output.len()).min(self.bytes.len());
+                output[..count].copy_from_slice(&self.bytes[..count]);
+                self.bytes = &self.bytes[count..];
+                Poll::Ready(Ok(count))
+            }
+        }
+        // Two segments, nonzero padding, followed by an empty frame. Every
+        // truncated prefix must discard rather than publishing old pool bytes.
+        let frame = [
+            word(1, 0, 0, 0, 1, 0, 0, 0),
+            word(1, 0, 0, 0, 9, 8, 7, 6),
+            word(0, 0, 0, 0, 0, 0, 0, 0),
+            word(0, 0, 0, 0, 0, 0, 0, 0),
+            word(0, 0, 0, 0, 0, 0, 0, 0),
+        ];
+        let frame = Word::words_to_bytes(&frame);
+        for chunk in 1..=16 {
+            for length in 0..=frame.len() {
+                let mut bytes = [word(0xa5, 0xa5, 0xa5, 0xa5, 0xa5, 0xa5, 0xa5, 0xa5); 8];
+                let mut buffers = [messages::Buffer::new(Word::words_to_bytes_mut(&mut bytes))];
+                messages::with_messages(&mut buffers, &mut [], |messages| {
+                    let mut source = Fragments {
+                        bytes: &frame[..length],
+                        chunk,
+                        polls: 0,
+                    };
+                    let outcome = {
+                        let mut task = core::pin::pin!(receive(
+                            messages.receive(64).unwrap(),
+                            &mut source,
+                            Default::default(),
+                            NonZeroUsize::new(2).unwrap()
+                        ));
+                        let mut cx = Context::from_waker(Waker::noop());
+                        let mut ready = None;
+                        for _ in 0..128 {
+                            if let Poll::Ready(received) = task.as_mut().poll(&mut cx) {
+                                ready = Some(received.finish(messages));
+                                break;
+                            }
+                        }
+                        ready.expect("bounded fragmented receive")
+                    };
+                    if length == 0 {
+                        assert!(outcome.unwrap().is_none());
+                    } else if length < 32 {
+                        assert!(matches!(
+                            outcome,
+                            Err(ReceiveError::Input(crate::io::ReceiveError::Wire(
+                                capnp::ErrorKind::PrematureEndOfFile
+                            )))
+                        ));
+                    } else {
+                        let received = outcome.unwrap().unwrap();
+                        assert_eq!(source.bytes, &frame[32..length]);
+                        assert_eq!(received.size_in_words(messages).unwrap(), 2);
+                        received.release(messages);
+                    }
+                    let receiving = messages.receive(64).unwrap();
+                    assert!(receiving.received().is_empty());
+                    receiving.discard(messages);
+                })
+                .unwrap();
+            }
+        }
     }
 }

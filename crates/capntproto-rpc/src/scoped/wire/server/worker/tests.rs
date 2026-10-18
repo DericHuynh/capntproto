@@ -137,10 +137,9 @@ fn incoming<'p, 'id>(
         position: 0,
         polls: 0,
     };
-    let writer = messages.reserve(512).unwrap();
     let frame = {
         let receive = owned::tasks::receive(
-            messages.write_owned(writer).unwrap(),
+            messages.receive(512).unwrap(),
             &mut source,
             Default::default(),
             NonZeroUsize::new(2).unwrap(),

@@ -74,7 +74,7 @@ pub fn owned_task_failures() -> Result<()> {
             let writing = messages.write_owned(writer).unwrap();
             let outcome = {
                 let mut task = core::pin::pin!(tasks::receive(
-                    writing,
+                    messages::Receiving::from_writing(writing),
                     &mut input,
                     Default::default(),
                     NonZeroUsize::new(2).unwrap()
@@ -173,7 +173,7 @@ pub fn owned_task_failures() -> Result<()> {
         };
         {
             let mut task = core::pin::pin!(tasks::receive(
-                writing,
+                messages::Receiving::from_writing(writing),
                 &mut input,
                 Default::default(),
                 NonZeroUsize::new(2).unwrap()

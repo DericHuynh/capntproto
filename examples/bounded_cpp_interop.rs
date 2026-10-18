@@ -98,9 +98,8 @@ fn flush<'p>(
     panic!("output did not drain");
 }
 fn receive<'p>(io: &mut Socket, messages: &mut messages::Messages<'p, '_, '_>) -> Frame<'p> {
-    let writer = messages.reserve(BYTES).unwrap();
-    let writing = messages.write_owned(writer).unwrap();
-    let mut future = core::pin::pin!(tasks::receive(writing, io, Default::default(), budget()));
+    let receiving = messages.receive(BYTES).unwrap();
+    let mut future = core::pin::pin!(tasks::receive(receiving, io, Default::default(), budget()));
     let mut cx = Context::from_waker(Waker::noop());
     for _ in 0..65536 {
         if let Poll::Ready(result) = future.as_mut().poll(&mut cx) {

@@ -3,7 +3,8 @@
 //!
 //! Writers are exclusive; sealing exposes only an immutable used prefix. Read
 //! leases and offered/accepted sends independently retain that prefix. A buffer
-//! is reusable only after both counts reach zero. Reservation clears old bytes.
+//! is reusable only after both counts reach zero. Builder reservations clear old
+//! bytes; receive reservations expose only bytes committed by the IO adapter.
 //! The caller chooses buffer alignment, sizes, send capacity and polling order.
 //!
 //! Scoped tokens cannot escape or cross pools. Dropped/forgotten writer, reader
@@ -52,9 +53,11 @@ pub use growing::{with_growing_messages, with_growing_messages_async, GrowingBuf
 #[cfg(feature = "alloc")]
 mod parts;
 mod queue;
+mod receiving;
 #[cfg(feature = "alloc")]
 pub use parts::{Parts, SharedParts};
 pub use queue::{Queue, QueueEntry, QueueSlot, QueueWindow};
+pub use receiving::{ReceiveReadError, Receiving};
 
 type Brand<'id> = PhantomData<fn(&'id ()) -> &'id ()>;
 
@@ -307,7 +310,7 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
     /// Reserve the first reusable buffer which fits, clearing its whole capacity
     /// before exposing it. Exhausted generations are never reused.
     pub fn reserve(&mut self, minimum: usize) -> Result<Writer<'id>, Error> {
-        self.reserve_length(minimum, false)
+        self.reserve_length(minimum, false, true)
     }
     /// Inspect configured capacity without reserving or changing generations.
     /// Used to flush accepted output before admitting another buffered request.
@@ -334,7 +337,20 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
     /// buffer. All writer views and sealing are limited to that prefix. Bytes
     /// beyond it remain inaccessible until a later reservation clears them.
     pub fn reserve_exact(&mut self, length: usize) -> Result<Writer<'id>, Error> {
-        self.reserve_length(length, true)
+        self.reserve_length(length, true, true)
+    }
+    /// Reserve receive capacity without clearing previous contents. Only the IO
+    /// adapter can access unwritten bytes; readers and sealing are restricted to
+    /// the prefix it commits. Dropping this owner reserves storage until teardown.
+    pub fn receive(&mut self, capacity: usize) -> Result<Receiving<'id, 'storage>, Error> {
+        let writer = self.reserve_length(capacity, true, false)?;
+        match self.write_owned(writer) {
+            Ok(writing) => Ok(Receiving::new(writing)),
+            Err(rejected) => {
+                self.discard(rejected.writer);
+                Err(rejected.error)
+            }
+        }
     }
     /// Copy a complete message into reusable storage in one exclusive borrow.
     /// The entire exposed prefix is overwritten before sealing; no mutable
@@ -459,7 +475,12 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
             brand: PhantomData,
         })
     }
-    fn reserve_length(&mut self, minimum: usize, exact: bool) -> Result<Writer<'id>, Error> {
+    fn reserve_length(
+        &mut self,
+        minimum: usize,
+        exact: bool,
+        clear: bool,
+    ) -> Result<Writer<'id>, Error> {
         let mut exhausted = false;
         for (index, buffer) in self.buffers.iter().enumerate() {
             if buffer.state.get() != State::Free || buffer.capacity.get() < minimum {
@@ -482,7 +503,9 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
             } else {
                 buffer.capacity.get()
             };
-            bytes[..length].fill(0);
+            if clear {
+                bytes[..length].fill(0);
+            }
             buffer.generation.set(buffer.generation.get() + 1);
             buffer.state.set(State::Writing);
             return Ok(Writer {
@@ -506,7 +529,9 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
         } else {
             buffer.capacity.get()
         };
-        buffer.bytes.borrow_mut()[..length].fill(0);
+        if clear {
+            buffer.bytes.borrow_mut()[..length].fill(0);
+        }
         buffer.state.set(State::Writing);
         Ok(Writer {
             length,

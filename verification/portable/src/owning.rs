@@ -63,9 +63,13 @@ pub(super) fn exchange<'pool>(
         }
         assert!(attempt < 4095, "output poll bound");
     }
-    let writer = messages.reserve(97 * 8).unwrap();
-    let writing = messages.write_owned(writer).unwrap();
-    let mut future = core::pin::pin!(tasks::receive(writing, &mut io, Default::default(), budget));
+    let receiving = messages.receive(97 * 8).unwrap();
+    let mut future = core::pin::pin!(tasks::receive(
+        receiving,
+        &mut io,
+        Default::default(),
+        budget
+    ));
     for _ in 0..4096 {
         if let Poll::Ready(outcome) = future.as_mut().poll(&mut cx) {
             return outcome.finish(messages).unwrap().unwrap();

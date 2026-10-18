@@ -1,6 +1,25 @@
 use super::*;
 
 #[test]
+fn receive_reservations_respect_escaping_owners_and_generation_exhaustion() {
+    let mut pool = GrowingBuffers::new(1, 64, 71);
+    with_growing_messages(&mut pool, sends(0), |messages| {
+        let first = messages.copy_from(b"retained").unwrap();
+        let shared = messages.share(&first).unwrap();
+        messages.release(first);
+        assert_eq!(messages.receive(8).err(), Some(Error::NoBuffer));
+        assert_eq!(&*shared, b"retained");
+        drop(shared);
+        let receiving = messages.receive(64).unwrap();
+        assert!(receiving.received().is_empty());
+        receiving.discard(messages);
+        messages.buffers[0].generation.set(u64::MAX);
+        assert_eq!(messages.receive(64).err(), Some(Error::GenerationExhausted));
+    })
+    .unwrap();
+}
+
+#[test]
 fn capacity_lookahead_observes_growth_limits_and_shared_owners() {
     let mut pool = GrowingBuffers::new(1, 64, 71);
     with_growing_messages(&mut pool, sends(0), |messages| {
