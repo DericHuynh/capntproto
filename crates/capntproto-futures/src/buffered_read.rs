@@ -492,7 +492,8 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
     }
 
     /// Advise the transport how many bytes a known incomplete frame still needs.
-    /// Unknown headers, streaming reads and completed frames use one. A
+    /// Unknown headers and completed frames use one. Streaming body reads
+    /// advise at most the next caller-provided slice's length. A
     /// canceled read keeps the hint and its partial frame until resumed; the
     /// transport must restore any external socket state when it is dropped.
     /// The callback must never require more than the supplied number of bytes.
@@ -916,6 +917,14 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
             output[..count].copy_from_slice(&self.buffer.bytes()[start..start + count]);
             count
         } else {
+            // This body goes directly into caller-owned storage, bypassing
+            // poll_prepare_frame's ordinary remaining-body hint. Bound the
+            // readiness request by both the frame and the caller's slice.
+            if let Err(error) = (self.read_hint)(&mut self.input, length) {
+                let error = Error::from(error);
+                self.terminal = Some(Err(error.clone()));
+                return Poll::Ready(Err(error));
+            }
             match ready!(Pin::new(&mut self.input).poll_read(cx, output)) {
                 Ok(0) => {
                     let error = Error::from_kind(ErrorKind::PrematureEndOfFile);
@@ -933,6 +942,11 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
         streaming.position += count;
         if streaming.position == streaming.bytes {
             let bytes = streaming.bytes;
+            if let Err(error) = (self.read_hint)(&mut self.input, 1) {
+                let error = Error::from(error);
+                self.terminal = Some(Err(error.clone()));
+                return Poll::Ready(Err(error));
+            }
             if let Err(error) = self.advance(bytes) {
                 self.terminal = Some(Err(error.clone()));
                 return Poll::Ready(Err(error));
@@ -2030,6 +2044,111 @@ mod tests {
         ));
         assert_eq!(input.get_ref().position(), position);
         assert_eq!(input.consumed_bytes(), u64::MAX);
+    }
+
+    #[test]
+    fn streamed_read_hints_bound_slices_and_reset_before_completing() {
+        let mut message = capnp::message::Builder::new_default();
+        message
+            .initn_root::<capnp::data::Builder>((MAX_PROMOTED_BUFFER_WORDS * 8) as u32)
+            .fill(0x91);
+        let large = capnp::serialize::write_message_to_words(&message);
+        let mut message = capnp::message::Builder::new_default();
+        message.set_root("successor").unwrap();
+        let small = capnp::serialize::write_message_to_words(&message);
+        for slice in [8192, large.len()] {
+            for reject in [0, 1, 2] {
+                let mut input = BufferedRead::new(
+                    Hinted {
+                        reader: Fragmented {
+                            input: futures::io::Cursor::new([&large[..], &small[..]].concat()),
+                            chunk: 4093,
+                            pending: false,
+                        },
+                        frame_bytes: large.len(),
+                        hints: Vec::new(),
+                        reject_reset: reject == 1,
+                    },
+                    Default::default(),
+                );
+                input.set_read_hint(|input, bytes| {
+                    if bytes > 1 {
+                        assert!(
+                            bytes <= input.frame_bytes - input.reader.input.position() as usize
+                        );
+                    } else if input.reject_reset && input.hints.iter().any(|n| *n > 1) {
+                        return Err(std::io::Error::other("stream readiness reset failed"));
+                    }
+                    input.hints.push(bytes);
+                    Ok(())
+                });
+                let mut cx = Context::from_waker(std::task::Waker::noop());
+                loop {
+                    match input.poll_stream_frame_size(&mut cx) {
+                        Poll::Pending => (),
+                        Poll::Ready(result) => {
+                            assert_eq!(result.unwrap(), Some(large.len()));
+                            break;
+                        }
+                    }
+                }
+                if reject == 2 {
+                    input.set_read_hint(|_, _| {
+                        Err(std::io::Error::other("stream body hint failed"))
+                    });
+                }
+                let mut output = vec![0xa5; large.len() + 8];
+                let mut position = 0;
+                let mut failed = false;
+                while position < large.len() {
+                    let end = (position + slice).min(output.len());
+                    // A Pending discards the individual read operation while
+                    // the framer retains its prefix, body progress and hint.
+                    match input.poll_stream_frame(&mut cx, &mut output[position..end]) {
+                        Poll::Pending => (),
+                        Poll::Ready(Ok(count)) => {
+                            assert!(count > 0);
+                            position += count;
+                        }
+                        Poll::Ready(Err(_)) => {
+                            assert_ne!(reject, 0);
+                            failed = true;
+                            let read = input.get_ref().reader.input.position();
+                            assert!(matches!(
+                                input.poll_stream_frame(&mut cx, &mut output),
+                                Poll::Ready(Err(_))
+                            ));
+                            assert!(matches!(
+                                input.poll_stream_frame_size(&mut cx),
+                                Poll::Ready(Err(_))
+                            ));
+                            assert_eq!(input.get_ref().reader.input.position(), read);
+                            break;
+                        }
+                    }
+                }
+                assert_eq!(failed, reject != 0);
+                if failed {
+                    assert_eq!(input.consumed_bytes(), 0);
+                    continue;
+                }
+                assert_eq!(&output[..large.len()], large);
+                assert_eq!(&output[large.len()..], &[0xa5; 8]);
+                assert!(input.get_ref().hints.iter().any(|n| *n > 1));
+                assert!(input.get_ref().hints.iter().all(|n| *n <= slice));
+                assert_eq!(input.get_ref().hints.last(), Some(&1));
+                input.finish_borrowed_frame();
+                input.input.frame_bytes += small.len();
+                let successor = futures::executor::block_on(core::future::poll_fn(|cx| {
+                    input.poll_stream_frame_size(cx)
+                }))
+                .unwrap();
+                assert_eq!(successor, Some(small.len()));
+                assert_eq!(input.borrowed_frame().unwrap(), small);
+                input.finish_borrowed_frame();
+                assert_eq!(input.consumed_bytes(), (large.len() + small.len()) as u64);
+            }
+        }
     }
 
     #[test]

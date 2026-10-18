@@ -56,3 +56,10 @@ Historical logs and model-checker output referenced by older design documents
 are local archives and are not included in this repository. Model source and
 verification fixtures remain under `research/baseline/`, `verification/`, and
 `test-support/verification/`.
+
+The [portable deep/concurrent comparison](portable-performance/2026-10-18-topologies/README.md)
+adds portable to all eight topology fixtures and compares it with current legacy,
+fixed C++ and a frozen portable control. Streaming body readiness hints and
+iterative final-field validation improve selected workloads; the full 24-cell
+latency target and complete read/write parity remain open. All timing modes,
+regressions, rejected scheduling changes and per-process traces are retained.

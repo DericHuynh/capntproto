@@ -36,7 +36,9 @@ Request construction, traversal, forwarding, response validation/destruction,
 and a ten-second batch deadline are inside the timed operation. Connection setup,
 bootstrap resolution and topology discovery are outside timing. Rust and C++
 perform the same application work; no payload or validation is skipped. The
-topology suite currently compares legacy Tokio and C++/KJ.
+topology suite compares portable Tokio, legacy Tokio and C++/KJ. The Rust
+implementations use the same release binary by default; each client and every
+service process explicitly selects its driver, including downstream connections.
 
 ## Running the suite
 
@@ -50,17 +52,20 @@ python3 benchmarks/rpc/topology-runner.py \
   --output target/topology-latency --mixed
 ```
 
-Use the actual bundle paths produced by your build. Defaults are four repetitions,
+Use the actual bundle paths produced by your build. Defaults are six repetitions,
 100 warmups and 1,000 retained batch samples per cell. Variant order rotates and
-reverses so each implementation occupies both positions equally. `--mixed` also
-checks alternating Rust/C++ service chains in both directions, outside the latency
-comparison. `--cases` accepts comma-separated catalog names.
+reverses so each implementation occupies all three positions equally. `--mixed`
+also checks every ordered pair of portable, legacy and C++ in alternating service
+chains, outside the latency comparison. `--cases` accepts comma-separated catalog
+names. `--portable DRIVER` supplies a separate portable candidate while keeping
+the legacy reference fixed with `--rust DRIVER`.
 
-To isolate an optimization from run-to-run shifts, add `--baseline FROZEN_RUST`
-and use `--repetitions 6`. This interleaves the candidate, the previous Rust
-binary and C++ in balanced order. At least two complete variant cycles are
-required for a qualifying budget. Mixed-chain checks still use the candidate
-and C++; the baseline runs the same homogeneous fixtures as both controls.
+To isolate a portable optimization from run-to-run shifts, add
+`--portable-baseline FROZEN_PORTABLE`. The default then becomes eight repetitions
+to interleave all four variants in balanced order. `--baseline FROZEN_LEGACY`
+remains available for a legacy control. At least two complete variant cycles are
+required for a qualifying budget. Mixed-chain checks use the three current
+implementations; frozen controls run the same homogeneous fixtures.
 
 The runner selects distinct physical cores for the client and available service
 workers. Longer chains cycle over the available service cores; the exact placement
@@ -72,9 +77,10 @@ Every output directory must be new. It retains raw latency samples, per-process
 logs, server readiness/chain checks, CPU placement, binary and fixture hashes,
 CPU quota/throttling and steal counters around each process lifecycle,
 and every trial's p50/p95/p99 and batch/request/service-call throughput. These host
-counters include setup and teardown; they do not modify or filter samples. The 30%
-latency goal is `Rust p50 <= 0.70 * C++ p50` in every cell; passing some cells
-does not qualify the suite.
+counters include setup and teardown; they do not modify or filter samples. The
+portable latency goal is `portable p50 <= min(legacy p50, C++ p50)` in every
+cell; passing some cells does not qualify the suite. Syscall count parity is
+assessed separately using diagnostic captures.
 
 ## Tracing and profiling
 

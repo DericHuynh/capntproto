@@ -101,6 +101,15 @@ impl access_service::Server for Service {
 }
 
 async fn connect(address: &str) -> Result<access_service::Client> {
+    if crate::tcp_driver()? == "portable" {
+        let socket = tokio::net::TcpStream::connect(address).await?;
+        socket.set_nodelay(true)?;
+        let mut driver =
+            crate::portable_tcp(socket, None, capnp_rpc::rpc_twoparty_capnp::Side::Client)?;
+        let client = driver.bootstrap(capnp_rpc::rpc_twoparty_capnp::Side::Server);
+        tokio::task::spawn_local(driver);
+        return Ok(client);
+    }
     let mut driver = capntproto::rpc::connect(address, None, Default::default()).await?;
     let client = driver.bootstrap();
     tokio::task::spawn_local(driver);
@@ -130,22 +139,33 @@ pub async fn serve(args: &[String]) -> Result<()> {
     let listener = TcpListener::bind(&args[0]).await?;
     println!(
         "{}",
-        json!({"address":listener.local_addr()?.to_string(),"hops":hops})
+        json!({"address":listener.local_addr()?.to_string(),"hops":hops,"implementation":crate::tcp_driver()?})
     );
     use std::io::Write;
     std::io::stdout().flush()?;
     loop {
         let (socket, _) = listener.accept().await?;
         socket.set_nodelay(true)?;
-        let driver = capntproto::rpc::tcp::client(
-            socket,
-            Some(service.client.clone()),
-            capnp_rpc::rpc_twoparty_capnp::Side::Server,
-            Default::default(),
-        );
-        tokio::task::spawn_local(async move {
-            let _ = driver.await;
-        });
+        if crate::tcp_driver()? == "portable" {
+            let driver = crate::portable_tcp(
+                socket,
+                Some(service.client.clone()),
+                capnp_rpc::rpc_twoparty_capnp::Side::Server,
+            )?;
+            tokio::task::spawn_local(async move {
+                let _ = driver.await;
+            });
+        } else {
+            let driver = capntproto::rpc::tcp::client(
+                socket,
+                Some(service.client.clone()),
+                capnp_rpc::rpc_twoparty_capnp::Side::Server,
+                Default::default(),
+            );
+            tokio::task::spawn_local(async move {
+                let _ = driver.await;
+            });
+        }
     }
 }
 
@@ -219,7 +239,7 @@ pub async fn measure(args: &[String]) -> Result<()> {
     }
     println!(
         "{}",
-        json!({"topology_version":1,"implementation":"legacy","case":case,"warmup":warmup,"iterations":iterations,"elapsed_ns":u64::try_from(start.elapsed().as_nanos())?,"latency_ns":samples})
+        json!({"topology_version":1,"implementation":crate::tcp_driver()?,"case":case,"warmup":warmup,"iterations":iterations,"elapsed_ns":u64::try_from(start.elapsed().as_nanos())?,"latency_ns":samples})
     );
     Ok(())
 }

@@ -1,0 +1,6155 @@
+{
+  "scope": "Local TCP; all 24 equivalent cases. A topology sample is an entire concurrent batch. No remote-host qualification.",
+  "goal": "portable pooled p50 <= min(current legacy, fixed C++), with reads/writes and attempts <= C++ separately.",
+  "selected": {
+    "base": "c7edff6294888a0089982839874d7e3ae81e59e0",
+    "binary": "/workspace/scratch/portable34-binaries/hints-tail",
+    "binary_sha256": "ccb2441c34c48bda690e5e4bf66fa0d1ecf507cf933d52b5dcc8819c55ef79a2",
+    "patch_sha256": "aebf46d0214b8de6f64d8798d3dbb796da44a2e7d52780febcd88e8d0b84bc46",
+    "files": {
+      "benchmarks/rpc/README.md": "1abafd03b74f635851a8c9dfa0270869223e894517bfd78ec394ef806e70fa76",
+      "benchmarks/rpc/src/topology.rs": "c247072c480181d60f53e90314be7fc18f99dbafe5235e086ad904951411d3bc",
+      "benchmarks/rpc/topology-runner.py": "c16456de9a420dad663401a782a306a1378aabd723f33e415ea011d13ec57237",
+      "crates/capntproto-core/src/private/layout/bounded.rs": "dd73fff1a7faf8996d39dca2c68156dbedc59624dc54780a33dbcaf73b7d48df",
+      "crates/capntproto-futures/src/buffered_read.rs": "1e44b538d7572c0da59c19ca81dce0360d0de9e8c4ee02a5da6d4e2241d2610d"
+    },
+    "scope": "Streaming body hints plus iterative final-field validation. Test-only fixed-array amendment followed compilation."
+  },
+  "baseline": {
+    "base": "c7edff6294888a0089982839874d7e3ae81e59e0",
+    "binary": "/workspace/scratch/portable34-binaries/baseline",
+    "binary_sha256": "fad68437196d076c886f2a4692a4bdfd5757676575bc7e8e0e8b9c627e25e84d",
+    "patch_sha256": "2887c5df1ec403fd81f83a29de4135b4c62f28d03d036b2deba94c6d61f6b58d",
+    "files": {
+      "benchmarks/rpc/README.md": "1abafd03b74f635851a8c9dfa0270869223e894517bfd78ec394ef806e70fa76",
+      "benchmarks/rpc/src/topology.rs": "c247072c480181d60f53e90314be7fc18f99dbafe5235e086ad904951411d3bc",
+      "benchmarks/rpc/topology-runner.py": "c16456de9a420dad663401a782a306a1378aabd723f33e415ea011d13ec57237"
+    },
+    "scope": "Topology portable selection and harness only; production unchanged from c7edff6."
+  },
+  "latency": {
+    "samples": 768000,
+    "rows": [
+      {
+        "case": "unary-empty",
+        "variants": {
+          "legacy": {
+            "samples": 8000,
+            "p50_ns": 22654,
+            "p95_ns": 40601,
+            "p99_ns": 90686,
+            "repetition_p50_ns": [
+              22234,
+              21542,
+              32119,
+              32379,
+              21502,
+              21342,
+              21432,
+              32028
+            ],
+            "operations_per_second": 34757.00185233097
+          },
+          "portable": {
+            "samples": 8000,
+            "p50_ns": 30386,
+            "p95_ns": 41012,
+            "p99_ns": 89905,
+            "repetition_p50_ns": [
+              20892,
+              20541,
+              31127,
+              31417,
+              20510,
+              31347,
+              20771,
+              30956
+            ],
+            "operations_per_second": 33171.10410554899
+          },
+          "portable-baseline": {
+            "samples": 8000,
+            "p50_ns": 22153,
+            "p95_ns": 38748,
+            "p99_ns": 86399,
+            "repetition_p50_ns": [
+              32199,
+              20501,
+              31097,
+              31457,
+              20501,
+              20380,
+              20501,
+              31217
+            ],
+            "operations_per_second": 34018.88126153442
+          },
+          "cpp": {
+            "samples": 8000,
+            "p50_ns": 31458,
+            "p95_ns": 39980,
+            "p99_ns": 80471,
+            "repetition_p50_ns": [
+              33701,
+              21563,
+              32248,
+              32299,
+              21963,
+              21803,
+              21782,
+              32038
+            ],
+            "operations_per_second": 33505.833510108016
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 1.3413083782113535,
+        "portable_over_before": 1.3716426669074167,
+        "paired_repetition_ratio_median": 1.0007018631303346,
+        "faster_than_before_repetitions": 3,
+        "meets_target": false
+      },
+      {
+        "case": "unary-small",
+        "variants": {
+          "legacy": {
+            "samples": 8000,
+            "p50_ns": 31406,
+            "p95_ns": 45248,
+            "p99_ns": 103545,
+            "repetition_p50_ns": [
+              21652,
+              21392,
+              32208,
+              32188,
+              21772,
+              32138,
+              30696,
+              31517
+            ],
+            "operations_per_second": 30599.202768371073
+          },
+          "portable": {
+            "samples": 8000,
+            "p50_ns": 30956,
+            "p95_ns": 38168,
+            "p99_ns": 79109,
+            "repetition_p50_ns": [
+              32248,
+              20521,
+              31107,
+              32048,
+              21021,
+              31817,
+              20751,
+              31026
+            ],
+            "operations_per_second": 33122.03887678612
+          },
+          "portable-baseline": {
+            "samples": 8000,
+            "p50_ns": 31116,
+            "p95_ns": 43124,
+            "p99_ns": 82163,
+            "repetition_p50_ns": [
+              33100,
+              20491,
+              31247,
+              31488,
+              20701,
+              31518,
+              31007,
+              30796
+            ],
+            "operations_per_second": 31407.504340271727
+          },
+          "cpp": {
+            "samples": 8000,
+            "p50_ns": 32089,
+            "p95_ns": 41753,
+            "p99_ns": 80241,
+            "repetition_p50_ns": [
+              22363,
+              21663,
+              32499,
+              32399,
+              21673,
+              32568,
+              32408,
+              31938
+            ],
+            "operations_per_second": 32007.996109556105
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 0.985671527733554,
+        "portable_over_before": 0.994857950893431,
+        "paired_repetition_ratio_median": 1.0044662798969797,
+        "faster_than_before_repetitions": 3,
+        "meets_target": true
+      },
+      {
+        "case": "unary-1k",
+        "variants": {
+          "legacy": {
+            "samples": 8000,
+            "p50_ns": 32990,
+            "p95_ns": 43045,
+            "p99_ns": 83095,
+            "repetition_p50_ns": [
+              21762,
+              22384,
+              33260,
+              33310,
+              21823,
+              33911,
+              33430,
+              32899
+            ],
+            "operations_per_second": 31138.025713407977
+          },
+          "portable": {
+            "samples": 8000,
+            "p50_ns": 31658,
+            "p95_ns": 38408,
+            "p99_ns": 76265,
+            "repetition_p50_ns": [
+              21001,
+              21052,
+              31958,
+              32269,
+              20841,
+              32108,
+              32037,
+              31918
+            ],
+            "operations_per_second": 33348.0831905285
+          },
+          "portable-baseline": {
+            "samples": 8000,
+            "p50_ns": 31707,
+            "p95_ns": 43315,
+            "p99_ns": 83946,
+            "repetition_p50_ns": [
+              21172,
+              21062,
+              32449,
+              32209,
+              21292,
+              32028,
+              32108,
+              31928
+            ],
+            "operations_per_second": 32597.567391864475
+          },
+          "cpp": {
+            "samples": 8000,
+            "p50_ns": 33400,
+            "p95_ns": 47061,
+            "p99_ns": 88753,
+            "repetition_p50_ns": [
+              21973,
+              33821,
+              33551,
+              33720,
+              22664,
+              33771,
+              33710,
+              33089
+            ],
+            "operations_per_second": 29814.994307982168
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 0.9596241285237951,
+        "portable_over_before": 0.9984545999306147,
+        "paired_repetition_ratio_median": 0.9986569621871451,
+        "faster_than_before_repetitions": 6,
+        "meets_target": true
+      },
+      {
+        "case": "fanout-32",
+        "variants": {
+          "legacy": {
+            "samples": 8000,
+            "p50_ns": 133570,
+            "p95_ns": 168293,
+            "p99_ns": 230064,
+            "repetition_p50_ns": [
+              99239,
+              95954,
+              139470,
+              135834,
+              95453,
+              134842,
+              137506,
+              136415
+            ],
+            "operations_per_second": 7733.0821375641035
+          },
+          "portable": {
+            "samples": 8000,
+            "p50_ns": 151798,
+            "p95_ns": 195744,
+            "p99_ns": 261492,
+            "repetition_p50_ns": [
+              131898,
+              115494,
+              114352,
+              153811,
+              115704,
+              153711,
+              157786,
+              154321
+            ],
+            "operations_per_second": 6804.5251671011065
+          },
+          "portable-baseline": {
+            "samples": 8000,
+            "p50_ns": 151157,
+            "p95_ns": 189935,
+            "p99_ns": 261001,
+            "repetition_p50_ns": [
+              115704,
+              117627,
+              155875,
+              149775,
+              115794,
+              152609,
+              155042,
+              155053
+            ],
+            "operations_per_second": 6717.30047412428
+          },
+          "cpp": {
+            "samples": 8000,
+            "p50_ns": 167671,
+            "p95_ns": 216235,
+            "p99_ns": 295604,
+            "repetition_p50_ns": [
+              147972,
+              133921,
+              162645,
+              176635,
+              132909,
+              169514,
+              171357,
+              174221
+            ],
+            "operations_per_second": 5908.186835655778
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 1.1364677697087668,
+        "portable_over_before": 1.0042406239869803,
+        "paired_repetition_ratio_median": 1.0032219129379645,
+        "faster_than_before_repetitions": 4,
+        "meets_target": false
+      },
+      {
+        "case": "dependent-read",
+        "variants": {
+          "legacy": {
+            "samples": 8000,
+            "p50_ns": 69414,
+            "p95_ns": 94592,
+            "p99_ns": 150606,
+            "repetition_p50_ns": [
+              71257,
+              48173,
+              69925,
+              68963,
+              47681,
+              69875,
+              69795,
+              69875
+            ],
+            "operations_per_second": 14349.520041558506
+          },
+          "portable": {
+            "samples": 8000,
+            "p50_ns": 74482,
+            "p95_ns": 107732,
+            "p99_ns": 172980,
+            "repetition_p50_ns": [
+              77487,
+              52258,
+              75314,
+              74432,
+              53200,
+              74482,
+              75754,
+              74252
+            ],
+            "operations_per_second": 12803.458429219834
+          },
+          "portable-baseline": {
+            "samples": 8000,
+            "p50_ns": 74001,
+            "p95_ns": 108934,
+            "p99_ns": 161813,
+            "repetition_p50_ns": [
+              75344,
+              53340,
+              74202,
+              74832,
+              52528,
+              72759,
+              75243,
+              74312
+            ],
+            "operations_per_second": 13169.527133230255
+          },
+          "cpp": {
+            "samples": 8000,
+            "p50_ns": 68753,
+            "p95_ns": 92299,
+            "p99_ns": 149034,
+            "repetition_p50_ns": [
+              72148,
+              47551,
+              69194,
+              68974,
+              48473,
+              68563,
+              69254,
+              69024
+            ],
+            "operations_per_second": 14491.512682404013
+          }
+        },
+        "faster_reference": "cpp",
+        "portable_over_faster_reference": 1.083327272991724,
+        "portable_over_before": 1.006499912163349,
+        "paired_repetition_ratio_median": 1.0097922531991372,
+        "faster_than_before_repetitions": 3,
+        "meets_target": false
+      },
+      {
+        "case": "pipelined-read",
+        "variants": {
+          "legacy": {
+            "samples": 8000,
+            "p50_ns": 40531,
+            "p95_ns": 56184,
+            "p99_ns": 101021,
+            "repetition_p50_ns": [
+              41773,
+              30886,
+              31056,
+              41702,
+              30926,
+              40481,
+              41041,
+              40831
+            ],
+            "operations_per_second": 24451.811999541515
+          },
+          "portable": {
+            "samples": 8000,
+            "p50_ns": 53010,
+            "p95_ns": 90836,
+            "p99_ns": 127893,
+            "repetition_p50_ns": [
+              54112,
+              42394,
+              88433,
+              52979,
+              41783,
+              53901,
+              53741,
+              52328
+            ],
+            "operations_per_second": 17330.508359376123
+          },
+          "portable-baseline": {
+            "samples": 8000,
+            "p50_ns": 51688,
+            "p95_ns": 88382,
+            "p99_ns": 127121,
+            "repetition_p50_ns": [
+              52960,
+              42064,
+              51468,
+              52068,
+              43234,
+              52239,
+              84927,
+              52018
+            ],
+            "operations_per_second": 17678.08707700213
+          },
+          "cpp": {
+            "samples": 8000,
+            "p50_ns": 40641,
+            "p95_ns": 58719,
+            "p99_ns": 105508,
+            "repetition_p50_ns": [
+              42324,
+              31117,
+              40621,
+              40641,
+              31137,
+              40972,
+              41832,
+              40341
+            ],
+            "operations_per_second": 23503.877704999588
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 1.3078877895931509,
+        "portable_over_before": 1.0255765361399165,
+        "paired_repetition_ratio_median": 1.0126707696051156,
+        "faster_than_before_repetitions": 2,
+        "meets_target": false
+      },
+      {
+        "case": "write-read",
+        "variants": {
+          "legacy": {
+            "samples": 8000,
+            "p50_ns": 64386,
+            "p95_ns": 95533,
+            "p99_ns": 162655,
+            "repetition_p50_ns": [
+              67812,
+              43075,
+              42724,
+              64306,
+              65328,
+              64757,
+              42734,
+              65237
+            ],
+            "operations_per_second": 15812.666329978105
+          },
+          "portable": {
+            "samples": 8000,
+            "p50_ns": 61693,
+            "p95_ns": 82304,
+            "p99_ns": 134843,
+            "repetition_p50_ns": [
+              64808,
+              40661,
+              40981,
+              62524,
+              41251,
+              62865,
+              41452,
+              63205
+            ],
+            "operations_per_second": 17517.79524427508
+          },
+          "portable-baseline": {
+            "samples": 8000,
+            "p50_ns": 62254,
+            "p95_ns": 79450,
+            "p99_ns": 117577,
+            "repetition_p50_ns": [
+              66290,
+              40901,
+              40911,
+              62504,
+              40851,
+              62564,
+              65959,
+              62744
+            ],
+            "operations_per_second": 16888.028826615493
+          },
+          "cpp": {
+            "samples": 8000,
+            "p50_ns": 64908,
+            "p95_ns": 90336,
+            "p99_ns": 147832,
+            "repetition_p50_ns": [
+              69895,
+              43736,
+              52339,
+              65449,
+              43665,
+              65177,
+              43656,
+              66279
+            ],
+            "operations_per_second": 15855.146462321734
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 0.9581741372348026,
+        "portable_over_before": 0.990988530857455,
+        "paired_repetition_ratio_median": 1.0010155053921481,
+        "faster_than_before_repetitions": 3,
+        "meets_target": true
+      },
+      {
+        "case": "callback",
+        "variants": {
+          "legacy": {
+            "samples": 8000,
+            "p50_ns": 67200,
+            "p95_ns": 95313,
+            "p99_ns": 141232,
+            "repetition_p50_ns": [
+              48734,
+              69434,
+              47291,
+              67071,
+              68212,
+              66691,
+              49214,
+              67611
+            ],
+            "operations_per_second": 14768.428166505699
+          },
+          "portable": {
+            "samples": 8000,
+            "p50_ns": 70366,
+            "p95_ns": 104017,
+            "p99_ns": 143596,
+            "repetition_p50_ns": [
+              54151,
+              49585,
+              91577,
+              71087,
+              70816,
+              68984,
+              50196,
+              72349
+            ],
+            "operations_per_second": 13685.375827063926
+          },
+          "portable-baseline": {
+            "samples": 8000,
+            "p50_ns": 70025,
+            "p95_ns": 105228,
+            "p99_ns": 154772,
+            "repetition_p50_ns": [
+              90887,
+              50115,
+              49594,
+              70296,
+              71096,
+              70746,
+              50646,
+              71448
+            ],
+            "operations_per_second": 14069.950118280707
+          },
+          "cpp": {
+            "samples": 8000,
+            "p50_ns": 65398,
+            "p95_ns": 88763,
+            "p99_ns": 129214,
+            "repetition_p50_ns": [
+              46710,
+              45849,
+              52038,
+              65949,
+              66830,
+              65588,
+              45548,
+              65489
+            ],
+            "operations_per_second": 15828.823806956223
+          }
+        },
+        "faster_reference": "cpp",
+        "portable_over_faster_reference": 1.075965625860118,
+        "portable_over_before": 1.004869689396644,
+        "paired_repetition_ratio_median": 0.9935882299642151,
+        "faster_than_before_repetitions": 5,
+        "meets_target": false
+      },
+      {
+        "case": "bulk-64k",
+        "variants": {
+          "legacy": {
+            "samples": 8000,
+            "p50_ns": 106170,
+            "p95_ns": 127021,
+            "p99_ns": 177426,
+            "repetition_p50_ns": [
+              51588,
+              107552,
+              49965,
+              107361,
+              109334,
+              105108,
+              50646,
+              108963
+            ],
+            "operations_per_second": 10937.019956677781
+          },
+          "portable": {
+            "samples": 8000,
+            "p50_ns": 107492,
+            "p95_ns": 136475,
+            "p99_ns": 200660,
+            "repetition_p50_ns": [
+              50887,
+              110377,
+              49514,
+              108373,
+              107501,
+              107982,
+              49274,
+              112288
+            ],
+            "operations_per_second": 10758.6765613175
+          },
+          "portable-baseline": {
+            "samples": 8000,
+            "p50_ns": 104797,
+            "p95_ns": 125940,
+            "p99_ns": 167551,
+            "repetition_p50_ns": [
+              61974,
+              104718,
+              50045,
+              107281,
+              105598,
+              108192,
+              49173,
+              108773
+            ],
+            "operations_per_second": 10904.35244256309
+          },
+          "cpp": {
+            "samples": 8000,
+            "p50_ns": 108133,
+            "p95_ns": 131888,
+            "p99_ns": 184447,
+            "repetition_p50_ns": [
+              51208,
+              107191,
+              52328,
+              110375,
+              110336,
+              110766,
+              53330,
+              111387
+            ],
+            "operations_per_second": 10588.065162595305
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 1.012451728360177,
+        "portable_over_before": 1.0257163850110214,
+        "paired_repetition_ratio_median": 1.0061164243722156,
+        "faster_than_before_repetitions": 3,
+        "meets_target": false
+      },
+      {
+        "case": "bulk-256k",
+        "variants": {
+          "legacy": {
+            "samples": 8000,
+            "p50_ns": 122264,
+            "p95_ns": 360050,
+            "p99_ns": 424206,
+            "repetition_p50_ns": [
+              103306,
+              161773,
+              104608,
+              331548,
+              100010,
+              121142,
+              120020,
+              340651
+            ],
+            "operations_per_second": 5035.2033884652965
+          },
+          "portable": {
+            "samples": 8000,
+            "p50_ns": 317596,
+            "p95_ns": 372408,
+            "p99_ns": 446781,
+            "repetition_p50_ns": [
+              92259,
+              340001,
+              338650,
+              331668,
+              94372,
+              91277,
+              106660,
+              341001
+            ],
+            "operations_per_second": 4439.573509640459
+          },
+          "portable-baseline": {
+            "samples": 8000,
+            "p50_ns": 144097,
+            "p95_ns": 317537,
+            "p99_ns": 379819,
+            "repetition_p50_ns": [
+              134652,
+              294663,
+              92659,
+              286089,
+              93681,
+              110666,
+              125388,
+              297626
+            ],
+            "operations_per_second": 5284.552534309127
+          },
+          "cpp": {
+            "samples": 8000,
+            "p50_ns": 376486,
+            "p95_ns": 440572,
+            "p99_ns": 527352,
+            "repetition_p50_ns": [
+              266452,
+              395414,
+              245088,
+              389635,
+              397077,
+              246080,
+              249505,
+              396915
+            ],
+            "operations_per_second": 2954.7016969047963
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 2.5976248118824836,
+        "portable_over_before": 2.204043109849615,
+        "paired_repetition_ratio_median": 1.0765563455330307,
+        "faster_than_before_repetitions": 3,
+        "meets_target": false
+      },
+      {
+        "case": "bulk-1m",
+        "variants": {
+          "legacy": {
+            "samples": 8000,
+            "p50_ns": 344336,
+            "p95_ns": 582096,
+            "p99_ns": 860904,
+            "repetition_p50_ns": [
+              370478,
+              328835,
+              380091,
+              325730,
+              315623,
+              315674,
+              318568,
+              382133
+            ],
+            "operations_per_second": 2621.342047911574
+          },
+          "portable": {
+            "samples": 8000,
+            "p50_ns": 372399,
+            "p95_ns": 1567774,
+            "p99_ns": 2734707,
+            "repetition_p50_ns": [
+              375265,
+              480482,
+              309746,
+              309685,
+              1273242,
+              364958,
+              299660,
+              360941
+            ],
+            "operations_per_second": 1708.2695442708575
+          },
+          "portable-baseline": {
+            "samples": 8000,
+            "p50_ns": 591061,
+            "p95_ns": 1386372,
+            "p99_ns": 1679638,
+            "repetition_p50_ns": [
+              564240,
+              555585,
+              1246805,
+              540529,
+              1226041,
+              536765,
+              559458,
+              1255201
+            ],
+            "operations_per_second": 1215.053819811845
+          },
+          "cpp": {
+            "samples": 8000,
+            "p50_ns": 921152,
+            "p95_ns": 1662294,
+            "p99_ns": 2008159,
+            "repetition_p50_ns": [
+              895357,
+              943708,
+              889135,
+              1555869,
+              935545,
+              893640,
+              899479,
+              908873
+            ],
+            "operations_per_second": 955.5181509800366
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 1.0814988848101854,
+        "portable_over_before": 0.630051720549994,
+        "paired_repetition_ratio_median": 0.619004972129551,
+        "faster_than_before_repetitions": 7,
+        "meets_target": false
+      },
+      {
+        "case": "bulk-4m",
+        "variants": {
+          "legacy": {
+            "samples": 8000,
+            "p50_ns": 2057484,
+            "p95_ns": 4755150,
+            "p99_ns": 5079553,
+            "repetition_p50_ns": [
+              1953798,
+              1935620,
+              2008660,
+              2082399,
+              2028796,
+              2140592,
+              2384767,
+              2151494
+            ],
+            "operations_per_second": 412.8037093040364
+          },
+          "portable": {
+            "samples": 8000,
+            "p50_ns": 2816117,
+            "p95_ns": 5015760,
+            "p99_ns": 5492976,
+            "repetition_p50_ns": [
+              2667251,
+              2777410,
+              2701702,
+              2780813,
+              4631913,
+              4708751,
+              2752832,
+              2629251
+            ],
+            "operations_per_second": 307.4199321308117
+          },
+          "portable-baseline": {
+            "samples": 8000,
+            "p50_ns": 2876462,
+            "p95_ns": 5281717,
+            "p99_ns": 5764652,
+            "repetition_p50_ns": [
+              2776322,
+              2788745,
+              4758345,
+              2892430,
+              2916737,
+              2796997,
+              3149532,
+              2863362
+            ],
+            "operations_per_second": 293.43350782781863
+          },
+          "cpp": {
+            "samples": 8000,
+            "p50_ns": 4451483,
+            "p95_ns": 6916865,
+            "p99_ns": 7839327,
+            "repetition_p50_ns": [
+              4423601,
+              4329284,
+              4246071,
+              5393744,
+              4265745,
+              4078003,
+              4362059,
+              6367933
+            ],
+            "operations_per_second": 202.55873373882702
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 1.3687187846904276,
+        "portable_over_before": 0.9790211030077922,
+        "paired_repetition_ratio_median": 0.9610622493547013,
+        "faster_than_before_repetitions": 6,
+        "meets_target": false
+      },
+      {
+        "case": "loopback-0",
+        "variants": {
+          "legacy": {
+            "samples": 8000,
+            "p50_ns": 24056,
+            "p95_ns": 35623,
+            "p99_ns": 69845,
+            "repetition_p50_ns": [
+              22705,
+              32379,
+              20982,
+              24126,
+              32088,
+              21031,
+              31968,
+              21182
+            ],
+            "operations_per_second": 35725.702309029846
+          },
+          "portable": {
+            "samples": 8000,
+            "p50_ns": 30877,
+            "p95_ns": 37876,
+            "p99_ns": 74932,
+            "repetition_p50_ns": [
+              30927,
+              20681,
+              30996,
+              31577,
+              30987,
+              20772,
+              31016,
+              31637
+            ],
+            "operations_per_second": 32316.68320048773
+          },
+          "portable-baseline": {
+            "samples": 8000,
+            "p50_ns": 30826,
+            "p95_ns": 37366,
+            "p99_ns": 68423,
+            "repetition_p50_ns": [
+              31477,
+              20601,
+              20981,
+              31397,
+              30936,
+              20681,
+              31057,
+              31537
+            ],
+            "operations_per_second": 33815.7182170693
+          },
+          "cpp": {
+            "samples": 8000,
+            "p50_ns": 32058,
+            "p95_ns": 35884,
+            "p99_ns": 61472,
+            "repetition_p50_ns": [
+              32599,
+              32109,
+              21713,
+              21813,
+              32429,
+              21683,
+              32458,
+              33360
+            ],
+            "operations_per_second": 33384.80574862986
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 1.2835467243099434,
+        "portable_over_before": 1.0016544475442808,
+        "paired_repetition_ratio_median": 1.003527092643037,
+        "faster_than_before_repetitions": 2,
+        "meets_target": false
+      },
+      {
+        "case": "loopback-64",
+        "variants": {
+          "legacy": {
+            "samples": 8000,
+            "p50_ns": 31828,
+            "p95_ns": 40551,
+            "p99_ns": 73460,
+            "repetition_p50_ns": [
+              32238,
+              31598,
+              31898,
+              31767,
+              21452,
+              31497,
+              31857,
+              32869
+            ],
+            "operations_per_second": 28446.016687393443
+          },
+          "portable": {
+            "samples": 8000,
+            "p50_ns": 31247,
+            "p95_ns": 42984,
+            "p99_ns": 79288,
+            "repetition_p50_ns": [
+              31447,
+              31647,
+              31086,
+              31547,
+              31507,
+              20210,
+              30906,
+              31246
+            ],
+            "operations_per_second": 31021.76511858132
+          },
+          "portable-baseline": {
+            "samples": 8000,
+            "p50_ns": 30976,
+            "p95_ns": 43746,
+            "p99_ns": 82133,
+            "repetition_p50_ns": [
+              31187,
+              30636,
+              30987,
+              30956,
+              31057,
+              30326,
+              30887,
+              31507
+            ],
+            "operations_per_second": 30139.832244707708
+          },
+          "cpp": {
+            "samples": 8000,
+            "p50_ns": 32078,
+            "p95_ns": 43185,
+            "p99_ns": 88313,
+            "repetition_p50_ns": [
+              32939,
+              32028,
+              32178,
+              32489,
+              32408,
+              21422,
+              32179,
+              21683
+            ],
+            "operations_per_second": 30820.041638184455
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 0.9817456327761719,
+        "portable_over_before": 1.0087487086776858,
+        "paired_repetition_ratio_median": 1.005765847590916,
+        "faster_than_before_repetitions": 2,
+        "meets_target": true
+      },
+      {
+        "case": "loopback-1024",
+        "variants": {
+          "legacy": {
+            "samples": 8000,
+            "p50_ns": 32268,
+            "p95_ns": 43706,
+            "p99_ns": 84868,
+            "repetition_p50_ns": [
+              33540,
+              21693,
+              32660,
+              21642,
+              33300,
+              21763,
+              21602,
+              32799
+            ],
+            "operations_per_second": 32466.27163249492
+          },
+          "portable": {
+            "samples": 8000,
+            "p50_ns": 31457,
+            "p95_ns": 41873,
+            "p99_ns": 76915,
+            "repetition_p50_ns": [
+              20911,
+              31788,
+              32008,
+              20641,
+              32388,
+              31638,
+              31698,
+              20981
+            ],
+            "operations_per_second": 33354.5706053699
+          },
+          "portable-baseline": {
+            "samples": 8000,
+            "p50_ns": 21182,
+            "p95_ns": 35624,
+            "p99_ns": 72529,
+            "repetition_p50_ns": [
+              20832,
+              31878,
+              31287,
+              20610,
+              20581,
+              31388,
+              20812,
+              20650
+            ],
+            "operations_per_second": 37191.494346153675
+          },
+          "cpp": {
+            "samples": 8000,
+            "p50_ns": 22513,
+            "p95_ns": 38237,
+            "p99_ns": 68473,
+            "repetition_p50_ns": [
+              22504,
+              34542,
+              33039,
+              22193,
+              21983,
+              22073,
+              22203,
+              22534
+            ],
+            "operations_per_second": 35174.81909271769
+          }
+        },
+        "faster_reference": "cpp",
+        "portable_over_faster_reference": 1.39728157064807,
+        "portable_over_before": 1.4850816731186858,
+        "paired_repetition_ratio_median": 1.0119969415063081,
+        "faster_than_before_repetitions": 1,
+        "meets_target": false
+      },
+      {
+        "case": "loopback-65536",
+        "variants": {
+          "legacy": {
+            "samples": 8000,
+            "p50_ns": 50836,
+            "p95_ns": 121712,
+            "p99_ns": 198468,
+            "repetition_p50_ns": [
+              108864,
+              108744,
+              50927,
+              50816,
+              50395,
+              49664,
+              50496,
+              50726
+            ],
+            "operations_per_second": 13693.503936271309
+          },
+          "portable": {
+            "samples": 8000,
+            "p50_ns": 48252,
+            "p95_ns": 107631,
+            "p99_ns": 139238,
+            "repetition_p50_ns": [
+              48002,
+              47902,
+              47812,
+              49134,
+              48332,
+              106219,
+              47862,
+              48112
+            ],
+            "operations_per_second": 16833.942608426645
+          },
+          "portable-baseline": {
+            "samples": 8000,
+            "p50_ns": 69263,
+            "p95_ns": 125278,
+            "p99_ns": 194581,
+            "repetition_p50_ns": [
+              105889,
+              49073,
+              101543,
+              108543,
+              47261,
+              48022,
+              103235,
+              48583
+            ],
+            "operations_per_second": 11934.929908789789
+          },
+          "cpp": {
+            "samples": 8000,
+            "p50_ns": 65619,
+            "p95_ns": 127311,
+            "p99_ns": 164337,
+            "repetition_p50_ns": [
+              112950,
+              52659,
+              63536,
+              52319,
+              66079,
+              107761,
+              52929,
+              111668
+            ],
+            "operations_per_second": 12334.929540030014
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 0.9491698796128728,
+        "portable_over_before": 0.6966490045190072,
+        "paired_repetition_ratio_median": 0.7234961513664626,
+        "faster_than_before_repetitions": 6,
+        "meets_target": true
+      },
+      {
+        "case": "deep-8",
+        "variants": {
+          "legacy": {
+            "samples": 8000,
+            "p50_ns": 22724,
+            "p95_ns": 36634,
+            "p99_ns": 72178,
+            "repetition_p50_ns": [
+              22464,
+              22704,
+              22534,
+              33971,
+              22594,
+              22533,
+              35413,
+              22755
+            ],
+            "batches_per_second": 36402.08656396164,
+            "logical_requests_per_second": 36402.08656396164,
+            "service_calls_per_second": 36402.08656396164
+          },
+          "portable": {
+            "samples": 8000,
+            "p50_ns": 22414,
+            "p95_ns": 38939,
+            "p99_ns": 88363,
+            "repetition_p50_ns": [
+              32870,
+              22354,
+              22403,
+              33329,
+              21882,
+              22293,
+              22113,
+              22173
+            ],
+            "batches_per_second": 36041.46401039515,
+            "logical_requests_per_second": 36041.46401039515,
+            "service_calls_per_second": 36041.46401039515
+          },
+          "cpp": {
+            "samples": 8000,
+            "p50_ns": 23315,
+            "p95_ns": 40671,
+            "p99_ns": 87461,
+            "repetition_p50_ns": [
+              34151,
+              23194,
+              23235,
+              34341,
+              23155,
+              23144,
+              23084,
+              23065
+            ],
+            "batches_per_second": 34748.515114507325,
+            "logical_requests_per_second": 34748.515114507325,
+            "service_calls_per_second": 34748.515114507325
+          },
+          "portable-baseline": {
+            "samples": 8000,
+            "p50_ns": 22884,
+            "p95_ns": 37426,
+            "p99_ns": 79379,
+            "repetition_p50_ns": [
+              33521,
+              23034,
+              22163,
+              33701,
+              22694,
+              22754,
+              22734,
+              22334
+            ],
+            "batches_per_second": 36211.956821496395,
+            "logical_requests_per_second": 36211.956821496395,
+            "service_calls_per_second": 36211.956821496395
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 0.9863580355571202,
+        "portable_over_before": 0.9794616325817165,
+        "paired_repetition_ratio_median": 0.9801595821449473,
+        "faster_than_before_repetitions": 7,
+        "meets_target": true
+      },
+      {
+        "case": "deep-32",
+        "variants": {
+          "legacy": {
+            "samples": 8000,
+            "p50_ns": 33330,
+            "p95_ns": 50206,
+            "p99_ns": 87080,
+            "repetition_p50_ns": [
+              37556,
+              41372,
+              35964,
+              37656,
+              27421,
+              26850,
+              26970,
+              26800
+            ],
+            "batches_per_second": 28629.353217068074,
+            "logical_requests_per_second": 28629.353217068074,
+            "service_calls_per_second": 28629.353217068074
+          },
+          "portable": {
+            "samples": 8000,
+            "p50_ns": 28653,
+            "p95_ns": 45889,
+            "p99_ns": 83224,
+            "repetition_p50_ns": [
+              38548,
+              28072,
+              38919,
+              38488,
+              28252,
+              27922,
+              27541,
+              28202
+            ],
+            "batches_per_second": 28713.63551759562,
+            "logical_requests_per_second": 28713.63551759562,
+            "service_calls_per_second": 28713.63551759562
+          },
+          "cpp": {
+            "samples": 8000,
+            "p50_ns": 27962,
+            "p95_ns": 45058,
+            "p99_ns": 82653,
+            "repetition_p50_ns": [
+              38267,
+              27461,
+              27511,
+              39159,
+              27290,
+              27251,
+              38888,
+              27741
+            ],
+            "batches_per_second": 29469.79050670041,
+            "logical_requests_per_second": 29469.79050670041,
+            "service_calls_per_second": 29469.79050670041
+          },
+          "portable-baseline": {
+            "samples": 8000,
+            "p50_ns": 31026,
+            "p95_ns": 47401,
+            "p99_ns": 84266,
+            "repetition_p50_ns": [
+              40681,
+              30215,
+              29835,
+              40571,
+              30115,
+              30726,
+              40481,
+              30546
+            ],
+            "batches_per_second": 27180.78468560659,
+            "logical_requests_per_second": 27180.78468560659,
+            "service_calls_per_second": 27180.78468560659
+          }
+        },
+        "faster_reference": "cpp",
+        "portable_over_faster_reference": 1.0247121092911808,
+        "portable_over_before": 0.9235157609746664,
+        "paired_repetition_ratio_median": 0.9336060518632461,
+        "faster_than_before_repetitions": 7,
+        "meets_target": false
+      },
+      {
+        "case": "concurrent-32",
+        "variants": {
+          "legacy": {
+            "samples": 8000,
+            "p50_ns": 100160,
+            "p95_ns": 126449,
+            "p99_ns": 180790,
+            "repetition_p50_ns": [
+              102002,
+              85798,
+              100961,
+              102354,
+              85818,
+              86069,
+              103054,
+              85448
+            ],
+            "batches_per_second": 10060.308696020047,
+            "logical_requests_per_second": 321929.8782726415,
+            "service_calls_per_second": 321929.8782726415
+          },
+          "portable": {
+            "samples": 8000,
+            "p50_ns": 125327,
+            "p95_ns": 169134,
+            "p99_ns": 249924,
+            "repetition_p50_ns": [
+              126860,
+              113809,
+              126860,
+              128522,
+              109074,
+              110596,
+              127200,
+              112959
+            ],
+            "batches_per_second": 7195.480518686213,
+            "logical_requests_per_second": 230255.37659795882,
+            "service_calls_per_second": 230255.37659795882
+          },
+          "cpp": {
+            "samples": 8000,
+            "p50_ns": 143465,
+            "p95_ns": 182754,
+            "p99_ns": 253940,
+            "repetition_p50_ns": [
+              146910,
+              131937,
+              144947,
+              148041,
+              129584,
+              130065,
+              146349,
+              129724
+            ],
+            "batches_per_second": 6833.104108172288,
+            "logical_requests_per_second": 218659.3314615132,
+            "service_calls_per_second": 218659.3314615132
+          },
+          "portable-baseline": {
+            "samples": 8000,
+            "p50_ns": 125658,
+            "p95_ns": 163464,
+            "p99_ns": 247641,
+            "repetition_p50_ns": [
+              127641,
+              111226,
+              127131,
+              128963,
+              110105,
+              111617,
+              128502,
+              112569
+            ],
+            "batches_per_second": 7448.181553194139,
+            "logical_requests_per_second": 238341.80970221246,
+            "service_calls_per_second": 238341.80970221246
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 1.2512679712460064,
+        "portable_over_before": 0.9973658660809499,
+        "paired_repetition_ratio_median": 0.9952308454649423,
+        "faster_than_before_repetitions": 6,
+        "meets_target": false
+      },
+      {
+        "case": "deep-32-concurrent-32",
+        "variants": {
+          "legacy": {
+            "samples": 8000,
+            "p50_ns": 253270,
+            "p95_ns": 364605,
+            "p99_ns": 445447,
+            "repetition_p50_ns": [
+              281391,
+              220671,
+              229142,
+              231727,
+              279980,
+              219489,
+              284837,
+              217636
+            ],
+            "batches_per_second": 3782.0301164712814,
+            "logical_requests_per_second": 121024.963727081,
+            "service_calls_per_second": 121024.963727081
+          },
+          "portable": {
+            "samples": 8000,
+            "p50_ns": 362623,
+            "p95_ns": 470415,
+            "p99_ns": 594780,
+            "repetition_p50_ns": [
+              360269,
+              317153,
+              375882,
+              355592,
+              377886,
+              353940,
+              406779,
+              318907
+            ],
+            "batches_per_second": 2688.278158635796,
+            "logical_requests_per_second": 86024.90107634547,
+            "service_calls_per_second": 86024.90107634547
+          },
+          "cpp": {
+            "samples": 8000,
+            "p50_ns": 266289,
+            "p95_ns": 363041,
+            "p99_ns": 471265,
+            "repetition_p50_ns": [
+              267230,
+              258526,
+              326519,
+              262273,
+              256824,
+              259608,
+              257365,
+              260700
+            ],
+            "batches_per_second": 3522.0140569762148,
+            "logical_requests_per_second": 112704.44982323887,
+            "service_calls_per_second": 112704.44982323887
+          },
+          "portable-baseline": {
+            "samples": 8000,
+            "p50_ns": 396745,
+            "p95_ns": 504996,
+            "p99_ns": 612899,
+            "repetition_p50_ns": [
+              382854,
+              409181,
+              460589,
+              394961,
+              383705,
+              435763,
+              377244,
+              374881
+            ],
+            "batches_per_second": 2400.4185091263967,
+            "logical_requests_per_second": 76813.3922920447,
+            "service_calls_per_second": 76813.3922920447
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 1.4317645200773879,
+        "portable_over_before": 0.913995135414435,
+        "paired_repetition_ratio_median": 0.8755052112232777,
+        "faster_than_before_repetitions": 7,
+        "meets_target": false
+      },
+      {
+        "case": "services-4-deep-16",
+        "variants": {
+          "legacy": {
+            "samples": 8000,
+            "p50_ns": 138087,
+            "p95_ns": 209323,
+            "p99_ns": 346499,
+            "repetition_p50_ns": [
+              120841,
+              131177,
+              123294,
+              126760,
+              144466,
+              159579,
+              136945,
+              122994
+            ],
+            "batches_per_second": 6783.1362705910815,
+            "logical_requests_per_second": 6783.1362705910815,
+            "service_calls_per_second": 27132.545082364326
+          },
+          "portable": {
+            "samples": 8000,
+            "p50_ns": 142122,
+            "p95_ns": 242483,
+            "p99_ns": 377355,
+            "repetition_p50_ns": [
+              131918,
+              143304,
+              122643,
+              148773,
+              181402,
+              127952,
+              143154,
+              122183
+            ],
+            "batches_per_second": 6280.563543065051,
+            "logical_requests_per_second": 6280.563543065051,
+            "service_calls_per_second": 25122.254172260204
+          },
+          "cpp": {
+            "samples": 8000,
+            "p50_ns": 134662,
+            "p95_ns": 208663,
+            "p99_ns": 371798,
+            "repetition_p50_ns": [
+              119780,
+              131697,
+              142904,
+              129845,
+              147662,
+              138958,
+              122583,
+              129143
+            ],
+            "batches_per_second": 5387.604857244456,
+            "logical_requests_per_second": 5387.604857244456,
+            "service_calls_per_second": 21550.419428977824
+          },
+          "portable-baseline": {
+            "samples": 8000,
+            "p50_ns": 145849,
+            "p95_ns": 253299,
+            "p99_ns": 432798,
+            "repetition_p50_ns": [
+              151857,
+              134071,
+              151647,
+              177045,
+              135924,
+              157335,
+              141672,
+              125358
+            ],
+            "batches_per_second": 6008.487439144349,
+            "logical_requests_per_second": 6008.487439144349,
+            "service_calls_per_second": 24033.949756577396
+          }
+        },
+        "faster_reference": "cpp",
+        "portable_over_faster_reference": 1.0553979593352245,
+        "portable_over_before": 0.9744461737824737,
+        "paired_repetition_ratio_median": 0.9216856897625048,
+        "faster_than_before_repetitions": 5,
+        "meets_target": false
+      },
+      {
+        "case": "services-4-deep-16-concurrent-32",
+        "variants": {
+          "legacy": {
+            "samples": 8000,
+            "p50_ns": 1110493,
+            "p95_ns": 1351372,
+            "p99_ns": 1815749,
+            "repetition_p50_ns": [
+              1111546,
+              1108220,
+              1134209,
+              1143181,
+              1094118,
+              1122440,
+              1099179,
+              1070502
+            ],
+            "batches_per_second": 871.702085142769,
+            "logical_requests_per_second": 27894.466724568607,
+            "service_calls_per_second": 111577.86689827443
+          },
+          "portable": {
+            "samples": 8000,
+            "p50_ns": 996363,
+            "p95_ns": 1269009,
+            "p99_ns": 1811200,
+            "repetition_p50_ns": [
+              993639,
+              1100258,
+              1005495,
+              1003152,
+              900048,
+              994959,
+              987077,
+              988078
+            ],
+            "batches_per_second": 974.5708673561627,
+            "logical_requests_per_second": 31186.267755397206,
+            "service_calls_per_second": 124745.07102158882
+          },
+          "cpp": {
+            "samples": 8000,
+            "p50_ns": 1143010,
+            "p95_ns": 1352844,
+            "p99_ns": 1783167,
+            "repetition_p50_ns": [
+              1146908,
+              1146707,
+              1161448,
+              1160207,
+              1126313,
+              1139846,
+              1158974,
+              1107958
+            ],
+            "batches_per_second": 845.2617819750501,
+            "logical_requests_per_second": 27048.377023201603,
+            "service_calls_per_second": 108193.50809280641
+          },
+          "portable-baseline": {
+            "samples": 8000,
+            "p50_ns": 1037533,
+            "p95_ns": 1318893,
+            "p99_ns": 1878040,
+            "repetition_p50_ns": [
+              954490,
+              978586,
+              1052776,
+              1021770,
+              1069501,
+              968539,
+              1089721,
+              1135178
+            ],
+            "batches_per_second": 923.3175891091604,
+            "logical_requests_per_second": 29546.162851493133,
+            "service_calls_per_second": 118184.65140597253
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 0.8972258267274085,
+        "portable_over_before": 0.9603193344211702,
+        "paired_repetition_ratio_median": 0.9684339449681263,
+        "faster_than_before_repetitions": 5,
+        "meets_target": true
+      },
+      {
+        "case": "services-4-deep-16-clients-8",
+        "variants": {
+          "legacy": {
+            "samples": 8000,
+            "p50_ns": 1129679,
+            "p95_ns": 1347597,
+            "p99_ns": 1610940,
+            "repetition_p50_ns": [
+              1082762,
+              1176221,
+              1147348,
+              1085956,
+              1116861,
+              1152935,
+              1155188,
+              1110467
+            ],
+            "batches_per_second": 863.6913818570022,
+            "logical_requests_per_second": 27638.12421942407,
+            "service_calls_per_second": 110552.49687769628
+          },
+          "portable": {
+            "samples": 8000,
+            "p50_ns": 934163,
+            "p95_ns": 1261167,
+            "p99_ns": 1497738,
+            "repetition_p50_ns": [
+              867359,
+              917914,
+              970503,
+              908791,
+              962652,
+              995089,
+              1051403,
+              951448
+            ],
+            "batches_per_second": 1020.2450656398332,
+            "logical_requests_per_second": 32647.842100474663,
+            "service_calls_per_second": 130591.36840189865
+          },
+          "cpp": {
+            "samples": 8000,
+            "p50_ns": 1091494,
+            "p95_ns": 1360548,
+            "p99_ns": 2100945,
+            "repetition_p50_ns": [
+              1052186,
+              1071975,
+              1128479,
+              1086527,
+              1081339,
+              1049881,
+              1105334,
+              1176387
+            ],
+            "batches_per_second": 896.7417582962981,
+            "logical_requests_per_second": 28695.73626548154,
+            "service_calls_per_second": 114782.94506192616
+          },
+          "portable-baseline": {
+            "samples": 8000,
+            "p50_ns": 1014664,
+            "p95_ns": 1308380,
+            "p99_ns": 1731096,
+            "repetition_p50_ns": [
+              917364,
+              983202,
+              1024624,
+              1149341,
+              1047989,
+              1004123,
+              1047357,
+              966672
+            ],
+            "batches_per_second": 943.6092055779989,
+            "logical_requests_per_second": 30195.494578495964,
+            "service_calls_per_second": 120781.97831398385
+          }
+        },
+        "faster_reference": "cpp",
+        "portable_over_faster_reference": 0.8558572012306068,
+        "portable_over_before": 0.9206624064715019,
+        "paired_repetition_ratio_median": 0.9463351030338707,
+        "faster_than_before_repetitions": 7,
+        "meets_target": true
+      },
+      {
+        "case": "services-8-deep-16-clients-8",
+        "variants": {
+          "legacy": {
+            "samples": 8000,
+            "p50_ns": 2416182,
+            "p95_ns": 2825922,
+            "p99_ns": 3720340,
+            "repetition_p50_ns": [
+              2442509,
+              2480515,
+              2410219,
+              2434726,
+              2369091,
+              2392208,
+              2417467,
+              2405091
+            ],
+            "batches_per_second": 402.6233683503357,
+            "logical_requests_per_second": 12883.947787210742,
+            "service_calls_per_second": 103071.58229768593
+          },
+          "portable": {
+            "samples": 8000,
+            "p50_ns": 1774001,
+            "p95_ns": 2408664,
+            "p99_ns": 3375539,
+            "repetition_p50_ns": [
+              1593293,
+              1967827,
+              1651753,
+              1752413,
+              1926614,
+              1949357,
+              1692663,
+              1922777
+            ],
+            "batches_per_second": 540.5487080489014,
+            "logical_requests_per_second": 17297.558657564845,
+            "service_calls_per_second": 138380.46926051876
+          },
+          "cpp": {
+            "samples": 8000,
+            "p50_ns": 2284840,
+            "p95_ns": 2710589,
+            "p99_ns": 3651752,
+            "repetition_p50_ns": [
+              2243772,
+              2354106,
+              2290690,
+              2249638,
+              2299732,
+              2264528,
+              2301654,
+              2304038
+            ],
+            "batches_per_second": 447.7171284821846,
+            "logical_requests_per_second": 14326.948111429907,
+            "service_calls_per_second": 114615.58489143926
+          },
+          "portable-baseline": {
+            "samples": 8000,
+            "p50_ns": 1839862,
+            "p95_ns": 2530279,
+            "p99_ns": 3237189,
+            "repetition_p50_ns": [
+              1615070,
+              1852424,
+              1999955,
+              1998002,
+              2095073,
+              1825099,
+              1844510,
+              1637241
+            ],
+            "batches_per_second": 521.754631390579,
+            "logical_requests_per_second": 16696.148204498528,
+            "service_calls_per_second": 133569.18563598822
+          }
+        },
+        "faster_reference": "cpp",
+        "portable_over_faster_reference": 0.7764224190752963,
+        "portable_over_before": 0.9642032935078827,
+        "paired_repetition_ratio_median": 0.9530545759080244,
+        "faster_than_before_repetitions": 5,
+        "meets_target": true
+      }
+    ],
+    "target_passes": 9,
+    "total_cells": 24,
+    "mixed_checks": 240,
+    "verified": [
+      {
+        "campaign": "/workspace/scratch/portable34-final-original20261018",
+        "repetitions": 8,
+        "balanced": true,
+        "samples": 512000
+      },
+      {
+        "campaign": "/workspace/scratch/portable34-final-topology20261018",
+        "repetitions": 8,
+        "balanced": true,
+        "samples": 256000
+      }
+    ]
+  },
+  "counts": {
+    "socket": {
+      "captures": 70,
+      "positive_passes": 11,
+      "attempts_passes": 12,
+      "rows": [
+        {
+          "capture": "portable34-hints-tail-diagnostics20261018",
+          "case": "pipelined-read",
+          "peer": "client",
+          "portable": {
+            "read_positive": 111,
+            "write_positive": 112,
+            "read_attempts": 222,
+            "write_attempts": 112
+          },
+          "cpp": {
+            "read_positive": 111,
+            "write_positive": 111,
+            "read_attempts": 223,
+            "write_attempts": 111
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-hints-tail-diagnostics20261018",
+          "case": "pipelined-read",
+          "peer": "server",
+          "portable": {
+            "read_positive": 112,
+            "write_positive": 111,
+            "read_attempts": 225,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 111,
+            "write_positive": 112,
+            "read_attempts": 224,
+            "write_attempts": 112
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-hints-tail-diagnostics20261018",
+          "case": "bulk-1m",
+          "peer": "client",
+          "portable": {
+            "read_positive": 332,
+            "write_positive": 113,
+            "read_attempts": 445,
+            "write_attempts": 113
+          },
+          "cpp": {
+            "read_positive": 660,
+            "write_positive": 111,
+            "read_attempts": 1051,
+            "write_attempts": 111
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-hints-tail-diagnostics20261018",
+          "case": "bulk-1m",
+          "peer": "server",
+          "portable": {
+            "read_positive": 336,
+            "write_positive": 112,
+            "read_attempts": 449,
+            "write_attempts": 112
+          },
+          "cpp": {
+            "read_positive": 844,
+            "write_positive": 112,
+            "read_attempts": 1144,
+            "write_attempts": 112
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable34-hints-tail-diagnostics20261018",
+          "case": "bulk-4m",
+          "peer": "client",
+          "portable": {
+            "read_positive": 676,
+            "write_positive": 113,
+            "read_attempts": 928,
+            "write_attempts": 113
+          },
+          "cpp": {
+            "read_positive": 3988,
+            "write_positive": 130,
+            "read_attempts": 6997,
+            "write_attempts": 130
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable34-hints-tail-diagnostics20261018",
+          "case": "bulk-4m",
+          "peer": "server",
+          "portable": {
+            "read_positive": 659,
+            "write_positive": 112,
+            "read_attempts": 927,
+            "write_attempts": 112
+          },
+          "cpp": {
+            "read_positive": 1962,
+            "write_positive": 113,
+            "read_attempts": 2345,
+            "write_attempts": 113
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "unary-empty",
+          "peer": "client",
+          "portable": {
+            "read_positive": 111,
+            "write_positive": 112,
+            "read_attempts": 222,
+            "write_attempts": 112
+          },
+          "cpp": {
+            "read_positive": 111,
+            "write_positive": 111,
+            "read_attempts": 222,
+            "write_attempts": 111
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "unary-empty",
+          "peer": "server",
+          "portable": {
+            "read_positive": 112,
+            "write_positive": 111,
+            "read_attempts": 225,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 111,
+            "write_positive": 112,
+            "read_attempts": 224,
+            "write_attempts": 112
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "unary-small",
+          "peer": "client",
+          "portable": {
+            "read_positive": 111,
+            "write_positive": 112,
+            "read_attempts": 222,
+            "write_attempts": 112
+          },
+          "cpp": {
+            "read_positive": 111,
+            "write_positive": 111,
+            "read_attempts": 222,
+            "write_attempts": 111
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "unary-small",
+          "peer": "server",
+          "portable": {
+            "read_positive": 112,
+            "write_positive": 111,
+            "read_attempts": 225,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 111,
+            "write_positive": 112,
+            "read_attempts": 224,
+            "write_attempts": 112
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "unary-1k",
+          "peer": "client",
+          "portable": {
+            "read_positive": 111,
+            "write_positive": 112,
+            "read_attempts": 222,
+            "write_attempts": 112
+          },
+          "cpp": {
+            "read_positive": 111,
+            "write_positive": 111,
+            "read_attempts": 222,
+            "write_attempts": 111
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "unary-1k",
+          "peer": "server",
+          "portable": {
+            "read_positive": 112,
+            "write_positive": 111,
+            "read_attempts": 225,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 111,
+            "write_positive": 112,
+            "read_attempts": 224,
+            "write_attempts": 112
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "fanout-32",
+          "peer": "client",
+          "portable": {
+            "read_positive": 111,
+            "write_positive": 113,
+            "read_attempts": 222,
+            "write_attempts": 113
+          },
+          "cpp": {
+            "read_positive": 111,
+            "write_positive": 111,
+            "read_attempts": 222,
+            "write_attempts": 111
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "fanout-32",
+          "peer": "server",
+          "portable": {
+            "read_positive": 112,
+            "write_positive": 111,
+            "read_attempts": 225,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 111,
+            "write_positive": 112,
+            "read_attempts": 224,
+            "write_attempts": 112
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "dependent-read",
+          "peer": "client",
+          "portable": {
+            "read_positive": 221,
+            "write_positive": 222,
+            "read_attempts": 442,
+            "write_attempts": 222
+          },
+          "cpp": {
+            "read_positive": 221,
+            "write_positive": 221,
+            "read_attempts": 442,
+            "write_attempts": 221
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "dependent-read",
+          "peer": "server",
+          "portable": {
+            "read_positive": 222,
+            "write_positive": 221,
+            "read_attempts": 445,
+            "write_attempts": 221
+          },
+          "cpp": {
+            "read_positive": 221,
+            "write_positive": 222,
+            "read_attempts": 444,
+            "write_attempts": 222
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "pipelined-read",
+          "peer": "client",
+          "portable": {
+            "read_positive": 111,
+            "write_positive": 112,
+            "read_attempts": 222,
+            "write_attempts": 112
+          },
+          "cpp": {
+            "read_positive": 111,
+            "write_positive": 111,
+            "read_attempts": 223,
+            "write_attempts": 111
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "pipelined-read",
+          "peer": "server",
+          "portable": {
+            "read_positive": 112,
+            "write_positive": 111,
+            "read_attempts": 225,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 111,
+            "write_positive": 112,
+            "read_attempts": 224,
+            "write_attempts": 112
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "write-read",
+          "peer": "client",
+          "portable": {
+            "read_positive": 221,
+            "write_positive": 222,
+            "read_attempts": 442,
+            "write_attempts": 222
+          },
+          "cpp": {
+            "read_positive": 221,
+            "write_positive": 221,
+            "read_attempts": 442,
+            "write_attempts": 221
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "write-read",
+          "peer": "server",
+          "portable": {
+            "read_positive": 222,
+            "write_positive": 221,
+            "read_attempts": 445,
+            "write_attempts": 221
+          },
+          "cpp": {
+            "read_positive": 221,
+            "write_positive": 222,
+            "read_attempts": 444,
+            "write_attempts": 222
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "callback",
+          "peer": "client",
+          "portable": {
+            "read_positive": 221,
+            "write_positive": 223,
+            "read_attempts": 442,
+            "write_attempts": 223
+          },
+          "cpp": {
+            "read_positive": 221,
+            "write_positive": 221,
+            "read_attempts": 442,
+            "write_attempts": 221
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "callback",
+          "peer": "server",
+          "portable": {
+            "read_positive": 223,
+            "write_positive": 221,
+            "read_attempts": 446,
+            "write_attempts": 221
+          },
+          "cpp": {
+            "read_positive": 221,
+            "write_positive": 222,
+            "read_attempts": 444,
+            "write_attempts": 222
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "bulk-64k",
+          "peer": "client",
+          "portable": {
+            "read_positive": 113,
+            "write_positive": 113,
+            "read_attempts": 225,
+            "write_attempts": 113
+          },
+          "cpp": {
+            "read_positive": 221,
+            "write_positive": 111,
+            "read_attempts": 332,
+            "write_attempts": 111
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "bulk-64k",
+          "peer": "server",
+          "portable": {
+            "read_positive": 115,
+            "write_positive": 112,
+            "read_attempts": 225,
+            "write_attempts": 112
+          },
+          "cpp": {
+            "read_positive": 222,
+            "write_positive": 112,
+            "read_attempts": 335,
+            "write_attempts": 112
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "bulk-256k",
+          "peer": "client",
+          "portable": {
+            "read_positive": 228,
+            "write_positive": 113,
+            "read_attempts": 340,
+            "write_attempts": 113
+          },
+          "cpp": {
+            "read_positive": 358,
+            "write_positive": 111,
+            "read_attempts": 598,
+            "write_attempts": 111
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "bulk-256k",
+          "peer": "server",
+          "portable": {
+            "read_positive": 256,
+            "write_positive": 112,
+            "read_attempts": 368,
+            "write_attempts": 112
+          },
+          "cpp": {
+            "read_positive": 226,
+            "write_positive": 112,
+            "read_attempts": 340,
+            "write_attempts": 112
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "bulk-1m",
+          "peer": "client",
+          "portable": {
+            "read_positive": 326,
+            "write_positive": 113,
+            "read_attempts": 437,
+            "write_attempts": 113
+          },
+          "cpp": {
+            "read_positive": 663,
+            "write_positive": 111,
+            "read_attempts": 1020,
+            "write_attempts": 111
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "bulk-1m",
+          "peer": "server",
+          "portable": {
+            "read_positive": 333,
+            "write_positive": 112,
+            "read_attempts": 448,
+            "write_attempts": 112
+          },
+          "cpp": {
+            "read_positive": 835,
+            "write_positive": 112,
+            "read_attempts": 1066,
+            "write_attempts": 112
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "bulk-4m",
+          "peer": "client",
+          "portable": {
+            "read_positive": 662,
+            "write_positive": 114,
+            "read_attempts": 924,
+            "write_attempts": 114
+          },
+          "cpp": {
+            "read_positive": 4346,
+            "write_positive": 130,
+            "read_attempts": 7668,
+            "write_attempts": 130
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "bulk-4m",
+          "peer": "server",
+          "portable": {
+            "read_positive": 653,
+            "write_positive": 112,
+            "read_attempts": 905,
+            "write_attempts": 112
+          },
+          "cpp": {
+            "read_positive": 2543,
+            "write_positive": 113,
+            "read_attempts": 3742,
+            "write_attempts": 113
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "loopback-0",
+          "peer": "client",
+          "portable": {
+            "read_positive": 110,
+            "write_positive": 111,
+            "read_attempts": 219,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 110,
+            "write_positive": 110,
+            "read_attempts": 220,
+            "write_attempts": 110
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "loopback-0",
+          "peer": "server",
+          "portable": {
+            "read_positive": 111,
+            "write_positive": 110,
+            "read_attempts": 222,
+            "write_attempts": 110
+          },
+          "cpp": {
+            "read_positive": 110,
+            "write_positive": 111,
+            "read_attempts": 221,
+            "write_attempts": 111
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "loopback-64",
+          "peer": "client",
+          "portable": {
+            "read_positive": 110,
+            "write_positive": 111,
+            "read_attempts": 220,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 110,
+            "write_positive": 110,
+            "read_attempts": 220,
+            "write_attempts": 110
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "loopback-64",
+          "peer": "server",
+          "portable": {
+            "read_positive": 111,
+            "write_positive": 110,
+            "read_attempts": 222,
+            "write_attempts": 110
+          },
+          "cpp": {
+            "read_positive": 110,
+            "write_positive": 111,
+            "read_attempts": 221,
+            "write_attempts": 111
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "loopback-1024",
+          "peer": "client",
+          "portable": {
+            "read_positive": 110,
+            "write_positive": 111,
+            "read_attempts": 220,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 110,
+            "write_positive": 110,
+            "read_attempts": 220,
+            "write_attempts": 110
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "loopback-1024",
+          "peer": "server",
+          "portable": {
+            "read_positive": 111,
+            "write_positive": 110,
+            "read_attempts": 223,
+            "write_attempts": 110
+          },
+          "cpp": {
+            "read_positive": 110,
+            "write_positive": 111,
+            "read_attempts": 222,
+            "write_attempts": 111
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "loopback-65536",
+          "peer": "client",
+          "portable": {
+            "read_positive": 112,
+            "write_positive": 112,
+            "read_attempts": 223,
+            "write_attempts": 112
+          },
+          "cpp": {
+            "read_positive": 220,
+            "write_positive": 110,
+            "read_attempts": 330,
+            "write_attempts": 110
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "loopback-65536",
+          "peer": "server",
+          "portable": {
+            "read_positive": 113,
+            "write_positive": 111,
+            "read_attempts": 114,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 220,
+            "write_positive": 111,
+            "read_attempts": 332,
+            "write_attempts": 111
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "deep-8",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 26,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "deep-8",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 14,
+            "write_positive": 13,
+            "read_attempts": 29,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 28,
+            "write_attempts": 14
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "deep-32",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 26,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "deep-32",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 14,
+            "write_positive": 13,
+            "read_attempts": 29,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 28,
+            "write_attempts": 14
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "concurrent-32",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 15,
+            "read_attempts": 26,
+            "write_attempts": 15
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "concurrent-32",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 14,
+            "write_positive": 13,
+            "read_attempts": 29,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 28,
+            "write_attempts": 14
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "deep-32-concurrent-32",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 15,
+            "read_attempts": 26,
+            "write_attempts": 15
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "deep-32-concurrent-32",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 14,
+            "write_positive": 13,
+            "read_attempts": 29,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 28,
+            "write_attempts": 14
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "services-4-deep-16",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 26,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "services-4-deep-16",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 27,
+            "write_positive": 27,
+            "read_attempts": 55,
+            "write_attempts": 27
+          },
+          "cpp": {
+            "read_positive": 26,
+            "write_positive": 28,
+            "read_attempts": 55,
+            "write_attempts": 28
+          },
+          "positive_pass": false,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "services-4-deep-16",
+          "peer": "service-1",
+          "portable": {
+            "read_positive": 27,
+            "write_positive": 27,
+            "read_attempts": 55,
+            "write_attempts": 27
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 57,
+            "write_attempts": 28
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "services-4-deep-16",
+          "peer": "service-2",
+          "portable": {
+            "read_positive": 27,
+            "write_positive": 27,
+            "read_attempts": 55,
+            "write_attempts": 27
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 56,
+            "write_attempts": 28
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "services-4-deep-16",
+          "peer": "service-3",
+          "portable": {
+            "read_positive": 14,
+            "write_positive": 13,
+            "read_attempts": 29,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 14,
+            "write_positive": 14,
+            "read_attempts": 30,
+            "write_attempts": 14
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "services-4-deep-16-concurrent-32",
+          "peer": "client",
+          "portable": {
+            "read_positive": 75,
+            "write_positive": 15,
+            "read_attempts": 142,
+            "write_attempts": 15
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "services-4-deep-16-concurrent-32",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 73,
+            "write_positive": 148,
+            "read_attempts": 123,
+            "write_attempts": 148
+          },
+          "cpp": {
+            "read_positive": 26,
+            "write_positive": 28,
+            "read_attempts": 55,
+            "write_attempts": 28
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "services-4-deep-16-concurrent-32",
+          "peer": "service-1",
+          "portable": {
+            "read_positive": 96,
+            "write_positive": 144,
+            "read_attempts": 142,
+            "write_attempts": 144
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 57,
+            "write_attempts": 28
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "services-4-deep-16-concurrent-32",
+          "peer": "service-2",
+          "portable": {
+            "read_positive": 79,
+            "write_positive": 135,
+            "read_attempts": 112,
+            "write_attempts": 135
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 57,
+            "write_attempts": 28
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "services-4-deep-16-concurrent-32",
+          "peer": "service-3",
+          "portable": {
+            "read_positive": 62,
+            "write_positive": 64,
+            "read_attempts": 110,
+            "write_attempts": 64
+          },
+          "cpp": {
+            "read_positive": 14,
+            "write_positive": 14,
+            "read_attempts": 30,
+            "write_attempts": 14
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "services-4-deep-16-clients-8",
+          "peer": "client",
+          "portable": {
+            "read_positive": 145,
+            "write_positive": 119,
+            "read_attempts": 283,
+            "write_attempts": 119
+          },
+          "cpp": {
+            "read_positive": 104,
+            "write_positive": 111,
+            "read_attempts": 211,
+            "write_attempts": 111
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "services-4-deep-16-clients-8",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 198,
+            "write_positive": 185,
+            "read_attempts": 392,
+            "write_attempts": 185
+          },
+          "cpp": {
+            "read_positive": 133,
+            "write_positive": 138,
+            "read_attempts": 281,
+            "write_attempts": 138
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "services-4-deep-16-clients-8",
+          "peer": "service-1",
+          "portable": {
+            "read_positive": 87,
+            "write_positive": 159,
+            "read_attempts": 150,
+            "write_attempts": 159
+          },
+          "cpp": {
+            "read_positive": 48,
+            "write_positive": 47,
+            "read_attempts": 97,
+            "write_attempts": 47
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "services-4-deep-16-clients-8",
+          "peer": "service-2",
+          "portable": {
+            "read_positive": 91,
+            "write_positive": 155,
+            "read_attempts": 147,
+            "write_attempts": 155
+          },
+          "cpp": {
+            "read_positive": 46,
+            "write_positive": 47,
+            "read_attempts": 94,
+            "write_attempts": 47
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "services-4-deep-16-clients-8",
+          "peer": "service-3",
+          "portable": {
+            "read_positive": 59,
+            "write_positive": 60,
+            "read_attempts": 111,
+            "write_attempts": 60
+          },
+          "cpp": {
+            "read_positive": 24,
+            "write_positive": 23,
+            "read_attempts": 49,
+            "write_attempts": 23
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "client",
+          "portable": {
+            "read_positive": 165,
+            "write_positive": 119,
+            "read_attempts": 319,
+            "write_attempts": 119
+          },
+          "cpp": {
+            "read_positive": 104,
+            "write_positive": 111,
+            "read_attempts": 213,
+            "write_attempts": 111
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 192,
+            "write_positive": 221,
+            "read_attempts": 366,
+            "write_attempts": 221
+          },
+          "cpp": {
+            "read_positive": 130,
+            "write_positive": 138,
+            "read_attempts": 276,
+            "write_attempts": 138
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-1",
+          "portable": {
+            "read_positive": 102,
+            "write_positive": 165,
+            "read_attempts": 175,
+            "write_attempts": 165
+          },
+          "cpp": {
+            "read_positive": 45,
+            "write_positive": 43,
+            "read_attempts": 90,
+            "write_attempts": 43
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-2",
+          "portable": {
+            "read_positive": 129,
+            "write_positive": 165,
+            "read_attempts": 204,
+            "write_attempts": 165
+          },
+          "cpp": {
+            "read_positive": 42,
+            "write_positive": 43,
+            "read_attempts": 87,
+            "write_attempts": 43
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-3",
+          "portable": {
+            "read_positive": 125,
+            "write_positive": 160,
+            "read_attempts": 216,
+            "write_attempts": 160
+          },
+          "cpp": {
+            "read_positive": 42,
+            "write_positive": 42,
+            "read_attempts": 86,
+            "write_attempts": 42
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-4",
+          "portable": {
+            "read_positive": 138,
+            "write_positive": 159,
+            "read_attempts": 229,
+            "write_attempts": 159
+          },
+          "cpp": {
+            "read_positive": 41,
+            "write_positive": 41,
+            "read_attempts": 84,
+            "write_attempts": 41
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-5",
+          "portable": {
+            "read_positive": 120,
+            "write_positive": 171,
+            "read_attempts": 190,
+            "write_attempts": 171
+          },
+          "cpp": {
+            "read_positive": 40,
+            "write_positive": 41,
+            "read_attempts": 83,
+            "write_attempts": 41
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-6",
+          "portable": {
+            "read_positive": 76,
+            "write_positive": 149,
+            "read_attempts": 111,
+            "write_attempts": 149
+          },
+          "cpp": {
+            "read_positive": 40,
+            "write_positive": 41,
+            "read_attempts": 83,
+            "write_attempts": 41
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-socket20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-7",
+          "portable": {
+            "read_positive": 59,
+            "write_positive": 58,
+            "read_attempts": 107,
+            "write_attempts": 58
+          },
+          "cpp": {
+            "read_positive": 21,
+            "write_positive": 20,
+            "read_attempts": 43,
+            "write_attempts": 20
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        }
+      ]
+    },
+    "wire": {
+      "captures": 70,
+      "positive_passes": 7,
+      "attempts_passes": 8,
+      "rows": [
+        {
+          "capture": "portable34-hints-tail-diagnostics20261018",
+          "case": "pipelined-read",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 26,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 27,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-hints-tail-diagnostics20261018",
+          "case": "pipelined-read",
+          "peer": "server",
+          "portable": {
+            "read_positive": 14,
+            "write_positive": 13,
+            "read_attempts": 29,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 27,
+            "write_attempts": 14
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-hints-tail-diagnostics20261018",
+          "case": "bulk-1m",
+          "peer": "client",
+          "portable": {
+            "read_positive": 27,
+            "write_positive": 15,
+            "read_attempts": 41,
+            "write_attempts": 15
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 13,
+            "read_attempts": 40,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-hints-tail-diagnostics20261018",
+          "case": "bulk-1m",
+          "peer": "server",
+          "portable": {
+            "read_positive": 30,
+            "write_positive": 14,
+            "read_attempts": 44,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 14,
+            "read_attempts": 42,
+            "write_attempts": 14
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-hints-tail-diagnostics20261018",
+          "case": "bulk-4m",
+          "peer": "client",
+          "portable": {
+            "read_positive": 32,
+            "write_positive": 15,
+            "read_attempts": 46,
+            "write_attempts": 15
+          },
+          "cpp": {
+            "read_positive": 36,
+            "write_positive": 13,
+            "read_attempts": 49,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-hints-tail-diagnostics20261018",
+          "case": "bulk-4m",
+          "peer": "server",
+          "portable": {
+            "read_positive": 37,
+            "write_positive": 14,
+            "read_attempts": 51,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 48,
+            "write_positive": 14,
+            "read_attempts": 63,
+            "write_attempts": 14
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "unary-empty",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 26,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "unary-empty",
+          "peer": "server",
+          "portable": {
+            "read_positive": 14,
+            "write_positive": 13,
+            "read_attempts": 29,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 28,
+            "write_attempts": 14
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "unary-small",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 26,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "unary-small",
+          "peer": "server",
+          "portable": {
+            "read_positive": 14,
+            "write_positive": 13,
+            "read_attempts": 29,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 27,
+            "write_attempts": 14
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "unary-1k",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 26,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "unary-1k",
+          "peer": "server",
+          "portable": {
+            "read_positive": 14,
+            "write_positive": 13,
+            "read_attempts": 29,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 28,
+            "write_attempts": 14
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "fanout-32",
+          "peer": "client",
+          "portable": {
+            "read_positive": 14,
+            "write_positive": 15,
+            "read_attempts": 27,
+            "write_attempts": 15
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "fanout-32",
+          "peer": "server",
+          "portable": {
+            "read_positive": 15,
+            "write_positive": 14,
+            "read_attempts": 30,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 27,
+            "write_attempts": 14
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "dependent-read",
+          "peer": "client",
+          "portable": {
+            "read_positive": 25,
+            "write_positive": 26,
+            "read_attempts": 50,
+            "write_attempts": 26
+          },
+          "cpp": {
+            "read_positive": 25,
+            "write_positive": 25,
+            "read_attempts": 50,
+            "write_attempts": 25
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "dependent-read",
+          "peer": "server",
+          "portable": {
+            "read_positive": 26,
+            "write_positive": 25,
+            "read_attempts": 53,
+            "write_attempts": 25
+          },
+          "cpp": {
+            "read_positive": 25,
+            "write_positive": 26,
+            "read_attempts": 52,
+            "write_attempts": 26
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "pipelined-read",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 26,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 27,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "pipelined-read",
+          "peer": "server",
+          "portable": {
+            "read_positive": 14,
+            "write_positive": 13,
+            "read_attempts": 29,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 28,
+            "write_attempts": 14
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "write-read",
+          "peer": "client",
+          "portable": {
+            "read_positive": 25,
+            "write_positive": 26,
+            "read_attempts": 50,
+            "write_attempts": 26
+          },
+          "cpp": {
+            "read_positive": 25,
+            "write_positive": 25,
+            "read_attempts": 50,
+            "write_attempts": 25
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "write-read",
+          "peer": "server",
+          "portable": {
+            "read_positive": 26,
+            "write_positive": 25,
+            "read_attempts": 53,
+            "write_attempts": 25
+          },
+          "cpp": {
+            "read_positive": 25,
+            "write_positive": 26,
+            "read_attempts": 51,
+            "write_attempts": 26
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "callback",
+          "peer": "client",
+          "portable": {
+            "read_positive": 25,
+            "write_positive": 27,
+            "read_attempts": 50,
+            "write_attempts": 27
+          },
+          "cpp": {
+            "read_positive": 25,
+            "write_positive": 25,
+            "read_attempts": 50,
+            "write_attempts": 25
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "callback",
+          "peer": "server",
+          "portable": {
+            "read_positive": 27,
+            "write_positive": 25,
+            "read_attempts": 54,
+            "write_attempts": 25
+          },
+          "cpp": {
+            "read_positive": 25,
+            "write_positive": 26,
+            "read_attempts": 52,
+            "write_attempts": 26
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "bulk-64k",
+          "peer": "client",
+          "portable": {
+            "read_positive": 15,
+            "write_positive": 15,
+            "read_attempts": 28,
+            "write_attempts": 15
+          },
+          "cpp": {
+            "read_positive": 25,
+            "write_positive": 13,
+            "read_attempts": 38,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "bulk-64k",
+          "peer": "server",
+          "portable": {
+            "read_positive": 17,
+            "write_positive": 14,
+            "read_attempts": 29,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 26,
+            "write_positive": 14,
+            "read_attempts": 41,
+            "write_attempts": 14
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "bulk-256k",
+          "peer": "client",
+          "portable": {
+            "read_positive": 27,
+            "write_positive": 15,
+            "read_attempts": 41,
+            "write_attempts": 15
+          },
+          "cpp": {
+            "read_positive": 26,
+            "write_positive": 13,
+            "read_attempts": 39,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "bulk-256k",
+          "peer": "server",
+          "portable": {
+            "read_positive": 30,
+            "write_positive": 14,
+            "read_attempts": 45,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 14,
+            "read_attempts": 42,
+            "write_attempts": 14
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "bulk-1m",
+          "peer": "client",
+          "portable": {
+            "read_positive": 27,
+            "write_positive": 15,
+            "read_attempts": 41,
+            "write_attempts": 15
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 13,
+            "read_attempts": 40,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "bulk-1m",
+          "peer": "server",
+          "portable": {
+            "read_positive": 30,
+            "write_positive": 14,
+            "read_attempts": 44,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 14,
+            "read_attempts": 42,
+            "write_attempts": 14
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "bulk-4m",
+          "peer": "client",
+          "portable": {
+            "read_positive": 32,
+            "write_positive": 15,
+            "read_attempts": 46,
+            "write_attempts": 15
+          },
+          "cpp": {
+            "read_positive": 39,
+            "write_positive": 13,
+            "read_attempts": 52,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "bulk-4m",
+          "peer": "server",
+          "portable": {
+            "read_positive": 44,
+            "write_positive": 14,
+            "read_attempts": 58,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 53,
+            "write_positive": 14,
+            "read_attempts": 68,
+            "write_attempts": 14
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "loopback-0",
+          "peer": "client",
+          "portable": {
+            "read_positive": 12,
+            "write_positive": 13,
+            "read_attempts": 24,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 12,
+            "write_positive": 12,
+            "read_attempts": 24,
+            "write_attempts": 12
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "loopback-0",
+          "peer": "server",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 12,
+            "read_attempts": 27,
+            "write_attempts": 12
+          },
+          "cpp": {
+            "read_positive": 12,
+            "write_positive": 13,
+            "read_attempts": 25,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "loopback-64",
+          "peer": "client",
+          "portable": {
+            "read_positive": 12,
+            "write_positive": 13,
+            "read_attempts": 24,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 12,
+            "write_positive": 12,
+            "read_attempts": 24,
+            "write_attempts": 12
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "loopback-64",
+          "peer": "server",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 12,
+            "read_attempts": 27,
+            "write_attempts": 12
+          },
+          "cpp": {
+            "read_positive": 12,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "loopback-1024",
+          "peer": "client",
+          "portable": {
+            "read_positive": 12,
+            "write_positive": 13,
+            "read_attempts": 24,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 12,
+            "write_positive": 12,
+            "read_attempts": 24,
+            "write_attempts": 12
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "loopback-1024",
+          "peer": "server",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 12,
+            "read_attempts": 27,
+            "write_attempts": 12
+          },
+          "cpp": {
+            "read_positive": 12,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "loopback-65536",
+          "peer": "client",
+          "portable": {
+            "read_positive": 14,
+            "write_positive": 14,
+            "read_attempts": 27,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 24,
+            "write_positive": 12,
+            "read_attempts": 36,
+            "write_attempts": 12
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-diagnostics20261018",
+          "case": "loopback-65536",
+          "peer": "server",
+          "portable": {
+            "read_positive": 15,
+            "write_positive": 13,
+            "read_attempts": 16,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 24,
+            "write_positive": 13,
+            "read_attempts": 38,
+            "write_attempts": 13
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "deep-8",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 26,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "deep-8",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 14,
+            "write_positive": 13,
+            "read_attempts": 29,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 27,
+            "write_attempts": 14
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "deep-32",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 26,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "deep-32",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 14,
+            "write_positive": 13,
+            "read_attempts": 29,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 27,
+            "write_attempts": 14
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "concurrent-32",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 15,
+            "read_attempts": 26,
+            "write_attempts": 15
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "concurrent-32",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 14,
+            "write_positive": 13,
+            "read_attempts": 29,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 28,
+            "write_attempts": 14
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "deep-32-concurrent-32",
+          "peer": "client",
+          "portable": {
+            "read_positive": 14,
+            "write_positive": 15,
+            "read_attempts": 27,
+            "write_attempts": 15
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "deep-32-concurrent-32",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 15,
+            "write_positive": 14,
+            "read_attempts": 30,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 28,
+            "write_attempts": 14
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "services-4-deep-16",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 26,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "services-4-deep-16",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 27,
+            "write_positive": 27,
+            "read_attempts": 55,
+            "write_attempts": 27
+          },
+          "cpp": {
+            "read_positive": 26,
+            "write_positive": 28,
+            "read_attempts": 55,
+            "write_attempts": 28
+          },
+          "positive_pass": false,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "services-4-deep-16",
+          "peer": "service-1",
+          "portable": {
+            "read_positive": 27,
+            "write_positive": 27,
+            "read_attempts": 55,
+            "write_attempts": 27
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 57,
+            "write_attempts": 28
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "services-4-deep-16",
+          "peer": "service-2",
+          "portable": {
+            "read_positive": 27,
+            "write_positive": 27,
+            "read_attempts": 55,
+            "write_attempts": 27
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 57,
+            "write_attempts": 28
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "services-4-deep-16",
+          "peer": "service-3",
+          "portable": {
+            "read_positive": 14,
+            "write_positive": 13,
+            "read_attempts": 29,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 14,
+            "write_positive": 14,
+            "read_attempts": 30,
+            "write_attempts": 14
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "services-4-deep-16-concurrent-32",
+          "peer": "client",
+          "portable": {
+            "read_positive": 113,
+            "write_positive": 15,
+            "read_attempts": 195,
+            "write_attempts": 15
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "services-4-deep-16-concurrent-32",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 106,
+            "write_positive": 177,
+            "read_attempts": 182,
+            "write_attempts": 177
+          },
+          "cpp": {
+            "read_positive": 26,
+            "write_positive": 28,
+            "read_attempts": 55,
+            "write_attempts": 28
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "services-4-deep-16-concurrent-32",
+          "peer": "service-1",
+          "portable": {
+            "read_positive": 129,
+            "write_positive": 166,
+            "read_attempts": 193,
+            "write_attempts": 166
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 57,
+            "write_attempts": 28
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "services-4-deep-16-concurrent-32",
+          "peer": "service-2",
+          "portable": {
+            "read_positive": 89,
+            "write_positive": 159,
+            "read_attempts": 148,
+            "write_attempts": 159
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 57,
+            "write_attempts": 28
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "services-4-deep-16-concurrent-32",
+          "peer": "service-3",
+          "portable": {
+            "read_positive": 64,
+            "write_positive": 73,
+            "read_attempts": 107,
+            "write_attempts": 73
+          },
+          "cpp": {
+            "read_positive": 14,
+            "write_positive": 14,
+            "read_attempts": 30,
+            "write_attempts": 14
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "services-4-deep-16-clients-8",
+          "peer": "client",
+          "portable": {
+            "read_positive": 141,
+            "write_positive": 119,
+            "read_attempts": 277,
+            "write_attempts": 119
+          },
+          "cpp": {
+            "read_positive": 104,
+            "write_positive": 111,
+            "read_attempts": 215,
+            "write_attempts": 111
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "services-4-deep-16-clients-8",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 217,
+            "write_positive": 189,
+            "read_attempts": 408,
+            "write_attempts": 189
+          },
+          "cpp": {
+            "read_positive": 148,
+            "write_positive": 158,
+            "read_attempts": 310,
+            "write_attempts": 158
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "services-4-deep-16-clients-8",
+          "peer": "service-1",
+          "portable": {
+            "read_positive": 120,
+            "write_positive": 194,
+            "read_attempts": 216,
+            "write_attempts": 194
+          },
+          "cpp": {
+            "read_positive": 83,
+            "write_positive": 79,
+            "read_attempts": 164,
+            "write_attempts": 79
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "services-4-deep-16-clients-8",
+          "peer": "service-2",
+          "portable": {
+            "read_positive": 135,
+            "write_positive": 165,
+            "read_attempts": 217,
+            "write_attempts": 165
+          },
+          "cpp": {
+            "read_positive": 78,
+            "write_positive": 78,
+            "read_attempts": 158,
+            "write_attempts": 78
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "services-4-deep-16-clients-8",
+          "peer": "service-3",
+          "portable": {
+            "read_positive": 70,
+            "write_positive": 87,
+            "read_attempts": 113,
+            "write_attempts": 87
+          },
+          "cpp": {
+            "read_positive": 39,
+            "write_positive": 39,
+            "read_attempts": 80,
+            "write_attempts": 39
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "client",
+          "portable": {
+            "read_positive": 155,
+            "write_positive": 119,
+            "read_attempts": 308,
+            "write_attempts": 119
+          },
+          "cpp": {
+            "read_positive": 104,
+            "write_positive": 111,
+            "read_attempts": 215,
+            "write_attempts": 111
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 225,
+            "write_positive": 208,
+            "read_attempts": 436,
+            "write_attempts": 208
+          },
+          "cpp": {
+            "read_positive": 146,
+            "write_positive": 156,
+            "read_attempts": 306,
+            "write_attempts": 156
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-1",
+          "portable": {
+            "read_positive": 157,
+            "write_positive": 199,
+            "read_attempts": 284,
+            "write_attempts": 199
+          },
+          "cpp": {
+            "read_positive": 79,
+            "write_positive": 77,
+            "read_attempts": 158,
+            "write_attempts": 77
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-2",
+          "portable": {
+            "read_positive": 182,
+            "write_positive": 202,
+            "read_attempts": 308,
+            "write_attempts": 202
+          },
+          "cpp": {
+            "read_positive": 76,
+            "write_positive": 76,
+            "read_attempts": 154,
+            "write_attempts": 76
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-3",
+          "portable": {
+            "read_positive": 179,
+            "write_positive": 202,
+            "read_attempts": 319,
+            "write_attempts": 202
+          },
+          "cpp": {
+            "read_positive": 75,
+            "write_positive": 76,
+            "read_attempts": 153,
+            "write_attempts": 76
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-4",
+          "portable": {
+            "read_positive": 174,
+            "write_positive": 204,
+            "read_attempts": 300,
+            "write_attempts": 204
+          },
+          "cpp": {
+            "read_positive": 74,
+            "write_positive": 75,
+            "read_attempts": 151,
+            "write_attempts": 75
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-5",
+          "portable": {
+            "read_positive": 164,
+            "write_positive": 194,
+            "read_attempts": 288,
+            "write_attempts": 194
+          },
+          "cpp": {
+            "read_positive": 75,
+            "write_positive": 74,
+            "read_attempts": 151,
+            "write_attempts": 74
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-6",
+          "portable": {
+            "read_positive": 138,
+            "write_positive": 188,
+            "read_attempts": 250,
+            "write_attempts": 188
+          },
+          "cpp": {
+            "read_positive": 75,
+            "write_positive": 75,
+            "read_attempts": 152,
+            "write_attempts": 75
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable34-final-topology-wire20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-7",
+          "portable": {
+            "read_positive": 71,
+            "write_positive": 80,
+            "read_attempts": 124,
+            "write_attempts": 80
+          },
+          "cpp": {
+            "read_positive": 38,
+            "write_positive": 38,
+            "read_attempts": 77,
+            "write_attempts": 38
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        }
+      ]
+    }
+  },
+  "profiles": [
+    {
+      "case": "pipelined-read",
+      "peer": "client",
+      "instructions": {
+        "baseline-portable": 17104726,
+        "baseline-legacy": 10465755,
+        "baseline-cpp": 15174532,
+        "hints-tail-portable": 17110955,
+        "hints-tail-legacy": 10465973,
+        "hints-tail-cpp": 15174532
+      },
+      "portable_ratio": 1.0003641683590838
+    },
+    {
+      "case": "pipelined-read",
+      "peer": "server",
+      "instructions": {
+        "baseline-portable": 15131057,
+        "baseline-legacy": 13073101,
+        "baseline-cpp": 17182274,
+        "hints-tail-portable": 15141472,
+        "hints-tail-legacy": 13073089,
+        "hints-tail-cpp": 17182274
+      },
+      "portable_ratio": 1.0006883193950034
+    },
+    {
+      "case": "bulk-1m",
+      "peer": "client",
+      "instructions": {
+        "baseline-portable": 20912084,
+        "baseline-legacy": 19370059,
+        "baseline-cpp": 21563987,
+        "hints-tail-portable": 20907284,
+        "hints-tail-legacy": 19376822,
+        "hints-tail-cpp": 21563934
+      },
+      "portable_ratio": 0.9997704676396671
+    },
+    {
+      "case": "bulk-1m",
+      "peer": "server",
+      "instructions": {
+        "baseline-portable": 6351648,
+        "baseline-legacy": 4980527,
+        "baseline-cpp": 6004817,
+        "hints-tail-portable": 6347630,
+        "hints-tail-legacy": 5947405,
+        "hints-tail-cpp": 6004923
+      },
+      "portable_ratio": 0.9993674082694759
+    },
+    {
+      "case": "bulk-4m",
+      "peer": "client",
+      "instructions": {
+        "baseline-portable": 71104671,
+        "baseline-legacy": 67054017,
+        "baseline-cpp": 71323830,
+        "hints-tail-portable": 71104377,
+        "hints-tail-legacy": 67026910,
+        "hints-tail-cpp": 71322697
+      },
+      "portable_ratio": 0.9999958652505403
+    },
+    {
+      "case": "bulk-4m",
+      "peer": "server",
+      "instructions": {
+        "baseline-portable": 14320196,
+        "baseline-legacy": 11063868,
+        "baseline-cpp": 11495739,
+        "hints-tail-portable": 14309421,
+        "hints-tail-legacy": 11193550,
+        "hints-tail-cpp": 11478594
+      },
+      "portable_ratio": 0.9992475661645972
+    },
+    {
+      "case": "concurrent-32",
+      "peer": "client",
+      "instructions": {
+        "baseline-portable": 9310790,
+        "baseline-legacy": 6856002,
+        "baseline-cpp": 11136672,
+        "hints-tail-portable": 9327792,
+        "hints-tail-legacy": 6856002,
+        "hints-tail-cpp": 11136672
+      },
+      "portable_ratio": 1.0018260534283343
+    },
+    {
+      "case": "concurrent-32",
+      "peer": "service-0",
+      "instructions": {
+        "baseline-portable": 7069840,
+        "baseline-legacy": 6439594,
+        "baseline-cpp": 11231182,
+        "hints-tail-portable": 7086894,
+        "hints-tail-legacy": 6439594,
+        "hints-tail-cpp": 11231182
+      },
+      "portable_ratio": 1.0024122186640716
+    },
+    {
+      "case": "deep-32-concurrent-32",
+      "peer": "client",
+      "instructions": {
+        "baseline-portable": 23380596,
+        "baseline-legacy": 16209929,
+        "baseline-cpp": 18739918,
+        "hints-tail-portable": 22397729,
+        "hints-tail-legacy": 16209937,
+        "hints-tail-cpp": 18739918
+      },
+      "portable_ratio": 0.957962277779403
+    },
+    {
+      "case": "deep-32-concurrent-32",
+      "peer": "service-0",
+      "instructions": {
+        "baseline-portable": 26221416,
+        "baseline-legacy": 20163466,
+        "baseline-cpp": 23202763,
+        "hints-tail-portable": 25238534,
+        "hints-tail-legacy": 20163590,
+        "hints-tail-cpp": 23202763
+      },
+      "portable_ratio": 0.9625160593920633
+    }
+  ],
+  "preceding_screens": {
+    "topology-baseline": {
+      "rows": [
+        {
+          "case": {
+            "name": "deep-8",
+            "depth": 8,
+            "width": 1,
+            "connections": 1,
+            "hops": 1,
+            "payload_bytes_per_node": 32
+          },
+          "variants": {
+            "legacy": {
+              "samples": 6000,
+              "p50_ns": 22474,
+              "p95_ns": 34973,
+              "p99_ns": 77488,
+              "repetition_p50_ns": [
+                22364,
+                22404,
+                22394,
+                22674,
+                22464,
+                22444
+              ],
+              "batches_per_second": 38235.4244554616,
+              "logical_requests_per_second": 38235.4244554616,
+              "service_calls_per_second": 38235.4244554616
+            },
+            "portable": {
+              "samples": 6000,
+              "p50_ns": 22844,
+              "p95_ns": 36886,
+              "p99_ns": 93612,
+              "repetition_p50_ns": [
+                22724,
+                22905,
+                22594,
+                22704,
+                22785,
+                34923
+              ],
+              "batches_per_second": 35617.87639132998,
+              "logical_requests_per_second": 35617.87639132998,
+              "service_calls_per_second": 35617.87639132998
+            },
+            "cpp": {
+              "samples": 6000,
+              "p50_ns": 23185,
+              "p95_ns": 37306,
+              "p99_ns": 74473,
+              "repetition_p50_ns": [
+                23005,
+                22845,
+                23246,
+                35414,
+                22985,
+                23155
+              ],
+              "batches_per_second": 36016.85668129769,
+              "logical_requests_per_second": 36016.85668129769,
+              "service_calls_per_second": 36016.85668129769
+            }
+          },
+          "legacy_over_cpp": 0.9693336208755661,
+          "faster_reference": "legacy",
+          "portable_over_faster_reference": 1.0164634688973926,
+          "meets_target": false
+        },
+        {
+          "case": {
+            "name": "deep-32",
+            "depth": 32,
+            "width": 1,
+            "connections": 1,
+            "hops": 1,
+            "payload_bytes_per_node": 32
+          },
+          "variants": {
+            "legacy": {
+              "samples": 6000,
+              "p50_ns": 27021,
+              "p95_ns": 43696,
+              "p99_ns": 85058,
+              "repetition_p50_ns": [
+                40822,
+                26570,
+                26660,
+                27251,
+                26941,
+                27001
+              ],
+              "batches_per_second": 32299.35855142717,
+              "logical_requests_per_second": 32299.35855142717,
+              "service_calls_per_second": 32299.35855142717
+            },
+            "portable": {
+              "samples": 6000,
+              "p50_ns": 30385,
+              "p95_ns": 48123,
+              "p99_ns": 92830,
+              "repetition_p50_ns": [
+                32980,
+                30296,
+                30405,
+                30435,
+                30536,
+                29915
+              ],
+              "batches_per_second": 29334.344325213642,
+              "logical_requests_per_second": 29334.344325213642,
+              "service_calls_per_second": 29334.344325213642
+            },
+            "cpp": {
+              "samples": 6000,
+              "p50_ns": 27832,
+              "p95_ns": 44558,
+              "p99_ns": 79350,
+              "repetition_p50_ns": [
+                41312,
+                27311,
+                27792,
+                28013,
+                27591,
+                27692
+              ],
+              "batches_per_second": 30898.776185991846,
+              "logical_requests_per_second": 30898.776185991846,
+              "service_calls_per_second": 30898.776185991846
+            }
+          },
+          "legacy_over_cpp": 0.9708608795630929,
+          "faster_reference": "legacy",
+          "portable_over_faster_reference": 1.1244957625550498,
+          "meets_target": false
+        },
+        {
+          "case": {
+            "name": "concurrent-32",
+            "depth": 1,
+            "width": 32,
+            "connections": 1,
+            "hops": 1,
+            "payload_bytes_per_node": 32
+          },
+          "variants": {
+            "legacy": {
+              "samples": 6000,
+              "p50_ns": 87541,
+              "p95_ns": 134072,
+              "p99_ns": 221336,
+              "repetition_p50_ns": [
+                88573,
+                85960,
+                85939,
+                87212,
+                100022,
+                86511
+              ],
+              "batches_per_second": 9856.319971997013,
+              "logical_requests_per_second": 315402.2391039044,
+              "service_calls_per_second": 315402.2391039044
+            },
+            "portable": {
+              "samples": 6000,
+              "p50_ns": 111860,
+              "p95_ns": 179290,
+              "p99_ns": 229148,
+              "repetition_p50_ns": [
+                170727,
+                110518,
+                112108,
+                111238,
+                111840,
+                110487
+              ],
+              "batches_per_second": 7860.763830971709,
+              "logical_requests_per_second": 251544.44259109467,
+              "service_calls_per_second": 251544.44259109467
+            },
+            "cpp": {
+              "samples": 6000,
+              "p50_ns": 139132,
+              "p95_ns": 204809,
+              "p99_ns": 294605,
+              "repetition_p50_ns": [
+                147001,
+                130769,
+                130626,
+                132790,
+                142717,
+                131540
+              ],
+              "batches_per_second": 6784.933147669217,
+              "logical_requests_per_second": 217117.86072541494,
+              "service_calls_per_second": 217117.86072541494
+            }
+          },
+          "legacy_over_cpp": 0.6291938590690854,
+          "faster_reference": "legacy",
+          "portable_over_faster_reference": 1.2778012588387155,
+          "meets_target": false
+        },
+        {
+          "case": {
+            "name": "deep-32-concurrent-32",
+            "depth": 32,
+            "width": 32,
+            "connections": 1,
+            "hops": 1,
+            "payload_bytes_per_node": 32
+          },
+          "variants": {
+            "legacy": {
+              "samples": 6000,
+              "p50_ns": 240281,
+              "p95_ns": 377680,
+              "p99_ns": 439604,
+              "repetition_p50_ns": [
+                299372,
+                276438,
+                222724,
+                220022,
+                221116,
+                241116
+              ],
+              "batches_per_second": 3801.990263581986,
+              "logical_requests_per_second": 121663.68843462355,
+              "service_calls_per_second": 121663.68843462355
+            },
+            "portable": {
+              "samples": 6000,
+              "p50_ns": 406057,
+              "p95_ns": 518898,
+              "p99_ns": 672913,
+              "repetition_p50_ns": [
+                444180,
+                376973,
+                400531,
+                392131,
+                395561,
+                439858
+              ],
+              "batches_per_second": 2355.2170134345247,
+              "logical_requests_per_second": 75366.94442990479,
+              "service_calls_per_second": 75366.94442990479
+            },
+            "cpp": {
+              "samples": 6000,
+              "p50_ns": 287624,
+              "p95_ns": 422347,
+              "p99_ns": 463750,
+              "repetition_p50_ns": [
+                396809,
+                312375,
+                320470,
+                257348,
+                258092,
+                269089
+              ],
+              "batches_per_second": 3203.5584016158236,
+              "logical_requests_per_second": 102513.86885170636,
+              "service_calls_per_second": 102513.86885170636
+            }
+          },
+          "legacy_over_cpp": 0.835399688482185,
+          "faster_reference": "legacy",
+          "portable_over_faster_reference": 1.6899255455071354,
+          "meets_target": false
+        },
+        {
+          "case": {
+            "name": "services-4-deep-16",
+            "depth": 16,
+            "width": 1,
+            "connections": 1,
+            "hops": 4,
+            "payload_bytes_per_node": 32
+          },
+          "variants": {
+            "legacy": {
+              "samples": 6000,
+              "p50_ns": 146833,
+              "p95_ns": 225089,
+              "p99_ns": 364134,
+              "repetition_p50_ns": [
+                150767,
+                120026,
+                159369,
+                142546,
+                149337,
+                126022
+              ],
+              "batches_per_second": 6392.374868422951,
+              "logical_requests_per_second": 6392.374868422951,
+              "service_calls_per_second": 25569.499473691805
+            },
+            "portable": {
+              "samples": 6000,
+              "p50_ns": 146342,
+              "p95_ns": 253005,
+              "p99_ns": 359479,
+              "repetition_p50_ns": [
+                138219,
+                144103,
+                164647,
+                156506,
+                149327,
+                114735
+              ],
+              "batches_per_second": 6183.955675467037,
+              "logical_requests_per_second": 6183.955675467037,
+              "service_calls_per_second": 24735.822701868146
+            },
+            "cpp": {
+              "samples": 6000,
+              "p50_ns": 131378,
+              "p95_ns": 209386,
+              "p99_ns": 353857,
+              "repetition_p50_ns": [
+                143637,
+                115751,
+                145819,
+                136896,
+                115185,
+                119051
+              ],
+              "batches_per_second": 6988.612019441723,
+              "logical_requests_per_second": 6988.612019441723,
+              "service_calls_per_second": 27954.44807776689
+            }
+          },
+          "legacy_over_cpp": 1.1176376562285923,
+          "faster_reference": "cpp",
+          "portable_over_faster_reference": 1.1139003486124008,
+          "meets_target": false
+        },
+        {
+          "case": {
+            "name": "services-4-deep-16-concurrent-32",
+            "depth": 16,
+            "width": 32,
+            "connections": 1,
+            "hops": 4,
+            "payload_bytes_per_node": 32
+          },
+          "variants": {
+            "legacy": {
+              "samples": 6000,
+              "p50_ns": 1119792,
+              "p95_ns": 1323228,
+              "p99_ns": 1624955,
+              "repetition_p50_ns": [
+                1097649,
+                1108889,
+                1138026,
+                1111050,
+                1121655,
+                1131608
+              ],
+              "batches_per_second": 869.4508588978556,
+              "logical_requests_per_second": 27822.42748473138,
+              "service_calls_per_second": 111289.70993892552
+            },
+            "portable": {
+              "samples": 6000,
+              "p50_ns": 1002906,
+              "p95_ns": 1307195,
+              "p99_ns": 1546483,
+              "repetition_p50_ns": [
+                1061485,
+                926673,
+                1072216,
+                1094446,
+                968973,
+                1064828
+              ],
+              "batches_per_second": 947.2412354206449,
+              "logical_requests_per_second": 30311.719533460637,
+              "service_calls_per_second": 121246.87813384255
+            },
+            "cpp": {
+              "samples": 6000,
+              "p50_ns": 1150915,
+              "p95_ns": 1385257,
+              "p99_ns": 1844612,
+              "repetition_p50_ns": [
+                1119953,
+                1158964,
+                1180831,
+                1154357,
+                1123528,
+                1149886
+              ],
+              "batches_per_second": 843.6036623925949,
+              "logical_requests_per_second": 26995.317196563035,
+              "service_calls_per_second": 107981.26878625214
+            }
+          },
+          "legacy_over_cpp": 0.9729580377351933,
+          "faster_reference": "legacy",
+          "portable_over_faster_reference": 0.8956181147927472,
+          "meets_target": true
+        },
+        {
+          "case": {
+            "name": "services-4-deep-16-clients-8",
+            "depth": 16,
+            "width": 32,
+            "connections": 8,
+            "hops": 4,
+            "payload_bytes_per_node": 32
+          },
+          "variants": {
+            "legacy": {
+              "samples": 6000,
+              "p50_ns": 1109057,
+              "p95_ns": 1321360,
+              "p99_ns": 1713212,
+              "repetition_p50_ns": [
+                1087404,
+                1152324,
+                1084900,
+                1104145,
+                1109108,
+                1117728
+              ],
+              "batches_per_second": 874.4978416044356,
+              "logical_requests_per_second": 27983.93093134194,
+              "service_calls_per_second": 111935.72372536776
+            },
+            "portable": {
+              "samples": 6000,
+              "p50_ns": 1026801,
+              "p95_ns": 1315421,
+              "p99_ns": 1708072,
+              "repetition_p50_ns": [
+                920491,
+                1096280,
+                996267,
+                1023533,
+                1125631,
+                989003
+              ],
+              "batches_per_second": 943.1730426068746,
+              "logical_requests_per_second": 30181.537363419986,
+              "service_calls_per_second": 120726.14945367994
+            },
+            "cpp": {
+              "samples": 6000,
+              "p50_ns": 1078176,
+              "p95_ns": 1292322,
+              "p99_ns": 1561253,
+              "repetition_p50_ns": [
+                1097629,
+                1116400,
+                1052055,
+                1043188,
+                1074675,
+                1080811
+              ],
+              "batches_per_second": 920.5399098453928,
+              "logical_requests_per_second": 29457.27711505257,
+              "service_calls_per_second": 117829.10846021028
+            }
+          },
+          "legacy_over_cpp": 1.0286418914908142,
+          "faster_reference": "cpp",
+          "portable_over_faster_reference": 0.9523500801353397,
+          "meets_target": true
+        },
+        {
+          "case": {
+            "name": "services-8-deep-16-clients-8",
+            "depth": 16,
+            "width": 32,
+            "connections": 8,
+            "hops": 8,
+            "payload_bytes_per_node": 32
+          },
+          "variants": {
+            "legacy": {
+              "samples": 6000,
+              "p50_ns": 2435552,
+              "p95_ns": 2814038,
+              "p99_ns": 3727204,
+              "repetition_p50_ns": [
+                2376794,
+                2408979,
+                2448980,
+                2512801,
+                2463043,
+                2382932
+              ],
+              "batches_per_second": 402.2016209987703,
+              "logical_requests_per_second": 12870.45187196065,
+              "service_calls_per_second": 102963.6149756852
+            },
+            "portable": {
+              "samples": 6000,
+              "p50_ns": 1791660,
+              "p95_ns": 2499881,
+              "p99_ns": 3314243,
+              "repetition_p50_ns": [
+                1770781,
+                1835943,
+                2003663,
+                1778624,
+                1816179,
+                1663636
+              ],
+              "batches_per_second": 527.5162531672211,
+              "logical_requests_per_second": 16880.520101351074,
+              "service_calls_per_second": 135044.1608108086
+            },
+            "cpp": {
+              "samples": 6000,
+              "p50_ns": 2279034,
+              "p95_ns": 2720034,
+              "p99_ns": 3565290,
+              "repetition_p50_ns": [
+                2259394,
+                2342507,
+                2322829,
+                2314419,
+                2264858,
+                2215662
+              ],
+              "batches_per_second": 448.74662212169164,
+              "logical_requests_per_second": 14359.891907894133,
+              "service_calls_per_second": 114879.13526315306
+            }
+          },
+          "legacy_over_cpp": 1.068677343119936,
+          "faster_reference": "cpp",
+          "portable_over_faster_reference": 0.7861488683363215,
+          "meets_target": true
+        }
+      ],
+      "socket_journals": [],
+      "diagnostic": false,
+      "qualifying_budget": true,
+      "all_cells_meet_target": false
+    },
+    "hints-tail-screen": {
+      "samples": 96000,
+      "rows": [
+        {
+          "case": "pipelined-read",
+          "variants": {
+            "legacy": {
+              "samples": 8000,
+              "p50_ns": 32018,
+              "p95_ns": 55305,
+              "p99_ns": 94312,
+              "repetition_p50_ns": [
+                31087,
+                30756,
+                41363,
+                52982,
+                30987,
+                31478,
+                30977,
+                41083
+              ],
+              "operations_per_second": 25420.763201472615
+            },
+            "portable": {
+              "samples": 8000,
+              "p50_ns": 46790,
+              "p95_ns": 91511,
+              "p99_ns": 134692,
+              "repetition_p50_ns": [
+                42894,
+                42493,
+                52199,
+                88456,
+                42525,
+                42395,
+                43395,
+                51949
+              ],
+              "operations_per_second": 17725.716638980426
+            },
+            "portable-baseline": {
+              "samples": 8000,
+              "p50_ns": 42254,
+              "p95_ns": 87072,
+              "p99_ns": 128814,
+              "repetition_p50_ns": [
+                41583,
+                41152,
+                43976,
+                42265,
+                41404,
+                41573,
+                42454,
+                52860
+              ],
+              "operations_per_second": 19910.902593520004
+            },
+            "cpp": {
+              "samples": 8000,
+              "p50_ns": 31798,
+              "p95_ns": 54504,
+              "p99_ns": 93361,
+              "repetition_p50_ns": [
+                30315,
+                31177,
+                41222,
+                49276,
+                31538,
+                30907,
+                30716,
+                40912
+              ],
+              "operations_per_second": 25768.09555330347
+            }
+          }
+        },
+        {
+          "case": "bulk-1m",
+          "variants": {
+            "legacy": {
+              "samples": 8000,
+              "p50_ns": 384386,
+              "p95_ns": 1570328,
+              "p99_ns": 2726654,
+              "repetition_p50_ns": [
+                1307544,
+                334093,
+                390991,
+                363310,
+                349604,
+                326738,
+                375646,
+                593399
+              ],
+              "operations_per_second": 1649.1765997875434
+            },
+            "portable": {
+              "samples": 8000,
+              "p50_ns": 345733,
+              "p95_ns": 1408014,
+              "p99_ns": 2614877,
+              "repetition_p50_ns": [
+                463547,
+                351887,
+                313143,
+                323419,
+                332218,
+                342840,
+                306802,
+                416582
+              ],
+              "operations_per_second": 1981.1156632600741
+            },
+            "portable-baseline": {
+              "samples": 8000,
+              "p50_ns": 672707,
+              "p95_ns": 1371378,
+              "p99_ns": 1631718,
+              "repetition_p50_ns": [
+                536867,
+                1244808,
+                932027,
+                1215193,
+                552784,
+                550067,
+                534332,
+                1270245
+              ],
+              "operations_per_second": 1192.4426320053103
+            },
+            "cpp": {
+              "samples": 8000,
+              "p50_ns": 1094734,
+              "p95_ns": 1750974,
+              "p99_ns": 2015986,
+              "repetition_p50_ns": [
+                868895,
+                1321060,
+                1575869,
+                957547,
+                881446,
+                905566,
+                1390204,
+                1365103
+              ],
+              "operations_per_second": 847.298309455956
+            }
+          }
+        },
+        {
+          "case": "bulk-4m",
+          "variants": {
+            "legacy": {
+              "samples": 8000,
+              "p50_ns": 2086042,
+              "p95_ns": 3008272,
+              "p99_ns": 4721690,
+              "repetition_p50_ns": [
+                2383688,
+                2033765,
+                2065502,
+                2184940,
+                1965268,
+                2165646,
+                1994082,
+                2014286
+              ],
+              "operations_per_second": 455.1269841020081
+            },
+            "portable": {
+              "samples": 8000,
+              "p50_ns": 2767572,
+              "p95_ns": 4652011,
+              "p99_ns": 5112416,
+              "repetition_p50_ns": [
+                2765474,
+                2628948,
+                2836493,
+                2731957,
+                3103639,
+                2782251,
+                2685329,
+                2747843
+              ],
+              "operations_per_second": 343.5606032513312
+            },
+            "portable-baseline": {
+              "samples": 8000,
+              "p50_ns": 2837765,
+              "p95_ns": 5218370,
+              "p99_ns": 6085667,
+              "repetition_p50_ns": [
+                2734777,
+                2805074,
+                2823083,
+                2722548,
+                2724367,
+                3044919,
+                4958865,
+                2865551
+              ],
+              "operations_per_second": 301.1977074390262
+            },
+            "cpp": {
+              "samples": 8000,
+              "p50_ns": 4485790,
+              "p95_ns": 6818648,
+              "p99_ns": 8110405,
+              "repetition_p50_ns": [
+                4031870,
+                4023062,
+                5378797,
+                4683554,
+                5296532,
+                4233312,
+                4545939,
+                4622932
+              ],
+              "operations_per_second": 207.00214511370456
+            }
+          }
+        }
+      ]
+    },
+    "topology-hints-tail-screen": {
+      "rows": [
+        {
+          "case": {
+            "name": "deep-32",
+            "depth": 32,
+            "width": 1,
+            "connections": 1,
+            "hops": 1,
+            "payload_bytes_per_node": 32
+          },
+          "variants": {
+            "legacy": {
+              "samples": 8000,
+              "p50_ns": 36835,
+              "p95_ns": 51738,
+              "p99_ns": 102765,
+              "repetition_p50_ns": [
+                25729,
+                38028,
+                27041,
+                26941,
+                37647,
+                26330,
+                37617,
+                38038
+              ],
+              "batches_per_second": 27895.453780960615,
+              "logical_requests_per_second": 27895.453780960615,
+              "service_calls_per_second": 27895.453780960615
+            },
+            "portable": {
+              "samples": 8000,
+              "p50_ns": 28683,
+              "p95_ns": 47141,
+              "p99_ns": 91679,
+              "repetition_p50_ns": [
+                27873,
+                27952,
+                28373,
+                28403,
+                39369,
+                28102,
+                38368,
+                39039
+              ],
+              "batches_per_second": 28691.00684729886,
+              "logical_requests_per_second": 28691.00684729886,
+              "service_calls_per_second": 28691.00684729886
+            },
+            "cpp": {
+              "samples": 8000,
+              "p50_ns": 27972,
+              "p95_ns": 45939,
+              "p99_ns": 92830,
+              "repetition_p50_ns": [
+                27091,
+                27452,
+                27922,
+                27882,
+                38738,
+                27652,
+                38548,
+                28052
+              ],
+              "batches_per_second": 29736.166826259436,
+              "logical_requests_per_second": 29736.166826259436,
+              "service_calls_per_second": 29736.166826259436
+            },
+            "portable-baseline": {
+              "samples": 8000,
+              "p50_ns": 30937,
+              "p95_ns": 52370,
+              "p99_ns": 98098,
+              "repetition_p50_ns": [
+                30576,
+                29815,
+                30256,
+                30266,
+                40240,
+                30195,
+                40641,
+                41162
+              ],
+              "batches_per_second": 26346.13927281224,
+              "logical_requests_per_second": 26346.13927281224,
+              "service_calls_per_second": 26346.13927281224
+            }
+          },
+          "legacy_over_cpp": 1.3168525668525668,
+          "faster_reference": "cpp",
+          "portable_over_faster_reference": 1.0254182754182755,
+          "meets_target": false
+        },
+        {
+          "case": {
+            "name": "concurrent-32",
+            "depth": 1,
+            "width": 32,
+            "connections": 1,
+            "hops": 1,
+            "payload_bytes_per_node": 32
+          },
+          "variants": {
+            "legacy": {
+              "samples": 8000,
+              "p50_ns": 100282,
+              "p95_ns": 134233,
+              "p99_ns": 221045,
+              "repetition_p50_ns": [
+                87393,
+                104007,
+                85159,
+                85730,
+                99430,
+                87522,
+                101584,
+                104077
+              ],
+              "batches_per_second": 9606.945433427773,
+              "logical_requests_per_second": 307422.2538696887,
+              "service_calls_per_second": 307422.2538696887
+            },
+            "portable": {
+              "samples": 8000,
+              "p50_ns": 126351,
+              "p95_ns": 176697,
+              "p99_ns": 239061,
+              "repetition_p50_ns": [
+                127573,
+                127191,
+                129265,
+                126762,
+                126190,
+                112361,
+                127584,
+                112129
+              ],
+              "batches_per_second": 7483.159913300521,
+              "logical_requests_per_second": 239461.11722561668,
+              "service_calls_per_second": 239461.11722561668
+            },
+            "cpp": {
+              "samples": 8000,
+              "p50_ns": 143717,
+              "p95_ns": 204500,
+              "p99_ns": 256978,
+              "repetition_p50_ns": [
+                134833,
+                145649,
+                129927,
+                143638,
+                144979,
+                131118,
+                145601,
+                145660
+              ],
+              "batches_per_second": 6634.880166653858,
+              "logical_requests_per_second": 212316.16533292347,
+              "service_calls_per_second": 212316.16533292347
+            },
+            "portable-baseline": {
+              "samples": 8000,
+              "p50_ns": 126801,
+              "p95_ns": 171650,
+              "p99_ns": 248496,
+              "repetition_p50_ns": [
+                111839,
+                128964,
+                112951,
+                110979,
+                127643,
+                111879,
+                132020,
+                130097
+              ],
+              "batches_per_second": 7683.043869549525,
+              "logical_requests_per_second": 245857.4038255848,
+              "service_calls_per_second": 245857.4038255848
+            }
+          },
+          "legacy_over_cpp": 0.6977740977059081,
+          "faster_reference": "legacy",
+          "portable_over_faster_reference": 1.2599569214814224,
+          "meets_target": false
+        },
+        {
+          "case": {
+            "name": "deep-32-concurrent-32",
+            "depth": 32,
+            "width": 32,
+            "connections": 1,
+            "hops": 1,
+            "payload_bytes_per_node": 32
+          },
+          "variants": {
+            "legacy": {
+              "samples": 8000,
+              "p50_ns": 277658,
+              "p95_ns": 386362,
+              "p99_ns": 500835,
+              "repetition_p50_ns": [
+                270468,
+                276428,
+                279693,
+                281614,
+                222185,
+                282157,
+                348778,
+                261655
+              ],
+              "batches_per_second": 3382.193901590697,
+              "logical_requests_per_second": 108230.2048509023,
+              "service_calls_per_second": 108230.2048509023
+            },
+            "portable": {
+              "samples": 8000,
+              "p50_ns": 382078,
+              "p95_ns": 487408,
+              "p99_ns": 642771,
+              "repetition_p50_ns": [
+                406583,
+                386585,
+                361427,
+                368846,
+                317589,
+                401217,
+                327736,
+                414596
+              ],
+              "batches_per_second": 2588.3656104849097,
+              "logical_requests_per_second": 82827.69953551711,
+              "service_calls_per_second": 82827.69953551711
+            },
+            "cpp": {
+              "samples": 8000,
+              "p50_ns": 310688,
+              "p95_ns": 420325,
+              "p99_ns": 574039,
+              "repetition_p50_ns": [
+                312651,
+                311502,
+                295097,
+                312191,
+                284389,
+                315688,
+                287864,
+                299623
+              ],
+              "batches_per_second": 3039.653314772906,
+              "logical_requests_per_second": 97268.90607273299,
+              "service_calls_per_second": 97268.90607273299
+            },
+            "portable-baseline": {
+              "samples": 8000,
+              "p50_ns": 458014,
+              "p95_ns": 537710,
+              "p99_ns": 644315,
+              "repetition_p50_ns": [
+                383188,
+                397001,
+                481599,
+                483211,
+                475176,
+                398574,
+                432755,
+                462199
+              ],
+              "batches_per_second": 2219.1920147732476,
+              "logical_requests_per_second": 71014.14447274392,
+              "service_calls_per_second": 71014.14447274392
+            }
+          },
+          "legacy_over_cpp": 0.8936875579359357,
+          "faster_reference": "legacy",
+          "portable_over_faster_reference": 1.3760741631791629,
+          "meets_target": false
+        }
+      ],
+      "socket_journals": [],
+      "diagnostic": false,
+      "qualifying_budget": true,
+      "all_cells_meet_target": false
+    }
+  },
+  "supplementary_bulk256": {
+    "samples": 96000,
+    "rows": [
+      {
+        "case": "bulk-256k",
+        "variants": {
+          "legacy": {
+            "samples": 24000,
+            "p50_ns": 107203,
+            "p95_ns": 361607,
+            "p99_ns": 436080,
+            "repetition_p50_ns": [
+              100302,
+              96726,
+              340514,
+              287183,
+              97928,
+              109386,
+              279573,
+              103727,
+              100151,
+              102905,
+              328885,
+              99620,
+              121884,
+              119951,
+              368377,
+              102245,
+              98589,
+              102094,
+              98328,
+              340972,
+              138910,
+              101604,
+              100272,
+              100902
+            ],
+            "operations_per_second": 5872.4798229594535
+          },
+          "portable": {
+            "samples": 24000,
+            "p50_ns": 109044,
+            "p95_ns": 370296,
+            "p99_ns": 445604,
+            "repetition_p50_ns": [
+              93241,
+              92079,
+              222075,
+              375948,
+              91288,
+              209518,
+              343690,
+              92750,
+              91288,
+              107361,
+              131678,
+              91959,
+              93481,
+              279944,
+              337891,
+              109086,
+              93031,
+              92789,
+              92929,
+              344988,
+              130237,
+              91969,
+              91659,
+              138469
+            ],
+            "operations_per_second": 5832.507855863763
+          },
+          "portable-baseline": {
+            "samples": 24000,
+            "p50_ns": 115144,
+            "p95_ns": 309268,
+            "p99_ns": 380916,
+            "repetition_p50_ns": [
+              91789,
+              114583,
+              115955,
+              248676,
+              93181,
+              115625,
+              91708,
+              92450,
+              92589,
+              92018,
+              91388,
+              90616,
+              229707,
+              298932,
+              235957,
+              291010,
+              112230,
+              91798,
+              111437,
+              203037,
+              263078,
+              90947,
+              205010,
+              296498
+            ],
+            "operations_per_second": 6053.511478147485
+          },
+          "cpp": {
+            "samples": 24000,
+            "p50_ns": 293230,
+            "p95_ns": 477882,
+            "p99_ns": 589403,
+            "repetition_p50_ns": [
+              245991,
+              444180,
+              363038,
+              448767,
+              383561,
+              245942,
+              220955,
+              247845,
+              249627,
+              248655,
+              321095,
+              253151,
+              446423,
+              342868,
+              396269,
+              254265,
+              263165,
+              279169,
+              248994,
+              383727,
+              444552,
+              260664,
+              446976,
+              248997
+            ],
+            "operations_per_second": 3018.8398474190794
+          }
+        }
+      }
+    ]
+  },
+  "rejected": {
+    "reason": "Deferring the combined network lifecycle future delays an immediately ready fatal error after an already completed empty disconnector. Existing test contract preserved; candidate rejected before release build or timing. A separate writer scheduling owner would be needed to defer output without deferring failure observation.",
+    "test_log": "/workspace/scratch/portable34-test-deferred20261018.log",
+    "tests": {
+      "passed": 318,
+      "failed": 1
+    },
+    "failed_test": "portable::tests::network_failure_is_not_masked_by_an_already_completed_empty_disconnector"
+  },
+  "validation": [
+    {
+      "check": "test-libraries",
+      "result": "passed",
+      "detail": "77 core + 72 futures + 319 RPC library tests",
+      "log": "/workspace/scratch/portable34-test-libraries20261018.log"
+    },
+    {
+      "check": "test-wire",
+      "result": "passed",
+      "detail": "96 wire library tests",
+      "log": "/workspace/scratch/portable34-test-wire20261018.log"
+    },
+    {
+      "check": "clippy",
+      "result": "passed",
+      "detail": "Strict all-targets Clippy: core, futures, RPC",
+      "log": "/workspace/scratch/portable34-clippy20261018.log"
+    },
+    {
+      "check": "miri-validator",
+      "result": "passed",
+      "detail": "branched_struct_tails_preserve_validation_order_and_limits",
+      "log": "/workspace/scratch/portable34-miri-validator20261018.log"
+    },
+    {
+      "check": "miri-stream",
+      "result": "passed",
+      "detail": "streamed_read_hints_bound_slices_and_reset_before_completing",
+      "log": "/workspace/scratch/portable34-miri-stream20261018.log"
+    },
+    {
+      "check": "check-noalloc",
+      "result": "passed",
+      "detail": "core no-default-features",
+      "log": "/workspace/scratch/portable34-check-noalloc20261018.log"
+    },
+    {
+      "check": "check-alloc",
+      "result": "passed",
+      "detail": "core alloc without defaults",
+      "log": "/workspace/scratch/portable34-check-alloc20261018.log"
+    },
+    {
+      "check": "rejected-network-deferral",
+      "result": "failed-reverted",
+      "detail": "318 passed, 1 failed; selected code passes all 319",
+      "log": "/workspace/scratch/portable34-test-deferred20261018.log"
+    },
+    {
+      "check": "initial-core-filter",
+      "result": "zero-tests-superseded",
+      "detail": "Incorrect test filter; replaced by full core library and focused Miri runs",
+      "log": "/workspace/scratch/portable34-test-validator20261018.log"
+    },
+    {
+      "check": "coverage",
+      "result": "not-run-locally"
+    },
+    {
+      "check": "unsafe",
+      "result": "passed",
+      "detail": "Strict workspace all-targets Clippy with unchanged unsafe documentation inventory",
+      "log": "/workspace/scratch/portable34-unsafe20261018.log"
+    },
+    {
+      "check": "repository",
+      "result": "passed",
+      "detail": "Repository policy checks",
+      "log": "/workspace/scratch/portable34-repository20261018.log"
+    },
+    {
+      "check": "wiki-staged",
+      "result": "passed",
+      "detail": "104 tracked project documents",
+      "log": "/workspace/scratch/portable34-wiki-staged20261018.log"
+    },
+    {
+      "check": "format",
+      "result": "passed",
+      "detail": "Root and benchmark Rust formatting",
+      "log": "/workspace/scratch/portable34-format20261018.log"
+    },
+    {
+      "check": "wiki-before-stage",
+      "result": "failed-superseded",
+      "detail": "New report link was checked before new tracked files were staged; passed after staging",
+      "log": "/workspace/scratch/portable34-wiki20261018.log"
+    },
+    {
+      "check": "benchmark-clippy",
+      "result": "passed",
+      "detail": "Strict all-targets Clippy for standalone benchmark crate",
+      "log": "/workspace/scratch/portable34-benchmark-clippy20261018.log"
+    },
+    {
+      "check": "independent-evidence-verification",
+      "result": "passed",
+      "detail": "All 1,200,000 samples, balanced order, budgets, throughput, tails, wire edges, hashes, exact patch and report links",
+      "evidence": "/workspace/scratch/portable34-independent-verification20261018.json"
+    }
+  ],
+  "replay": [
+    {
+      "snapshot": "baseline",
+      "tree": "2aabb4bc82be4e50c1d9471b8ea50780cb37914e",
+      "files": 3,
+      "patch_sha256": "2887c5df1ec403fd81f83a29de4135b4c62f28d03d036b2deba94c6d61f6b58d",
+      "replays": true
+    },
+    {
+      "snapshot": "hints-tail",
+      "tree": "3788ece6d487735358061ef3ca033feed805ccdc",
+      "files": 5,
+      "patch_sha256": "aebf46d0214b8de6f64d8798d3dbb796da44a2e7d52780febcd88e8d0b84bc46",
+      "replays": true
+    }
+  ],
+  "unchanged_cpp": {
+    "revision": "0de72d8d8cec6b69edaa29de51d3bd490341f9c2",
+    "original_sha256": "306ada5926f3a9fbc9f31ebe55506774701cc73fa2c67f6f15f0a8a41a70decb",
+    "topology_sha256": "39190f9df67e115fcd2256c51b1050419616d38e6e850e99b04185fe2cb67d44"
+  },
+  "archive": {
+    "path": "/workspace/capntproto/target/portable-topologies-20261018",
+    "files": 11731,
+    "bytes": 729209287,
+    "manifest_sha256": "9dca1debce70ead60bbd13ce2e77c03127342963b12ce95ebcecd9f267ca40c2",
+    "count_scope": "Logical bytes including hard links; excludes SHA256SUMS itself."
+  }
+}

@@ -62,12 +62,10 @@ impl PointerReader<'_> {
                             data + pointers,
                         )?;
                         let section = body.add(data * BYTES_PER_WORD).cast::<WirePointer>();
-                        if pointers == 1 {
-                            current.pointer = section;
-                            current.nesting_limit -= 1;
-                            continue;
+                        if pointers == 0 {
+                            return Ok(());
                         }
-                        for index in 0..pointers {
+                        for index in 0..pointers - 1 {
                             if (*section.add(index)).is_null() {
                                 continue;
                             }
@@ -78,8 +76,15 @@ impl PointerReader<'_> {
                             }
                             .validate_capability_indices_in(arena, count)?;
                         }
+                        // Continue through the final field without another
+                        // recursive call. Linked structs commonly have a data
+                        // pointer followed by a next pointer. Earlier fields
+                        // retain their ordered validation and budget charges;
+                        // the tail has the same checked extent and nesting step.
+                        current.pointer = section.add(pointers - 1);
+                        current.nesting_limit -= 1;
                     }
-                    return Ok(());
+                    continue;
                 }
                 WirePointerKind::List => {
                     // A near primitive list has no descendants or capability slots.
@@ -401,6 +406,32 @@ mod validation_tests {
             }
         }
         compare(&[encoded(0xffff_fffc, 1 << 16)], 0); // recursive struct
+    }
+
+    #[test]
+    fn branched_struct_tails_preserve_validation_order_and_limits() {
+        for depth in 1..=12 {
+            let mut words = [encoded(0, 0); 25];
+            words[0] = encoded(0, 2 << 16);
+            for level in 0..depth {
+                words[1 + level * 2] = encoded(3, 0);
+                if level + 1 < depth {
+                    words[2 + level * 2] = encoded(0, 2 << 16);
+                }
+            }
+            compare(&words, 0);
+            compare(&words, 1);
+            // Invalid capabilities in either an earlier sibling or the tail's
+            // last descendant must still be found under the same read budget.
+            for level in 0..depth {
+                words[1 + level * 2] = encoded(3, 9);
+                compare(&words, 1);
+                words[1 + level * 2] = encoded(3, 0);
+            }
+            // A back edge must exhaust nesting rather than looping forever.
+            words[depth * 2] = encoded((-(depth as i32 * 2) * 4) as u32, 2 << 16);
+            compare(&words, 1);
+        }
     }
 
     #[test]

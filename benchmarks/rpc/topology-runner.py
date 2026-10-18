@@ -43,24 +43,33 @@ def host_state():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--rust', type=Path, required=True)
+    parser.add_argument('--portable', type=Path, help='Portable driver binary; defaults to --rust with portable selected on every peer.')
     parser.add_argument('--cpp', type=Path, required=True)
     parser.add_argument('--baseline', type=Path, help='Optional frozen Rust control, interleaved with the candidate and C++.')
+    parser.add_argument('--portable-baseline', type=Path, help='Optional frozen portable control, explicitly selected on every peer.')
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--repetitions', type=int, default=4)
+    parser.add_argument('--repetitions', type=int, help='Defaults to two complete variant cycles.')
     parser.add_argument('--warmup', type=int)
     parser.add_argument('--iterations', type=int)
     parser.add_argument('--cases', default='')
     parser.add_argument('--instrument', choices=['none', 'socket', 'wire', 'callgrind'], default='none')
-    parser.add_argument('--mixed', action='store_true', help='Also validate alternating Rust/C++ service chains in both directions.')
+    parser.add_argument('--mixed', action='store_true', help='Also validate every ordered pair of legacy, portable and C++ in alternating service chains.')
     args = parser.parse_args()
     diagnostic = args.instrument != 'none'
     warmup = args.warmup if args.warmup is not None else (2 if diagnostic else 100)
     iterations = args.iterations if args.iterations is not None else (10 if diagnostic else 1000)
-    assert 0 <= warmup <= 100000 and 1 <= iterations <= 100000 and 1 <= args.repetitions <= 100
-    binaries = {'legacy': args.rust.resolve(strict=True), 'cpp': args.cpp.resolve(strict=True)}
+    binaries = {'legacy': args.rust.resolve(strict=True),
+                'portable': (args.portable or args.rust).resolve(strict=True),
+                'cpp': args.cpp.resolve(strict=True)}
     if args.baseline is not None:
         binaries['baseline'] = args.baseline.resolve(strict=True)
-    qualifying = not diagnostic and warmup >= 100 and iterations >= 1000 and args.repetitions >= 2 * len(binaries)
+    if args.portable_baseline is not None:
+        binaries['portable-baseline'] = args.portable_baseline.resolve(strict=True)
+    if args.repetitions is None:
+        args.repetitions = 2 * len(binaries)
+    assert 0 <= warmup <= 100000 and 1 <= iterations <= 100000 and 1 <= args.repetitions <= 100
+    qualifying = (not diagnostic and warmup >= 100 and iterations >= 1000
+                  and args.repetitions % (2 * len(binaries)) == 0)
     catalog_path = ROOT / 'benchmarks/rpc/topologies.json'
     catalog = json.loads(catalog_path.read_text())
     selected = set(args.cases.split(',')) if args.cases else {c['name'] for c in catalog}
@@ -98,12 +107,12 @@ def main():
                  uname=list(platform.uname()), client_cpu=cpus[0], server_cpus=cpus[1:],
                  order_policy='Rotate variants, then reverse every complete cycle; two full cycles balance positions.',
                  metric='Whole concurrent batch latency, including construction, all service hops, validation, response destruction and ten-second deadline.',
-                 goal='Every uninstrumented cell pooled p50 <= 0.70 * C++ pooled p50; diagnostic timings do not qualify.',
+                 goal='Every uninstrumented portable cell pooled p50 <= min(legacy, C++) pooled p50; diagnostic timings do not qualify.',
                  trials=[])
     (out / 'scope.json').write_text(json.dumps(scope, indent=2) + '\n')
 
     def launch(label, argv, prefix, cpu):
-        env = dict(os.environ, CAPNTPROTO_BENCH_PORTABLE='0')
+        env = dict(os.environ, CAPNTPROTO_BENCH_PORTABLE='1' if label in ['portable', 'portable-baseline'] else '0')
         command = ['taskset', '-c', str(cpu)]
         if args.instrument == 'socket':
             env.update(LD_PRELOAD=str(probe), CAPNTPROTO_IO_TRACE=str(prefix) + '.bin')
@@ -149,6 +158,10 @@ def main():
                 (directory / f'service-{hop}.ready.json').write_text(line)
                 ready = json.loads(line)
                 assert ready['hops'] == case['hops'] - hop, 'incorrect chain length'
+                if label in ['portable', 'portable-baseline']:
+                    assert ready['implementation'] == 'portable', 'portable service was not selected'
+                elif 'implementation' in ready:
+                    assert ready['implementation'] == ('capnp-cpp' if label == 'cpp' else 'legacy')
                 address = ready.get('address') or f"127.0.0.1:{ready['port']}"
                 placement.append(dict(hop=hop, implementation=label, cpu=cpu, address=address))
             client = launch(client_label, ['topology-measure', address, case['name'], str(warm), str(count)], directory / 'client', cpus[0])
@@ -157,7 +170,8 @@ def main():
             assert client.returncode == 0, f'client failed: {directory}'
             data = json.loads(output)
             assert data['topology_version'] == 1 and data['case'] == case
-            assert data['implementation'] == ('capnp-cpp' if client_label == 'cpp' else 'legacy')
+            expected = 'portable' if client_label in ['portable', 'portable-baseline'] else ('capnp-cpp' if client_label == 'cpp' else 'legacy')
+            assert data['implementation'] == expected
             assert data['iterations'] == len(data['latency_ns']) == count and data['warmup'] == warm
             assert all(type(n) is int and n > 0 for n in data['latency_ns'])
             assert data['elapsed_ns'] >= sum(data['latency_ns'])
@@ -180,12 +194,15 @@ def main():
 
     if args.mixed:
         for case in cases:
-            for index, label in enumerate(['legacy', 'cpp']):
-                services = [['legacy', 'cpp'][(hop + index + 1) % 2] for hop in range(case['hops'])]
-                prefix = f"mixed-{case['name']}-{label}"
-                _, placement = trial(case, label, services, prefix, 2, 5)
-                scope['trials'].append(dict(path=prefix, case=case['name'], client=label, services=placement, mixed=True))
-                (out / 'scope.json').write_text(json.dumps(scope, indent=2) + '\n')
+            for label in ['legacy', 'portable', 'cpp']:
+                for other in ['legacy', 'portable', 'cpp']:
+                    if label == other:
+                        continue
+                    services = [other if hop % 2 == 0 else label for hop in range(case['hops'])]
+                    prefix = f"mixed-{case['name']}-{label}-{other}"
+                    _, placement = trial(case, label, services, prefix, 2, 5)
+                    scope['trials'].append(dict(path=prefix, case=case['name'], client=label, services=placement, mixed=True))
+                    (out / 'scope.json').write_text(json.dumps(scope, indent=2) + '\n')
     for rep in range(args.repetitions):
         order = list(binaries)
         order = order[rep % len(binaries):] + order[:rep % len(binaries)]
@@ -210,7 +227,11 @@ def main():
                                 batches_per_second=rate, logical_requests_per_second=rate * case['width'],
                                 service_calls_per_second=rate * case['width'] * case['hops'])
         ratio = cells['legacy']['p50_ns'] / cells['cpp']['p50_ns']
-        rows.append(dict(case=case, variants=cells, legacy_over_cpp=ratio, meets_target=ratio <= 0.70 if qualifying else None))
+        reference = min(['legacy', 'cpp'], key=lambda label: cells[label]['p50_ns'])
+        portable_ratio = cells['portable']['p50_ns'] / cells[reference]['p50_ns']
+        rows.append(dict(case=case, variants=cells, legacy_over_cpp=ratio, faster_reference=reference,
+                         portable_over_faster_reference=portable_ratio,
+                         meets_target=portable_ratio <= 1.0 if qualifying else None))
     journals = []
     for path in sorted(out.glob('*/*.bin')):
         raw = path.read_bytes()
