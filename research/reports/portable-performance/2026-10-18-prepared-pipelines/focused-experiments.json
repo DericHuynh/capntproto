@@ -1,0 +1,2506 @@
+{
+  "readiness": {
+    "original": {
+      "samples": 100000,
+      "rows": [
+        {
+          "case": "unary-small",
+          "variants": {
+            "legacy": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 31738.7226,
+              "stddev_ns": 22427.86264442086,
+              "min_ns": 17235,
+              "max_ns": 956303,
+              "repetition_mean_ns": [
+                37264.446,
+                34042.355,
+                28980.264,
+                33742.903,
+                24663.645
+              ],
+              "repetition_mean_stddev_ns": 4937.6841053604585,
+              "repetition_mean_range_ns": [
+                24663.645,
+                37264.446
+              ],
+              "p50_ns": 32038,
+              "p95_ns": 49263,
+              "p99_ns": 100980,
+              "repetition_p50_ns": [
+                32609,
+                32118,
+                21192,
+                32608,
+                21362
+              ],
+              "operations_per_second": 31467.139982799432
+            },
+            "portable": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 32723.8604,
+              "stddev_ns": 36829.48361983986,
+              "min_ns": 20751,
+              "max_ns": 2289376,
+              "repetition_mean_ns": [
+                35736.041,
+                39408.475,
+                35813.521,
+                27500.283,
+                25160.982
+              ],
+              "repetition_mean_stddev_ns": 6078.367327821657,
+              "repetition_mean_range_ns": [
+                25160.982,
+                39408.475
+              ],
+              "p50_ns": 32148,
+              "p95_ns": 50385,
+              "p99_ns": 106869,
+              "repetition_p50_ns": [
+                32308,
+                32468,
+                33741,
+                21752,
+                21622
+              ],
+              "operations_per_second": 30519.02118443064
+            },
+            "portable-baseline": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 30826.8136,
+              "stddev_ns": 17746.030027180732,
+              "min_ns": 20570,
+              "max_ns": 478012,
+              "repetition_mean_ns": [
+                34729.925,
+                35385.342,
+                25479.004,
+                33921.052,
+                24618.745
+              ],
+              "repetition_mean_stddev_ns": 5308.671074539494,
+              "repetition_mean_range_ns": [
+                24618.745,
+                35385.342
+              ],
+              "p50_ns": 31888,
+              "p95_ns": 44265,
+              "p99_ns": 97315,
+              "repetition_p50_ns": [
+                32368,
+                32709,
+                21301,
+                35052,
+                21532
+              ],
+              "operations_per_second": 32395.454264674307
+            },
+            "cpp": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 29223.5784,
+              "stddev_ns": 19436.784373337287,
+              "min_ns": 20961,
+              "max_ns": 423761,
+              "repetition_mean_ns": [
+                35843.076,
+                36082.853,
+                24860.879,
+                23913.586,
+                25417.498
+              ],
+              "repetition_mean_stddev_ns": 6176.220726882526,
+              "repetition_mean_range_ns": [
+                23913.586,
+                36082.853
+              ],
+              "p50_ns": 22264,
+              "p95_ns": 40310,
+              "p99_ns": 98357,
+              "repetition_p50_ns": [
+                32448,
+                32709,
+                21732,
+                21623,
+                21732
+              ],
+              "operations_per_second": 34186.657605287946
+            }
+          }
+        },
+        {
+          "case": "dependent-read",
+          "variants": {
+            "legacy": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 71221.8832,
+              "stddev_ns": 27286.56918871949,
+              "min_ns": 45298,
+              "max_ns": 786080,
+              "repetition_mean_ns": [
+                76968.578,
+                81078.386,
+                66437.463,
+                71490.681,
+                60134.308
+              ],
+              "repetition_mean_stddev_ns": 8307.713302917096,
+              "repetition_mean_range_ns": [
+                60134.308,
+                81078.386
+              ],
+              "p50_ns": 71386,
+              "p95_ns": 108532,
+              "p99_ns": 168991,
+              "repetition_p50_ns": [
+                68803,
+                76363,
+                54771,
+                76074,
+                47902
+              ],
+              "operations_per_second": 14031.220852681838
+            },
+            "portable": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 85375.6236,
+              "stddev_ns": 42474.693678332005,
+              "min_ns": 54160,
+              "max_ns": 1453262,
+              "repetition_mean_ns": [
+                86929.17,
+                83420.907,
+                65114.126,
+                84572.868,
+                106841.047
+              ],
+              "repetition_mean_stddev_ns": 14816.979505728163,
+              "repetition_mean_range_ns": [
+                65114.126,
+                106841.047
+              ],
+              "p50_ns": 76994,
+              "p95_ns": 134050,
+              "p99_ns": 213738,
+              "repetition_p50_ns": [
+                77396,
+                76975,
+                58487,
+                58377,
+                101240
+              ],
+              "operations_per_second": 11706.957417164602
+            },
+            "portable-baseline": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 85868.7404,
+              "stddev_ns": 101057.87823966754,
+              "min_ns": 50595,
+              "max_ns": 4963315,
+              "repetition_mean_ns": [
+                87443.216,
+                91068.966,
+                75275.839,
+                86216.79,
+                89338.891
+              ],
+              "repetition_mean_stddev_ns": 6202.700288720089,
+              "repetition_mean_range_ns": [
+                75275.839,
+                91068.966
+              ],
+              "p50_ns": 76614,
+              "p95_ns": 141921,
+              "p99_ns": 253327,
+              "repetition_p50_ns": [
+                77174,
+                78617,
+                57155,
+                57706,
+                100620
+              ],
+              "operations_per_second": 11631.578389787284
+            },
+            "cpp": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 74085.1376,
+              "stddev_ns": 131121.43139642183,
+              "min_ns": 43755,
+              "max_ns": 6824725,
+              "repetition_mean_ns": [
+                78463.145,
+                75947.719,
+                76371.117,
+                74326.809,
+                65316.898
+              ],
+              "repetition_mean_stddev_ns": 5118.649500402699,
+              "repetition_mean_range_ns": [
+                65316.898,
+                78463.145
+              ],
+              "p50_ns": 70725,
+              "p95_ns": 103654,
+              "p99_ns": 168400,
+              "repetition_p50_ns": [
+                69413,
+                70095,
+                74952,
+                72688,
+                47340
+              ],
+              "operations_per_second": 13491.928397170293
+            }
+          }
+        },
+        {
+          "case": "pipelined-read",
+          "variants": {
+            "legacy": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 43017.9304,
+              "stddev_ns": 40113.92492994687,
+              "min_ns": 27551,
+              "max_ns": 2280423,
+              "repetition_mean_ns": [
+                45620.881,
+                50205.65,
+                47452.895,
+                35407.96,
+                36402.266
+              ],
+              "repetition_mean_stddev_ns": 6704.219582095689,
+              "repetition_mean_range_ns": [
+                35407.96,
+                50205.65
+              ],
+              "p50_ns": 40961,
+              "p95_ns": 74821,
+              "p99_ns": 150133,
+              "repetition_p50_ns": [
+                41082,
+                42233,
+                41832,
+                29614,
+                30325
+              ],
+              "operations_per_second": 23226.91718377178
+            },
+            "portable": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 61551.4848,
+              "stddev_ns": 36148.17361205496,
+              "min_ns": 35933,
+              "max_ns": 1185914,
+              "repetition_mean_ns": [
+                72660.335,
+                81127.026,
+                49634.976,
+                50572.559,
+                53762.528
+              ],
+              "repetition_mean_stddev_ns": 14403.26532225928,
+              "repetition_mean_range_ns": [
+                49634.976,
+                81127.026
+              ],
+              "p50_ns": 44025,
+              "p95_ns": 109613,
+              "p99_ns": 159558,
+              "repetition_p50_ns": [
+                62002,
+                89003,
+                42252,
+                43364,
+                42744
+              ],
+              "operations_per_second": 16232.106448180262
+            },
+            "portable-baseline": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 70129.209,
+              "stddev_ns": 95353.45643483583,
+              "min_ns": 40591,
+              "max_ns": 5018547,
+              "repetition_mean_ns": [
+                61421.175,
+                56189.721,
+                53450.258,
+                82848.278,
+                96736.613
+              ],
+              "repetition_mean_stddev_ns": 18828.537198582886,
+              "repetition_mean_range_ns": [
+                53450.258,
+                96736.613
+              ],
+              "p50_ns": 54230,
+              "p95_ns": 116323,
+              "p99_ns": 176873,
+              "repetition_p50_ns": [
+                54451,
+                52759,
+                43865,
+                56954,
+                92097
+              ],
+              "operations_per_second": 14247.64319902971
+            },
+            "cpp": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 42126.5114,
+              "stddev_ns": 37533.42069840337,
+              "min_ns": 25969,
+              "max_ns": 1638638,
+              "repetition_mean_ns": [
+                47812.656,
+                47065.458,
+                36477.319,
+                38530.46,
+                40746.664
+              ],
+              "repetition_mean_stddev_ns": 5086.1177046129005,
+              "repetition_mean_range_ns": [
+                36477.319,
+                47812.656
+              ],
+              "p50_ns": 36023,
+              "p95_ns": 76383,
+              "p99_ns": 153479,
+              "repetition_p50_ns": [
+                41722,
+                42223,
+                31236,
+                31097,
+                30815
+              ],
+              "operations_per_second": 23720.352003192267
+            }
+          }
+        },
+        {
+          "case": "callback",
+          "variants": {
+            "legacy": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 68053.5396,
+              "stddev_ns": 38768.634738245884,
+              "min_ns": 44416,
+              "max_ns": 905868,
+              "repetition_mean_ns": [
+                80407.825,
+                53184.186,
+                53089.881,
+                79209.782,
+                74376.024
+              ],
+              "repetition_mean_stddev_ns": 13802.831923192802,
+              "repetition_mean_range_ns": [
+                53089.881,
+                80407.825
+              ],
+              "p50_ns": 68111,
+              "p95_ns": 104405,
+              "p99_ns": 186287,
+              "repetition_p50_ns": [
+                68552,
+                46018,
+                46319,
+                75833,
+                73799
+              ],
+              "operations_per_second": 14684.414516328485
+            },
+            "portable": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 89715.9992,
+              "stddev_ns": 27915.3019744882,
+              "min_ns": 51567,
+              "max_ns": 403070,
+              "repetition_mean_ns": [
+                84415.002,
+                90920.946,
+                75809.892,
+                95197.197,
+                102236.959
+              ],
+              "repetition_mean_stddev_ns": 10121.1443177028,
+              "repetition_mean_range_ns": [
+                75809.892,
+                102236.959
+              ],
+              "p50_ns": 95012,
+              "p95_ns": 130444,
+              "p99_ns": 186297,
+              "repetition_p50_ns": [
+                74721,
+                94591,
+                59528,
+                96543,
+                97065
+              ],
+              "operations_per_second": 11139.509533098686
+            },
+            "portable-baseline": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 72861.8612,
+              "stddev_ns": 35076.07702593094,
+              "min_ns": 50926,
+              "max_ns": 918767,
+              "repetition_mean_ns": [
+                86798.729,
+                61450.962,
+                62266.861,
+                63112.265,
+                90680.489
+              ],
+              "repetition_mean_stddev_ns": 14571.007657358714,
+              "repetition_mean_range_ns": [
+                61450.962,
+                90680.489
+              ],
+              "p50_ns": 56514,
+              "p95_ns": 124235,
+              "p99_ns": 187650,
+              "repetition_p50_ns": [
+                76193,
+                54722,
+                53780,
+                53680,
+                97295
+              ],
+              "operations_per_second": 13715.534326371118
+            },
+            "cpp": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 73262.049,
+              "stddev_ns": 301144.45447668503,
+              "min_ns": 43925,
+              "max_ns": 12645826,
+              "repetition_mean_ns": [
+                77294.568,
+                67557.097,
+                48599.588,
+                120241.984,
+                52617.008
+              ],
+              "repetition_mean_stddev_ns": 28680.90253060428,
+              "repetition_mean_range_ns": [
+                48599.588,
+                120241.984
+              ],
+              "p50_ns": 62583,
+              "p95_ns": 98967,
+              "p99_ns": 181279,
+              "repetition_p50_ns": [
+                69072,
+                69994,
+                45317,
+                70335,
+                45468
+              ],
+              "operations_per_second": 13643.68198334603
+            }
+          }
+        },
+        {
+          "case": "fanout-32",
+          "variants": {
+            "legacy": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 113166.837,
+              "stddev_ns": 53457.410626335106,
+              "min_ns": 90464,
+              "max_ns": 2119604,
+              "repetition_mean_ns": [
+                106019.648,
+                134395.532,
+                105932.886,
+                107274.177,
+                112211.942
+              ],
+              "repetition_mean_stddev_ns": 12141.92237056979,
+              "repetition_mean_range_ns": [
+                105932.886,
+                134395.532
+              ],
+              "p50_ns": 96374,
+              "p95_ns": 166768,
+              "p99_ns": 266016,
+              "repetition_p50_ns": [
+                95602,
+                139397,
+                95552,
+                96473,
+                96123
+              ],
+              "operations_per_second": 8833.402604582112
+            },
+            "portable": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 135492.0924,
+              "stddev_ns": 97673.72094020132,
+              "min_ns": 107079,
+              "max_ns": 3673206,
+              "repetition_mean_ns": [
+                126319.203,
+                126932.188,
+                146838.19,
+                142532.965,
+                134837.916
+              ],
+              "repetition_mean_stddev_ns": 9167.191878681353,
+              "repetition_mean_range_ns": [
+                126319.203,
+                146838.19
+              ],
+              "p50_ns": 114079,
+              "p95_ns": 193788,
+              "p99_ns": 346596,
+              "repetition_p50_ns": [
+                113048,
+                113949,
+                114230,
+                116704,
+                114270
+              ],
+              "operations_per_second": 7377.786980796467
+            },
+            "portable-baseline": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 133322.79,
+              "stddev_ns": 75148.34335342898,
+              "min_ns": 109253,
+              "max_ns": 4669739,
+              "repetition_mean_ns": [
+                122723.386,
+                122895.443,
+                127906.601,
+                156231.874,
+                136856.646
+              ],
+              "repetition_mean_stddev_ns": 14033.231112658434,
+              "repetition_mean_range_ns": [
+                122723.386,
+                156231.874
+              ],
+              "p50_ns": 115622,
+              "p95_ns": 195401,
+              "p99_ns": 305865,
+              "repetition_p50_ns": [
+                113479,
+                115872,
+                113328,
+                152517,
+                116544
+              ],
+              "operations_per_second": 7497.8073149864795
+            },
+            "cpp": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 187499.4422,
+              "stddev_ns": 108166.89804331787,
+              "min_ns": 128290,
+              "max_ns": 4233790,
+              "repetition_mean_ns": [
+                199822.878,
+                147832.325,
+                193601.714,
+                193069.829,
+                203170.465
+              ],
+              "repetition_mean_stddev_ns": 22578.724181716214,
+              "repetition_mean_range_ns": [
+                147832.325,
+                203170.465
+              ],
+              "p50_ns": 180859,
+              "p95_ns": 248630,
+              "p99_ns": 369139,
+              "repetition_p50_ns": [
+                178626,
+                136153,
+                201981,
+                198785,
+                201330
+              ],
+              "operations_per_second": 5332.095013275019
+            }
+          }
+        }
+      ]
+    },
+    "topology": {
+      "rows": [
+        {
+          "case": {
+            "name": "concurrent-32",
+            "depth": 1,
+            "width": 32,
+            "connections": 1,
+            "hops": 1,
+            "payload_bytes_per_node": 32
+          },
+          "variants": {
+            "legacy": {
+              "samples": 5000,
+              "p50_ns": 87730,
+              "p95_ns": 142642,
+              "p99_ns": 227509,
+              "statistics_version": 1,
+              "mean_ns": 99863.2328,
+              "stddev_ns": 58698.511158125984,
+              "min_ns": 82683,
+              "max_ns": 2746475,
+              "repetition_mean_ns": [
+                96231.522,
+                108162.901,
+                107768.196,
+                89894.63,
+                97258.915
+              ],
+              "repetition_mean_stddev_ns": 7917.034983910433,
+              "repetition_mean_range_ns": [
+                89894.63,
+                108162.901
+              ],
+              "repetition_p50_ns": [
+                86168,
+                101090,
+                88241,
+                84606,
+                86689
+              ],
+              "batches_per_second": 10009.376704021313,
+              "logical_requests_per_second": 320300.054528682,
+              "service_calls_per_second": 320300.054528682
+            },
+            "portable": {
+              "samples": 5000,
+              "p50_ns": 109253,
+              "p95_ns": 179107,
+              "p99_ns": 294458,
+              "statistics_version": 1,
+              "mean_ns": 122434.5076,
+              "stddev_ns": 65372.970654884506,
+              "min_ns": 104165,
+              "max_ns": 3167453,
+              "repetition_mean_ns": [
+                120874.204,
+                124116.796,
+                125048.009,
+                120427.972,
+                121705.557
+              ],
+              "repetition_mean_stddev_ns": 2040.3789625984473,
+              "repetition_mean_range_ns": [
+                120427.972,
+                125048.009
+              ],
+              "repetition_p50_ns": [
+                109132,
+                108131,
+                111165,
+                108171,
+                110164
+              ],
+              "batches_per_second": 8164.732905198254,
+              "logical_requests_per_second": 261271.45296634414,
+              "service_calls_per_second": 261271.45296634414
+            },
+            "cpp": {
+              "samples": 5000,
+              "p50_ns": 132006,
+              "p95_ns": 227337,
+              "p99_ns": 334157,
+              "statistics_version": 1,
+              "mean_ns": 152165.0794,
+              "stddev_ns": 46105.67192398141,
+              "min_ns": 123734,
+              "max_ns": 1058675,
+              "repetition_mean_ns": [
+                148465.24,
+                141536.208,
+                152474.627,
+                136791.259,
+                181558.063
+              ],
+              "repetition_mean_stddev_ns": 17514.70365965066,
+              "repetition_mean_range_ns": [
+                136791.259,
+                181558.063
+              ],
+              "repetition_p50_ns": [
+                131495,
+                130353,
+                132908,
+                129562,
+                199687
+              ],
+              "batches_per_second": 6569.799225556009,
+              "logical_requests_per_second": 210233.5752177923,
+              "service_calls_per_second": 210233.5752177923
+            },
+            "portable-baseline": {
+              "samples": 5000,
+              "p50_ns": 112998,
+              "p95_ns": 190693,
+              "p99_ns": 288700,
+              "statistics_version": 1,
+              "mean_ns": 129184.0626,
+              "stddev_ns": 50235.9762178779,
+              "min_ns": 104606,
+              "max_ns": 2350427,
+              "repetition_mean_ns": [
+                124003.559,
+                140285.964,
+                143437.129,
+                116338.109,
+                121855.552
+              ],
+              "repetition_mean_stddev_ns": 11957.898284767783,
+              "repetition_mean_range_ns": [
+                116338.109,
+                143437.129
+              ],
+              "repetition_p50_ns": [
+                112357,
+                124966,
+                119948,
+                108181,
+                109453
+              ],
+              "batches_per_second": 7738.176363662296,
+              "logical_requests_per_second": 247621.64363719348,
+              "service_calls_per_second": 247621.64363719348
+            }
+          },
+          "legacy_over_cpp": 0.6645910034392376,
+          "faster_reference": "legacy",
+          "portable_over_faster_reference": 1.2453322694631255,
+          "meets_target": false
+        },
+        {
+          "case": {
+            "name": "deep-32-concurrent-32",
+            "depth": 32,
+            "width": 32,
+            "connections": 1,
+            "hops": 1,
+            "payload_bytes_per_node": 32
+          },
+          "variants": {
+            "legacy": {
+              "samples": 5000,
+              "p50_ns": 222201,
+              "p95_ns": 368949,
+              "p99_ns": 416710,
+              "statistics_version": 1,
+              "mean_ns": 251967.6778,
+              "stddev_ns": 68875.64230706985,
+              "min_ns": 208840,
+              "max_ns": 2308644,
+              "repetition_mean_ns": [
+                232584.34,
+                299761.993,
+                236704.289,
+                256314.57,
+                234473.197
+              ],
+              "repetition_mean_stddev_ns": 28363.417096789562,
+              "repetition_mean_range_ns": [
+                232584.34,
+                299761.993
+              ],
+              "repetition_p50_ns": [
+                216342,
+                294368,
+                219176,
+                221950,
+                219436
+              ],
+              "batches_per_second": 3967.971993456887,
+              "logical_requests_per_second": 126975.10379062039,
+              "service_calls_per_second": 126975.10379062039
+            },
+            "portable": {
+              "samples": 5000,
+              "p50_ns": 290662,
+              "p95_ns": 409819,
+              "p99_ns": 548757,
+              "statistics_version": 1,
+              "mean_ns": 305345.4882,
+              "stddev_ns": 174367.45879422093,
+              "min_ns": 238044,
+              "max_ns": 7540649,
+              "repetition_mean_ns": [
+                328688.797,
+                338174.383,
+                263193.5,
+                328666.437,
+                268004.324
+              ],
+              "repetition_mean_stddev_ns": 36529.6650185782,
+              "repetition_mean_range_ns": [
+                263193.5,
+                338174.383
+              ],
+              "repetition_p50_ns": [
+                270743,
+                316801,
+                250072,
+                310823,
+                254249
+              ],
+              "batches_per_second": 3274.336787143942,
+              "logical_requests_per_second": 104778.77718860614,
+              "service_calls_per_second": 104778.77718860614
+            },
+            "cpp": {
+              "samples": 5000,
+              "p50_ns": 318013,
+              "p95_ns": 434537,
+              "p99_ns": 563379,
+              "statistics_version": 1,
+              "mean_ns": 333552.0054,
+              "stddev_ns": 112892.34336496633,
+              "min_ns": 246477,
+              "max_ns": 4505654,
+              "repetition_mean_ns": [
+                357414.632,
+                346682.238,
+                281111.533,
+                347754.356,
+                334797.268
+              ],
+              "repetition_mean_stddev_ns": 30393.619986045476,
+              "repetition_mean_range_ns": [
+                281111.533,
+                357414.632
+              ],
+              "repetition_p50_ns": [
+                361818,
+                326656,
+                258565,
+                329540,
+                347948
+              ],
+              "batches_per_second": 2997.4475930429285,
+              "logical_requests_per_second": 95918.32297737371,
+              "service_calls_per_second": 95918.32297737371
+            },
+            "portable-baseline": {
+              "samples": 5000,
+              "p50_ns": 271344,
+              "p95_ns": 419293,
+              "p99_ns": 485913,
+              "statistics_version": 1,
+              "mean_ns": 299580.651,
+              "stddev_ns": 73480.44569198132,
+              "min_ns": 237844,
+              "max_ns": 2157140,
+              "repetition_mean_ns": [
+                329397.116,
+                330806.106,
+                273221.153,
+                259193.314,
+                305285.566
+              ],
+              "repetition_mean_stddev_ns": 32490.60173717181,
+              "repetition_mean_range_ns": [
+                259193.314,
+                330806.106
+              ],
+              "repetition_p50_ns": [
+                330121,
+                315539,
+                253206,
+                245115,
+                263442
+              ],
+              "batches_per_second": 3337.301881415883,
+              "logical_requests_per_second": 106793.66020530826,
+              "service_calls_per_second": 106793.66020530826
+            }
+          },
+          "legacy_over_cpp": 0.6987167191278344,
+          "faster_reference": "legacy",
+          "portable_over_faster_reference": 1.3081039239247347,
+          "meets_target": false
+        },
+        {
+          "case": {
+            "name": "services-4-deep-16-clients-8",
+            "depth": 16,
+            "width": 32,
+            "connections": 8,
+            "hops": 4,
+            "payload_bytes_per_node": 32
+          },
+          "variants": {
+            "legacy": {
+              "samples": 5000,
+              "p50_ns": 1153073,
+              "p95_ns": 1459455,
+              "p99_ns": 2087445,
+              "statistics_version": 1,
+              "mean_ns": 1204089.1576,
+              "stddev_ns": 309280.85864571785,
+              "min_ns": 663967,
+              "max_ns": 13078285,
+              "repetition_mean_ns": [
+                1284591.317,
+                1147449.356,
+                1168081.386,
+                1187092.565,
+                1233231.164
+              ],
+              "repetition_mean_stddev_ns": 55053.076903058245,
+              "repetition_mean_range_ns": [
+                1147449.356,
+                1284591.317
+              ],
+              "repetition_p50_ns": [
+                1212885,
+                1124200,
+                1129160,
+                1142562,
+                1178383
+              ],
+              "batches_per_second": 830.4602729729561,
+              "logical_requests_per_second": 26574.728735134595,
+              "service_calls_per_second": 106298.91494053838
+            },
+            "portable": {
+              "samples": 5000,
+              "p50_ns": 1045515,
+              "p95_ns": 1387564,
+              "p99_ns": 2076650,
+              "statistics_version": 1,
+              "mean_ns": 1088547.557,
+              "stddev_ns": 268253.7880540042,
+              "min_ns": 713421,
+              "max_ns": 5074550,
+              "repetition_mean_ns": [
+                1176001.089,
+                1032186.785,
+                1094255.794,
+                1061976.75,
+                1078317.367
+              ],
+              "repetition_mean_stddev_ns": 54009.039570766545,
+              "repetition_mean_range_ns": [
+                1032186.785,
+                1176001.089
+              ],
+              "repetition_p50_ns": [
+                1125335,
+                1003053,
+                1039557,
+                1048780,
+                1023332
+              ],
+              "batches_per_second": 918.5948218927102,
+              "logical_requests_per_second": 29395.034300566727,
+              "service_calls_per_second": 117580.13720226691
+            },
+            "cpp": {
+              "samples": 5000,
+              "p50_ns": 1112725,
+              "p95_ns": 1463267,
+              "p99_ns": 2116138,
+              "statistics_version": 1,
+              "mean_ns": 1139943.4664,
+              "stddev_ns": 284032.8972137918,
+              "min_ns": 700432,
+              "max_ns": 7930023,
+              "repetition_mean_ns": [
+                1212480.04,
+                1195802.272,
+                1113403.857,
+                1076012.959,
+                1102018.204
+              ],
+              "repetition_mean_stddev_ns": 60439.11573708227,
+              "repetition_mean_range_ns": [
+                1076012.959,
+                1212480.04
+              ],
+              "repetition_p50_ns": [
+                1161098,
+                1141338,
+                1100457,
+                1058104,
+                1101989
+              ],
+              "batches_per_second": 877.16268464146,
+              "logical_requests_per_second": 28069.20590852672,
+              "service_calls_per_second": 112276.82363410688
+            },
+            "portable-baseline": {
+              "samples": 5000,
+              "p50_ns": 1064694,
+              "p95_ns": 1369147,
+              "p99_ns": 1848103,
+              "statistics_version": 1,
+              "mean_ns": 1095720.7786,
+              "stddev_ns": 238129.6509733589,
+              "min_ns": 724127,
+              "max_ns": 5140258,
+              "repetition_mean_ns": [
+                1134309.095,
+                1079400.744,
+                1037739.251,
+                1096500.942,
+                1130653.861
+              ],
+              "repetition_mean_stddev_ns": 39806.369263150445,
+              "repetition_mean_range_ns": [
+                1037739.251,
+                1134309.095
+              ],
+              "repetition_p50_ns": [
+                1110692,
+                1059684,
+                1023263,
+                1044725,
+                1100377
+              ],
+              "batches_per_second": 912.5954022031669,
+              "logical_requests_per_second": 29203.052870501342,
+              "service_calls_per_second": 116812.21148200537
+            }
+          },
+          "legacy_over_cpp": 1.0362605315778832,
+          "faster_reference": "cpp",
+          "portable_over_faster_reference": 0.9395987328405491,
+          "meets_target": true
+        },
+        {
+          "case": {
+            "name": "services-8-deep-16-clients-8",
+            "depth": 16,
+            "width": 32,
+            "connections": 8,
+            "hops": 8,
+            "payload_bytes_per_node": 32
+          },
+          "variants": {
+            "legacy": {
+              "samples": 5000,
+              "p50_ns": 2516703,
+              "p95_ns": 3145670,
+              "p99_ns": 4623058,
+              "statistics_version": 1,
+              "mean_ns": 2624677.0956,
+              "stddev_ns": 697041.9016413754,
+              "min_ns": 1711987,
+              "max_ns": 26213940,
+              "repetition_mean_ns": [
+                2660018.078,
+                2600366.033,
+                2701055.083,
+                2664406.414,
+                2497539.87
+              ],
+              "repetition_mean_stddev_ns": 79711.82885056436,
+              "repetition_mean_range_ns": [
+                2497539.87,
+                2701055.083
+              ],
+              "repetition_p50_ns": [
+                2570624,
+                2504796,
+                2562442,
+                2509463,
+                2452518
+              ],
+              "batches_per_second": 380.98894207362105,
+              "logical_requests_per_second": 12191.646146355873,
+              "service_calls_per_second": 97533.16917084699
+            },
+            "portable": {
+              "samples": 5000,
+              "p50_ns": 2122478,
+              "p95_ns": 2627048,
+              "p99_ns": 3369412,
+              "statistics_version": 1,
+              "mean_ns": 2153122.531,
+              "stddev_ns": 644668.7762880498,
+              "min_ns": 1410506,
+              "max_ns": 31669572,
+              "repetition_mean_ns": [
+                2136606.405,
+                2035682.605,
+                2239324.519,
+                2186457.638,
+                2167541.488
+              ],
+              "repetition_mean_stddev_ns": 75522.90555148611,
+              "repetition_mean_range_ns": [
+                2035682.605,
+                2239324.519
+              ],
+              "repetition_p50_ns": [
+                2136689,
+                2018342,
+                2214465,
+                2112713,
+                2136348
+              ],
+              "batches_per_second": 464.4225613262401,
+              "logical_requests_per_second": 14861.521962439683,
+              "service_calls_per_second": 118892.17569951747
+            },
+            "cpp": {
+              "samples": 5000,
+              "p50_ns": 2366461,
+              "p95_ns": 2874907,
+              "p99_ns": 3523662,
+              "statistics_version": 1,
+              "mean_ns": 2327062.457,
+              "stddev_ns": 461817.4545216908,
+              "min_ns": 1349007,
+              "max_ns": 11302809,
+              "repetition_mean_ns": [
+                2352415.27,
+                2223227.425,
+                2313531.168,
+                2409253.152,
+                2336885.27
+              ],
+              "repetition_mean_stddev_ns": 67932.63718433045,
+              "repetition_mean_range_ns": [
+                2223227.425,
+                2409253.152
+              ],
+              "repetition_p50_ns": [
+                2402494,
+                2291139,
+                2357707,
+                2410146,
+                2366250
+              ],
+              "batches_per_second": 429.70833526805217,
+              "logical_requests_per_second": 13750.66672857767,
+              "service_calls_per_second": 110005.33382862135
+            },
+            "portable-baseline": {
+              "samples": 5000,
+              "p50_ns": 2056309,
+              "p95_ns": 2569983,
+              "p99_ns": 3227056,
+              "statistics_version": 1,
+              "mean_ns": 2087659.203,
+              "stddev_ns": 427679.5926056113,
+              "min_ns": 1396998,
+              "max_ns": 14030620,
+              "repetition_mean_ns": [
+                2064022.21,
+                2159230.537,
+                2015892.079,
+                2170998.313,
+                2028152.876
+              ],
+              "repetition_mean_stddev_ns": 73003.5848169048,
+              "repetition_mean_range_ns": [
+                2015892.079,
+                2170998.313
+              ],
+              "repetition_p50_ns": [
+                2029867,
+                2183208,
+                1973786,
+                2148356,
+                2017361
+              ],
+              "batches_per_second": 478.9900268740238,
+              "logical_requests_per_second": 15327.680859968761,
+              "service_calls_per_second": 122621.44687975009
+            }
+          },
+          "legacy_over_cpp": 1.063488052412442,
+          "faster_reference": "cpp",
+          "portable_over_faster_reference": 0.8968996319821032,
+          "meets_target": true
+        }
+      ],
+      "socket_journals": [],
+      "diagnostic": false,
+      "qualifying_budget": true,
+      "all_cells_meet_target": false
+    }
+  },
+  "promised": {
+    "original": {
+      "samples": 100000,
+      "rows": [
+        {
+          "case": "unary-small",
+          "variants": {
+            "legacy": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 25840.4978,
+              "stddev_ns": 17000.14895304392,
+              "min_ns": 18218,
+              "max_ns": 599716,
+              "repetition_mean_ns": [
+                26982.659,
+                23381.284,
+                23424.822,
+                23599.87,
+                31813.854
+              ],
+              "repetition_mean_stddev_ns": 3670.461535073375,
+              "repetition_mean_range_ns": [
+                23381.284,
+                31813.854
+              ],
+              "p50_ns": 21482,
+              "p95_ns": 35443,
+              "p99_ns": 78277,
+              "repetition_p50_ns": [
+                21533,
+                21502,
+                21282,
+                21222,
+                32218
+              ],
+              "operations_per_second": 38627.041368641985
+            },
+            "portable": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 29375.3478,
+              "stddev_ns": 93564.07041431735,
+              "min_ns": 19259,
+              "max_ns": 5161740,
+              "repetition_mean_ns": [
+                23815.294,
+                35122.957,
+                36838.551,
+                23915.075,
+                27184.862
+              ],
+              "repetition_mean_stddev_ns": 6210.10102312617,
+              "repetition_mean_range_ns": [
+                23815.294,
+                36838.551
+              ],
+              "p50_ns": 21633,
+              "p95_ns": 37776,
+              "p99_ns": 91166,
+              "repetition_p50_ns": [
+                21562,
+                33680,
+                21492,
+                21282,
+                21572
+              ],
+              "operations_per_second": 33988.152015707805
+            },
+            "portable-baseline": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 26036.2674,
+              "stddev_ns": 11570.308341825736,
+              "min_ns": 20611,
+              "max_ns": 236523,
+              "repetition_mean_ns": [
+                23854.907,
+                23856.119,
+                23214.577,
+                23345.041,
+                35910.693
+              ],
+              "repetition_mean_stddev_ns": 5527.664457529852,
+              "repetition_mean_range_ns": [
+                23214.577,
+                35910.693
+              ],
+              "p50_ns": 21562,
+              "p95_ns": 36915,
+              "p99_ns": 75242,
+              "repetition_p50_ns": [
+                21272,
+                21612,
+                21492,
+                21342,
+                34302
+              ],
+              "operations_per_second": 38343.17808489828
+            },
+            "cpp": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 26433.4666,
+              "stddev_ns": 58658.9023443444,
+              "min_ns": 21001,
+              "max_ns": 3103324,
+              "repetition_mean_ns": [
+                24873.189,
+                24647.403,
+                24513.041,
+                26091.352,
+                32042.348
+              ],
+              "repetition_mean_stddev_ns": 3197.2299266803298,
+              "repetition_mean_range_ns": [
+                24513.041,
+                32042.348
+              ],
+              "p50_ns": 21822,
+              "p95_ns": 36014,
+              "p99_ns": 92999,
+              "repetition_p50_ns": [
+                21703,
+                21692,
+                21873,
+                21683,
+                23665
+              ],
+              "operations_per_second": 37790.931406935066
+            }
+          }
+        },
+        {
+          "case": "dependent-read",
+          "variants": {
+            "legacy": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 55264.5922,
+              "stddev_ns": 26420.856829743858,
+              "min_ns": 45688,
+              "max_ns": 384653,
+              "repetition_mean_ns": [
+                52960.452,
+                52001.407,
+                64236.632,
+                50853.327,
+                56271.143
+              ],
+              "repetition_mean_stddev_ns": 5406.647368315479,
+              "repetition_mean_range_ns": [
+                50853.327,
+                64236.632
+              ],
+              "p50_ns": 47671,
+              "p95_ns": 104897,
+              "p99_ns": 174050,
+              "repetition_p50_ns": [
+                47531,
+                47160,
+                48503,
+                47251,
+                48612
+              ],
+              "operations_per_second": 18064.786937670506
+            },
+            "portable": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 86235.2946,
+              "stddev_ns": 35537.50173339287,
+              "min_ns": 53490,
+              "max_ns": 693053,
+              "repetition_mean_ns": [
+                62333.095,
+                97624.982,
+                91262.664,
+                87107.365,
+                92848.367
+              ],
+              "repetition_mean_stddev_ns": 13881.712801580117,
+              "repetition_mean_range_ns": [
+                62333.095,
+                97624.982
+              ],
+              "p50_ns": 99649,
+              "p95_ns": 130415,
+              "p99_ns": 188812,
+              "repetition_p50_ns": [
+                56083,
+                100981,
+                101832,
+                100550,
+                102544
+              ],
+              "operations_per_second": 11588.96339719318
+            },
+            "portable-baseline": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 86344.4266,
+              "stddev_ns": 62123.482128716605,
+              "min_ns": 52739,
+              "max_ns": 2363313,
+              "repetition_mean_ns": [
+                64176.909,
+                63699.744,
+                101771.16,
+                91906.586,
+                110167.734
+              ],
+              "repetition_mean_stddev_ns": 21451.411274445505,
+              "repetition_mean_range_ns": [
+                63699.744,
+                110167.734
+              ],
+              "p50_ns": 80840,
+              "p95_ns": 131687,
+              "p99_ns": 190985,
+              "repetition_p50_ns": [
+                55252,
+                56625,
+                102203,
+                101681,
+                104116
+              ],
+              "operations_per_second": 11574.638766404261
+            },
+            "cpp": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 62840.764,
+              "stddev_ns": 31241.85366378208,
+              "min_ns": 45558,
+              "max_ns": 854226,
+              "repetition_mean_ns": [
+                70297.939,
+                50750.35,
+                64029.527,
+                52411.681,
+                76714.323
+              ],
+              "repetition_mean_stddev_ns": 11229.894686611717,
+              "repetition_mean_range_ns": [
+                50750.35,
+                76714.323
+              ],
+              "p50_ns": 48382,
+              "p95_ns": 99508,
+              "p99_ns": 172568,
+              "repetition_p50_ns": [
+                52789,
+                46850,
+                50495,
+                46890,
+                74491
+              ],
+              "operations_per_second": 15902.700459510756
+            }
+          }
+        },
+        {
+          "case": "pipelined-read",
+          "variants": {
+            "legacy": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 45274.1404,
+              "stddev_ns": 48468.85392468077,
+              "min_ns": 25278,
+              "max_ns": 2873486,
+              "repetition_mean_ns": [
+                46760.36,
+                53074.832,
+                45640.484,
+                35585.556,
+                45309.47
+              ],
+              "repetition_mean_stddev_ns": 6266.254096897829,
+              "repetition_mean_range_ns": [
+                35585.556,
+                53074.832
+              ],
+              "p50_ns": 49183,
+              "p95_ns": 71356,
+              "p99_ns": 115302,
+              "repetition_p50_ns": [
+                33920,
+                50655,
+                32789,
+                30265,
+                50275
+              ],
+              "operations_per_second": 22069.463672219452
+            },
+            "portable": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 68269.0144,
+              "stddev_ns": 55957.02481072529,
+              "min_ns": 37005,
+              "max_ns": 1463996,
+              "repetition_mean_ns": [
+                59290.754,
+                76411.418,
+                94977.862,
+                56572.692,
+                54092.346
+              ],
+              "repetition_mean_stddev_ns": 17306.446204549236,
+              "repetition_mean_range_ns": [
+                54092.346,
+                94977.862
+              ],
+              "p50_ns": 45217,
+              "p95_ns": 116384,
+              "p99_ns": 218015,
+              "repetition_p50_ns": [
+                42504,
+                87681,
+                90565,
+                42864,
+                42864
+              ],
+              "operations_per_second": 14637.637210869192
+            },
+            "portable-baseline": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 68631.0084,
+              "stddev_ns": 42015.45878232996,
+              "min_ns": 35753,
+              "max_ns": 1648681,
+              "repetition_mean_ns": [
+                82934.513,
+                67865.057,
+                72248.918,
+                63229.239,
+                56877.315
+              ],
+              "repetition_mean_stddev_ns": 9818.281627341103,
+              "repetition_mean_range_ns": [
+                56877.315,
+                82934.513
+              ],
+              "p50_ns": 53540,
+              "p95_ns": 118618,
+              "p99_ns": 201061,
+              "repetition_p50_ns": [
+                89053,
+                52248,
+                71307,
+                53690,
+                44577
+              ],
+              "operations_per_second": 14560.156300598817
+            },
+            "cpp": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 41163.6808,
+              "stddev_ns": 16622.853983880905,
+              "min_ns": 24716,
+              "max_ns": 357434,
+              "repetition_mean_ns": [
+                52003.468,
+                50517.488,
+                34994.856,
+                32790.489,
+                35512.103
+              ],
+              "repetition_mean_stddev_ns": 9288.430540707492,
+              "repetition_mean_range_ns": [
+                32790.489,
+                52003.468
+              ],
+              "p50_ns": 32018,
+              "p95_ns": 58407,
+              "p99_ns": 100150,
+              "repetition_p50_ns": [
+                49684,
+                48562,
+                30766,
+                30365,
+                31186
+              ],
+              "operations_per_second": 24268.997883180346
+            }
+          }
+        },
+        {
+          "case": "callback",
+          "variants": {
+            "legacy": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 70281.3672,
+              "stddev_ns": 73522.17970834773,
+              "min_ns": 44286,
+              "max_ns": 3370593,
+              "repetition_mean_ns": [
+                65033.189,
+                55280.791,
+                69027.827,
+                80203.824,
+                81861.205
+              ],
+              "repetition_mean_stddev_ns": 11030.410420811104,
+              "repetition_mean_range_ns": [
+                55280.791,
+                81861.205
+              ],
+              "p50_ns": 68072,
+              "p95_ns": 122042,
+              "p99_ns": 233328,
+              "repetition_p50_ns": [
+                46640,
+                45939,
+                72188,
+                68882,
+                70045
+              ],
+              "operations_per_second": 14217.864240831352
+            },
+            "portable": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 91019.0374,
+              "stddev_ns": 30269.591550573143,
+              "min_ns": 50716,
+              "max_ns": 663281,
+              "repetition_mean_ns": [
+                94368.904,
+                77341.779,
+                100280.457,
+                94795.728,
+                88308.319
+              ],
+              "repetition_mean_stddev_ns": 8741.771598446981,
+              "repetition_mean_range_ns": [
+                77341.779,
+                100280.457
+              ],
+              "p50_ns": 94251,
+              "p95_ns": 127880,
+              "p99_ns": 184286,
+              "repetition_p50_ns": [
+                95122,
+                72909,
+                95633,
+                93610,
+                75743
+              ],
+              "operations_per_second": 10977.572358613314
+            },
+            "portable-baseline": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 80249.2662,
+              "stddev_ns": 120550.16787465481,
+              "min_ns": 51107,
+              "max_ns": 3150672,
+              "repetition_mean_ns": [
+                64266.326,
+                73392.521,
+                98372.026,
+                95847.776,
+                69367.682
+              ],
+              "repetition_mean_stddev_ns": 15752.984936396822,
+              "repetition_mean_range_ns": [
+                64266.326,
+                98372.026
+              ],
+              "p50_ns": 55884,
+              "p95_ns": 133018,
+              "p99_ns": 302913,
+              "repetition_p50_ns": [
+                54762,
+                55032,
+                55192,
+                96063,
+                55263
+              ],
+              "operations_per_second": 12449.187675689627
+            },
+            "cpp": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 73028.0356,
+              "stddev_ns": 157502.7800474343,
+              "min_ns": 43836,
+              "max_ns": 4107444,
+              "repetition_mean_ns": [
+                62451.552,
+                97163.791,
+                72402.264,
+                74964.17,
+                58158.401
+              ],
+              "repetition_mean_stddev_ns": 15162.807570808292,
+              "repetition_mean_range_ns": [
+                58158.401,
+                97163.791
+              ],
+              "p50_ns": 51707,
+              "p95_ns": 114110,
+              "p99_ns": 241690,
+              "repetition_p50_ns": [
+                45328,
+                45448,
+                70224,
+                67471,
+                46119
+              ],
+              "operations_per_second": 13687.464840666877
+            }
+          }
+        },
+        {
+          "case": "fanout-32",
+          "variants": {
+            "legacy": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 129841.2918,
+              "stddev_ns": 36549.03198029179,
+              "min_ns": 90775,
+              "max_ns": 1284555,
+              "repetition_mean_ns": [
+                144911.092,
+                104191.529,
+                122359.309,
+                143809.201,
+                133935.328
+              ],
+              "repetition_mean_stddev_ns": 16976.84376003116,
+              "repetition_mean_range_ns": [
+                104191.529,
+                144911.092
+              ],
+              "p50_ns": 137986,
+              "p95_ns": 167260,
+              "p99_ns": 213919,
+              "repetition_p50_ns": [
+                139749,
+                95983,
+                100750,
+                139278,
+                138808
+              ],
+              "operations_per_second": 7698.88513414432
+            },
+            "portable": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 139468.7554,
+              "stddev_ns": 67185.81897509504,
+              "min_ns": 107841,
+              "max_ns": 2228662,
+              "repetition_mean_ns": [
+                126571.989,
+                125165.017,
+                142570.419,
+                171673.393,
+                131362.959
+              ],
+              "repetition_mean_stddev_ns": 19257.378138683336,
+              "repetition_mean_range_ns": [
+                125165.017,
+                171673.393
+              ],
+              "p50_ns": 116183,
+              "p95_ns": 190985,
+              "p99_ns": 287028,
+              "repetition_p50_ns": [
+                113830,
+                112538,
+                113749,
+                165708,
+                115122
+              ],
+              "operations_per_second": 7167.3576491599015
+            },
+            "portable-baseline": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 151030.692,
+              "stddev_ns": 51483.48620210019,
+              "min_ns": 109503,
+              "max_ns": 1695317,
+              "repetition_mean_ns": [
+                166438.45,
+                122557.113,
+                142180.54,
+                173077.661,
+                150899.696
+              ],
+              "repetition_mean_stddev_ns": 20078.31479555671,
+              "repetition_mean_range_ns": [
+                122557.113,
+                173077.661
+              ],
+              "p50_ns": 163684,
+              "p95_ns": 198586,
+              "p99_ns": 262332,
+              "repetition_p50_ns": [
+                166589,
+                114461,
+                123815,
+                167039,
+                162843
+              ],
+              "operations_per_second": 6618.4699361105995
+            },
+            "cpp": {
+              "samples": 5000,
+              "statistics_version": 1,
+              "mean_ns": 179233.6122,
+              "stddev_ns": 53924.36659757814,
+              "min_ns": 128942,
+              "max_ns": 2117803,
+              "repetition_mean_ns": [
+                200725.665,
+                146953.449,
+                145036.684,
+                208912.016,
+                194540.247
+              ],
+              "repetition_mean_stddev_ns": 30775.184358135873,
+              "repetition_mean_range_ns": [
+                145036.684,
+                208912.016
+              ],
+              "p50_ns": 198556,
+              "p95_ns": 238176,
+              "p99_ns": 299658,
+              "repetition_p50_ns": [
+                203955,
+                135442,
+                134170,
+                203013,
+                202543
+              ],
+              "operations_per_second": 5578.061365946586
+            }
+          }
+        }
+      ]
+    },
+    "topology": {
+      "rows": [
+        {
+          "case": {
+            "name": "concurrent-32",
+            "depth": 1,
+            "width": 32,
+            "connections": 1,
+            "hops": 1,
+            "payload_bytes_per_node": 32
+          },
+          "variants": {
+            "legacy": {
+              "samples": 5000,
+              "p50_ns": 88071,
+              "p95_ns": 150906,
+              "p99_ns": 216973,
+              "statistics_version": 1,
+              "mean_ns": 106524.054,
+              "stddev_ns": 75288.48152379961,
+              "min_ns": 83204,
+              "max_ns": 3326216,
+              "repetition_mean_ns": [
+                101339.957,
+                112702.551,
+                109057.451,
+                89569.843,
+                119950.468
+              ],
+              "repetition_mean_stddev_ns": 11610.131898216576,
+              "repetition_mean_range_ns": [
+                89569.843,
+                119950.468
+              ],
+              "repetition_p50_ns": [
+                86950,
+                88602,
+                100089,
+                85167,
+                124706
+              ],
+              "batches_per_second": 9383.982535762883,
+              "logical_requests_per_second": 300287.44114441227,
+              "service_calls_per_second": 300287.44114441227
+            },
+            "portable": {
+              "samples": 5000,
+              "p50_ns": 111366,
+              "p95_ns": 185317,
+              "p99_ns": 250764,
+              "statistics_version": 1,
+              "mean_ns": 140028.0622,
+              "stddev_ns": 288555.1579512499,
+              "min_ns": 102232,
+              "max_ns": 17082394,
+              "repetition_mean_ns": [
+                175177.555,
+                110898.167,
+                115290.059,
+                143227.311,
+                155547.219
+              ],
+              "repetition_mean_stddev_ns": 27143.534503868195,
+              "repetition_mean_range_ns": [
+                110898.167,
+                175177.555
+              ],
+              "repetition_p50_ns": [
+                129414,
+                106148,
+                107430,
+                160079,
+                160519
+              ],
+              "batches_per_second": 7138.865904913504,
+              "logical_requests_per_second": 228443.70895723213,
+              "service_calls_per_second": 228443.70895723213
+            },
+            "cpp": {
+              "samples": 5000,
+              "p50_ns": 131356,
+              "p95_ns": 225506,
+              "p99_ns": 315210,
+              "statistics_version": 1,
+              "mean_ns": 154770.0594,
+              "stddev_ns": 47414.732920596085,
+              "min_ns": 121732,
+              "max_ns": 994424,
+              "repetition_mean_ns": [
+                150067.248,
+                134734.75,
+                136709.021,
+                174325.377,
+                178013.901
+              ],
+              "repetition_mean_stddev_ns": 20447.60245521913,
+              "repetition_mean_range_ns": [
+                134734.75,
+                178013.901
+              ],
+              "repetition_p50_ns": [
+                130735,
+                128422,
+                128771,
+                161451,
+                168511
+              ],
+              "batches_per_second": 6459.330719935492,
+              "logical_requests_per_second": 206698.58303793575,
+              "service_calls_per_second": 206698.58303793575
+            },
+            "portable-baseline": {
+              "samples": 5000,
+              "p50_ns": 111006,
+              "p95_ns": 189192,
+              "p99_ns": 283794,
+              "statistics_version": 1,
+              "mean_ns": 130015.4214,
+              "stddev_ns": 42724.89508672264,
+              "min_ns": 103904,
+              "max_ns": 1216094,
+              "repetition_mean_ns": [
+                118845.876,
+                162080.339,
+                116855.106,
+                117879.739,
+                134416.047
+              ],
+              "repetition_mean_stddev_ns": 19318.073658817364,
+              "repetition_mean_range_ns": [
+                116855.106,
+                162080.339
+              ],
+              "repetition_p50_ns": [
+                110134,
+                163674,
+                107520,
+                108412,
+                113119
+              ],
+              "batches_per_second": 7688.593805784352,
+              "logical_requests_per_second": 246035.00178509927,
+              "service_calls_per_second": 246035.00178509927
+            }
+          },
+          "legacy_over_cpp": 0.6704756539480495,
+          "faster_reference": "legacy",
+          "portable_over_faster_reference": 1.2645025036618183,
+          "meets_target": false
+        },
+        {
+          "case": {
+            "name": "deep-32-concurrent-32",
+            "depth": 32,
+            "width": 32,
+            "connections": 1,
+            "hops": 1,
+            "payload_bytes_per_node": 32
+          },
+          "variants": {
+            "legacy": {
+              "samples": 5000,
+              "p50_ns": 269763,
+              "p95_ns": 388870,
+              "p99_ns": 449011,
+              "statistics_version": 1,
+              "mean_ns": 284622.4724,
+              "stddev_ns": 113646.54137816197,
+              "min_ns": 208772,
+              "max_ns": 6139600,
+              "repetition_mean_ns": [
+                276469.732,
+                270919.641,
+                273140.061,
+                242969.979,
+                359612.949
+              ],
+              "repetition_mean_stddev_ns": 44001.65429588319,
+              "repetition_mean_range_ns": [
+                242969.979,
+                359612.949
+              ],
+              "repetition_p50_ns": [
+                234790,
+                246938,
+                272266,
+                218796,
+                352555
+              ],
+              "batches_per_second": 3512.7808459767866,
+              "logical_requests_per_second": 112408.98707125717,
+              "service_calls_per_second": 112408.98707125717
+            },
+            "portable": {
+              "samples": 5000,
+              "p50_ns": 262251,
+              "p95_ns": 418624,
+              "p99_ns": 477482,
+              "statistics_version": 1,
+              "mean_ns": 302150.7246,
+              "stddev_ns": 76768.6145564536,
+              "min_ns": 237484,
+              "max_ns": 1537906,
+              "repetition_mean_ns": [
+                287753.434,
+                256014.308,
+                281164.194,
+                295388.964,
+                390432.723
+              ],
+              "repetition_mean_stddev_ns": 51516.30331226139,
+              "repetition_mean_range_ns": [
+                256014.308,
+                390432.723
+              ],
+              "repetition_p50_ns": [
+                257124,
+                244365,
+                256483,
+                258485,
+                380248
+              ],
+              "batches_per_second": 3308.985813511525,
+              "logical_requests_per_second": 105887.5460323688,
+              "service_calls_per_second": 105887.5460323688
+            },
+            "cpp": {
+              "samples": 5000,
+              "p50_ns": 276182,
+              "p95_ns": 434369,
+              "p99_ns": 511152,
+              "statistics_version": 1,
+              "mean_ns": 319614.2726,
+              "stddev_ns": 115873.28918286,
+              "min_ns": 246007,
+              "max_ns": 3580896,
+              "repetition_mean_ns": [
+                363077.035,
+                299538.999,
+                277547.91,
+                271358.796,
+                386548.623
+              ],
+              "repetition_mean_stddev_ns": 52130.6183382461,
+              "repetition_mean_range_ns": [
+                271358.796,
+                386548.623
+              ],
+              "repetition_p50_ns": [
+                375350,
+                265596,
+                259878,
+                255972,
+                391094
+              ],
+              "batches_per_second": 3128.105242703511,
+              "logical_requests_per_second": 100099.36776651235,
+              "service_calls_per_second": 100099.36776651235
+            },
+            "portable-baseline": {
+              "samples": 5000,
+              "p50_ns": 268821,
+              "p95_ns": 429751,
+              "p99_ns": 535018,
+              "statistics_version": 1,
+              "mean_ns": 309802.164,
+              "stddev_ns": 135517.67056095216,
+              "min_ns": 237284,
+              "max_ns": 4551399,
+              "repetition_mean_ns": [
+                362848.023,
+                308533.536,
+                265790.586,
+                275396.289,
+                336442.386
+              ],
+              "repetition_mean_stddev_ns": 40761.3702996638,
+              "repetition_mean_range_ns": [
+                265790.586,
+                362848.023
+              ],
+              "repetition_p50_ns": [
+                366447,
+                279778,
+                247910,
+                251676,
+                352035
+              ],
+              "batches_per_second": 3227.2169869569584,
+              "logical_requests_per_second": 103270.94358262267,
+              "service_calls_per_second": 103270.94358262267
+            }
+          },
+          "legacy_over_cpp": 0.9767580798169323,
+          "faster_reference": "legacy",
+          "portable_over_faster_reference": 0.9721533345936989,
+          "meets_target": true
+        },
+        {
+          "case": {
+            "name": "services-4-deep-16-clients-8",
+            "depth": 16,
+            "width": 32,
+            "connections": 8,
+            "hops": 4,
+            "payload_bytes_per_node": 32
+          },
+          "variants": {
+            "legacy": {
+              "samples": 5000,
+              "p50_ns": 1162741,
+              "p95_ns": 1488132,
+              "p99_ns": 2131178,
+              "statistics_version": 1,
+              "mean_ns": 1219230.5728,
+              "stddev_ns": 327982.21907652065,
+              "min_ns": 847779,
+              "max_ns": 13125007,
+              "repetition_mean_ns": [
+                1271890.467,
+                1247013.244,
+                1164611.514,
+                1163569.924,
+                1249067.715
+              ],
+              "repetition_mean_stddev_ns": 51275.10541154526,
+              "repetition_mean_range_ns": [
+                1163569.924,
+                1271890.467
+              ],
+              "repetition_p50_ns": [
+                1164198,
+                1176634,
+                1129666,
+                1139781,
+                1206629
+              ],
+              "batches_per_second": 820.1513505563596,
+              "logical_requests_per_second": 26244.843217803507,
+              "service_calls_per_second": 104979.37287121403
+            },
+            "portable": {
+              "samples": 5000,
+              "p50_ns": 1120521,
+              "p95_ns": 1495108,
+              "p99_ns": 2401369,
+              "statistics_version": 1,
+              "mean_ns": 1162906.0924,
+              "stddev_ns": 336526.2955632653,
+              "min_ns": 728045,
+              "max_ns": 7493347,
+              "repetition_mean_ns": [
+                1187942.806,
+                1184210.33,
+                1174102.121,
+                1054734.678,
+                1213540.527
+              ],
+              "repetition_mean_stddev_ns": 62191.15589168587,
+              "repetition_mean_range_ns": [
+                1054734.678,
+                1213540.527
+              ],
+              "repetition_p50_ns": [
+                1136296,
+                1091168,
+                1139086,
+                1034663,
+                1181991
+              ],
+              "batches_per_second": 859.8557775426395,
+              "logical_requests_per_second": 27515.384881364465,
+              "service_calls_per_second": 110061.53952545786
+            },
+            "cpp": {
+              "samples": 5000,
+              "p50_ns": 1114761,
+              "p95_ns": 1490827,
+              "p99_ns": 2094726,
+              "statistics_version": 1,
+              "mean_ns": 1146978.7872,
+              "stddev_ns": 273567.57672750624,
+              "min_ns": 712413,
+              "max_ns": 5476437,
+              "repetition_mean_ns": [
+                1127137.561,
+                1208062.579,
+                1110190.003,
+                1109555.726,
+                1179948.067
+              ],
+              "repetition_mean_stddev_ns": 44625.60207103402,
+              "repetition_mean_range_ns": [
+                1109555.726,
+                1208062.579
+              ],
+              "repetition_p50_ns": [
+                1108806,
+                1156676,
+                1094062,
+                1088604,
+                1156844
+              ],
+              "batches_per_second": 871.786539500545,
+              "logical_requests_per_second": 27897.16926401744,
+              "service_calls_per_second": 111588.67705606976
+            },
+            "portable-baseline": {
+              "samples": 5000,
+              "p50_ns": 1112551,
+              "p95_ns": 1651434,
+              "p99_ns": 2615095,
+              "statistics_version": 1,
+              "mean_ns": 1174579.4132,
+              "stddev_ns": 372473.84120841156,
+              "min_ns": 716939,
+              "max_ns": 8926169,
+              "repetition_mean_ns": [
+                1384731.163,
+                1120188.564,
+                1061223.867,
+                1061846.86,
+                1244906.612
+              ],
+              "repetition_mean_stddev_ns": 139307.3452092932,
+              "repetition_mean_range_ns": [
+                1061223.867,
+                1384731.163
+              ],
+              "repetition_p50_ns": [
+                1197658,
+                1096737,
+                1038911,
+                1047883,
+                1205186
+              ],
+              "batches_per_second": 851.3130780271928,
+              "logical_requests_per_second": 27242.01849687017,
+              "service_calls_per_second": 108968.07398748067
+            }
+          },
+          "legacy_over_cpp": 1.043040615880893,
+          "faster_reference": "cpp",
+          "portable_over_faster_reference": 1.0051670268335544,
+          "meets_target": false
+        },
+        {
+          "case": {
+            "name": "services-8-deep-16-clients-8",
+            "depth": 16,
+            "width": 32,
+            "connections": 8,
+            "hops": 8,
+            "payload_bytes_per_node": 32
+          },
+          "variants": {
+            "legacy": {
+              "samples": 5000,
+              "p50_ns": 2531176,
+              "p95_ns": 3350502,
+              "p99_ns": 4723457,
+              "statistics_version": 1,
+              "mean_ns": 2653385.974,
+              "stddev_ns": 492541.6854275541,
+              "min_ns": 1579254,
+              "max_ns": 10019673,
+              "repetition_mean_ns": [
+                2994395.456,
+                2624421.072,
+                2475648.015,
+                2602272.654,
+                2570192.673
+              ],
+              "repetition_mean_stddev_ns": 198903.81547620095,
+              "repetition_mean_range_ns": [
+                2475648.015,
+                2994395.456
+              ],
+              "repetition_p50_ns": [
+                2852459,
+                2528866,
+                2414379,
+                2499298,
+                2475501
+              ],
+              "batches_per_second": 376.866102261093,
+              "logical_requests_per_second": 12059.715272354975,
+              "service_calls_per_second": 96477.7221788398
+            },
+            "portable": {
+              "samples": 5000,
+              "p50_ns": 2212108,
+              "p95_ns": 3100152,
+              "p99_ns": 4632175,
+              "statistics_version": 1,
+              "mean_ns": 2301771.2444,
+              "stddev_ns": 746913.2462423225,
+              "min_ns": 1427308,
+              "max_ns": 34757525,
+              "repetition_mean_ns": [
+                2561715.128,
+                2142840.469,
+                2101671.472,
+                2463064.852,
+                2239564.301
+              ],
+              "repetition_mean_stddev_ns": 201714.56601136972,
+              "repetition_mean_range_ns": [
+                2101671.472,
+                2561715.128
+              ],
+              "repetition_p50_ns": [
+                2412972,
+                2070157,
+                1999520,
+                2391002,
+                2163005
+              ],
+              "batches_per_second": 434.4332539057712,
+              "logical_requests_per_second": 13901.864124984679,
+              "service_calls_per_second": 111214.91299987743
+            },
+            "cpp": {
+              "samples": 5000,
+              "p50_ns": 2437756,
+              "p95_ns": 3262375,
+              "p99_ns": 4443380,
+              "statistics_version": 1,
+              "mean_ns": 2458351.1356,
+              "stddev_ns": 540432.1860005637,
+              "min_ns": 1335462,
+              "max_ns": 9114751,
+              "repetition_mean_ns": [
+                2327848.294,
+                2619035.91,
+                2316357.996,
+                2520946.925,
+                2507566.553
+              ],
+              "repetition_mean_stddev_ns": 131674.81748951093,
+              "repetition_mean_range_ns": [
+                2316357.996,
+                2619035.91
+              ],
+              "repetition_p50_ns": [
+                2366818,
+                2516272,
+                2349265,
+                2515908,
+                2503599
+              ],
+              "batches_per_second": 406.7576670700818,
+              "logical_requests_per_second": 13016.245346242618,
+              "service_calls_per_second": 104129.96276994095
+            },
+            "portable-baseline": {
+              "samples": 5000,
+              "p50_ns": 2165471,
+              "p95_ns": 2863390,
+              "p99_ns": 4050382,
+              "statistics_version": 1,
+              "mean_ns": 2219694.1412,
+              "stddev_ns": 544330.3687451499,
+              "min_ns": 1428210,
+              "max_ns": 19907626,
+              "repetition_mean_ns": [
+                2086669.048,
+                2285906.684,
+                2007733.224,
+                2297900.458,
+                2420261.292
+              ],
+              "repetition_mean_stddev_ns": 168337.9165789957,
+              "repetition_mean_range_ns": [
+                2007733.224,
+                2420261.292
+              ],
+              "repetition_p50_ns": [
+                2065943,
+                2219848,
+                1983409,
+                2198249,
+                2347672
+              ],
+              "batches_per_second": 450.4984660380369,
+              "logical_requests_per_second": 14415.95091321718,
+              "service_calls_per_second": 115327.60730573745
+            }
+          },
+          "legacy_over_cpp": 1.038322129039986,
+          "faster_reference": "cpp",
+          "portable_over_faster_reference": 0.9074361831126659,
+          "meets_target": true
+        }
+      ],
+      "socket_journals": [],
+      "diagnostic": false,
+      "qualifying_budget": true,
+      "all_cells_meet_target": false
+    }
+  }
+}

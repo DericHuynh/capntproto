@@ -411,9 +411,21 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
         parts: &[&[u8]],
         edit: impl FnOnce(&mut [u8]),
     ) -> Result<Lease<'id>, Error> {
+        self.copy_from_parts_with_minimum(parts, 0, edit)
+    }
+    /// As `copy_from_parts`, retaining the caller's minimum buffer-capacity
+    /// requirement. Only the initialized message length is exposed or sealed.
+    #[inline(always)]
+    pub fn copy_from_parts_with_minimum(
+        &mut self,
+        parts: &[&[u8]],
+        minimum: usize,
+        edit: impl FnOnce(&mut [u8]),
+    ) -> Result<Lease<'id>, Error> {
         let length = parts.iter().try_fold(0usize, |length, part| {
             length.checked_add(part.len()).ok_or(Error::InvalidLength)
         })?;
+        let capacity = length.max(minimum);
         let initialize = |bytes: &mut [u8]| {
             let bytes = &mut bytes[..length];
             let mut remaining = &mut bytes[..];
@@ -426,7 +438,7 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
         };
         let mut exhausted = false;
         for (index, buffer) in self.buffers.iter().enumerate() {
-            if buffer.state.get() != State::Free || buffer.capacity.get() < length {
+            if buffer.state.get() != State::Free || buffer.capacity.get() < capacity {
                 continue;
             }
             let Ok(mut bytes) = buffer.bytes.try_borrow_mut() else {
@@ -454,7 +466,7 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
                 brand: PhantomData,
             });
         }
-        let index = self.buffers.append(length).ok_or(if exhausted {
+        let index = self.buffers.append(capacity).ok_or(if exhausted {
             Error::GenerationExhausted
         } else {
             Error::NoBuffer

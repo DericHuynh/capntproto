@@ -171,6 +171,14 @@ _apalache-tmp/
 !/research/reports/portable-performance/2026-10-18-payload-batching/README.md
 !/research/reports/portable-performance/2026-10-18-payload-batching/report.json
 !/research/reports/portable-performance/2026-10-18-payload-batching/source.patch
+!/research/reports/portable-performance/2026-10-18-prepared-pipelines/
+/research/reports/portable-performance/2026-10-18-prepared-pipelines/*
+!/research/reports/portable-performance/2026-10-18-prepared-pipelines/README.md
+!/research/reports/portable-performance/2026-10-18-prepared-pipelines/report.json
+!/research/reports/portable-performance/2026-10-18-prepared-pipelines/projected.json
+!/research/reports/portable-performance/2026-10-18-prepared-pipelines/readfirst.json
+!/research/reports/portable-performance/2026-10-18-prepared-pipelines/focused-experiments.json
+!/research/reports/portable-performance/2026-10-18-prepared-pipelines/source.patch
 
 # Locally discovered fuzz inputs; checked-in upstream corpora remain included.
 /fuzz/artifacts/

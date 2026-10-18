@@ -371,6 +371,7 @@ impl<const P: usize> Slot<'_, '_, P> {
 pub struct Bindings<'slots, 'graph, 'a, const P: usize> {
     pub(crate) path_capacity: Capacity,
     slots: SlotStorage<'slots, Slot<'graph, 'a, P>>,
+    live: usize,
 }
 pub enum Progress<'graph> {
     Vacant,
@@ -408,6 +409,7 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
         let observed = match graph.retain_key(waiter.client) {
             Ok(client) => client,
             Err(clients::Error::Stale) => {
+                self.live -= 1;
                 answers.release_pipeline_deferred(slot.waiter.take().unwrap().answer);
                 return Ok(Some(Progress::Abandoned));
             }
@@ -438,6 +440,7 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
         graph.release(observed);
         match outcome {
             Ok(barrier) => {
+                self.live -= 1;
                 answers.release_pipeline_deferred(slot.waiter.take().unwrap().answer);
                 Ok(Some(Progress::Resolved(barrier)))
             }
@@ -450,10 +453,9 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
     pub fn capacity(&self) -> usize {
         self.slots.len()
     }
-    /// Check at most `maximum` slots for observers that need polling. Retained
-    /// vacant capacity alone must not force every later call through a scan.
-    pub(crate) fn vacant_within(&self, maximum: usize) -> bool {
-        self.slots.len() <= maximum && self.slots.iter().all(|slot| slot.waiter.is_none())
+    /// Occupancy follows observer ownership, independently of retained capacity.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.live == 0
     }
     /// Only used when a just-created, unexposed binding fails graph admission.
     pub(crate) fn discard_unexposed<T>(
@@ -470,6 +472,7 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
                     .is_some_and(|waiter| waiter.client == key)
             })
             .expect("unexposed pipeline observer");
+        self.live -= 1;
         answers.release_pipeline_deferred(slot.waiter.take().unwrap().answer);
     }
     pub fn new(slots: &'slots mut [Slot<'graph, 'a, P>]) -> Result<Self, Error> {
@@ -489,6 +492,7 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
         }
         Ok(Self {
             slots,
+            live: 0,
             path_capacity,
         })
     }
@@ -522,6 +526,7 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
             path: fields,
             length: path.fields().len(),
         });
+        self.live += 1;
         Ok(client)
     }
     /// Observe one producer without retaining a canceled graph observer. The
@@ -572,6 +577,7 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
         let observed = match graph.retain_key(waiter.client) {
             Ok(client) => client,
             Err(clients::Error::Stale) => {
+                self.live -= 1;
                 answers.release_pipeline_deferred(slot.waiter.take().unwrap().answer);
                 return Ok(Progress::Abandoned);
             }
@@ -619,6 +625,7 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
         graph.release(observed);
         match outcome {
             Ok(barrier) => {
+                self.live -= 1;
                 answers.release_pipeline_deferred(slot.waiter.take().unwrap().answer);
                 Ok(Progress::Resolved(barrier))
             }
@@ -635,6 +642,7 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
         let Some(slot) = self.slots.iter_mut().find(|s| s.waiter.is_some()) else {
             return false;
         };
+        self.live -= 1;
         answers.release_pipeline_deferred(slot.waiter.take().unwrap().answer);
         true
     }

@@ -24,13 +24,12 @@ fn exported_promise_freezes_once_before_retrying_resolve_output() {
                 |graph: &mut Graph<'_, '_, Endpoint<'_, u8, u32>, u8>| {
                     exports::with_exports(&mut [const { exports::Slot::EMPTY }; 2], |exports| {
                         let source = graph.promise(&mut None).unwrap();
-                        let mut slots = [Slot::EMPTY];
+                        let mut slots = [const { Slot::EMPTY }; 16];
                         let mut bindings = Bindings::new(&mut slots).unwrap();
-                        assert!(bindings.vacant_within(1));
-                        assert!(!bindings.vacant_within(0));
+                        assert!(bindings.is_empty());
                         let mut batch = exports.batch();
                         let grant = bindings.stage(graph, &mut batch, &source).unwrap();
-                        assert!(!bindings.vacant_within(1));
+                        assert!(!bindings.is_empty());
                         assert!(grant.is_promise());
                         assert_ne!(batch.pending_owner(grant.id()).unwrap().key(), source.key());
                         batch.commit();
@@ -75,6 +74,8 @@ fn exported_promise_freezes_once_before_retrying_resolve_output() {
                             )))
                         ));
                         assert!(queue.is_empty());
+                        // Retry still owns the observer.
+                        assert!(!bindings.is_empty());
                         // A nested promise resolves again while output is blocked.
                         // Neither the original export nor its eventual Resolve may
                         // silently switch from advertised route 10 to route 20.
@@ -103,6 +104,7 @@ fn exported_promise_freezes_once_before_retrying_resolve_output() {
                             ),
                             Ok(Progress::Published)
                         );
+                        assert!(bindings.is_empty());
                         let window = queue.window(messages).unwrap().unwrap();
                         let length = window.bytes().len();
                         let replacement = {

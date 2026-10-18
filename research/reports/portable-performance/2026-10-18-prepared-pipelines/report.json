@@ -1,0 +1,6157 @@
+{
+  "scope": "Same-host TCP. All native cells run five times; every sample retained. Diagnostic captures use separate short budgets and never enter timing results.",
+  "goal": "portable mean and pooled p50 <= min(current legacy,fixed C++) independently, and positive reads/writes plus attempts <= C++ independently per process capture.",
+  "statistics": "mean_ns is the pooled arithmetic mean; displayed \u00b1 run SD is sample SD (n-1) across five run means, not a confidence interval. Sample SD and extrema are retained separately.",
+  "base_commit": "6d9afa78c57fdaaa3893159accdf82532487dc01",
+  "binaries": {
+    "occupancy": {
+      "path": "/workspace/scratch/portable41-binaries/occupancy",
+      "sha256": "523047a57c1bcb20bfcf973e856b1f5b7016da9f64ec88b0ee3d0edcab4c5656"
+    },
+    "baseline": {
+      "path": "/workspace/scratch/portable41-binaries/projected",
+      "sha256": "0860ef6fe39c5f549537839d628eee0a5958acce0a26c12351c9f929cbf751e0"
+    },
+    "cpp-original": {
+      "path": "/workspace/scratch/portable-binaries/cpp-reference",
+      "sha256": "306ada5926f3a9fbc9f31ebe55506774701cc73fa2c67f6f15f0a8a41a70decb"
+    },
+    "cpp-topology": {
+      "path": "/workspace/scratch/legacy30-binaries/cpp-topology",
+      "sha256": "39190f9df67e115fcd2256c51b1050419616d38e6e850e99b04185fe2cb67d44"
+    },
+    "source": {
+      "base": "6d9afa78c57fdaaa3893159accdf82532487dc01",
+      "tree": "e6ee29e82b557dd8d4fb4afb0f80d86c97e9a1a3",
+      "patch_sha256": "26cf7af25168a5d0fcfcd11bdf60af6ec00057b8baea8592048759cdad9157f9",
+      "files": {
+        "crates/capntproto-rpc-engine/src/answers.rs": "3f82d6b03a42289764a5811a5d68d134efb6337631c7b9db9eb90050b5b07a04",
+        "crates/capntproto-rpc-engine/src/exports.rs": "1f5c1f9e382c40e8b7bccd66b8b661656c842c527c7cc42f8ee27f9a4036e880",
+        "crates/capntproto-rpc-engine/src/messages.rs": "f5692a098e175b9274456bf2a6f037175ed9cda2bbfeab68c2b55cf7faf0fcf4",
+        "crates/capntproto-rpc-engine/src/messages/tests.rs": "85fa791bbd5e42dd4507b7608a6a28ea64affc982d0579e3e2cb17b5fa617001",
+        "crates/capntproto-rpc-engine/src/observation.rs": "4a1bc1c82fb69107c91a116573fe460aef90b7c9eba5d6db1407328b6b42aac7",
+        "crates/capntproto-rpc-wire/src/clients/exporting.rs": "ed67cf9a3a4ca01f2f203083c4d83bac8782f3c7f4d68c7738065c9ce96e2778",
+        "crates/capntproto-rpc-wire/src/clients/exporting/tests.rs": "5bf6e14d2a0856197711a728353d22e6c9ef21413f8c1b568f6c4cb8ff2ee1ca",
+        "crates/capntproto-rpc-wire/src/owned/connection/growing/tests.rs": "2e1102effa0556d9b1ca177fc7c2b00ff7ace61802a9b3b08a96724a327916aa",
+        "crates/capntproto-rpc-wire/src/owned/connection/invocation/template.rs": "39488e927e62880e540a226718ffcddc09d2090cdc1c54dcd5d31d21f79ecd2b",
+        "crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs": "a9a3fcbb8acffc38e80689c59f771c3098e77402409cff367c7011330c931262",
+        "crates/capntproto-rpc-wire/src/owned/pipelines.rs": "417d54d6c367a7ab5b52df44ead834f6b7d8464171d03f7f3348c841b4b19f2a",
+        "crates/capntproto-rpc-wire/src/owned/pipelines/tests.rs": "977e3425ad7907881c245dba73a5b3972d8a318bf9780b972cd5ea456b536589",
+        "crates/capntproto-rpc/src/local.rs": "34e247265497910403c08464e9a840ed28f15648c9db7683e481307b248543f4",
+        "crates/capntproto-rpc/src/queued.rs": "b4a432010ea85a68c5ddce05a848eb267ebfc8f9ae42b8b6bf515b637750c462",
+        "crates/capntproto-rpc/src/scoped/wire.rs": "36c23abd098e61fdb782a72d26d3238dbdd70c6acfe70869d039327cf26f4483",
+        "crates/capntproto-rpc/src/scoped/wire/server/worker.rs": "c550f607ab5ce0f728487724698d747c3d49fba036739ce4cb230d07533e5b37",
+        "crates/capntproto-rpc/src/scoped/wire/server/worker/tests.rs": "4b19699e4acec77202f72cea632b7d99a282ff9f02ba27756813770004c9b64a",
+        "quality/unsafe-baseline.json": "5ab777726a21b8774cc71e96cc6ec676c070f45d831c95ca75a24f2d88ced5da",
+        "verification/portable/src/driver_invocation.rs": "b1b7d063a059697a1c5765a0cef35bd039188f83a977bb7885690a4c1db31936"
+      }
+    }
+  },
+  "latency": {
+    "samples": 480000,
+    "rows": [
+      {
+        "case": "unary-empty",
+        "variants": {
+          "legacy": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 29389.53,
+            "stddev_ns": 29373.496257306102,
+            "min_ns": 20411,
+            "max_ns": 1669277,
+            "repetition_mean_ns": [
+              38683.05,
+              22255.105,
+              24528.112,
+              36029.582,
+              25451.801
+            ],
+            "repetition_mean_stddev_ns": 7424.603007600711,
+            "repetition_mean_range_ns": [
+              22255.105,
+              38683.05
+            ],
+            "p50_ns": 21693,
+            "p95_ns": 46250,
+            "p99_ns": 109014,
+            "repetition_p50_ns": [
+              32730,
+              21192,
+              21062,
+              32489,
+              21383
+            ],
+            "operations_per_second": 33981.03750727016
+          },
+          "portable": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 29251.9674,
+            "stddev_ns": 26037.616397371487,
+            "min_ns": 20651,
+            "max_ns": 1291698,
+            "repetition_mean_ns": [
+              37445.103,
+              23096.906,
+              25935.082,
+              35320.014,
+              24462.732
+            ],
+            "repetition_mean_stddev_ns": 6628.950629829644,
+            "repetition_mean_range_ns": [
+              23096.906,
+              37445.103
+            ],
+            "p50_ns": 22013,
+            "p95_ns": 41323,
+            "p99_ns": 95845,
+            "repetition_p50_ns": [
+              32730,
+              21343,
+              21473,
+              32549,
+              21453
+            ],
+            "operations_per_second": 34132.98893784644
+          },
+          "portable-baseline": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 30013.651,
+            "stddev_ns": 40149.59605553067,
+            "min_ns": 16806,
+            "max_ns": 1823489,
+            "repetition_mean_ns": [
+              43095.371,
+              23244.027,
+              23081.714,
+              34432.541,
+              26214.602
+            ],
+            "repetition_mean_stddev_ns": 8645.379112107317,
+            "repetition_mean_range_ns": [
+              23081.714,
+              43095.371
+            ],
+            "p50_ns": 21993,
+            "p95_ns": 45149,
+            "p99_ns": 107521,
+            "repetition_p50_ns": [
+              32690,
+              21302,
+              21442,
+              32108,
+              21793
+            ],
+            "operations_per_second": 33262.290402998995
+          },
+          "cpp": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 29193.7034,
+            "stddev_ns": 21600.91585181878,
+            "min_ns": 20821,
+            "max_ns": 976477,
+            "repetition_mean_ns": [
+              37040.089,
+              23322.05,
+              23961.424,
+              36485.595,
+              25159.359
+            ],
+            "repetition_mean_stddev_ns": 6943.818225537828,
+            "repetition_mean_range_ns": [
+              23322.05,
+              37040.089
+            ],
+            "p50_ns": 22253,
+            "p95_ns": 39180,
+            "p99_ns": 89715,
+            "repetition_p50_ns": [
+              34452,
+              21743,
+              21953,
+              32749,
+              21602
+            ],
+            "operations_per_second": 34216.76316729138
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 1.014751302263403,
+        "portable_over_before": 1.0009093802573545,
+        "portable_mean_over_before": 0.9746220944596177,
+        "paired_repetition_ratio_median": 1.0014457606566551,
+        "faster_than_before_repetitions": 1,
+        "meets_mean_target": false,
+        "meets_both_targets": false,
+        "meets_target": false,
+        "before_meets_current_reference": false
+      },
+      {
+        "case": "unary-small",
+        "variants": {
+          "legacy": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 28505.7612,
+            "stddev_ns": 14779.201112782821,
+            "min_ns": 20331,
+            "max_ns": 290868,
+            "repetition_mean_ns": [
+              33983.077,
+              33976.231,
+              23422.042,
+              27808.405,
+              23339.051
+            ],
+            "repetition_mean_stddev_ns": 5313.954014445194,
+            "repetition_mean_range_ns": [
+              23339.051,
+              33983.077
+            ],
+            "p50_ns": 23886,
+            "p95_ns": 37437,
+            "p99_ns": 91568,
+            "repetition_p50_ns": [
+              32089,
+              31207,
+              21092,
+              21622,
+              21012
+            ],
+            "operations_per_second": 35025.91833894878
+          },
+          "portable": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 25298.4064,
+            "stddev_ns": 21974.08849846352,
+            "min_ns": 18679,
+            "max_ns": 572684,
+            "repetition_mean_ns": [
+              28916.711,
+              23161.413,
+              23578.762,
+              23598.763,
+              27236.383
+            ],
+            "repetition_mean_stddev_ns": 2610.583594801515,
+            "repetition_mean_range_ns": [
+              23161.413,
+              28916.711
+            ],
+            "p50_ns": 21342,
+            "p95_ns": 35023,
+            "p99_ns": 109094,
+            "repetition_p50_ns": [
+              21313,
+              21443,
+              21352,
+              21162,
+              21402
+            ],
+            "operations_per_second": 39465.15807469132
+          },
+          "portable-baseline": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 28300.5968,
+            "stddev_ns": 50813.76876095069,
+            "min_ns": 20511,
+            "max_ns": 2312818,
+            "repetition_mean_ns": [
+              33427.363,
+              27969.427,
+              23648.878,
+              23686.163,
+              32771.153
+            ],
+            "repetition_mean_stddev_ns": 4725.218643938838,
+            "repetition_mean_range_ns": [
+              23648.878,
+              33427.363
+            ],
+            "p50_ns": 21683,
+            "p95_ns": 37837,
+            "p99_ns": 88535,
+            "repetition_p50_ns": [
+              33370,
+              21833,
+              21563,
+              21182,
+              21783
+            ],
+            "operations_per_second": 35284.263789954755
+          },
+          "cpp": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 31570.9592,
+            "stddev_ns": 36864.78629517949,
+            "min_ns": 21161,
+            "max_ns": 1568918,
+            "repetition_mean_ns": [
+              31910.346,
+              41296.868,
+              24089.262,
+              35359.14,
+              25199.18
+            ],
+            "repetition_mean_stddev_ns": 7169.9749358951885,
+            "repetition_mean_range_ns": [
+              24089.262,
+              41296.868
+            ],
+            "p50_ns": 31458,
+            "p95_ns": 45448,
+            "p99_ns": 106542,
+            "repetition_p50_ns": [
+              32689,
+              32158,
+              21762,
+              32669,
+              21753
+            ],
+            "operations_per_second": 31646.018272664118
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 0.8934940969605627,
+        "portable_over_before": 0.9842733939030577,
+        "portable_mean_over_before": 0.8939177706669422,
+        "paired_repetition_ratio_median": 0.9825092962401873,
+        "faster_than_before_repetitions": 5,
+        "meets_mean_target": true,
+        "meets_both_targets": true,
+        "meets_target": true,
+        "before_meets_current_reference": true
+      },
+      {
+        "case": "unary-1k",
+        "variants": {
+          "legacy": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 30451.6734,
+            "stddev_ns": 14636.327416820892,
+            "min_ns": 20812,
+            "max_ns": 317882,
+            "repetition_mean_ns": [
+              34736.251,
+              37963.186,
+              22683.379,
+              22637.132,
+              34238.419
+            ],
+            "repetition_mean_stddev_ns": 7254.883254865049,
+            "repetition_mean_range_ns": [
+              22637.132,
+              37963.186
+            ],
+            "p50_ns": 32539,
+            "p95_ns": 38528,
+            "p99_ns": 94183,
+            "repetition_p50_ns": [
+              33110,
+              33521,
+              21663,
+              21542,
+              32739
+            ],
+            "operations_per_second": 32798.64608763285
+          },
+          "portable": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 28057.9306,
+            "stddev_ns": 29620.6978383405,
+            "min_ns": 20942,
+            "max_ns": 1734774,
+            "repetition_mean_ns": [
+              33194.388,
+              34205.129,
+              23832.948,
+              23661.711,
+              25395.477
+            ],
+            "repetition_mean_stddev_ns": 5206.657437955209,
+            "repetition_mean_range_ns": [
+              23661.711,
+              34205.129
+            ],
+            "p50_ns": 22014,
+            "p95_ns": 37888,
+            "p99_ns": 100992,
+            "repetition_p50_ns": [
+              22464,
+              32349,
+              21753,
+              21623,
+              21763
+            ],
+            "operations_per_second": 35583.778394476285
+          },
+          "portable-baseline": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 27468.3978,
+            "stddev_ns": 17083.87830132017,
+            "min_ns": 20531,
+            "max_ns": 356911,
+            "repetition_mean_ns": [
+              29496.089,
+              35537.397,
+              23913.195,
+              23994.609,
+              24400.699
+            ],
+            "repetition_mean_stddev_ns": 5082.758384868711,
+            "repetition_mean_range_ns": [
+              23913.195,
+              35537.397
+            ],
+            "p50_ns": 21873,
+            "p95_ns": 38969,
+            "p99_ns": 94142,
+            "repetition_p50_ns": [
+              21753,
+              32960,
+              21502,
+              21973,
+              21312
+            ],
+            "operations_per_second": 36336.87999935059
+          },
+          "cpp": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 27989.4744,
+            "stddev_ns": 21571.25620927613,
+            "min_ns": 20851,
+            "max_ns": 850441,
+            "repetition_mean_ns": [
+              30424.355,
+              36189.022,
+              25052.205,
+              23489.014,
+              24792.776
+            ],
+            "repetition_mean_stddev_ns": 5297.683465006879,
+            "repetition_mean_range_ns": [
+              23489.014,
+              36189.022
+            ],
+            "p50_ns": 22504,
+            "p95_ns": 38137,
+            "p99_ns": 105069,
+            "repetition_p50_ns": [
+              22745,
+              33451,
+              22163,
+              22244,
+              22254
+            ],
+            "operations_per_second": 35689.32765760721
+          }
+        },
+        "faster_reference": "cpp",
+        "portable_over_faster_reference": 0.9782260931389976,
+        "portable_over_before": 1.006446303662049,
+        "portable_mean_over_before": 1.0214622201226458,
+        "paired_repetition_ratio_median": 1.011673332713236,
+        "faster_than_before_repetitions": 2,
+        "meets_mean_target": false,
+        "meets_both_targets": false,
+        "meets_target": true,
+        "before_meets_current_reference": true
+      },
+      {
+        "case": "fanout-32",
+        "variants": {
+          "legacy": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 115879.4472,
+            "stddev_ns": 42656.54839091106,
+            "min_ns": 91919,
+            "max_ns": 1626970,
+            "repetition_mean_ns": [
+              132376.452,
+              135787.645,
+              102540.994,
+              101352.806,
+              107339.339
+            ],
+            "repetition_mean_stddev_ns": 16810.402980037255,
+            "repetition_mean_range_ns": [
+              101352.806,
+              135787.645
+            ],
+            "p50_ns": 97797,
+            "p95_ns": 164780,
+            "p99_ns": 223085,
+            "repetition_p50_ns": [
+              138661,
+              139181,
+              96386,
+              96405,
+              97177
+            ],
+            "operations_per_second": 8626.543523494
+          },
+          "portable": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 143823.5288,
+            "stddev_ns": 103352.42273976168,
+            "min_ns": 107722,
+            "max_ns": 4338402,
+            "repetition_mean_ns": [
+              155516.638,
+              165340.851,
+              147198.66,
+              130698.716,
+              120362.779
+            ],
+            "repetition_mean_stddev_ns": 18260.496709099913,
+            "repetition_mean_range_ns": [
+              120362.779,
+              165340.851
+            ],
+            "p50_ns": 120632,
+            "p95_ns": 209168,
+            "p99_ns": 341939,
+            "repetition_p50_ns": [
+              160443,
+              162496,
+              142605,
+              111729,
+              113041
+            ],
+            "operations_per_second": 6950.371045141223
+          },
+          "portable-baseline": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 146961.7816,
+            "stddev_ns": 88705.93053405102,
+            "min_ns": 109175,
+            "max_ns": 4751927,
+            "repetition_mean_ns": [
+              163730.823,
+              129611.827,
+              155843.424,
+              162722.424,
+              122900.41
+            ],
+            "repetition_mean_stddev_ns": 19290.23521080301,
+            "repetition_mean_range_ns": [
+              122900.41,
+              163730.823
+            ],
+            "p50_ns": 127472,
+            "p95_ns": 208254,
+            "p99_ns": 336421,
+            "repetition_p50_ns": [
+              165281,
+              114354,
+              164157,
+              152661,
+              113391
+            ],
+            "operations_per_second": 6801.822674083203
+          },
+          "cpp": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 176671.9528,
+            "stddev_ns": 62277.036138941476,
+            "min_ns": 129244,
+            "max_ns": 1385734,
+            "repetition_mean_ns": [
+              212881.128,
+              210096.101,
+              149449.859,
+              157373.07,
+              153559.606
+            ],
+            "repetition_mean_stddev_ns": 31921.575361921998,
+            "repetition_mean_range_ns": [
+              149449.859,
+              212881.128
+            ],
+            "p50_ns": 166901,
+            "p95_ns": 252894,
+            "p99_ns": 390173,
+            "repetition_p50_ns": [
+              184270,
+              205131,
+              136105,
+              135804,
+              136255
+            ],
+            "operations_per_second": 5658.925782099591
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 1.233493869955111,
+        "portable_over_before": 0.9463411572737542,
+        "portable_mean_over_before": 0.9786457896343305,
+        "paired_repetition_ratio_median": 0.9707286378954629,
+        "faster_than_before_repetitions": 4,
+        "meets_mean_target": false,
+        "meets_both_targets": false,
+        "meets_target": false,
+        "before_meets_current_reference": false
+      },
+      {
+        "case": "dependent-read",
+        "variants": {
+          "legacy": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 59514.3466,
+            "stddev_ns": 35493.69729803934,
+            "min_ns": 45148,
+            "max_ns": 939477,
+            "repetition_mean_ns": [
+              57500.439,
+              54533.69,
+              77772.28,
+              54240.064,
+              53525.26
+            ],
+            "repetition_mean_stddev_ns": 10318.697971089414,
+            "repetition_mean_range_ns": [
+              53525.26,
+              77772.28
+            ],
+            "p50_ns": 47482,
+            "p95_ns": 106581,
+            "p99_ns": 175645,
+            "repetition_p50_ns": [
+              47472,
+              46922,
+              69875,
+              47051,
+              46981
+            ],
+            "operations_per_second": 16790.94112338435
+          },
+          "portable": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 66542.1106,
+            "stddev_ns": 63914.91603217709,
+            "min_ns": 52579,
+            "max_ns": 2056407,
+            "repetition_mean_ns": [
+              70080.138,
+              66177.069,
+              60598.122,
+              65465.345,
+              70389.879
+            ],
+            "repetition_mean_stddev_ns": 3998.3321381293854,
+            "repetition_mean_range_ns": [
+              60598.122,
+              70389.879
+            ],
+            "p50_ns": 55774,
+            "p95_ns": 112341,
+            "p99_ns": 206101,
+            "repetition_p50_ns": [
+              56465,
+              55434,
+              55824,
+              55794,
+              55053
+            ],
+            "operations_per_second": 15014.080264528397
+          },
+          "portable-baseline": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 78943.285,
+            "stddev_ns": 46640.55840890752,
+            "min_ns": 51809,
+            "max_ns": 1630211,
+            "repetition_mean_ns": [
+              63956.632,
+              67570.937,
+              86684.302,
+              70555.007,
+              105949.547
+            ],
+            "repetition_mean_stddev_ns": 17418.056768679235,
+            "repetition_mean_range_ns": [
+              63956.632,
+              105949.547
+            ],
+            "p50_ns": 65409,
+            "p95_ns": 128013,
+            "p99_ns": 197991,
+            "repetition_p50_ns": [
+              56395,
+              54853,
+              77176,
+              56615,
+              100762
+            ],
+            "operations_per_second": 12660.237364308938
+          },
+          "cpp": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 61582.4118,
+            "stddev_ns": 60842.89423327557,
+            "min_ns": 44728,
+            "max_ns": 2207266,
+            "repetition_mean_ns": [
+              56447.268,
+              69779.745,
+              76515.543,
+              52961.814,
+              52207.689
+            ],
+            "repetition_mean_stddev_ns": 10940.344086009349,
+            "repetition_mean_range_ns": [
+              52207.689,
+              76515.543
+            ],
+            "p50_ns": 48033,
+            "p95_ns": 101354,
+            "p99_ns": 192010,
+            "repetition_p50_ns": [
+              47643,
+              47572,
+              68784,
+              46941,
+              47792
+            ],
+            "operations_per_second": 16229.809216580163
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 1.1746345983741207,
+        "portable_over_before": 0.8526961121558195,
+        "portable_mean_over_before": 0.8429103323987595,
+        "paired_repetition_ratio_median": 0.9854985427890135,
+        "faster_than_before_repetitions": 3,
+        "meets_mean_target": false,
+        "meets_both_targets": false,
+        "meets_target": false,
+        "before_meets_current_reference": false
+      },
+      {
+        "case": "pipelined-read",
+        "variants": {
+          "legacy": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 38355.5632,
+            "stddev_ns": 24779.520337836253,
+            "min_ns": 28753,
+            "max_ns": 741426,
+            "repetition_mean_ns": [
+              39408.015,
+              34746.272,
+              46699.826,
+              38368.251,
+              32555.452
+            ],
+            "repetition_mean_stddev_ns": 5417.628871236448,
+            "repetition_mean_range_ns": [
+              32555.452,
+              46699.826
+            ],
+            "p50_ns": 30666,
+            "p95_ns": 62675,
+            "p99_ns": 124147,
+            "repetition_p50_ns": [
+              30637,
+              30456,
+              40732,
+              30506,
+              29875
+            ],
+            "operations_per_second": 26044.93639138947
+          },
+          "portable": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 50844.684,
+            "stddev_ns": 30058.4772533191,
+            "min_ns": 39960,
+            "max_ns": 1045767,
+            "repetition_mean_ns": [
+              51594.685,
+              47122.691,
+              60258.679,
+              47580.406,
+              47666.959
+            ],
+            "repetition_mean_stddev_ns": 5563.103501845528,
+            "repetition_mean_range_ns": [
+              47122.691,
+              60258.679
+            ],
+            "p50_ns": 43265,
+            "p95_ns": 84337,
+            "p99_ns": 152600,
+            "repetition_p50_ns": [
+              43096,
+              41503,
+              52359,
+              42935,
+              43165
+            ],
+            "operations_per_second": 19651.163935492226
+          },
+          "portable-baseline": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 52040.3202,
+            "stddev_ns": 34854.90712520998,
+            "min_ns": 39359,
+            "max_ns": 1209637,
+            "repetition_mean_ns": [
+              52306.429,
+              49615.02,
+              48452.976,
+              60684.034,
+              49143.142
+            ],
+            "repetition_mean_stddev_ns": 5048.003643562888,
+            "repetition_mean_range_ns": [
+              48452.976,
+              60684.034
+            ],
+            "p50_ns": 42946,
+            "p95_ns": 95294,
+            "p99_ns": 171550,
+            "repetition_p50_ns": [
+              42114,
+              43566,
+              42644,
+              43205,
+              42735
+            ],
+            "operations_per_second": 19201.257636292157
+          },
+          "cpp": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 41451.2044,
+            "stddev_ns": 31438.986838842487,
+            "min_ns": 25779,
+            "max_ns": 964985,
+            "repetition_mean_ns": [
+              39875.19,
+              34337.038,
+              46255.187,
+              51300.221,
+              35488.386
+            ],
+            "repetition_mean_stddev_ns": 7223.77610802434,
+            "repetition_mean_range_ns": [
+              34337.038,
+              51300.221
+            ],
+            "p50_ns": 31387,
+            "p95_ns": 71798,
+            "p99_ns": 138268,
+            "repetition_p50_ns": [
+              30546,
+              30607,
+              41042,
+              49355,
+              29875
+            ],
+            "operations_per_second": 24103.100840302068
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 1.410845887954086,
+        "portable_over_before": 1.0074279327527593,
+        "portable_mean_over_before": 0.9770248108504144,
+        "paired_repetition_ratio_median": 1.0100620100620101,
+        "faster_than_before_repetitions": 2,
+        "meets_mean_target": false,
+        "meets_both_targets": false,
+        "meets_target": false,
+        "before_meets_current_reference": false
+      },
+      {
+        "case": "write-read",
+        "variants": {
+          "legacy": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 51161.3744,
+            "stddev_ns": 40697.99372189767,
+            "min_ns": 41012,
+            "max_ns": 1293684,
+            "repetition_mean_ns": [
+              53271.174,
+              46919.924,
+              56481.509,
+              51968,
+              47166.265
+            ],
+            "repetition_mean_stddev_ns": 4103.551266478865,
+            "repetition_mean_range_ns": [
+              46919.924,
+              56481.509
+            ],
+            "p50_ns": 42884,
+            "p95_ns": 89094,
+            "p99_ns": 161074,
+            "repetition_p50_ns": [
+              42474,
+              42974,
+              44787,
+              42934,
+              42604
+            ],
+            "operations_per_second": 19531.401444655734
+          },
+          "portable": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 54557.24,
+            "stddev_ns": 82950.76441936356,
+            "min_ns": 37867,
+            "max_ns": 3150181,
+            "repetition_mean_ns": [
+              55685.165,
+              67754.805,
+              49679.716,
+              53593.749,
+              46072.765
+            ],
+            "repetition_mean_stddev_ns": 8248.527263065387,
+            "repetition_mean_range_ns": [
+              46072.765,
+              67754.805
+            ],
+            "p50_ns": 42805,
+            "p95_ns": 96537,
+            "p99_ns": 239982,
+            "repetition_p50_ns": [
+              43086,
+              43045,
+              42424,
+              42994,
+              42464
+            ],
+            "operations_per_second": 18314.226711079886
+          },
+          "portable-baseline": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 57403.559,
+            "stddev_ns": 30425.406594926753,
+            "min_ns": 40831,
+            "max_ns": 1171789,
+            "repetition_mean_ns": [
+              48152.463,
+              70276.497,
+              70121.178,
+              50612.629,
+              47855.028
+            ],
+            "repetition_mean_stddev_ns": 11729.496126273732,
+            "repetition_mean_range_ns": [
+              47855.028,
+              70276.497
+            ],
+            "p50_ns": 43697,
+            "p95_ns": 89095,
+            "p99_ns": 152049,
+            "repetition_p50_ns": [
+              42334,
+              67492,
+              64988,
+              42323,
+              42464
+            ],
+            "operations_per_second": 17402.428222066374
+          },
+          "cpp": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 57666.9312,
+            "stddev_ns": 50004.693896069344,
+            "min_ns": 42254,
+            "max_ns": 2300084,
+            "repetition_mean_ns": [
+              52917.727,
+              59680.847,
+              69707.374,
+              55867.341,
+              50161.367
+            ],
+            "repetition_mean_stddev_ns": 7601.892511919594,
+            "repetition_mean_range_ns": [
+              50161.367,
+              69707.374
+            ],
+            "p50_ns": 44408,
+            "p95_ns": 92470,
+            "p99_ns": 169746,
+            "repetition_p50_ns": [
+              44057,
+              65619,
+              65529,
+              43546,
+              43546
+            ],
+            "operations_per_second": 17330.5592607521
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 0.9981578210987782,
+        "portable_over_before": 0.9795866993157425,
+        "portable_mean_over_before": 0.950415635378984,
+        "paired_repetition_ratio_median": 1.0,
+        "faster_than_before_repetitions": 2,
+        "meets_mean_target": false,
+        "meets_both_targets": false,
+        "meets_target": true,
+        "before_meets_current_reference": false
+      },
+      {
+        "case": "callback",
+        "variants": {
+          "legacy": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 60508.9804,
+            "stddev_ns": 45622.39745333309,
+            "min_ns": 44227,
+            "max_ns": 1990336,
+            "repetition_mean_ns": [
+              64366.105,
+              58897.299,
+              52774.58,
+              53145.694,
+              73361.224
+            ],
+            "repetition_mean_stddev_ns": 8612.404263977585,
+            "repetition_mean_range_ns": [
+              52774.58,
+              73361.224
+            ],
+            "p50_ns": 46630,
+            "p95_ns": 102185,
+            "p99_ns": 181133,
+            "repetition_p50_ns": [
+              51909,
+              46179,
+              45288,
+              45769,
+              68683
+            ],
+            "operations_per_second": 16515.37084077768
+          },
+          "portable": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 76409.9388,
+            "stddev_ns": 47654.8431064268,
+            "min_ns": 50376,
+            "max_ns": 1784571,
+            "repetition_mean_ns": [
+              89078.014,
+              83132.7,
+              64569.093,
+              63852.385,
+              81417.502
+            ],
+            "repetition_mean_stddev_ns": 11496.185490482772,
+            "repetition_mean_range_ns": [
+              63852.385,
+              89078.014
+            ],
+            "p50_ns": 70276,
+            "p95_ns": 124279,
+            "p99_ns": 202906,
+            "repetition_p50_ns": [
+              94724,
+              62374,
+              52850,
+              52670,
+              74522
+            ],
+            "operations_per_second": 13077.369286822659
+          },
+          "portable-baseline": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 80789.0302,
+            "stddev_ns": 108399.01708314243,
+            "min_ns": 50786,
+            "max_ns": 4105190,
+            "repetition_mean_ns": [
+              60311.658,
+              91980.464,
+              94358.916,
+              73213.393,
+              84080.72
+            ],
+            "repetition_mean_stddev_ns": 14115.04750317551,
+            "repetition_mean_range_ns": [
+              60311.658,
+              94358.916
+            ],
+            "p50_ns": 66660,
+            "p95_ns": 126431,
+            "p99_ns": 219522,
+            "repetition_p50_ns": [
+              52620,
+              56875,
+              99160,
+              53902,
+              75503
+            ],
+            "operations_per_second": 12368.209247699171
+          },
+          "cpp": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 54720.4366,
+            "stddev_ns": 31878.25287604806,
+            "min_ns": 42334,
+            "max_ns": 1140440,
+            "repetition_mean_ns": [
+              53094.874,
+              51539.993,
+              54484.111,
+              50460.815,
+              64022.39
+            ],
+            "repetition_mean_stddev_ns": 5419.507318001175,
+            "repetition_mean_range_ns": [
+              50460.815,
+              64022.39
+            ],
+            "p50_ns": 45218,
+            "p95_ns": 99280,
+            "p99_ns": 164438,
+            "repetition_p50_ns": [
+              45199,
+              45108,
+              45108,
+              44818,
+              66730
+            ],
+            "operations_per_second": 18264.8515252046
+          }
+        },
+        "faster_reference": "cpp",
+        "portable_over_faster_reference": 1.554159847848202,
+        "portable_over_before": 1.0542454245424542,
+        "portable_mean_over_before": 0.9457959652546988,
+        "paired_repetition_ratio_median": 0.9870071387891872,
+        "faster_than_before_repetitions": 3,
+        "meets_mean_target": false,
+        "meets_both_targets": false,
+        "meets_target": false,
+        "before_meets_current_reference": false
+      },
+      {
+        "case": "bulk-64k",
+        "variants": {
+          "legacy": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 62064.3928,
+            "stddev_ns": 36459.63831095505,
+            "min_ns": 47161,
+            "max_ns": 855222,
+            "repetition_mean_ns": [
+              59764.784,
+              57276.152,
+              54551.939,
+              62705.287,
+              76023.802
+            ],
+            "repetition_mean_stddev_ns": 8365.528424397271,
+            "repetition_mean_range_ns": [
+              54551.939,
+              76023.802
+            ],
+            "p50_ns": 50606,
+            "p95_ns": 111678,
+            "p99_ns": 208074,
+            "repetition_p50_ns": [
+              50858,
+              49916,
+              49625,
+              50025,
+              59119
+            ],
+            "operations_per_second": 16092.694383116348
+          },
+          "portable": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 72555.6772,
+            "stddev_ns": 34979.436404442466,
+            "min_ns": 47271,
+            "max_ns": 887721,
+            "repetition_mean_ns": [
+              59900.098,
+              68735.316,
+              62480.456,
+              54156.05,
+              117506.466
+            ],
+            "repetition_mean_stddev_ns": 25668.018143479898,
+            "repetition_mean_range_ns": [
+              54156.05,
+              117506.466
+            ],
+            "p50_ns": 59901,
+            "p95_ns": 117657,
+            "p99_ns": 182646,
+            "repetition_p50_ns": [
+              59650,
+              59670,
+              60010,
+              49004,
+              110557
+            ],
+            "operations_per_second": 13773.427850121237
+          },
+          "portable-baseline": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 72560.7734,
+            "stddev_ns": 53684.9370070222,
+            "min_ns": 45810,
+            "max_ns": 2242497,
+            "repetition_mean_ns": [
+              56210.992,
+              62941.677,
+              65585.038,
+              59729.025,
+              118337.135
+            ],
+            "repetition_mean_stddev_ns": 25829.40330362835,
+            "repetition_mean_range_ns": [
+              56210.992,
+              118337.135
+            ],
+            "p50_ns": 62133,
+            "p95_ns": 118229,
+            "p99_ns": 183036,
+            "repetition_p50_ns": [
+              49025,
+              62094,
+              65549,
+              48994,
+              110366
+            ],
+            "operations_per_second": 13773.542775771442
+          },
+          "cpp": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 80237.405,
+            "stddev_ns": 224095.77164002796,
+            "min_ns": 50366,
+            "max_ns": 8225709,
+            "repetition_mean_ns": [
+              95997.165,
+              64430.898,
+              60216.887,
+              58636.4,
+              121905.675
+            ],
+            "repetition_mean_stddev_ns": 27847.284345111184,
+            "repetition_mean_range_ns": [
+              58636.4,
+              121905.675
+            ],
+            "p50_ns": 53371,
+            "p95_ns": 127562,
+            "p99_ns": 216506,
+            "repetition_p50_ns": [
+              52509,
+              53390,
+              53481,
+              52699,
+              112640
+            ],
+            "operations_per_second": 12457.945029776009
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 1.1836738726633205,
+        "portable_over_before": 0.9640770604992516,
+        "portable_mean_over_before": 0.9999297664597384,
+        "paired_repetition_ratio_median": 1.0002041066253011,
+        "faster_than_before_repetitions": 2,
+        "meets_mean_target": false,
+        "meets_both_targets": false,
+        "meets_target": false,
+        "before_meets_current_reference": false
+      },
+      {
+        "case": "bulk-256k",
+        "variants": {
+          "legacy": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 114691.9498,
+            "stddev_ns": 40873.11109455934,
+            "min_ns": 84387,
+            "max_ns": 1623124,
+            "repetition_mean_ns": [
+              108434.59,
+              125489.686,
+              118634.247,
+              112345.893,
+              108555.333
+            ],
+            "repetition_mean_stddev_ns": 7322.045721371913,
+            "repetition_mean_range_ns": [
+              108434.59,
+              125489.686
+            ],
+            "p50_ns": 102884,
+            "p95_ns": 164378,
+            "p99_ns": 262156,
+            "repetition_p50_ns": [
+              101323,
+              121032,
+              100983,
+              102565,
+              101693
+            ],
+            "operations_per_second": 8715.41954878401
+          },
+          "portable": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 124366.8592,
+            "stddev_ns": 60803.24405722241,
+            "min_ns": 84517,
+            "max_ns": 1640671,
+            "repetition_mean_ns": [
+              112234.165,
+              172315.036,
+              121820.638,
+              103392.928,
+              112071.529
+            ],
+            "repetition_mean_stddev_ns": 27585.2954674382,
+            "repetition_mean_range_ns": [
+              103392.928,
+              172315.036
+            ],
+            "p50_ns": 109384,
+            "p95_ns": 199902,
+            "p99_ns": 281907,
+            "repetition_p50_ns": [
+              97258,
+              169826,
+              126241,
+              93021,
+              94512
+            ],
+            "operations_per_second": 8036.993806702217
+          },
+          "portable-baseline": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 157861.0692,
+            "stddev_ns": 86693.72782607567,
+            "min_ns": 85429,
+            "max_ns": 2395758,
+            "repetition_mean_ns": [
+              140853.743,
+              132829.456,
+              129111.448,
+              124033.792,
+              262476.907
+            ],
+            "repetition_mean_stddev_ns": 58802.91175692888,
+            "repetition_mean_range_ns": [
+              124033.792,
+              262476.907
+            ],
+            "p50_ns": 128315,
+            "p95_ns": 348213,
+            "p99_ns": 433073,
+            "repetition_p50_ns": [
+              133182,
+              127963,
+              126070,
+              125098,
+              329225
+            ],
+            "operations_per_second": 6332.384344062697
+          },
+          "cpp": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 335824.9146,
+            "stddev_ns": 114989.5425190476,
+            "min_ns": 219161,
+            "max_ns": 2580681,
+            "repetition_mean_ns": [
+              378809.216,
+              352752.352,
+              290299.437,
+              276820.07,
+              380443.498
+            ],
+            "repetition_mean_stddev_ns": 49191.32821285164,
+            "repetition_mean_range_ns": [
+              276820.07,
+              380443.498
+            ],
+            "p50_ns": 310639,
+            "p95_ns": 507615,
+            "p99_ns": 660243,
+            "repetition_p50_ns": [
+              390202,
+              363539,
+              258821,
+              248926,
+              386463
+            ],
+            "operations_per_second": 2977.3148041877307
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 1.0631779479802497,
+        "portable_over_before": 0.8524646378054008,
+        "portable_mean_over_before": 0.7878247615467183,
+        "paired_repetition_ratio_median": 0.7435850293369998,
+        "faster_than_before_repetitions": 3,
+        "meets_mean_target": false,
+        "meets_both_targets": false,
+        "meets_target": false,
+        "before_meets_current_reference": false
+      },
+      {
+        "case": "bulk-1m",
+        "variants": {
+          "legacy": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 408093.2002,
+            "stddev_ns": 385260.3723200876,
+            "min_ns": 261957,
+            "max_ns": 25414841,
+            "repetition_mean_ns": [
+              401536.916,
+              429889.975,
+              399263.456,
+              430435.906,
+              379339.748
+            ],
+            "repetition_mean_stddev_ns": 21920.345302444228,
+            "repetition_mean_range_ns": [
+              379339.748,
+              430435.906
+            ],
+            "p50_ns": 378764,
+            "p95_ns": 610545,
+            "p99_ns": 901704,
+            "repetition_p50_ns": [
+              374028,
+              397091,
+              376289,
+              373965,
+              336927
+            ],
+            "operations_per_second": 2450.034897268062
+          },
+          "portable": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 416124.1602,
+            "stddev_ns": 125507.99658955011,
+            "min_ns": 277799,
+            "max_ns": 2523431,
+            "repetition_mean_ns": [
+              423054.813,
+              416465.091,
+              429612.419,
+              405472.977,
+              406015.501
+            ],
+            "repetition_mean_stddev_ns": 10555.993580450171,
+            "repetition_mean_range_ns": [
+              405472.977,
+              429612.419
+            ],
+            "p50_ns": 404862,
+            "p95_ns": 629046,
+            "p99_ns": 792158,
+            "repetition_p50_ns": [
+              412807,
+              406433,
+              411232,
+              395477,
+              397217
+            ],
+            "operations_per_second": 2402.666383430102
+          },
+          "portable-baseline": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 421530.123,
+            "stddev_ns": 140245.2636997482,
+            "min_ns": 277171,
+            "max_ns": 3480969,
+            "repetition_mean_ns": [
+              421785.521,
+              420830.639,
+              431312.837,
+              422098.33,
+              411623.288
+            ],
+            "repetition_mean_stddev_ns": 6977.181345689138,
+            "repetition_mean_range_ns": [
+              411623.288,
+              431312.837
+            ],
+            "p50_ns": 408724,
+            "p95_ns": 630982,
+            "p99_ns": 800878,
+            "repetition_p50_ns": [
+              409773,
+              399823,
+              416239,
+              414827,
+              396666
+            ],
+            "operations_per_second": 2371.651965838076
+          },
+          "cpp": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 1047111.9056,
+            "stddev_ns": 367296.33457950025,
+            "min_ns": 696717,
+            "max_ns": 11499159,
+            "repetition_mean_ns": [
+              996512.422,
+              1202320.989,
+              1062122.209,
+              943601.344,
+              1031002.564
+            ],
+            "repetition_mean_stddev_ns": 97274.64182425418,
+            "repetition_mean_range_ns": [
+              943601.344,
+              1202320.989
+            ],
+            "p50_ns": 984529,
+            "p95_ns": 1423676,
+            "p99_ns": 1907155,
+            "repetition_p50_ns": [
+              955722,
+              1140279,
+              989336,
+              907170,
+              937949
+            ],
+            "operations_per_second": 954.9066369647362
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 1.0689030636491323,
+        "portable_over_before": 0.9905510809250252,
+        "portable_mean_over_before": 0.9871753820070409,
+        "paired_repetition_ratio_median": 1.001389077964837,
+        "faster_than_before_repetitions": 2,
+        "meets_mean_target": false,
+        "meets_both_targets": false,
+        "meets_target": false,
+        "before_meets_current_reference": false
+      },
+      {
+        "case": "bulk-4m",
+        "variants": {
+          "legacy": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 2213244.578,
+            "stddev_ns": 525559.3959305639,
+            "min_ns": 1488850,
+            "max_ns": 6961887,
+            "repetition_mean_ns": [
+              2210246.269,
+              2279176.297,
+              2231177.076,
+              2171431.568,
+              2174191.68
+            ],
+            "repetition_mean_stddev_ns": 44584.22523475346,
+            "repetition_mean_range_ns": [
+              2171431.568,
+              2279176.297
+            ],
+            "p50_ns": 2109594,
+            "p95_ns": 3018310,
+            "p99_ns": 4635966,
+            "repetition_p50_ns": [
+              2148823,
+              2137746,
+              2142679,
+              2061672,
+              2011098
+            ],
+            "operations_per_second": 451.77986410580417
+          },
+          "portable": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 2478192.9158,
+            "stddev_ns": 809760.718113094,
+            "min_ns": 1525024,
+            "max_ns": 20703036,
+            "repetition_mean_ns": [
+              2299891.945,
+              2423442.159,
+              2290833.12,
+              2432494.711,
+              2944302.644
+            ],
+            "repetition_mean_stddev_ns": 268904.8062443443,
+            "repetition_mean_range_ns": [
+              2290833.12,
+              2944302.644
+            ],
+            "p50_ns": 2327951,
+            "p95_ns": 3516450,
+            "p99_ns": 5507907,
+            "repetition_p50_ns": [
+              2222993,
+              2336730,
+              2201982,
+              2274131,
+              2675000
+            ],
+            "operations_per_second": 403.48229829392136
+          },
+          "portable-baseline": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 2543714.1104,
+            "stddev_ns": 1030027.4285752337,
+            "min_ns": 1479906,
+            "max_ns": 34430016,
+            "repetition_mean_ns": [
+              2335320.983,
+              2404784.884,
+              2323136.705,
+              2762194.217,
+              2893133.763
+            ],
+            "repetition_mean_stddev_ns": 265146.6895285056,
+            "repetition_mean_range_ns": [
+              2323136.705,
+              2893133.763
+            ],
+            "p50_ns": 2405263,
+            "p95_ns": 3486322,
+            "p99_ns": 5604695,
+            "repetition_p50_ns": [
+              2213108,
+              2334087,
+              2266742,
+              2503217,
+              2738307
+            ],
+            "operations_per_second": 393.07557318713054
+          },
+          "cpp": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 4864234.1574,
+            "stddev_ns": 1087343.7892585339,
+            "min_ns": 3182463,
+            "max_ns": 18090945,
+            "repetition_mean_ns": [
+              4622663.222,
+              4757671.312,
+              4789740.209,
+              4722495.984,
+              5428600.06
+            ],
+            "repetition_mean_stddev_ns": 321659.7919441742,
+            "repetition_mean_range_ns": [
+              4622663.222,
+              5428600.06
+            ],
+            "p50_ns": 4628838,
+            "p95_ns": 6627353,
+            "p99_ns": 8080471,
+            "repetition_p50_ns": [
+              4367573,
+              4528497,
+              4627797,
+              4455050,
+              5473822
+            ],
+            "operations_per_second": 205.57095925546005
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 1.1035066463025587,
+        "portable_over_before": 0.9678571532510166,
+        "portable_mean_over_before": 0.9742419188020713,
+        "paired_repetition_ratio_median": 0.9768809706143249,
+        "faster_than_before_repetitions": 3,
+        "meets_mean_target": false,
+        "meets_both_targets": false,
+        "meets_target": false,
+        "before_meets_current_reference": false
+      },
+      {
+        "case": "loopback-0",
+        "variants": {
+          "legacy": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 29068.8334,
+            "stddev_ns": 19158.668198658113,
+            "min_ns": 20441,
+            "max_ns": 370178,
+            "repetition_mean_ns": [
+              22057.434,
+              27356.321,
+              35128.515,
+              37450.019,
+              23351.878
+            ],
+            "repetition_mean_stddev_ns": 6923.51089525916,
+            "repetition_mean_range_ns": [
+              22057.434,
+              37450.019
+            ],
+            "p50_ns": 23696,
+            "p95_ns": 39018,
+            "p99_ns": 93871,
+            "repetition_p50_ns": [
+              21071,
+              21442,
+              32008,
+              32469,
+              22564
+            ],
+            "operations_per_second": 34350.27340653564
+          },
+          "portable": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 32613.1496,
+            "stddev_ns": 193867.6503428303,
+            "min_ns": 18848,
+            "max_ns": 12339306,
+            "repetition_mean_ns": [
+              24727.591,
+              29252.401,
+              33521.885,
+              32346.245,
+              43217.626
+            ],
+            "repetition_mean_stddev_ns": 6834.263372838859,
+            "repetition_mean_range_ns": [
+              24727.591,
+              43217.626
+            ],
+            "p50_ns": 23916,
+            "p95_ns": 37427,
+            "p99_ns": 84066,
+            "repetition_p50_ns": [
+              21152,
+              22994,
+              32028,
+              33951,
+              23085
+            ],
+            "operations_per_second": 30626.790936055124
+          },
+          "portable-baseline": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 31226.6132,
+            "stddev_ns": 33391.32061909686,
+            "min_ns": 17217,
+            "max_ns": 2218757,
+            "repetition_mean_ns": [
+              34482.167,
+              26657.364,
+              22421.586,
+              37043.533,
+              35528.416
+            ],
+            "repetition_mean_stddev_ns": 6351.126594527439,
+            "repetition_mean_range_ns": [
+              22421.586,
+              37043.533
+            ],
+            "p50_ns": 32490,
+            "p95_ns": 40340,
+            "p99_ns": 79750,
+            "repetition_p50_ns": [
+              32179,
+              21452,
+              21192,
+              33411,
+              34342
+            ],
+            "operations_per_second": 31982.947408859618
+          },
+          "cpp": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 30096.9142,
+            "stddev_ns": 30347.298949368505,
+            "min_ns": 20861,
+            "max_ns": 1878273,
+            "repetition_mean_ns": [
+              30352.458,
+              24251.166,
+              36498.674,
+              35785.221,
+              23597.052
+            ],
+            "repetition_mean_stddev_ns": 6120.1643372203,
+            "repetition_mean_range_ns": [
+              23597.052,
+              36498.674
+            ],
+            "p50_ns": 31899,
+            "p95_ns": 37496,
+            "p99_ns": 86150,
+            "repetition_p50_ns": [
+              32800,
+              21683,
+              32499,
+              32559,
+              21673
+            ],
+            "operations_per_second": 33184.012577218615
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 1.0092842673869007,
+        "portable_over_before": 0.7361034164358264,
+        "portable_mean_over_before": 1.0444023945574732,
+        "paired_repetition_ratio_median": 1.016162341743737,
+        "faster_than_before_repetitions": 2,
+        "meets_mean_target": false,
+        "meets_both_targets": false,
+        "meets_target": false,
+        "before_meets_current_reference": false
+      },
+      {
+        "case": "loopback-64",
+        "variants": {
+          "legacy": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 30426.441,
+            "stddev_ns": 16878.847654568963,
+            "min_ns": 20411,
+            "max_ns": 424070,
+            "repetition_mean_ns": [
+              35075.65,
+              23130.401,
+              34898.839,
+              36105.319,
+              22921.996
+            ],
+            "repetition_mean_stddev_ns": 6771.5588673250495,
+            "repetition_mean_range_ns": [
+              22921.996,
+              36105.319
+            ],
+            "p50_ns": 31247,
+            "p95_ns": 39400,
+            "p99_ns": 97828,
+            "repetition_p50_ns": [
+              31618,
+              21052,
+              31978,
+              31568,
+              22173
+            ],
+            "operations_per_second": 32810.67976601996
+          },
+          "portable": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 29796.8484,
+            "stddev_ns": 14532.372328072033,
+            "min_ns": 20381,
+            "max_ns": 578039,
+            "repetition_mean_ns": [
+              35156.846,
+              22070.962,
+              33406.528,
+              36440.166,
+              21909.74
+            ],
+            "repetition_mean_stddev_ns": 7207.441109717566,
+            "repetition_mean_range_ns": [
+              21909.74,
+              36440.166
+            ],
+            "p50_ns": 31488,
+            "p95_ns": 36194,
+            "p99_ns": 81703,
+            "repetition_p50_ns": [
+              31878,
+              21052,
+              31748,
+              33650,
+              21082
+            ],
+            "operations_per_second": 33514.53121033346
+          },
+          "portable-baseline": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 30274.725,
+            "stddev_ns": 13716.378033936253,
+            "min_ns": 20541,
+            "max_ns": 344090,
+            "repetition_mean_ns": [
+              22966.902,
+              35623.474,
+              34994.168,
+              35119.71,
+              22669.371
+            ],
+            "repetition_mean_stddev_ns": 6811.788021696653,
+            "repetition_mean_range_ns": [
+              22669.371,
+              35623.474
+            ],
+            "p50_ns": 32189,
+            "p95_ns": 36715,
+            "p99_ns": 71598,
+            "repetition_p50_ns": [
+              21152,
+              34452,
+              32148,
+              33961,
+              21362
+            ],
+            "operations_per_second": 32989.42343249831
+          },
+          "cpp": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 30178.42,
+            "stddev_ns": 34271.114006064105,
+            "min_ns": 20992,
+            "max_ns": 2161691,
+            "repetition_mean_ns": [
+              23143.992,
+              29222.854,
+              36073.022,
+              37753.478,
+              24698.754
+            ],
+            "repetition_mean_stddev_ns": 6567.93079251114,
+            "repetition_mean_range_ns": [
+              23143.992,
+              37753.478
+            ],
+            "p50_ns": 31287,
+            "p95_ns": 38268,
+            "p99_ns": 85329,
+            "repetition_p50_ns": [
+              21502,
+              32599,
+              33130,
+              33370,
+              22283
+            ],
+            "operations_per_second": 33094.90506120846
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 1.0077127404230806,
+        "portable_over_before": 0.9782223741029544,
+        "portable_mean_over_before": 0.9842153281326255,
+        "paired_repetition_ratio_median": 0.9875575463481399,
+        "faster_than_before_repetitions": 4,
+        "meets_mean_target": true,
+        "meets_both_targets": false,
+        "meets_target": false,
+        "before_meets_current_reference": false
+      },
+      {
+        "case": "loopback-1024",
+        "variants": {
+          "legacy": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 32208.4012,
+            "stddev_ns": 17289.332614982362,
+            "min_ns": 20832,
+            "max_ns": 485524,
+            "repetition_mean_ns": [
+              27239.776,
+              33434.175,
+              37052.068,
+              36403.421,
+              26912.566
+            ],
+            "repetition_mean_stddev_ns": 4880.95603965593,
+            "repetition_mean_range_ns": [
+              26912.566,
+              37052.068
+            ],
+            "p50_ns": 32729,
+            "p95_ns": 39620,
+            "p99_ns": 85209,
+            "repetition_p50_ns": [
+              21913,
+              32880,
+              33140,
+              33110,
+              21883
+            ],
+            "operations_per_second": 31015.276388293394
+          },
+          "portable": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 29070.134,
+            "stddev_ns": 42396.60696118509,
+            "min_ns": 20822,
+            "max_ns": 2194065,
+            "repetition_mean_ns": [
+              27867.885,
+              25202.698,
+              23942.951,
+              41327.564,
+              27009.572
+            ],
+            "repetition_mean_stddev_ns": 7021.05717375115,
+            "repetition_mean_range_ns": [
+              23942.951,
+              41327.564
+            ],
+            "p50_ns": 21903,
+            "p95_ns": 48032,
+            "p99_ns": 124788,
+            "repetition_p50_ns": [
+              22053,
+              21632,
+              21652,
+              33811,
+              21622
+            ],
+            "operations_per_second": 34359.87774535595
+          },
+          "portable-baseline": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 29504.9556,
+            "stddev_ns": 16862.82734378888,
+            "min_ns": 16495,
+            "max_ns": 289896,
+            "repetition_mean_ns": [
+              34121.29,
+              23020.498,
+              37440.911,
+              29601.072,
+              23341.007
+            ],
+            "repetition_mean_stddev_ns": 6409.789826417891,
+            "repetition_mean_range_ns": [
+              23020.498,
+              37440.911
+            ],
+            "p50_ns": 22383,
+            "p95_ns": 40471,
+            "p99_ns": 99530,
+            "repetition_p50_ns": [
+              33971,
+              21693,
+              32879,
+              21833,
+              21582
+            ],
+            "operations_per_second": 33854.711463031286
+          },
+          "cpp": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 28333.9466,
+            "stddev_ns": 13365.02788604002,
+            "min_ns": 20021,
+            "max_ns": 283339,
+            "repetition_mean_ns": [
+              23707.251,
+              26600.023,
+              34231.926,
+              34375.48,
+              22755.053
+            ],
+            "repetition_mean_stddev_ns": 5630.789106598587,
+            "repetition_mean_range_ns": [
+              22755.053,
+              34375.48
+            ],
+            "p50_ns": 22434,
+            "p95_ns": 38739,
+            "p99_ns": 82986,
+            "repetition_p50_ns": [
+              21993,
+              22014,
+              35884,
+              33180,
+              22023
+            ],
+            "operations_per_second": 35248.86449131683
+          }
+        },
+        "faster_reference": "cpp",
+        "portable_over_faster_reference": 0.976330569671035,
+        "portable_over_before": 0.978555153464683,
+        "portable_mean_over_before": 0.9852627604021881,
+        "paired_repetition_ratio_median": 0.9971880330060389,
+        "faster_than_before_repetitions": 3,
+        "meets_mean_target": false,
+        "meets_both_targets": false,
+        "meets_target": true,
+        "before_meets_current_reference": true
+      },
+      {
+        "case": "loopback-65536",
+        "variants": {
+          "legacy": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 56911.9574,
+            "stddev_ns": 28836.106614772478,
+            "min_ns": 47942,
+            "max_ns": 1205620,
+            "repetition_mean_ns": [
+              55826.926,
+              63063.275,
+              57426.165,
+              55710.163,
+              52533.258
+            ],
+            "repetition_mean_stddev_ns": 3869.681156968401,
+            "repetition_mean_range_ns": [
+              52533.258,
+              63063.275
+            ],
+            "p50_ns": 50305,
+            "p95_ns": 82274,
+            "p99_ns": 137558,
+            "repetition_p50_ns": [
+              50326,
+              59891,
+              50015,
+              49936,
+              49925
+            ],
+            "operations_per_second": 17557.52192700096
+          },
+          "portable": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 80910.0648,
+            "stddev_ns": 39672.83222420525,
+            "min_ns": 46530,
+            "max_ns": 646303,
+            "repetition_mean_ns": [
+              116836.59,
+              56921.985,
+              118949.385,
+              53121.347,
+              58721.017
+            ],
+            "repetition_mean_stddev_ns": 33829.35022267739,
+            "repetition_mean_range_ns": [
+              53121.347,
+              118949.385
+            ],
+            "p50_ns": 60471,
+            "p95_ns": 134214,
+            "p99_ns": 209115,
+            "repetition_p50_ns": [
+              108945,
+              49094,
+              110726,
+              48764,
+              59871
+            ],
+            "operations_per_second": 12353.513976939897
+          },
+          "portable-baseline": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 67022.3004,
+            "stddev_ns": 36158.49641597909,
+            "min_ns": 45809,
+            "max_ns": 599699,
+            "repetition_mean_ns": [
+              116056.274,
+              56668.423,
+              54011.894,
+              53770.532,
+              54604.379
+            ],
+            "repetition_mean_stddev_ns": 27434.550098993357,
+            "repetition_mean_range_ns": [
+              53770.532,
+              116056.274
+            ],
+            "p50_ns": 49204,
+            "p95_ns": 118378,
+            "p99_ns": 184217,
+            "repetition_p50_ns": [
+              108625,
+              48804,
+              48363,
+              49114,
+              49034
+            ],
+            "operations_per_second": 14912.489010912286
+          },
+          "cpp": {
+            "samples": 5000,
+            "statistics_version": 1,
+            "mean_ns": 73304.7276,
+            "stddev_ns": 91521.36606122606,
+            "min_ns": 48713,
+            "max_ns": 4962211,
+            "repetition_mean_ns": [
+              128258.867,
+              65144.938,
+              55043.018,
+              63326.251,
+              54750.564
+            ],
+            "repetition_mean_stddev_ns": 31079.963896286725,
+            "repetition_mean_range_ns": [
+              54750.564,
+              128258.867
+            ],
+            "p50_ns": 52729,
+            "p95_ns": 132290,
+            "p99_ns": 232892,
+            "repetition_p50_ns": [
+              111029,
+              53110,
+              50746,
+              52779,
+              51408
+            ],
+            "operations_per_second": 13635.262365805123
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 1.2020872676672298,
+        "portable_over_before": 1.2289854483375335,
+        "portable_mean_over_before": 1.2072110971589392,
+        "paired_repetition_ratio_median": 1.0059421358905007,
+        "faster_than_before_repetitions": 1,
+        "meets_mean_target": false,
+        "meets_both_targets": false,
+        "meets_target": false,
+        "before_meets_current_reference": true
+      },
+      {
+        "case": "deep-8",
+        "variants": {
+          "legacy": {
+            "samples": 5000,
+            "p50_ns": 22634,
+            "p95_ns": 32328,
+            "p99_ns": 82143,
+            "statistics_version": 1,
+            "mean_ns": 25665.6812,
+            "stddev_ns": 18191.304596002657,
+            "min_ns": 20861,
+            "max_ns": 767525,
+            "repetition_mean_ns": [
+              28414.341,
+              25154.641,
+              27236.355,
+              23442.176,
+              24080.893
+            ],
+            "repetition_mean_stddev_ns": 2105.8749951887457,
+            "repetition_mean_range_ns": [
+              23442.176,
+              28414.341
+            ],
+            "repetition_p50_ns": [
+              25719,
+              22714,
+              22654,
+              22433,
+              22294
+            ],
+            "batches_per_second": 38900.59329940081,
+            "logical_requests_per_second": 38900.59329940081,
+            "service_calls_per_second": 38900.59329940081
+          },
+          "portable": {
+            "samples": 5000,
+            "p50_ns": 22804,
+            "p95_ns": 32449,
+            "p99_ns": 79870,
+            "statistics_version": 1,
+            "mean_ns": 25611.0598,
+            "stddev_ns": 18162.093188540297,
+            "min_ns": 21723,
+            "max_ns": 861256,
+            "repetition_mean_ns": [
+              26702.725,
+              25234.833,
+              27526.141,
+              23863.945,
+              24727.655
+            ],
+            "repetition_mean_stddev_ns": 1486.071135710266,
+            "repetition_mean_range_ns": [
+              23863.945,
+              27526.141
+            ],
+            "repetition_p50_ns": [
+              24357,
+              22624,
+              22844,
+              22674,
+              22744
+            ],
+            "batches_per_second": 38982.218253347295,
+            "logical_requests_per_second": 38982.218253347295,
+            "service_calls_per_second": 38982.218253347295
+          },
+          "cpp": {
+            "samples": 5000,
+            "p50_ns": 23215,
+            "p95_ns": 32850,
+            "p99_ns": 91717,
+            "statistics_version": 1,
+            "mean_ns": 26092.334,
+            "stddev_ns": 17554.72030026705,
+            "min_ns": 20931,
+            "max_ns": 487108,
+            "repetition_mean_ns": [
+              27662.466,
+              24585.892,
+              29404.393,
+              24215.051,
+              24593.868
+            ],
+            "repetition_mean_stddev_ns": 2317.002839419603,
+            "repetition_mean_range_ns": [
+              24215.051,
+              29404.393
+            ],
+            "repetition_p50_ns": [
+              23515,
+              23185,
+              23294,
+              23195,
+              23114
+            ],
+            "batches_per_second": 38284.57742628146,
+            "logical_requests_per_second": 38284.57742628146,
+            "service_calls_per_second": 38284.57742628146
+          },
+          "portable-baseline": {
+            "samples": 5000,
+            "p50_ns": 22844,
+            "p95_ns": 33521,
+            "p99_ns": 89434,
+            "statistics_version": 1,
+            "mean_ns": 25698.606,
+            "stddev_ns": 16694.3446070439,
+            "min_ns": 19099,
+            "max_ns": 416797,
+            "repetition_mean_ns": [
+              24492.543,
+              25395.371,
+              26782.549,
+              26597.341,
+              25225.226
+            ],
+            "repetition_mean_stddev_ns": 968.6698453379248,
+            "repetition_mean_range_ns": [
+              24492.543,
+              26782.549
+            ],
+            "repetition_p50_ns": [
+              22894,
+              22694,
+              23045,
+              22884,
+              22644
+            ],
+            "batches_per_second": 38855.43936363121,
+            "logical_requests_per_second": 38855.43936363121,
+            "service_calls_per_second": 38855.43936363121
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 1.0075108244234339,
+        "portable_over_before": 0.9982489931710734,
+        "portable_mean_over_before": 0.9965933482928996,
+        "paired_repetition_ratio_median": 0.9969154842689698,
+        "faster_than_before_repetitions": 3,
+        "meets_mean_target": true,
+        "meets_both_targets": false,
+        "meets_target": false,
+        "before_meets_current_reference": false
+      },
+      {
+        "case": "deep-32",
+        "variants": {
+          "legacy": {
+            "samples": 5000,
+            "p50_ns": 25979,
+            "p95_ns": 34812,
+            "p99_ns": 83705,
+            "statistics_version": 1,
+            "mean_ns": 28250.6132,
+            "stddev_ns": 15430.342151091974,
+            "min_ns": 24066,
+            "max_ns": 627051,
+            "repetition_mean_ns": [
+              27859.429,
+              29502.537,
+              27681.459,
+              28282.828,
+              27926.813
+            ],
+            "repetition_mean_stddev_ns": 733.1710485236039,
+            "repetition_mean_range_ns": [
+              27681.459,
+              29502.537
+            ],
+            "repetition_p50_ns": [
+              25759,
+              25509,
+              26389,
+              26470,
+              25549
+            ],
+            "batches_per_second": 35348.210306326386,
+            "logical_requests_per_second": 35348.210306326386,
+            "service_calls_per_second": 35348.210306326386
+          },
+          "portable": {
+            "samples": 5000,
+            "p50_ns": 26991,
+            "p95_ns": 41873,
+            "p99_ns": 90085,
+            "statistics_version": 1,
+            "mean_ns": 30443.4872,
+            "stddev_ns": 48220.51418635761,
+            "min_ns": 21572,
+            "max_ns": 3276903,
+            "repetition_mean_ns": [
+              29804.561,
+              28560.648,
+              33998.096,
+              32204.501,
+              27649.63
+            ],
+            "repetition_mean_stddev_ns": 2621.8009802863935,
+            "repetition_mean_range_ns": [
+              27649.63,
+              33998.096
+            ],
+            "repetition_p50_ns": [
+              26840,
+              27171,
+              27271,
+              27331,
+              26009
+            ],
+            "batches_per_second": 32800.68949673377,
+            "logical_requests_per_second": 32800.68949673377,
+            "service_calls_per_second": 32800.68949673377
+          },
+          "cpp": {
+            "samples": 5000,
+            "p50_ns": 27782,
+            "p95_ns": 44978,
+            "p99_ns": 88583,
+            "statistics_version": 1,
+            "mean_ns": 34338.3312,
+            "stddev_ns": 15685.255758946083,
+            "min_ns": 25398,
+            "max_ns": 355854,
+            "repetition_mean_ns": [
+              36992.332,
+              31947.462,
+              30675.905,
+              42590.558,
+              29485.399
+            ],
+            "repetition_mean_stddev_ns": 5427.327600780857,
+            "repetition_mean_range_ns": [
+              29485.399,
+              42590.558
+            ],
+            "repetition_p50_ns": [
+              40752,
+              26930,
+              27390,
+              41001,
+              26990
+            ],
+            "batches_per_second": 29096.84916505311,
+            "logical_requests_per_second": 29096.84916505311,
+            "service_calls_per_second": 29096.84916505311
+          },
+          "portable-baseline": {
+            "samples": 5000,
+            "p50_ns": 27191,
+            "p95_ns": 49695,
+            "p99_ns": 118829,
+            "statistics_version": 1,
+            "mean_ns": 35849.3444,
+            "stddev_ns": 61534.428644090774,
+            "min_ns": 25388,
+            "max_ns": 2103286,
+            "repetition_mean_ns": [
+              45029.199,
+              44039.584,
+              32851.192,
+              27971.724,
+              29355.023
+            ],
+            "repetition_mean_stddev_ns": 8132.831404393694,
+            "repetition_mean_range_ns": [
+              27971.724,
+              45029.199
+            ],
+            "repetition_p50_ns": [
+              43135,
+              26831,
+              27010,
+              26991,
+              26980
+            ],
+            "batches_per_second": 27860.622732504016,
+            "logical_requests_per_second": 27860.622732504016,
+            "service_calls_per_second": 27860.622732504016
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 1.0389545402055507,
+        "portable_over_before": 0.9926446250597625,
+        "portable_mean_over_before": 0.8492062465722524,
+        "paired_repetition_ratio_median": 1.0096630877452795,
+        "faster_than_before_repetitions": 2,
+        "meets_mean_target": false,
+        "meets_both_targets": false,
+        "meets_target": false,
+        "before_meets_current_reference": false
+      },
+      {
+        "case": "concurrent-32",
+        "variants": {
+          "legacy": {
+            "samples": 5000,
+            "p50_ns": 86479,
+            "p95_ns": 146769,
+            "p99_ns": 229746,
+            "statistics_version": 1,
+            "mean_ns": 100862.1426,
+            "stddev_ns": 30688.456841146697,
+            "min_ns": 82353,
+            "max_ns": 548484,
+            "repetition_mean_ns": [
+              96670.848,
+              92369.06,
+              112596.334,
+              112121.743,
+              90552.728
+            ],
+            "repetition_mean_stddev_ns": 10729.087575938358,
+            "repetition_mean_range_ns": [
+              90552.728,
+              112596.334
+            ],
+            "repetition_p50_ns": [
+              85438,
+              85919,
+              99129,
+              123094,
+              85999
+            ],
+            "batches_per_second": 9910.478842822362,
+            "logical_requests_per_second": 317135.3229703156,
+            "service_calls_per_second": 317135.3229703156
+          },
+          "portable": {
+            "samples": 5000,
+            "p50_ns": 107400,
+            "p95_ns": 162013,
+            "p99_ns": 253789,
+            "statistics_version": 1,
+            "mean_ns": 116424.5478,
+            "stddev_ns": 30366.41033577481,
+            "min_ns": 102584,
+            "max_ns": 680367,
+            "repetition_mean_ns": [
+              117166.793,
+              117924.854,
+              115513.757,
+              116374.979,
+              115142.356
+            ],
+            "repetition_mean_stddev_ns": 1148.6796104622506,
+            "repetition_mean_range_ns": [
+              115142.356,
+              117924.854
+            ],
+            "repetition_p50_ns": [
+              107212,
+              107421,
+              107501,
+              108422,
+              106851
+            ],
+            "batches_per_second": 8586.219772565326,
+            "logical_requests_per_second": 274759.03272209043,
+            "service_calls_per_second": 274759.03272209043
+          },
+          "cpp": {
+            "samples": 5000,
+            "p50_ns": 129564,
+            "p95_ns": 187521,
+            "p99_ns": 298376,
+            "statistics_version": 1,
+            "mean_ns": 141110.1416,
+            "stddev_ns": 78807.87381969612,
+            "min_ns": 122104,
+            "max_ns": 4253834,
+            "repetition_mean_ns": [
+              136703.841,
+              141673.164,
+              149814.554,
+              138114.856,
+              139244.293
+            ],
+            "repetition_mean_stddev_ns": 5195.007248633667,
+            "repetition_mean_range_ns": [
+              136703.841,
+              149814.554
+            ],
+            "repetition_p50_ns": [
+              127581,
+              129224,
+              130946,
+              129954,
+              129434
+            ],
+            "batches_per_second": 7085.080668326647,
+            "logical_requests_per_second": 226722.58138645272,
+            "service_calls_per_second": 226722.58138645272
+          },
+          "portable-baseline": {
+            "samples": 5000,
+            "p50_ns": 109485,
+            "p95_ns": 169374,
+            "p99_ns": 267371,
+            "statistics_version": 1,
+            "mean_ns": 120875.8206,
+            "stddev_ns": 55761.21724403192,
+            "min_ns": 105388,
+            "max_ns": 2077677,
+            "repetition_mean_ns": [
+              119667.712,
+              127924.459,
+              120935.965,
+              120534.963,
+              115316.004
+            ],
+            "repetition_mean_stddev_ns": 4532.499077807773,
+            "repetition_mean_range_ns": [
+              115316.004,
+              127924.459
+            ],
+            "repetition_p50_ns": [
+              109354,
+              109354,
+              109574,
+              109844,
+              109204
+            ],
+            "batches_per_second": 8270.009580524918,
+            "logical_requests_per_second": 264640.3065767974,
+            "service_calls_per_second": 264640.3065767974
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 1.2419200037003204,
+        "portable_over_before": 0.9809562953829292,
+        "portable_mean_over_before": 0.9631748286968816,
+        "paired_repetition_ratio_median": 0.9810812784054611,
+        "faster_than_before_repetitions": 5,
+        "meets_mean_target": false,
+        "meets_both_targets": false,
+        "meets_target": false,
+        "before_meets_current_reference": false
+      },
+      {
+        "case": "deep-32-concurrent-32",
+        "variants": {
+          "legacy": {
+            "samples": 5000,
+            "p50_ns": 219518,
+            "p95_ns": 365459,
+            "p99_ns": 414673,
+            "statistics_version": 1,
+            "mean_ns": 246459.652,
+            "stddev_ns": 74117.94378746048,
+            "min_ns": 208843,
+            "max_ns": 3459298,
+            "repetition_mean_ns": [
+              226866.993,
+              222924.301,
+              325405.938,
+              231517.51,
+              225583.518
+            ],
+            "repetition_mean_stddev_ns": 44241.8966730389,
+            "repetition_mean_range_ns": [
+              222924.301,
+              325405.938
+            ],
+            "repetition_p50_ns": [
+              216585,
+              215394,
+              345850,
+              220579,
+              218418
+            ],
+            "batches_per_second": 4056.58689810687,
+            "logical_requests_per_second": 129810.78073941985,
+            "service_calls_per_second": 129810.78073941985
+          },
+          "portable": {
+            "samples": 5000,
+            "p50_ns": 244677,
+            "p95_ns": 328271,
+            "p99_ns": 440061,
+            "statistics_version": 1,
+            "mean_ns": 260339.3142,
+            "stddev_ns": 41180.25879592767,
+            "min_ns": 235933,
+            "max_ns": 861785,
+            "repetition_mean_ns": [
+              254385.251,
+              259241.629,
+              269060.444,
+              262631.372,
+              256377.875
+            ],
+            "repetition_mean_stddev_ns": 5780.579898898101,
+            "repetition_mean_range_ns": [
+              254385.251,
+              269060.444
+            ],
+            "repetition_p50_ns": [
+              242505,
+              243115,
+              249745,
+              247119,
+              244677
+            ],
+            "batches_per_second": 3840.2891013875656,
+            "logical_requests_per_second": 122889.2512444021,
+            "service_calls_per_second": 122889.2512444021
+          },
+          "cpp": {
+            "samples": 5000,
+            "p50_ns": 258948,
+            "p95_ns": 401040,
+            "p99_ns": 478428,
+            "statistics_version": 1,
+            "mean_ns": 284475.2886,
+            "stddev_ns": 102883.04086704533,
+            "min_ns": 244537,
+            "max_ns": 3574326,
+            "repetition_mean_ns": [
+              269556.886,
+              270666.185,
+              282850.934,
+              327710.011,
+              271592.427
+            ],
+            "repetition_mean_stddev_ns": 24754.2822065576,
+            "repetition_mean_range_ns": [
+              269556.886,
+              327710.011
+            ],
+            "repetition_p50_ns": [
+              255945,
+              256305,
+              258697,
+              285377,
+              255954
+            ],
+            "batches_per_second": 3514.588536857392,
+            "logical_requests_per_second": 112466.83317943654,
+            "service_calls_per_second": 112466.83317943654
+          },
+          "portable-baseline": {
+            "samples": 5000,
+            "p50_ns": 246609,
+            "p95_ns": 348501,
+            "p99_ns": 464374,
+            "statistics_version": 1,
+            "mean_ns": 265601.8378,
+            "stddev_ns": 93098.16670368223,
+            "min_ns": 236225,
+            "max_ns": 3759681,
+            "repetition_mean_ns": [
+              257290.529,
+              269998.626,
+              269126.85,
+              275045.945,
+              256547.239
+            ],
+            "repetition_mean_stddev_ns": 8246.396662919182,
+            "repetition_mean_range_ns": [
+              256547.239,
+              275045.945
+            ],
+            "repetition_p50_ns": [
+              244107,
+              243996,
+              249292,
+              249052,
+              244457
+            ],
+            "batches_per_second": 3764.269710310205,
+            "logical_requests_per_second": 120456.63072992656,
+            "service_calls_per_second": 120456.63072992656
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 1.1146101914193824,
+        "portable_over_before": 0.9921657360436967,
+        "portable_mean_over_before": 0.9801864187251494,
+        "paired_repetition_ratio_median": 0.996389285070247,
+        "faster_than_before_repetitions": 3,
+        "meets_mean_target": false,
+        "meets_both_targets": false,
+        "meets_target": false,
+        "before_meets_current_reference": false
+      },
+      {
+        "case": "services-4-deep-16",
+        "variants": {
+          "legacy": {
+            "samples": 5000,
+            "p50_ns": 135873,
+            "p95_ns": 251728,
+            "p99_ns": 407121,
+            "statistics_version": 1,
+            "mean_ns": 151873.6802,
+            "stddev_ns": 86430.81270679433,
+            "min_ns": 102533,
+            "max_ns": 3584386,
+            "repetition_mean_ns": [
+              127068.158,
+              167667.848,
+              149223.217,
+              160224.231,
+              155184.947
+            ],
+            "repetition_mean_stddev_ns": 15431.224917095587,
+            "repetition_mean_range_ns": [
+              127068.158,
+              167667.848
+            ],
+            "repetition_p50_ns": [
+              109405,
+              153941,
+              125729,
+              138597,
+              137646
+            ],
+            "batches_per_second": 6582.347367360879,
+            "logical_requests_per_second": 6582.347367360879,
+            "service_calls_per_second": 26329.389469443515
+          },
+          "portable": {
+            "samples": 5000,
+            "p50_ns": 140992,
+            "p95_ns": 254381,
+            "p99_ns": 441345,
+            "statistics_version": 1,
+            "mean_ns": 161250.4368,
+            "stddev_ns": 98766.53837862227,
+            "min_ns": 104827,
+            "max_ns": 3610144,
+            "repetition_mean_ns": [
+              166081.515,
+              151930.036,
+              161230.806,
+              145773.22,
+              181236.607
+            ],
+            "repetition_mean_stddev_ns": 13685.766439562625,
+            "repetition_mean_range_ns": [
+              145773.22,
+              181236.607
+            ],
+            "repetition_p50_ns": [
+              153812,
+              132429,
+              131397,
+              132968,
+              159198
+            ],
+            "batches_per_second": 6199.709698593363,
+            "logical_requests_per_second": 6199.709698593363,
+            "service_calls_per_second": 24798.838794373452
+          },
+          "cpp": {
+            "samples": 5000,
+            "p50_ns": 136704,
+            "p95_ns": 252568,
+            "p99_ns": 414059,
+            "statistics_version": 1,
+            "mean_ns": 154438.135,
+            "stddev_ns": 105609.25779138031,
+            "min_ns": 98648,
+            "max_ns": 3287529,
+            "repetition_mean_ns": [
+              179479.763,
+              134584.592,
+              147238.997,
+              152656.769,
+              158230.554
+            ],
+            "repetition_mean_stddev_ns": 16512.340818186516,
+            "repetition_mean_range_ns": [
+              134584.592,
+              179479.763
+            ],
+            "repetition_p50_ns": [
+              143707,
+              118969,
+              138278,
+              128873,
+              145257
+            ],
+            "batches_per_second": 6473.27489492933,
+            "logical_requests_per_second": 6473.27489492933,
+            "service_calls_per_second": 25893.09957971732
+          },
+          "portable-baseline": {
+            "samples": 5000,
+            "p50_ns": 162604,
+            "p95_ns": 316856,
+            "p99_ns": 531180,
+            "statistics_version": 1,
+            "mean_ns": 186012.3998,
+            "stddev_ns": 112898.72090944236,
+            "min_ns": 104326,
+            "max_ns": 2768406,
+            "repetition_mean_ns": [
+              205640.861,
+              152852.68,
+              187616.943,
+              231888.483,
+              152063.032
+            ],
+            "repetition_mean_stddev_ns": 34440.50177105468,
+            "repetition_mean_range_ns": [
+              152063.032,
+              231888.483
+            ],
+            "repetition_p50_ns": [
+              178679,
+              142094,
+              166220,
+              174180,
+              140260
+            ],
+            "batches_per_second": 5374.286722382134,
+            "logical_requests_per_second": 5374.286722382134,
+            "service_calls_per_second": 21497.146889528536
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 1.037674887578842,
+        "portable_over_before": 0.8670881405131485,
+        "portable_mean_over_before": 0.8668800411874477,
+        "paired_repetition_ratio_median": 0.8608286368291741,
+        "faster_than_before_repetitions": 4,
+        "meets_mean_target": false,
+        "meets_both_targets": false,
+        "meets_target": false,
+        "before_meets_current_reference": false
+      },
+      {
+        "case": "services-4-deep-16-concurrent-32",
+        "variants": {
+          "legacy": {
+            "samples": 5000,
+            "p50_ns": 1124179,
+            "p95_ns": 1632415,
+            "p99_ns": 2567351,
+            "statistics_version": 1,
+            "mean_ns": 1206472.8014,
+            "stddev_ns": 318103.45886785747,
+            "min_ns": 940762,
+            "max_ns": 6761509,
+            "repetition_mean_ns": [
+              1129402.168,
+              1174236.155,
+              1428709.614,
+              1143521.671,
+              1156494.399
+            ],
+            "repetition_mean_stddev_ns": 125328.5385531738,
+            "repetition_mean_range_ns": [
+              1129402.168,
+              1428709.614
+            ],
+            "repetition_p50_ns": [
+              1094628,
+              1113585,
+              1285752,
+              1093271,
+              1126090
+            ],
+            "batches_per_second": 828.8212393470877,
+            "logical_requests_per_second": 26522.279659106807,
+            "service_calls_per_second": 106089.11863642723
+          },
+          "portable": {
+            "samples": 5000,
+            "p50_ns": 993019,
+            "p95_ns": 1278315,
+            "p99_ns": 1616395,
+            "statistics_version": 1,
+            "mean_ns": 1024304.7542,
+            "stddev_ns": 295835.5484626197,
+            "min_ns": 703075,
+            "max_ns": 12673049,
+            "repetition_mean_ns": [
+              980477.971,
+              1006297.967,
+              1080198.679,
+              1001577.079,
+              1052972.075
+            ],
+            "repetition_mean_stddev_ns": 40949.7394445946,
+            "repetition_mean_range_ns": [
+              980477.971,
+              1080198.679
+            ],
+            "repetition_p50_ns": [
+              942469,
+              966570,
+              1060309,
+              990497,
+              989594
+            ],
+            "batches_per_second": 976.2131697438725,
+            "logical_requests_per_second": 31238.82143180392,
+            "service_calls_per_second": 124955.28572721568
+          },
+          "cpp": {
+            "samples": 5000,
+            "p50_ns": 1147484,
+            "p95_ns": 1468600,
+            "p99_ns": 2397041,
+            "statistics_version": 1,
+            "mean_ns": 1208669.5046,
+            "stddev_ns": 317347.1074328304,
+            "min_ns": 993556,
+            "max_ns": 7895331,
+            "repetition_mean_ns": [
+              1142642.018,
+              1307079.126,
+              1215347.057,
+              1201819.011,
+              1176460.311
+            ],
+            "repetition_mean_stddev_ns": 61589.43434507494,
+            "repetition_mean_range_ns": [
+              1142642.018,
+              1307079.126
+            ],
+            "repetition_p50_ns": [
+              1117973,
+              1160055,
+              1164189,
+              1160642,
+              1138816
+            ],
+            "batches_per_second": 827.3024449422372,
+            "logical_requests_per_second": 26473.67823815159,
+            "service_calls_per_second": 105894.71295260637
+          },
+          "portable-baseline": {
+            "samples": 5000,
+            "p50_ns": 1043169,
+            "p95_ns": 1417400,
+            "p99_ns": 2746274,
+            "statistics_version": 1,
+            "mean_ns": 1093937.8072,
+            "stddev_ns": 378181.97504633246,
+            "min_ns": 709162,
+            "max_ns": 12953435,
+            "repetition_mean_ns": [
+              1049515.595,
+              1185301.919,
+              1125318.851,
+              1055893.426,
+              1053659.245
+            ],
+            "repetition_mean_stddev_ns": 59948.39715437024,
+            "repetition_mean_range_ns": [
+              1049515.595,
+              1185301.919
+            ],
+            "repetition_p50_ns": [
+              1043017,
+              1080505,
+              1075926,
+              1008514,
+              1013387
+            ],
+            "batches_per_second": 914.0685179000567,
+            "logical_requests_per_second": 29250.192572801814,
+            "service_calls_per_second": 117000.77029120726
+          }
+        },
+        "faster_reference": "legacy",
+        "portable_over_faster_reference": 0.8833281888382544,
+        "portable_over_before": 0.9519253352045546,
+        "portable_mean_over_before": 0.9363464243198341,
+        "paired_repetition_ratio_median": 0.9765213092332939,
+        "faster_than_before_repetitions": 5,
+        "meets_mean_target": true,
+        "meets_both_targets": true,
+        "meets_target": true,
+        "before_meets_current_reference": true
+      },
+      {
+        "case": "services-4-deep-16-clients-8",
+        "variants": {
+          "legacy": {
+            "samples": 5000,
+            "p50_ns": 1127774,
+            "p95_ns": 1451852,
+            "p99_ns": 2282390,
+            "statistics_version": 1,
+            "mean_ns": 1183671.3274,
+            "stddev_ns": 268429.40314136446,
+            "min_ns": 808931,
+            "max_ns": 6280796,
+            "repetition_mean_ns": [
+              1107127.705,
+              1294638.261,
+              1187927.593,
+              1205085.772,
+              1123577.306
+            ],
+            "repetition_mean_stddev_ns": 74599.88626852662,
+            "repetition_mean_range_ns": [
+              1107127.705,
+              1294638.261
+            ],
+            "repetition_p50_ns": [
+              1084259,
+              1180915,
+              1145561,
+              1153236,
+              1100788
+            ],
+            "batches_per_second": 844.7891673774508,
+            "logical_requests_per_second": 27033.253356078425,
+            "service_calls_per_second": 108133.0134243137
+          },
+          "portable": {
+            "samples": 5000,
+            "p50_ns": 1025446,
+            "p95_ns": 1468399,
+            "p99_ns": 3092766,
+            "statistics_version": 1,
+            "mean_ns": 1114305.6636,
+            "stddev_ns": 651320.914063106,
+            "min_ns": 716636,
+            "max_ns": 36553986,
+            "repetition_mean_ns": [
+              1016357.97,
+              1061726.109,
+              1048704.454,
+              1328965.898,
+              1115773.887
+            ],
+            "repetition_mean_stddev_ns": 125242.81502055546,
+            "repetition_mean_range_ns": [
+              1016357.97,
+              1328965.898
+            ],
+            "repetition_p50_ns": [
+              964490,
+              1026086,
+              1006452,
+              1166150,
+              1051740
+            ],
+            "batches_per_second": 897.3651919845876,
+            "logical_requests_per_second": 28715.686143506802,
+            "service_calls_per_second": 114862.74457402721
+          },
+          "cpp": {
+            "samples": 5000,
+            "p50_ns": 1101453,
+            "p95_ns": 1478062,
+            "p99_ns": 2573040,
+            "statistics_version": 1,
+            "mean_ns": 1142959.1458,
+            "stddev_ns": 319289.72076302476,
+            "min_ns": 694862,
+            "max_ns": 6818183,
+            "repetition_mean_ns": [
+              1071576.168,
+              1237741.055,
+              1144312.797,
+              1089405.211,
+              1171760.498
+            ],
+            "repetition_mean_stddev_ns": 66668.0471138061,
+            "repetition_mean_range_ns": [
+              1071576.168,
+              1237741.055
+            ],
+            "repetition_p50_ns": [
+              1082007,
+              1117993,
+              1115472,
+              1086601,
+              1122274
+            ],
+            "batches_per_second": 874.8518206605979,
+            "logical_requests_per_second": 27995.258261139134,
+            "service_calls_per_second": 111981.03304455653
+          },
+          "portable-baseline": {
+            "samples": 5000,
+            "p50_ns": 1006696,
+            "p95_ns": 1336098,
+            "p99_ns": 1788273,
+            "statistics_version": 1,
+            "mean_ns": 1053885.5706,
+            "stddev_ns": 360186.76397328667,
+            "min_ns": 697786,
+            "max_ns": 17710811,
+            "repetition_mean_ns": [
+              1064153.418,
+              1101604.887,
+              1042034.196,
+              1016255.632,
+              1045379.72
+            ],
+            "repetition_mean_stddev_ns": 31667.722926079736,
+            "repetition_mean_range_ns": [
+              1016255.632,
+              1101604.887
+            ],
+            "repetition_p50_ns": [
+              990461,
+              1049528,
+              1011546,
+              984343,
+              1004236
+            ],
+            "batches_per_second": 948.8210994145117,
+            "logical_requests_per_second": 30362.275181264373,
+            "service_calls_per_second": 121449.10072505749
+          }
+        },
+        "faster_reference": "cpp",
+        "portable_over_faster_reference": 0.9309938780864913,
+        "portable_over_before": 1.0186252850910305,
+        "portable_mean_over_before": 1.0573307906337512,
+        "paired_repetition_ratio_median": 0.9949641439934516,
+        "faster_than_before_repetitions": 3,
+        "meets_mean_target": true,
+        "meets_both_targets": true,
+        "meets_target": true,
+        "before_meets_current_reference": true
+      },
+      {
+        "case": "services-8-deep-16-clients-8",
+        "variants": {
+          "legacy": {
+            "samples": 5000,
+            "p50_ns": 2495666,
+            "p95_ns": 3525778,
+            "p99_ns": 4911982,
+            "statistics_version": 1,
+            "mean_ns": 2637355.0032,
+            "stddev_ns": 510428.5263949239,
+            "min_ns": 1565109,
+            "max_ns": 9682284,
+            "repetition_mean_ns": [
+              2516070.26,
+              2953223.774,
+              2597510,
+              2469260.042,
+              2650710.94
+            ],
+            "repetition_mean_stddev_ns": 190069.0602178825,
+            "repetition_mean_range_ns": [
+              2469260.042,
+              2953223.774
+            ],
+            "repetition_p50_ns": [
+              2413494,
+              2657704,
+              2493342,
+              2424987,
+              2575321
+            ],
+            "batches_per_second": 379.15713756878694,
+            "logical_requests_per_second": 12133.028402201182,
+            "service_calls_per_second": 97064.22721760946
+          },
+          "portable": {
+            "samples": 5000,
+            "p50_ns": 2068030,
+            "p95_ns": 2670375,
+            "p99_ns": 3853779,
+            "statistics_version": 1,
+            "mean_ns": 2115616.8208,
+            "stddev_ns": 639871.4164540076,
+            "min_ns": 1389889,
+            "max_ns": 31084207,
+            "repetition_mean_ns": [
+              2122453.365,
+              2222853.302,
+              2097934.959,
+              1917379.058,
+              2217463.42
+            ],
+            "repetition_mean_stddev_ns": 124026.19667032581,
+            "repetition_mean_range_ns": [
+              1917379.058,
+              2222853.302
+            ],
+            "repetition_p50_ns": [
+              2059248,
+              2165946,
+              2067905,
+              1868354,
+              2191284
+            ],
+            "batches_per_second": 472.65807216518203,
+            "logical_requests_per_second": 15125.058309285825,
+            "service_calls_per_second": 121000.4664742866
+          },
+          "cpp": {
+            "samples": 5000,
+            "p50_ns": 2378156,
+            "p95_ns": 3263856,
+            "p99_ns": 5252491,
+            "statistics_version": 1,
+            "mean_ns": 2423646.6536,
+            "stddev_ns": 695120.2218705644,
+            "min_ns": 1346611,
+            "max_ns": 19680832,
+            "repetition_mean_ns": [
+              2316453.88,
+              2849047.455,
+              2304939.731,
+              2276070.147,
+              2371722.055
+            ],
+            "repetition_mean_stddev_ns": 240323.97677771174,
+            "repetition_mean_range_ns": [
+              2276070.147,
+              2849047.455
+            ],
+            "repetition_p50_ns": [
+              2345550,
+              2587747,
+              2327486,
+              2338839,
+              2422192
+            ],
+            "batches_per_second": 412.5831165036803,
+            "logical_requests_per_second": 13202.65972811777,
+            "service_calls_per_second": 105621.27782494215
+          },
+          "portable-baseline": {
+            "samples": 5000,
+            "p50_ns": 2003157,
+            "p95_ns": 2581509,
+            "p99_ns": 3901343,
+            "statistics_version": 1,
+            "mean_ns": 2054493.4578,
+            "stddev_ns": 476759.0689114615,
+            "min_ns": 1399855,
+            "max_ns": 11012913,
+            "repetition_mean_ns": [
+              2077046.783,
+              2067833.769,
+              2038672.065,
+              2016143.262,
+              2072771.41
+            ],
+            "repetition_mean_stddev_ns": 26180.87997540147,
+            "repetition_mean_range_ns": [
+              2016143.262,
+              2077046.783
+            ],
+            "repetition_p50_ns": [
+              1959369,
+              1989320,
+              2020903,
+              1971198,
+              2062212
+            ],
+            "batches_per_second": 486.7222496402059,
+            "logical_requests_per_second": 15575.11198848659,
+            "service_calls_per_second": 124600.89590789271
+          }
+        },
+        "faster_reference": "cpp",
+        "portable_over_faster_reference": 0.869593920667946,
+        "portable_over_before": 1.032385379678178,
+        "portable_mean_over_before": 1.029751062369141,
+        "paired_repetition_ratio_median": 1.0509750843256171,
+        "faster_than_before_repetitions": 1,
+        "meets_mean_target": true,
+        "meets_both_targets": true,
+        "meets_target": true,
+        "before_meets_current_reference": true
+      }
+    ],
+    "target_passes": 7,
+    "before_passes_against_same_reference": 7,
+    "total_cells": 24,
+    "mixed_checks": 240,
+    "verified": [
+      {
+        "campaign": "/workspace/scratch/portable41-occupancy-original20261018",
+        "repetitions": 5,
+        "samples": 320000,
+        "order": "verified rotation/reversal, not exactly balanced"
+      },
+      {
+        "campaign": "/workspace/scratch/portable41-occupancy-topology20261018",
+        "repetitions": 5,
+        "samples": 160000,
+        "order": "verified rotation/reversal, not exactly balanced"
+      }
+    ],
+    "mean_target_passes": 6,
+    "mean_and_median_passes": 4,
+    "five_percent_faster_passes": 4
+  },
+  "counts": {
+    "socket": {
+      "captures": 64,
+      "positive_passes": 45,
+      "attempts_passes": 45,
+      "rows": [
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "unary-empty",
+          "peer": "client",
+          "portable": {
+            "read_positive": 111,
+            "write_positive": 111,
+            "read_attempts": 221,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 111,
+            "write_positive": 111,
+            "read_attempts": 222,
+            "write_attempts": 111
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "unary-empty",
+          "peer": "server",
+          "portable": {
+            "read_positive": 111,
+            "write_positive": 111,
+            "read_attempts": 223,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 111,
+            "write_positive": 112,
+            "read_attempts": 224,
+            "write_attempts": 112
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "unary-small",
+          "peer": "client",
+          "portable": {
+            "read_positive": 111,
+            "write_positive": 111,
+            "read_attempts": 221,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 111,
+            "write_positive": 111,
+            "read_attempts": 222,
+            "write_attempts": 111
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "unary-small",
+          "peer": "server",
+          "portable": {
+            "read_positive": 111,
+            "write_positive": 111,
+            "read_attempts": 223,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 111,
+            "write_positive": 112,
+            "read_attempts": 224,
+            "write_attempts": 112
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "unary-1k",
+          "peer": "client",
+          "portable": {
+            "read_positive": 111,
+            "write_positive": 111,
+            "read_attempts": 221,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 111,
+            "write_positive": 111,
+            "read_attempts": 222,
+            "write_attempts": 111
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "unary-1k",
+          "peer": "server",
+          "portable": {
+            "read_positive": 111,
+            "write_positive": 111,
+            "read_attempts": 223,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 111,
+            "write_positive": 112,
+            "read_attempts": 224,
+            "write_attempts": 112
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "fanout-32",
+          "peer": "client",
+          "portable": {
+            "read_positive": 111,
+            "write_positive": 111,
+            "read_attempts": 221,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 111,
+            "write_positive": 111,
+            "read_attempts": 222,
+            "write_attempts": 111
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "fanout-32",
+          "peer": "server",
+          "portable": {
+            "read_positive": 111,
+            "write_positive": 111,
+            "read_attempts": 223,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 111,
+            "write_positive": 112,
+            "read_attempts": 224,
+            "write_attempts": 112
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "dependent-read",
+          "peer": "client",
+          "portable": {
+            "read_positive": 221,
+            "write_positive": 221,
+            "read_attempts": 441,
+            "write_attempts": 221
+          },
+          "cpp": {
+            "read_positive": 221,
+            "write_positive": 221,
+            "read_attempts": 442,
+            "write_attempts": 221
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "dependent-read",
+          "peer": "server",
+          "portable": {
+            "read_positive": 221,
+            "write_positive": 221,
+            "read_attempts": 443,
+            "write_attempts": 221
+          },
+          "cpp": {
+            "read_positive": 221,
+            "write_positive": 222,
+            "read_attempts": 444,
+            "write_attempts": 222
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "pipelined-read",
+          "peer": "client",
+          "portable": {
+            "read_positive": 111,
+            "write_positive": 111,
+            "read_attempts": 221,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 111,
+            "write_positive": 111,
+            "read_attempts": 223,
+            "write_attempts": 111
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "pipelined-read",
+          "peer": "server",
+          "portable": {
+            "read_positive": 111,
+            "write_positive": 111,
+            "read_attempts": 223,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 111,
+            "write_positive": 112,
+            "read_attempts": 224,
+            "write_attempts": 112
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "write-read",
+          "peer": "client",
+          "portable": {
+            "read_positive": 221,
+            "write_positive": 221,
+            "read_attempts": 441,
+            "write_attempts": 221
+          },
+          "cpp": {
+            "read_positive": 221,
+            "write_positive": 221,
+            "read_attempts": 442,
+            "write_attempts": 221
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "write-read",
+          "peer": "server",
+          "portable": {
+            "read_positive": 221,
+            "write_positive": 221,
+            "read_attempts": 443,
+            "write_attempts": 221
+          },
+          "cpp": {
+            "read_positive": 221,
+            "write_positive": 222,
+            "read_attempts": 444,
+            "write_attempts": 222
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "callback",
+          "peer": "client",
+          "portable": {
+            "read_positive": 221,
+            "write_positive": 221,
+            "read_attempts": 441,
+            "write_attempts": 221
+          },
+          "cpp": {
+            "read_positive": 221,
+            "write_positive": 221,
+            "read_attempts": 442,
+            "write_attempts": 221
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "callback",
+          "peer": "server",
+          "portable": {
+            "read_positive": 221,
+            "write_positive": 221,
+            "read_attempts": 443,
+            "write_attempts": 221
+          },
+          "cpp": {
+            "read_positive": 221,
+            "write_positive": 222,
+            "read_attempts": 444,
+            "write_attempts": 222
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "bulk-64k",
+          "peer": "client",
+          "portable": {
+            "read_positive": 113,
+            "write_positive": 111,
+            "read_attempts": 223,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 221,
+            "write_positive": 111,
+            "read_attempts": 332,
+            "write_attempts": 111
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "bulk-64k",
+          "peer": "server",
+          "portable": {
+            "read_positive": 114,
+            "write_positive": 111,
+            "read_attempts": 117,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 222,
+            "write_positive": 112,
+            "read_attempts": 335,
+            "write_attempts": 112
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "bulk-256k",
+          "peer": "client",
+          "portable": {
+            "read_positive": 313,
+            "write_positive": 112,
+            "read_attempts": 435,
+            "write_attempts": 112
+          },
+          "cpp": {
+            "read_positive": 441,
+            "write_positive": 112,
+            "read_attempts": 869,
+            "write_attempts": 112
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "bulk-256k",
+          "peer": "server",
+          "portable": {
+            "read_positive": 285,
+            "write_positive": 112,
+            "read_attempts": 398,
+            "write_attempts": 112
+          },
+          "cpp": {
+            "read_positive": 444,
+            "write_positive": 113,
+            "read_attempts": 842,
+            "write_attempts": 113
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "bulk-1m",
+          "peer": "client",
+          "portable": {
+            "read_positive": 338,
+            "write_positive": 112,
+            "read_attempts": 513,
+            "write_attempts": 112
+          },
+          "cpp": {
+            "read_positive": 1749,
+            "write_positive": 112,
+            "read_attempts": 3311,
+            "write_attempts": 112
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "bulk-1m",
+          "peer": "server",
+          "portable": {
+            "read_positive": 265,
+            "write_positive": 112,
+            "read_attempts": 447,
+            "write_attempts": 112
+          },
+          "cpp": {
+            "read_positive": 1698,
+            "write_positive": 113,
+            "read_attempts": 3128,
+            "write_attempts": 113
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "bulk-4m",
+          "peer": "client",
+          "portable": {
+            "read_positive": 974,
+            "write_positive": 111,
+            "read_attempts": 1364,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 3977,
+            "write_positive": 135,
+            "read_attempts": 6526,
+            "write_attempts": 135
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "bulk-4m",
+          "peer": "server",
+          "portable": {
+            "read_positive": 1013,
+            "write_positive": 111,
+            "read_attempts": 1358,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 1875,
+            "write_positive": 113,
+            "read_attempts": 2234,
+            "write_attempts": 113
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "loopback-0",
+          "peer": "client",
+          "portable": {
+            "read_positive": 110,
+            "write_positive": 110,
+            "read_attempts": 219,
+            "write_attempts": 110
+          },
+          "cpp": {
+            "read_positive": 110,
+            "write_positive": 110,
+            "read_attempts": 220,
+            "write_attempts": 110
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "loopback-0",
+          "peer": "server",
+          "portable": {
+            "read_positive": 110,
+            "write_positive": 110,
+            "read_attempts": 221,
+            "write_attempts": 110
+          },
+          "cpp": {
+            "read_positive": 110,
+            "write_positive": 111,
+            "read_attempts": 222,
+            "write_attempts": 111
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "loopback-64",
+          "peer": "client",
+          "portable": {
+            "read_positive": 110,
+            "write_positive": 110,
+            "read_attempts": 219,
+            "write_attempts": 110
+          },
+          "cpp": {
+            "read_positive": 110,
+            "write_positive": 110,
+            "read_attempts": 220,
+            "write_attempts": 110
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "loopback-64",
+          "peer": "server",
+          "portable": {
+            "read_positive": 110,
+            "write_positive": 110,
+            "read_attempts": 221,
+            "write_attempts": 110
+          },
+          "cpp": {
+            "read_positive": 110,
+            "write_positive": 111,
+            "read_attempts": 222,
+            "write_attempts": 111
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "loopback-1024",
+          "peer": "client",
+          "portable": {
+            "read_positive": 110,
+            "write_positive": 110,
+            "read_attempts": 219,
+            "write_attempts": 110
+          },
+          "cpp": {
+            "read_positive": 110,
+            "write_positive": 110,
+            "read_attempts": 220,
+            "write_attempts": 110
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "loopback-1024",
+          "peer": "server",
+          "portable": {
+            "read_positive": 110,
+            "write_positive": 110,
+            "read_attempts": 221,
+            "write_attempts": 110
+          },
+          "cpp": {
+            "read_positive": 110,
+            "write_positive": 111,
+            "read_attempts": 222,
+            "write_attempts": 111
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "loopback-65536",
+          "peer": "client",
+          "portable": {
+            "read_positive": 111,
+            "write_positive": 110,
+            "read_attempts": 220,
+            "write_attempts": 110
+          },
+          "cpp": {
+            "read_positive": 220,
+            "write_positive": 110,
+            "read_attempts": 330,
+            "write_attempts": 110
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "loopback-65536",
+          "peer": "server",
+          "portable": {
+            "read_positive": 113,
+            "write_positive": 110,
+            "read_attempts": 116,
+            "write_attempts": 110
+          },
+          "cpp": {
+            "read_positive": 220,
+            "write_positive": 111,
+            "read_attempts": 332,
+            "write_attempts": 111
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "deep-8",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 25,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "deep-8",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 27,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 28,
+            "write_attempts": 14
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "deep-32",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 25,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "deep-32",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 27,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 28,
+            "write_attempts": 14
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "concurrent-32",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 25,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "concurrent-32",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 27,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 28,
+            "write_attempts": 14
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "deep-32-concurrent-32",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 25,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "deep-32-concurrent-32",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 27,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 28,
+            "write_attempts": 14
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "services-4-deep-16",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 25,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "services-4-deep-16",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 26,
+            "write_positive": 27,
+            "read_attempts": 53,
+            "write_attempts": 27
+          },
+          "cpp": {
+            "read_positive": 26,
+            "write_positive": 28,
+            "read_attempts": 55,
+            "write_attempts": 28
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "services-4-deep-16",
+          "peer": "service-1",
+          "portable": {
+            "read_positive": 27,
+            "write_positive": 27,
+            "read_attempts": 55,
+            "write_attempts": 27
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 57,
+            "write_attempts": 28
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "services-4-deep-16",
+          "peer": "service-2",
+          "portable": {
+            "read_positive": 27,
+            "write_positive": 27,
+            "read_attempts": 55,
+            "write_attempts": 27
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 57,
+            "write_attempts": 28
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "services-4-deep-16",
+          "peer": "service-3",
+          "portable": {
+            "read_positive": 14,
+            "write_positive": 13,
+            "read_attempts": 29,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 14,
+            "write_positive": 14,
+            "read_attempts": 30,
+            "write_attempts": 14
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "services-4-deep-16-concurrent-32",
+          "peer": "client",
+          "portable": {
+            "read_positive": 95,
+            "write_positive": 13,
+            "read_attempts": 174,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "services-4-deep-16-concurrent-32",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 72,
+            "write_positive": 167,
+            "read_attempts": 136,
+            "write_attempts": 167
+          },
+          "cpp": {
+            "read_positive": 26,
+            "write_positive": 28,
+            "read_attempts": 55,
+            "write_attempts": 28
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "services-4-deep-16-concurrent-32",
+          "peer": "service-1",
+          "portable": {
+            "read_positive": 106,
+            "write_positive": 166,
+            "read_attempts": 176,
+            "write_attempts": 166
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 57,
+            "write_attempts": 28
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "services-4-deep-16-concurrent-32",
+          "peer": "service-2",
+          "portable": {
+            "read_positive": 80,
+            "write_positive": 149,
+            "read_attempts": 141,
+            "write_attempts": 149
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 56,
+            "write_attempts": 28
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "services-4-deep-16-concurrent-32",
+          "peer": "service-3",
+          "portable": {
+            "read_positive": 54,
+            "write_positive": 50,
+            "read_attempts": 99,
+            "write_attempts": 50
+          },
+          "cpp": {
+            "read_positive": 14,
+            "write_positive": 14,
+            "read_attempts": 30,
+            "write_attempts": 14
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "services-4-deep-16-clients-8",
+          "peer": "client",
+          "portable": {
+            "read_positive": 125,
+            "write_positive": 111,
+            "read_attempts": 244,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 104,
+            "write_positive": 111,
+            "read_attempts": 214,
+            "write_attempts": 111
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "services-4-deep-16-clients-8",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 169,
+            "write_positive": 154,
+            "read_attempts": 328,
+            "write_attempts": 154
+          },
+          "cpp": {
+            "read_positive": 132,
+            "write_positive": 138,
+            "read_attempts": 278,
+            "write_attempts": 138
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "services-4-deep-16-clients-8",
+          "peer": "service-1",
+          "portable": {
+            "read_positive": 75,
+            "write_positive": 148,
+            "read_attempts": 123,
+            "write_attempts": 148
+          },
+          "cpp": {
+            "read_positive": 47,
+            "write_positive": 47,
+            "read_attempts": 96,
+            "write_attempts": 47
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "services-4-deep-16-clients-8",
+          "peer": "service-2",
+          "portable": {
+            "read_positive": 78,
+            "write_positive": 149,
+            "read_attempts": 129,
+            "write_attempts": 149
+          },
+          "cpp": {
+            "read_positive": 47,
+            "write_positive": 46,
+            "read_attempts": 95,
+            "write_attempts": 46
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "services-4-deep-16-clients-8",
+          "peer": "service-3",
+          "portable": {
+            "read_positive": 53,
+            "write_positive": 48,
+            "read_attempts": 96,
+            "write_attempts": 48
+          },
+          "cpp": {
+            "read_positive": 24,
+            "write_positive": 23,
+            "read_attempts": 49,
+            "write_attempts": 23
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "client",
+          "portable": {
+            "read_positive": 142,
+            "write_positive": 111,
+            "read_attempts": 277,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 104,
+            "write_positive": 111,
+            "read_attempts": 213,
+            "write_attempts": 111
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 161,
+            "write_positive": 172,
+            "read_attempts": 306,
+            "write_attempts": 172
+          },
+          "cpp": {
+            "read_positive": 131,
+            "write_positive": 138,
+            "read_attempts": 276,
+            "write_attempts": 138
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-1",
+          "portable": {
+            "read_positive": 92,
+            "write_positive": 167,
+            "read_attempts": 161,
+            "write_attempts": 167
+          },
+          "cpp": {
+            "read_positive": 46,
+            "write_positive": 44,
+            "read_attempts": 92,
+            "write_attempts": 44
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-2",
+          "portable": {
+            "read_positive": 99,
+            "write_positive": 155,
+            "read_attempts": 157,
+            "write_attempts": 155
+          },
+          "cpp": {
+            "read_positive": 43,
+            "write_positive": 44,
+            "read_attempts": 88,
+            "write_attempts": 44
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-3",
+          "portable": {
+            "read_positive": 108,
+            "write_positive": 165,
+            "read_attempts": 180,
+            "write_attempts": 165
+          },
+          "cpp": {
+            "read_positive": 43,
+            "write_positive": 44,
+            "read_attempts": 89,
+            "write_attempts": 44
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-4",
+          "portable": {
+            "read_positive": 96,
+            "write_positive": 156,
+            "read_attempts": 157,
+            "write_attempts": 156
+          },
+          "cpp": {
+            "read_positive": 43,
+            "write_positive": 43,
+            "read_attempts": 87,
+            "write_attempts": 43
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-5",
+          "portable": {
+            "read_positive": 96,
+            "write_positive": 163,
+            "read_attempts": 166,
+            "write_attempts": 163
+          },
+          "cpp": {
+            "read_positive": 42,
+            "write_positive": 43,
+            "read_attempts": 87,
+            "write_attempts": 43
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-6",
+          "portable": {
+            "read_positive": 73,
+            "write_positive": 153,
+            "read_attempts": 129,
+            "write_attempts": 153
+          },
+          "cpp": {
+            "read_positive": 42,
+            "write_positive": 42,
+            "read_attempts": 86,
+            "write_attempts": 42
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-socket20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-7",
+          "portable": {
+            "read_positive": 46,
+            "write_positive": 42,
+            "read_attempts": 80,
+            "write_attempts": 42
+          },
+          "cpp": {
+            "read_positive": 21,
+            "write_positive": 21,
+            "read_attempts": 44,
+            "write_attempts": 21
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        }
+      ]
+    },
+    "wire": {
+      "captures": 64,
+      "positive_passes": 40,
+      "attempts_passes": 40,
+      "rows": [
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "unary-empty",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 25,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "unary-empty",
+          "peer": "server",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 27,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 27,
+            "write_attempts": 14
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "unary-small",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 25,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "unary-small",
+          "peer": "server",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 27,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 27,
+            "write_attempts": 14
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "unary-1k",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 25,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "unary-1k",
+          "peer": "server",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 27,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 28,
+            "write_attempts": 14
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "fanout-32",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 25,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "fanout-32",
+          "peer": "server",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 27,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 28,
+            "write_attempts": 14
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "dependent-read",
+          "peer": "client",
+          "portable": {
+            "read_positive": 25,
+            "write_positive": 25,
+            "read_attempts": 49,
+            "write_attempts": 25
+          },
+          "cpp": {
+            "read_positive": 25,
+            "write_positive": 25,
+            "read_attempts": 50,
+            "write_attempts": 25
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "dependent-read",
+          "peer": "server",
+          "portable": {
+            "read_positive": 25,
+            "write_positive": 25,
+            "read_attempts": 51,
+            "write_attempts": 25
+          },
+          "cpp": {
+            "read_positive": 25,
+            "write_positive": 26,
+            "read_attempts": 51,
+            "write_attempts": 26
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "pipelined-read",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 25,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 27,
+            "write_attempts": 13
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "pipelined-read",
+          "peer": "server",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 27,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 28,
+            "write_attempts": 14
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "write-read",
+          "peer": "client",
+          "portable": {
+            "read_positive": 25,
+            "write_positive": 25,
+            "read_attempts": 49,
+            "write_attempts": 25
+          },
+          "cpp": {
+            "read_positive": 25,
+            "write_positive": 25,
+            "read_attempts": 50,
+            "write_attempts": 25
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "write-read",
+          "peer": "server",
+          "portable": {
+            "read_positive": 25,
+            "write_positive": 25,
+            "read_attempts": 51,
+            "write_attempts": 25
+          },
+          "cpp": {
+            "read_positive": 25,
+            "write_positive": 26,
+            "read_attempts": 52,
+            "write_attempts": 26
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "callback",
+          "peer": "client",
+          "portable": {
+            "read_positive": 25,
+            "write_positive": 25,
+            "read_attempts": 49,
+            "write_attempts": 25
+          },
+          "cpp": {
+            "read_positive": 25,
+            "write_positive": 25,
+            "read_attempts": 50,
+            "write_attempts": 25
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "callback",
+          "peer": "server",
+          "portable": {
+            "read_positive": 25,
+            "write_positive": 25,
+            "read_attempts": 51,
+            "write_attempts": 25
+          },
+          "cpp": {
+            "read_positive": 25,
+            "write_positive": 26,
+            "read_attempts": 51,
+            "write_attempts": 26
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "bulk-64k",
+          "peer": "client",
+          "portable": {
+            "read_positive": 14,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 25,
+            "write_positive": 13,
+            "read_attempts": 38,
+            "write_attempts": 13
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "bulk-64k",
+          "peer": "server",
+          "portable": {
+            "read_positive": 15,
+            "write_positive": 13,
+            "read_attempts": 18,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 26,
+            "write_positive": 14,
+            "read_attempts": 41,
+            "write_attempts": 14
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "bulk-256k",
+          "peer": "client",
+          "portable": {
+            "read_positive": 27,
+            "write_positive": 14,
+            "read_attempts": 40,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 26,
+            "write_positive": 13,
+            "read_attempts": 39,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "bulk-256k",
+          "peer": "server",
+          "portable": {
+            "read_positive": 29,
+            "write_positive": 14,
+            "read_attempts": 43,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 14,
+            "read_attempts": 42,
+            "write_attempts": 14
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "bulk-1m",
+          "peer": "client",
+          "portable": {
+            "read_positive": 27,
+            "write_positive": 14,
+            "read_attempts": 40,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 13,
+            "read_attempts": 40,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "bulk-1m",
+          "peer": "server",
+          "portable": {
+            "read_positive": 29,
+            "write_positive": 14,
+            "read_attempts": 43,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 14,
+            "read_attempts": 42,
+            "write_attempts": 14
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "bulk-4m",
+          "peer": "client",
+          "portable": {
+            "read_positive": 42,
+            "write_positive": 13,
+            "read_attempts": 54,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 38,
+            "write_positive": 13,
+            "read_attempts": 51,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "bulk-4m",
+          "peer": "server",
+          "portable": {
+            "read_positive": 41,
+            "write_positive": 13,
+            "read_attempts": 55,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 52,
+            "write_positive": 14,
+            "read_attempts": 67,
+            "write_attempts": 14
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "loopback-0",
+          "peer": "client",
+          "portable": {
+            "read_positive": 12,
+            "write_positive": 12,
+            "read_attempts": 23,
+            "write_attempts": 12
+          },
+          "cpp": {
+            "read_positive": 12,
+            "write_positive": 12,
+            "read_attempts": 24,
+            "write_attempts": 12
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "loopback-0",
+          "peer": "server",
+          "portable": {
+            "read_positive": 12,
+            "write_positive": 12,
+            "read_attempts": 25,
+            "write_attempts": 12
+          },
+          "cpp": {
+            "read_positive": 12,
+            "write_positive": 13,
+            "read_attempts": 25,
+            "write_attempts": 13
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "loopback-64",
+          "peer": "client",
+          "portable": {
+            "read_positive": 12,
+            "write_positive": 12,
+            "read_attempts": 23,
+            "write_attempts": 12
+          },
+          "cpp": {
+            "read_positive": 12,
+            "write_positive": 12,
+            "read_attempts": 24,
+            "write_attempts": 12
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "loopback-64",
+          "peer": "server",
+          "portable": {
+            "read_positive": 12,
+            "write_positive": 12,
+            "read_attempts": 25,
+            "write_attempts": 12
+          },
+          "cpp": {
+            "read_positive": 12,
+            "write_positive": 13,
+            "read_attempts": 25,
+            "write_attempts": 13
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "loopback-1024",
+          "peer": "client",
+          "portable": {
+            "read_positive": 12,
+            "write_positive": 12,
+            "read_attempts": 23,
+            "write_attempts": 12
+          },
+          "cpp": {
+            "read_positive": 12,
+            "write_positive": 12,
+            "read_attempts": 24,
+            "write_attempts": 12
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "loopback-1024",
+          "peer": "server",
+          "portable": {
+            "read_positive": 12,
+            "write_positive": 12,
+            "read_attempts": 25,
+            "write_attempts": 12
+          },
+          "cpp": {
+            "read_positive": 12,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "loopback-65536",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 12,
+            "read_attempts": 24,
+            "write_attempts": 12
+          },
+          "cpp": {
+            "read_positive": 24,
+            "write_positive": 12,
+            "read_attempts": 36,
+            "write_attempts": 12
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-diagnostics20261018",
+          "case": "loopback-65536",
+          "peer": "server",
+          "portable": {
+            "read_positive": 14,
+            "write_positive": 12,
+            "read_attempts": 17,
+            "write_attempts": 12
+          },
+          "cpp": {
+            "read_positive": 24,
+            "write_positive": 13,
+            "read_attempts": 38,
+            "write_attempts": 13
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "deep-8",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 25,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "deep-8",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 27,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 28,
+            "write_attempts": 14
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "deep-32",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 25,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "deep-32",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 27,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 28,
+            "write_attempts": 14
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "concurrent-32",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 25,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "concurrent-32",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 27,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 28,
+            "write_attempts": 14
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "deep-32-concurrent-32",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 25,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "deep-32-concurrent-32",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 27,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 28,
+            "write_attempts": 14
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "services-4-deep-16",
+          "peer": "client",
+          "portable": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 25,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "services-4-deep-16",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 26,
+            "write_positive": 27,
+            "read_attempts": 53,
+            "write_attempts": 27
+          },
+          "cpp": {
+            "read_positive": 26,
+            "write_positive": 28,
+            "read_attempts": 55,
+            "write_attempts": 28
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "services-4-deep-16",
+          "peer": "service-1",
+          "portable": {
+            "read_positive": 27,
+            "write_positive": 27,
+            "read_attempts": 55,
+            "write_attempts": 27
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 57,
+            "write_attempts": 28
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "services-4-deep-16",
+          "peer": "service-2",
+          "portable": {
+            "read_positive": 27,
+            "write_positive": 27,
+            "read_attempts": 55,
+            "write_attempts": 27
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 57,
+            "write_attempts": 28
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "services-4-deep-16",
+          "peer": "service-3",
+          "portable": {
+            "read_positive": 14,
+            "write_positive": 13,
+            "read_attempts": 29,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 14,
+            "write_positive": 14,
+            "read_attempts": 30,
+            "write_attempts": 14
+          },
+          "positive_pass": true,
+          "attempts_pass": true
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "services-4-deep-16-concurrent-32",
+          "peer": "client",
+          "portable": {
+            "read_positive": 107,
+            "write_positive": 13,
+            "read_attempts": 186,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "services-4-deep-16-concurrent-32",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 108,
+            "write_positive": 169,
+            "read_attempts": 180,
+            "write_attempts": 169
+          },
+          "cpp": {
+            "read_positive": 26,
+            "write_positive": 28,
+            "read_attempts": 55,
+            "write_attempts": 28
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "services-4-deep-16-concurrent-32",
+          "peer": "service-1",
+          "portable": {
+            "read_positive": 119,
+            "write_positive": 163,
+            "read_attempts": 182,
+            "write_attempts": 163
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 57,
+            "write_attempts": 28
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "services-4-deep-16-concurrent-32",
+          "peer": "service-2",
+          "portable": {
+            "read_positive": 91,
+            "write_positive": 160,
+            "read_attempts": 158,
+            "write_attempts": 160
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 57,
+            "write_attempts": 28
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "services-4-deep-16-concurrent-32",
+          "peer": "service-3",
+          "portable": {
+            "read_positive": 60,
+            "write_positive": 56,
+            "read_attempts": 104,
+            "write_attempts": 56
+          },
+          "cpp": {
+            "read_positive": 14,
+            "write_positive": 14,
+            "read_attempts": 30,
+            "write_attempts": 14
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "services-4-deep-16-clients-8",
+          "peer": "client",
+          "portable": {
+            "read_positive": 136,
+            "write_positive": 111,
+            "read_attempts": 271,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 104,
+            "write_positive": 111,
+            "read_attempts": 214,
+            "write_attempts": 111
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "services-4-deep-16-clients-8",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 211,
+            "write_positive": 180,
+            "read_attempts": 400,
+            "write_attempts": 180
+          },
+          "cpp": {
+            "read_positive": 146,
+            "write_positive": 151,
+            "read_attempts": 305,
+            "write_attempts": 151
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "services-4-deep-16-clients-8",
+          "peer": "service-1",
+          "portable": {
+            "read_positive": 126,
+            "write_positive": 192,
+            "read_attempts": 223,
+            "write_attempts": 192
+          },
+          "cpp": {
+            "read_positive": 73,
+            "write_positive": 73,
+            "read_attempts": 148,
+            "write_attempts": 73
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "services-4-deep-16-clients-8",
+          "peer": "service-2",
+          "portable": {
+            "read_positive": 119,
+            "write_positive": 176,
+            "read_attempts": 213,
+            "write_attempts": 176
+          },
+          "cpp": {
+            "read_positive": 72,
+            "write_positive": 73,
+            "read_attempts": 147,
+            "write_attempts": 73
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "services-4-deep-16-clients-8",
+          "peer": "service-3",
+          "portable": {
+            "read_positive": 66,
+            "write_positive": 64,
+            "read_attempts": 116,
+            "write_attempts": 64
+          },
+          "cpp": {
+            "read_positive": 37,
+            "write_positive": 36,
+            "read_attempts": 75,
+            "write_attempts": 36
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "client",
+          "portable": {
+            "read_positive": 166,
+            "write_positive": 111,
+            "read_attempts": 330,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 104,
+            "write_positive": 111,
+            "read_attempts": 215,
+            "write_attempts": 111
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-0",
+          "portable": {
+            "read_positive": 228,
+            "write_positive": 209,
+            "read_attempts": 442,
+            "write_attempts": 209
+          },
+          "cpp": {
+            "read_positive": 148,
+            "write_positive": 153,
+            "read_attempts": 310,
+            "write_attempts": 153
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-1",
+          "portable": {
+            "read_positive": 158,
+            "write_positive": 205,
+            "read_attempts": 291,
+            "write_attempts": 205
+          },
+          "cpp": {
+            "read_positive": 78,
+            "write_positive": 79,
+            "read_attempts": 159,
+            "write_attempts": 79
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-2",
+          "portable": {
+            "read_positive": 179,
+            "write_positive": 207,
+            "read_attempts": 306,
+            "write_attempts": 207
+          },
+          "cpp": {
+            "read_positive": 78,
+            "write_positive": 79,
+            "read_attempts": 159,
+            "write_attempts": 79
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-3",
+          "portable": {
+            "read_positive": 179,
+            "write_positive": 209,
+            "read_attempts": 320,
+            "write_attempts": 209
+          },
+          "cpp": {
+            "read_positive": 78,
+            "write_positive": 79,
+            "read_attempts": 159,
+            "write_attempts": 79
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-4",
+          "portable": {
+            "read_positive": 172,
+            "write_positive": 200,
+            "read_attempts": 295,
+            "write_attempts": 200
+          },
+          "cpp": {
+            "read_positive": 78,
+            "write_positive": 78,
+            "read_attempts": 157,
+            "write_attempts": 78
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-5",
+          "portable": {
+            "read_positive": 149,
+            "write_positive": 190,
+            "read_attempts": 258,
+            "write_attempts": 190
+          },
+          "cpp": {
+            "read_positive": 76,
+            "write_positive": 77,
+            "read_attempts": 155,
+            "write_attempts": 77
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-6",
+          "portable": {
+            "read_positive": 125,
+            "write_positive": 181,
+            "read_attempts": 226,
+            "write_attempts": 181
+          },
+          "cpp": {
+            "read_positive": 76,
+            "write_positive": 77,
+            "read_attempts": 155,
+            "write_attempts": 77
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        },
+        {
+          "capture": "portable41-occupancy-topology-wire20261018",
+          "case": "services-8-deep-16-clients-8",
+          "peer": "service-7",
+          "portable": {
+            "read_positive": 68,
+            "write_positive": 65,
+            "read_attempts": 121,
+            "write_attempts": 65
+          },
+          "cpp": {
+            "read_positive": 39,
+            "write_positive": 39,
+            "read_attempts": 80,
+            "write_attempts": 39
+          },
+          "positive_pass": false,
+          "attempts_pass": false
+        }
+      ]
+    }
+  },
+  "profiles": [
+    {
+      "case": "unary-small",
+      "peer": "client",
+      "instructions": {
+        "legacy": 6451707,
+        "portable": 6492784,
+        "cpp": 8077586,
+        "portable-baseline": 6494784
+      },
+      "portable_over_before": 0.9996920605827692
+    },
+    {
+      "case": "unary-small",
+      "peer": "server",
+      "instructions": {
+        "legacy": 5939605,
+        "portable": 6007544,
+        "cpp": 8353364,
+        "portable-baseline": 6012974
+      },
+      "portable_over_before": 0.9990969526893015
+    },
+    {
+      "case": "unary-1k",
+      "peer": "client",
+      "instructions": {
+        "legacy": 6622759,
+        "portable": 6620724,
+        "cpp": 8274700,
+        "portable-baseline": 6623226
+      },
+      "portable_over_before": 0.9996222384680818
+    },
+    {
+      "case": "unary-1k",
+      "peer": "server",
+      "instructions": {
+        "legacy": 6067179,
+        "portable": 6090658,
+        "cpp": 8534930,
+        "portable-baseline": 6096101
+      },
+      "portable_over_before": 0.9991071342157881
+    },
+    {
+      "case": "fanout-32",
+      "peer": "client",
+      "instructions": {
+        "legacy": 23127266,
+        "portable": 27667256,
+        "cpp": 43869190,
+        "portable-baseline": 27681739
+      },
+      "portable_over_before": 0.9994768031011346
+    },
+    {
+      "case": "fanout-32",
+      "peer": "server",
+      "instructions": {
+        "legacy": 19820508,
+        "portable": 21759720,
+        "cpp": 43209026,
+        "portable-baseline": 21789767
+      },
+      "portable_over_before": 0.9986210499634989
+    },
+    {
+      "case": "pipelined-read",
+      "peer": "client",
+      "instructions": {
+        "legacy": 10470418,
+        "portable": 17366741,
+        "cpp": 15174261,
+        "portable-baseline": 17378305
+      },
+      "portable_over_before": 0.9993345726179854
+    },
+    {
+      "case": "pipelined-read",
+      "peer": "server",
+      "instructions": {
+        "legacy": 13071854,
+        "portable": 15631685,
+        "cpp": 17182017,
+        "portable-baseline": 15661671
+      },
+      "portable_over_before": 0.9980853894836637
+    },
+    {
+      "case": "callback",
+      "peer": "client",
+      "instructions": {
+        "legacy": 10900148,
+        "portable": 14441530,
+        "cpp": 15302494,
+        "portable-baseline": 14447777
+      },
+      "portable_over_before": 0.9995676151424541
+    },
+    {
+      "case": "callback",
+      "peer": "server",
+      "instructions": {
+        "legacy": 11970815,
+        "portable": 14193391,
+        "cpp": 14452286,
+        "portable-baseline": 14210962
+      },
+      "portable_over_before": 0.9987635601305528
+    },
+    {
+      "case": "bulk-4m",
+      "peer": "client",
+      "instructions": {
+        "legacy": 67024867,
+        "portable": 68570218,
+        "cpp": 71322855,
+        "portable-baseline": 68571762
+      },
+      "portable_over_before": 0.9999774834428201
+    },
+    {
+      "case": "bulk-4m",
+      "peer": "server",
+      "instructions": {
+        "legacy": 11065247,
+        "portable": 11547967,
+        "cpp": 11478689,
+        "portable-baseline": 11543598
+      },
+      "portable_over_before": 1.0003784781833185
+    },
+    {
+      "case": "concurrent-32",
+      "peer": "client",
+      "instructions": {
+        "legacy": 6852960,
+        "portable": 8310292,
+        "cpp": 11136401,
+        "portable-baseline": 8315004
+      },
+      "portable_over_before": 0.9994333135618455
+    },
+    {
+      "case": "concurrent-32",
+      "peer": "service-0",
+      "instructions": {
+        "legacy": 6438894,
+        "portable": 6976413,
+        "cpp": 11230916,
+        "portable-baseline": 6984485
+      },
+      "portable_over_before": 0.9988442956066196
+    },
+    {
+      "case": "deep-32-concurrent-32",
+      "peer": "client",
+      "instructions": {
+        "legacy": 16178903,
+        "portable": 17850617,
+        "cpp": 18739652,
+        "portable-baseline": 17855325
+      },
+      "portable_over_before": 0.9997363251579011
+    },
+    {
+      "case": "deep-32-concurrent-32",
+      "peer": "service-0",
+      "instructions": {
+        "legacy": 20162786,
+        "portable": 20283011,
+        "cpp": 23202497,
+        "portable-baseline": 20291083
+      },
+      "portable_over_before": 0.9996021897894755
+    },
+    {
+      "case": "services-4-deep-16-clients-8",
+      "peer": "client",
+      "instructions": {
+        "legacy": 12811069,
+        "portable": 15218502,
+        "cpp": 15977109,
+        "portable-baseline": 15232479
+      },
+      "portable_over_before": 0.9990824211869913
+    },
+    {
+      "case": "services-4-deep-16-clients-8",
+      "peer": "service-0",
+      "instructions": {
+        "legacy": 28761280,
+        "portable": 30386633,
+        "cpp": 30827081,
+        "portable-baseline": 30405272
+      },
+      "portable_over_before": 0.9993869813103464
+    },
+    {
+      "case": "services-4-deep-16-clients-8",
+      "peer": "service-1",
+      "instructions": {
+        "legacy": 27004443,
+        "portable": 38851326,
+        "cpp": 29516994,
+        "portable-baseline": 38775550
+      },
+      "portable_over_before": 1.0019542211522467
+    },
+    {
+      "case": "services-4-deep-16-clients-8",
+      "peer": "service-2",
+      "instructions": {
+        "legacy": 27004448,
+        "portable": 36962079,
+        "cpp": 29523929,
+        "portable-baseline": 37212163
+      },
+      "portable_over_before": 0.9932795091755349
+    },
+    {
+      "case": "services-4-deep-16-clients-8",
+      "peer": "service-3",
+      "instructions": {
+        "legacy": 13047770,
+        "portable": 13459360,
+        "cpp": 17019475,
+        "portable-baseline": 13476471
+      },
+      "portable_over_before": 0.9987303055822255
+    }
+  ]
+}

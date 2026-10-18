@@ -1,4 +1,5 @@
 use super::*;
+
 use crate::rpc_capnp::api::{CapDescriptor, Message, Payload, Return};
 use capnp::{word, Word};
 use capntproto_rpc_engine::clients::{dispatch, Destination, Graph};
@@ -35,6 +36,59 @@ fn value<'g>(graph: &mut Graph<'g, '_, u32, u8>, client: &Client<'g>) -> u32 {
     let retained = call.accept();
     graph.release(retained);
     value
+}
+
+#[test]
+fn occupancy_preserves_other_observers_across_cancellation_discard_and_reuse() {
+    messages::with_messages(&mut [], &mut [], |pool| {
+        clients::with_graph(
+            &mut [const { clients::Slot::EMPTY }; 4],
+            |graph: &mut Graph<'_, '_, u32, u8>| {
+                answers::with_answers(&mut [answers::Slot::EMPTY], |answers| {
+                    let id = AnswerId::from_wire(3);
+                    let key = answers
+                        .admit(
+                            id,
+                            super::super::answer::State::new(Results::<_, 0>::new(())),
+                        )
+                        .unwrap_or_else(|_| panic!("parent"));
+                    let lease = answers.pipeline(id).unwrap();
+                    let mut slots = [const { Slot::<0>::EMPTY }; 16];
+                    let mut bindings = Bindings::new(&mut slots).unwrap();
+                    let first = bindings
+                        .bind(graph, answers, &lease, pipeline::Path::new(&[]))
+                        .unwrap();
+                    let second = bindings
+                        .bind(graph, answers, &lease, pipeline::Path::new(&[]))
+                        .unwrap();
+                    graph.release(first);
+                    assert!(matches!(
+                        bindings.poll_one(0, graph, answers, pool, |_| 0).unwrap(),
+                        Progress::Abandoned
+                    ));
+                    assert!(!bindings.is_empty());
+                    bindings.discard_unexposed(second.key(), answers);
+                    graph.release(second);
+                    assert!(bindings.is_empty());
+                    let reused = bindings
+                        .bind(graph, answers, &lease, pipeline::Path::new(&[]))
+                        .unwrap();
+                    assert!(!bindings.is_empty());
+                    assert!(bindings.drain_one(answers));
+                    assert!(bindings.is_empty());
+                    assert!(!bindings.drain_one(answers));
+                    graph.release(reused);
+                    answers.release_pipeline_deferred(lease);
+                    answers.finish(id, false);
+                    assert!(answers.prepare_return(key).unwrap().accept().is_some());
+                    assert!(graph.is_empty());
+                })
+                .unwrap();
+            },
+        )
+        .unwrap();
+    })
+    .unwrap();
 }
 
 #[test]
@@ -153,8 +207,9 @@ fn finished_parent_and_reused_wire_id_still_resolve_the_admitted_child() {
                                         )
                                         .unwrap_or_else(|_| panic!("parent"));
                                     let admitted = answers.pipeline(id).unwrap();
-                                    let mut slots = [Slot::<1>::EMPTY];
+                                    let mut slots = [const { Slot::<1>::EMPTY }; 16];
                                     let mut bindings = Bindings::new(&mut slots).unwrap();
+                                    assert!(bindings.is_empty());
                                     let mut tasks = [dispatch::TaskSlot::EMPTY];
                                     let mut runtime =
                                         dispatch::borrow_runtime(graph, &mut tasks).unwrap();
@@ -170,6 +225,7 @@ fn finished_parent_and_reused_wire_id_still_resolve_the_admitted_child() {
                                             }),
                                         )
                                         .unwrap();
+                                    assert!(!bindings.is_empty());
                                     answers.release_pipeline_deferred(admitted);
                                     runtime
                                         .prepare_call(&child, &mut Some(99))
@@ -224,6 +280,7 @@ fn finished_parent_and_reused_wire_id_still_resolve_the_admitted_child() {
                                             .unwrap(),
                                         Progress::Resolved(None)
                                     ));
+                                    assert!(bindings.is_empty());
                                     let ready = runtime.next_ready().unwrap().unwrap();
                                     assert_eq!(ready.owner(), &99);
                                     if invalid_path {
@@ -301,6 +358,7 @@ fn canceled_observer_releases_parent_and_capacity_failures_preserve_dependencies
                         let lease = answers.pipeline(id).unwrap();
                         let mut slots = [Slot::<1>::EMPTY];
                         let mut bindings = Bindings::new(&mut slots).unwrap();
+                        assert!(bindings.is_empty());
                         assert!(matches!(
                             bindings.bind(graph, answers, &lease, pipeline::Path::new(&[0, 1])),
                             Err(Error::Capacity)
@@ -309,6 +367,7 @@ fn canceled_observer_releases_parent_and_capacity_failures_preserve_dependencies
                             bindings.bind(graph, answers, &lease, pipeline::Path::new(&[]));
                         match observed {
                             Ok(client) => {
+                                assert!(!bindings.is_empty());
                                 assert!(matches!(
                                     bindings.bind(graph, answers, &lease, pipeline::Path::new(&[])),
                                     Err(Error::Capacity)
@@ -331,6 +390,7 @@ fn canceled_observer_releases_parent_and_capacity_failures_preserve_dependencies
                         assert!(answers.cancellation_requested(key).unwrap());
                         assert!(!answers.dispatch(key, true).unwrap());
                         assert!(answers.prepare_return(key).unwrap().accept().is_some());
+                        assert!(bindings.is_empty());
                         assert!(!bindings.drain_one(answers));
                         assert!(graph.is_empty());
                     })
@@ -359,6 +419,7 @@ fn broken_producer_preserves_observer_until_graph_capacity_is_available() {
                 let lease = answers.pipeline(id).unwrap();
                 let mut slots = [Slot::<0>::EMPTY];
                 let mut bindings = Bindings::new(&mut slots).unwrap();
+                assert!(bindings.is_empty());
                 let child = bindings
                     .bind(graph, answers, &lease, pipeline::Path::new(&[]))
                     .unwrap();
@@ -371,6 +432,7 @@ fn broken_producer_preserves_observer_until_graph_capacity_is_available() {
                     )),
                     Err(Error::Graph(clients::Error::Full))
                 ));
+                assert!(!bindings.is_empty()); // Failed resolution keeps its owner.
                 graph.release(occupying);
                 assert_eq!(graph.take_retired(), Some(9));
                 assert!(matches!(
@@ -382,6 +444,7 @@ fn broken_producer_preserves_observer_until_graph_capacity_is_available() {
                         .unwrap(),
                     Progress::Resolved(None)
                 ));
+                assert!(bindings.is_empty());
                 let call = graph.prepare_call(&child).unwrap();
                 assert!(matches!(
                     call.destination(),

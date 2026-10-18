@@ -32,6 +32,7 @@ impl Slot<'_, '_> {
 }
 pub struct Bindings<'s, 'g, 'e> {
     slots: SlotStorage<'s, Slot<'g, 'e>>,
+    live: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -62,8 +63,9 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
     pub fn capacity(&self) -> usize {
         self.slots.len()
     }
-    pub(crate) fn vacant_within(&self, maximum: usize) -> bool {
-        self.slots.len() <= maximum && self.slots.iter().all(|slot| slot.entry.is_none())
+    /// Occupancy follows observer ownership, independently of retained capacity.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.live == 0
     }
     pub fn new(slots: &'s mut [Slot<'g, 'e>]) -> Result<Self, Error> {
         Self::from_storage(SlotStorage::borrowed(slots))
@@ -72,7 +74,7 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
         if slots.iter().any(|slot| slot.entry.is_some()) {
             return Err(Error::NonemptyStorage);
         }
-        Ok(Self { slots })
+        Ok(Self { slots, live: 0 })
     }
     pub fn stage<G: clients::Capabilities<'g>>(
         &mut self,
@@ -116,6 +118,7 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
             export: grant.key(),
             id: grant.id(),
         });
+        self.live += 1;
         Ok(grant)
     }
 
@@ -179,6 +182,7 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
             let observed = match graph.retain_key(entry.target) {
                 Ok(client) => client,
                 Err(clients::Error::Stale) => {
+                    self.live -= 1;
                     release_entry(slot.entry.take().unwrap(), graph);
                     return Ok(Progress::Abandoned);
                 }
@@ -228,6 +232,7 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
             graph.release(source);
         }
         if exports.lookup(entry.id) != Some(entry.export) {
+            self.live -= 1;
             release_entry(slot.entry.take().unwrap(), graph);
             return Ok(Progress::SettledLocally);
         }
@@ -304,6 +309,7 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
             }
             return Err(Error::Output(error));
         }
+        self.live -= 1;
         release_entry(slot.entry.take().unwrap(), graph);
         Ok(Progress::Published)
     }
@@ -311,6 +317,7 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
         let Some(slot) = self.slots.iter_mut().find(|slot| slot.entry.is_some()) else {
             return false;
         };
+        self.live -= 1;
         release_entry(slot.entry.take().unwrap(), graph);
         true
     }

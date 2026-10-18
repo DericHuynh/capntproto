@@ -15,13 +15,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         self.disconnected.is_none()
             && self.call.is_none()
             && self.resolution.is_none()
-            && self.pipelines.vacant_within(8)
+            && self.pipelines.is_empty()
             && self.outgoing_maintenance_is_idle()
             && self.ledgers.exports.retirement_is_idle(8)
             && !self.runtime.has_retired()
             && self.ledgers.answers.reclamation_is_idle(8)
             && !self.canceled_exchanges
-            && self.exported.vacant_within(8)
+            && self.exported.is_empty()
             && !self.ledgers.questions.has_pending_finish()
             && !self.ledgers.imports.has_pending_release()
             && self.runtime.queued() == 0
@@ -227,13 +227,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             let empty = match phase {
                 0 => self.call.is_none(),
                 1 => self.resolution.is_none(),
-                2 => self.pipelines.vacant_within(8),
+                2 => self.pipelines.is_empty(),
                 3 => self.outgoing_maintenance_is_idle(),
                 4 => self.ledgers.exports.retirement_is_idle(8),
                 5 => !self.runtime.has_retired(),
                 6 => self.ledgers.answers.reclamation_is_idle(8),
                 7 => !self.canceled_exchanges,
-                8 => self.exported.vacant_within(8),
+                8 => self.exported.is_empty(),
                 9 => !self.ledgers.questions.has_pending_finish(),
                 10 => !self.ledgers.imports.has_pending_release(),
                 11 => self.call.is_none() && self.runtime.queued() == 0,

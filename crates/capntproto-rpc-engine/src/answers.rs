@@ -266,10 +266,15 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
         self.slots.len()
     }
     /// Conservatively certify that no finished answer can be reclaimed,
-    /// examining at most `maximum` slots. Larger tables return false and must
-    /// use the budgeted scan. Returned answers still awaiting Finish or a local
-    /// pipeline lease retain their owner and do not require reclamation work.
+    /// examining at most `maximum` slots unless observed occupancy proves empty.
+    /// Other larger tables return false and must use the budgeted scan. Returned
+    /// answers awaiting Finish or a local pipeline lease retain their owner and
+    /// do not require reclamation work.
     pub fn reclamation_is_idle(&self, maximum: usize) -> bool {
+        #[cfg(feature = "alloc")]
+        if self.observation.known_empty() {
+            return true;
+        }
         self.slots.len() <= maximum
             && self.slots.iter().all(|slot| {
                 slot.record

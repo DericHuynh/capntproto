@@ -105,6 +105,12 @@ fn atomic_copy_parts_edits_only_initialized_bytes_and_recovers_after_unwind() {
     let mut buffers = [Buffer::new(&mut bytes)];
     with_messages(&mut buffers, &mut [], |messages| {
         let generation = messages.buffers[0].generation.get();
+        assert_eq!(
+            messages
+                .copy_from_parts_with_minimum(&[b"x"], 17, |_| panic!("capacity must reject first"))
+                .err(),
+            Some(Error::NoBuffer)
+        );
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _ = messages.copy_from_parts(&[b"head", b"", b"body"], |copied| {
                 assert_eq!(copied, b"headbody");
@@ -117,7 +123,7 @@ fn atomic_copy_parts_edits_only_initialized_bytes_and_recovers_after_unwind() {
         let initialized = Cell::new(false);
         let usage = allocation_counter::measure(|| {
             let lease = messages
-                .copy_from_parts(&[b"ab", b"cde"], |copied| {
+                .copy_from_parts_with_minimum(&[b"ab", b"cde"], 16, |copied| {
                     initialized.set(true);
                     assert_eq!(copied, b"abcde");
                     copied[1..4].copy_from_slice(b"XYZ");

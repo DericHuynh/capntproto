@@ -282,10 +282,14 @@ impl<'id, 'storage, T> Exports<'id, 'storage, T> {
         self.slots.len()
     }
     /// Conservatively certify that retirement has no work, examining at most
-    /// `maximum` slots. False also covers larger tables and forgotten batches;
-    /// those must continue through the caller's budgeted retirement scan.
+    /// `maximum` slots unless observed occupancy proves empty. Other larger
+    /// tables and forgotten batches still require the budgeted retirement scan.
     /// This check neither recovers a batch nor releases any owner.
     pub fn retirement_is_idle(&self, maximum: usize) -> bool {
+        #[cfg(feature = "alloc")]
+        if !self.open_batch && self.observation.known_empty() {
+            return true;
+        }
         !self.open_batch
             && self.slots.len() <= maximum
             && self

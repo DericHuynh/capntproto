@@ -1,0 +1,1261 @@
+diff --git a/crates/capntproto-rpc-engine/src/answers.rs b/crates/capntproto-rpc-engine/src/answers.rs
+index 61d1c61..52d51b2 100644
+--- a/crates/capntproto-rpc-engine/src/answers.rs
++++ b/crates/capntproto-rpc-engine/src/answers.rs
+@@ -266,10 +266,15 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
+         self.slots.len()
+     }
+     /// Conservatively certify that no finished answer can be reclaimed,
+-    /// examining at most `maximum` slots. Larger tables return false and must
+-    /// use the budgeted scan. Returned answers still awaiting Finish or a local
+-    /// pipeline lease retain their owner and do not require reclamation work.
++    /// examining at most `maximum` slots unless observed occupancy proves empty.
++    /// Other larger tables return false and must use the budgeted scan. Returned
++    /// answers awaiting Finish or a local pipeline lease retain their owner and
++    /// do not require reclamation work.
+     pub fn reclamation_is_idle(&self, maximum: usize) -> bool {
++        #[cfg(feature = "alloc")]
++        if self.observation.known_empty() {
++            return true;
++        }
+         self.slots.len() <= maximum
+             && self.slots.iter().all(|slot| {
+                 slot.record
+diff --git a/crates/capntproto-rpc-engine/src/exports.rs b/crates/capntproto-rpc-engine/src/exports.rs
+index 763959e..f77d308 100644
+--- a/crates/capntproto-rpc-engine/src/exports.rs
++++ b/crates/capntproto-rpc-engine/src/exports.rs
+@@ -282,10 +282,14 @@ impl<'id, 'storage, T> Exports<'id, 'storage, T> {
+         self.slots.len()
+     }
+     /// Conservatively certify that retirement has no work, examining at most
+-    /// `maximum` slots. False also covers larger tables and forgotten batches;
+-    /// those must continue through the caller's budgeted retirement scan.
++    /// `maximum` slots unless observed occupancy proves empty. Other larger
++    /// tables and forgotten batches still require the budgeted retirement scan.
+     /// This check neither recovers a batch nor releases any owner.
+     pub fn retirement_is_idle(&self, maximum: usize) -> bool {
++        #[cfg(feature = "alloc")]
++        if !self.open_batch && self.observation.known_empty() {
++            return true;
++        }
+         !self.open_batch
+             && self.slots.len() <= maximum
+             && self
+diff --git a/crates/capntproto-rpc-engine/src/messages.rs b/crates/capntproto-rpc-engine/src/messages.rs
+index b04e587..5558b2a 100644
+--- a/crates/capntproto-rpc-engine/src/messages.rs
++++ b/crates/capntproto-rpc-engine/src/messages.rs
+@@ -410,10 +410,22 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
+         &mut self,
+         parts: &[&[u8]],
+         edit: impl FnOnce(&mut [u8]),
++    ) -> Result<Lease<'id>, Error> {
++        self.copy_from_parts_with_minimum(parts, 0, edit)
++    }
++    /// As `copy_from_parts`, retaining the caller's minimum buffer-capacity
++    /// requirement. Only the initialized message length is exposed or sealed.
++    #[inline(always)]
++    pub fn copy_from_parts_with_minimum(
++        &mut self,
++        parts: &[&[u8]],
++        minimum: usize,
++        edit: impl FnOnce(&mut [u8]),
+     ) -> Result<Lease<'id>, Error> {
+         let length = parts.iter().try_fold(0usize, |length, part| {
+             length.checked_add(part.len()).ok_or(Error::InvalidLength)
+         })?;
++        let capacity = length.max(minimum);
+         let initialize = |bytes: &mut [u8]| {
+             let bytes = &mut bytes[..length];
+             let mut remaining = &mut bytes[..];
+@@ -426,7 +438,7 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
+         };
+         let mut exhausted = false;
+         for (index, buffer) in self.buffers.iter().enumerate() {
+-            if buffer.state.get() != State::Free || buffer.capacity.get() < length {
++            if buffer.state.get() != State::Free || buffer.capacity.get() < capacity {
+                 continue;
+             }
+             let Ok(mut bytes) = buffer.bytes.try_borrow_mut() else {
+@@ -454,7 +466,7 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
+                 brand: PhantomData,
+             });
+         }
+-        let index = self.buffers.append(length).ok_or(if exhausted {
++        let index = self.buffers.append(capacity).ok_or(if exhausted {
+             Error::GenerationExhausted
+         } else {
+             Error::NoBuffer
+diff --git a/crates/capntproto-rpc-engine/src/messages/tests.rs b/crates/capntproto-rpc-engine/src/messages/tests.rs
+index a4e5c4c..8388f92 100644
+--- a/crates/capntproto-rpc-engine/src/messages/tests.rs
++++ b/crates/capntproto-rpc-engine/src/messages/tests.rs
+@@ -105,6 +105,12 @@ fn atomic_copy_parts_edits_only_initialized_bytes_and_recovers_after_unwind() {
+     let mut buffers = [Buffer::new(&mut bytes)];
+     with_messages(&mut buffers, &mut [], |messages| {
+         let generation = messages.buffers[0].generation.get();
++        assert_eq!(
++            messages
++                .copy_from_parts_with_minimum(&[b"x"], 17, |_| panic!("capacity must reject first"))
++                .err(),
++            Some(Error::NoBuffer)
++        );
+         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+             let _ = messages.copy_from_parts(&[b"head", b"", b"body"], |copied| {
+                 assert_eq!(copied, b"headbody");
+@@ -117,7 +123,7 @@ fn atomic_copy_parts_edits_only_initialized_bytes_and_recovers_after_unwind() {
+         let initialized = Cell::new(false);
+         let usage = allocation_counter::measure(|| {
+             let lease = messages
+-                .copy_from_parts(&[b"ab", b"cde"], |copied| {
++                .copy_from_parts_with_minimum(&[b"ab", b"cde"], 16, |copied| {
+                     initialized.set(true);
+                     assert_eq!(copied, b"abcde");
+                     copied[1..4].copy_from_slice(b"XYZ");
+diff --git a/crates/capntproto-rpc-engine/src/observation.rs b/crates/capntproto-rpc-engine/src/observation.rs
+index 94f1961..a07859f 100644
+--- a/crates/capntproto-rpc-engine/src/observation.rs
++++ b/crates/capntproto-rpc-engine/src/observation.rs
+@@ -18,6 +18,11 @@ pub(crate) struct Counter(Option<Rc<Cell<usize>>>);
+ #[derive(Default)]
+ pub(crate) struct Presence(Option<Rc<Cell<usize>>>);
+ impl Counter {
++    /// Unknown occupancy is conservative: creating an observer remains explicit.
++    pub(crate) fn known_empty(&self) -> bool {
++        self.0.as_ref().is_some_and(|count| count.get() == 0)
++    }
++
+     pub(crate) fn enter(&self) -> Presence {
+         if let Some(count) = &self.0 {
+             count.set(count.get().checked_add(1).expect("live record count"));
+@@ -54,6 +59,48 @@ mod tests {
+         imports,
+     };
+ 
++    #[test]
++    fn observed_empty_tables_skip_retained_capacity_but_not_pending_cleanup() {
++        let mut storage = [const { answers::Slot::EMPTY }; 32];
++        answers::with_answers(&mut storage, |answers| {
++            assert!(!answers.reclamation_is_idle(0));
++            let count = answers.observe_len();
++            assert!(answers.reclamation_is_idle(0));
++            let id = AnswerId::from_wire(7);
++            let key = answers.admit(id, 41).unwrap();
++            let pipeline = answers.pipeline(id).unwrap();
++            assert!(!answers.reclamation_is_idle(0));
++            answers.finish(id, false);
++            assert!(answers.prepare_return(key).unwrap().accept().is_none());
++            answers.release_pipeline_deferred(pipeline);
++            assert_eq!(count.get(), 1);
++            assert!(!answers.reclamation_is_idle(0));
++            assert_eq!(answers.take_finished(0), Some(41));
++            assert!(answers.reclamation_is_idle(0));
++        })
++        .unwrap();
++
++        let mut storage = [const { exports::Slot::EMPTY }; 32];
++        exports::with_exports(&mut storage, |exports| {
++            assert!(!exports.retirement_is_idle(0));
++            let count = exports.observe_len();
++            assert!(exports.retirement_is_idle(0));
++            // Even an empty forgotten batch must be recovered by maintenance.
++            core::mem::forget(exports.batch());
++            assert_eq!(count.get(), 0);
++            assert!(!exports.retirement_is_idle(0));
++            assert_eq!(exports.take_retired(0), None::<u32>);
++            assert!(exports.retirement_is_idle(0));
++            let mut batch = exports.batch();
++            let _ = batch.export(43).unwrap();
++            drop(batch);
++            assert!(!exports.retirement_is_idle(0));
++            assert_eq!(exports.take_retired(0), Some(43));
++            assert!(exports.retirement_is_idle(0));
++        })
++        .unwrap();
++    }
++
+     #[test]
+     fn observations_follow_retained_records_rollback_and_terminal_owner_transfer() {
+         let mut storage = [imports::Slot::EMPTY];
+diff --git a/crates/capntproto-rpc-wire/src/clients/exporting.rs b/crates/capntproto-rpc-wire/src/clients/exporting.rs
+index bd9f85c..ad0356a 100644
+--- a/crates/capntproto-rpc-wire/src/clients/exporting.rs
++++ b/crates/capntproto-rpc-wire/src/clients/exporting.rs
+@@ -32,6 +32,7 @@ impl Slot<'_, '_> {
+ }
+ pub struct Bindings<'s, 'g, 'e> {
+     slots: SlotStorage<'s, Slot<'g, 'e>>,
++    live: usize,
+ }
+ 
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+@@ -62,8 +63,9 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
+     pub fn capacity(&self) -> usize {
+         self.slots.len()
+     }
+-    pub(crate) fn vacant_within(&self, maximum: usize) -> bool {
+-        self.slots.len() <= maximum && self.slots.iter().all(|slot| slot.entry.is_none())
++    /// Occupancy follows observer ownership, independently of retained capacity.
++    pub(crate) fn is_empty(&self) -> bool {
++        self.live == 0
+     }
+     pub fn new(slots: &'s mut [Slot<'g, 'e>]) -> Result<Self, Error> {
+         Self::from_storage(SlotStorage::borrowed(slots))
+@@ -72,7 +74,7 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
+         if slots.iter().any(|slot| slot.entry.is_some()) {
+             return Err(Error::NonemptyStorage);
+         }
+-        Ok(Self { slots })
++        Ok(Self { slots, live: 0 })
+     }
+     pub fn stage<G: clients::Capabilities<'g>>(
+         &mut self,
+@@ -116,6 +118,7 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
+             export: grant.key(),
+             id: grant.id(),
+         });
++        self.live += 1;
+         Ok(grant)
+     }
+ 
+@@ -179,6 +182,7 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
+             let observed = match graph.retain_key(entry.target) {
+                 Ok(client) => client,
+                 Err(clients::Error::Stale) => {
++                    self.live -= 1;
+                     release_entry(slot.entry.take().unwrap(), graph);
+                     return Ok(Progress::Abandoned);
+                 }
+@@ -228,6 +232,7 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
+             graph.release(source);
+         }
+         if exports.lookup(entry.id) != Some(entry.export) {
++            self.live -= 1;
+             release_entry(slot.entry.take().unwrap(), graph);
+             return Ok(Progress::SettledLocally);
+         }
+@@ -304,6 +309,7 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
+             }
+             return Err(Error::Output(error));
+         }
++        self.live -= 1;
+         release_entry(slot.entry.take().unwrap(), graph);
+         Ok(Progress::Published)
+     }
+@@ -311,6 +317,7 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
+         let Some(slot) = self.slots.iter_mut().find(|slot| slot.entry.is_some()) else {
+             return false;
+         };
++        self.live -= 1;
+         release_entry(slot.entry.take().unwrap(), graph);
+         true
+     }
+diff --git a/crates/capntproto-rpc-wire/src/clients/exporting/tests.rs b/crates/capntproto-rpc-wire/src/clients/exporting/tests.rs
+index c934669..890ed88 100644
+--- a/crates/capntproto-rpc-wire/src/clients/exporting/tests.rs
++++ b/crates/capntproto-rpc-wire/src/clients/exporting/tests.rs
+@@ -24,13 +24,12 @@ fn exported_promise_freezes_once_before_retrying_resolve_output() {
+                 |graph: &mut Graph<'_, '_, Endpoint<'_, u8, u32>, u8>| {
+                     exports::with_exports(&mut [const { exports::Slot::EMPTY }; 2], |exports| {
+                         let source = graph.promise(&mut None).unwrap();
+-                        let mut slots = [Slot::EMPTY];
++                        let mut slots = [const { Slot::EMPTY }; 16];
+                         let mut bindings = Bindings::new(&mut slots).unwrap();
+-                        assert!(bindings.vacant_within(1));
+-                        assert!(!bindings.vacant_within(0));
++                        assert!(bindings.is_empty());
+                         let mut batch = exports.batch();
+                         let grant = bindings.stage(graph, &mut batch, &source).unwrap();
+-                        assert!(!bindings.vacant_within(1));
++                        assert!(!bindings.is_empty());
+                         assert!(grant.is_promise());
+                         assert_ne!(batch.pending_owner(grant.id()).unwrap().key(), source.key());
+                         batch.commit();
+@@ -75,6 +74,8 @@ fn exported_promise_freezes_once_before_retrying_resolve_output() {
+                             )))
+                         ));
+                         assert!(queue.is_empty());
++                        // Retry still owns the observer.
++                        assert!(!bindings.is_empty());
+                         // A nested promise resolves again while output is blocked.
+                         // Neither the original export nor its eventual Resolve may
+                         // silently switch from advertised route 10 to route 20.
+@@ -103,6 +104,7 @@ fn exported_promise_freezes_once_before_retrying_resolve_output() {
+                             ),
+                             Ok(Progress::Published)
+                         );
++                        assert!(bindings.is_empty());
+                         let window = queue.window(messages).unwrap().unwrap();
+                         let length = window.bytes().len();
+                         let replacement = {
+diff --git a/crates/capntproto-rpc-wire/src/owned/connection/growing/tests.rs b/crates/capntproto-rpc-wire/src/owned/connection/growing/tests.rs
+index fe57b6e..1d2b9ea 100644
+--- a/crates/capntproto-rpc-wire/src/owned/connection/growing/tests.rs
++++ b/crates/capntproto-rpc-wire/src/owned/connection/growing/tests.rs
+@@ -724,7 +724,7 @@ fn server_idle_certificate_observes_deferred_answer_and_export_cleanup() {
+                 pipeline::Path::new(&[]),
+             )
+             .unwrap();
+-        assert!(!driver.pipelines.vacant_within(8));
++        assert!(!driver.pipelines.is_empty());
+         assert!(!matches!(poll!(), Progress::Idle));
+         driver.runtime.release(observer);
+         let mut idle = false;
+@@ -735,8 +735,7 @@ fn server_idle_certificate_observes_deferred_answer_and_export_cleanup() {
+             }
+         }
+         assert!(idle);
+-        assert!(!driver.pipelines.vacant_within(0));
+-        assert!(driver.pipelines.vacant_within(8));
++        assert!(driver.pipelines.is_empty());
+         assert!(driver
+             .ledgers
+             .answers
+diff --git a/crates/capntproto-rpc-wire/src/owned/connection/invocation/template.rs b/crates/capntproto-rpc-wire/src/owned/connection/invocation/template.rs
+index 01ffa7d..10145d4 100644
+--- a/crates/capntproto-rpc-wire/src/owned/connection/invocation/template.rs
++++ b/crates/capntproto-rpc-wire/src/owned/connection/invocation/template.rs
+@@ -225,6 +225,7 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
+                 no_promise_pipelining: method.no_promise_pipelining,
+                 call,
+                 target,
++                target_data_words: core::num::NonZeroU16::new(1),
+                 length: segment.len(),
+             },
+         }))
+@@ -346,8 +347,106 @@ impl<'a> EncodedCall<'a> {
+             Err(error) => Err(super::super::super::Error::Storage(error)),
+         }
+     }
+-    /// A promised-answer target needs a transform list, so rebuild its envelope
+-    /// from the certified parameters rather than rewriting the imported target.
++    /// Append a promised-answer transform without walking or relocating the
++    /// parameter graph. Every original segment retains its index and relative
++    /// offsets. The private builder certificate excludes overlapping objects.
++    /// Larger transforms and older target layouts use the general encoder.
++    #[allow(clippy::too_many_arguments)]
++    fn append_promised<'pool>(
++        &self,
++        messages: &mut messages::Messages<'pool, '_, '_>,
++        question: QuestionId,
++        parent: QuestionId,
++        path: pipeline::Path<'_>,
++        minimum: usize,
++        allow_handoff: bool,
++        options: capnp::message::ReaderOptions,
++    ) -> Result<Option<Frame<'pool>>, super::super::super::Error> {
++        let Some(data_words) = self.template.target_data_words else {
++            return Ok(None);
++        };
++        let pointer = self.template.target + usize::from(data_words.get()) * 8;
++        // Bound stack use independently of the configured path capacity. This
++        // buffer holds a root, a PromisedAnswer and sixteen transform entries.
++        let mut words = [capnp::word(0, 0, 0, 0, 0, 0, 0, 0); 20];
++        if path.fields().len() > 16 {
++            return Ok(None);
++        }
++        let mut target = capnp::message::FixedBuilder::new(&mut words)?;
++        path.write(
++            target.try_init_root::<rpc_capnp::api::PromisedAnswer>()?,
++            parent,
++        )?;
++        let target = target.get_segments_for_output()[0];
++        let appended = &target[8..];
++        let Some(first_bytes) = self.segment.len().checked_add(appended.len()) else {
++            return Ok(None);
++        };
++        let total_words = first_bytes / 8 + self.second.map_or(0, |second| second.len() / 8);
++        if options
++            .traversal_limit_in_words
++            .is_some_and(|limit| total_words > limit)
++        {
++            return Ok(None);
++        }
++        let Ok(first_words) = u32::try_from(first_bytes / 8) else {
++            return Ok(None);
++        };
++        // Relocate the generated root pointer into MessageTarget's pointer
++        // field. Its target starts immediately after the unchanged segment.
++        // Only the signed 30-bit offset changes; retain the generated sizes.
++        let offset = (self.segment.len() - pointer - 8) / 8;
++        if offset >= 1 << 29 {
++            return Ok(None);
++        }
++        let mut relocated = [0; 8];
++        relocated[..4].copy_from_slice(&((offset as u32) << 2).to_le_bytes());
++        relocated[4..].copy_from_slice(&target[4..8]);
++        let mut header = [0; 16];
++        header[4..8].copy_from_slice(&first_words.to_le_bytes());
++        let header_len = if let Some(second) = self.second {
++            header[..4].copy_from_slice(&1u32.to_le_bytes());
++            let second_words = u32::try_from(second.len() / 8)
++                .map_err(|_| super::super::super::Error::Capacity)?;
++            header[8..12].copy_from_slice(&second_words.to_le_bytes());
++            16
++        } else {
++            8
++        };
++        let lease = messages.copy_from_parts_with_minimum(
++            &[
++                &header[..header_len],
++                self.segment,
++                appended,
++                self.second.unwrap_or(&[]),
++            ],
++            minimum,
++            |output| {
++                let body = &mut output[header_len..];
++                body[self.template.call..self.template.call + 4]
++                    .copy_from_slice(&question.to_wire().to_le_bytes());
++                body[self.template.call + 16] = (body[self.template.call + 16] & !0b111)
++                    | u8::from(allow_handoff)
++                    | (u8::from(self.template.no_promise_pipelining) << 1);
++                // MessageTarget.promisedAnswer is union discriminant 1 at
++                // UInt16 slot 2; importedCap's inactive UInt32 slot is cleared.
++                body[self.template.target..self.template.target + 4].fill(0);
++                body[self.template.target + 4..self.template.target + 6]
++                    .copy_from_slice(&1u16.to_le_bytes());
++                body[pointer..pointer + 8].copy_from_slice(&relocated);
++            },
++        );
++        let lease = match lease {
++            Ok(lease) => lease,
++            // Compacting with the general encoder can fit when a prepared
++            // builder retains unused words from earlier parameter replacements.
++            Err(messages::Error::NoBuffer) => return Ok(None),
++            Err(error) => return Err(super::super::super::Error::Storage(error)),
++        };
++        Ok(Some(Frame::new(lease, options)))
++    }
++    /// A promised-answer target needs a transform list. Preserve certified
++    /// segments when possible, falling back to copying the parameter graph.
+     #[allow(clippy::too_many_arguments)]
+     pub(super) fn copy_promised<'pool>(
+         &self,
+@@ -360,6 +459,17 @@ impl<'a> EncodedCall<'a> {
+         allow_handoff: bool,
+         options: capnp::message::ReaderOptions,
+     ) -> Result<Frame<'pool>, super::super::super::Error> {
++        if let Some(frame) = self.append_promised(
++            messages,
++            question,
++            parent,
++            path,
++            minimum,
++            allow_handoff,
++            options,
++        )? {
++            return Self::validate_promised(frame, messages);
++        }
+         let segments = [self.segment, self.second.unwrap_or(&[])];
+         let segments = &segments[..if self.second.is_some() { 2 } else { 1 }];
+         let reader =
+@@ -398,6 +508,12 @@ impl<'a> EncodedCall<'a> {
+                 },
+             )
+         })?;
++        Self::validate_promised(frame, messages)
++    }
++    fn validate_promised<'pool>(
++        frame: Frame<'pool>,
++        messages: &mut messages::Messages<'pool, '_, '_>,
++    ) -> Result<Frame<'pool>, super::super::super::Error> {
+         let validation = frame
+             .with(messages, |root| -> capnp::Result<()> {
+                 let rpc_capnp::message::Call(call) = root.which()? else {
+@@ -551,6 +667,7 @@ pub(super) struct PlainTemplate {
+     no_promise_pipelining: bool,
+     call: usize,
+     target: usize,
++    target_data_words: Option<core::num::NonZeroU16>,
+     length: usize,
+ }
+ 
+@@ -638,6 +755,14 @@ impl PlainTemplate {
+             (data.len() >= minimum && start.checked_add(data.len())? <= bytes.len())
+                 .then_some(start)
+         };
++        let target = target.into_internal_struct_reader();
++        let data = target.get_data_section_as_blob();
++        let target_offset = offset(data, 8)?;
++        let pointer = target_offset.checked_add(data.len())?;
++        let target_data_words = (target.get_pointer_section_size() != 0
++            && pointer.checked_add(8)? <= bytes.len())
++        .then(|| core::num::NonZeroU16::new(u16::try_from(data.len() / 8).ok()?))
++        .flatten();
+         Some(Self {
+             method: (call.get_interface_id(), call.get_method_id()),
+             no_promise_pipelining: call.get_no_promise_pipelining(),
+@@ -646,12 +771,8 @@ impl PlainTemplate {
+                     .get_data_section_as_blob(),
+                 17,
+             )?,
+-            target: offset(
+-                target
+-                    .into_internal_struct_reader()
+-                    .get_data_section_as_blob(),
+-                8,
+-            )?,
++            target: target_offset,
++            target_data_words,
+             length: bytes.len(),
+         })
+     }
+@@ -703,6 +824,133 @@ mod tests {
+     use super::*;
+     use capnp::{field_api::Data, word, Word};
+ 
++    #[cfg(feature = "alloc")]
++    #[test]
++    fn promised_template_matches_codec_for_near_far_and_long_paths() {
++        fn canonical(root: rpc_capnp::message::Reader<'_>) -> alloc::vec::Vec<u8> {
++            let mut message = capnp::message::Builder::new_default();
++            message.set_root_canonical(root).unwrap();
++            message.get_segments_for_output()[0].to_vec()
++        }
++        for length in [0, 13, 4096] {
++            let mut call = PreparedCall::from_template(
++                &PreparedCallTemplate::default(),
++                capnp::message::HeapAllocator::new().first_segment_words(32),
++                u64::MAX,
++                u16::MAX,
++            )
++            .unwrap();
++            let data = alloc::vec![0xa5; length];
++            call.params()
++                .set_as::<capnp::data::Owned>(&data[..])
++                .unwrap();
++            let original = capnp::serialize::write_message_to_words(call.message());
++            for no_promise_pipelining in [false, true] {
++                let method = calls::DynamicCall {
++                    no_promise_pipelining,
++                    ..call.method
++                };
++                let encoded = call.encoded(method, Default::default()).unwrap().unwrap();
++                for fields in [&[][..], &[u16::MAX][..], &[17; 16][..], &[31; 17][..]] {
++                    for allow_handoff in [false, true] {
++                        let mut a = Word::allocate_zeroed_vec(1024);
++                        let mut buffers = [messages::Buffer::new(Word::words_to_bytes_mut(&mut a))];
++                        messages::with_messages(&mut buffers, &mut [], |messages| {
++                            let id = QuestionId::from_wire(u32::MAX);
++                            let parent = QuestionId::from_wire(0x7654_3210);
++                            let path = pipeline::Path::new(fields);
++                            // Exhaustion must preserve the certificate and source.
++                            let occupied = messages.reserve(128).unwrap();
++                            assert!(encoded
++                                .copy_promised(
++                                    messages,
++                                    id,
++                                    parent,
++                                    path,
++                                    method,
++                                    128,
++                                    allow_handoff,
++                                    Default::default()
++                                )
++                                .is_err());
++                            messages.discard(occupied);
++                            let appended = encoded
++                                .append_promised(
++                                    messages,
++                                    id,
++                                    parent,
++                                    path,
++                                    128,
++                                    allow_handoff,
++                                    Default::default(),
++                                )
++                                .unwrap();
++                            assert_eq!(appended.is_some(), fields.len() <= 16);
++                            if let Some(frame) = appended {
++                                frame.release(messages);
++                            }
++                            let frame = encoded
++                                .copy_promised(
++                                    messages,
++                                    id,
++                                    parent,
++                                    path,
++                                    method,
++                                    128,
++                                    allow_handoff,
++                                    Default::default(),
++                                )
++                                .unwrap();
++                            let actual = frame.with(messages, canonical).unwrap();
++                            frame.release(messages);
++                            let expected =
++                                Frame::build(messages, 8192, Default::default(), |builder| {
++                                    calls::dynamic_call_with_handoff(
++                                        builder,
++                                        id,
++                                        calls::Target::Promised {
++                                            question: parent,
++                                            path,
++                                        },
++                                        method,
++                                        allow_handoff,
++                                        |field| field.cast::<Data>().copy_from(&data),
++                                    )
++                                })
++                                .unwrap();
++                            assert_eq!(actual, expected.with(messages, canonical).unwrap());
++                            expected.release(messages);
++                            let strict = capnp::message::ReaderOptions {
++                                nesting_limit: 3,
++                                ..Default::default()
++                            };
++                            assert!(encoded
++                                .copy_promised(
++                                    messages,
++                                    id,
++                                    parent,
++                                    path,
++                                    method,
++                                    128,
++                                    allow_handoff,
++                                    strict
++                                )
++                                .is_err());
++                            // Rejected validation returns its buffer to the pool.
++                            let retry = messages.reserve(8192).unwrap();
++                            messages.discard(retry);
++                        })
++                        .unwrap();
++                    }
++                }
++            }
++            assert_eq!(
++                original,
++                capnp::serialize::write_message_to_words(call.message())
++            );
++        }
++    }
++
+     #[cfg(feature = "alloc")]
+     #[test]
+     fn prepared_pipeline_hints_preserve_source_and_reader_limits() {
+diff --git a/crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs b/crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs
+index 8ff4797..d433caa 100644
+--- a/crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs
++++ b/crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs
+@@ -15,13 +15,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+         self.disconnected.is_none()
+             && self.call.is_none()
+             && self.resolution.is_none()
+-            && self.pipelines.vacant_within(8)
++            && self.pipelines.is_empty()
+             && self.outgoing_maintenance_is_idle()
+             && self.ledgers.exports.retirement_is_idle(8)
+             && !self.runtime.has_retired()
+             && self.ledgers.answers.reclamation_is_idle(8)
+             && !self.canceled_exchanges
+-            && self.exported.vacant_within(8)
++            && self.exported.is_empty()
+             && !self.ledgers.questions.has_pending_finish()
+             && !self.ledgers.imports.has_pending_release()
+             && self.runtime.queued() == 0
+@@ -227,13 +227,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+             let empty = match phase {
+                 0 => self.call.is_none(),
+                 1 => self.resolution.is_none(),
+-                2 => self.pipelines.vacant_within(8),
++                2 => self.pipelines.is_empty(),
+                 3 => self.outgoing_maintenance_is_idle(),
+                 4 => self.ledgers.exports.retirement_is_idle(8),
+                 5 => !self.runtime.has_retired(),
+                 6 => self.ledgers.answers.reclamation_is_idle(8),
+                 7 => !self.canceled_exchanges,
+-                8 => self.exported.vacant_within(8),
++                8 => self.exported.is_empty(),
+                 9 => !self.ledgers.questions.has_pending_finish(),
+                 10 => !self.ledgers.imports.has_pending_release(),
+                 11 => self.call.is_none() && self.runtime.queued() == 0,
+diff --git a/crates/capntproto-rpc-wire/src/owned/pipelines.rs b/crates/capntproto-rpc-wire/src/owned/pipelines.rs
+index 75f7fa1..c2ae743 100644
+--- a/crates/capntproto-rpc-wire/src/owned/pipelines.rs
++++ b/crates/capntproto-rpc-wire/src/owned/pipelines.rs
+@@ -371,6 +371,7 @@ impl<const P: usize> Slot<'_, '_, P> {
+ pub struct Bindings<'slots, 'graph, 'a, const P: usize> {
+     pub(crate) path_capacity: Capacity,
+     slots: SlotStorage<'slots, Slot<'graph, 'a, P>>,
++    live: usize,
+ }
+ pub enum Progress<'graph> {
+     Vacant,
+@@ -408,6 +409,7 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
+         let observed = match graph.retain_key(waiter.client) {
+             Ok(client) => client,
+             Err(clients::Error::Stale) => {
++                self.live -= 1;
+                 answers.release_pipeline_deferred(slot.waiter.take().unwrap().answer);
+                 return Ok(Some(Progress::Abandoned));
+             }
+@@ -438,6 +440,7 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
+         graph.release(observed);
+         match outcome {
+             Ok(barrier) => {
++                self.live -= 1;
+                 answers.release_pipeline_deferred(slot.waiter.take().unwrap().answer);
+                 Ok(Some(Progress::Resolved(barrier)))
+             }
+@@ -450,10 +453,9 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
+     pub fn capacity(&self) -> usize {
+         self.slots.len()
+     }
+-    /// Check at most `maximum` slots for observers that need polling. Retained
+-    /// vacant capacity alone must not force every later call through a scan.
+-    pub(crate) fn vacant_within(&self, maximum: usize) -> bool {
+-        self.slots.len() <= maximum && self.slots.iter().all(|slot| slot.waiter.is_none())
++    /// Occupancy follows observer ownership, independently of retained capacity.
++    pub(crate) fn is_empty(&self) -> bool {
++        self.live == 0
+     }
+     /// Only used when a just-created, unexposed binding fails graph admission.
+     pub(crate) fn discard_unexposed<T>(
+@@ -470,6 +472,7 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
+                     .is_some_and(|waiter| waiter.client == key)
+             })
+             .expect("unexposed pipeline observer");
++        self.live -= 1;
+         answers.release_pipeline_deferred(slot.waiter.take().unwrap().answer);
+     }
+     pub fn new(slots: &'slots mut [Slot<'graph, 'a, P>]) -> Result<Self, Error> {
+@@ -489,6 +492,7 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
+         }
+         Ok(Self {
+             slots,
++            live: 0,
+             path_capacity,
+         })
+     }
+@@ -522,6 +526,7 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
+             path: fields,
+             length: path.fields().len(),
+         });
++        self.live += 1;
+         Ok(client)
+     }
+     /// Observe one producer without retaining a canceled graph observer. The
+@@ -572,6 +577,7 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
+         let observed = match graph.retain_key(waiter.client) {
+             Ok(client) => client,
+             Err(clients::Error::Stale) => {
++                self.live -= 1;
+                 answers.release_pipeline_deferred(slot.waiter.take().unwrap().answer);
+                 return Ok(Progress::Abandoned);
+             }
+@@ -619,6 +625,7 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
+         graph.release(observed);
+         match outcome {
+             Ok(barrier) => {
++                self.live -= 1;
+                 answers.release_pipeline_deferred(slot.waiter.take().unwrap().answer);
+                 Ok(Progress::Resolved(barrier))
+             }
+@@ -635,6 +642,7 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
+         let Some(slot) = self.slots.iter_mut().find(|s| s.waiter.is_some()) else {
+             return false;
+         };
++        self.live -= 1;
+         answers.release_pipeline_deferred(slot.waiter.take().unwrap().answer);
+         true
+     }
+diff --git a/crates/capntproto-rpc-wire/src/owned/pipelines/tests.rs b/crates/capntproto-rpc-wire/src/owned/pipelines/tests.rs
+index bddf1bf..c8480b4 100644
+--- a/crates/capntproto-rpc-wire/src/owned/pipelines/tests.rs
++++ b/crates/capntproto-rpc-wire/src/owned/pipelines/tests.rs
+@@ -1,4 +1,5 @@
+ use super::*;
++
+ use crate::rpc_capnp::api::{CapDescriptor, Message, Payload, Return};
+ use capnp::{word, Word};
+ use capntproto_rpc_engine::clients::{dispatch, Destination, Graph};
+@@ -37,6 +38,59 @@ fn value<'g>(graph: &mut Graph<'g, '_, u32, u8>, client: &Client<'g>) -> u32 {
+     value
+ }
+ 
++#[test]
++fn occupancy_preserves_other_observers_across_cancellation_discard_and_reuse() {
++    messages::with_messages(&mut [], &mut [], |pool| {
++        clients::with_graph(
++            &mut [const { clients::Slot::EMPTY }; 4],
++            |graph: &mut Graph<'_, '_, u32, u8>| {
++                answers::with_answers(&mut [answers::Slot::EMPTY], |answers| {
++                    let id = AnswerId::from_wire(3);
++                    let key = answers
++                        .admit(
++                            id,
++                            super::super::answer::State::new(Results::<_, 0>::new(())),
++                        )
++                        .unwrap_or_else(|_| panic!("parent"));
++                    let lease = answers.pipeline(id).unwrap();
++                    let mut slots = [const { Slot::<0>::EMPTY }; 16];
++                    let mut bindings = Bindings::new(&mut slots).unwrap();
++                    let first = bindings
++                        .bind(graph, answers, &lease, pipeline::Path::new(&[]))
++                        .unwrap();
++                    let second = bindings
++                        .bind(graph, answers, &lease, pipeline::Path::new(&[]))
++                        .unwrap();
++                    graph.release(first);
++                    assert!(matches!(
++                        bindings.poll_one(0, graph, answers, pool, |_| 0).unwrap(),
++                        Progress::Abandoned
++                    ));
++                    assert!(!bindings.is_empty());
++                    bindings.discard_unexposed(second.key(), answers);
++                    graph.release(second);
++                    assert!(bindings.is_empty());
++                    let reused = bindings
++                        .bind(graph, answers, &lease, pipeline::Path::new(&[]))
++                        .unwrap();
++                    assert!(!bindings.is_empty());
++                    assert!(bindings.drain_one(answers));
++                    assert!(bindings.is_empty());
++                    assert!(!bindings.drain_one(answers));
++                    graph.release(reused);
++                    answers.release_pipeline_deferred(lease);
++                    answers.finish(id, false);
++                    assert!(answers.prepare_return(key).unwrap().accept().is_some());
++                    assert!(graph.is_empty());
++                })
++                .unwrap();
++            },
++        )
++        .unwrap();
++    })
++    .unwrap();
++}
++
+ #[test]
+ fn published_pipeline_keeps_advertised_route_after_remote_promise_resolves() {
+     let measured = allocation_counter::measure(|| {
+@@ -153,8 +207,9 @@ fn finished_parent_and_reused_wire_id_still_resolve_the_admitted_child() {
+                                         )
+                                         .unwrap_or_else(|_| panic!("parent"));
+                                     let admitted = answers.pipeline(id).unwrap();
+-                                    let mut slots = [Slot::<1>::EMPTY];
++                                    let mut slots = [const { Slot::<1>::EMPTY }; 16];
+                                     let mut bindings = Bindings::new(&mut slots).unwrap();
++                                    assert!(bindings.is_empty());
+                                     let mut tasks = [dispatch::TaskSlot::EMPTY];
+                                     let mut runtime =
+                                         dispatch::borrow_runtime(graph, &mut tasks).unwrap();
+@@ -170,6 +225,7 @@ fn finished_parent_and_reused_wire_id_still_resolve_the_admitted_child() {
+                                             }),
+                                         )
+                                         .unwrap();
++                                    assert!(!bindings.is_empty());
+                                     answers.release_pipeline_deferred(admitted);
+                                     runtime
+                                         .prepare_call(&child, &mut Some(99))
+@@ -224,6 +280,7 @@ fn finished_parent_and_reused_wire_id_still_resolve_the_admitted_child() {
+                                             .unwrap(),
+                                         Progress::Resolved(None)
+                                     ));
++                                    assert!(bindings.is_empty());
+                                     let ready = runtime.next_ready().unwrap().unwrap();
+                                     assert_eq!(ready.owner(), &99);
+                                     if invalid_path {
+@@ -301,6 +358,7 @@ fn canceled_observer_releases_parent_and_capacity_failures_preserve_dependencies
+                         let lease = answers.pipeline(id).unwrap();
+                         let mut slots = [Slot::<1>::EMPTY];
+                         let mut bindings = Bindings::new(&mut slots).unwrap();
++                        assert!(bindings.is_empty());
+                         assert!(matches!(
+                             bindings.bind(graph, answers, &lease, pipeline::Path::new(&[0, 1])),
+                             Err(Error::Capacity)
+@@ -309,6 +367,7 @@ fn canceled_observer_releases_parent_and_capacity_failures_preserve_dependencies
+                             bindings.bind(graph, answers, &lease, pipeline::Path::new(&[]));
+                         match observed {
+                             Ok(client) => {
++                                assert!(!bindings.is_empty());
+                                 assert!(matches!(
+                                     bindings.bind(graph, answers, &lease, pipeline::Path::new(&[])),
+                                     Err(Error::Capacity)
+@@ -331,6 +390,7 @@ fn canceled_observer_releases_parent_and_capacity_failures_preserve_dependencies
+                         assert!(answers.cancellation_requested(key).unwrap());
+                         assert!(!answers.dispatch(key, true).unwrap());
+                         assert!(answers.prepare_return(key).unwrap().accept().is_some());
++                        assert!(bindings.is_empty());
+                         assert!(!bindings.drain_one(answers));
+                         assert!(graph.is_empty());
+                     })
+@@ -359,6 +419,7 @@ fn broken_producer_preserves_observer_until_graph_capacity_is_available() {
+                 let lease = answers.pipeline(id).unwrap();
+                 let mut slots = [Slot::<0>::EMPTY];
+                 let mut bindings = Bindings::new(&mut slots).unwrap();
++                assert!(bindings.is_empty());
+                 let child = bindings
+                     .bind(graph, answers, &lease, pipeline::Path::new(&[]))
+                     .unwrap();
+@@ -371,6 +432,7 @@ fn broken_producer_preserves_observer_until_graph_capacity_is_available() {
+                     )),
+                     Err(Error::Graph(clients::Error::Full))
+                 ));
++                assert!(!bindings.is_empty()); // Failed resolution keeps its owner.
+                 graph.release(occupying);
+                 assert_eq!(graph.take_retired(), Some(9));
+                 assert!(matches!(
+@@ -382,6 +444,7 @@ fn broken_producer_preserves_observer_until_graph_capacity_is_available() {
+                         .unwrap(),
+                     Progress::Resolved(None)
+                 ));
++                assert!(bindings.is_empty());
+                 let call = graph.prepare_call(&child).unwrap();
+                 assert!(matches!(
+                     call.destination(),
+diff --git a/crates/capntproto-rpc/src/local.rs b/crates/capntproto-rpc/src/local.rs
+index 2708320..7ac1cfa 100644
+--- a/crates/capntproto-rpc/src/local.rs
++++ b/crates/capntproto-rpc/src/local.rs
+@@ -652,6 +652,29 @@ impl ParamsHook for Request {
+ }
+ 
+ impl Request {
++    /// A portable pipeline already knows its outgoing message domain before
++    /// its target resolves. Keep that envelope through queued forwarding; local
++    /// resolution still reads the selected parameters through ParamsHook.
++    pub(crate) fn prepared(
++        interface_id: u64,
++        method_id: u16,
++        size_hint: Option<capnp::MessageSize>,
++        client: Box<dyn ClientHook>,
++        pipeline: &crate::scoped::wire::PipelineState,
++    ) -> Self {
++        let params = pipeline.prepare_params(interface_id, method_id, size_hint);
++        Self {
++            message: params.request,
++            third_party: None,
++            context: None,
++            cap_table: params.cap_table,
++            interface_id,
++            method_id,
++            client: Some(RequestClient::Hook(client)),
++            hints: CallHints::default(),
++            is_streaming: false,
++        }
++    }
+     pub(crate) fn retain_pipeline(&mut self, parent: crate::scoped::wire::PipelineRef) {
+         debug_assert!(self.client.is_none());
+         self.client = Some(RequestClient::Publishing(parent));
+diff --git a/crates/capntproto-rpc/src/queued.rs b/crates/capntproto-rpc/src/queued.rs
+index ec75510..a7b93b2 100644
+--- a/crates/capntproto-rpc/src/queued.rs
++++ b/crates/capntproto-rpc/src/queued.rs
+@@ -482,6 +482,19 @@ impl ClientHook for Client {
+         if let Some(client) = redirect {
+             return client.new_call(interface_id, method_id, size_hint);
+         }
++        let pipeline = match &self.inner.borrow().pipeline_owner {
++            Some(PipelineOwner::Wire { _pipeline }) => Some(_pipeline.clone()),
++            _ => None,
++        };
++        if let Some(pipeline) = pipeline {
++            return capnp::capability::Request::new(Box::new(local::Request::prepared(
++                interface_id,
++                method_id,
++                size_hint,
++                self.add_ref(),
++                &pipeline,
++            )));
++        }
+         ::capnp::capability::Request::new(Box::new(local::Request::new(
+             interface_id,
+             method_id,
+diff --git a/crates/capntproto-rpc/src/scoped/wire.rs b/crates/capntproto-rpc/src/scoped/wire.rs
+index d7c991f..eb12bf3 100644
+--- a/crates/capntproto-rpc/src/scoped/wire.rs
++++ b/crates/capntproto-rpc/src/scoped/wire.rs
+@@ -1157,6 +1157,29 @@ pub(crate) struct PipelineState {
+     maximum: usize,
+ }
+ impl PipelineState {
++    pub(crate) fn prepare_params(
++        &self,
++        interface: u64,
++        method: u16,
++        size: Option<capnp::MessageSize>,
++    ) -> crate::local::Params {
++        let inbox = self.inbox.upgrade();
++        let allocator = crate::local::result_allocator(size);
++        let allocator = match inbox.as_ref().and_then(|inbox| inbox.message_pool.as_ref()) {
++            Some(pool) => allocator.segment_pool(pool.clone()),
++            None => allocator,
++        };
++        crate::local::Params::scoped(
++            interface,
++            method,
++            allocator,
++            Some(
++                inbox
++                    .as_ref()
++                    .map(|inbox| inbox.call_template(interface, method)),
++            ),
++        )
++    }
+     pub(super) fn prepared(inbox: Option<&Rc<Inbox>>) -> Rc<Self> {
+         Rc::new(Self {
+             used: Cell::new(false),
+diff --git a/crates/capntproto-rpc/src/scoped/wire/server/worker.rs b/crates/capntproto-rpc/src/scoped/wire/server/worker.rs
+index 9db84a0..6a865ca 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/server/worker.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/server/worker.rs
+@@ -54,6 +54,8 @@ pub enum Progress {
+ #[must_use = "poll accepted work and terminate it before releasing the driver"]
+ pub struct Worker<'p, 'id, I, const C: usize, const H: usize> {
+     entries: Vec<Option<Entry<'p, 'id, I, C, H>>>,
++    live: usize,
++    first_free: usize,
+     maximum: usize,
+     cursor: usize,
+     remaining: usize,
+@@ -66,6 +68,8 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
+     pub fn new(maximum: usize, executor: Option<Rc<dyn capability::CallExecutor>>) -> Self {
+         Self {
+             entries: Vec::new(),
++            live: 0,
++            first_free: 0,
+             maximum,
+             cursor: 0,
+             remaining: 0,
+@@ -76,7 +80,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
+         }
+     }
+     pub fn is_empty(&self) -> bool {
+-        self.entries.iter().all(Option::is_none)
++        self.live == 0
+     }
+     pub(in crate::scoped::wire) fn results(
+         &self,
+@@ -127,11 +131,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
+         if !driver.has_pending_call() && driver.runtime.queued() == 0 {
+             return Ok(false);
+         }
+-        let index = self
+-            .entries
+-            .iter()
+-            .position(Option::is_none)
+-            .unwrap_or(self.entries.len());
++        let index = self.first_free;
+         if index == self.entries.len() {
+             if index == self.maximum {
+                 return Ok(false);
+@@ -226,6 +226,11 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
+         } else {
+             self.entries[index] = Some(entry);
+         }
++        self.live += 1;
++        self.first_free = self.entries[index + 1..]
++            .iter()
++            .position(Option::is_none)
++            .map_or(self.entries.len(), |offset| index + 1 + offset);
+         self.remaining = self.entries.len();
+     }
+ 
+@@ -361,7 +366,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
+         if let Some(kind) = driver.disconnected() {
+             return Poll::Ready(Err(Error::from_kind(kind)));
+         }
+-        if self.entries.is_empty() {
++        if self.is_empty() {
+             return Poll::Ready(Ok(Progress::Idle));
+         }
+         if self.remaining == 0 {
+@@ -405,6 +410,8 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
+                 self.remaining = self.entries.len();
+                 if matches!(outcome, Ok(Progress::Replied)) {
+                     let entry = self.entries[index].take().expect("replied operation");
++                    self.live -= 1;
++                    self.first_free = self.first_free.min(index);
+                     self.results_cache.recycle(release(entry, driver, messages));
+                 }
+                 if matches!(outcome, Ok(Progress::Advanced)) {
+diff --git a/crates/capntproto-rpc/src/scoped/wire/server/worker/tests.rs b/crates/capntproto-rpc/src/scoped/wire/server/worker/tests.rs
+index fb36b9f..982628c 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/server/worker/tests.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/server/worker/tests.rs
+@@ -534,6 +534,37 @@ fn pending_service_does_not_starve_ready_reply_or_shutdown() {
+         check(&drain(&mut queue, messages), |r| {
+             assert_eq!(r.get_answer_id(), 1)
+         });
++        // Keep the first slot pending while repeatedly reusing the other one.
++        // A bounded worker must regain admission capacity after each reply,
++        // even though it has never become empty.
++        finish(&mut driver, messages, 1);
++        for question in 2..8 {
++            incoming(
++                &mut driver,
++                messages,
++                question,
++                1,
++                calls::Target::Imported(id),
++            );
++            assert!(worker.accept(&mut driver).unwrap());
++            let mut replied = false;
++            for _ in 0..32 {
++                if matches!(
++                    tick(&mut worker, &mut hooks, &mut driver, messages, &mut queue),
++                    Poll::Ready(Ok(Progress::Replied))
++                ) {
++                    replied = true;
++                    break;
++                }
++            }
++            assert!(replied);
++            assert!(!worker.is_empty());
++            check(&drain(&mut queue, messages), |r| {
++                assert_eq!(r.get_answer_id(), question)
++            });
++            finish(&mut driver, messages, question);
++        }
++        assert_eq!(count.get(), 8);
+         close(worker, hooks, driver, messages, &mut queue);
+     });
+ }
+diff --git a/quality/unsafe-baseline.json b/quality/unsafe-baseline.json
+index 0eaeb59..474f464 100644
+--- a/quality/unsafe-baseline.json
++++ b/quality/unsafe-baseline.json
+@@ -12,7 +12,7 @@
+         "clippy::undocumented_unsafe_blocks": 9,
+         "unsafe_op_in_unsafe_fn": 2
+       },
+-      "sha256": "46a85cd4f54518cd9fd482fad1fe002c4beaf84ef08a45c333d28096879e5117"
++      "sha256": "b90903cd3a0455b05059e6678f1a94785749a32903c5053e228874ce9151361e"
+     },
+     "crates/capntproto-core/src/primitive_list.rs": {
+       "diagnostics": {
+@@ -24,7 +24,7 @@
+       "diagnostics": {
+         "clippy::undocumented_unsafe_blocks": 12
+       },
+-      "sha256": "634da2263b92fb409b0345fc87dbfc00ee673f0bc5e4000008935ad774e1c29f"
++      "sha256": "70851ddee5b0309360dce81d569eda09264e3082d99dd435cb54b582a738037e"
+     },
+     "crates/capntproto-core/src/private/layout.rs": {
+       "diagnostics": {
+@@ -32,7 +32,7 @@
+         "clippy::undocumented_unsafe_blocks": 91,
+         "unsafe_op_in_unsafe_fn": 366
+       },
+-      "sha256": "e1ff7d4955969a9a31153292c3a34f5c0beee3cfe5957d39d80ca95afae925a6"
++      "sha256": "c52ddd480305d1ef4b4ade1903c4ce09af639599f2000366e97c06d9f16b617e"
+     },
+     "crates/capntproto-core/src/private/layout_test.rs": {
+       "diagnostics": {
+diff --git a/verification/portable/src/driver_invocation.rs b/verification/portable/src/driver_invocation.rs
+index 54c70b4..5e4f791 100644
+--- a/verification/portable/src/driver_invocation.rs
++++ b/verification/portable/src/driver_invocation.rs
+@@ -26,7 +26,9 @@ type Peer<'p, 'id, 's> = Driver<'p, 'id, 's, (), u32, u8, u32, 4, 4>;
+ 
+ pub fn encoded_immediate_return(chunk: usize) {
+     for canceled in [false, true] {
+-        for no_finish in [false, true] {
++        for (no_finish, missing_descriptor) in
++            [(false, false), (false, true), (true, false), (true, true)]
++        {
+             let mut words = [[ZERO; 97]; 12];
+             let mut buffers = words
+                 .each_mut()
+@@ -80,24 +82,42 @@ pub fn encoded_immediate_return(chunk: usize) {
+                         }
+                         let answer =
+                             capntproto_rpc_engine::ids::AnswerId::from_wire(key.id().to_wire());
+-                        // No descriptor receipt can authorize a capability hidden
+-                        // in an otherwise data-only result, even after cancellation.
++                        // Live replies reject unknown descriptor owners. Canceled
++                        // replies discard descriptors, so exercise rejection with
++                        // an unknown question ID in that case.
+                         let malformed =
+                             Frame::build(messages, 776, Default::default(), |builder| {
+                                 calls::results(
+                                     builder,
+-                                    answer,
++                                    if canceled {
++                                        capntproto_rpc_engine::ids::AnswerId::from_wire(u32::MAX)
++                                    } else {
++                                        answer
++                                    },
+                                     echo::Owned::CAPABILITY,
+                                     |mut result| {
+                                         result.field(CapabilityResults::VALUE).set_index(0)
+                                     },
+-                                )
++                                )?;
++                                builder
++                                    .try_get_root::<rpc_capnp::api::Message>()?
++                                    .field(rpc_capnp::api::Message::RETURN)
++                                    .edit()?
++                                    .field(rpc_capnp::api::Return::RESULTS)
++                                    .edit()?
++                                    .field(rpc_capnp::api::Payload::CAP_TABLE)
++                                    .init(1)?
++                                    .get_mut(0)
++                                    .unwrap()
++                                    .scalar(rpc_capnp::api::CapDescriptor::RECEIVER_HOSTED)
++                                    .set(u32::MAX);
++                                Ok(())
+                             })
+                             .unwrap();
+                         let rejected = peer
+                             .receive(malformed, messages, &mut [0; 4], |_| (), || panic!())
+                             .err()
+-                            .expect("missing descriptor must fail");
++                            .expect("unknown question or descriptor owner must fail");
+                         rejected.frame.release(messages);
+                         assert_eq!(
+                             peer.ledgers.questions.len(),
+@@ -105,7 +125,18 @@ pub fn encoded_immediate_return(chunk: usize) {
+                             "rejection retains outstanding question"
+                         );
+                         let returned = Frame::build(messages, 776, Default::default(), |builder| {
+-                            calls::acknowledge(builder, answer)?;
++                            if missing_descriptor {
++                                calls::results(
++                                    builder,
++                                    answer,
++                                    echo::Owned::CAPABILITY,
++                                    |mut result| {
++                                        result.field(CapabilityResults::VALUE).set_index(0)
++                                    },
++                                )?;
++                            } else {
++                                calls::acknowledge(builder, answer)?;
++                            }
+                             let mut root = builder.try_get_root::<rpc_capnp::api::Message>()?;
+                             let mut returned =
+                                 root.field(rpc_capnp::api::Message::RETURN).edit()?;
+@@ -131,6 +162,29 @@ pub fn encoded_immediate_return(chunk: usize) {
+                             assert!(peer.drain_canceled_response(messages));
+                         } else {
+                             let output = peer.take_output(key, messages).unwrap().unwrap();
++                            let owned::connection::CallOutput::Remote(response) = &output else {
++                                panic!("remote result");
++                            };
++                            response
++                                .with(messages, |reply| {
++                                    let owned::Reply::Results(payload) = reply else {
++                                        panic!("result");
++                                    };
++                                    if missing_descriptor {
++                                        // Content is checked on access, as in C++. A
++                                        // wire index never grants capability authority
++                                        // without its exact admitted descriptor receipt.
++                                        let pointer = echo::Owned::CAPABILITY
++                                            .read_results(payload.content())
++                                            .unwrap()
++                                            .value()
++                                            .unwrap();
++                                        assert!(payload.capability(pointer).is_err());
++                                    } else {
++                                        assert!(payload.content().is_null());
++                                    }
++                                })
++                                .unwrap();
+                             peer.release_output(output, messages);
+                         }
+                         let finish = controls::finish_one(

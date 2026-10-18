@@ -724,7 +724,7 @@ fn server_idle_certificate_observes_deferred_answer_and_export_cleanup() {
                 pipeline::Path::new(&[]),
             )
             .unwrap();
-        assert!(!driver.pipelines.vacant_within(8));
+        assert!(!driver.pipelines.is_empty());
         assert!(!matches!(poll!(), Progress::Idle));
         driver.runtime.release(observer);
         let mut idle = false;
@@ -735,8 +735,7 @@ fn server_idle_certificate_observes_deferred_answer_and_export_cleanup() {
             }
         }
         assert!(idle);
-        assert!(!driver.pipelines.vacant_within(0));
-        assert!(driver.pipelines.vacant_within(8));
+        assert!(driver.pipelines.is_empty());
         assert!(driver
             .ledgers
             .answers

@@ -482,6 +482,19 @@ impl ClientHook for Client {
         if let Some(client) = redirect {
             return client.new_call(interface_id, method_id, size_hint);
         }
+        let pipeline = match &self.inner.borrow().pipeline_owner {
+            Some(PipelineOwner::Wire { _pipeline }) => Some(_pipeline.clone()),
+            _ => None,
+        };
+        if let Some(pipeline) = pipeline {
+            return capnp::capability::Request::new(Box::new(local::Request::prepared(
+                interface_id,
+                method_id,
+                size_hint,
+                self.add_ref(),
+                &pipeline,
+            )));
+        }
         ::capnp::capability::Request::new(Box::new(local::Request::new(
             interface_id,
             method_id,

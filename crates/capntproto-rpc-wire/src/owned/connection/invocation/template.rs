@@ -225,6 +225,7 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
                 no_promise_pipelining: method.no_promise_pipelining,
                 call,
                 target,
+                target_data_words: core::num::NonZeroU16::new(1),
                 length: segment.len(),
             },
         }))
@@ -346,8 +347,106 @@ impl<'a> EncodedCall<'a> {
             Err(error) => Err(super::super::super::Error::Storage(error)),
         }
     }
-    /// A promised-answer target needs a transform list, so rebuild its envelope
-    /// from the certified parameters rather than rewriting the imported target.
+    /// Append a promised-answer transform without walking or relocating the
+    /// parameter graph. Every original segment retains its index and relative
+    /// offsets. The private builder certificate excludes overlapping objects.
+    /// Larger transforms and older target layouts use the general encoder.
+    #[allow(clippy::too_many_arguments)]
+    fn append_promised<'pool>(
+        &self,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        question: QuestionId,
+        parent: QuestionId,
+        path: pipeline::Path<'_>,
+        minimum: usize,
+        allow_handoff: bool,
+        options: capnp::message::ReaderOptions,
+    ) -> Result<Option<Frame<'pool>>, super::super::super::Error> {
+        let Some(data_words) = self.template.target_data_words else {
+            return Ok(None);
+        };
+        let pointer = self.template.target + usize::from(data_words.get()) * 8;
+        // Bound stack use independently of the configured path capacity. This
+        // buffer holds a root, a PromisedAnswer and sixteen transform entries.
+        let mut words = [capnp::word(0, 0, 0, 0, 0, 0, 0, 0); 20];
+        if path.fields().len() > 16 {
+            return Ok(None);
+        }
+        let mut target = capnp::message::FixedBuilder::new(&mut words)?;
+        path.write(
+            target.try_init_root::<rpc_capnp::api::PromisedAnswer>()?,
+            parent,
+        )?;
+        let target = target.get_segments_for_output()[0];
+        let appended = &target[8..];
+        let Some(first_bytes) = self.segment.len().checked_add(appended.len()) else {
+            return Ok(None);
+        };
+        let total_words = first_bytes / 8 + self.second.map_or(0, |second| second.len() / 8);
+        if options
+            .traversal_limit_in_words
+            .is_some_and(|limit| total_words > limit)
+        {
+            return Ok(None);
+        }
+        let Ok(first_words) = u32::try_from(first_bytes / 8) else {
+            return Ok(None);
+        };
+        // Relocate the generated root pointer into MessageTarget's pointer
+        // field. Its target starts immediately after the unchanged segment.
+        // Only the signed 30-bit offset changes; retain the generated sizes.
+        let offset = (self.segment.len() - pointer - 8) / 8;
+        if offset >= 1 << 29 {
+            return Ok(None);
+        }
+        let mut relocated = [0; 8];
+        relocated[..4].copy_from_slice(&((offset as u32) << 2).to_le_bytes());
+        relocated[4..].copy_from_slice(&target[4..8]);
+        let mut header = [0; 16];
+        header[4..8].copy_from_slice(&first_words.to_le_bytes());
+        let header_len = if let Some(second) = self.second {
+            header[..4].copy_from_slice(&1u32.to_le_bytes());
+            let second_words = u32::try_from(second.len() / 8)
+                .map_err(|_| super::super::super::Error::Capacity)?;
+            header[8..12].copy_from_slice(&second_words.to_le_bytes());
+            16
+        } else {
+            8
+        };
+        let lease = messages.copy_from_parts_with_minimum(
+            &[
+                &header[..header_len],
+                self.segment,
+                appended,
+                self.second.unwrap_or(&[]),
+            ],
+            minimum,
+            |output| {
+                let body = &mut output[header_len..];
+                body[self.template.call..self.template.call + 4]
+                    .copy_from_slice(&question.to_wire().to_le_bytes());
+                body[self.template.call + 16] = (body[self.template.call + 16] & !0b111)
+                    | u8::from(allow_handoff)
+                    | (u8::from(self.template.no_promise_pipelining) << 1);
+                // MessageTarget.promisedAnswer is union discriminant 1 at
+                // UInt16 slot 2; importedCap's inactive UInt32 slot is cleared.
+                body[self.template.target..self.template.target + 4].fill(0);
+                body[self.template.target + 4..self.template.target + 6]
+                    .copy_from_slice(&1u16.to_le_bytes());
+                body[pointer..pointer + 8].copy_from_slice(&relocated);
+            },
+        );
+        let lease = match lease {
+            Ok(lease) => lease,
+            // Compacting with the general encoder can fit when a prepared
+            // builder retains unused words from earlier parameter replacements.
+            Err(messages::Error::NoBuffer) => return Ok(None),
+            Err(error) => return Err(super::super::super::Error::Storage(error)),
+        };
+        Ok(Some(Frame::new(lease, options)))
+    }
+    /// A promised-answer target needs a transform list. Preserve certified
+    /// segments when possible, falling back to copying the parameter graph.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn copy_promised<'pool>(
         &self,
@@ -360,6 +459,17 @@ impl<'a> EncodedCall<'a> {
         allow_handoff: bool,
         options: capnp::message::ReaderOptions,
     ) -> Result<Frame<'pool>, super::super::super::Error> {
+        if let Some(frame) = self.append_promised(
+            messages,
+            question,
+            parent,
+            path,
+            minimum,
+            allow_handoff,
+            options,
+        )? {
+            return Self::validate_promised(frame, messages);
+        }
         let segments = [self.segment, self.second.unwrap_or(&[])];
         let segments = &segments[..if self.second.is_some() { 2 } else { 1 }];
         let reader =
@@ -398,6 +508,12 @@ impl<'a> EncodedCall<'a> {
                 },
             )
         })?;
+        Self::validate_promised(frame, messages)
+    }
+    fn validate_promised<'pool>(
+        frame: Frame<'pool>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+    ) -> Result<Frame<'pool>, super::super::super::Error> {
         let validation = frame
             .with(messages, |root| -> capnp::Result<()> {
                 let rpc_capnp::message::Call(call) = root.which()? else {
@@ -551,6 +667,7 @@ pub(super) struct PlainTemplate {
     no_promise_pipelining: bool,
     call: usize,
     target: usize,
+    target_data_words: Option<core::num::NonZeroU16>,
     length: usize,
 }
 
@@ -638,6 +755,14 @@ impl PlainTemplate {
             (data.len() >= minimum && start.checked_add(data.len())? <= bytes.len())
                 .then_some(start)
         };
+        let target = target.into_internal_struct_reader();
+        let data = target.get_data_section_as_blob();
+        let target_offset = offset(data, 8)?;
+        let pointer = target_offset.checked_add(data.len())?;
+        let target_data_words = (target.get_pointer_section_size() != 0
+            && pointer.checked_add(8)? <= bytes.len())
+        .then(|| core::num::NonZeroU16::new(u16::try_from(data.len() / 8).ok()?))
+        .flatten();
         Some(Self {
             method: (call.get_interface_id(), call.get_method_id()),
             no_promise_pipelining: call.get_no_promise_pipelining(),
@@ -646,12 +771,8 @@ impl PlainTemplate {
                     .get_data_section_as_blob(),
                 17,
             )?,
-            target: offset(
-                target
-                    .into_internal_struct_reader()
-                    .get_data_section_as_blob(),
-                8,
-            )?,
+            target: target_offset,
+            target_data_words,
             length: bytes.len(),
         })
     }
@@ -702,6 +823,133 @@ impl PlainTemplate {
 mod tests {
     use super::*;
     use capnp::{field_api::Data, word, Word};
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn promised_template_matches_codec_for_near_far_and_long_paths() {
+        fn canonical(root: rpc_capnp::message::Reader<'_>) -> alloc::vec::Vec<u8> {
+            let mut message = capnp::message::Builder::new_default();
+            message.set_root_canonical(root).unwrap();
+            message.get_segments_for_output()[0].to_vec()
+        }
+        for length in [0, 13, 4096] {
+            let mut call = PreparedCall::from_template(
+                &PreparedCallTemplate::default(),
+                capnp::message::HeapAllocator::new().first_segment_words(32),
+                u64::MAX,
+                u16::MAX,
+            )
+            .unwrap();
+            let data = alloc::vec![0xa5; length];
+            call.params()
+                .set_as::<capnp::data::Owned>(&data[..])
+                .unwrap();
+            let original = capnp::serialize::write_message_to_words(call.message());
+            for no_promise_pipelining in [false, true] {
+                let method = calls::DynamicCall {
+                    no_promise_pipelining,
+                    ..call.method
+                };
+                let encoded = call.encoded(method, Default::default()).unwrap().unwrap();
+                for fields in [&[][..], &[u16::MAX][..], &[17; 16][..], &[31; 17][..]] {
+                    for allow_handoff in [false, true] {
+                        let mut a = Word::allocate_zeroed_vec(1024);
+                        let mut buffers = [messages::Buffer::new(Word::words_to_bytes_mut(&mut a))];
+                        messages::with_messages(&mut buffers, &mut [], |messages| {
+                            let id = QuestionId::from_wire(u32::MAX);
+                            let parent = QuestionId::from_wire(0x7654_3210);
+                            let path = pipeline::Path::new(fields);
+                            // Exhaustion must preserve the certificate and source.
+                            let occupied = messages.reserve(128).unwrap();
+                            assert!(encoded
+                                .copy_promised(
+                                    messages,
+                                    id,
+                                    parent,
+                                    path,
+                                    method,
+                                    128,
+                                    allow_handoff,
+                                    Default::default()
+                                )
+                                .is_err());
+                            messages.discard(occupied);
+                            let appended = encoded
+                                .append_promised(
+                                    messages,
+                                    id,
+                                    parent,
+                                    path,
+                                    128,
+                                    allow_handoff,
+                                    Default::default(),
+                                )
+                                .unwrap();
+                            assert_eq!(appended.is_some(), fields.len() <= 16);
+                            if let Some(frame) = appended {
+                                frame.release(messages);
+                            }
+                            let frame = encoded
+                                .copy_promised(
+                                    messages,
+                                    id,
+                                    parent,
+                                    path,
+                                    method,
+                                    128,
+                                    allow_handoff,
+                                    Default::default(),
+                                )
+                                .unwrap();
+                            let actual = frame.with(messages, canonical).unwrap();
+                            frame.release(messages);
+                            let expected =
+                                Frame::build(messages, 8192, Default::default(), |builder| {
+                                    calls::dynamic_call_with_handoff(
+                                        builder,
+                                        id,
+                                        calls::Target::Promised {
+                                            question: parent,
+                                            path,
+                                        },
+                                        method,
+                                        allow_handoff,
+                                        |field| field.cast::<Data>().copy_from(&data),
+                                    )
+                                })
+                                .unwrap();
+                            assert_eq!(actual, expected.with(messages, canonical).unwrap());
+                            expected.release(messages);
+                            let strict = capnp::message::ReaderOptions {
+                                nesting_limit: 3,
+                                ..Default::default()
+                            };
+                            assert!(encoded
+                                .copy_promised(
+                                    messages,
+                                    id,
+                                    parent,
+                                    path,
+                                    method,
+                                    128,
+                                    allow_handoff,
+                                    strict
+                                )
+                                .is_err());
+                            // Rejected validation returns its buffer to the pool.
+                            let retry = messages.reserve(8192).unwrap();
+                            messages.discard(retry);
+                        })
+                        .unwrap();
+                    }
+                }
+            }
+            assert_eq!(
+                original,
+                capnp::serialize::write_message_to_words(call.message())
+            );
+        }
+    }
 
     #[cfg(feature = "alloc")]
     #[test]

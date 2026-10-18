@@ -1157,6 +1157,29 @@ pub(crate) struct PipelineState {
     maximum: usize,
 }
 impl PipelineState {
+    pub(crate) fn prepare_params(
+        &self,
+        interface: u64,
+        method: u16,
+        size: Option<capnp::MessageSize>,
+    ) -> crate::local::Params {
+        let inbox = self.inbox.upgrade();
+        let allocator = crate::local::result_allocator(size);
+        let allocator = match inbox.as_ref().and_then(|inbox| inbox.message_pool.as_ref()) {
+            Some(pool) => allocator.segment_pool(pool.clone()),
+            None => allocator,
+        };
+        crate::local::Params::scoped(
+            interface,
+            method,
+            allocator,
+            Some(
+                inbox
+                    .as_ref()
+                    .map(|inbox| inbox.call_template(interface, method)),
+            ),
+        )
+    }
     pub(super) fn prepared(inbox: Option<&Rc<Inbox>>) -> Rc<Self> {
         Rc::new(Self {
             used: Cell::new(false),

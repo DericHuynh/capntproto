@@ -26,7 +26,9 @@ type Peer<'p, 'id, 's> = Driver<'p, 'id, 's, (), u32, u8, u32, 4, 4>;
 
 pub fn encoded_immediate_return(chunk: usize) {
     for canceled in [false, true] {
-        for no_finish in [false, true] {
+        for (no_finish, missing_descriptor) in
+            [(false, false), (false, true), (true, false), (true, true)]
+        {
             let mut words = [[ZERO; 97]; 12];
             let mut buffers = words
                 .each_mut()
@@ -80,24 +82,42 @@ pub fn encoded_immediate_return(chunk: usize) {
                         }
                         let answer =
                             capntproto_rpc_engine::ids::AnswerId::from_wire(key.id().to_wire());
-                        // No descriptor receipt can authorize a capability hidden
-                        // in an otherwise data-only result, even after cancellation.
+                        // Live replies reject unknown descriptor owners. Canceled
+                        // replies discard descriptors, so exercise rejection with
+                        // an unknown question ID in that case.
                         let malformed =
                             Frame::build(messages, 776, Default::default(), |builder| {
                                 calls::results(
                                     builder,
-                                    answer,
+                                    if canceled {
+                                        capntproto_rpc_engine::ids::AnswerId::from_wire(u32::MAX)
+                                    } else {
+                                        answer
+                                    },
                                     echo::Owned::CAPABILITY,
                                     |mut result| {
                                         result.field(CapabilityResults::VALUE).set_index(0)
                                     },
-                                )
+                                )?;
+                                builder
+                                    .try_get_root::<rpc_capnp::api::Message>()?
+                                    .field(rpc_capnp::api::Message::RETURN)
+                                    .edit()?
+                                    .field(rpc_capnp::api::Return::RESULTS)
+                                    .edit()?
+                                    .field(rpc_capnp::api::Payload::CAP_TABLE)
+                                    .init(1)?
+                                    .get_mut(0)
+                                    .unwrap()
+                                    .scalar(rpc_capnp::api::CapDescriptor::RECEIVER_HOSTED)
+                                    .set(u32::MAX);
+                                Ok(())
                             })
                             .unwrap();
                         let rejected = peer
                             .receive(malformed, messages, &mut [0; 4], |_| (), || panic!())
                             .err()
-                            .expect("missing descriptor must fail");
+                            .expect("unknown question or descriptor owner must fail");
                         rejected.frame.release(messages);
                         assert_eq!(
                             peer.ledgers.questions.len(),
@@ -105,7 +125,18 @@ pub fn encoded_immediate_return(chunk: usize) {
                             "rejection retains outstanding question"
                         );
                         let returned = Frame::build(messages, 776, Default::default(), |builder| {
-                            calls::acknowledge(builder, answer)?;
+                            if missing_descriptor {
+                                calls::results(
+                                    builder,
+                                    answer,
+                                    echo::Owned::CAPABILITY,
+                                    |mut result| {
+                                        result.field(CapabilityResults::VALUE).set_index(0)
+                                    },
+                                )?;
+                            } else {
+                                calls::acknowledge(builder, answer)?;
+                            }
                             let mut root = builder.try_get_root::<rpc_capnp::api::Message>()?;
                             let mut returned =
                                 root.field(rpc_capnp::api::Message::RETURN).edit()?;
@@ -131,6 +162,29 @@ pub fn encoded_immediate_return(chunk: usize) {
                             assert!(peer.drain_canceled_response(messages));
                         } else {
                             let output = peer.take_output(key, messages).unwrap().unwrap();
+                            let owned::connection::CallOutput::Remote(response) = &output else {
+                                panic!("remote result");
+                            };
+                            response
+                                .with(messages, |reply| {
+                                    let owned::Reply::Results(payload) = reply else {
+                                        panic!("result");
+                                    };
+                                    if missing_descriptor {
+                                        // Content is checked on access, as in C++. A
+                                        // wire index never grants capability authority
+                                        // without its exact admitted descriptor receipt.
+                                        let pointer = echo::Owned::CAPABILITY
+                                            .read_results(payload.content())
+                                            .unwrap()
+                                            .value()
+                                            .unwrap();
+                                        assert!(payload.capability(pointer).is_err());
+                                    } else {
+                                        assert!(payload.content().is_null());
+                                    }
+                                })
+                                .unwrap();
                             peer.release_output(output, messages);
                         }
                         let finish = controls::finish_one(

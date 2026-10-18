@@ -54,6 +54,8 @@ pub enum Progress {
 #[must_use = "poll accepted work and terminate it before releasing the driver"]
 pub struct Worker<'p, 'id, I, const C: usize, const H: usize> {
     entries: Vec<Option<Entry<'p, 'id, I, C, H>>>,
+    live: usize,
+    first_free: usize,
     maximum: usize,
     cursor: usize,
     remaining: usize,
@@ -66,6 +68,8 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
     pub fn new(maximum: usize, executor: Option<Rc<dyn capability::CallExecutor>>) -> Self {
         Self {
             entries: Vec::new(),
+            live: 0,
+            first_free: 0,
             maximum,
             cursor: 0,
             remaining: 0,
@@ -76,7 +80,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         }
     }
     pub fn is_empty(&self) -> bool {
-        self.entries.iter().all(Option::is_none)
+        self.live == 0
     }
     pub(in crate::scoped::wire) fn results(
         &self,
@@ -127,11 +131,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         if !driver.has_pending_call() && driver.runtime.queued() == 0 {
             return Ok(false);
         }
-        let index = self
-            .entries
-            .iter()
-            .position(Option::is_none)
-            .unwrap_or(self.entries.len());
+        let index = self.first_free;
         if index == self.entries.len() {
             if index == self.maximum {
                 return Ok(false);
@@ -226,6 +226,11 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         } else {
             self.entries[index] = Some(entry);
         }
+        self.live += 1;
+        self.first_free = self.entries[index + 1..]
+            .iter()
+            .position(Option::is_none)
+            .map_or(self.entries.len(), |offset| index + 1 + offset);
         self.remaining = self.entries.len();
     }
 
@@ -361,7 +366,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         if let Some(kind) = driver.disconnected() {
             return Poll::Ready(Err(Error::from_kind(kind)));
         }
-        if self.entries.is_empty() {
+        if self.is_empty() {
             return Poll::Ready(Ok(Progress::Idle));
         }
         if self.remaining == 0 {
@@ -405,6 +410,8 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 self.remaining = self.entries.len();
                 if matches!(outcome, Ok(Progress::Replied)) {
                     let entry = self.entries[index].take().expect("replied operation");
+                    self.live -= 1;
+                    self.first_free = self.first_free.min(index);
                     self.results_cache.recycle(release(entry, driver, messages));
                 }
                 if matches!(outcome, Ok(Progress::Advanced)) {

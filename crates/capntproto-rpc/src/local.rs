@@ -652,6 +652,29 @@ impl ParamsHook for Request {
 }
 
 impl Request {
+    /// A portable pipeline already knows its outgoing message domain before
+    /// its target resolves. Keep that envelope through queued forwarding; local
+    /// resolution still reads the selected parameters through ParamsHook.
+    pub(crate) fn prepared(
+        interface_id: u64,
+        method_id: u16,
+        size_hint: Option<capnp::MessageSize>,
+        client: Box<dyn ClientHook>,
+        pipeline: &crate::scoped::wire::PipelineState,
+    ) -> Self {
+        let params = pipeline.prepare_params(interface_id, method_id, size_hint);
+        Self {
+            message: params.request,
+            third_party: None,
+            context: None,
+            cap_table: params.cap_table,
+            interface_id,
+            method_id,
+            client: Some(RequestClient::Hook(client)),
+            hints: CallHints::default(),
+            is_streaming: false,
+        }
+    }
     pub(crate) fn retain_pipeline(&mut self, parent: crate::scoped::wire::PipelineRef) {
         debug_assert!(self.client.is_none());
         self.client = Some(RequestClient::Publishing(parent));

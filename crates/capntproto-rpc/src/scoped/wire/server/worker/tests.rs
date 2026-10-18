@@ -534,6 +534,37 @@ fn pending_service_does_not_starve_ready_reply_or_shutdown() {
         check(&drain(&mut queue, messages), |r| {
             assert_eq!(r.get_answer_id(), 1)
         });
+        // Keep the first slot pending while repeatedly reusing the other one.
+        // A bounded worker must regain admission capacity after each reply,
+        // even though it has never become empty.
+        finish(&mut driver, messages, 1);
+        for question in 2..8 {
+            incoming(
+                &mut driver,
+                messages,
+                question,
+                1,
+                calls::Target::Imported(id),
+            );
+            assert!(worker.accept(&mut driver).unwrap());
+            let mut replied = false;
+            for _ in 0..32 {
+                if matches!(
+                    tick(&mut worker, &mut hooks, &mut driver, messages, &mut queue),
+                    Poll::Ready(Ok(Progress::Replied))
+                ) {
+                    replied = true;
+                    break;
+                }
+            }
+            assert!(replied);
+            assert!(!worker.is_empty());
+            check(&drain(&mut queue, messages), |r| {
+                assert_eq!(r.get_answer_id(), question)
+            });
+            finish(&mut driver, messages, question);
+        }
+        assert_eq!(count.get(), 8);
         close(worker, hooks, driver, messages, &mut queue);
     });
 }
