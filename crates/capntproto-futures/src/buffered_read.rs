@@ -408,8 +408,12 @@ struct Streaming {
 
 /// Reads multiple frames per underlying read. Completed buffered frames are
 /// classified by the caller: short-lived messages share the buffer; others are
-/// copied to independent storage. Incomplete frames larger than half the buffer
-/// are read directly into independent storage without invoking the classifier.
+/// copied to independent storage unless an exclusive large frame can transfer
+/// its whole allocation. Incomplete frames larger than half a small buffer are
+/// read directly into independent storage without invoking the classifier.
+/// Released large allocations, bounded to 8 MiB, can become the next receive
+/// buffer and fill completely before transferring back to a message. Retained
+/// messages never lend their allocations back to the reader.
 ///
 /// The next read rejects a live shared-buffer message, without consuming input.
 /// Dropping an unfinished read future preserves partial framing/body progress.
@@ -487,8 +491,8 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
         self.read_ahead = policy;
     }
 
-    /// Advise the transport how many bytes an exact body read still needs.
-    /// Ordinary buffered/streaming reads and completed frames use one. A
+    /// Advise the transport how many bytes a known incomplete frame still needs.
+    /// Unknown headers, streaming reads and completed frames use one. A
     /// canceled read keeps the hint and its partial frame until resumed; the
     /// transport must restore any external socket state when it is dropped.
     /// The callback must never require more than the supplied number of bytes.
@@ -636,6 +640,26 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
         scratch: &mut Option<&'a mut [Word]>,
         classify: &mut Option<impl FnOnce(&Reader<BufferedSegments>) -> Result<bool>>,
     ) -> Poll<Result<Option<Reader<BufferedScratchSegments<'a>>>>> {
+        // A released direct-read message may have returned a large allocation.
+        // Exchange it with the empty input buffer before receiving its successor,
+        // retaining the small buffer in the same cache for the reverse transfer.
+        if self.begin == self.end
+            && self.frame.is_none()
+            && self.spill.is_none()
+            && (self.read_ahead)(&self.input)
+        {
+            if let (ReceiveBuffer::Words(buffer), Some(cache)) =
+                (&mut self.buffer, &self.owned_spare)
+            {
+                let mut returned = cache.lock().unwrap();
+                if returned.len() > MAX_PROMOTED_BUFFER_WORDS
+                    && returned.len() > buffer.len()
+                    && returned.capacity() <= MAX_CACHED_SPILL_WORDS
+                {
+                    core::mem::swap(Arc::get_mut(buffer).unwrap(), &mut *returned);
+                }
+            }
+        }
         if !ready!(self.poll_prepare_frame(cx, false, false))? {
             return Poll::Ready(Ok(None));
         }
@@ -670,6 +694,41 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
         let short_lived = classify.take().expect("classify one complete frame")(&view)?;
         self.advance(bytes)?;
         let segments = view.into_segments();
+        if bytes > MAX_PROMOTED_BUFFER_WORDS * 8
+            && self.begin == 0
+            && self.end == bytes
+            && matches!(self.buffer, ReceiveBuffer::Words(_))
+            && scratch.is_none()
+        {
+            // No successor shares this allocation. Transfer it to the message
+            // instead of copying it, and restore the cached receive buffer.
+            let BufferedSegments { storage, frame, .. } = segments;
+            drop(storage);
+            let cache = self
+                .owned_spare
+                .get_or_insert_with(|| Arc::new(Mutex::new(Vec::new())));
+            let mut storage = core::mem::take(&mut *cache.lock().unwrap());
+            if storage.is_empty() {
+                storage = Word::allocate_zeroed_vec(DEFAULT_BUFFER_WORDS);
+            }
+            let ReceiveBuffer::Words(buffer) = &mut self.buffer else {
+                unreachable!()
+            };
+            core::mem::swap(Arc::get_mut(buffer).unwrap(), &mut storage);
+            self.begin = 0;
+            self.end = 0;
+            return Poll::Ready(Ok(Some(Reader::new(
+                BufferedScratchSegments(ScratchStorage::Buffered(BufferedSegments {
+                    storage: Storage::Recycled(Box::new(RecycledSpill {
+                        words: storage,
+                        cache: Arc::downgrade(cache),
+                    })),
+                    start: 0,
+                    frame,
+                })),
+                self.options,
+            ))));
+        }
         let segments = if short_lived {
             BufferedScratchSegments(ScratchStorage::Buffered(segments))
         } else {
@@ -921,8 +980,9 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
         }
     }
 
-    // Owning reads retain their half-buffer direct-read threshold. A borrowed
-    // frame can fill its reusable buffer because no storage owner escapes.
+    // Small owning buffers retain their half-buffer direct-read threshold.
+    // Borrowed frames and recovered large allocations may fill the buffer;
+    // complete, exclusive large frames can transfer storage without copying.
     // Framing, read-ahead policy and error checks remain shared.
     fn poll_prepare_frame(
         &mut self,
@@ -954,12 +1014,14 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
             }
             if let Some(frame) = &self.frame {
                 if self.end - self.begin >= frame.bytes {
+                    (self.read_hint)(&mut self.input, 1)?;
                     return Poll::Ready(Ok(true));
                 }
                 if streaming && frame.bytes > MAX_PROMOTED_BUFFER_WORDS * 8 {
                     return Poll::Ready(Ok(true));
                 }
-                let threshold = self.buffer.len() * if borrowed { 8 } else { 4 };
+                let full_buffer = borrowed || self.buffer.len() > MAX_PROMOTED_BUFFER_WORDS;
+                let threshold = self.buffer.len() * if full_buffer { 8 } else { 4 };
                 if frame.bytes > threshold || !(self.read_ahead)(&self.input) {
                     let words = frame.bytes / 8;
                     let mut storage = core::mem::take(&mut self.spare);
@@ -1032,7 +1094,10 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
                 };
                 read_end = read_end.min(self.begin + header);
             }
-            (self.read_hint)(&mut self.input, 1)?;
+            let missing = self.frame.as_ref().map_or(1, |frame| {
+                frame.bytes.saturating_sub(self.end - self.begin).max(1)
+            });
+            (self.read_hint)(&mut self.input, missing)?;
             let count =
                 ready!(Pin::new(&mut self.input).poll_read(cx, &mut buffer[self.end..read_end]))?;
             if count == 0 {
@@ -1131,6 +1196,174 @@ mod tests {
                 }
             }
             assert!(input.get_ref().hints.iter().any(|n| *n > 1));
+        }
+    }
+
+    #[test]
+    fn owning_large_frames_transfer_released_storage_without_changing_retained_frames() {
+        struct Counted {
+            source: Fragmented,
+            reads: usize,
+        }
+        impl AsyncRead for Counted {
+            fn poll_read(
+                mut self: Pin<&mut Self>,
+                cx: &mut Context<'_>,
+                bytes: &mut [u8],
+            ) -> Poll<std::io::Result<usize>> {
+                let result = Pin::new(&mut self.source).poll_read(cx, bytes);
+                if matches!(result, Poll::Ready(Ok(n)) if n != 0) {
+                    self.reads += 1;
+                }
+                result
+            }
+        }
+        let size = MAX_PROMOTED_BUFFER_WORDS * 8 + 32;
+        let frames: Vec<_> = [(size, 0x91), (size, 0x32), (size, 0x73), (31, 0x54)]
+            .into_iter()
+            .map(|(size, byte)| {
+                let mut message = capnp::message::Builder::new_default();
+                message
+                    .initn_root::<capnp::data::Builder>(size as u32)
+                    .fill(byte);
+                capnp::serialize::write_message_to_words(&message)
+            })
+            .collect();
+        for chunk in [usize::MAX, 4093] {
+            for read_ahead in [false, true] {
+                let mut input = BufferedRead::new(
+                    Counted {
+                        source: Fragmented {
+                            input: futures::io::Cursor::new(frames.concat()),
+                            chunk,
+                            pending: false,
+                        },
+                        reads: 0,
+                    },
+                    Default::default(),
+                );
+                if !read_ahead {
+                    input.set_read_ahead_policy(|_| false);
+                }
+                let read = |input: &mut BufferedRead<_>| {
+                    futures::executor::block_on(futures::future::poll_fn(|cx| {
+                        input.poll_read_message(cx, |_| Ok(false))
+                    }))
+                    .unwrap()
+                    .unwrap()
+                };
+                let retained = read(&mut input);
+                let released = read(&mut input);
+                let address = released.get_segments().framed_bytes().as_ptr();
+                drop(released);
+                let before = input.get_ref().reads;
+                let reused = read(&mut input);
+                assert_eq!(reused.get_segments().framed_bytes(), frames[2]);
+                assert_eq!(reused.get_segments().framed_bytes().as_ptr(), address);
+                if read_ahead && chunk == usize::MAX {
+                    assert_eq!(input.get_ref().reads - before, 1);
+                }
+                let successor = read(&mut input);
+                assert_eq!(successor.get_segments().framed_bytes(), frames[3]);
+                assert_eq!(retained.get_segments().framed_bytes(), frames[0]);
+                assert_eq!(reused.get_segments().framed_bytes(), frames[2]);
+                assert_eq!(
+                    input.consumed_bytes(),
+                    frames.iter().map(|f| f.len() as u64).sum()
+                );
+                drop(input);
+                assert_eq!(
+                    retained.get_root::<capnp::data::Reader>().unwrap(),
+                    vec![0x91; size]
+                );
+                assert_eq!(
+                    reused.get_root::<capnp::data::Reader>().unwrap(),
+                    vec![0x73; size]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn recovered_large_buffer_resets_readiness_and_honors_caller_scratch() {
+        let size = MAX_PROMOTED_BUFFER_WORDS * 8 + 32;
+        let mut message = capnp::message::Builder::new_default();
+        message
+            .initn_root::<capnp::data::Builder>(size as u32)
+            .fill(0x91);
+        let frame = capnp::serialize::write_message_to_words(&message);
+        let mut small = capnp::message::Builder::new_default();
+        small.set_root("successor").unwrap();
+        let small = capnp::serialize::write_message_to_words(&small);
+        for reject_reset in [false, true] {
+            let mut input = BufferedRead::new(
+                Hinted {
+                    reader: Fragmented {
+                        input: futures::io::Cursor::new(
+                            [&frame[..], &frame[..], &small[..]].concat(),
+                        ),
+                        chunk: 4093,
+                        pending: false,
+                    },
+                    frame_bytes: frame.len(),
+                    hints: Vec::new(),
+                    reject_reset: false,
+                },
+                Default::default(),
+            );
+            input.set_read_hint(Hinted::hint);
+            let first = futures::executor::block_on(input.try_read_message(|_| Ok(false)))
+                .unwrap()
+                .unwrap();
+            drop(first);
+            input.input.frame_bytes = frame.len() * 2;
+            input.input.reject_reset = reject_reset;
+            let mut scratch = Word::allocate_zeroed_vec(frame.len() / 8 + 1);
+            let last = scratch.len() - 1;
+            scratch[last] = capnp::word(1, 2, 3, 4, 5, 6, 7, 8);
+            let mut classify = Some(|_: &Reader<BufferedSegments>| Ok(false));
+            let mut available = Some(scratch.as_mut_slice());
+            let mut cx = Context::from_waker(std::task::Waker::noop());
+            loop {
+                // Discard the preparation future at every Pending, preserving
+                // only the stream's framing state and the caller's scratch.
+                match input.poll_try_read(&mut cx, &mut available, &mut classify) {
+                    Poll::Pending => continue,
+                    Poll::Ready(Ok(Some(second))) => {
+                        assert!(!reject_reset);
+                        assert!(second.get_segments().uses_scratch());
+                        assert_eq!(
+                            second.get_root::<capnp::data::Reader>().unwrap(),
+                            vec![0x91; size]
+                        );
+                        break;
+                    }
+                    Poll::Ready(Err(error)) => {
+                        assert!(reject_reset);
+                        assert!(error.to_string().contains("readiness reset failed"));
+                        assert!(matches!(
+                            input.poll_read_message(&mut cx, |_| Ok(false)),
+                            Poll::Ready(Err(_))
+                        ));
+                        break;
+                    }
+                    _ => panic!("expected a complete large frame"),
+                }
+            }
+            assert_eq!(
+                Word::words_to_bytes(&scratch[last..]),
+                &[1, 2, 3, 4, 5, 6, 7, 8]
+            );
+            if !reject_reset {
+                assert_eq!(input.get_ref().hints.last(), Some(&1));
+                let successor = futures::executor::block_on(input.try_read_message(|_| Ok(false)))
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(
+                    successor.get_root::<capnp::text::Reader>().unwrap(),
+                    "successor"
+                );
+            }
         }
     }
 

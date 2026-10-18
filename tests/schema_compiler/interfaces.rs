@@ -337,26 +337,32 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
     struct Server(Rc<RefCell<Vec<u8>>>, Rc<dyn capnp::capability::CallExecutor>);
     impl base::Server for Server {
-        async fn ping(self: Rc<Self>, params: base::PingParams, mut results: base::PingResults) -> capnp::Result<()> {
-            results.get().set_value(params.get()?.get_value() + 1);
-            Ok(())
+        fn ping(self: Rc<Self>, context: base::PingContext<'_>) -> capnp::capability::Promise<(), capnp::Error> {
+            context.complete(|params, mut results| {
+                results.set_value(params.get_value() + 1);
+                Ok(())
+            })
         }
     }
     impl service::Server for Server {
-        async fn echo(self: Rc<Self>, params: service::EchoParams, mut results: service::EchoResults) -> capnp::Result<()> {
-            let params = params.get()?;
-            let mut results = results.get();
-            results.set_text(params.get_text()?);
-            results.set_count(params.get_count() * 2);
-            Ok(())
+        fn echo(self: Rc<Self>, context: service::EchoContext<'_>) -> capnp::capability::Promise<(), capnp::Error> {
+            context.complete(|params, mut results| {
+                results.set_text(params.get_text()?);
+                results.set_count(params.get_count() * 2);
+                Ok(())
+            })
         }
-        async fn get_peer(self: Rc<Self>, _: service::GetPeerParams, mut results: service::GetPeerResults) -> capnp::Result<()> {
-            results.get().set_peer(capnp_rpc::new_client_with_executor(Server(self.0.clone(), self.1.clone()), self.1.clone()));
-            Ok(())
+        fn get_peer(self: Rc<Self>, context: service::GetPeerContext<'_>) -> capnp::capability::Promise<(), capnp::Error> {
+            context.complete(|_, mut results| {
+                results.set_peer(capnp_rpc::new_client_with_executor(Server(self.0.clone(), self.1.clone()), self.1.clone()));
+                Ok(())
+            })
         }
-        async fn upload(self: Rc<Self>, params: service::UploadParams) -> capnp::Result<()> {
-            self.0.borrow_mut().extend_from_slice(params.get()?.get_bytes()?);
-            Ok(())
+        fn upload(self: Rc<Self>, context: service::UploadContext<'_>) -> capnp::capability::Promise<(), capnp::Error> {
+            context.complete(|params, _| {
+                self.0.borrow_mut().extend_from_slice(params.get_bytes()?);
+                Ok(())
+            })
         }
     }
     #[tokio::test(flavor = "current_thread")]

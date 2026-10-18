@@ -319,27 +319,34 @@ mod tests {
     use std::rc::Rc;
     struct Server;
     impl echo::Server<text::Owned> for Server {
-        async fn echo(self: Rc<Self>, params: echo::EchoParams<text::Owned>, mut results: echo::EchoResults<text::Owned>) -> capnp::Result<()> {
-            results.get().set_value(params.get()?.get_value()?)?;
-            Ok(())
+        fn echo(self: Rc<Self>, context: echo::EchoContext<'_, text::Owned>) -> capnp::capability::Promise<(), capnp::Error> {
+            context.complete(|params, mut results| {
+                results.set_value(params.get_value()?)?;
+                Ok(())
+            })
         }
     }
     impl service::Server<text::Owned> for Server {
-        async fn wrap(self: Rc<Self>, params: service::WrapParams<text::Owned>, mut results: service::WrapResults<text::Owned>) -> capnp::Result<()> {
-            results.get().init_value().set_value(params.get()?.get_value()?)?;
-            Ok(())
+        fn wrap(self: Rc<Self>, context: service::WrapContext<'_, text::Owned>) -> capnp::capability::Promise<(), capnp::Error> {
+            context.complete(|params, results| {
+                results.init_value().set_value(params.get_value()?)?;
+                Ok(())
+            })
         }
-        async fn relay(self: Rc<Self>, params: service::RelayParams<text::Owned>, mut results: service::RelayResults<text::Owned>) -> capnp::Result<()> {
-            results.get().get_value()?.set_as::<any_pointer::Owned>(params.get()?.get_value()?)?;
-            Ok(())
+        fn relay(self: Rc<Self>, context: service::RelayContext<'_, text::Owned>) -> capnp::capability::Promise<(), capnp::Error> {
+            context.complete(|params, results| {
+                results.get_value()?.set_as::<any_pointer::Owned>(params.get_value()?)?;
+                Ok(())
+            })
         }
     }
     impl outer::service::Server<data::Owned, text::Owned, envelope::Owned<text::Owned>> for Server {
-        async fn exchange(self: Rc<Self>, params: outer::service::ExchangeParams<data::Owned, envelope::Owned<text::Owned>>, mut results: outer::service::ExchangeResults<data::Owned, text::Owned>) -> capnp::Result<()> {
-            let params = params.get()?;
-            results.get().set_first(params.get_first()?.get_value()?)?;
-            results.get().set_second(params.get_second()?)?;
-            Ok(())
+        fn exchange(self: Rc<Self>, context: outer::service::ExchangeContext<'_, data::Owned, text::Owned, envelope::Owned<text::Owned>>) -> capnp::capability::Promise<(), capnp::Error> {
+            context.complete(|params, mut results| {
+                results.set_first(params.get_first()?.get_value()?)?;
+                results.set_second(params.get_second()?)?;
+                Ok(())
+            })
         }
     }
     #[test]

@@ -1,6 +1,6 @@
 //! TCP readiness and direct-body progress for the deferred RPC scheduler.
-//! Small reads drain like KJ; large reads report partial progress while using
-//! Tokio's short-read optimization. Exact body sizes bound Linux readiness.
+//! Small and very large reads drain like KJ. Reads within the body-hint cap
+//! use Tokio's short-read optimization. Exact body sizes bound Linux readiness.
 #![forbid(unsafe_code)]
 
 use std::{
@@ -11,8 +11,8 @@ use std::{
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 
 /// Owned TCP input used by the RPC network. Small reads preserve readiness until
-/// WouldBlock. Direct body reads retain Tokio's short-read optimization and
-/// notify the RPC scheduler before yielding. On Linux, incomplete large bodies
+/// WouldBlock. Body reads within the readiness cap use Tokio's short-read
+/// optimization; all partial large reads notify the scheduler. Incomplete bodies
 /// supply a bounded readiness minimum without disabling TCP receive autotuning.
 pub struct ReadHalf {
     inner: OwnedReadHalf,
@@ -87,11 +87,12 @@ impl futures::AsyncRead for ReadHalf {
         if bytes.is_empty() {
             return Poll::Ready(Ok(0));
         }
-        if bytes.len() > 64 * 1024 {
-            // Large direct body reads benefit from Tokio's short-read
-            // readiness optimization. Publish partial progress to the RPC
-            // scheduler so a queued reply still waits for the next input turn.
-            // Otherwise it can flush between two already arriving body chunks.
+        if bytes.len() > 64 * 1024 && bytes.len() <= 1024 * 1024 {
+            // Within the receive-hint cap, a short read clears stale cached
+            // readiness before the framer raises the remaining-body minimum.
+            // Larger reads drain immediately; their remainder eventually uses
+            // this bounded path. Publish partial progress before yielding so
+            // queued output still waits for the next input turn.
             let this = self.get_mut();
             let mut buffer = tokio::io::ReadBuf::new(bytes);
             ready!(tokio::io::AsyncRead::poll_read(
@@ -109,7 +110,14 @@ impl futures::AsyncRead for ReadHalf {
             ready!(self.inner.as_ref().poll_read_ready(cx))?;
             match self.inner.try_read(bytes) {
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => continue,
-                result => return Poll::Ready(result),
+                result => {
+                    if let Ok(count) = result {
+                        if bytes.len() > 64 * 1024 && count != 0 && count < bytes.len() {
+                            cx.waker().wake_by_ref();
+                        }
+                    }
+                    return Poll::Ready(result);
+                }
             }
         }
     }
