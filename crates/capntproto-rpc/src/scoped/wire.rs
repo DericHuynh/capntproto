@@ -44,7 +44,7 @@ enum PayloadBody {
     Shared { message: Box<SharedPayload> },
 }
 struct SharedPayload {
-    message: capnp::message::CheckedPointerReader<
+    message: capnp::message::CachedPointerReader<
         capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
     >,
 }
@@ -115,7 +115,8 @@ impl Payload {
             // Retain the already selected content pointer instead of decoding
             // Call/Return and Payload ancestors again. The checked owner verifies
             // every segment's identity and extent before keeping these offsets.
-            let message = capnp::message::CheckedPointerReader::retain(reader, segments, options)?;
+            let message = capnp::message::CheckedPointerReader::retain(reader, segments, options)?
+                .into_cached()?;
             return Ok(Self {
                 body: PayloadBody::Shared {
                     message: Box::new(SharedPayload { message }),
@@ -159,7 +160,9 @@ impl Payload {
             .expect("result selector returns a pointer or an error");
         Ok(Self {
             body: PayloadBody::Shared {
-                message: Box::new(SharedPayload { message }),
+                message: Box::new(SharedPayload {
+                    message: message.into_cached()?,
+                }),
             },
             caps: Vec::new(),
         })

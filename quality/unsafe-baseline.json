@@ -12,7 +12,7 @@
         "clippy::undocumented_unsafe_blocks": 9,
         "unsafe_op_in_unsafe_fn": 2
       },
-      "sha256": "904483e4cd8ad826e9a573dd8d2735115fda11eac8940ec2c43a76d9da1bbc1f"
+      "sha256": "46a85cd4f54518cd9fd482fad1fe002c4beaf84ef08a45c333d28096879e5117"
     },
     "crates/capntproto-core/src/primitive_list.rs": {
       "diagnostics": {
@@ -24,7 +24,7 @@
       "diagnostics": {
         "clippy::undocumented_unsafe_blocks": 12
       },
-      "sha256": "90f811c1b2567e6786131fadc495fcf1b013aebea5287f5d9e445db38f359192"
+      "sha256": "634da2263b92fb409b0345fc87dbfc00ee673f0bc5e4000008935ad774e1c29f"
     },
     "crates/capntproto-core/src/private/layout.rs": {
       "diagnostics": {

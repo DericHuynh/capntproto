@@ -408,6 +408,7 @@ impl<'pool, 'q> Question<'pool, 'q> {
                         nesting_limit: i32::MAX,
                     },
                 )
+                .and_then(capnp::message::CheckedPointerReader::into_cached)
                 .map(|message| {
                     alloc::boxed::Box::new(PlainResults {
                         message,
@@ -565,7 +566,7 @@ impl AdmittedPlain {
     #[cfg(feature = "alloc")]
     #[inline(always)]
     pub(super) fn owned(
-        message: capnp::message::CheckedPointerReader<
+        message: capnp::message::CachedPointerReader<
             capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
         >,
     ) -> Self {
@@ -605,7 +606,7 @@ pub(super) struct AdmittedReturn<'i, 'e, 'a, I, const N: usize> {
 /// reuse until the final response reader has gone away.
 #[cfg(feature = "alloc")]
 pub struct PlainResults {
-    message: capnp::message::CheckedPointerReader<
+    message: capnp::message::CachedPointerReader<
         capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
     >,
     owner: Option<alloc::rc::Rc<dyn core::any::Any>>,

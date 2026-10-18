@@ -145,6 +145,11 @@ _apalache-tmp/
 !/research/reports/portable-performance/2026-10-18-repetitions/README.md
 !/research/reports/portable-performance/2026-10-18-repetitions/report.json
 !/research/reports/portable-performance/2026-10-18-repetitions/source.patch
+!/research/reports/portable-performance/2026-10-18-owned-readers/
+/research/reports/portable-performance/2026-10-18-owned-readers/*
+!/research/reports/portable-performance/2026-10-18-owned-readers/README.md
+!/research/reports/portable-performance/2026-10-18-owned-readers/report.json
+!/research/reports/portable-performance/2026-10-18-owned-readers/source.patch
 
 # Locally discovered fuzz inputs; checked-in upstream corpora remain included.
 /fuzz/artifacts/

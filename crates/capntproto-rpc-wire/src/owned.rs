@@ -236,7 +236,9 @@ impl<'pool> Frame<'pool> {
                 nesting_limit: i32::MAX,
             },
         )?;
-        Ok(Some(alloc::boxed::Box::new(PlainParams { message })))
+        Ok(Some(alloc::boxed::Box::new(PlainParams {
+            message: message.into_cached()?,
+        })))
     }
     /// Full serialized segment words, including unreachable data but excluding
     /// the segment table. Admission policies must not use root target_size(),
@@ -1013,6 +1015,7 @@ impl<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> Call<'pool, 'i, 'e, '
                     nesting_limit: i32::MAX,
                 },
             )
+            .and_then(capnp::message::CheckedPointerReader::into_cached)
             .map(|message| Some(alloc::boxed::Box::new(PlainParams { message })))
         })?
         .map_err(Error::from)
@@ -1130,7 +1133,7 @@ impl<'m, 'r, 'i, 'e, 'a, I, const N: usize> Request<'m, 'r, 'i, 'e, 'a, I, N> {
 /// is private so unchecked frames cannot bypass admission's traversal limits.
 #[cfg(feature = "alloc")]
 pub struct PlainParams {
-    message: capnp::message::CheckedPointerReader<
+    message: capnp::message::CachedPointerReader<
         capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
     >,
 }

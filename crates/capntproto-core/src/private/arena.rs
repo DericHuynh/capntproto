@@ -162,7 +162,7 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn cached(&self) -> Result<CachedReaderArena<'_, S>> {
+    pub(crate) fn cached(&self) -> Result<CachedReaderArena<&Self>> {
         Ok(CachedReaderArena {
             inner: self,
             first: self.get_segment(0)?,
@@ -170,13 +170,22 @@ where
     }
 }
 
-/// A short-lived borrow caches the common segment, never a movable owner. The
-/// source remains borrowed until every view into this arena has been destroyed.
-pub(crate) struct CachedReaderArena<'a, S> {
-    inner: &'a ReaderArenaImpl<S>,
+/// Cache the common segment only after its arena has a stable address. The
+/// private constructors accept either a live borrow or an owning Rc; neither
+/// exposes mutable access or moves the arena while cached pointers exist.
+pub(crate) struct CachedReaderArena<O> {
+    inner: O,
     first: (*const u8, u32),
 }
-impl<S: ReaderSegments> CachedReaderArena<'_, S> {
+#[cfg(feature = "alloc")]
+impl<S: ReaderSegments> CachedReaderArena<alloc::rc::Rc<ReaderArenaImpl<S>>> {
+    pub(crate) fn owning(arena: ReaderArenaImpl<S>) -> Result<Self> {
+        let inner = alloc::rc::Rc::new(arena);
+        let first = inner.get_segment(0)?;
+        Ok(Self { inner, first })
+    }
+}
+impl<S: ReaderSegments, O: core::ops::Deref<Target = ReaderArenaImpl<S>>> CachedReaderArena<O> {
     // Keep non-cached segment lookup and its error storage out of the vtable's
     // common segment-zero bounds check. The same arena validates other segments.
     #[inline(never)]
@@ -192,10 +201,13 @@ impl<S: ReaderSegments> CachedReaderArena<'_, S> {
         unsafe { self.inner.check_offset_and_read(id, start, offset, words) }
     }
 }
-// SAFETY: first was checked by the original arena while it is borrowed for 'a.
-// All other segments and the traversal budget belong to that same live arena.
-// No cached pointer survives a move of its segment owner.
-unsafe impl<S: ReaderSegments> ReaderArena for CachedReaderArena<'_, S> {
+// SAFETY: private constructors cache first only after borrowing the arena or
+// placing it in an Rc. Neither constructor exposes mutation or moves its owner
+// afterward. ReaderSegments keeps returned storage live until that owner drops.
+// Other segments and the traversal budget belong to the same retained arena.
+unsafe impl<S: ReaderSegments, O: core::ops::Deref<Target = ReaderArenaImpl<S>>> ReaderArena
+    for CachedReaderArena<O>
+{
     #[inline(always)]
     fn get_segment(&self, id: u32) -> Result<(*const u8, u32)> {
         if id == 0 {

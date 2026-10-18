@@ -1,0 +1,383 @@
+diff --git a/crates/capntproto-core/src/message.rs b/crates/capntproto-core/src/message.rs
+index 9500c79..9282565 100644
+--- a/crates/capntproto-core/src/message.rs
++++ b/crates/capntproto-core/src/message.rs
+@@ -301,6 +301,19 @@ impl<S: ReaderSegments> CheckedPointerReader<S> {
+         reader.arena.amplified_read(root.words())?;
+         Ok(Self { root, reader })
+     }
++    /// Move this reader into stable shared storage and cache segment zero for
++    /// subsequent application reads. This allocates one owner without copying
++    /// the message and preserves the existing traversal and nesting budgets.
++    /// The cached segment is a snapshot of its extent at conversion; its owner
++    /// cannot be recovered or mutated through the returned reader. Other
++    /// segments continue to use the original provider. Requires segment zero.
++    #[cfg(feature = "alloc")]
++    pub fn into_cached(self) -> Result<CachedPointerReader<S>> {
++        Ok(CachedPointerReader {
++            root: self.root,
++            arena: crate::private::arena::CachedReaderArena::owning(self.reader.arena)?,
++        })
++    }
+     /// Borrow the selected pointer without decoding its ancestors again.
+     #[inline(always)]
+     pub fn root(&self) -> any_pointer::Reader<'_> {
+@@ -311,6 +324,24 @@ impl<S: ReaderSegments> CheckedPointerReader<S> {
+     }
+ }
+ 
++/// An owning selected pointer whose segment-zero storage has a stable
++/// address. Construct with [`CheckedPointerReader::into_cached`]. Views borrow
++/// this owner, and all reads share its original traversal budget.
++#[cfg(feature = "alloc")]
++pub struct CachedPointerReader<S: ReaderSegments> {
++    root: layout::CachedPointerRoot,
++    arena: crate::private::arena::CachedReaderArena<alloc::rc::Rc<ReaderArenaImpl<S>>>,
++}
++#[cfg(feature = "alloc")]
++impl<S: ReaderSegments> CachedPointerReader<S> {
++    #[inline(always)]
++    pub fn root(&self) -> any_pointer::Reader<'_> {
++        // SAFETY: selection validated the offsets, and the owning cache retains
++        // the same immutable arena at a stable address until every view expires.
++        any_pointer::Reader::new(unsafe { self.root.borrow(&self.arena) })
++    }
++}
++
+ /// An immutable message with one optional selected struct. Dispatchers can
+ /// cache a view they already decoded without traversing its path a second time.
+ /// Selection preserves the message's existing traversal and nesting budgets.
+diff --git a/crates/capntproto-core/src/private/arena.rs b/crates/capntproto-core/src/private/arena.rs
+index 16879f2..eaafe54 100644
+--- a/crates/capntproto-core/src/private/arena.rs
++++ b/crates/capntproto-core/src/private/arena.rs
+@@ -162,7 +162,7 @@ where
+     }
+ 
+     #[inline(always)]
+-    pub(crate) fn cached(&self) -> Result<CachedReaderArena<'_, S>> {
++    pub(crate) fn cached(&self) -> Result<CachedReaderArena<&Self>> {
+         Ok(CachedReaderArena {
+             inner: self,
+             first: self.get_segment(0)?,
+@@ -170,13 +170,22 @@ where
+     }
+ }
+ 
+-/// A short-lived borrow caches the common segment, never a movable owner. The
+-/// source remains borrowed until every view into this arena has been destroyed.
+-pub(crate) struct CachedReaderArena<'a, S> {
+-    inner: &'a ReaderArenaImpl<S>,
++/// Cache the common segment only after its arena has a stable address. The
++/// private constructors accept either a live borrow or an owning Rc; neither
++/// exposes mutable access or moves the arena while cached pointers exist.
++pub(crate) struct CachedReaderArena<O> {
++    inner: O,
+     first: (*const u8, u32),
+ }
+-impl<S: ReaderSegments> CachedReaderArena<'_, S> {
++#[cfg(feature = "alloc")]
++impl<S: ReaderSegments> CachedReaderArena<alloc::rc::Rc<ReaderArenaImpl<S>>> {
++    pub(crate) fn owning(arena: ReaderArenaImpl<S>) -> Result<Self> {
++        let inner = alloc::rc::Rc::new(arena);
++        let first = inner.get_segment(0)?;
++        Ok(Self { inner, first })
++    }
++}
++impl<S: ReaderSegments, O: core::ops::Deref<Target = ReaderArenaImpl<S>>> CachedReaderArena<O> {
+     // Keep non-cached segment lookup and its error storage out of the vtable's
+     // common segment-zero bounds check. The same arena validates other segments.
+     #[inline(never)]
+@@ -192,10 +201,13 @@ impl<S: ReaderSegments> CachedReaderArena<'_, S> {
+         unsafe { self.inner.check_offset_and_read(id, start, offset, words) }
+     }
+ }
+-// SAFETY: first was checked by the original arena while it is borrowed for 'a.
+-// All other segments and the traversal budget belong to that same live arena.
+-// No cached pointer survives a move of its segment owner.
+-unsafe impl<S: ReaderSegments> ReaderArena for CachedReaderArena<'_, S> {
++// SAFETY: private constructors cache first only after borrowing the arena or
++// placing it in an Rc. Neither constructor exposes mutation or moves its owner
++// afterward. ReaderSegments keeps returned storage live until that owner drops.
++// Other segments and the traversal budget belong to the same retained arena.
++unsafe impl<S: ReaderSegments, O: core::ops::Deref<Target = ReaderArenaImpl<S>>> ReaderArena
++    for CachedReaderArena<O>
++{
+     #[inline(always)]
+     fn get_segment(&self, id: u32) -> Result<(*const u8, u32)> {
+         if id == 0 {
+diff --git a/crates/capntproto-core/tests/selected_struct.rs b/crates/capntproto-core/tests/selected_struct.rs
+index ae9a1e0..2256772 100644
+--- a/crates/capntproto-core/tests/selected_struct.rs
++++ b/crates/capntproto-core/tests/selected_struct.rs
+@@ -660,3 +660,136 @@ fn cached_arena_validates_far_segment_children_with_the_original_budget() {
+         }
+     }
+ }
++
++#[test]
++fn owning_pointer_cache_pins_inline_storage_and_preserves_spent_budget() {
++    use std::{cell::Cell, rc::Rc};
++    struct Inline {
++        words: [capnp::Word; 4],
++        lookups: Rc<Cell<usize>>,
++        dropped: Rc<Cell<bool>>,
++    }
++    impl message::ReaderSegments for Inline {
++        fn get_segment(&self, id: u32) -> Option<&[u8]> {
++            self.lookups.set(self.lookups.get() + 1);
++            (id == 0).then(|| capnp::Word::words_to_bytes(&self.words))
++        }
++    }
++    impl Drop for Inline {
++        fn drop(&mut self) {
++            self.dropped.set(true);
++        }
++    }
++    let lookups = Rc::new(Cell::new(0));
++    let dropped = Rc::new(Cell::new(false));
++    let reader = message::Reader::new(
++        Inline {
++            words: [
++                capnp::word(0, 0, 0, 0, 1, 0, 1, 0),
++                capnp::word(42, 0, 0, 0, 0, 0, 0, 0),
++                capnp::word(1, 0, 0, 0, 26, 0, 0, 0),
++                capnp::word(b'a', b'b', b'c', 0, 0, 0, 0, 0),
++            ],
++            lookups: lookups.clone(),
++            dropped: dropped.clone(),
++        },
++        Default::default(),
++    );
++    let (selected, ()) = reader
++        .try_select_pointer::<_, capnp::Error>(
++            message::ReaderOptions {
++                traversal_limit_in_words: Some(8),
++                ..Default::default()
++            },
++            |root| Ok(Some((root, ()))),
++        )
++        .unwrap()
++        .unwrap();
++    let before = selected
++        .root()
++        .get_as::<capnp::any_struct::Reader>()
++        .unwrap();
++    let address = before
++        .into_internal_struct_reader()
++        .get_data_section_as_blob()
++        .as_ptr();
++    let cached = selected.into_cached().unwrap();
++    let calls = lookups.get();
++    let root = cached.root().get_as::<capnp::any_struct::Reader>().unwrap();
++    let root = root.into_internal_struct_reader();
++    assert_ne!(address, root.get_data_section_as_blob().as_ptr());
++    assert_eq!(root.get_data_field::<u64>(0), 42);
++    let address = root.get_data_section_as_blob().as_ptr();
++    for _ in 0..3 {
++        assert_eq!(root.get_pointer_field(0).get_data(None).unwrap(), b"abc");
++    }
++    assert_eq!(
++        root.get_pointer_field(0).get_data(None).unwrap_err().kind,
++        ErrorKind::ReadLimitExceeded
++    );
++    assert_eq!(
++        lookups.get(),
++        calls,
++        "all segment-zero reads use the cached descriptor"
++    );
++    let moved = Box::new(cached);
++    assert!(!dropped.get());
++    assert!(
++        matches!(moved.root().get_as::<capnp::any_struct::Reader>(), Err(error) if error.kind == ErrorKind::ReadLimitExceeded)
++    );
++    assert!(!address.is_null());
++    drop(moved);
++    assert!(
++        dropped.get(),
++        "cache retains and drops its original owner exactly once"
++    );
++}
++
++#[test]
++fn owning_pointer_cache_keeps_far_pointer_and_nesting_checks() {
++    for first_segment_words in [1, 64] {
++        let mut builder = message::Builder::new(
++            message::HeapAllocator::new().first_segment_words(first_segment_words),
++        );
++        builder
++            .init_root::<type_::Builder>()
++            .init_list()
++            .init_element_type()
++            .set_uint64(());
++        let bytes = capnp::serialize::write_message_to_words(&builder);
++        for limit in [1, 64] {
++            let reader =
++                capnp::serialize::read_message(bytes.as_slice(), Default::default()).unwrap();
++            let (selected, ()) = reader
++                .try_select_pointer::<_, capnp::Error>(
++                    message::ReaderOptions {
++                        nesting_limit: limit,
++                        ..Default::default()
++                    },
++                    |root| Ok(Some((root, ()))),
++                )
++                .unwrap()
++                .unwrap();
++            let cached = Box::new(selected.into_cached().unwrap());
++            let type_::List(list) = cached
++                .root()
++                .get_as::<type_::Reader>()
++                .unwrap()
++                .which()
++                .unwrap()
++            else {
++                panic!()
++            };
++            if limit == 1 {
++                assert!(
++                    matches!(list.get_element_type(), Err(error) if error.kind == ErrorKind::MessageIsTooDeeplyNestedOrContainsCycles)
++                );
++            } else {
++                assert!(matches!(
++                    list.get_element_type().unwrap().which(),
++                    Ok(type_::Uint64(()))
++                ));
++            }
++        }
++    }
++}
+diff --git a/crates/capntproto-rpc-wire/src/owned.rs b/crates/capntproto-rpc-wire/src/owned.rs
+index 72eb8e8..7ca0031 100644
+--- a/crates/capntproto-rpc-wire/src/owned.rs
++++ b/crates/capntproto-rpc-wire/src/owned.rs
+@@ -236,7 +236,9 @@ impl<'pool> Frame<'pool> {
+                 nesting_limit: i32::MAX,
+             },
+         )?;
+-        Ok(Some(alloc::boxed::Box::new(PlainParams { message })))
++        Ok(Some(alloc::boxed::Box::new(PlainParams {
++            message: message.into_cached()?,
++        })))
+     }
+     /// Full serialized segment words, including unreachable data but excluding
+     /// the segment table. Admission policies must not use root target_size(),
+@@ -1013,6 +1015,7 @@ impl<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> Call<'pool, 'i, 'e, '
+                     nesting_limit: i32::MAX,
+                 },
+             )
++            .and_then(capnp::message::CheckedPointerReader::into_cached)
+             .map(|message| Some(alloc::boxed::Box::new(PlainParams { message })))
+         })?
+         .map_err(Error::from)
+@@ -1130,7 +1133,7 @@ impl<'m, 'r, 'i, 'e, 'a, I, const N: usize> Request<'m, 'r, 'i, 'e, 'a, I, N> {
+ /// is private so unchecked frames cannot bypass admission's traversal limits.
+ #[cfg(feature = "alloc")]
+ pub struct PlainParams {
+-    message: capnp::message::CheckedPointerReader<
++    message: capnp::message::CachedPointerReader<
+         capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
+     >,
+ }
+diff --git a/crates/capntproto-rpc-wire/src/owned/connection/plain_return.rs b/crates/capntproto-rpc-wire/src/owned/connection/plain_return.rs
+index 3f21bbb..6ecca89 100644
+--- a/crates/capntproto-rpc-wire/src/owned/connection/plain_return.rs
++++ b/crates/capntproto-rpc-wire/src/owned/connection/plain_return.rs
+@@ -171,6 +171,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+         );
+         match admitted {
+             Ok(Some((message, (index, receiver, pending)))) => {
++                // Construct the stable application reader before committing the
++                // pending question transition; failure leaves admission intact.
++                let message = message
++                    .into_cached()
++                    .map_err(|error| Error::Input(error.into()))?;
+                 let admitted = super::super::question::AdmittedPlain::owned(message);
+                 let Some(Exchange::Pending(question)) = self.exchanges[index].exchange.take()
+                 else {
+diff --git a/crates/capntproto-rpc-wire/src/owned/question.rs b/crates/capntproto-rpc-wire/src/owned/question.rs
+index b5a53b6..a838eae 100644
+--- a/crates/capntproto-rpc-wire/src/owned/question.rs
++++ b/crates/capntproto-rpc-wire/src/owned/question.rs
+@@ -408,6 +408,7 @@ impl<'pool, 'q> Question<'pool, 'q> {
+                         nesting_limit: i32::MAX,
+                     },
+                 )
++                .and_then(capnp::message::CheckedPointerReader::into_cached)
+                 .map(|message| {
+                     alloc::boxed::Box::new(PlainResults {
+                         message,
+@@ -565,7 +566,7 @@ impl AdmittedPlain {
+     #[cfg(feature = "alloc")]
+     #[inline(always)]
+     pub(super) fn owned(
+-        message: capnp::message::CheckedPointerReader<
++        message: capnp::message::CachedPointerReader<
+             capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
+         >,
+     ) -> Self {
+@@ -605,7 +606,7 @@ pub(super) struct AdmittedReturn<'i, 'e, 'a, I, const N: usize> {
+ /// reuse until the final response reader has gone away.
+ #[cfg(feature = "alloc")]
+ pub struct PlainResults {
+-    message: capnp::message::CheckedPointerReader<
++    message: capnp::message::CachedPointerReader<
+         capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
+     >,
+     owner: Option<alloc::rc::Rc<dyn core::any::Any>>,
+diff --git a/crates/capntproto-rpc/src/scoped/wire.rs b/crates/capntproto-rpc/src/scoped/wire.rs
+index 5fb2b12..3914599 100644
+--- a/crates/capntproto-rpc/src/scoped/wire.rs
++++ b/crates/capntproto-rpc/src/scoped/wire.rs
+@@ -44,7 +44,7 @@ enum PayloadBody {
+     Shared { message: Box<SharedPayload> },
+ }
+ struct SharedPayload {
+-    message: capnp::message::CheckedPointerReader<
++    message: capnp::message::CachedPointerReader<
+         capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
+     >,
+ }
+@@ -115,7 +115,8 @@ impl Payload {
+             // Retain the already selected content pointer instead of decoding
+             // Call/Return and Payload ancestors again. The checked owner verifies
+             // every segment's identity and extent before keeping these offsets.
+-            let message = capnp::message::CheckedPointerReader::retain(reader, segments, options)?;
++            let message = capnp::message::CheckedPointerReader::retain(reader, segments, options)?
++                .into_cached()?;
+             return Ok(Self {
+                 body: PayloadBody::Shared {
+                     message: Box::new(SharedPayload { message }),
+@@ -159,7 +160,9 @@ impl Payload {
+             .expect("result selector returns a pointer or an error");
+         Ok(Self {
+             body: PayloadBody::Shared {
+-                message: Box::new(SharedPayload { message }),
++                message: Box::new(SharedPayload {
++                    message: message.into_cached()?,
++                }),
+             },
+             caps: Vec::new(),
+         })
+diff --git a/quality/unsafe-baseline.json b/quality/unsafe-baseline.json
+index 770bcaa..0eaeb59 100644
+--- a/quality/unsafe-baseline.json
++++ b/quality/unsafe-baseline.json
+@@ -12,7 +12,7 @@
+         "clippy::undocumented_unsafe_blocks": 9,
+         "unsafe_op_in_unsafe_fn": 2
+       },
+-      "sha256": "904483e4cd8ad826e9a573dd8d2735115fda11eac8940ec2c43a76d9da1bbc1f"
++      "sha256": "46a85cd4f54518cd9fd482fad1fe002c4beaf84ef08a45c333d28096879e5117"
+     },
+     "crates/capntproto-core/src/primitive_list.rs": {
+       "diagnostics": {
+@@ -24,7 +24,7 @@
+       "diagnostics": {
+         "clippy::undocumented_unsafe_blocks": 12
+       },
+-      "sha256": "90f811c1b2567e6786131fadc495fcf1b013aebea5287f5d9e445db38f359192"
++      "sha256": "634da2263b92fb409b0345fc87dbfc00ee673f0bc5e4000008935ad774e1c29f"
+     },
+     "crates/capntproto-core/src/private/layout.rs": {
+       "diagnostics": {

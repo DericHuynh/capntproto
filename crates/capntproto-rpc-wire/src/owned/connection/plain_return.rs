@@ -171,6 +171,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         );
         match admitted {
             Ok(Some((message, (index, receiver, pending)))) => {
+                // Construct the stable application reader before committing the
+                // pending question transition; failure leaves admission intact.
+                let message = message
+                    .into_cached()
+                    .map_err(|error| Error::Input(error.into()))?;
                 let admitted = super::super::question::AdmittedPlain::owned(message);
                 let Some(Exchange::Pending(question)) = self.exchanges[index].exchange.take()
                 else {

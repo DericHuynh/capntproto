@@ -301,6 +301,19 @@ impl<S: ReaderSegments> CheckedPointerReader<S> {
         reader.arena.amplified_read(root.words())?;
         Ok(Self { root, reader })
     }
+    /// Move this reader into stable shared storage and cache segment zero for
+    /// subsequent application reads. This allocates one owner without copying
+    /// the message and preserves the existing traversal and nesting budgets.
+    /// The cached segment is a snapshot of its extent at conversion; its owner
+    /// cannot be recovered or mutated through the returned reader. Other
+    /// segments continue to use the original provider. Requires segment zero.
+    #[cfg(feature = "alloc")]
+    pub fn into_cached(self) -> Result<CachedPointerReader<S>> {
+        Ok(CachedPointerReader {
+            root: self.root,
+            arena: crate::private::arena::CachedReaderArena::owning(self.reader.arena)?,
+        })
+    }
     /// Borrow the selected pointer without decoding its ancestors again.
     #[inline(always)]
     pub fn root(&self) -> any_pointer::Reader<'_> {
@@ -308,6 +321,24 @@ impl<S: ReaderSegments> CheckedPointerReader<S> {
         // The cache stores offsets; borrow checks the current extent and uses
         // fresh bases, including after moving an inline segment provider.
         any_pointer::Reader::new(unsafe { self.root.borrow(&self.reader.arena) })
+    }
+}
+
+/// An owning selected pointer whose segment-zero storage has a stable
+/// address. Construct with [`CheckedPointerReader::into_cached`]. Views borrow
+/// this owner, and all reads share its original traversal budget.
+#[cfg(feature = "alloc")]
+pub struct CachedPointerReader<S: ReaderSegments> {
+    root: layout::CachedPointerRoot,
+    arena: crate::private::arena::CachedReaderArena<alloc::rc::Rc<ReaderArenaImpl<S>>>,
+}
+#[cfg(feature = "alloc")]
+impl<S: ReaderSegments> CachedPointerReader<S> {
+    #[inline(always)]
+    pub fn root(&self) -> any_pointer::Reader<'_> {
+        // SAFETY: selection validated the offsets, and the owning cache retains
+        // the same immutable arena at a stable address until every view expires.
+        any_pointer::Reader::new(unsafe { self.root.borrow(&self.arena) })
     }
 }
 

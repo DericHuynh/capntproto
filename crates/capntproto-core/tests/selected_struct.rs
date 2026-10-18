@@ -660,3 +660,136 @@ fn cached_arena_validates_far_segment_children_with_the_original_budget() {
         }
     }
 }
+
+#[test]
+fn owning_pointer_cache_pins_inline_storage_and_preserves_spent_budget() {
+    use std::{cell::Cell, rc::Rc};
+    struct Inline {
+        words: [capnp::Word; 4],
+        lookups: Rc<Cell<usize>>,
+        dropped: Rc<Cell<bool>>,
+    }
+    impl message::ReaderSegments for Inline {
+        fn get_segment(&self, id: u32) -> Option<&[u8]> {
+            self.lookups.set(self.lookups.get() + 1);
+            (id == 0).then(|| capnp::Word::words_to_bytes(&self.words))
+        }
+    }
+    impl Drop for Inline {
+        fn drop(&mut self) {
+            self.dropped.set(true);
+        }
+    }
+    let lookups = Rc::new(Cell::new(0));
+    let dropped = Rc::new(Cell::new(false));
+    let reader = message::Reader::new(
+        Inline {
+            words: [
+                capnp::word(0, 0, 0, 0, 1, 0, 1, 0),
+                capnp::word(42, 0, 0, 0, 0, 0, 0, 0),
+                capnp::word(1, 0, 0, 0, 26, 0, 0, 0),
+                capnp::word(b'a', b'b', b'c', 0, 0, 0, 0, 0),
+            ],
+            lookups: lookups.clone(),
+            dropped: dropped.clone(),
+        },
+        Default::default(),
+    );
+    let (selected, ()) = reader
+        .try_select_pointer::<_, capnp::Error>(
+            message::ReaderOptions {
+                traversal_limit_in_words: Some(8),
+                ..Default::default()
+            },
+            |root| Ok(Some((root, ()))),
+        )
+        .unwrap()
+        .unwrap();
+    let before = selected
+        .root()
+        .get_as::<capnp::any_struct::Reader>()
+        .unwrap();
+    let address = before
+        .into_internal_struct_reader()
+        .get_data_section_as_blob()
+        .as_ptr();
+    let cached = selected.into_cached().unwrap();
+    let calls = lookups.get();
+    let root = cached.root().get_as::<capnp::any_struct::Reader>().unwrap();
+    let root = root.into_internal_struct_reader();
+    assert_ne!(address, root.get_data_section_as_blob().as_ptr());
+    assert_eq!(root.get_data_field::<u64>(0), 42);
+    let address = root.get_data_section_as_blob().as_ptr();
+    for _ in 0..3 {
+        assert_eq!(root.get_pointer_field(0).get_data(None).unwrap(), b"abc");
+    }
+    assert_eq!(
+        root.get_pointer_field(0).get_data(None).unwrap_err().kind,
+        ErrorKind::ReadLimitExceeded
+    );
+    assert_eq!(
+        lookups.get(),
+        calls,
+        "all segment-zero reads use the cached descriptor"
+    );
+    let moved = Box::new(cached);
+    assert!(!dropped.get());
+    assert!(
+        matches!(moved.root().get_as::<capnp::any_struct::Reader>(), Err(error) if error.kind == ErrorKind::ReadLimitExceeded)
+    );
+    assert!(!address.is_null());
+    drop(moved);
+    assert!(
+        dropped.get(),
+        "cache retains and drops its original owner exactly once"
+    );
+}
+
+#[test]
+fn owning_pointer_cache_keeps_far_pointer_and_nesting_checks() {
+    for first_segment_words in [1, 64] {
+        let mut builder = message::Builder::new(
+            message::HeapAllocator::new().first_segment_words(first_segment_words),
+        );
+        builder
+            .init_root::<type_::Builder>()
+            .init_list()
+            .init_element_type()
+            .set_uint64(());
+        let bytes = capnp::serialize::write_message_to_words(&builder);
+        for limit in [1, 64] {
+            let reader =
+                capnp::serialize::read_message(bytes.as_slice(), Default::default()).unwrap();
+            let (selected, ()) = reader
+                .try_select_pointer::<_, capnp::Error>(
+                    message::ReaderOptions {
+                        nesting_limit: limit,
+                        ..Default::default()
+                    },
+                    |root| Ok(Some((root, ()))),
+                )
+                .unwrap()
+                .unwrap();
+            let cached = Box::new(selected.into_cached().unwrap());
+            let type_::List(list) = cached
+                .root()
+                .get_as::<type_::Reader>()
+                .unwrap()
+                .which()
+                .unwrap()
+            else {
+                panic!()
+            };
+            if limit == 1 {
+                assert!(
+                    matches!(list.get_element_type(), Err(error) if error.kind == ErrorKind::MessageIsTooDeeplyNestedOrContainsCycles)
+                );
+            } else {
+                assert!(matches!(
+                    list.get_element_type().unwrap().which(),
+                    Ok(type_::Uint64(()))
+                ));
+            }
+        }
+    }
+}
