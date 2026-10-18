@@ -5,6 +5,12 @@ published as GitHub Actions artifacts. See [the quality guide](../../docs/wiki/Q
 for report generation, coverage gates, and the comparison charts in each report's
 README.
 
+The [five-run portable comparison](portable-performance/2026-10-18-repetitions/README.md)
+adds means and spread across independent repetitions, profiles inline primitive
+validation, and preserves a rejected cache experiment. It compares all 24 cases
+against current legacy, a frozen portable control and fixed C++; remaining
+latency and per-process read/write gaps are reported explicitly.
+
 The JSON and JSONL files in `storage-benchmark/`, `eae-integration/`, and
 `storage-next/2026-10-01/`, `storage-resilience/2026-10-01/` and
 `concurrency/2026-10-01/` and `rpc-pipeline/2026-10-01/` are frozen

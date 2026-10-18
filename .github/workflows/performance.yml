@@ -63,6 +63,8 @@ jobs:
         run: cargo run --locked -p capntproto-quality -- benchmark-build target/benchmark-build
       - name: Test benchmark identity, validation, and CPU placement
         run: cargo nextest run --locked --manifest-path benchmarks/rpc/Cargo.toml
+      - name: Test latency means and spread calculations
+        run: python3 -m unittest discover -s benchmarks/rpc -p 'test_*.py'
       - name: Exercise all six workflow implementations locally (not timing evidence)
         run: cargo run --locked -p capntproto-dev -- digitalocean-bench smoke --bundle target/benchmark-build/bundle --output "$RUNNER_TEMP/benchmark-workflow-smoke" --state "$RUNNER_TEMP/workflow-smoke"
       - name: Exercise deep and concurrent service chains (not timing evidence)

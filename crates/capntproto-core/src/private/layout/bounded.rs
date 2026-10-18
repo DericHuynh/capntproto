@@ -69,12 +69,25 @@ impl PointerReader<'_> {
                             if (*section.add(index)).is_null() {
                                 continue;
                             }
-                            PointerReader {
+                            let child = PointerReader {
                                 pointer: section.add(index),
                                 nesting_limit: current.nesting_limit - 1,
                                 ..current
+                            };
+                            // Primitive siblings have no capabilities or children.
+                            // Keep their full extent and budget checks inline rather
+                            // than recursively entering the general validator.
+                            if (*child.pointer).kind() == WirePointerKind::List {
+                                let size = (*child.pointer).list_element_size();
+                                if !matches!(
+                                    size,
+                                    ElementSize::Pointer | ElementSize::InlineComposite
+                                ) {
+                                    child.validate_primitive_list_in(arena, size)?;
+                                    continue;
+                                }
                             }
-                            .validate_capability_indices_in(arena, count)?;
+                            child.validate_capability_indices_in(arena, count)?;
                         }
                         // Continue through the final field without another
                         // recursive call. Linked structs commonly have a data
@@ -94,30 +107,9 @@ impl PointerReader<'_> {
                     // validated pointer word, not its (still untrusted) target.
                     let size = unsafe { (*current.pointer).list_element_size() };
                     if !matches!(size, ElementSize::Pointer | ElementSize::InlineComposite) {
-                        if current.nesting_limit <= 0 {
-                            current.get_pointer_type()?;
-                            return Err(Error::from_kind(ErrorKind::NestingLimitExceeded));
-                        }
-                        // SAFETY: only the validated pointer word is inspected. The
-                        // arena checks the entire target before forming any pointer;
-                        // no target is dereferenced by this primitive-only path.
-                        let elements = unsafe {
-                            let elements = (*current.pointer).list_element_count();
-                            let words = wire_helpers::round_bits_up_to_words(
-                                u64::from(elements) * u64::from(data_bits_per_element(size)),
-                            );
-                            arena.check_offset_and_read(
-                                current.segment_id,
-                                current.pointer.cast(),
-                                (*current.pointer).offset_in_words(),
-                                words as usize,
-                            )?;
-                            elements
-                        };
-                        if size == ElementSize::Void {
-                            arena.amplified_read(u64::from(elements))?;
-                        }
-                        return Ok(());
+                        // SAFETY: current owns this checked near-list pointer
+                        // word; size is its decoded primitive element kind.
+                        return unsafe { current.validate_primitive_list_in(arena, size) };
                     }
                     PointerType::List
                 }
@@ -127,6 +119,41 @@ impl PointerReader<'_> {
             };
             return current.validate_complex_capability_indices(kind, count);
         }
+    }
+
+    /// # Safety
+    /// `self` must retain `arena` and a validated, non-null near-list pointer
+    /// word with the supplied primitive element size (no pointers/composites).
+    #[inline(always)]
+    unsafe fn validate_primitive_list_in<A: crate::private::arena::ReaderArena + ?Sized>(
+        &self,
+        arena: &A,
+        size: ElementSize,
+    ) -> Result<()> {
+        if self.nesting_limit <= 0 {
+            self.get_pointer_type()?;
+            return Err(Error::from_kind(ErrorKind::NestingLimitExceeded));
+        }
+        // SAFETY: only the validated pointer word is inspected. The original
+        // arena bounds the complete target before forming any pointer. This
+        // primitive-only traversal never dereferences the target.
+        let elements = unsafe {
+            let elements = (*self.pointer).list_element_count();
+            let words = wire_helpers::round_bits_up_to_words(
+                u64::from(elements) * u64::from(data_bits_per_element(size)),
+            );
+            arena.check_offset_and_read(
+                self.segment_id,
+                self.pointer.cast(),
+                (*self.pointer).offset_in_words(),
+                words as usize,
+            )?;
+            elements
+        };
+        if size == ElementSize::Void {
+            arena.amplified_read(u64::from(elements))?;
+        }
+        Ok(())
     }
 
     // Keep far pointers and composite lists outside the ordinary data-only
@@ -431,6 +458,26 @@ mod validation_tests {
             // A back edge must exhaust nesting rather than looping forever.
             words[depth * 2] = encoded((-(depth as i32 * 2) * 4) as u32, 2 << 16);
             compare(&words, 1);
+        }
+    }
+
+    #[test]
+    fn primitive_siblings_preserve_validation_order_and_budget_charges() {
+        for size in 0..=5 {
+            for elements in [0, 1, 7, 65, 0x1fff_ffff] {
+                // Root: primitive list followed by a capability. The primitive
+                // starts after both pointer slots; four words back its extent.
+                let mut words = [encoded(0, 0); 7];
+                words[0] = encoded(0, 2 << 16);
+                words[1] = encoded(5, elements << 3 | size);
+                words[2] = encoded(3, 1);
+                compare(&words, 1);
+                compare(&words, 2);
+                // An invalid earlier target must still fail before the later
+                // capability, even for a zero-sized or amplified void list.
+                words[1] = encoded(0x7fff_fffd, elements << 3 | size);
+                compare(&words, 1);
+            }
         }
     }
 

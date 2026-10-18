@@ -3,6 +3,8 @@ use capntproto_test_support::verification::{self as v, root};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{fs, path::Path};
+#[path = "../../benchmarks/rpc/latency-summary.rs"]
+mod latency_summary;
 pub const PROTOCOLS: [&str; 6] = [
     "tcp",
     "capnp-cpp",
@@ -169,7 +171,16 @@ pub fn matrix(trials: &[Trial]) -> Result<Vec<Value>> {
             let p99 = percentile(&mut samples, 99);
             medians.sort_unstable();
             let elapsed: u128 = cell.iter().map(|t| u128::from(t.elapsed_ns)).sum();
-            rows.push(json!({"protocol":protocol,"payload_bytes":bytes,"repetitions":cell.len(),"iterations_per_repetition":first.iterations,"p50_ns":p50,"p95_ns":p95,"p99_ns":p99,"median_range_ns":[medians[0],medians[REPETITIONS-1]],"sequential_requests_per_second":samples.len() as f64 * 1e9 / elapsed as f64}));
+            let sample_trials: Vec<Vec<u64>> =
+                cell.iter().map(|trial| trial.latency_ns.clone()).collect();
+            let mut row = json!({"protocol":protocol,"payload_bytes":bytes,"repetitions":cell.len(),"iterations_per_repetition":first.iterations,"p50_ns":p50,"p95_ns":p95,"p99_ns":p99,"median_range_ns":[medians[0],medians[REPETITIONS-1]],"sequential_requests_per_second":samples.len() as f64 * 1e9 / elapsed as f64});
+            row.as_object_mut().unwrap().extend(
+                latency_summary::summarize(&sample_trials)
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            );
+            rows.push(row);
         }
     }
     Ok(rows)
@@ -546,6 +557,10 @@ mod tests {
             }
         }
         assert_eq!(matrix(&trials).unwrap().len(), 24);
+        let summary = matrix(&trials).unwrap();
+        assert_eq!(summary[0]["mean_ns"], 40.0);
+        assert_eq!(summary[0]["repetition_mean_ns"], json!(vec![40.0; 5]));
+        assert_eq!(summary[0]["repetition_mean_stddev_ns"], 0.0);
         let without_upstream: Vec<_> = trials
             .iter()
             .filter(|t| t.protocol != "capnp-rust")

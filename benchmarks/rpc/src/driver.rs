@@ -1,5 +1,7 @@
 //! Runs precompiled clients and servers; never invokes a compiler on the benchmark host.
 use crate::Result;
+#[path = "../latency-summary.rs"]
+mod latency_summary;
 mod placement;
 pub mod portable;
 pub mod tail;
@@ -258,7 +260,7 @@ fn tcp_summary_for_driver(trials: &[Value], driver: &str) -> Result<Value> {
     let mut rows = Vec::new();
     let mut passed = true;
     for bytes in PAYLOADS {
-        let percentiles = |protocol: &str| -> Result<[u64; 3]> {
+        let percentiles = |protocol: &str| -> Result<([u64; 3], Value)> {
             let cell: Vec<_> = trials
                 .iter()
                 .filter(|t| t["protocol"] == protocol && t["payload_bytes"] == bytes)
@@ -269,26 +271,33 @@ fn tcp_summary_for_driver(trials: &[Value], driver: &str) -> Result<Value> {
             for trial in &cell {
                 validate_trial(trial, protocol, bytes)?;
             }
-            let mut samples: Vec<u64> = cell
+            let sample_trials: Vec<Vec<u64>> = cell
                 .into_iter()
-                .flat_map(|t| {
+                .map(|t| {
                     t["latency_ns"]
                         .as_array()
                         .unwrap()
                         .iter()
                         .map(|n| n.as_u64().unwrap())
+                        .collect()
                 })
                 .collect();
+            let statistics = latency_summary::summarize(&sample_trials);
+            let mut samples: Vec<u64> = sample_trials.into_iter().flatten().collect();
             samples.sort_unstable();
-            Ok([50, 95, 99].map(|p| samples[(samples.len() * p).div_ceil(100) - 1]))
+            Ok((
+                [50, 95, 99].map(|p| samples[(samples.len() * p).div_ceil(100) - 1]),
+                statistics,
+            ))
         };
-        let tcp = percentiles("tcp")?;
-        let cpp = percentiles("capnp-cpp")?;
+        let (tcp, tcp_statistics) = percentiles("tcp")?;
+        let (cpp, cpp_statistics) = percentiles("capnp-cpp")?;
         let within = u128::from(tcp[0]) * 100 <= u128::from(cpp[0]) * limit;
         let required = driver == "legacy" || bytes <= 1024;
         passed &= !required || within;
         rows.push(
             json!({"payload_bytes":bytes,"tcp_p50_p95_p99_ns":tcp,"cpp_p50_p95_p99_ns":cpp,
+            "statistics":{"tcp":tcp_statistics,"capnp-cpp":cpp_statistics},
             "p50_ratio":tcp[0] as f64 / cpp[0] as f64,"passed":within,"required":required}),
         );
     }

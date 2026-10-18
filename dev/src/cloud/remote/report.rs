@@ -1,4 +1,6 @@
 use super::*;
+#[path = "../../../../benchmarks/rpc/latency-summary.rs"]
+mod latency_summary;
 #[path = "../../../../benchmarks/rpc/workflow-support.rs"]
 mod support;
 use support::{supported, IMPLEMENTATIONS, VERSION};
@@ -72,10 +74,11 @@ fn matrix(trials: &[Value]) -> Result<Vec<Value>> {
             if !supported(implementation, crate::string(&case, "name")?) {
                 continue;
             }
-            let cell: Vec<_> = trials
+            let mut cell: Vec<_> = trials
                 .iter()
                 .filter(|t| t["case"] == case && t["implementation"] == implementation)
                 .collect();
+            cell.sort_by_key(|trial| trial["repetition"].as_u64().unwrap());
             ensure!(cell.len() == 5, "missing implementation");
             let mut samples: Vec<_> = cell
                 .iter()
@@ -93,7 +96,25 @@ fn matrix(trials: &[Value]) -> Result<Vec<Value>> {
                 .map(|t| u128::from(t["elapsed_ns"].as_u64().unwrap()))
                 .sum();
             let throughput = samples.len() as f64 * 1e9 / elapsed as f64;
-            rows.push(json!({"case":case,"implementation":implementation,"samples":samples.len(),"p50_ns":samples[2499],"p95_ns":samples[4749],"p99_ns":samples[4949],"workflows_per_second":throughput,"rpcs_per_second":throughput*case["rpcs_per_iteration"].as_u64().unwrap() as f64}));
+            let sample_trials: Vec<Vec<u64>> = cell
+                .iter()
+                .map(|trial| {
+                    trial["latency_ns"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|n| n.as_u64().unwrap())
+                        .collect()
+                })
+                .collect();
+            let mut row = json!({"case":case,"implementation":implementation,"samples":samples.len(),"p50_ns":samples[2499],"p95_ns":samples[4749],"p99_ns":samples[4949],"workflows_per_second":throughput,"rpcs_per_second":throughput*case["rpcs_per_iteration"].as_u64().unwrap() as f64});
+            row.as_object_mut().unwrap().extend(
+                latency_summary::summarize(&sample_trials)
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            );
+            rows.push(row);
         }
     }
     for index in 0..rows.len() {
@@ -222,12 +243,16 @@ pub(super) fn generate(output: &Path, bundle: &Path) -> Result<()> {
         output.join("summary.json"),
         &json!({"workflow_version":VERSION,"topology":topology,"validated":true,"acceptance":"descriptive remote workflow baseline; no loopback ratio gate applied","portable_target":target,"rows":rows,"unsupported":[{"case":"pipelined-read","implementation":"grpc","reason":"no native capability promise pipelining"},{"case":"pipelined-read","implementation":"websocket","reason":"no native capability promise pipelining"}]}),
     )?;
-    let mut text=String::from("# Remote RPC workflows\n\nTwo dedicated droplets, same region/plan/VPC, direct plaintext TCP. Five rotating repetitions, 250 warmups and 1,000 retained workflows per cell. Timings use only the client monotonic clock; validation, response cleanup and ten-second workflow deadlines are included. Setup/compilation is excluded.\n\nA fan-out sample covers completion of all 32 concurrent calls; it is **not** individual request latency. Throughput is closed-loop, not an open-loop saturation or SLO test. RPC/s counts the two calls in dependent/stateful/callback workflows.\n\n| Workflow | Implementation | p50 µs | p95 µs | p99 µs | Workflows/s | RPC/s | p50 / C++ |\n|---|---|---:|---:|---:|---:|---:|---:|\n");
+    let mut text=String::from("# Remote RPC workflows\n\nTwo dedicated droplets, same region/plan/VPC, direct plaintext TCP. Five rotating repetitions, 250 warmups and 1,000 retained workflows per cell. Timings use only the client monotonic clock; validation, response cleanup and ten-second workflow deadlines are included. Setup/compilation is excluded.\n\nA fan-out sample covers completion of all 32 concurrent calls; it is **not** individual request latency. Throughput is closed-loop, not an open-loop saturation or SLO test. RPC/s counts the two calls in dependent/stateful/callback workflows.\n\n| Workflow | Implementation | Mean ± run SD µs | Run mean min–max µs | p50 µs | p95 µs | p99 µs | Workflows/s | RPC/s | p50 / C++ |\n|---|---|---:|---:|---:|---:|---:|---:|---:|---:|\n");
     for row in &rows {
         text += &format!(
-            "| {} | {} | {:.2} | {:.2} | {:.2} | {:.0} | {:.0} | {:.3}× |\n",
+            "| {} | {} | {:.2} ± {:.2} | {:.2}–{:.2} | {:.2} | {:.2} | {:.2} | {:.0} | {:.0} | {:.3}× |\n",
             row["case"]["name"].as_str().unwrap(),
             row["implementation"].as_str().unwrap(),
+            row["mean_ns"].as_f64().unwrap() / 1000.0,
+            row["repetition_mean_stddev_ns"].as_f64().unwrap() / 1000.0,
+            row["repetition_mean_range_ns"][0].as_f64().unwrap() / 1000.0,
+            row["repetition_mean_range_ns"][1].as_f64().unwrap() / 1000.0,
             row["p50_ns"].as_u64().unwrap() as f64 / 1000.0,
             row["p95_ns"].as_u64().unwrap() as f64 / 1000.0,
             row["p99_ns"].as_u64().unwrap() as f64 / 1000.0,
@@ -236,6 +261,7 @@ pub(super) fn generate(output: &Path, bundle: &Path) -> Result<()> {
             row["p50_ratio_to_cpp"].as_f64().unwrap()
         );
     }
+    text += "\nMean ± SD uses sample standard deviation across the five run means, not a confidence interval. Per-sample SD, extrema and all run means are retained in summary.json.\n";
     text += "\n## Portable performance gap\n\nTarget: portable pooled p50 ≤ 1.05 × the faster of legacy and C++ for **each** workflow. This is advisory while the gap remains open; it does not replace correctness, tail-latency or resource evidence.\n\n| Workflow | Faster reference | Portable/reference | Meets 5% target |\n|---|---|---:|---|\n";
     for row in target["rows"].as_array().unwrap() {
         text += &format!(
@@ -343,6 +369,25 @@ pub(super) mod tests {
         let valid = trials();
         let rows = matrix(&valid).unwrap();
         assert_eq!(rows.len(), 70);
+        assert_eq!(rows[0]["mean_ns"], 10.0);
+        assert_eq!(rows[0]["repetition_mean_stddev_ns"], 0.0);
+        let mut varied = valid.clone();
+        for trial in &mut varied {
+            let value = (trial["repetition"].as_u64().unwrap() + 1) * 10;
+            trial["latency_ns"] = json!(vec![value; 1000]);
+            trial["elapsed_ns"] = json!(value * 1000);
+        }
+        varied.reverse();
+        let varied = matrix(&varied).unwrap();
+        assert_eq!(varied[0]["mean_ns"], 30.0);
+        assert_eq!(
+            varied[0]["repetition_mean_ns"],
+            json!([10.0, 20.0, 30.0, 40.0, 50.0])
+        );
+        assert!(
+            (varied[0]["repetition_mean_stddev_ns"].as_f64().unwrap() - 250.0f64.sqrt()).abs()
+                < 1e-12
+        );
         let without_upstream: Vec<_> = valid
             .iter()
             .filter(|t| t["implementation"] != "capnp-rust")

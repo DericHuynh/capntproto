@@ -240,7 +240,7 @@ pub fn generate(base: &Path, lanes: &str) -> Result<()> {
                         failures.push(error.to_string());
                     }
                 }
-                readme.push_str("| Payload bytes | Implementation | p50 µs | p95 µs | p99 µs | Sequential req/s | p50 / C++ Cap’n Proto |\n| --- | --- | --- | --- | --- | --- | --- |\n");
+                readme.push_str("Mean ± SD uses sample standard deviation across the five run means, not a confidence interval. Per-sample SD, extrema and every run mean remain in the JSON report.\n\n| Payload bytes | Implementation | Mean ± run SD µs | Run mean min–max µs | p50 µs | p95 µs | p99 µs | Sequential req/s | p50 / C++ Cap’n Proto |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n");
                 for row in &rows {
                     let native = rows
                         .iter()
@@ -252,9 +252,13 @@ pub fn generate(base: &Path, lanes: &str) -> Result<()> {
                     let p50 = row["p50_ns"].as_f64().ok_or("missing latency")?;
                     writeln!(
                         readme,
-                        "| {} | {} | {:.2} | {:.2} | {:.2} | {:.0} | {:.4}× |",
+                        "| {} | {} | {:.2} ± {:.2} | {:.2}–{:.2} | {:.2} | {:.2} | {:.2} | {:.0} | {:.4}× |",
                         row["payload_bytes"],
                         text(row["protocol"].as_str().unwrap()),
+                        row["mean_ns"].as_f64().unwrap() / 1000.0,
+                        row["repetition_mean_stddev_ns"].as_f64().unwrap() / 1000.0,
+                        row["repetition_mean_range_ns"][0].as_f64().unwrap() / 1000.0,
+                        row["repetition_mean_range_ns"][1].as_f64().unwrap() / 1000.0,
                         p50 / 1000.0,
                         row["p95_ns"].as_f64().unwrap() / 1000.0,
                         row["p99_ns"].as_f64().unwrap() / 1000.0,
@@ -338,6 +342,7 @@ mod tests {
                 }
             }
         }
+        trials[0].latency_ns[..2].copy_from_slice(&[99, 101]);
         // These real-run elapsed values reproduce the f64 JSON round-trip issue.
         let raw = serde_json::to_vec(&trials).unwrap();
         let rows = benchmark::matrix(&trials).unwrap();
@@ -357,10 +362,14 @@ mod tests {
         assert!(benchmark_rows(&stored, dir.path()).is_ok());
         stored.data["rows"][0]["p50_ns"] = serde_json::json!(101);
         assert!(benchmark_rows(&stored, dir.path()).is_err());
+        let mut stored: Evidence =
+            serde_json::from_slice(&serde_json::to_vec(&e).unwrap()).unwrap();
+        stored.data["rows"][0]["mean_ns"] = serde_json::json!(101);
+        assert!(benchmark_rows(&stored, dir.path()).is_err());
         let stored: Evidence = serde_json::from_slice(&serde_json::to_vec(&e).unwrap()).unwrap();
-        // Altering one sample does not change any reported percentile. Its hash
-        // must still reject the modification.
-        trials[0].latency_ns[0] += 1;
+        // Reordering samples preserves all descriptive statistics, including
+        // the new mean and spread. The raw hash must still reject tampering.
+        trials[0].latency_ns.swap(0, 1);
         assert_eq!(benchmark::matrix(&trials).unwrap(), rows);
         fs::write(
             dir.path().join("trials.json"),

@@ -78,6 +78,21 @@ pub fn compare(directory: &Path, destination: &Path) -> Result<()> {
             row["meets_target"]
         );
     }
+    readme += "\nMean ± SD below uses sample standard deviation across the five run means, not a confidence interval. Per-sample SD, extrema and all run means remain in summary.json.\n\n| Bytes | Driver | Mean ± run SD µs | Run mean min–max µs |\n| ---: | --- | ---: | ---: |\n";
+    for row in report["rows"].as_array().unwrap() {
+        for driver in DRIVERS {
+            let stats = &row["statistics"][driver];
+            readme += &format!(
+                "| {} | {} | {:.3} ± {:.3} | {:.3}–{:.3} |\n",
+                row["payload_bytes"],
+                driver,
+                stats["mean_ns"].as_f64().unwrap() / 1000.0,
+                stats["repetition_mean_stddev_ns"].as_f64().unwrap() / 1000.0,
+                stats["repetition_mean_range_ns"][0].as_f64().unwrap() / 1000.0,
+                stats["repetition_mean_range_ns"][1].as_f64().unwrap() / 1000.0
+            );
+        }
+    }
     fs::write(destination.join("README.md"), readme)?;
     println!("{}", serde_json::to_string_pretty(&report)?);
     // Preserve every miss while this tracked gap is being optimized. Invalid
@@ -93,13 +108,14 @@ fn summarize(trials: &[Value]) -> Result<Value> {
     let mut passed = true;
     for bytes in PAYLOADS {
         let mut measured = Vec::new();
+        let mut statistics = serde_json::Map::new();
         for driver in DRIVERS {
             let protocol = if driver == "capnp-cpp" {
                 "capnp-cpp"
             } else {
                 "tcp"
             };
-            let cell: Vec<_> = trials
+            let mut cell: Vec<_> = trials
                 .iter()
                 .filter(|t| t["driver"] == driver && t["payload_bytes"] == bytes)
                 .collect();
@@ -116,17 +132,24 @@ fn summarize(trials: &[Value]) -> Result<Value> {
                     return Err("missing or duplicate portable repetition".into());
                 }
             }
+            cell.sort_by_key(|trial| trial["repetition"].as_u64().unwrap());
             let mut samples = Vec::new();
+            let mut sample_trials = Vec::new();
             for trial in cell {
                 validate_trial(trial, protocol, bytes)?;
-                samples.extend(
-                    trial["latency_ns"]
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .map(|v| v.as_u64().unwrap()),
-                );
+                let sample_trial: Vec<u64> = trial["latency_ns"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|v| v.as_u64().unwrap())
+                    .collect();
+                samples.extend_from_slice(&sample_trial);
+                sample_trials.push(sample_trial);
             }
+            statistics.insert(
+                driver.to_owned(),
+                latency_summary::summarize(&sample_trials),
+            );
             samples.sort_unstable();
             measured.push([50, 95, 99].map(|p| samples[(samples.len() * p).div_ceil(100) - 1]));
         }
@@ -140,7 +163,7 @@ fn summarize(trials: &[Value]) -> Result<Value> {
         rows.push(json!({"payload_bytes":bytes, "portable_p50_p95_p99_ns":measured[0],
             "legacy_p50_p95_p99_ns":measured[1], "cpp_p50_p95_p99_ns":measured[2],
             "reference":DRIVERS[reference], "ratio":measured[0][0] as f64 / measured[reference][0] as f64,
-            "meets_target":within}));
+            "meets_target":within, "statistics":statistics}));
     }
     Ok(
         json!({"metric":"pooled p50 per payload", "maximum_ratio":1.05, "advisory":true,
@@ -166,6 +189,32 @@ mod tests {
         }
         values
     }
+    #[test]
+    fn reports_all_five_run_means_even_when_input_is_shuffled() {
+        let mut input = trials(100, 100, 100);
+        for trial in &mut input {
+            let value = (trial["repetition"].as_u64().unwrap() + 1) * 10;
+            trial["latency_ns"] = json!(vec![value; 1000]);
+            trial["elapsed_ns"] = json!(value * 1000);
+        }
+        input.reverse();
+        let output = summarize(&input).unwrap();
+        for row in output["rows"].as_array().unwrap() {
+            for driver in DRIVERS {
+                let stats = &row["statistics"][driver];
+                assert_eq!(stats["mean_ns"], 30.0);
+                assert_eq!(
+                    stats["repetition_mean_ns"],
+                    json!([10.0, 20.0, 30.0, 40.0, 50.0])
+                );
+                assert!(
+                    (stats["repetition_mean_stddev_ns"].as_f64().unwrap() - 250.0f64.sqrt()).abs()
+                        < 1e-12
+                );
+            }
+        }
+    }
+
     #[test]
     fn target_switches_reference_and_keeps_every_payload_and_tail() {
         for (legacy, cpp, reference) in [(100, 200, "legacy"), (200, 100, "capnp-cpp")] {

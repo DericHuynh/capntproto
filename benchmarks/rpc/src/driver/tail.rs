@@ -89,6 +89,7 @@ fn summarize(trials: &[Value], iterations: usize) -> Result<Value> {
         let mut peers = Vec::new();
         for (variant, protocol) in PEERS {
             let mut samples = Vec::new();
+            let mut sample_trials = Vec::new();
             let mut tails = Vec::new();
             let mut elapsed = 0u128;
             for repetition in 0..REPETITIONS {
@@ -110,19 +111,27 @@ fn summarize(trials: &[Value], iterations: usize) -> Result<Value> {
                     .collect();
                 values.sort_unstable();
                 tails.push(percentile(&values, 99));
-                samples.extend(values);
+                samples.extend_from_slice(&values);
+                sample_trials.push(values);
                 elapsed += u128::from(trial["elapsed_ns"].as_u64().unwrap());
             }
             samples.sort_unstable();
             let [p50, p95, p99] = [50, 95, 99].map(|p| percentile(&samples, p));
             let min = *tails.iter().min().unwrap();
             let max = *tails.iter().max().unwrap();
-            peers.push(json!({"variant":variant,"protocol":protocol,
+            let mut row = json!({"variant":variant,"protocol":protocol,
                 "p50_ns":p50,"p95_ns":p95,"p99_ns":p99,
                 "p99_over_p50":p99 as f64 / p50 as f64,
                 "trial_p99_ns":tails,"p99_range_ns":[min,max],
                 "samples":samples.len(),
-                "sequential_requests_per_second":samples.len() as f64 * 1e9 / elapsed as f64}));
+                "sequential_requests_per_second":samples.len() as f64 * 1e9 / elapsed as f64});
+            row.as_object_mut().unwrap().extend(
+                latency_summary::summarize(&sample_trials)
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            );
+            peers.push(row);
         }
         let ratio = |numerator: usize, denominator: usize, metric: &str| {
             peers[numerator][metric].as_f64().unwrap()

@@ -1,0 +1,880 @@
+diff --git a/.github/workflows/performance.yml b/.github/workflows/performance.yml
+index d3aa76f..ada396a 100644
+--- a/.github/workflows/performance.yml
++++ b/.github/workflows/performance.yml
+@@ -63,6 +63,8 @@ jobs:
+         run: cargo run --locked -p capntproto-quality -- benchmark-build target/benchmark-build
+       - name: Test benchmark identity, validation, and CPU placement
+         run: cargo nextest run --locked --manifest-path benchmarks/rpc/Cargo.toml
++      - name: Test latency means and spread calculations
++        run: python3 -m unittest discover -s benchmarks/rpc -p 'test_*.py'
+       - name: Exercise all six workflow implementations locally (not timing evidence)
+         run: cargo run --locked -p capntproto-dev -- digitalocean-bench smoke --bundle target/benchmark-build/bundle --output "$RUNNER_TEMP/benchmark-workflow-smoke" --state "$RUNNER_TEMP/workflow-smoke"
+       - name: Exercise deep and concurrent service chains (not timing evidence)
+diff --git a/benchmarks/rpc/README.md b/benchmarks/rpc/README.md
+index 6b6d4d1..cc40a38 100644
+--- a/benchmarks/rpc/README.md
++++ b/benchmarks/rpc/README.md
+@@ -52,19 +52,19 @@ python3 benchmarks/rpc/topology-runner.py \
+   --output target/topology-latency --mixed
+ ```
+ 
+-Use the actual bundle paths produced by your build. Defaults are six repetitions,
++Use the actual bundle paths produced by your build. Defaults are five repetitions,
+ 100 warmups and 1,000 retained batch samples per cell. Variant order rotates and
+-reverses so each implementation occupies all three positions equally. `--mixed`
++reverses across cycles. Five runs do not exactly balance every variant position;
++the complete order is retained. `--mixed`
+ also checks every ordered pair of portable, legacy and C++ in alternating service
+ chains, outside the latency comparison. `--cases` accepts comma-separated catalog
+ names. `--portable DRIVER` supplies a separate portable candidate while keeping
+ the legacy reference fixed with `--rust DRIVER`.
+ 
+ To isolate a portable optimization from run-to-run shifts, add
+-`--portable-baseline FROZEN_PORTABLE`. The default then becomes eight repetitions
+-to interleave all four variants in balanced order. `--baseline FROZEN_LEGACY`
+-remains available for a legacy control. At least two complete variant cycles are
+-required for a qualifying budget. Mixed-chain checks use the three current
++`--portable-baseline FROZEN_PORTABLE`. All four variants still run five times.
++`--baseline FROZEN_LEGACY` remains available for a legacy control. At least five
++repetitions are required for a qualifying budget. Mixed-chain checks use the three current
+ implementations; frozen controls run the same homogeneous fixtures.
+ 
+ The runner selects distinct physical cores for the client and available service
+@@ -76,8 +76,14 @@ TCP microservice chains, not cross-host network measurements.
+ Every output directory must be new. It retains raw latency samples, per-process
+ logs, server readiness/chain checks, CPU placement, binary and fixture hashes,
+ CPU quota/throttling and steal counters around each process lifecycle,
+-and every trial's p50/p95/p99 and batch/request/service-call throughput. These host
+-counters include setup and teardown; they do not modify or filter samples. The
++and every trial's p50/p95/p99 and batch/request/service-call throughput. The generated
++README adds mean ± sample standard deviation of the repetition means, plus their
++minimum and maximum. This measures between-run spread, not a confidence interval.
++JSON also retains the pooled arithmetic mean, sample standard deviation and
++extrema of all latency samples, and every repetition's mean. The workflow,
++portable-loopback and general loopback reports use the same definitions and five
++repetitions. All samples remain included; percentiles and acceptance gates are
++preserved. Host counters include setup and teardown; they do not modify or filter samples. The
+ portable latency goal is `portable p50 <= min(legacy p50, C++ p50)` in every
+ cell; passing some cells does not qualify the suite. Syscall count parity is
+ assessed separately using diagnostic captures.
+diff --git a/benchmarks/rpc/latency-summary.rs b/benchmarks/rpc/latency-summary.rs
+new file mode 100644
+index 0000000..28794f8
+--- /dev/null
++++ b/benchmarks/rpc/latency-summary.rs
+@@ -0,0 +1,68 @@
++//! Descriptive latency statistics shared by runners and artifact validators.
++//! Call only after validating every trial and its equal sampling budget.
++use serde_json::{json, Value};
++
++pub fn summarize(trials: &[Vec<u64>]) -> Value {
++    assert!(!trials.is_empty() && trials.iter().all(|trial| !trial.is_empty()));
++    let samples = trials.iter().map(Vec::len).sum::<usize>();
++    let total: u128 = trials.iter().flatten().map(|&n| u128::from(n)).sum();
++    let mean = total as f64 / samples as f64;
++    let variance = trials
++        .iter()
++        .flatten()
++        .map(|&n| (n as f64 - mean).powi(2))
++        .sum::<f64>()
++        / samples.saturating_sub(1).max(1) as f64;
++    let run_means: Vec<f64> = trials
++        .iter()
++        .map(|trial| trial.iter().map(|&n| u128::from(n)).sum::<u128>() as f64 / trial.len() as f64)
++        .collect();
++    let run_mean = run_means.iter().sum::<f64>() / run_means.len() as f64;
++    let run_variance = run_means
++        .iter()
++        .map(|n| (n - run_mean).powi(2))
++        .sum::<f64>()
++        / run_means.len().saturating_sub(1).max(1) as f64;
++    json!({
++        "statistics_version": 1,
++        "mean_ns": mean,
++        "stddev_ns": variance.sqrt(),
++        "min_ns": trials.iter().flatten().min().unwrap(),
++        "max_ns": trials.iter().flatten().max().unwrap(),
++        "repetition_mean_ns": run_means,
++        "repetition_mean_stddev_ns": run_variance.sqrt(),
++        "repetition_mean_range_ns": [
++            run_means.iter().copied().fold(f64::INFINITY, f64::min),
++            run_means.iter().copied().fold(f64::NEG_INFINITY, f64::max)
++        ]
++    })
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn separates_sample_spread_from_between_run_spread() {
++        let value = summarize(&[vec![1, 3], vec![5, 7]]);
++        assert_eq!(value["mean_ns"], 4.0);
++        assert_eq!(value["min_ns"], 1);
++        assert_eq!(value["max_ns"], 7);
++        assert_eq!(value["repetition_mean_ns"], json!([2.0, 6.0]));
++        assert_eq!(value["repetition_mean_range_ns"], json!([2.0, 6.0]));
++        assert!((value["stddev_ns"].as_f64().unwrap() - (20.0f64 / 3.0).sqrt()).abs() < 1e-12);
++        assert!(
++            (value["repetition_mean_stddev_ns"].as_f64().unwrap() - 8.0f64.sqrt()).abs() < 1e-12
++        );
++    }
++
++    #[test]
++    fn singleton_and_large_constant_samples_are_finite() {
++        for trials in [vec![vec![7]], vec![vec![u64::MAX; 1000]; 5]] {
++            let value = summarize(&trials);
++            assert_eq!(value["mean_ns"].as_f64().unwrap(), trials[0][0] as f64);
++            assert_eq!(value["stddev_ns"], 0.0);
++            assert_eq!(value["repetition_mean_stddev_ns"], 0.0);
++        }
++    }
++}
+diff --git a/benchmarks/rpc/latency_stats.py b/benchmarks/rpc/latency_stats.py
+new file mode 100644
+index 0000000..c134d5e
+--- /dev/null
++++ b/benchmarks/rpc/latency_stats.py
+@@ -0,0 +1,13 @@
++"""Descriptive statistics; sample standard deviations use n - 1 (zero for n = 1)."""
++import statistics
++
++
++def summarize(trials):
++    assert trials and all(trials)
++    values = [n for trial in trials for n in trial]
++    means = [statistics.mean(trial) for trial in trials]
++    return dict(statistics_version=1, mean_ns=statistics.mean(values),
++                stddev_ns=statistics.stdev(values) if len(values) > 1 else 0.0,
++                min_ns=min(values), max_ns=max(values), repetition_mean_ns=means,
++                repetition_mean_stddev_ns=statistics.stdev(means) if len(means) > 1 else 0.0,
++                repetition_mean_range_ns=[min(means), max(means)])
+diff --git a/benchmarks/rpc/src/driver.rs b/benchmarks/rpc/src/driver.rs
+index 147c50d..8918760 100644
+--- a/benchmarks/rpc/src/driver.rs
++++ b/benchmarks/rpc/src/driver.rs
+@@ -1,5 +1,7 @@
+ //! Runs precompiled clients and servers; never invokes a compiler on the benchmark host.
+ use crate::Result;
++#[path = "../latency-summary.rs"]
++mod latency_summary;
+ mod placement;
+ pub mod portable;
+ pub mod tail;
+@@ -258,7 +260,7 @@ fn tcp_summary_for_driver(trials: &[Value], driver: &str) -> Result<Value> {
+     let mut rows = Vec::new();
+     let mut passed = true;
+     for bytes in PAYLOADS {
+-        let percentiles = |protocol: &str| -> Result<[u64; 3]> {
++        let percentiles = |protocol: &str| -> Result<([u64; 3], Value)> {
+             let cell: Vec<_> = trials
+                 .iter()
+                 .filter(|t| t["protocol"] == protocol && t["payload_bytes"] == bytes)
+@@ -269,26 +271,33 @@ fn tcp_summary_for_driver(trials: &[Value], driver: &str) -> Result<Value> {
+             for trial in &cell {
+                 validate_trial(trial, protocol, bytes)?;
+             }
+-            let mut samples: Vec<u64> = cell
++            let sample_trials: Vec<Vec<u64>> = cell
+                 .into_iter()
+-                .flat_map(|t| {
++                .map(|t| {
+                     t["latency_ns"]
+                         .as_array()
+                         .unwrap()
+                         .iter()
+                         .map(|n| n.as_u64().unwrap())
++                        .collect()
+                 })
+                 .collect();
++            let statistics = latency_summary::summarize(&sample_trials);
++            let mut samples: Vec<u64> = sample_trials.into_iter().flatten().collect();
+             samples.sort_unstable();
+-            Ok([50, 95, 99].map(|p| samples[(samples.len() * p).div_ceil(100) - 1]))
++            Ok((
++                [50, 95, 99].map(|p| samples[(samples.len() * p).div_ceil(100) - 1]),
++                statistics,
++            ))
+         };
+-        let tcp = percentiles("tcp")?;
+-        let cpp = percentiles("capnp-cpp")?;
++        let (tcp, tcp_statistics) = percentiles("tcp")?;
++        let (cpp, cpp_statistics) = percentiles("capnp-cpp")?;
+         let within = u128::from(tcp[0]) * 100 <= u128::from(cpp[0]) * limit;
+         let required = driver == "legacy" || bytes <= 1024;
+         passed &= !required || within;
+         rows.push(
+             json!({"payload_bytes":bytes,"tcp_p50_p95_p99_ns":tcp,"cpp_p50_p95_p99_ns":cpp,
++            "statistics":{"tcp":tcp_statistics,"capnp-cpp":cpp_statistics},
+             "p50_ratio":tcp[0] as f64 / cpp[0] as f64,"passed":within,"required":required}),
+         );
+     }
+diff --git a/benchmarks/rpc/src/driver/portable.rs b/benchmarks/rpc/src/driver/portable.rs
+index a47d64e..b23f002 100644
+--- a/benchmarks/rpc/src/driver/portable.rs
++++ b/benchmarks/rpc/src/driver/portable.rs
+@@ -78,6 +78,21 @@ pub fn compare(directory: &Path, destination: &Path) -> Result<()> {
+             row["meets_target"]
+         );
+     }
++    readme += "\nMean ± SD below uses sample standard deviation across the five run means, not a confidence interval. Per-sample SD, extrema and all run means remain in summary.json.\n\n| Bytes | Driver | Mean ± run SD µs | Run mean min–max µs |\n| ---: | --- | ---: | ---: |\n";
++    for row in report["rows"].as_array().unwrap() {
++        for driver in DRIVERS {
++            let stats = &row["statistics"][driver];
++            readme += &format!(
++                "| {} | {} | {:.3} ± {:.3} | {:.3}–{:.3} |\n",
++                row["payload_bytes"],
++                driver,
++                stats["mean_ns"].as_f64().unwrap() / 1000.0,
++                stats["repetition_mean_stddev_ns"].as_f64().unwrap() / 1000.0,
++                stats["repetition_mean_range_ns"][0].as_f64().unwrap() / 1000.0,
++                stats["repetition_mean_range_ns"][1].as_f64().unwrap() / 1000.0
++            );
++        }
++    }
+     fs::write(destination.join("README.md"), readme)?;
+     println!("{}", serde_json::to_string_pretty(&report)?);
+     // Preserve every miss while this tracked gap is being optimized. Invalid
+@@ -93,13 +108,14 @@ fn summarize(trials: &[Value]) -> Result<Value> {
+     let mut passed = true;
+     for bytes in PAYLOADS {
+         let mut measured = Vec::new();
++        let mut statistics = serde_json::Map::new();
+         for driver in DRIVERS {
+             let protocol = if driver == "capnp-cpp" {
+                 "capnp-cpp"
+             } else {
+                 "tcp"
+             };
+-            let cell: Vec<_> = trials
++            let mut cell: Vec<_> = trials
+                 .iter()
+                 .filter(|t| t["driver"] == driver && t["payload_bytes"] == bytes)
+                 .collect();
+@@ -116,17 +132,24 @@ fn summarize(trials: &[Value]) -> Result<Value> {
+                     return Err("missing or duplicate portable repetition".into());
+                 }
+             }
++            cell.sort_by_key(|trial| trial["repetition"].as_u64().unwrap());
+             let mut samples = Vec::new();
++            let mut sample_trials = Vec::new();
+             for trial in cell {
+                 validate_trial(trial, protocol, bytes)?;
+-                samples.extend(
+-                    trial["latency_ns"]
+-                        .as_array()
+-                        .unwrap()
+-                        .iter()
+-                        .map(|v| v.as_u64().unwrap()),
+-                );
++                let sample_trial: Vec<u64> = trial["latency_ns"]
++                    .as_array()
++                    .unwrap()
++                    .iter()
++                    .map(|v| v.as_u64().unwrap())
++                    .collect();
++                samples.extend_from_slice(&sample_trial);
++                sample_trials.push(sample_trial);
+             }
++            statistics.insert(
++                driver.to_owned(),
++                latency_summary::summarize(&sample_trials),
++            );
+             samples.sort_unstable();
+             measured.push([50, 95, 99].map(|p| samples[(samples.len() * p).div_ceil(100) - 1]));
+         }
+@@ -140,7 +163,7 @@ fn summarize(trials: &[Value]) -> Result<Value> {
+         rows.push(json!({"payload_bytes":bytes, "portable_p50_p95_p99_ns":measured[0],
+             "legacy_p50_p95_p99_ns":measured[1], "cpp_p50_p95_p99_ns":measured[2],
+             "reference":DRIVERS[reference], "ratio":measured[0][0] as f64 / measured[reference][0] as f64,
+-            "meets_target":within}));
++            "meets_target":within, "statistics":statistics}));
+     }
+     Ok(
+         json!({"metric":"pooled p50 per payload", "maximum_ratio":1.05, "advisory":true,
+@@ -166,6 +189,32 @@ mod tests {
+         }
+         values
+     }
++    #[test]
++    fn reports_all_five_run_means_even_when_input_is_shuffled() {
++        let mut input = trials(100, 100, 100);
++        for trial in &mut input {
++            let value = (trial["repetition"].as_u64().unwrap() + 1) * 10;
++            trial["latency_ns"] = json!(vec![value; 1000]);
++            trial["elapsed_ns"] = json!(value * 1000);
++        }
++        input.reverse();
++        let output = summarize(&input).unwrap();
++        for row in output["rows"].as_array().unwrap() {
++            for driver in DRIVERS {
++                let stats = &row["statistics"][driver];
++                assert_eq!(stats["mean_ns"], 30.0);
++                assert_eq!(
++                    stats["repetition_mean_ns"],
++                    json!([10.0, 20.0, 30.0, 40.0, 50.0])
++                );
++                assert!(
++                    (stats["repetition_mean_stddev_ns"].as_f64().unwrap() - 250.0f64.sqrt()).abs()
++                        < 1e-12
++                );
++            }
++        }
++    }
++
+     #[test]
+     fn target_switches_reference_and_keeps_every_payload_and_tail() {
+         for (legacy, cpp, reference) in [(100, 200, "legacy"), (200, 100, "capnp-cpp")] {
+diff --git a/benchmarks/rpc/src/driver/tail.rs b/benchmarks/rpc/src/driver/tail.rs
+index 2187cad..d651a3b 100644
+--- a/benchmarks/rpc/src/driver/tail.rs
++++ b/benchmarks/rpc/src/driver/tail.rs
+@@ -89,6 +89,7 @@ fn summarize(trials: &[Value], iterations: usize) -> Result<Value> {
+         let mut peers = Vec::new();
+         for (variant, protocol) in PEERS {
+             let mut samples = Vec::new();
++            let mut sample_trials = Vec::new();
+             let mut tails = Vec::new();
+             let mut elapsed = 0u128;
+             for repetition in 0..REPETITIONS {
+@@ -110,19 +111,27 @@ fn summarize(trials: &[Value], iterations: usize) -> Result<Value> {
+                     .collect();
+                 values.sort_unstable();
+                 tails.push(percentile(&values, 99));
+-                samples.extend(values);
++                samples.extend_from_slice(&values);
++                sample_trials.push(values);
+                 elapsed += u128::from(trial["elapsed_ns"].as_u64().unwrap());
+             }
+             samples.sort_unstable();
+             let [p50, p95, p99] = [50, 95, 99].map(|p| percentile(&samples, p));
+             let min = *tails.iter().min().unwrap();
+             let max = *tails.iter().max().unwrap();
+-            peers.push(json!({"variant":variant,"protocol":protocol,
++            let mut row = json!({"variant":variant,"protocol":protocol,
+                 "p50_ns":p50,"p95_ns":p95,"p99_ns":p99,
+                 "p99_over_p50":p99 as f64 / p50 as f64,
+                 "trial_p99_ns":tails,"p99_range_ns":[min,max],
+                 "samples":samples.len(),
+-                "sequential_requests_per_second":samples.len() as f64 * 1e9 / elapsed as f64}));
++                "sequential_requests_per_second":samples.len() as f64 * 1e9 / elapsed as f64});
++            row.as_object_mut().unwrap().extend(
++                latency_summary::summarize(&sample_trials)
++                    .as_object()
++                    .unwrap()
++                    .clone(),
++            );
++            peers.push(row);
+         }
+         let ratio = |numerator: usize, denominator: usize, metric: &str| {
+             peers[numerator][metric].as_f64().unwrap()
+diff --git a/benchmarks/rpc/test_latency_stats.py b/benchmarks/rpc/test_latency_stats.py
+new file mode 100644
+index 0000000..ba391cb
+--- /dev/null
++++ b/benchmarks/rpc/test_latency_stats.py
+@@ -0,0 +1,28 @@
++import math
++import unittest
++
++from latency_stats import summarize
++
++
++class LatencyStatisticsTests(unittest.TestCase):
++    def test_sample_and_between_run_spread_are_distinct(self):
++        result = summarize([[1, 3], [5, 7]])
++        self.assertEqual(result['mean_ns'], 4)
++        self.assertEqual(result['repetition_mean_ns'], [2, 6])
++        self.assertEqual(result['repetition_mean_range_ns'], [2, 6])
++        self.assertEqual((result['min_ns'], result['max_ns']), (1, 7))
++        self.assertAlmostEqual(result['stddev_ns'], math.sqrt(20 / 3))
++        self.assertAlmostEqual(result['repetition_mean_stddev_ns'], math.sqrt(8))
++
++    def test_five_repetitions_preserve_extremes_and_all_means(self):
++        result = summarize([[n] * 1000 for n in [10, 20, 30, 40, 50]])
++        self.assertEqual(result['mean_ns'], 30)
++        self.assertEqual(result['repetition_mean_ns'], [10, 20, 30, 40, 50])
++        self.assertEqual(result['repetition_mean_range_ns'], [10, 50])
++        self.assertAlmostEqual(result['repetition_mean_stddev_ns'], math.sqrt(250))
++        self.assertEqual(summarize([[7]])['stddev_ns'], 0)
++        self.assertEqual(summarize([[7]])['repetition_mean_stddev_ns'], 0)
++
++
++if __name__ == '__main__':
++    unittest.main()
+diff --git a/benchmarks/rpc/topology-runner.py b/benchmarks/rpc/topology-runner.py
+index 50111cf..147173b 100644
+--- a/benchmarks/rpc/topology-runner.py
++++ b/benchmarks/rpc/topology-runner.py
+@@ -13,6 +13,7 @@ import signal
+ import struct
+ import subprocess
+ import time
++from latency_stats import summarize as latency_statistics
+ 
+ ROOT = Path(__file__).resolve().parents[2]
+ EVENT = struct.Struct('<QQQQqiIII')
+@@ -48,7 +49,7 @@ def main():
+     parser.add_argument('--baseline', type=Path, help='Optional frozen Rust control, interleaved with the candidate and C++.')
+     parser.add_argument('--portable-baseline', type=Path, help='Optional frozen portable control, explicitly selected on every peer.')
+     parser.add_argument('--output', type=Path, required=True)
+-    parser.add_argument('--repetitions', type=int, help='Defaults to two complete variant cycles.')
++    parser.add_argument('--repetitions', type=int, default=5, help='Independent process repetitions per cell (default: 5).')
+     parser.add_argument('--warmup', type=int)
+     parser.add_argument('--iterations', type=int)
+     parser.add_argument('--cases', default='')
+@@ -65,11 +66,9 @@ def main():
+         binaries['baseline'] = args.baseline.resolve(strict=True)
+     if args.portable_baseline is not None:
+         binaries['portable-baseline'] = args.portable_baseline.resolve(strict=True)
+-    if args.repetitions is None:
+-        args.repetitions = 2 * len(binaries)
+     assert 0 <= warmup <= 100000 and 1 <= iterations <= 100000 and 1 <= args.repetitions <= 100
+     qualifying = (not diagnostic and warmup >= 100 and iterations >= 1000
+-                  and args.repetitions % (2 * len(binaries)) == 0)
++                  and args.repetitions >= 5)
+     catalog_path = ROOT / 'benchmarks/rpc/topologies.json'
+     catalog = json.loads(catalog_path.read_text())
+     selected = set(args.cases.split(',')) if args.cases else {c['name'] for c in catalog}
+@@ -105,7 +104,8 @@ def main():
+                  repetitions=args.repetitions, cases=cases, binaries={k: dict(path=str(v), sha256=digest(v)) for k, v in binaries.items()},
+                  fixture_sha256=digest(catalog_path), runner_sha256=digest(__file__), cpu_topology=topology,
+                  uname=list(platform.uname()), client_cpu=cpus[0], server_cpus=cpus[1:],
+-                 order_policy='Rotate variants, then reverse every complete cycle; two full cycles balance positions.',
++                 order_policy='Rotate variants, then reverse every complete cycle. Five repetitions do not exactly balance every position.',
++                 statistics='mean_ns and sample stddev_ns describe all retained samples; repetition_mean_stddev_ns is sample SD across run means, not a confidence interval.',
+                  metric='Whole concurrent batch latency, including construction, all service hops, validation, response destruction and ten-second deadline.',
+                  goal='Every uninstrumented portable cell pooled p50 <= min(legacy, C++) pooled p50; diagnostic timings do not qualify.',
+                  trials=[])
+@@ -223,6 +223,7 @@ def main():
+             values = [n for trial in trials for n in trial['latency_ns']]
+             rate = len(values) * 1e9 / sum(t['elapsed_ns'] for t in trials)
+             cells[label] = dict(samples=len(values), **{f'p{p}_ns': percentile(values, p) for p in [50, 95, 99]},
++                                **latency_statistics([t['latency_ns'] for t in trials]),
+                                 repetition_p50_ns=[percentile(t['latency_ns'], 50) for t in trials],
+                                 batches_per_second=rate, logical_requests_per_second=rate * case['width'],
+                                 service_calls_per_second=rate * case['width'] * case['hops'])
+@@ -245,6 +246,20 @@ def main():
+     summary = dict(rows=rows, socket_journals=journals, diagnostic=diagnostic, qualifying_budget=qualifying,
+                    all_cells_meet_target=all(r['meets_target'] for r in rows) if qualifying else None)
+     (out / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
++    lines = ['# Deep/concurrent RPC comparison', '',
++             f'{args.repetitions} independent process repetitions per implementation/case. Times are microseconds per complete batch.',
++             'Mean ± SD reports the mean latency and sample standard deviation of the repetition means. It is not a confidence interval.',
++             'Per-sample SD, extrema, each run mean, run-mean range, p95/p99 and throughput are retained in summary.json.',
++             'All repetitions and samples are included. Five repetitions cannot exactly balance all variant positions.', '',
++             '| Case | Implementation | Mean ± run SD µs | Run mean min–max µs | p50 µs | p95 µs | p99 µs |',
++             '| --- | --- | ---: | ---: | ---: | ---: | ---: |']
++    for row in rows:
++        for label, cell in row['variants'].items():
++            lo, hi = cell['repetition_mean_range_ns']
++            lines.append(f"| {row['case']['name']} | {label} | {cell['mean_ns']/1000:.3f} ± {cell['repetition_mean_stddev_ns']/1000:.3f} | {lo/1000:.3f}–{hi/1000:.3f} | {cell['p50_ns']/1000:.3f} | {cell['p95_ns']/1000:.3f} | {cell['p99_ns']/1000:.3f} |")
++    lines += ['', 'Instrumented/short runs are diagnostic only.' if not qualifying else
++              'The latency target remains portable pooled p50 ≤ min(legacy, C++) in every cell; added descriptive statistics do not replace that gate.']
++    (out / 'README.md').write_text('\n'.join(lines) + '\n')
+     print(json.dumps(rows, indent=2))
+ 
+ 
+diff --git a/crates/capntproto-core/src/private/layout/bounded.rs b/crates/capntproto-core/src/private/layout/bounded.rs
+index 0a33828..1c4f7c9 100644
+--- a/crates/capntproto-core/src/private/layout/bounded.rs
++++ b/crates/capntproto-core/src/private/layout/bounded.rs
+@@ -69,12 +69,25 @@ impl PointerReader<'_> {
+                             if (*section.add(index)).is_null() {
+                                 continue;
+                             }
+-                            PointerReader {
++                            let child = PointerReader {
+                                 pointer: section.add(index),
+                                 nesting_limit: current.nesting_limit - 1,
+                                 ..current
++                            };
++                            // Primitive siblings have no capabilities or children.
++                            // Keep their full extent and budget checks inline rather
++                            // than recursively entering the general validator.
++                            if (*child.pointer).kind() == WirePointerKind::List {
++                                let size = (*child.pointer).list_element_size();
++                                if !matches!(
++                                    size,
++                                    ElementSize::Pointer | ElementSize::InlineComposite
++                                ) {
++                                    child.validate_primitive_list_in(arena, size)?;
++                                    continue;
++                                }
+                             }
+-                            .validate_capability_indices_in(arena, count)?;
++                            child.validate_capability_indices_in(arena, count)?;
+                         }
+                         // Continue through the final field without another
+                         // recursive call. Linked structs commonly have a data
+@@ -94,30 +107,9 @@ impl PointerReader<'_> {
+                     // validated pointer word, not its (still untrusted) target.
+                     let size = unsafe { (*current.pointer).list_element_size() };
+                     if !matches!(size, ElementSize::Pointer | ElementSize::InlineComposite) {
+-                        if current.nesting_limit <= 0 {
+-                            current.get_pointer_type()?;
+-                            return Err(Error::from_kind(ErrorKind::NestingLimitExceeded));
+-                        }
+-                        // SAFETY: only the validated pointer word is inspected. The
+-                        // arena checks the entire target before forming any pointer;
+-                        // no target is dereferenced by this primitive-only path.
+-                        let elements = unsafe {
+-                            let elements = (*current.pointer).list_element_count();
+-                            let words = wire_helpers::round_bits_up_to_words(
+-                                u64::from(elements) * u64::from(data_bits_per_element(size)),
+-                            );
+-                            arena.check_offset_and_read(
+-                                current.segment_id,
+-                                current.pointer.cast(),
+-                                (*current.pointer).offset_in_words(),
+-                                words as usize,
+-                            )?;
+-                            elements
+-                        };
+-                        if size == ElementSize::Void {
+-                            arena.amplified_read(u64::from(elements))?;
+-                        }
+-                        return Ok(());
++                        // SAFETY: current owns this checked near-list pointer
++                        // word; size is its decoded primitive element kind.
++                        return unsafe { current.validate_primitive_list_in(arena, size) };
+                     }
+                     PointerType::List
+                 }
+@@ -129,6 +121,41 @@ impl PointerReader<'_> {
+         }
+     }
+ 
++    /// # Safety
++    /// `self` must retain `arena` and a validated, non-null near-list pointer
++    /// word with the supplied primitive element size (no pointers/composites).
++    #[inline(always)]
++    unsafe fn validate_primitive_list_in<A: crate::private::arena::ReaderArena + ?Sized>(
++        &self,
++        arena: &A,
++        size: ElementSize,
++    ) -> Result<()> {
++        if self.nesting_limit <= 0 {
++            self.get_pointer_type()?;
++            return Err(Error::from_kind(ErrorKind::NestingLimitExceeded));
++        }
++        // SAFETY: only the validated pointer word is inspected. The original
++        // arena bounds the complete target before forming any pointer. This
++        // primitive-only traversal never dereferences the target.
++        let elements = unsafe {
++            let elements = (*self.pointer).list_element_count();
++            let words = wire_helpers::round_bits_up_to_words(
++                u64::from(elements) * u64::from(data_bits_per_element(size)),
++            );
++            arena.check_offset_and_read(
++                self.segment_id,
++                self.pointer.cast(),
++                (*self.pointer).offset_in_words(),
++                words as usize,
++            )?;
++            elements
++        };
++        if size == ElementSize::Void {
++            arena.amplified_read(u64::from(elements))?;
++        }
++        Ok(())
++    }
++
+     // Keep far pointers and composite lists outside the ordinary data-only
+     // traversal. Their recursive validation has identical limits and charging.
+     #[inline(never)]
+@@ -434,6 +461,26 @@ mod validation_tests {
+         }
+     }
+ 
++    #[test]
++    fn primitive_siblings_preserve_validation_order_and_budget_charges() {
++        for size in 0..=5 {
++            for elements in [0, 1, 7, 65, 0x1fff_ffff] {
++                // Root: primitive list followed by a capability. The primitive
++                // starts after both pointer slots; four words back its extent.
++                let mut words = [encoded(0, 0); 7];
++                words[0] = encoded(0, 2 << 16);
++                words[1] = encoded(5, elements << 3 | size);
++                words[2] = encoded(3, 1);
++                compare(&words, 1);
++                compare(&words, 2);
++                // An invalid earlier target must still fail before the later
++                // capability, even for a zero-sized or amplified void list.
++                words[1] = encoded(0x7fff_fffd, elements << 3 | size);
++                compare(&words, 1);
++            }
++        }
++    }
++
+     #[test]
+     fn capability_validation_checks_targets_and_budgets_before_traversing() {
+         let invalid = [
+diff --git a/dev/src/cloud/remote/report.rs b/dev/src/cloud/remote/report.rs
+index b283acf..1c06272 100644
+--- a/dev/src/cloud/remote/report.rs
++++ b/dev/src/cloud/remote/report.rs
+@@ -1,4 +1,6 @@
+ use super::*;
++#[path = "../../../../benchmarks/rpc/latency-summary.rs"]
++mod latency_summary;
+ #[path = "../../../../benchmarks/rpc/workflow-support.rs"]
+ mod support;
+ use support::{supported, IMPLEMENTATIONS, VERSION};
+@@ -72,10 +74,11 @@ fn matrix(trials: &[Value]) -> Result<Vec<Value>> {
+             if !supported(implementation, crate::string(&case, "name")?) {
+                 continue;
+             }
+-            let cell: Vec<_> = trials
++            let mut cell: Vec<_> = trials
+                 .iter()
+                 .filter(|t| t["case"] == case && t["implementation"] == implementation)
+                 .collect();
++            cell.sort_by_key(|trial| trial["repetition"].as_u64().unwrap());
+             ensure!(cell.len() == 5, "missing implementation");
+             let mut samples: Vec<_> = cell
+                 .iter()
+@@ -93,7 +96,25 @@ fn matrix(trials: &[Value]) -> Result<Vec<Value>> {
+                 .map(|t| u128::from(t["elapsed_ns"].as_u64().unwrap()))
+                 .sum();
+             let throughput = samples.len() as f64 * 1e9 / elapsed as f64;
+-            rows.push(json!({"case":case,"implementation":implementation,"samples":samples.len(),"p50_ns":samples[2499],"p95_ns":samples[4749],"p99_ns":samples[4949],"workflows_per_second":throughput,"rpcs_per_second":throughput*case["rpcs_per_iteration"].as_u64().unwrap() as f64}));
++            let sample_trials: Vec<Vec<u64>> = cell
++                .iter()
++                .map(|trial| {
++                    trial["latency_ns"]
++                        .as_array()
++                        .unwrap()
++                        .iter()
++                        .map(|n| n.as_u64().unwrap())
++                        .collect()
++                })
++                .collect();
++            let mut row = json!({"case":case,"implementation":implementation,"samples":samples.len(),"p50_ns":samples[2499],"p95_ns":samples[4749],"p99_ns":samples[4949],"workflows_per_second":throughput,"rpcs_per_second":throughput*case["rpcs_per_iteration"].as_u64().unwrap() as f64});
++            row.as_object_mut().unwrap().extend(
++                latency_summary::summarize(&sample_trials)
++                    .as_object()
++                    .unwrap()
++                    .clone(),
++            );
++            rows.push(row);
+         }
+     }
+     for index in 0..rows.len() {
+@@ -222,12 +243,16 @@ pub(super) fn generate(output: &Path, bundle: &Path) -> Result<()> {
+         output.join("summary.json"),
+         &json!({"workflow_version":VERSION,"topology":topology,"validated":true,"acceptance":"descriptive remote workflow baseline; no loopback ratio gate applied","portable_target":target,"rows":rows,"unsupported":[{"case":"pipelined-read","implementation":"grpc","reason":"no native capability promise pipelining"},{"case":"pipelined-read","implementation":"websocket","reason":"no native capability promise pipelining"}]}),
+     )?;
+-    let mut text=String::from("# Remote RPC workflows\n\nTwo dedicated droplets, same region/plan/VPC, direct plaintext TCP. Five rotating repetitions, 250 warmups and 1,000 retained workflows per cell. Timings use only the client monotonic clock; validation, response cleanup and ten-second workflow deadlines are included. Setup/compilation is excluded.\n\nA fan-out sample covers completion of all 32 concurrent calls; it is **not** individual request latency. Throughput is closed-loop, not an open-loop saturation or SLO test. RPC/s counts the two calls in dependent/stateful/callback workflows.\n\n| Workflow | Implementation | p50 µs | p95 µs | p99 µs | Workflows/s | RPC/s | p50 / C++ |\n|---|---|---:|---:|---:|---:|---:|---:|\n");
++    let mut text=String::from("# Remote RPC workflows\n\nTwo dedicated droplets, same region/plan/VPC, direct plaintext TCP. Five rotating repetitions, 250 warmups and 1,000 retained workflows per cell. Timings use only the client monotonic clock; validation, response cleanup and ten-second workflow deadlines are included. Setup/compilation is excluded.\n\nA fan-out sample covers completion of all 32 concurrent calls; it is **not** individual request latency. Throughput is closed-loop, not an open-loop saturation or SLO test. RPC/s counts the two calls in dependent/stateful/callback workflows.\n\n| Workflow | Implementation | Mean ± run SD µs | Run mean min–max µs | p50 µs | p95 µs | p99 µs | Workflows/s | RPC/s | p50 / C++ |\n|---|---|---:|---:|---:|---:|---:|---:|---:|---:|\n");
+     for row in &rows {
+         text += &format!(
+-            "| {} | {} | {:.2} | {:.2} | {:.2} | {:.0} | {:.0} | {:.3}× |\n",
++            "| {} | {} | {:.2} ± {:.2} | {:.2}–{:.2} | {:.2} | {:.2} | {:.2} | {:.0} | {:.0} | {:.3}× |\n",
+             row["case"]["name"].as_str().unwrap(),
+             row["implementation"].as_str().unwrap(),
++            row["mean_ns"].as_f64().unwrap() / 1000.0,
++            row["repetition_mean_stddev_ns"].as_f64().unwrap() / 1000.0,
++            row["repetition_mean_range_ns"][0].as_f64().unwrap() / 1000.0,
++            row["repetition_mean_range_ns"][1].as_f64().unwrap() / 1000.0,
+             row["p50_ns"].as_u64().unwrap() as f64 / 1000.0,
+             row["p95_ns"].as_u64().unwrap() as f64 / 1000.0,
+             row["p99_ns"].as_u64().unwrap() as f64 / 1000.0,
+@@ -236,6 +261,7 @@ pub(super) fn generate(output: &Path, bundle: &Path) -> Result<()> {
+             row["p50_ratio_to_cpp"].as_f64().unwrap()
+         );
+     }
++    text += "\nMean ± SD uses sample standard deviation across the five run means, not a confidence interval. Per-sample SD, extrema and all run means are retained in summary.json.\n";
+     text += "\n## Portable performance gap\n\nTarget: portable pooled p50 ≤ 1.05 × the faster of legacy and C++ for **each** workflow. This is advisory while the gap remains open; it does not replace correctness, tail-latency or resource evidence.\n\n| Workflow | Faster reference | Portable/reference | Meets 5% target |\n|---|---|---:|---|\n";
+     for row in target["rows"].as_array().unwrap() {
+         text += &format!(
+@@ -343,6 +369,25 @@ pub(super) mod tests {
+         let valid = trials();
+         let rows = matrix(&valid).unwrap();
+         assert_eq!(rows.len(), 70);
++        assert_eq!(rows[0]["mean_ns"], 10.0);
++        assert_eq!(rows[0]["repetition_mean_stddev_ns"], 0.0);
++        let mut varied = valid.clone();
++        for trial in &mut varied {
++            let value = (trial["repetition"].as_u64().unwrap() + 1) * 10;
++            trial["latency_ns"] = json!(vec![value; 1000]);
++            trial["elapsed_ns"] = json!(value * 1000);
++        }
++        varied.reverse();
++        let varied = matrix(&varied).unwrap();
++        assert_eq!(varied[0]["mean_ns"], 30.0);
++        assert_eq!(
++            varied[0]["repetition_mean_ns"],
++            json!([10.0, 20.0, 30.0, 40.0, 50.0])
++        );
++        assert!(
++            (varied[0]["repetition_mean_stddev_ns"].as_f64().unwrap() - 250.0f64.sqrt()).abs()
++                < 1e-12
++        );
+         let without_upstream: Vec<_> = valid
+             .iter()
+             .filter(|t| t["implementation"] != "capnp-rust")
+diff --git a/quality/src/benchmark.rs b/quality/src/benchmark.rs
+index aa7b48e..06ae3de 100644
+--- a/quality/src/benchmark.rs
++++ b/quality/src/benchmark.rs
+@@ -3,6 +3,8 @@ use capntproto_test_support::verification::{self as v, root};
+ use serde::{Deserialize, Serialize};
+ use serde_json::{json, Value};
+ use std::{fs, path::Path};
++#[path = "../../benchmarks/rpc/latency-summary.rs"]
++mod latency_summary;
+ pub const PROTOCOLS: [&str; 6] = [
+     "tcp",
+     "capnp-cpp",
+@@ -169,7 +171,16 @@ pub fn matrix(trials: &[Trial]) -> Result<Vec<Value>> {
+             let p99 = percentile(&mut samples, 99);
+             medians.sort_unstable();
+             let elapsed: u128 = cell.iter().map(|t| u128::from(t.elapsed_ns)).sum();
+-            rows.push(json!({"protocol":protocol,"payload_bytes":bytes,"repetitions":cell.len(),"iterations_per_repetition":first.iterations,"p50_ns":p50,"p95_ns":p95,"p99_ns":p99,"median_range_ns":[medians[0],medians[REPETITIONS-1]],"sequential_requests_per_second":samples.len() as f64 * 1e9 / elapsed as f64}));
++            let sample_trials: Vec<Vec<u64>> =
++                cell.iter().map(|trial| trial.latency_ns.clone()).collect();
++            let mut row = json!({"protocol":protocol,"payload_bytes":bytes,"repetitions":cell.len(),"iterations_per_repetition":first.iterations,"p50_ns":p50,"p95_ns":p95,"p99_ns":p99,"median_range_ns":[medians[0],medians[REPETITIONS-1]],"sequential_requests_per_second":samples.len() as f64 * 1e9 / elapsed as f64});
++            row.as_object_mut().unwrap().extend(
++                latency_summary::summarize(&sample_trials)
++                    .as_object()
++                    .unwrap()
++                    .clone(),
++            );
++            rows.push(row);
+         }
+     }
+     Ok(rows)
+@@ -546,6 +557,10 @@ mod tests {
+             }
+         }
+         assert_eq!(matrix(&trials).unwrap().len(), 24);
++        let summary = matrix(&trials).unwrap();
++        assert_eq!(summary[0]["mean_ns"], 40.0);
++        assert_eq!(summary[0]["repetition_mean_ns"], json!(vec![40.0; 5]));
++        assert_eq!(summary[0]["repetition_mean_stddev_ns"], 0.0);
+         let without_upstream: Vec<_> = trials
+             .iter()
+             .filter(|t| t.protocol != "capnp-rust")
+diff --git a/quality/src/report.rs b/quality/src/report.rs
+index 84956b2..5097109 100644
+--- a/quality/src/report.rs
++++ b/quality/src/report.rs
+@@ -240,7 +240,7 @@ pub fn generate(base: &Path, lanes: &str) -> Result<()> {
+                         failures.push(error.to_string());
+                     }
+                 }
+-                readme.push_str("| Payload bytes | Implementation | p50 µs | p95 µs | p99 µs | Sequential req/s | p50 / C++ Cap’n Proto |\n| --- | --- | --- | --- | --- | --- | --- |\n");
++                readme.push_str("Mean ± SD uses sample standard deviation across the five run means, not a confidence interval. Per-sample SD, extrema and every run mean remain in the JSON report.\n\n| Payload bytes | Implementation | Mean ± run SD µs | Run mean min–max µs | p50 µs | p95 µs | p99 µs | Sequential req/s | p50 / C++ Cap’n Proto |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n");
+                 for row in &rows {
+                     let native = rows
+                         .iter()
+@@ -252,9 +252,13 @@ pub fn generate(base: &Path, lanes: &str) -> Result<()> {
+                     let p50 = row["p50_ns"].as_f64().ok_or("missing latency")?;
+                     writeln!(
+                         readme,
+-                        "| {} | {} | {:.2} | {:.2} | {:.2} | {:.0} | {:.4}× |",
++                        "| {} | {} | {:.2} ± {:.2} | {:.2}–{:.2} | {:.2} | {:.2} | {:.2} | {:.0} | {:.4}× |",
+                         row["payload_bytes"],
+                         text(row["protocol"].as_str().unwrap()),
++                        row["mean_ns"].as_f64().unwrap() / 1000.0,
++                        row["repetition_mean_stddev_ns"].as_f64().unwrap() / 1000.0,
++                        row["repetition_mean_range_ns"][0].as_f64().unwrap() / 1000.0,
++                        row["repetition_mean_range_ns"][1].as_f64().unwrap() / 1000.0,
+                         p50 / 1000.0,
+                         row["p95_ns"].as_f64().unwrap() / 1000.0,
+                         row["p99_ns"].as_f64().unwrap() / 1000.0,
+@@ -338,6 +342,7 @@ mod tests {
+                 }
+             }
+         }
++        trials[0].latency_ns[..2].copy_from_slice(&[99, 101]);
+         // These real-run elapsed values reproduce the f64 JSON round-trip issue.
+         let raw = serde_json::to_vec(&trials).unwrap();
+         let rows = benchmark::matrix(&trials).unwrap();
+@@ -357,10 +362,14 @@ mod tests {
+         assert!(benchmark_rows(&stored, dir.path()).is_ok());
+         stored.data["rows"][0]["p50_ns"] = serde_json::json!(101);
+         assert!(benchmark_rows(&stored, dir.path()).is_err());
++        let mut stored: Evidence =
++            serde_json::from_slice(&serde_json::to_vec(&e).unwrap()).unwrap();
++        stored.data["rows"][0]["mean_ns"] = serde_json::json!(101);
++        assert!(benchmark_rows(&stored, dir.path()).is_err());
+         let stored: Evidence = serde_json::from_slice(&serde_json::to_vec(&e).unwrap()).unwrap();
+-        // Altering one sample does not change any reported percentile. Its hash
+-        // must still reject the modification.
+-        trials[0].latency_ns[0] += 1;
++        // Reordering samples preserves all descriptive statistics, including
++        // the new mean and spread. The raw hash must still reject tampering.
++        trials[0].latency_ns.swap(0, 1);
+         assert_eq!(benchmark::matrix(&trials).unwrap(), rows);
+         fs::write(
+             dir.path().join("trials.json"),
+diff --git a/test-support/src/verification/mod.rs b/test-support/src/verification/mod.rs
+index b24beb6..d5551a0 100644
+--- a/test-support/src/verification/mod.rs
++++ b/test-support/src/verification/mod.rs
+@@ -494,29 +494,41 @@ fn descendant_groups(pid: u32) -> Vec<u32> {
+     // that ignores termination. Other Unix platforms still stop the main group.
+     #[cfg(target_os = "linux")]
+     {
+-        let mut pending = vec![pid];
+-        while let Some(parent) = pending.pop() {
+-            let Ok(tasks) = fs::read_dir(format!("/proc/{parent}/task")) else {
+-                continue;
+-            };
+-            for task in tasks.flatten() {
+-                let Ok(children) = fs::read_to_string(task.path().join("children")) else {
++        // Some container kernels omit /proc/<pid>/task/<tid>/children.
++        // Process stat still exposes PPID and process-group ID; snapshot those
++        // relationships before sending TERM and potentially reparenting them.
++        let mut children = std::collections::BTreeMap::<u32, Vec<(u32, u32)>>::new();
++        if let Ok(entries) = fs::read_dir("/proc") {
++            for entry in entries.flatten() {
++                let Some(child) = entry
++                    .file_name()
++                    .to_str()
++                    .and_then(|name| name.parse::<u32>().ok())
++                else {
+                     continue;
+                 };
+-                for child in children
+-                    .split_whitespace()
+-                    .filter_map(|p| p.parse::<u32>().ok())
+-                {
++                let Ok(stat) = fs::read_to_string(entry.path().join("stat")) else {
++                    continue;
++                };
++                let Some((_, fields)) = stat.rsplit_once(") ") else {
++                    continue;
++                };
++                let mut fields = fields.split_whitespace().skip(1);
++                if let (Some(parent), Some(group)) = (
++                    fields.next().and_then(|v| v.parse::<u32>().ok()),
++                    fields.next().and_then(|v| v.parse::<u32>().ok()),
++                ) {
++                    children.entry(parent).or_default().push((child, group));
++                }
++            }
++        }
++        let mut pending = vec![pid];
++        while let Some(parent) = pending.pop() {
++            if let Some(descendants) = children.remove(&parent) {
++                for (child, group) in descendants {
+                     pending.push(child);
+-                    if let Ok(stat) = fs::read_to_string(format!("/proc/{child}/stat")) {
+-                        if stat
+-                            .rsplit_once(") ")
+-                            .and_then(|(_, fields)| fields.split_whitespace().nth(2))
+-                            .and_then(|p| p.parse::<u32>().ok())
+-                            == Some(child)
+-                        {
+-                            groups.push(child);
+-                        }
++                    if group == child {
++                        groups.push(child);
+                     }
+                 }
+             }

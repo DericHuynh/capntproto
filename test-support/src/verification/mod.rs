@@ -494,29 +494,41 @@ fn descendant_groups(pid: u32) -> Vec<u32> {
     // that ignores termination. Other Unix platforms still stop the main group.
     #[cfg(target_os = "linux")]
     {
-        let mut pending = vec![pid];
-        while let Some(parent) = pending.pop() {
-            let Ok(tasks) = fs::read_dir(format!("/proc/{parent}/task")) else {
-                continue;
-            };
-            for task in tasks.flatten() {
-                let Ok(children) = fs::read_to_string(task.path().join("children")) else {
+        // Some container kernels omit /proc/<pid>/task/<tid>/children.
+        // Process stat still exposes PPID and process-group ID; snapshot those
+        // relationships before sending TERM and potentially reparenting them.
+        let mut children = std::collections::BTreeMap::<u32, Vec<(u32, u32)>>::new();
+        if let Ok(entries) = fs::read_dir("/proc") {
+            for entry in entries.flatten() {
+                let Some(child) = entry
+                    .file_name()
+                    .to_str()
+                    .and_then(|name| name.parse::<u32>().ok())
+                else {
                     continue;
                 };
-                for child in children
-                    .split_whitespace()
-                    .filter_map(|p| p.parse::<u32>().ok())
-                {
+                let Ok(stat) = fs::read_to_string(entry.path().join("stat")) else {
+                    continue;
+                };
+                let Some((_, fields)) = stat.rsplit_once(") ") else {
+                    continue;
+                };
+                let mut fields = fields.split_whitespace().skip(1);
+                if let (Some(parent), Some(group)) = (
+                    fields.next().and_then(|v| v.parse::<u32>().ok()),
+                    fields.next().and_then(|v| v.parse::<u32>().ok()),
+                ) {
+                    children.entry(parent).or_default().push((child, group));
+                }
+            }
+        }
+        let mut pending = vec![pid];
+        while let Some(parent) = pending.pop() {
+            if let Some(descendants) = children.remove(&parent) {
+                for (child, group) in descendants {
                     pending.push(child);
-                    if let Ok(stat) = fs::read_to_string(format!("/proc/{child}/stat")) {
-                        if stat
-                            .rsplit_once(") ")
-                            .and_then(|(_, fields)| fields.split_whitespace().nth(2))
-                            .and_then(|p| p.parse::<u32>().ok())
-                            == Some(child)
-                        {
-                            groups.push(child);
-                        }
+                    if group == child {
+                        groups.push(child);
                     }
                 }
             }

@@ -13,6 +13,7 @@ import signal
 import struct
 import subprocess
 import time
+from latency_stats import summarize as latency_statistics
 
 ROOT = Path(__file__).resolve().parents[2]
 EVENT = struct.Struct('<QQQQqiIII')
@@ -48,7 +49,7 @@ def main():
     parser.add_argument('--baseline', type=Path, help='Optional frozen Rust control, interleaved with the candidate and C++.')
     parser.add_argument('--portable-baseline', type=Path, help='Optional frozen portable control, explicitly selected on every peer.')
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--repetitions', type=int, help='Defaults to two complete variant cycles.')
+    parser.add_argument('--repetitions', type=int, default=5, help='Independent process repetitions per cell (default: 5).')
     parser.add_argument('--warmup', type=int)
     parser.add_argument('--iterations', type=int)
     parser.add_argument('--cases', default='')
@@ -65,11 +66,9 @@ def main():
         binaries['baseline'] = args.baseline.resolve(strict=True)
     if args.portable_baseline is not None:
         binaries['portable-baseline'] = args.portable_baseline.resolve(strict=True)
-    if args.repetitions is None:
-        args.repetitions = 2 * len(binaries)
     assert 0 <= warmup <= 100000 and 1 <= iterations <= 100000 and 1 <= args.repetitions <= 100
     qualifying = (not diagnostic and warmup >= 100 and iterations >= 1000
-                  and args.repetitions % (2 * len(binaries)) == 0)
+                  and args.repetitions >= 5)
     catalog_path = ROOT / 'benchmarks/rpc/topologies.json'
     catalog = json.loads(catalog_path.read_text())
     selected = set(args.cases.split(',')) if args.cases else {c['name'] for c in catalog}
@@ -105,7 +104,8 @@ def main():
                  repetitions=args.repetitions, cases=cases, binaries={k: dict(path=str(v), sha256=digest(v)) for k, v in binaries.items()},
                  fixture_sha256=digest(catalog_path), runner_sha256=digest(__file__), cpu_topology=topology,
                  uname=list(platform.uname()), client_cpu=cpus[0], server_cpus=cpus[1:],
-                 order_policy='Rotate variants, then reverse every complete cycle; two full cycles balance positions.',
+                 order_policy='Rotate variants, then reverse every complete cycle. Five repetitions do not exactly balance every position.',
+                 statistics='mean_ns and sample stddev_ns describe all retained samples; repetition_mean_stddev_ns is sample SD across run means, not a confidence interval.',
                  metric='Whole concurrent batch latency, including construction, all service hops, validation, response destruction and ten-second deadline.',
                  goal='Every uninstrumented portable cell pooled p50 <= min(legacy, C++) pooled p50; diagnostic timings do not qualify.',
                  trials=[])
@@ -223,6 +223,7 @@ def main():
             values = [n for trial in trials for n in trial['latency_ns']]
             rate = len(values) * 1e9 / sum(t['elapsed_ns'] for t in trials)
             cells[label] = dict(samples=len(values), **{f'p{p}_ns': percentile(values, p) for p in [50, 95, 99]},
+                                **latency_statistics([t['latency_ns'] for t in trials]),
                                 repetition_p50_ns=[percentile(t['latency_ns'], 50) for t in trials],
                                 batches_per_second=rate, logical_requests_per_second=rate * case['width'],
                                 service_calls_per_second=rate * case['width'] * case['hops'])
@@ -245,6 +246,20 @@ def main():
     summary = dict(rows=rows, socket_journals=journals, diagnostic=diagnostic, qualifying_budget=qualifying,
                    all_cells_meet_target=all(r['meets_target'] for r in rows) if qualifying else None)
     (out / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
+    lines = ['# Deep/concurrent RPC comparison', '',
+             f'{args.repetitions} independent process repetitions per implementation/case. Times are microseconds per complete batch.',
+             'Mean ± SD reports the mean latency and sample standard deviation of the repetition means. It is not a confidence interval.',
+             'Per-sample SD, extrema, each run mean, run-mean range, p95/p99 and throughput are retained in summary.json.',
+             'All repetitions and samples are included. Five repetitions cannot exactly balance all variant positions.', '',
+             '| Case | Implementation | Mean ± run SD µs | Run mean min–max µs | p50 µs | p95 µs | p99 µs |',
+             '| --- | --- | ---: | ---: | ---: | ---: | ---: |']
+    for row in rows:
+        for label, cell in row['variants'].items():
+            lo, hi = cell['repetition_mean_range_ns']
+            lines.append(f"| {row['case']['name']} | {label} | {cell['mean_ns']/1000:.3f} ± {cell['repetition_mean_stddev_ns']/1000:.3f} | {lo/1000:.3f}–{hi/1000:.3f} | {cell['p50_ns']/1000:.3f} | {cell['p95_ns']/1000:.3f} | {cell['p99_ns']/1000:.3f} |")
+    lines += ['', 'Instrumented/short runs are diagnostic only.' if not qualifying else
+              'The latency target remains portable pooled p50 ≤ min(legacy, C++) in every cell; added descriptive statistics do not replace that gate.']
+    (out / 'README.md').write_text('\n'.join(lines) + '\n')
     print(json.dumps(rows, indent=2))
 
 

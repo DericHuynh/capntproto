@@ -52,19 +52,19 @@ python3 benchmarks/rpc/topology-runner.py \
   --output target/topology-latency --mixed
 ```
 
-Use the actual bundle paths produced by your build. Defaults are six repetitions,
+Use the actual bundle paths produced by your build. Defaults are five repetitions,
 100 warmups and 1,000 retained batch samples per cell. Variant order rotates and
-reverses so each implementation occupies all three positions equally. `--mixed`
+reverses across cycles. Five runs do not exactly balance every variant position;
+the complete order is retained. `--mixed`
 also checks every ordered pair of portable, legacy and C++ in alternating service
 chains, outside the latency comparison. `--cases` accepts comma-separated catalog
 names. `--portable DRIVER` supplies a separate portable candidate while keeping
 the legacy reference fixed with `--rust DRIVER`.
 
 To isolate a portable optimization from run-to-run shifts, add
-`--portable-baseline FROZEN_PORTABLE`. The default then becomes eight repetitions
-to interleave all four variants in balanced order. `--baseline FROZEN_LEGACY`
-remains available for a legacy control. At least two complete variant cycles are
-required for a qualifying budget. Mixed-chain checks use the three current
+`--portable-baseline FROZEN_PORTABLE`. All four variants still run five times.
+`--baseline FROZEN_LEGACY` remains available for a legacy control. At least five
+repetitions are required for a qualifying budget. Mixed-chain checks use the three current
 implementations; frozen controls run the same homogeneous fixtures.
 
 The runner selects distinct physical cores for the client and available service
@@ -76,8 +76,14 @@ TCP microservice chains, not cross-host network measurements.
 Every output directory must be new. It retains raw latency samples, per-process
 logs, server readiness/chain checks, CPU placement, binary and fixture hashes,
 CPU quota/throttling and steal counters around each process lifecycle,
-and every trial's p50/p95/p99 and batch/request/service-call throughput. These host
-counters include setup and teardown; they do not modify or filter samples. The
+and every trial's p50/p95/p99 and batch/request/service-call throughput. The generated
+README adds mean ± sample standard deviation of the repetition means, plus their
+minimum and maximum. This measures between-run spread, not a confidence interval.
+JSON also retains the pooled arithmetic mean, sample standard deviation and
+extrema of all latency samples, and every repetition's mean. The workflow,
+portable-loopback and general loopback reports use the same definitions and five
+repetitions. All samples remain included; percentiles and acceptance gates are
+preserved. Host counters include setup and teardown; they do not modify or filter samples. The
 portable latency goal is `portable p50 <= min(legacy p50, C++ p50)` in every
 cell; passing some cells does not qualify the suite. Syscall count parity is
 assessed separately using diagnostic captures.
