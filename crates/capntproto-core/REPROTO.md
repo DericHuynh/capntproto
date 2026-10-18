@@ -229,3 +229,12 @@ structured-reply generator profile uses consuming Reply, ReplyBuilder and
 PublishedReply stages to prevent writing before forwarding or editing after
 publication. See the [current RPC contract](../../docs/wiki/RPC-Applications.md#structured-server-replies)
 and the compile-time acceptance tests before selecting that profile.
+
+Error diagnostics now occupy an optional cold context, keeping plain errors and
+successful `Result` values smaller. `Error::from_kind`, empty descriptions,
+cloning a plain error and reading its diagnostics still allocate nothing.
+`error.kind` and ordinary `error.extra` reads/edits remain available; the first
+mutable diagnostic access allocates context. Construct errors with
+`Error::from_kind` or `Error::with_description` rather than struct literals, and
+use `into_extra()` to move out the description. Exception metadata is accessed
+through `remote_trace`, `set_remote_trace`, `detail`, `details` and `set_detail`.

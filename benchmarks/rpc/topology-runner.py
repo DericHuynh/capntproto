@@ -12,6 +12,7 @@ import selectors
 import signal
 import struct
 import subprocess
+import time
 
 ROOT = Path(__file__).resolve().parents[2]
 EVENT = struct.Struct('<QQQQqiIII')
@@ -25,10 +26,25 @@ def percentile(values, p):
     return sorted(values)[(len(values) * p + 99) // 100 - 1]
 
 
+def host_state():
+    """Outside the timed workload; retain quota/throttling and CPU steal context."""
+    state = {'monotonic_ns': time.monotonic_ns()}
+    for name in ['/proc/stat', '/proc/loadavg', '/sys/fs/cgroup/cpu.max', '/sys/fs/cgroup/cpu.stat']:
+        try:
+            value = Path(name).read_text()
+            if name == '/proc/stat':
+                value = '\n'.join(row for row in value.splitlines() if row.startswith('cpu'))
+            state[name] = value
+        except OSError:
+            state[name] = None
+    return state
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--rust', type=Path, required=True)
     parser.add_argument('--cpp', type=Path, required=True)
+    parser.add_argument('--baseline', type=Path, help='Optional frozen Rust control, interleaved with the candidate and C++.')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--repetitions', type=int, default=4)
     parser.add_argument('--warmup', type=int)
@@ -41,8 +57,10 @@ def main():
     warmup = args.warmup if args.warmup is not None else (2 if diagnostic else 100)
     iterations = args.iterations if args.iterations is not None else (10 if diagnostic else 1000)
     assert 0 <= warmup <= 100000 and 1 <= iterations <= 100000 and 1 <= args.repetitions <= 100
-    qualifying = not diagnostic and warmup >= 100 and iterations >= 1000 and args.repetitions >= 4
     binaries = {'legacy': args.rust.resolve(strict=True), 'cpp': args.cpp.resolve(strict=True)}
+    if args.baseline is not None:
+        binaries['baseline'] = args.baseline.resolve(strict=True)
+    qualifying = not diagnostic and warmup >= 100 and iterations >= 1000 and args.repetitions >= 2 * len(binaries)
     catalog_path = ROOT / 'benchmarks/rpc/topologies.json'
     catalog = json.loads(catalog_path.read_text())
     selected = set(args.cases.split(',')) if args.cases else {c['name'] for c in catalog}
@@ -63,7 +81,7 @@ def main():
     for path in Path('/proc').glob('[0-9]*/comm'):
         try:
             name = path.read_text().strip()
-            if name in ['rustc', 'clippy-driver', 'miri', 'rust-lld', 'cc1plus', 'clang', 'clang++', 'strace'] or 'callgrind' in name:
+            if name in ['rustc', 'clippy-driver', 'rustfmt', 'cargo', 'miri', 'rust-lld', 'java', 'cc1plus', 'clang', 'clang++', 'strace'] or 'callgrind' in name:
                 assert (path.parent / 'stat').read_text().split(') ', 1)[1].split()[0] == 'Z', f'competing build/profiler: {path}'
         except (FileNotFoundError, ProcessLookupError):
             pass
@@ -78,7 +96,7 @@ def main():
                  repetitions=args.repetitions, cases=cases, binaries={k: dict(path=str(v), sha256=digest(v)) for k, v in binaries.items()},
                  fixture_sha256=digest(catalog_path), runner_sha256=digest(__file__), cpu_topology=topology,
                  uname=list(platform.uname()), client_cpu=cpus[0], server_cpus=cpus[1:],
-                 order_policy='Rotate two variants, then reverse every complete cycle; four repetitions balance positions.',
+                 order_policy='Rotate variants, then reverse every complete cycle; two full cycles balance positions.',
                  metric='Whole concurrent batch latency, including construction, all service hops, validation, response destruction and ten-second deadline.',
                  goal='Every uninstrumented cell pooled p50 <= 0.70 * C++ pooled p50; diagnostic timings do not qualify.',
                  trials=[])
@@ -111,6 +129,8 @@ def main():
     def trial(case, client_label, services, prefix, warm, count):
         directory = out / prefix
         directory.mkdir()
+        host = {'scope': 'Entire process lifecycle, including setup and teardown; outside client latency samples.',
+                'before': host_state()}
         workers = []
         address = None
         placement = []
@@ -137,7 +157,7 @@ def main():
             assert client.returncode == 0, f'client failed: {directory}'
             data = json.loads(output)
             assert data['topology_version'] == 1 and data['case'] == case
-            assert data['implementation'] == ('legacy' if client_label == 'legacy' else 'capnp-cpp')
+            assert data['implementation'] == ('capnp-cpp' if client_label == 'cpp' else 'legacy')
             assert data['iterations'] == len(data['latency_ns']) == count and data['warmup'] == warm
             assert all(type(n) is int and n > 0 for n in data['latency_ns'])
             assert data['elapsed_ns'] >= sum(data['latency_ns'])
@@ -150,6 +170,8 @@ def main():
                 stop(client)
             for process in reversed(workers):
                 stop(process)
+            host['after'] = host_state()
+            (directory / 'host.json').write_text(json.dumps(host, indent=2) + '\n')
             for trace in directory.glob('*.strace'):
                 with trace.open('rb') as source, gzip.open(str(trace) + '.gz', 'wb', compresslevel=1) as sink:
                     import shutil
@@ -158,16 +180,16 @@ def main():
 
     if args.mixed:
         for case in cases:
-            for index, label in enumerate(binaries):
-                services = [list(binaries)[(hop + index + 1) % 2] for hop in range(case['hops'])]
+            for index, label in enumerate(['legacy', 'cpp']):
+                services = [['legacy', 'cpp'][(hop + index + 1) % 2] for hop in range(case['hops'])]
                 prefix = f"mixed-{case['name']}-{label}"
                 _, placement = trial(case, label, services, prefix, 2, 5)
                 scope['trials'].append(dict(path=prefix, case=case['name'], client=label, services=placement, mixed=True))
                 (out / 'scope.json').write_text(json.dumps(scope, indent=2) + '\n')
     for rep in range(args.repetitions):
         order = list(binaries)
-        order = order[rep % 2:] + order[:rep % 2]
-        if rep // 2 % 2:
+        order = order[rep % len(binaries):] + order[:rep % len(binaries)]
+        if rep // len(binaries) % 2:
             order.reverse()
         for case in cases:
             for label in order:

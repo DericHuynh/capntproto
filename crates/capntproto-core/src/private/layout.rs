@@ -458,7 +458,10 @@ mod wire_helpers {
     }
 
     /// Reserve before clearing or publishing. Failure preserves the old object.
-    #[inline]
+    // Keep the common same-segment reservation in the caller, where kind and
+    // size are often constants. The fallible growth and old-object cleanup
+    // remain shared calls; no bounds or allocation policy changes here.
+    #[inline(always)]
     pub(crate) unsafe fn try_allocate(
         arena: &mut dyn BuilderArena,
         cap_table: CapTableBuilder,

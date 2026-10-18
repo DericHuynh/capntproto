@@ -457,6 +457,6 @@ impl CompilerCommand {
 #[cfg_attr(miri, ignore)]
 fn compiler_command_new_no_out_dir() {
     std::env::remove_var("OUT_DIR");
-    let error = CompilerCommand::new().run().unwrap_err().extra;
+    let error = CompilerCommand::new().run().unwrap_err().into_extra();
     assert!(error.starts_with("Could not access `OUT_DIR` environment variable"));
 }

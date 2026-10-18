@@ -170,10 +170,7 @@ mod tests {
     impl Connector for Fails {
         fn connect(&self, _: VatId) -> Promise<AuthenticatedSession, Error> {
             self.attempts.set(self.attempts.get() + 1);
-            Promise::err(Error {
-                kind: self.kind,
-                ..Error::failed("dial failed".into())
-            })
+            Promise::err(Error::with_description(self.kind, "dial failed".into()))
         }
     }
     #[tokio::test(flavor = "current_thread", start_paused = true)]

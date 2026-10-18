@@ -1,0 +1,540 @@
+diff --git a/benchmarks/rpc/README.md b/benchmarks/rpc/README.md
+index 4ecbc98..629adf3 100644
+--- a/benchmarks/rpc/README.md
++++ b/benchmarks/rpc/README.md
+@@ -56,6 +56,12 @@ reverses so each implementation occupies both positions equally. `--mixed` also
+ checks alternating Rust/C++ service chains in both directions, outside the latency
+ comparison. `--cases` accepts comma-separated catalog names.
+ 
++To isolate an optimization from run-to-run shifts, add `--baseline FROZEN_RUST`
++and use `--repetitions 6`. This interleaves the candidate, the previous Rust
++binary and C++ in balanced order. At least two complete variant cycles are
++required for a qualifying budget. Mixed-chain checks still use the candidate
++and C++; the baseline runs the same homogeneous fixtures as both controls.
++
+ The runner selects distinct physical cores for the client and available service
+ workers. Longer chains cycle over the available service cores; the exact placement
+ is retained. On a five-core host, four-service chains use one core per process,
+@@ -64,7 +70,9 @@ TCP microservice chains, not cross-host network measurements.
+ 
+ Every output directory must be new. It retains raw latency samples, per-process
+ logs, server readiness/chain checks, CPU placement, binary and fixture hashes,
+-and every trial's p50/p95/p99 and batch/request/service-call throughput. The 30%
++CPU quota/throttling and steal counters around each process lifecycle,
++and every trial's p50/p95/p99 and batch/request/service-call throughput. These host
++counters include setup and teardown; they do not modify or filter samples. The 30%
+ latency goal is `Rust p50 <= 0.70 * C++ p50` in every cell; passing some cells
+ does not qualify the suite.
+ 
+diff --git a/benchmarks/rpc/topology-runner.py b/benchmarks/rpc/topology-runner.py
+index abc00c7..3cece68 100644
+--- a/benchmarks/rpc/topology-runner.py
++++ b/benchmarks/rpc/topology-runner.py
+@@ -12,6 +12,7 @@ import selectors
+ import signal
+ import struct
+ import subprocess
++import time
+ 
+ ROOT = Path(__file__).resolve().parents[2]
+ EVENT = struct.Struct('<QQQQqiIII')
+@@ -25,10 +26,25 @@ def percentile(values, p):
+     return sorted(values)[(len(values) * p + 99) // 100 - 1]
+ 
+ 
++def host_state():
++    """Outside the timed workload; retain quota/throttling and CPU steal context."""
++    state = {'monotonic_ns': time.monotonic_ns()}
++    for name in ['/proc/stat', '/proc/loadavg', '/sys/fs/cgroup/cpu.max', '/sys/fs/cgroup/cpu.stat']:
++        try:
++            value = Path(name).read_text()
++            if name == '/proc/stat':
++                value = '\n'.join(row for row in value.splitlines() if row.startswith('cpu'))
++            state[name] = value
++        except OSError:
++            state[name] = None
++    return state
++
++
+ def main():
+     parser = argparse.ArgumentParser(description=__doc__)
+     parser.add_argument('--rust', type=Path, required=True)
+     parser.add_argument('--cpp', type=Path, required=True)
++    parser.add_argument('--baseline', type=Path, help='Optional frozen Rust control, interleaved with the candidate and C++.')
+     parser.add_argument('--output', type=Path, required=True)
+     parser.add_argument('--repetitions', type=int, default=4)
+     parser.add_argument('--warmup', type=int)
+@@ -41,8 +57,10 @@ def main():
+     warmup = args.warmup if args.warmup is not None else (2 if diagnostic else 100)
+     iterations = args.iterations if args.iterations is not None else (10 if diagnostic else 1000)
+     assert 0 <= warmup <= 100000 and 1 <= iterations <= 100000 and 1 <= args.repetitions <= 100
+-    qualifying = not diagnostic and warmup >= 100 and iterations >= 1000 and args.repetitions >= 4
+     binaries = {'legacy': args.rust.resolve(strict=True), 'cpp': args.cpp.resolve(strict=True)}
++    if args.baseline is not None:
++        binaries['baseline'] = args.baseline.resolve(strict=True)
++    qualifying = not diagnostic and warmup >= 100 and iterations >= 1000 and args.repetitions >= 2 * len(binaries)
+     catalog_path = ROOT / 'benchmarks/rpc/topologies.json'
+     catalog = json.loads(catalog_path.read_text())
+     selected = set(args.cases.split(',')) if args.cases else {c['name'] for c in catalog}
+@@ -63,7 +81,7 @@ def main():
+     for path in Path('/proc').glob('[0-9]*/comm'):
+         try:
+             name = path.read_text().strip()
+-            if name in ['rustc', 'clippy-driver', 'miri', 'rust-lld', 'cc1plus', 'clang', 'clang++', 'strace'] or 'callgrind' in name:
++            if name in ['rustc', 'clippy-driver', 'rustfmt', 'cargo', 'miri', 'rust-lld', 'java', 'cc1plus', 'clang', 'clang++', 'strace'] or 'callgrind' in name:
+                 assert (path.parent / 'stat').read_text().split(') ', 1)[1].split()[0] == 'Z', f'competing build/profiler: {path}'
+         except (FileNotFoundError, ProcessLookupError):
+             pass
+@@ -78,7 +96,7 @@ def main():
+                  repetitions=args.repetitions, cases=cases, binaries={k: dict(path=str(v), sha256=digest(v)) for k, v in binaries.items()},
+                  fixture_sha256=digest(catalog_path), runner_sha256=digest(__file__), cpu_topology=topology,
+                  uname=list(platform.uname()), client_cpu=cpus[0], server_cpus=cpus[1:],
+-                 order_policy='Rotate two variants, then reverse every complete cycle; four repetitions balance positions.',
++                 order_policy='Rotate variants, then reverse every complete cycle; two full cycles balance positions.',
+                  metric='Whole concurrent batch latency, including construction, all service hops, validation, response destruction and ten-second deadline.',
+                  goal='Every uninstrumented cell pooled p50 <= 0.70 * C++ pooled p50; diagnostic timings do not qualify.',
+                  trials=[])
+@@ -111,6 +129,8 @@ def main():
+     def trial(case, client_label, services, prefix, warm, count):
+         directory = out / prefix
+         directory.mkdir()
++        host = {'scope': 'Entire process lifecycle, including setup and teardown; outside client latency samples.',
++                'before': host_state()}
+         workers = []
+         address = None
+         placement = []
+@@ -137,7 +157,7 @@ def main():
+             assert client.returncode == 0, f'client failed: {directory}'
+             data = json.loads(output)
+             assert data['topology_version'] == 1 and data['case'] == case
+-            assert data['implementation'] == ('legacy' if client_label == 'legacy' else 'capnp-cpp')
++            assert data['implementation'] == ('capnp-cpp' if client_label == 'cpp' else 'legacy')
+             assert data['iterations'] == len(data['latency_ns']) == count and data['warmup'] == warm
+             assert all(type(n) is int and n > 0 for n in data['latency_ns'])
+             assert data['elapsed_ns'] >= sum(data['latency_ns'])
+@@ -150,6 +170,8 @@ def main():
+                 stop(client)
+             for process in reversed(workers):
+                 stop(process)
++            host['after'] = host_state()
++            (directory / 'host.json').write_text(json.dumps(host, indent=2) + '\n')
+             for trace in directory.glob('*.strace'):
+                 with trace.open('rb') as source, gzip.open(str(trace) + '.gz', 'wb', compresslevel=1) as sink:
+                     import shutil
+@@ -158,16 +180,16 @@ def main():
+ 
+     if args.mixed:
+         for case in cases:
+-            for index, label in enumerate(binaries):
+-                services = [list(binaries)[(hop + index + 1) % 2] for hop in range(case['hops'])]
++            for index, label in enumerate(['legacy', 'cpp']):
++                services = [['legacy', 'cpp'][(hop + index + 1) % 2] for hop in range(case['hops'])]
+                 prefix = f"mixed-{case['name']}-{label}"
+                 _, placement = trial(case, label, services, prefix, 2, 5)
+                 scope['trials'].append(dict(path=prefix, case=case['name'], client=label, services=placement, mixed=True))
+                 (out / 'scope.json').write_text(json.dumps(scope, indent=2) + '\n')
+     for rep in range(args.repetitions):
+         order = list(binaries)
+-        order = order[rep % 2:] + order[:rep % 2]
+-        if rep // 2 % 2:
++        order = order[rep % len(binaries):] + order[:rep % len(binaries)]
++        if rep // len(binaries) % 2:
+             order.reverse()
+         for case in cases:
+             for label in order:
+diff --git a/crates/capntproto-codegen/src/lib.rs b/crates/capntproto-codegen/src/lib.rs
+index a115a50..2e74cf3 100644
+--- a/crates/capntproto-codegen/src/lib.rs
++++ b/crates/capntproto-codegen/src/lib.rs
+@@ -457,6 +457,6 @@ impl CompilerCommand {
+ #[cfg_attr(miri, ignore)]
+ fn compiler_command_new_no_out_dir() {
+     std::env::remove_var("OUT_DIR");
+-    let error = CompilerCommand::new().run().unwrap_err().extra;
++    let error = CompilerCommand::new().run().unwrap_err().into_extra();
+     assert!(error.starts_with("Could not access `OUT_DIR` environment variable"));
+ }
+diff --git a/crates/capntproto-core/REPROTO.md b/crates/capntproto-core/REPROTO.md
+index 6e39f52..88666a2 100644
+--- a/crates/capntproto-core/REPROTO.md
++++ b/crates/capntproto-core/REPROTO.md
+@@ -229,3 +229,12 @@ structured-reply generator profile uses consuming Reply, ReplyBuilder and
+ PublishedReply stages to prevent writing before forwarding or editing after
+ publication. See the [current RPC contract](../../docs/wiki/RPC-Applications.md#structured-server-replies)
+ and the compile-time acceptance tests before selecting that profile.
++
++Error diagnostics now occupy an optional cold context, keeping plain errors and
++successful `Result` values smaller. `Error::from_kind`, empty descriptions,
++cloning a plain error and reading its diagnostics still allocate nothing.
++`error.kind` and ordinary `error.extra` reads/edits remain available; the first
++mutable diagnostic access allocates context. Construct errors with
++`Error::from_kind` or `Error::with_description` rather than struct literals, and
++use `into_extra()` to move out the description. Exception metadata is accessed
++through `remote_trace`, `set_remote_trace`, `detail`, `details` and `set_detail`.
+diff --git a/crates/capntproto-core/src/lib.rs b/crates/capntproto-core/src/lib.rs
+index b142647..2f339af 100644
+--- a/crates/capntproto-core/src/lib.rs
++++ b/crates/capntproto-core/src/lib.rs
+@@ -216,20 +216,66 @@ impl ::core::error::Error for NotInSchema {
+ pub type Result<T> = ::core::result::Result<T, Error>;
+ 
+ /// Describes an arbitrary error that prevented an operation from completing.
+-#[derive(Debug, Clone)]
++#[derive(Clone)]
+ pub struct Error {
+     /// The general kind of the error. Code that decides how to respond to an error
+     /// should read only this field in making its decision.
+     pub kind: ErrorKind,
+ 
+-    /// Extra context about error
++    // Keep cold diagnostic storage out of every successful Result's layout.
++    // Basic errors, including fixed-storage failures, allocate nothing.
+     #[cfg(feature = "alloc")]
++    context: Option<alloc::boxed::Box<ErrorContext>>,
++}
++
++/// Cold error diagnostics. Field access through [`Error`] retains ordinary
++/// `error.extra` reads and edits; the first mutable access allocates this context.
++/// Use [`Error::into_extra`] to take ownership of the description.
++#[cfg(feature = "alloc")]
++#[derive(Debug, Clone, Default)]
++pub struct ErrorContext {
++    /// Extra context about the error.
+     pub extra: alloc::string::String,
++    metadata: ExceptionMetadata,
++}
+ 
+-    /// Optional RPC exception metadata. Use the accessors below to read or set it.
+-    /// Kept behind a box so ordinary serialization errors remain small.
+-    #[cfg(feature = "alloc")]
+-    pub metadata: Option<alloc::boxed::Box<ExceptionMetadata>>,
++#[cfg(feature = "alloc")]
++impl core::ops::Deref for Error {
++    type Target = ErrorContext;
++    fn deref(&self) -> &Self::Target {
++        static EMPTY: ErrorContext = ErrorContext {
++            extra: alloc::string::String::new(),
++            metadata: ExceptionMetadata {
++                remote_trace: None,
++                details: alloc::collections::BTreeMap::new(),
++            },
++        };
++        self.context.as_deref().unwrap_or(&EMPTY)
++    }
++}
++
++#[cfg(feature = "alloc")]
++impl core::ops::DerefMut for Error {
++    fn deref_mut(&mut self) -> &mut Self::Target {
++        self.context.get_or_insert_with(Default::default)
++    }
++}
++
++impl core::fmt::Debug for Error {
++    fn fmt(&self, fmt: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
++        let mut debug = fmt.debug_struct("Error");
++        debug.field("kind", &self.kind);
++        #[cfg(feature = "alloc")]
++        debug.field("extra", &self.extra).field(
++            "metadata",
++            &self
++                .context
++                .as_ref()
++                .map(|c| &c.metadata)
++                .filter(|m| m.remote_trace.is_some() || !m.details.is_empty()),
++        );
++        debug.finish()
++    }
+ }
+ 
+ /// Structured RPC exception data. Detail IDs identify opaque application-defined bytes.
+@@ -486,29 +532,32 @@ impl Error {
+     /// Trace received from the peer, if present. Outgoing RPC traces remain opt-in.
+     #[cfg(feature = "alloc")]
+     pub fn remote_trace(&self) -> Option<&str> {
+-        self.metadata.as_ref()?.remote_trace.as_deref()
++        self.context.as_ref()?.metadata.remote_trace.as_deref()
+     }
+ 
+     #[cfg(feature = "alloc")]
+     pub fn set_remote_trace(&mut self, trace: alloc::string::String) {
+-        self.metadata
++        self.context
+             .get_or_insert_with(Default::default)
++            .metadata
+             .remote_trace = Some(trace);
+     }
+ 
+     /// Replace any previous value for this detail ID, matching C++ setDetail().
+     #[cfg(feature = "alloc")]
+     pub fn set_detail(&mut self, id: u64, data: alloc::vec::Vec<u8>) {
+-        self.metadata
++        self.context
+             .get_or_insert_with(Default::default)
++            .metadata
+             .details
+             .insert(id, data);
+     }
+ 
+     #[cfg(feature = "alloc")]
+     pub fn detail(&self, id: u64) -> Option<&[u8]> {
+-        self.metadata
++        self.context
+             .as_ref()?
++            .metadata
+             .details
+             .get(&id)
+             .map(alloc::vec::Vec::as_slice)
+@@ -516,9 +565,9 @@ impl Error {
+ 
+     #[cfg(feature = "alloc")]
+     pub fn details(&self) -> impl Iterator<Item = (u64, &[u8])> {
+-        self.metadata
++        self.context
+             .as_ref()
+-            .map(|m| &m.details)
++            .map(|m| &m.metadata.details)
+             .into_iter()
+             .flat_map(|details| details.iter())
+             .map(|(&id, data)| (id, data.as_slice()))
+@@ -532,54 +581,67 @@ impl Error {
+         #[cfg(feature = "alloc")]
+         {
+             use core::fmt::Write;
+-            let _ = self.extra.write_fmt(fmt);
++            struct Writer<'a>(&'a mut Error);
++            impl Write for Writer<'_> {
++                fn write_str(&mut self, value: &str) -> core::fmt::Result {
++                    if !value.is_empty() {
++                        self.0.extra.push_str(value);
++                    }
++                    Ok(())
++                }
++            }
++            let _ = Writer(self).write_fmt(fmt);
+         }
+     }
+ 
+     #[cfg(feature = "alloc")]
+     pub fn failed(description: alloc::string::String) -> Self {
++        Self::with_description(ErrorKind::Failed, description)
++    }
++
++    /// Attach a description without allocating context for an empty string.
++    #[cfg(feature = "alloc")]
++    pub fn with_description(kind: ErrorKind, description: alloc::string::String) -> Self {
+         Self {
+-            extra: description,
+-            metadata: None,
+-            kind: ErrorKind::Failed,
++            kind,
++            context: (!description.is_empty()).then(|| {
++                alloc::boxed::Box::new(ErrorContext {
++                    extra: description,
++                    metadata: Default::default(),
++                })
++            }),
+         }
+     }
+ 
++    /// Consume the error and return its description, releasing other metadata.
++    #[cfg(feature = "alloc")]
++    pub fn into_extra(self) -> alloc::string::String {
++        self.context
++            .map_or_else(alloc::string::String::new, |context| context.extra)
++    }
++
+     pub fn from_kind(kind: ErrorKind) -> Self {
+         #[cfg(not(feature = "alloc"))]
+         return Self { kind };
+         #[cfg(feature = "alloc")]
+         return Self {
+             kind,
+-            extra: alloc::string::String::new(),
+-            metadata: None,
++            context: None,
+         };
+     }
+ 
+     #[cfg(feature = "alloc")]
+     pub fn overloaded(description: alloc::string::String) -> Self {
+-        Self {
+-            extra: description,
+-            metadata: None,
+-            kind: ErrorKind::Overloaded,
+-        }
++        Self::with_description(ErrorKind::Overloaded, description)
+     }
+     #[cfg(feature = "alloc")]
+     pub fn disconnected(description: alloc::string::String) -> Self {
+-        Self {
+-            extra: description,
+-            metadata: None,
+-            kind: ErrorKind::Disconnected,
+-        }
++        Self::with_description(ErrorKind::Disconnected, description)
+     }
+ 
+     #[cfg(feature = "alloc")]
+     pub fn unimplemented(description: alloc::string::String) -> Self {
+-        Self {
+-            extra: description,
+-            metadata: None,
+-            kind: ErrorKind::Unimplemented,
+-        }
++        Self::with_description(ErrorKind::Unimplemented, description)
+     }
+ }
+ 
+@@ -605,11 +667,7 @@ impl core::convert::From<::std::io::Error> for Error {
+     fn from(err: ::std::io::Error) -> Self {
+         let kind = err.kind().into();
+         #[cfg(feature = "alloc")]
+-        return Self {
+-            kind,
+-            extra: format!("{err}"),
+-            metadata: None,
+-        };
++        return Self::with_description(kind, format!("{err}"));
+         #[cfg(not(feature = "alloc"))]
+         return Self { kind };
+     }
+@@ -772,6 +830,45 @@ impl core::error::Error for Error {
+     }
+ }
+ 
++#[cfg(all(test, feature = "alloc"))]
++mod error_context_tests {
++    use super::*;
++
++    #[test]
++    fn compact_errors_preserve_context_when_cloned_moved_and_edited() {
++        assert_eq!(
++            core::mem::size_of::<Error>(),
++            core::mem::size_of::<ErrorKind>() + core::mem::size_of::<usize>()
++        );
++        let mut error = Error::from_kind(ErrorKind::Disconnected);
++        assert!(error.context.is_none());
++        error.write_fmt(format_args!(""));
++        assert!(error.context.is_none());
++        error.write_fmt(format_args!("failure {}", 7));
++        error.set_remote_trace("trace".into());
++        error.set_detail(12, vec![1, 2]);
++        let mut cloned = error.clone();
++        cloned.extra.push_str(" copied");
++        cloned.set_detail(12, vec![3]);
++        assert_eq!(error.extra, "failure 7");
++        assert_eq!(error.detail(12), Some([1, 2].as_slice()));
++        assert_eq!(cloned.extra, "failure 7 copied");
++        assert_eq!(cloned.remote_trace(), Some("trace"));
++        assert_eq!(cloned.detail(12), Some([3].as_slice()));
++        assert_eq!(error.into_extra(), "failure 7");
++        assert_eq!(cloned.into_extra(), "failure 7 copied");
++
++        // Editing one initially empty error must not mutate the shared empty
++        // diagnostic view returned for a different error.
++        let mut first = Error::from_kind(ErrorKind::Failed);
++        let second = first.clone();
++        first.extra = "first".into();
++        assert_eq!(first.extra, "first");
++        assert!(second.extra.is_empty());
++        assert_eq!(format!("{first}"), "Failed: first");
++    }
++}
++
+ /// Helper struct that allows `MessageBuilder::get_segments_for_output()` to avoid heap allocations
+ /// in the single-segment case.
+ pub enum OutputSegments<'a> {
+diff --git a/crates/capntproto-core/src/private/layout.rs b/crates/capntproto-core/src/private/layout.rs
+index 1e332e4..d8b66e1 100644
+--- a/crates/capntproto-core/src/private/layout.rs
++++ b/crates/capntproto-core/src/private/layout.rs
+@@ -458,7 +458,10 @@ mod wire_helpers {
+     }
+ 
+     /// Reserve before clearing or publishing. Failure preserves the old object.
+-    #[inline]
++    // Keep the common same-segment reservation in the caller, where kind and
++    // size are often constants. The fallible growth and old-object cleanup
++    // remain shared calls; no bounds or allocation policy changes here.
++    #[inline(always)]
+     pub(crate) unsafe fn try_allocate(
+         arena: &mut dyn BuilderArena,
+         cap_table: CapTableBuilder,
+diff --git a/quality/unsafe-baseline.json b/quality/unsafe-baseline.json
+index 8b4bb04..770bcaa 100644
+--- a/quality/unsafe-baseline.json
++++ b/quality/unsafe-baseline.json
+@@ -5,7 +5,7 @@
+       "diagnostics": {
+         "clippy::undocumented_unsafe_blocks": 2
+       },
+-      "sha256": "ccd0094e7417f5f51e0346d6a993d124b16442861c4cf5247efccc1b094ab56f"
++      "sha256": "7399f735130ddfda348355e2318cdc0f374b29c123f3564166722d22d6a70491"
+     },
+     "crates/capntproto-core/src/message.rs": {
+       "diagnostics": {
+@@ -32,7 +32,7 @@
+         "clippy::undocumented_unsafe_blocks": 91,
+         "unsafe_op_in_unsafe_fn": 366
+       },
+-      "sha256": "5ac5a5ea68843efc676977be7916ede546242a5d96153431d5e975f5f81a9d44"
++      "sha256": "e1ff7d4955969a9a31153292c3a34f5c0beee3cfe5957d39d80ca95afae925a6"
+     },
+     "crates/capntproto-core/src/private/layout_test.rs": {
+       "diagnostics": {
+diff --git a/src/native_rpc/policy.rs b/src/native_rpc/policy.rs
+index cd372ec..26d17e4 100644
+--- a/src/native_rpc/policy.rs
++++ b/src/native_rpc/policy.rs
+@@ -170,10 +170,7 @@ mod tests {
+     impl Connector for Fails {
+         fn connect(&self, _: VatId) -> Promise<AuthenticatedSession, Error> {
+             self.attempts.set(self.attempts.get() + 1);
+-            Promise::err(Error {
+-                kind: self.kind,
+-                ..Error::failed("dial failed".into())
+-            })
++            Promise::err(Error::with_description(self.kind, "dial failed".into()))
+         }
+     }
+     #[tokio::test(flavor = "current_thread", start_paused = true)]
+diff --git a/tests/allocations.rs b/tests/allocations.rs
+index 629430d..186ef9f 100644
+--- a/tests/allocations.rs
++++ b/tests/allocations.rs
+@@ -13,6 +13,34 @@ fn counter_detects_an_allocation() {
+     assert_eq!(counts.count_current, 0);
+ }
+ 
++#[test]
++fn basic_errors_and_empty_diagnostics_remain_allocation_free() {
++    use capnp::{Error, ErrorKind};
++    let counts = allocation_counter::measure(|| {
++        for kind in [
++            ErrorKind::ReadLimitExceeded,
++            ErrorKind::InvalidReadCount(usize::MAX, usize::MAX - 1),
++            ErrorKind::InsufficientCapacity {
++                requested_words: u32::MAX,
++                available_words: 1,
++            },
++        ] {
++            let mut error = Error::from_kind(black_box(kind));
++            error.write_fmt(format_args!(""));
++            assert!(error.extra.is_empty());
++            assert!(error.remote_trace().is_none());
++            assert!(error.detail(0).is_none());
++            assert_eq!(error.details().count(), 0);
++            let cloned = black_box(error.clone());
++            assert_eq!(cloned.kind, kind);
++            assert!(cloned.into_extra().is_empty());
++        }
++        assert!(Error::failed(String::new()).into_extra().is_empty());
++    });
++    assert_eq!(counts.count_total, 0, "{counts:?}");
++    assert_eq!(counts.bytes_total, 0);
++}
++
+ #[test]
+ fn caller_indexed_readers_and_capacity_errors_do_not_allocate() {
+     use capnp::{

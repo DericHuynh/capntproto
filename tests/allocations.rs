@@ -14,6 +14,34 @@ fn counter_detects_an_allocation() {
 }
 
 #[test]
+fn basic_errors_and_empty_diagnostics_remain_allocation_free() {
+    use capnp::{Error, ErrorKind};
+    let counts = allocation_counter::measure(|| {
+        for kind in [
+            ErrorKind::ReadLimitExceeded,
+            ErrorKind::InvalidReadCount(usize::MAX, usize::MAX - 1),
+            ErrorKind::InsufficientCapacity {
+                requested_words: u32::MAX,
+                available_words: 1,
+            },
+        ] {
+            let mut error = Error::from_kind(black_box(kind));
+            error.write_fmt(format_args!(""));
+            assert!(error.extra.is_empty());
+            assert!(error.remote_trace().is_none());
+            assert!(error.detail(0).is_none());
+            assert_eq!(error.details().count(), 0);
+            let cloned = black_box(error.clone());
+            assert_eq!(cloned.kind, kind);
+            assert!(cloned.into_extra().is_empty());
+        }
+        assert!(Error::failed(String::new()).into_extra().is_empty());
+    });
+    assert_eq!(counts.count_total, 0, "{counts:?}");
+    assert_eq!(counts.bytes_total, 0);
+}
+
+#[test]
 fn caller_indexed_readers_and_capacity_errors_do_not_allocate() {
     use capnp::{
         message::{Builder, HeapAllocator},

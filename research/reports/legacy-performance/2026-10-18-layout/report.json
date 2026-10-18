@@ -1,0 +1,5997 @@
+{
+  "preliminary": false,
+  "goal_met": false,
+  "scope": "Legacy Tokio; all 24 fixed equivalent cells. Local and dedicated-host evidence are separate. Diagnostic timing is not qualification.",
+  "selected": {
+    "compiled_snapshot": {
+      "base": "6ff8b25cb5dbcb8ea8d8efa95df70f8d78951ff1",
+      "tree": "68c9ef49dba05438066654beef4067b76c42eaac",
+      "binary": "/workspace/scratch/legacy31-binaries/context",
+      "binary_sha256": "18617746ceb65a0b0afeff0a3dc62478594be371a366aff59bf7ba96ecfbe016",
+      "patch_sha256": "0ac76112767534351717d69c55968ba562ddce9094d652a4d1775a1b949b8d3a",
+      "source_files": {
+        "benchmarks/rpc/README.md": "4c1a251cf6b65edcb9c519a672ffe1e307c9e11f9faf2b870ac6ca765773327c",
+        "benchmarks/rpc/topology-runner.py": "daf9f7a6a995a83fa78f4492181400653c11ad02591544db362e28f3ab5b3c66",
+        "crates/capntproto-codegen/src/lib.rs": "4ee0b81c0b8a4d8e15b88529808b8bf32fbbc03370704842d46d50824393257f",
+        "crates/capntproto-core/src/lib.rs": "7399f735130ddfda348355e2318cdc0f374b29c123f3564166722d22d6a70491",
+        "crates/capntproto-core/src/private/layout.rs": "e1ff7d4955969a9a31153292c3a34f5c0beee3cfe5957d39d80ca95afae925a6"
+      },
+      "selection": {
+        "CAPNTPROTO_BENCH_PORTABLE": "0"
+      },
+      "build_args": [
+        "cargo",
+        "build",
+        "--locked",
+        "--release",
+        "--manifest-path",
+        "benchmarks/rpc/Cargo.toml",
+        "--bin",
+        "capntproto-rpc-bench"
+      ]
+    },
+    "base": "6ff8b25cb5dbcb8ea8d8efa95df70f8d78951ff1",
+    "tree": "48c7eae7a3a066306fca90a6ed6f9ae6b98aa73b",
+    "binary": "/workspace/scratch/legacy31-binaries/selected",
+    "binary_sha256": "18617746ceb65a0b0afeff0a3dc62478594be371a366aff59bf7ba96ecfbe016",
+    "patch_sha256": "49ed54a1cb73a2471d4ef2511a19264cba7d2c682047d797653dd30aa86032f1",
+    "source_files": {
+      "benchmarks/rpc/README.md": "4642db92a344d48352f0fd1250d1f8de8535a2490bb3666ec5088cb87d7b4590",
+      "benchmarks/rpc/topology-runner.py": "ab761c7b9cc6669634cb5dad6b3f44217c0d1308c67ea9ee8425be3f974a2ee9",
+      "crates/capntproto-codegen/src/lib.rs": "4ee0b81c0b8a4d8e15b88529808b8bf32fbbc03370704842d46d50824393257f",
+      "crates/capntproto-core/REPROTO.md": "e1a1c15fe0f2122c830ae8f8a2418978cb8d8cd0926ecc8c5697f8cd8bc83671",
+      "crates/capntproto-core/src/lib.rs": "7399f735130ddfda348355e2318cdc0f374b29c123f3564166722d22d6a70491",
+      "crates/capntproto-core/src/private/layout.rs": "e1ff7d4955969a9a31153292c3a34f5c0beee3cfe5957d39d80ca95afae925a6",
+      "quality/unsafe-baseline.json": "44aa9b654f8a170127aa4cfe38a544c1b4bdf4a976ba3010f8ab760952f43a7b",
+      "src/native_rpc/policy.rs": "d40510484edcc5e4d8eb634056791e900fb289738325766af31f63cccf014329",
+      "tests/allocations.rs": "0f0a4b57151d01810808aeb8be886c7448c33aae53d982ebc1a334ab05ca8721"
+    },
+    "selection": {
+      "CAPNTPROTO_BENCH_PORTABLE": "0"
+    },
+    "build_args": [
+      "cargo",
+      "build",
+      "--locked",
+      "--release",
+      "--manifest-path",
+      "benchmarks/rpc/Cargo.toml",
+      "--bin",
+      "capntproto-rpc-bench"
+    ]
+  },
+  "comparisons": [
+    {
+      "case": "unary-empty",
+      "variants": {
+        "current": {
+          "samples": 6000,
+          "p50_ns": 32058,
+          "p95_ns": 45909,
+          "p99_ns": 98107,
+          "repetition_p50_ns": [
+            33340,
+            32289,
+            32259,
+            32047,
+            32068,
+            21342
+          ],
+          "operations_per_second": 30371.36879724839
+        },
+        "context": {
+          "samples": 6000,
+          "p50_ns": 31818,
+          "p95_ns": 43515,
+          "p99_ns": 87431,
+          "repetition_p50_ns": [
+            21432,
+            32048,
+            32299,
+            32308,
+            31998,
+            21662
+          ],
+          "operations_per_second": 32129.095734793464
+        },
+        "cpp": {
+          "samples": 6000,
+          "p50_ns": 32559,
+          "p95_ns": 45528,
+          "p99_ns": 87170,
+          "repetition_p50_ns": [
+            33019,
+            32770,
+            32479,
+            32729,
+            32569,
+            21493
+          ],
+          "operations_per_second": 29850.09491285429
+        }
+      },
+      "selected_label": "context",
+      "baseline_label": "current",
+      "legacy_over_cpp": 0.9772413157652262,
+      "meets_30_percent": false,
+      "legacy_over_previous": 0.9925135691559049
+    },
+    {
+      "case": "unary-small",
+      "variants": {
+        "current": {
+          "samples": 6000,
+          "p50_ns": 32198,
+          "p95_ns": 52669,
+          "p99_ns": 105227,
+          "repetition_p50_ns": [
+            33340,
+            31867,
+            32479,
+            32248,
+            32028,
+            21472
+          ],
+          "operations_per_second": 29162.34559686274
+        },
+        "context": {
+          "samples": 6000,
+          "p50_ns": 32038,
+          "p95_ns": 44857,
+          "p99_ns": 89464,
+          "repetition_p50_ns": [
+            21722,
+            32198,
+            32458,
+            32218,
+            32268,
+            21402
+          ],
+          "operations_per_second": 30955.202162827594
+        },
+        "cpp": {
+          "samples": 6000,
+          "p50_ns": 32569,
+          "p95_ns": 46019,
+          "p99_ns": 91266,
+          "repetition_p50_ns": [
+            33650,
+            32729,
+            33019,
+            32559,
+            32238,
+            21623
+          ],
+          "operations_per_second": 29637.542341180906
+        }
+      },
+      "selected_label": "context",
+      "baseline_label": "current",
+      "legacy_over_cpp": 0.9836961527833216,
+      "meets_30_percent": false,
+      "legacy_over_previous": 0.9950307472513821
+    },
+    {
+      "case": "unary-1k",
+      "variants": {
+        "current": {
+          "samples": 6000,
+          "p50_ns": 32839,
+          "p95_ns": 49094,
+          "p99_ns": 96054,
+          "repetition_p50_ns": [
+            21883,
+            32969,
+            33460,
+            33450,
+            33050,
+            22343
+          ],
+          "operations_per_second": 30007.55665295413
+        },
+        "context": {
+          "samples": 6000,
+          "p50_ns": 33009,
+          "p95_ns": 53380,
+          "p99_ns": 112078,
+          "repetition_p50_ns": [
+            21712,
+            33050,
+            33260,
+            33590,
+            33510,
+            22023
+          ],
+          "operations_per_second": 29130.68812249307
+        },
+        "cpp": {
+          "samples": 6000,
+          "p50_ns": 33300,
+          "p95_ns": 48592,
+          "p99_ns": 97226,
+          "repetition_p50_ns": [
+            22103,
+            33570,
+            33821,
+            33641,
+            33631,
+            22323
+          ],
+          "operations_per_second": 26165.923800826506
+        }
+      },
+      "selected_label": "context",
+      "baseline_label": "current",
+      "legacy_over_cpp": 0.9912612612612612,
+      "meets_30_percent": false,
+      "legacy_over_previous": 1.0051767715216664
+    },
+    {
+      "case": "fanout-32",
+      "variants": {
+        "current": {
+          "samples": 6000,
+          "p50_ns": 135423,
+          "p95_ns": 179289,
+          "p99_ns": 272178,
+          "repetition_p50_ns": [
+            146390,
+            132438,
+            136765,
+            142863,
+            136123,
+            96384
+          ],
+          "operations_per_second": 7361.549904643083
+        },
+        "context": {
+          "samples": 6000,
+          "p50_ns": 136184,
+          "p95_ns": 179498,
+          "p99_ns": 279148,
+          "repetition_p50_ns": [
+            96585,
+            135683,
+            135383,
+            145257,
+            138727,
+            96053
+          ],
+          "operations_per_second": 7368.440048987109
+        },
+        "cpp": {
+          "samples": 6000,
+          "p50_ns": 173700,
+          "p95_ns": 240069,
+          "p99_ns": 348281,
+          "repetition_p50_ns": [
+            134201,
+            166750,
+            178988,
+            179499,
+            176574,
+            134211
+          ],
+          "operations_per_second": 5731.953264702479
+        }
+      },
+      "selected_label": "context",
+      "baseline_label": "current",
+      "legacy_over_cpp": 0.7840184225676453,
+      "meets_30_percent": false,
+      "legacy_over_previous": 1.0056194294912977
+    },
+    {
+      "case": "dependent-read",
+      "variants": {
+        "current": {
+          "samples": 6000,
+          "p50_ns": 68412,
+          "p95_ns": 91056,
+          "p99_ns": 142413,
+          "repetition_p50_ns": [
+            47731,
+            69684,
+            70405,
+            47972,
+            69674,
+            47280
+          ],
+          "operations_per_second": 15694.51993871834
+        },
+        "context": {
+          "samples": 6000,
+          "p50_ns": 68312,
+          "p95_ns": 91326,
+          "p99_ns": 145738,
+          "repetition_p50_ns": [
+            48062,
+            70115,
+            69775,
+            48493,
+            69394,
+            47250
+          ],
+          "operations_per_second": 15676.145506703697
+        },
+        "cpp": {
+          "samples": 6000,
+          "p50_ns": 68933,
+          "p95_ns": 105308,
+          "p99_ns": 186549,
+          "repetition_p50_ns": [
+            47631,
+            69434,
+            68954,
+            76926,
+            69044,
+            46840
+          ],
+          "operations_per_second": 14183.91826307179
+        }
+      },
+      "selected_label": "context",
+      "baseline_label": "current",
+      "legacy_over_cpp": 0.990991252375495,
+      "meets_30_percent": false,
+      "legacy_over_previous": 0.9985382681400924
+    },
+    {
+      "case": "pipelined-read",
+      "variants": {
+        "current": {
+          "samples": 6000,
+          "p50_ns": 40501,
+          "p95_ns": 62664,
+          "p99_ns": 115903,
+          "repetition_p50_ns": [
+            32038,
+            40801,
+            41532,
+            31147,
+            41532,
+            31297
+          ],
+          "operations_per_second": 23933.089495837623
+        },
+        "context": {
+          "samples": 6000,
+          "p50_ns": 41002,
+          "p95_ns": 65117,
+          "p99_ns": 109444,
+          "repetition_p50_ns": [
+            30385,
+            41242,
+            41181,
+            31367,
+            41442,
+            51106
+          ],
+          "operations_per_second": 21675.201469913904
+        },
+        "cpp": {
+          "samples": 6000,
+          "p50_ns": 40050,
+          "p95_ns": 58087,
+          "p99_ns": 98668,
+          "repetition_p50_ns": [
+            30836,
+            40671,
+            41161,
+            30706,
+            41442,
+            30886
+          ],
+          "operations_per_second": 25293.954215877195
+        }
+      },
+      "selected_label": "context",
+      "baseline_label": "current",
+      "legacy_over_cpp": 1.0237702871410737,
+      "meets_30_percent": false,
+      "legacy_over_previous": 1.0123700649366683
+    },
+    {
+      "case": "write-read",
+      "variants": {
+        "current": {
+          "samples": 6000,
+          "p50_ns": 43595,
+          "p95_ns": 82844,
+          "p99_ns": 136183,
+          "repetition_p50_ns": [
+            42915,
+            42744,
+            65157,
+            43144,
+            65368,
+            42884
+          ],
+          "operations_per_second": 17880.438087898376
+        },
+        "context": {
+          "samples": 6000,
+          "p50_ns": 63675,
+          "p95_ns": 84657,
+          "p99_ns": 134041,
+          "repetition_p50_ns": [
+            42964,
+            65428,
+            64837,
+            42854,
+            65027,
+            42563
+          ],
+          "operations_per_second": 16656.944008448936
+        },
+        "cpp": {
+          "samples": 6000,
+          "p50_ns": 64497,
+          "p95_ns": 86520,
+          "p99_ns": 140750,
+          "repetition_p50_ns": [
+            43595,
+            42984,
+            65438,
+            43515,
+            66139,
+            65468
+          ],
+          "operations_per_second": 16727.705972829823
+        }
+      },
+      "selected_label": "context",
+      "baseline_label": "current",
+      "legacy_over_cpp": 0.9872552211730778,
+      "meets_30_percent": false,
+      "legacy_over_previous": 1.4606032801926827
+    },
+    {
+      "case": "callback",
+      "variants": {
+        "current": {
+          "samples": 6000,
+          "p50_ns": 65848,
+          "p95_ns": 92989,
+          "p99_ns": 161052,
+          "repetition_p50_ns": [
+            46570,
+            46319,
+            48052,
+            74161,
+            68653,
+            67211
+          ],
+          "operations_per_second": 15691.60748208588
+        },
+        "context": {
+          "samples": 6000,
+          "p50_ns": 66870,
+          "p95_ns": 102133,
+          "p99_ns": 197836,
+          "repetition_p50_ns": [
+            46189,
+            49444,
+            47732,
+            75383,
+            68432,
+            67201
+          ],
+          "operations_per_second": 13723.566609492002
+        },
+        "cpp": {
+          "samples": 6000,
+          "p50_ns": 66260,
+          "p95_ns": 94501,
+          "p99_ns": 165407,
+          "repetition_p50_ns": [
+            44567,
+            45929,
+            68583,
+            44887,
+            66790,
+            66369
+          ],
+          "operations_per_second": 15398.095074455037
+        }
+      },
+      "selected_label": "context",
+      "baseline_label": "current",
+      "legacy_over_cpp": 1.0092061575611229,
+      "meets_30_percent": false,
+      "legacy_over_previous": 1.0155205928805735
+    },
+    {
+      "case": "bulk-64k",
+      "variants": {
+        "current": {
+          "samples": 6000,
+          "p50_ns": 62523,
+          "p95_ns": 112789,
+          "p99_ns": 156054,
+          "repetition_p50_ns": [
+            51718,
+            63665,
+            50045,
+            50195,
+            109363,
+            63966
+          ],
+          "operations_per_second": 14282.164045778878
+        },
+        "context": {
+          "samples": 6000,
+          "p50_ns": 51758,
+          "p95_ns": 121021,
+          "p99_ns": 184486,
+          "repetition_p50_ns": [
+            51097,
+            51467,
+            49474,
+            49824,
+            105197,
+            106600
+          ],
+          "operations_per_second": 13496.711050593458
+        },
+        "cpp": {
+          "samples": 6000,
+          "p50_ns": 60430,
+          "p95_ns": 116094,
+          "p99_ns": 161351,
+          "repetition_p50_ns": [
+            53600,
+            63445,
+            52799,
+            52429,
+            112969,
+            63064
+          ],
+          "operations_per_second": 14181.165801780211
+        }
+      },
+      "selected_label": "context",
+      "baseline_label": "current",
+      "legacy_over_cpp": 0.8564951183187158,
+      "meets_30_percent": false,
+      "legacy_over_previous": 0.8278233610031508
+    },
+    {
+      "case": "bulk-256k",
+      "variants": {
+        "current": {
+          "samples": 6000,
+          "p50_ns": 93670,
+          "p95_ns": 202173,
+          "p99_ns": 367369,
+          "repetition_p50_ns": [
+            93290,
+            93921,
+            93039,
+            117606,
+            93210,
+            92528
+          ],
+          "operations_per_second": 8873.926357885217
+        },
+        "context": {
+          "samples": 6000,
+          "p50_ns": 111296,
+          "p95_ns": 323605,
+          "p99_ns": 392068,
+          "repetition_p50_ns": [
+            102593,
+            93771,
+            95162,
+            93449,
+            279429,
+            117946
+          ],
+          "operations_per_second": 6680.725012810485
+        },
+        "cpp": {
+          "samples": 6000,
+          "p50_ns": 265768,
+          "p95_ns": 459499,
+          "p99_ns": 593618,
+          "repetition_p50_ns": [
+            308292,
+            282232,
+            249013,
+            249824,
+            384135,
+            264896
+          ],
+          "operations_per_second": 3224.2669092341416
+        }
+      },
+      "selected_label": "context",
+      "baseline_label": "current",
+      "legacy_over_cpp": 0.418771259143313,
+      "meets_30_percent": true,
+      "legacy_over_previous": 1.1881712394576704
+    },
+    {
+      "case": "bulk-1m",
+      "variants": {
+        "current": {
+          "samples": 6000,
+          "p50_ns": 348060,
+          "p95_ns": 695792,
+          "p99_ns": 1568426,
+          "repetition_p50_ns": [
+            346960,
+            314520,
+            330855,
+            325887,
+            378656,
+            385847
+          ],
+          "operations_per_second": 2378.091647112303
+        },
+        "context": {
+          "samples": 6000,
+          "p50_ns": 367891,
+          "p95_ns": 582102,
+          "p99_ns": 763842,
+          "repetition_p50_ns": [
+            317415,
+            371076,
+            384286,
+            332227,
+            320119,
+            397034
+          ],
+          "operations_per_second": 2601.082341835534
+        },
+        "cpp": {
+          "samples": 6000,
+          "p50_ns": 925074,
+          "p95_ns": 1613601,
+          "p99_ns": 1996306,
+          "repetition_p50_ns": [
+            1130012,
+            908130,
+            987949,
+            985825,
+            884073,
+            907808
+          ],
+          "operations_per_second": 963.2731367702959
+        }
+      },
+      "selected_label": "context",
+      "baseline_label": "current",
+      "legacy_over_cpp": 0.39768818494520436,
+      "meets_30_percent": true,
+      "legacy_over_previous": 1.0569758087686032
+    },
+    {
+      "case": "bulk-4m",
+      "variants": {
+        "current": {
+          "samples": 6000,
+          "p50_ns": 2636955,
+          "p95_ns": 4611610,
+          "p99_ns": 5167547,
+          "repetition_p50_ns": [
+            2469619,
+            2974837,
+            2498424,
+            2478358,
+            2814580,
+            2685037
+          ],
+          "operations_per_second": 357.18408128846755
+        },
+        "context": {
+          "samples": 6000,
+          "p50_ns": 2433105,
+          "p95_ns": 3310753,
+          "p99_ns": 4945811,
+          "repetition_p50_ns": [
+            2376758,
+            2334867,
+            2419432,
+            2428133,
+            2472800,
+            2574931
+          ],
+          "operations_per_second": 397.49022125065056
+        },
+        "cpp": {
+          "samples": 6000,
+          "p50_ns": 4588980,
+          "p95_ns": 6702123,
+          "p99_ns": 7661197,
+          "repetition_p50_ns": [
+            4977122,
+            4669891,
+            4704091,
+            4470099,
+            4416537,
+            4448884
+          ],
+          "operations_per_second": 206.27236628027208
+        }
+      },
+      "selected_label": "context",
+      "baseline_label": "current",
+      "legacy_over_cpp": 0.5302060588627538,
+      "meets_30_percent": true,
+      "legacy_over_previous": 0.9226949265345825
+    },
+    {
+      "case": "loopback-0",
+      "variants": {
+        "current": {
+          "samples": 6000,
+          "p50_ns": 31517,
+          "p95_ns": 36535,
+          "p99_ns": 58878,
+          "repetition_p50_ns": [
+            21261,
+            32378,
+            21372,
+            32829,
+            21412,
+            32939
+          ],
+          "operations_per_second": 35207.27455523442
+        },
+        "context": {
+          "samples": 6000,
+          "p50_ns": 21533,
+          "p95_ns": 33330,
+          "p99_ns": 65549,
+          "repetition_p50_ns": [
+            32258,
+            21392,
+            21422,
+            21322,
+            21492,
+            22784
+          ],
+          "operations_per_second": 39778.06201560306
+        },
+        "cpp": {
+          "samples": 6000,
+          "p50_ns": 21812,
+          "p95_ns": 38088,
+          "p99_ns": 80580,
+          "repetition_p50_ns": [
+            32078,
+            21683,
+            21371,
+            21312,
+            21713,
+            33059
+          ],
+          "operations_per_second": 35557.38536494524
+        }
+      },
+      "selected_label": "context",
+      "baseline_label": "current",
+      "legacy_over_cpp": 0.987208875848157,
+      "meets_30_percent": false,
+      "legacy_over_previous": 0.6832185804486468
+    },
+    {
+      "case": "loopback-64",
+      "variants": {
+        "current": {
+          "samples": 6000,
+          "p50_ns": 31707,
+          "p95_ns": 41572,
+          "p99_ns": 75723,
+          "repetition_p50_ns": [
+            31748,
+            31938,
+            21242,
+            32038,
+            32679,
+            21452
+          ],
+          "operations_per_second": 32493.33073032871
+        },
+        "context": {
+          "samples": 6000,
+          "p50_ns": 32128,
+          "p95_ns": 41102,
+          "p99_ns": 80290,
+          "repetition_p50_ns": [
+            32028,
+            32228,
+            21252,
+            32669,
+            32148,
+            32458
+          ],
+          "operations_per_second": 30678.200054168497
+        },
+        "cpp": {
+          "samples": 6000,
+          "p50_ns": 31888,
+          "p95_ns": 41572,
+          "p99_ns": 86430,
+          "repetition_p50_ns": [
+            21983,
+            32669,
+            21442,
+            32618,
+            32779,
+            22053
+          ],
+          "operations_per_second": 33487.3373187246
+        }
+      },
+      "selected_label": "context",
+      "baseline_label": "current",
+      "legacy_over_cpp": 1.0075263421976919,
+      "meets_30_percent": false,
+      "legacy_over_previous": 1.013277825085943
+    },
+    {
+      "case": "loopback-1024",
+      "variants": {
+        "current": {
+          "samples": 6000,
+          "p50_ns": 21993,
+          "p95_ns": 42633,
+          "p99_ns": 110595,
+          "repetition_p50_ns": [
+            22013,
+            21522,
+            21863,
+            22153,
+            33070,
+            21702
+          ],
+          "operations_per_second": 36138.566902121274
+        },
+        "context": {
+          "samples": 6000,
+          "p50_ns": 32208,
+          "p95_ns": 38508,
+          "p99_ns": 75432,
+          "repetition_p50_ns": [
+            21903,
+            33480,
+            33050,
+            33069,
+            21913,
+            22143
+          ],
+          "operations_per_second": 32946.44795394157
+        },
+        "cpp": {
+          "samples": 6000,
+          "p50_ns": 22504,
+          "p95_ns": 40060,
+          "p99_ns": 81501,
+          "repetition_p50_ns": [
+            33570,
+            22133,
+            22293,
+            33160,
+            21943,
+            22104
+          ],
+          "operations_per_second": 34073.4509001033
+        }
+      },
+      "selected_label": "context",
+      "baseline_label": "current",
+      "legacy_over_cpp": 1.431212228937078,
+      "meets_30_percent": false,
+      "legacy_over_previous": 1.4644659664438684
+    },
+    {
+      "case": "loopback-65536",
+      "variants": {
+        "current": {
+          "samples": 6000,
+          "p50_ns": 95623,
+          "p95_ns": 128683,
+          "p99_ns": 190094,
+          "repetition_p50_ns": [
+            51187,
+            51697,
+            110325,
+            102283,
+            50566,
+            111617
+          ],
+          "operations_per_second": 11684.050355818961
+        },
+        "context": {
+          "samples": 6000,
+          "p50_ns": 100861,
+          "p95_ns": 124897,
+          "p99_ns": 177185,
+          "repetition_p50_ns": [
+            104967,
+            50686,
+            109484,
+            49965,
+            50305,
+            105809
+          ],
+          "operations_per_second": 11956.210855988376
+        },
+        "cpp": {
+          "samples": 6000,
+          "p50_ns": 63304,
+          "p95_ns": 118277,
+          "p99_ns": 147020,
+          "repetition_p50_ns": [
+            107781,
+            52178,
+            102824,
+            63745,
+            51737,
+            51256
+          ],
+          "operations_per_second": 13308.195955173906
+        }
+      },
+      "selected_label": "context",
+      "baseline_label": "current",
+      "legacy_over_cpp": 1.5932800454947555,
+      "meets_30_percent": false,
+      "legacy_over_previous": 1.0547776162638696
+    },
+    {
+      "case": "deep-8",
+      "variants": {
+        "legacy": {
+          "samples": 6000,
+          "p50_ns": 22574,
+          "p95_ns": 36196,
+          "p99_ns": 88273,
+          "repetition_p50_ns": [
+            22765,
+            22754,
+            22234,
+            22605,
+            22654,
+            22204
+          ],
+          "batches_per_second": 38685.129832614926,
+          "logical_requests_per_second": 38685.129832614926,
+          "service_calls_per_second": 38685.129832614926
+        },
+        "cpp": {
+          "samples": 6000,
+          "p50_ns": 23205,
+          "p95_ns": 40682,
+          "p99_ns": 94806,
+          "repetition_p50_ns": [
+            26209,
+            22815,
+            23025,
+            23206,
+            23275,
+            23155
+          ],
+          "batches_per_second": 36544.432523921256,
+          "logical_requests_per_second": 36544.432523921256,
+          "service_calls_per_second": 36544.432523921256
+        },
+        "baseline": {
+          "samples": 6000,
+          "p50_ns": 22674,
+          "p95_ns": 39420,
+          "p99_ns": 102653,
+          "repetition_p50_ns": [
+            33681,
+            22594,
+            22274,
+            22415,
+            22755,
+            22644
+          ],
+          "batches_per_second": 35241.75172087236,
+          "logical_requests_per_second": 35241.75172087236,
+          "service_calls_per_second": 35241.75172087236
+        }
+      },
+      "selected_label": "legacy",
+      "baseline_label": "baseline",
+      "legacy_over_cpp": 0.9728075845722904,
+      "meets_30_percent": false,
+      "legacy_over_previous": 0.9955896621681221
+    },
+    {
+      "case": "deep-32",
+      "variants": {
+        "legacy": {
+          "samples": 6000,
+          "p50_ns": 27783,
+          "p95_ns": 50928,
+          "p99_ns": 119220,
+          "repetition_p50_ns": [
+            38258,
+            27050,
+            27311,
+            37557,
+            27111,
+            27562
+          ],
+          "batches_per_second": 27666.19552826394,
+          "logical_requests_per_second": 27666.19552826394,
+          "service_calls_per_second": 27666.19552826394
+        },
+        "cpp": {
+          "samples": 6000,
+          "p50_ns": 27822,
+          "p95_ns": 49776,
+          "p99_ns": 109084,
+          "repetition_p50_ns": [
+            38738,
+            27211,
+            27742,
+            28294,
+            27682,
+            27572
+          ],
+          "batches_per_second": 28752.203395156976,
+          "logical_requests_per_second": 28752.203395156976,
+          "service_calls_per_second": 28752.203395156976
+        },
+        "baseline": {
+          "samples": 6000,
+          "p50_ns": 27061,
+          "p95_ns": 46080,
+          "p99_ns": 92670,
+          "repetition_p50_ns": [
+            38568,
+            26530,
+            26340,
+            26782,
+            27181,
+            27201
+          ],
+          "batches_per_second": 31472.594679544232,
+          "logical_requests_per_second": 31472.594679544232,
+          "service_calls_per_second": 31472.594679544232
+        }
+      },
+      "selected_label": "legacy",
+      "baseline_label": "baseline",
+      "legacy_over_cpp": 0.9985982316152685,
+      "meets_30_percent": false,
+      "legacy_over_previous": 1.0266804626584383
+    },
+    {
+      "case": "concurrent-32",
+      "variants": {
+        "legacy": {
+          "samples": 6000,
+          "p50_ns": 100862,
+          "p95_ns": 148549,
+          "p99_ns": 204579,
+          "repetition_p50_ns": [
+            101482,
+            102124,
+            85920,
+            126375,
+            100491,
+            86311
+          ],
+          "batches_per_second": 9277.225594475687,
+          "logical_requests_per_second": 296871.219023222,
+          "service_calls_per_second": 296871.219023222
+        },
+        "cpp": {
+          "samples": 6000,
+          "p50_ns": 141413,
+          "p95_ns": 224426,
+          "p99_ns": 297708,
+          "repetition_p50_ns": [
+            144818,
+            143327,
+            131478,
+            204505,
+            131586,
+            129688
+          ],
+          "batches_per_second": 6432.423552037096,
+          "logical_requests_per_second": 205837.55366518706,
+          "service_calls_per_second": 205837.55366518706
+        },
+        "baseline": {
+          "samples": 6000,
+          "p50_ns": 102935,
+          "p95_ns": 155459,
+          "p99_ns": 231309,
+          "repetition_p50_ns": [
+            103726,
+            101764,
+            85148,
+            130611,
+            129474,
+            85681
+          ],
+          "batches_per_second": 8866.532000694953,
+          "logical_requests_per_second": 283729.0240222385,
+          "service_calls_per_second": 283729.0240222385
+        }
+      },
+      "selected_label": "legacy",
+      "baseline_label": "baseline",
+      "legacy_over_cpp": 0.7132441854709256,
+      "meets_30_percent": false,
+      "legacy_over_previous": 0.9798610773789285
+    },
+    {
+      "case": "deep-32-concurrent-32",
+      "variants": {
+        "legacy": {
+          "samples": 6000,
+          "p50_ns": 234788,
+          "p95_ns": 348682,
+          "p99_ns": 440605,
+          "repetition_p50_ns": [
+            278009,
+            215565,
+            217308,
+            287543,
+            230215,
+            215870
+          ],
+          "batches_per_second": 3907.1563483490672,
+          "logical_requests_per_second": 125029.00314717015,
+          "service_calls_per_second": 125029.00314717015
+        },
+        "cpp": {
+          "samples": 6000,
+          "p50_ns": 271609,
+          "p95_ns": 402040,
+          "p99_ns": 554207,
+          "repetition_p50_ns": [
+            268806,
+            266191,
+            262066,
+            329238,
+            267971,
+            265045
+          ],
+          "batches_per_second": 3338.7762694736034,
+          "logical_requests_per_second": 106840.84062315531,
+          "service_calls_per_second": 106840.84062315531
+        },
+        "baseline": {
+          "samples": 6000,
+          "p50_ns": 229396,
+          "p95_ns": 388226,
+          "p99_ns": 430590,
+          "repetition_p50_ns": [
+            227894,
+            222917,
+            239782,
+            240080,
+            224646,
+            236501
+          ],
+          "batches_per_second": 3893.824570038099,
+          "logical_requests_per_second": 124602.38624121917,
+          "service_calls_per_second": 124602.38624121917
+        }
+      },
+      "selected_label": "legacy",
+      "baseline_label": "baseline",
+      "legacy_over_cpp": 0.8644338000581718,
+      "meets_30_percent": false,
+      "legacy_over_previous": 1.0235052049730597
+    },
+    {
+      "case": "services-4-deep-16",
+      "variants": {
+        "legacy": {
+          "samples": 6000,
+          "p50_ns": 150462,
+          "p95_ns": 260471,
+          "p99_ns": 395446,
+          "repetition_p50_ns": [
+            158238,
+            168064,
+            133021,
+            147628,
+            126734,
+            157621
+          ],
+          "batches_per_second": 6081.469019222547,
+          "logical_requests_per_second": 6081.469019222547,
+          "service_calls_per_second": 24325.87607689019
+        },
+        "cpp": {
+          "samples": 6000,
+          "p50_ns": 142825,
+          "p95_ns": 238069,
+          "p99_ns": 393938,
+          "repetition_p50_ns": [
+            143296,
+            115224,
+            152971,
+            128788,
+            139223,
+            159643
+          ],
+          "batches_per_second": 6371.307484456774,
+          "logical_requests_per_second": 6371.307484456774,
+          "service_calls_per_second": 25485.229937827095
+        },
+        "baseline": {
+          "samples": 6000,
+          "p50_ns": 155795,
+          "p95_ns": 272095,
+          "p99_ns": 423870,
+          "repetition_p50_ns": [
+            143426,
+            120893,
+            170307,
+            159827,
+            144862,
+            144521
+          ],
+          "batches_per_second": 5902.535562038945,
+          "logical_requests_per_second": 5902.535562038945,
+          "service_calls_per_second": 23610.14224815578
+        }
+      },
+      "selected_label": "legacy",
+      "baseline_label": "baseline",
+      "legacy_over_cpp": 1.053471030981971,
+      "meets_30_percent": false,
+      "legacy_over_previous": 0.9657691196764979
+    },
+    {
+      "case": "services-4-deep-16-concurrent-32",
+      "variants": {
+        "legacy": {
+          "samples": 6000,
+          "p50_ns": 1124196,
+          "p95_ns": 1406720,
+          "p99_ns": 2278783,
+          "repetition_p50_ns": [
+            1143334,
+            1149903,
+            1102843,
+            1105725,
+            1156742,
+            1092226
+          ],
+          "batches_per_second": 846.3298745106028,
+          "logical_requests_per_second": 27082.55598433929,
+          "service_calls_per_second": 108330.22393735716
+        },
+        "cpp": {
+          "samples": 6000,
+          "p50_ns": 1162260,
+          "p95_ns": 1483978,
+          "p99_ns": 2128949,
+          "repetition_p50_ns": [
+            1185707,
+            1212981,
+            1123736,
+            1164106,
+            1176913,
+            1114741
+          ],
+          "batches_per_second": 822.8495007576036,
+          "logical_requests_per_second": 26331.184024243314,
+          "service_calls_per_second": 105324.73609697325
+        },
+        "baseline": {
+          "samples": 6000,
+          "p50_ns": 1169531,
+          "p95_ns": 1461364,
+          "p99_ns": 2002799,
+          "repetition_p50_ns": [
+            1167420,
+            1187773,
+            1141684,
+            1144785,
+            1207154,
+            1172406
+          ],
+          "batches_per_second": 823.9668197856018,
+          "logical_requests_per_second": 26366.93823313926,
+          "service_calls_per_second": 105467.75293255704
+        }
+      },
+      "selected_label": "legacy",
+      "baseline_label": "baseline",
+      "legacy_over_cpp": 0.9672500129058903,
+      "meets_30_percent": false,
+      "legacy_over_previous": 0.9612365982603283
+    },
+    {
+      "case": "services-4-deep-16-clients-8",
+      "variants": {
+        "legacy": {
+          "samples": 6000,
+          "p50_ns": 1141197,
+          "p95_ns": 1433312,
+          "p99_ns": 2122370,
+          "repetition_p50_ns": [
+            1138996,
+            1118187,
+            1167234,
+            1117715,
+            1169348,
+            1134477
+          ],
+          "batches_per_second": 841.2146040255857,
+          "logical_requests_per_second": 26918.867328818742,
+          "service_calls_per_second": 107675.46931527497
+        },
+        "cpp": {
+          "samples": 6000,
+          "p50_ns": 1089138,
+          "p95_ns": 1423748,
+          "p99_ns": 2412306,
+          "repetition_p50_ns": [
+            1080718,
+            1074271,
+            1103935,
+            1050500,
+            1182077,
+            1067344
+          ],
+          "batches_per_second": 884.9465726537599,
+          "logical_requests_per_second": 28318.290324920315,
+          "service_calls_per_second": 113273.16129968126
+        },
+        "baseline": {
+          "samples": 6000,
+          "p50_ns": 1185148,
+          "p95_ns": 1530336,
+          "p99_ns": 2267210,
+          "repetition_p50_ns": [
+            1169548,
+            1195694,
+            1191863,
+            1151796,
+            1259535,
+            1163672
+          ],
+          "batches_per_second": 804.1969613302548,
+          "logical_requests_per_second": 25734.302762568153,
+          "service_calls_per_second": 102937.21105027261
+        }
+      },
+      "selected_label": "legacy",
+      "baseline_label": "baseline",
+      "legacy_over_cpp": 1.0477983506222353,
+      "meets_30_percent": false,
+      "legacy_over_previous": 0.9629151802137792
+    },
+    {
+      "case": "services-8-deep-16-clients-8",
+      "variants": {
+        "legacy": {
+          "samples": 6000,
+          "p50_ns": 2470093,
+          "p95_ns": 3214176,
+          "p99_ns": 5063689,
+          "repetition_p50_ns": [
+            2389001,
+            2588901,
+            2459597,
+            2494609,
+            2596562,
+            2385996
+          ],
+          "batches_per_second": 385.02453933366803,
+          "logical_requests_per_second": 12320.785258677377,
+          "service_calls_per_second": 98566.28206941902
+        },
+        "cpp": {
+          "samples": 6000,
+          "p50_ns": 2369525,
+          "p95_ns": 3097159,
+          "p99_ns": 4466499,
+          "repetition_p50_ns": [
+            2426756,
+            2340461,
+            2412354,
+            2348839,
+            2360453,
+            2353606
+          ],
+          "batches_per_second": 419.2165066723084,
+          "logical_requests_per_second": 13414.92821351387,
+          "service_calls_per_second": 107319.42570811095
+        },
+        "baseline": {
+          "samples": 6000,
+          "p50_ns": 2552069,
+          "p95_ns": 3046559,
+          "p99_ns": 4031215,
+          "repetition_p50_ns": [
+            2603440,
+            2524543,
+            2586303,
+            2490998,
+            2605533,
+            2506128
+          ],
+          "batches_per_second": 381.7538999517451,
+          "logical_requests_per_second": 12216.124798455843,
+          "service_calls_per_second": 97728.99838764674
+        }
+      },
+      "selected_label": "legacy",
+      "baseline_label": "baseline",
+      "legacy_over_cpp": 1.0424422616347158,
+      "meets_30_percent": false,
+      "legacy_over_previous": 0.9678786114325278
+    }
+  ],
+  "selected_samples": 432000,
+  "mixed_checks": 124,
+  "counts": {
+    "socket": {
+      "rows": [
+        {
+          "case": "bulk-1m",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write_positive": 111,
+            "read_positive": 325,
+            "read_nonpositive": 116,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 494,
+            "write_positive": 111,
+            "read_positive": 745,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "bulk-1m",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read_positive": 330,
+            "read_nonpositive": 114,
+            "write_positive": 112,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 246,
+            "read_positive": 757,
+            "write_positive": 112,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "bulk-256k",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write_positive": 111,
+            "read_positive": 222,
+            "read_nonpositive": 111,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 253,
+            "write_positive": 111,
+            "read_positive": 375,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "bulk-256k",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read_positive": 224,
+            "read_nonpositive": 112,
+            "write_positive": 112,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 114,
+            "read_positive": 227,
+            "write_positive": 112,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "bulk-4m",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write_positive": 111,
+            "read_positive": 627,
+            "read_nonpositive": 113,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 3486,
+            "write_positive": 127,
+            "read_positive": 4457,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "bulk-4m",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read_positive": 618,
+            "read_nonpositive": 114,
+            "write_positive": 112,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 1960,
+            "read_positive": 3472,
+            "write_positive": 113,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "bulk-64k",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write_positive": 111,
+            "read_positive": 221,
+            "read_nonpositive": 111,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 111,
+            "write_positive": 111,
+            "read_positive": 221,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "bulk-64k",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read_positive": 222,
+            "read_nonpositive": 112,
+            "write_positive": 112,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 113,
+            "read_positive": 222,
+            "write_positive": 112,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "callback",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write_positive": 221,
+            "read_positive": 221,
+            "read_nonpositive": 221,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 221,
+            "write_positive": 221,
+            "read_positive": 221,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "callback",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read_positive": 221,
+            "read_nonpositive": 222,
+            "write_positive": 222,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 223,
+            "read_positive": 221,
+            "write_positive": 222,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "dependent-read",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write_positive": 221,
+            "read_positive": 221,
+            "read_nonpositive": 221,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 221,
+            "write_positive": 221,
+            "read_positive": 221,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "dependent-read",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read_positive": 221,
+            "read_nonpositive": 222,
+            "write_positive": 222,
+            "journals": 1
+          },
+          "cpp": {
+            "read_positive": 221,
+            "read_nonpositive": 222,
+            "write_positive": 222,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "fanout-32",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write_positive": 111,
+            "read_positive": 111,
+            "read_nonpositive": 111,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 111,
+            "write_positive": 111,
+            "read_positive": 111,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "fanout-32",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read_positive": 111,
+            "read_nonpositive": 112,
+            "write_positive": 112,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 113,
+            "read_positive": 111,
+            "write_positive": 112,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "loopback-0",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write_positive": 110,
+            "read_positive": 110,
+            "read_nonpositive": 110,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 110,
+            "write_positive": 110,
+            "read_positive": 110,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "loopback-0",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read_positive": 110,
+            "read_nonpositive": 111,
+            "write_positive": 111,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 112,
+            "read_positive": 110,
+            "write_positive": 111,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "loopback-1024",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write_positive": 110,
+            "read_positive": 110,
+            "read_nonpositive": 110,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 110,
+            "write_positive": 110,
+            "read_positive": 110,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "loopback-1024",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read_positive": 110,
+            "read_nonpositive": 111,
+            "write_positive": 111,
+            "journals": 1
+          },
+          "cpp": {
+            "read_positive": 110,
+            "read_nonpositive": 111,
+            "write_positive": 111,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "loopback-64",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write_positive": 110,
+            "read_positive": 110,
+            "read_nonpositive": 110,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 110,
+            "write_positive": 110,
+            "read_positive": 110,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "loopback-64",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read_positive": 110,
+            "read_nonpositive": 111,
+            "write_positive": 111,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 112,
+            "read_positive": 110,
+            "write_positive": 111,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "loopback-65536",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write_positive": 110,
+            "read_positive": 220,
+            "read_nonpositive": 110,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 110,
+            "write_positive": 110,
+            "read_positive": 220,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "loopback-65536",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read_positive": 220,
+            "read_nonpositive": 111,
+            "write_positive": 111,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 113,
+            "read_positive": 220,
+            "write_positive": 111,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "pipelined-read",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write_positive": 111,
+            "read_positive": 111,
+            "read_nonpositive": 111,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 112,
+            "write_positive": 111,
+            "read_positive": 111,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "pipelined-read",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read_positive": 111,
+            "read_nonpositive": 112,
+            "write_positive": 112,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 113,
+            "read_positive": 111,
+            "write_positive": 112,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "unary-1k",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write_positive": 111,
+            "read_positive": 111,
+            "read_nonpositive": 111,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 111,
+            "write_positive": 111,
+            "read_positive": 111,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "unary-1k",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read_positive": 111,
+            "read_nonpositive": 112,
+            "write_positive": 112,
+            "journals": 1
+          },
+          "cpp": {
+            "read_positive": 111,
+            "read_nonpositive": 112,
+            "write_positive": 112,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "unary-empty",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write_positive": 111,
+            "read_positive": 111,
+            "read_nonpositive": 111,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 111,
+            "write_positive": 111,
+            "read_positive": 111,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "unary-empty",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read_positive": 111,
+            "read_nonpositive": 112,
+            "write_positive": 112,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 113,
+            "read_positive": 111,
+            "write_positive": 112,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "unary-small",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write_positive": 111,
+            "read_positive": 111,
+            "read_nonpositive": 111,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 111,
+            "write_positive": 111,
+            "read_positive": 111,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "unary-small",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read_positive": 111,
+            "read_nonpositive": 112,
+            "write_positive": 112,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 113,
+            "read_positive": 111,
+            "write_positive": 112,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "write-read",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write_positive": 221,
+            "read_positive": 221,
+            "read_nonpositive": 221,
+            "journals": 1
+          },
+          "cpp": {
+            "read_nonpositive": 221,
+            "write_positive": 221,
+            "read_positive": 221,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "write-read",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read_positive": 221,
+            "read_nonpositive": 222,
+            "write_positive": 222,
+            "journals": 1
+          },
+          "cpp": {
+            "read_positive": 221,
+            "read_nonpositive": 222,
+            "write_positive": 222,
+            "journals": 1
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "concurrent-32",
+          "variant": "legacy",
+          "peer": "client",
+          "counts": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "concurrent-32",
+          "variant": "legacy",
+          "peer": "service-0",
+          "counts": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 27,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 28,
+            "write_attempts": 14
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "deep-32-concurrent-32",
+          "variant": "legacy",
+          "peer": "client",
+          "counts": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "deep-32-concurrent-32",
+          "variant": "legacy",
+          "peer": "service-0",
+          "counts": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 27,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 27,
+            "write_attempts": 14
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "deep-32",
+          "variant": "legacy",
+          "peer": "client",
+          "counts": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "deep-32",
+          "variant": "legacy",
+          "peer": "service-0",
+          "counts": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 27,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 27,
+            "write_attempts": 14
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "deep-8",
+          "variant": "legacy",
+          "peer": "client",
+          "counts": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "deep-8",
+          "variant": "legacy",
+          "peer": "service-0",
+          "counts": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 27,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 14,
+            "read_attempts": 28,
+            "write_attempts": 14
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "client",
+          "counts": {
+            "read_positive": 104,
+            "write_positive": 111,
+            "read_attempts": 208,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 104,
+            "write_positive": 111,
+            "read_attempts": 214,
+            "write_attempts": 111
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "service-0",
+          "counts": {
+            "read_positive": 124,
+            "write_positive": 127,
+            "read_attempts": 256,
+            "write_attempts": 127
+          },
+          "cpp": {
+            "read_positive": 131,
+            "write_positive": 136,
+            "read_attempts": 277,
+            "write_attempts": 136
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "service-1",
+          "counts": {
+            "read_positive": 28,
+            "write_positive": 28,
+            "read_attempts": 56,
+            "write_attempts": 28
+          },
+          "cpp": {
+            "read_positive": 46,
+            "write_positive": 46,
+            "read_attempts": 94,
+            "write_attempts": 46
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "service-2",
+          "counts": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 55,
+            "write_attempts": 28
+          },
+          "cpp": {
+            "read_positive": 45,
+            "write_positive": 43,
+            "read_attempts": 90,
+            "write_attempts": 43
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "service-3",
+          "counts": {
+            "read_positive": 14,
+            "write_positive": 14,
+            "read_attempts": 29,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 22,
+            "write_positive": 21,
+            "read_attempts": 45,
+            "write_attempts": 21
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16-concurrent-32",
+          "variant": "legacy",
+          "peer": "client",
+          "counts": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16-concurrent-32",
+          "variant": "legacy",
+          "peer": "service-0",
+          "counts": {
+            "read_positive": 26,
+            "write_positive": 28,
+            "read_attempts": 53,
+            "write_attempts": 28
+          },
+          "cpp": {
+            "read_positive": 26,
+            "write_positive": 28,
+            "read_attempts": 55,
+            "write_attempts": 28
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16-concurrent-32",
+          "variant": "legacy",
+          "peer": "service-1",
+          "counts": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 55,
+            "write_attempts": 28
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 57,
+            "write_attempts": 28
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16-concurrent-32",
+          "variant": "legacy",
+          "peer": "service-2",
+          "counts": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 55,
+            "write_attempts": 28
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 57,
+            "write_attempts": 28
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16-concurrent-32",
+          "variant": "legacy",
+          "peer": "service-3",
+          "counts": {
+            "read_positive": 14,
+            "write_positive": 14,
+            "read_attempts": 29,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 14,
+            "write_positive": 14,
+            "read_attempts": 30,
+            "write_attempts": 14
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16",
+          "variant": "legacy",
+          "peer": "client",
+          "counts": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "cpp": {
+            "read_positive": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "write_attempts": 13
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16",
+          "variant": "legacy",
+          "peer": "service-0",
+          "counts": {
+            "read_positive": 26,
+            "write_positive": 28,
+            "read_attempts": 53,
+            "write_attempts": 28
+          },
+          "cpp": {
+            "read_positive": 26,
+            "write_positive": 28,
+            "read_attempts": 55,
+            "write_attempts": 28
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16",
+          "variant": "legacy",
+          "peer": "service-1",
+          "counts": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 55,
+            "write_attempts": 28
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 57,
+            "write_attempts": 28
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16",
+          "variant": "legacy",
+          "peer": "service-2",
+          "counts": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 55,
+            "write_attempts": 28
+          },
+          "cpp": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 57,
+            "write_attempts": 28
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16",
+          "variant": "legacy",
+          "peer": "service-3",
+          "counts": {
+            "read_positive": 14,
+            "write_positive": 14,
+            "read_attempts": 29,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 14,
+            "write_positive": 14,
+            "read_attempts": 30,
+            "write_attempts": 14
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-8-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "client",
+          "counts": {
+            "read_positive": 104,
+            "write_positive": 111,
+            "read_attempts": 208,
+            "write_attempts": 111
+          },
+          "cpp": {
+            "read_positive": 104,
+            "write_positive": 111,
+            "read_attempts": 215,
+            "write_attempts": 111
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-8-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "service-0",
+          "counts": {
+            "read_positive": 124,
+            "write_positive": 127,
+            "read_attempts": 256,
+            "write_attempts": 127
+          },
+          "cpp": {
+            "read_positive": 129,
+            "write_positive": 138,
+            "read_attempts": 271,
+            "write_attempts": 138
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-8-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "service-1",
+          "counts": {
+            "read_positive": 28,
+            "write_positive": 28,
+            "read_attempts": 56,
+            "write_attempts": 28
+          },
+          "cpp": {
+            "read_positive": 44,
+            "write_positive": 40,
+            "read_attempts": 85,
+            "write_attempts": 40
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-8-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "service-2",
+          "counts": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 55,
+            "write_attempts": 28
+          },
+          "cpp": {
+            "read_positive": 38,
+            "write_positive": 39,
+            "read_attempts": 79,
+            "write_attempts": 39
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-8-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "service-3",
+          "counts": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 55,
+            "write_attempts": 28
+          },
+          "cpp": {
+            "read_positive": 38,
+            "write_positive": 39,
+            "read_attempts": 79,
+            "write_attempts": 39
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-8-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "service-4",
+          "counts": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 55,
+            "write_attempts": 28
+          },
+          "cpp": {
+            "read_positive": 38,
+            "write_positive": 38,
+            "read_attempts": 78,
+            "write_attempts": 38
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-8-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "service-5",
+          "counts": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 55,
+            "write_attempts": 28
+          },
+          "cpp": {
+            "read_positive": 37,
+            "write_positive": 38,
+            "read_attempts": 77,
+            "write_attempts": 38
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-8-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "service-6",
+          "counts": {
+            "read_positive": 27,
+            "write_positive": 28,
+            "read_attempts": 55,
+            "write_attempts": 28
+          },
+          "cpp": {
+            "read_positive": 37,
+            "write_positive": 38,
+            "read_attempts": 77,
+            "write_attempts": 38
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-8-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "service-7",
+          "counts": {
+            "read_positive": 14,
+            "write_positive": 14,
+            "read_attempts": 29,
+            "write_attempts": 14
+          },
+          "cpp": {
+            "read_positive": 19,
+            "write_positive": 19,
+            "read_attempts": 40,
+            "write_attempts": 19
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        }
+      ],
+      "positive_passing": 64,
+      "attempts_passing": 64,
+      "total": 64
+    },
+    "wire": {
+      "rows": [
+        {
+          "case": "bulk-1m",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write": 13,
+            "read": 26,
+            "read_attempts": 39,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "cpp": {
+            "write": 13,
+            "read": 27,
+            "read_attempts": 40,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "bulk-1m",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read": 27,
+            "write": 14,
+            "read_attempts": 41,
+            "write_attempts": 14,
+            "journals": 1
+          },
+          "cpp": {
+            "read": 27,
+            "write": 14,
+            "read_attempts": 42,
+            "write_attempts": 14,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "bulk-256k",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write": 13,
+            "read": 26,
+            "read_attempts": 39,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "cpp": {
+            "write": 13,
+            "read": 26,
+            "read_attempts": 39,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "bulk-256k",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read": 27,
+            "write": 14,
+            "read_attempts": 41,
+            "write_attempts": 14,
+            "journals": 1
+          },
+          "cpp": {
+            "read": 27,
+            "write": 14,
+            "read_attempts": 42,
+            "write_attempts": 14,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "bulk-4m",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write": 13,
+            "read": 40,
+            "read_attempts": 53,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "cpp": {
+            "write": 13,
+            "read": 30,
+            "read_attempts": 43,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "matches_or_better": false,
+          "attempts_match_or_better": false
+        },
+        {
+          "case": "bulk-4m",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read": 40,
+            "write": 14,
+            "read_attempts": 54,
+            "write_attempts": 14,
+            "journals": 1
+          },
+          "cpp": {
+            "read": 42,
+            "write": 14,
+            "read_attempts": 57,
+            "write_attempts": 14,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "bulk-64k",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write": 13,
+            "read": 25,
+            "read_attempts": 38,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "cpp": {
+            "write": 13,
+            "read": 25,
+            "read_attempts": 38,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "bulk-64k",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read": 26,
+            "write": 14,
+            "read_attempts": 40,
+            "write_attempts": 14,
+            "journals": 1
+          },
+          "cpp": {
+            "read": 26,
+            "write": 14,
+            "read_attempts": 41,
+            "write_attempts": 14,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "callback",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write": 25,
+            "read": 25,
+            "read_attempts": 50,
+            "write_attempts": 25,
+            "journals": 1
+          },
+          "cpp": {
+            "write": 25,
+            "read": 25,
+            "read_attempts": 50,
+            "write_attempts": 25,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "callback",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read": 25,
+            "write": 26,
+            "read_attempts": 51,
+            "write_attempts": 26,
+            "journals": 1
+          },
+          "cpp": {
+            "read": 25,
+            "write": 26,
+            "read_attempts": 51,
+            "write_attempts": 26,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "dependent-read",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write": 25,
+            "read": 25,
+            "read_attempts": 50,
+            "write_attempts": 25,
+            "journals": 1
+          },
+          "cpp": {
+            "write": 25,
+            "read": 25,
+            "read_attempts": 50,
+            "write_attempts": 25,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "dependent-read",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read": 25,
+            "write": 26,
+            "read_attempts": 51,
+            "write_attempts": 26,
+            "journals": 1
+          },
+          "cpp": {
+            "read": 25,
+            "write": 26,
+            "read_attempts": 51,
+            "write_attempts": 26,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "fanout-32",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write": 13,
+            "read": 13,
+            "read_attempts": 26,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "cpp": {
+            "write": 13,
+            "read": 13,
+            "read_attempts": 26,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "fanout-32",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read": 13,
+            "write": 14,
+            "read_attempts": 27,
+            "write_attempts": 14,
+            "journals": 1
+          },
+          "cpp": {
+            "read": 13,
+            "write": 14,
+            "read_attempts": 27,
+            "write_attempts": 14,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "loopback-0",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write": 12,
+            "read": 12,
+            "read_attempts": 24,
+            "write_attempts": 12,
+            "journals": 1
+          },
+          "cpp": {
+            "write": 12,
+            "read": 12,
+            "read_attempts": 24,
+            "write_attempts": 12,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "loopback-0",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read": 12,
+            "write": 13,
+            "read_attempts": 25,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "cpp": {
+            "read": 12,
+            "write": 13,
+            "read_attempts": 25,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "loopback-1024",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write": 12,
+            "read": 12,
+            "read_attempts": 24,
+            "write_attempts": 12,
+            "journals": 1
+          },
+          "cpp": {
+            "write": 12,
+            "read": 12,
+            "read_attempts": 24,
+            "write_attempts": 12,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "loopback-1024",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read": 12,
+            "write": 13,
+            "read_attempts": 25,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "cpp": {
+            "read": 12,
+            "write": 13,
+            "read_attempts": 26,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "loopback-64",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write": 12,
+            "read": 12,
+            "read_attempts": 24,
+            "write_attempts": 12,
+            "journals": 1
+          },
+          "cpp": {
+            "write": 12,
+            "read": 12,
+            "read_attempts": 24,
+            "write_attempts": 12,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "loopback-64",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read": 12,
+            "write": 13,
+            "read_attempts": 25,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "cpp": {
+            "read": 12,
+            "write": 13,
+            "read_attempts": 25,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "loopback-65536",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write": 12,
+            "read": 24,
+            "read_attempts": 36,
+            "write_attempts": 12,
+            "journals": 1
+          },
+          "cpp": {
+            "write": 12,
+            "read": 24,
+            "read_attempts": 36,
+            "write_attempts": 12,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "loopback-65536",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read": 24,
+            "write": 13,
+            "read_attempts": 37,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "cpp": {
+            "read": 24,
+            "write": 13,
+            "read_attempts": 38,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "pipelined-read",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write": 13,
+            "read": 13,
+            "read_attempts": 26,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "cpp": {
+            "write": 13,
+            "read": 13,
+            "read_attempts": 27,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "pipelined-read",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read": 13,
+            "write": 14,
+            "read_attempts": 27,
+            "write_attempts": 14,
+            "journals": 1
+          },
+          "cpp": {
+            "read": 13,
+            "write": 14,
+            "read_attempts": 27,
+            "write_attempts": 14,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "unary-1k",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write": 13,
+            "read": 13,
+            "read_attempts": 26,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "cpp": {
+            "write": 13,
+            "read": 13,
+            "read_attempts": 26,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "unary-1k",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read": 13,
+            "write": 14,
+            "read_attempts": 27,
+            "write_attempts": 14,
+            "journals": 1
+          },
+          "cpp": {
+            "read": 13,
+            "write": 14,
+            "read_attempts": 28,
+            "write_attempts": 14,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "unary-empty",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write": 13,
+            "read": 13,
+            "read_attempts": 26,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "cpp": {
+            "write": 13,
+            "read": 13,
+            "read_attempts": 26,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "unary-empty",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read": 13,
+            "write": 14,
+            "read_attempts": 27,
+            "write_attempts": 14,
+            "journals": 1
+          },
+          "cpp": {
+            "read": 13,
+            "write": 14,
+            "read_attempts": 27,
+            "write_attempts": 14,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "unary-small",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write": 13,
+            "read": 13,
+            "read_attempts": 26,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "cpp": {
+            "write": 13,
+            "read": 13,
+            "read_attempts": 26,
+            "write_attempts": 13,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "unary-small",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read": 13,
+            "write": 14,
+            "read_attempts": 27,
+            "write_attempts": 14,
+            "journals": 1
+          },
+          "cpp": {
+            "read": 13,
+            "write": 14,
+            "read_attempts": 28,
+            "write_attempts": 14,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "write-read",
+          "variant": "context",
+          "peer": "client",
+          "counts": {
+            "write": 25,
+            "read": 25,
+            "read_attempts": 50,
+            "write_attempts": 25,
+            "journals": 1
+          },
+          "cpp": {
+            "write": 25,
+            "read": 25,
+            "read_attempts": 50,
+            "write_attempts": 25,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "write-read",
+          "variant": "context",
+          "peer": "server",
+          "counts": {
+            "read": 25,
+            "write": 26,
+            "read_attempts": 51,
+            "write_attempts": 26,
+            "journals": 1
+          },
+          "cpp": {
+            "read": 25,
+            "write": 26,
+            "read_attempts": 51,
+            "write_attempts": 26,
+            "journals": 1
+          },
+          "matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "deep-8",
+          "variant": "legacy",
+          "peer": "client",
+          "counts": {
+            "write_attempts": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "read_positive": 13
+          },
+          "cpp": {
+            "read_attempts": 26,
+            "write_attempts": 13,
+            "write_positive": 13,
+            "read_positive": 13
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "deep-8",
+          "variant": "legacy",
+          "peer": "service-0",
+          "counts": {
+            "read_attempts": 27,
+            "read_positive": 13,
+            "write_attempts": 14,
+            "write_positive": 14
+          },
+          "cpp": {
+            "read_attempts": 28,
+            "read_positive": 13,
+            "write_attempts": 14,
+            "write_positive": 14
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "deep-32",
+          "variant": "legacy",
+          "peer": "client",
+          "counts": {
+            "write_attempts": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "read_positive": 13
+          },
+          "cpp": {
+            "read_attempts": 26,
+            "write_attempts": 13,
+            "write_positive": 13,
+            "read_positive": 13
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "deep-32",
+          "variant": "legacy",
+          "peer": "service-0",
+          "counts": {
+            "read_attempts": 27,
+            "read_positive": 13,
+            "write_attempts": 14,
+            "write_positive": 14
+          },
+          "cpp": {
+            "read_attempts": 28,
+            "read_positive": 13,
+            "write_attempts": 14,
+            "write_positive": 14
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "concurrent-32",
+          "variant": "legacy",
+          "peer": "client",
+          "counts": {
+            "write_attempts": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "read_positive": 13
+          },
+          "cpp": {
+            "read_attempts": 26,
+            "write_attempts": 13,
+            "write_positive": 13,
+            "read_positive": 13
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "concurrent-32",
+          "variant": "legacy",
+          "peer": "service-0",
+          "counts": {
+            "read_attempts": 27,
+            "read_positive": 13,
+            "write_attempts": 14,
+            "write_positive": 14
+          },
+          "cpp": {
+            "read_attempts": 28,
+            "read_positive": 13,
+            "write_attempts": 14,
+            "write_positive": 14
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "deep-32-concurrent-32",
+          "variant": "legacy",
+          "peer": "client",
+          "counts": {
+            "write_attempts": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "read_positive": 13
+          },
+          "cpp": {
+            "read_attempts": 26,
+            "write_attempts": 13,
+            "write_positive": 13,
+            "read_positive": 13
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "deep-32-concurrent-32",
+          "variant": "legacy",
+          "peer": "service-0",
+          "counts": {
+            "read_attempts": 27,
+            "read_positive": 13,
+            "write_attempts": 14,
+            "write_positive": 14
+          },
+          "cpp": {
+            "read_attempts": 28,
+            "read_positive": 13,
+            "write_attempts": 14,
+            "write_positive": 14
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16",
+          "variant": "legacy",
+          "peer": "client",
+          "counts": {
+            "write_attempts": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "read_positive": 13
+          },
+          "cpp": {
+            "read_attempts": 26,
+            "write_attempts": 13,
+            "write_positive": 13,
+            "read_positive": 13
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16",
+          "variant": "legacy",
+          "peer": "service-0",
+          "counts": {
+            "write_attempts": 28,
+            "write_positive": 28,
+            "read_attempts": 53,
+            "read_positive": 26
+          },
+          "cpp": {
+            "read_attempts": 55,
+            "write_attempts": 28,
+            "write_positive": 28,
+            "read_positive": 26
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16",
+          "variant": "legacy",
+          "peer": "service-1",
+          "counts": {
+            "write_attempts": 28,
+            "write_positive": 28,
+            "read_attempts": 55,
+            "read_positive": 27
+          },
+          "cpp": {
+            "read_attempts": 56,
+            "write_attempts": 28,
+            "write_positive": 28,
+            "read_positive": 27
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16",
+          "variant": "legacy",
+          "peer": "service-2",
+          "counts": {
+            "write_attempts": 28,
+            "write_positive": 28,
+            "read_attempts": 55,
+            "read_positive": 27
+          },
+          "cpp": {
+            "read_attempts": 57,
+            "write_attempts": 28,
+            "write_positive": 28,
+            "read_positive": 27
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16",
+          "variant": "legacy",
+          "peer": "service-3",
+          "counts": {
+            "read_attempts": 29,
+            "read_positive": 14,
+            "write_attempts": 14,
+            "write_positive": 14
+          },
+          "cpp": {
+            "read_attempts": 30,
+            "read_positive": 14,
+            "write_attempts": 14,
+            "write_positive": 14
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16-concurrent-32",
+          "variant": "legacy",
+          "peer": "client",
+          "counts": {
+            "write_attempts": 13,
+            "write_positive": 13,
+            "read_attempts": 26,
+            "read_positive": 13
+          },
+          "cpp": {
+            "read_attempts": 26,
+            "write_attempts": 13,
+            "write_positive": 13,
+            "read_positive": 13
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16-concurrent-32",
+          "variant": "legacy",
+          "peer": "service-0",
+          "counts": {
+            "write_attempts": 28,
+            "write_positive": 28,
+            "read_attempts": 53,
+            "read_positive": 26
+          },
+          "cpp": {
+            "read_attempts": 55,
+            "write_attempts": 28,
+            "write_positive": 28,
+            "read_positive": 26
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16-concurrent-32",
+          "variant": "legacy",
+          "peer": "service-1",
+          "counts": {
+            "write_attempts": 28,
+            "write_positive": 28,
+            "read_attempts": 55,
+            "read_positive": 27
+          },
+          "cpp": {
+            "read_attempts": 57,
+            "write_attempts": 28,
+            "write_positive": 28,
+            "read_positive": 27
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16-concurrent-32",
+          "variant": "legacy",
+          "peer": "service-2",
+          "counts": {
+            "write_attempts": 28,
+            "write_positive": 28,
+            "read_attempts": 55,
+            "read_positive": 27
+          },
+          "cpp": {
+            "read_attempts": 56,
+            "write_attempts": 28,
+            "write_positive": 28,
+            "read_positive": 27
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16-concurrent-32",
+          "variant": "legacy",
+          "peer": "service-3",
+          "counts": {
+            "read_attempts": 29,
+            "read_positive": 14,
+            "write_attempts": 14,
+            "write_positive": 14
+          },
+          "cpp": {
+            "read_attempts": 30,
+            "read_positive": 14,
+            "write_attempts": 14,
+            "write_positive": 14
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "client",
+          "counts": {
+            "write_attempts": 111,
+            "write_positive": 111,
+            "read_attempts": 208,
+            "read_positive": 104
+          },
+          "cpp": {
+            "read_attempts": 215,
+            "write_attempts": 111,
+            "write_positive": 111,
+            "read_positive": 104
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "service-0",
+          "counts": {
+            "write_attempts": 141,
+            "write_positive": 141,
+            "read_attempts": 286,
+            "read_positive": 139
+          },
+          "cpp": {
+            "read_attempts": 308,
+            "write_attempts": 155,
+            "write_positive": 155,
+            "read_positive": 147
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "service-1",
+          "counts": {
+            "write_attempts": 58,
+            "write_positive": 58,
+            "read_attempts": 115,
+            "read_positive": 57
+          },
+          "cpp": {
+            "read_attempts": 157,
+            "write_attempts": 76,
+            "write_positive": 76,
+            "read_positive": 79
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "service-2",
+          "counts": {
+            "write_attempts": 58,
+            "write_positive": 58,
+            "read_attempts": 115,
+            "read_positive": 57
+          },
+          "cpp": {
+            "read_attempts": 154,
+            "write_attempts": 77,
+            "write_positive": 77,
+            "read_positive": 76
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-4-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "service-3",
+          "counts": {
+            "read_attempts": 59,
+            "read_positive": 29,
+            "write_attempts": 29,
+            "write_positive": 29
+          },
+          "cpp": {
+            "read_attempts": 78,
+            "read_positive": 38,
+            "write_attempts": 38,
+            "write_positive": 38
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-8-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "client",
+          "counts": {
+            "write_attempts": 111,
+            "write_positive": 111,
+            "read_attempts": 208,
+            "read_positive": 104
+          },
+          "cpp": {
+            "read_attempts": 214,
+            "write_attempts": 111,
+            "write_positive": 111,
+            "read_positive": 104
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-8-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "service-0",
+          "counts": {
+            "write_attempts": 139,
+            "write_positive": 139,
+            "read_attempts": 278,
+            "read_positive": 135
+          },
+          "cpp": {
+            "read_attempts": 308,
+            "write_attempts": 158,
+            "write_positive": 158,
+            "read_positive": 146
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-8-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "service-1",
+          "counts": {
+            "write_attempts": 50,
+            "write_positive": 50,
+            "read_attempts": 100,
+            "read_positive": 50
+          },
+          "cpp": {
+            "read_attempts": 164,
+            "write_attempts": 81,
+            "write_positive": 81,
+            "read_positive": 81
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-8-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "service-2",
+          "counts": {
+            "write_attempts": 50,
+            "write_positive": 50,
+            "read_attempts": 99,
+            "read_positive": 49
+          },
+          "cpp": {
+            "read_attempts": 159,
+            "write_attempts": 77,
+            "write_positive": 77,
+            "read_positive": 80
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-8-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "service-3",
+          "counts": {
+            "write_attempts": 50,
+            "write_positive": 50,
+            "read_attempts": 99,
+            "read_positive": 49
+          },
+          "cpp": {
+            "read_attempts": 154,
+            "write_attempts": 76,
+            "write_positive": 76,
+            "read_positive": 76
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-8-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "service-4",
+          "counts": {
+            "write_attempts": 50,
+            "write_positive": 50,
+            "read_attempts": 99,
+            "read_positive": 49
+          },
+          "cpp": {
+            "read_attempts": 152,
+            "write_attempts": 75,
+            "write_positive": 75,
+            "read_positive": 75
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-8-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "service-5",
+          "counts": {
+            "write_attempts": 50,
+            "write_positive": 50,
+            "read_attempts": 99,
+            "read_positive": 49
+          },
+          "cpp": {
+            "read_attempts": 148,
+            "write_attempts": 72,
+            "write_positive": 72,
+            "read_positive": 74
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-8-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "service-6",
+          "counts": {
+            "write_attempts": 50,
+            "write_positive": 50,
+            "read_attempts": 99,
+            "read_positive": 49
+          },
+          "cpp": {
+            "read_attempts": 145,
+            "write_attempts": 72,
+            "write_positive": 72,
+            "read_positive": 71
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        },
+        {
+          "case": "services-8-deep-16-clients-8",
+          "variant": "legacy",
+          "peer": "service-7",
+          "counts": {
+            "read_attempts": 51,
+            "read_positive": 25,
+            "write_attempts": 25,
+            "write_positive": 25
+          },
+          "cpp": {
+            "read_attempts": 74,
+            "read_positive": 36,
+            "write_attempts": 36,
+            "write_positive": 36
+          },
+          "positive_matches_or_better": true,
+          "attempts_match_or_better": true
+        }
+      ],
+      "positive_passing": 63,
+      "attempts_passing": 63,
+      "total": 64
+    }
+  },
+  "profiles": [
+    {
+      "path": "0-services-4-deep-16-clients-8-baseline/client.callgrind",
+      "instructions": 13076677,
+      "allocator_calls": {
+        "malloc": 6179,
+        "free": 6367,
+        "realloc": 68,
+        "calloc": 173
+      }
+    },
+    {
+      "path": "0-services-4-deep-16-clients-8-baseline/service-0.callgrind",
+      "instructions": 29960647,
+      "allocator_calls": {
+        "malloc": 16543,
+        "free": 16593,
+        "calloc": 213,
+        "realloc": 46
+      }
+    },
+    {
+      "path": "0-services-4-deep-16-clients-8-baseline/service-1.callgrind",
+      "instructions": 28329422,
+      "allocator_calls": {
+        "malloc": 15369,
+        "free": 15151,
+        "calloc": 101,
+        "realloc": 37
+      }
+    },
+    {
+      "path": "0-services-4-deep-16-clients-8-baseline/service-2.callgrind",
+      "instructions": 28329026,
+      "allocator_calls": {
+        "malloc": 15369,
+        "free": 15151,
+        "realloc": 37,
+        "calloc": 101
+      }
+    },
+    {
+      "path": "0-services-4-deep-16-clients-8-baseline/service-3.callgrind",
+      "instructions": 13645643,
+      "allocator_calls": {
+        "malloc": 4813,
+        "free": 4696,
+        "calloc": 53,
+        "realloc": 14
+      }
+    },
+    {
+      "path": "0-services-4-deep-16-clients-8-cpp/client.callgrind",
+      "instructions": 15984405,
+      "allocator_calls": {
+        "malloc": 8140,
+        "free": 10110,
+        "calloc": 424
+      }
+    },
+    {
+      "path": "0-services-4-deep-16-clients-8-cpp/service-0.callgrind",
+      "instructions": 30831207,
+      "allocator_calls": {
+        "malloc": 14387,
+        "free": 17279,
+        "calloc": 797
+      }
+    },
+    {
+      "path": "0-services-4-deep-16-clients-8-cpp/service-1.callgrind",
+      "instructions": 29517265,
+      "allocator_calls": {
+        "malloc": 13111,
+        "free": 15736,
+        "calloc": 776
+      }
+    },
+    {
+      "path": "0-services-4-deep-16-clients-8-cpp/service-2.callgrind",
+      "instructions": 29524200,
+      "allocator_calls": {
+        "malloc": 13118,
+        "free": 15750,
+        "calloc": 776
+      }
+    },
+    {
+      "path": "0-services-4-deep-16-clients-8-cpp/service-3.callgrind",
+      "instructions": 16856564,
+      "allocator_calls": {
+        "malloc": 7006,
+        "free": 8369,
+        "calloc": 388
+      }
+    },
+    {
+      "path": "0-services-4-deep-16-clients-8-legacy/client.callgrind",
+      "instructions": 12777707,
+      "allocator_calls": {
+        "malloc": 6235,
+        "free": 6423,
+        "realloc": 68,
+        "calloc": 173
+      }
+    },
+    {
+      "path": "0-services-4-deep-16-clients-8-legacy/service-0.callgrind",
+      "instructions": 28720445,
+      "allocator_calls": {
+        "malloc": 16632,
+        "free": 16681,
+        "realloc": 46,
+        "calloc": 213
+      }
+    },
+    {
+      "path": "0-services-4-deep-16-clients-8-legacy/service-1.callgrind",
+      "instructions": 26965591,
+      "allocator_calls": {
+        "malloc": 15374,
+        "free": 15153,
+        "calloc": 101,
+        "realloc": 37
+      }
+    },
+    {
+      "path": "0-services-4-deep-16-clients-8-legacy/service-2.callgrind",
+      "instructions": 26966025,
+      "allocator_calls": {
+        "malloc": 15374,
+        "free": 15153,
+        "calloc": 101,
+        "realloc": 37
+      }
+    },
+    {
+      "path": "0-services-4-deep-16-clients-8-legacy/service-3.callgrind",
+      "instructions": 12992943,
+      "allocator_calls": {
+        "malloc": 4817,
+        "free": 4698,
+        "realloc": 14,
+        "calloc": 53
+      }
+    }
+  ],
+  "profile_comparison": [
+    {
+      "process": "client.callgrind",
+      "before": 13076677,
+      "candidate": 12777707,
+      "cpp": 15984405,
+      "reduction": 0.022862841989597205
+    },
+    {
+      "process": "service-0.callgrind",
+      "before": 29960647,
+      "candidate": 28720445,
+      "cpp": 30831207,
+      "reduction": 0.0413943664167199
+    },
+    {
+      "process": "service-1.callgrind",
+      "before": 28329422,
+      "candidate": 26965591,
+      "cpp": 29517265,
+      "reduction": 0.04814185760655476
+    },
+    {
+      "process": "service-2.callgrind",
+      "before": 28329026,
+      "candidate": 26966025,
+      "cpp": 29524200,
+      "reduction": 0.04811323199039741
+    },
+    {
+      "process": "service-3.callgrind",
+      "before": 13645643,
+      "candidate": 12992943,
+      "cpp": 16856564,
+      "reduction": 0.047832117548436526
+    }
+  ],
+  "validation": [
+    {
+      "name": "core",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "capntproto-core",
+        "--tests"
+      ],
+      "exit_code": 0,
+      "path": "/workspace/scratch/legacy31-validation20261017/core.log",
+      "sha256": "3b2e3f211faf667c1b5c55c8de2f391de7c632f5e140cd45717331055a4c7178",
+      "tests_passed": 138
+    },
+    {
+      "name": "rpc-framing",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "capntproto-rpc",
+        "-p",
+        "capntproto-futures",
+        "--lib"
+      ],
+      "exit_code": 0,
+      "path": "/workspace/scratch/legacy31-validation20261017/rpc-framing.log",
+      "sha256": "aae921a59ad83e8c0766a85fe796c40ba6951dcbba14331f183751124956aab0",
+      "tests_passed": 388
+    },
+    {
+      "name": "codegen",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "capntproto-codegen",
+        "--lib"
+      ],
+      "exit_code": 0,
+      "path": "/workspace/scratch/legacy31-validation20261017/codegen.log",
+      "sha256": "68472caefd487d2f3bdb3ae14fb1f953f93d41a1194cbc124e64432effd3576b",
+      "tests_passed": 2
+    },
+    {
+      "name": "allocation-exception-interop",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "capntproto",
+        "--test",
+        "allocations",
+        "--test",
+        "exception_metadata",
+        "--test",
+        "exception_trace",
+        "--test",
+        "field_diagnostics",
+        "--test",
+        "result_pipeline",
+        "--test",
+        "answer_adoption",
+        "--test",
+        "tcp_rpc",
+        "--test",
+        "upstream_interop",
+        "--test",
+        "rpc"
+      ],
+      "exit_code": 0,
+      "path": "/workspace/scratch/legacy31-validation-b20261017/allocation-exception-interop.log",
+      "sha256": "e1ea83cc646ccec0c1e82383b111a42a8710955bf172a3e9dfea57bfd8ca31c1",
+      "tests_passed": 81
+    },
+    {
+      "name": "core-no-alloc",
+      "command": [
+        "cargo",
+        "check",
+        "--locked",
+        "-p",
+        "capntproto-core",
+        "--no-default-features"
+      ],
+      "exit_code": 0,
+      "path": "/workspace/scratch/legacy31-validation-b20261017/core-no-alloc.log",
+      "sha256": "fc195e1b5159149a33f7cdda23e948173e4e09e88d316bc650bce84c49419ffe",
+      "tests_passed": 0
+    },
+    {
+      "name": "core-alloc-only",
+      "command": [
+        "cargo",
+        "check",
+        "--locked",
+        "-p",
+        "capntproto-core",
+        "--no-default-features",
+        "--features",
+        "alloc"
+      ],
+      "exit_code": 0,
+      "path": "/workspace/scratch/legacy31-validation-b20261017/core-alloc-only.log",
+      "sha256": "49d368ef5948094857d0eb81549f9725d871d4fcfd01e83a363ebd1a4e45f92d",
+      "tests_passed": 0
+    },
+    {
+      "name": "miri-error",
+      "command": [
+        "cargo",
+        "+nightly-2026-08-29",
+        "miri",
+        "test",
+        "--locked",
+        "-p",
+        "capntproto-core",
+        "--lib",
+        "error_context_tests"
+      ],
+      "exit_code": 0,
+      "path": "/workspace/scratch/legacy31-validation-b20261017/miri-error.log",
+      "sha256": "b33d1149eac43809f473bbb685ab0e730748318e2883ca2a709890c28eaca18f",
+      "tests_passed": 1
+    },
+    {
+      "name": "miri-move",
+      "command": [
+        "cargo",
+        "+nightly-2026-08-29",
+        "miri",
+        "test",
+        "--locked",
+        "-p",
+        "capntproto-core",
+        "--features",
+        "rpc_try",
+        "--test",
+        "rpc_try"
+      ],
+      "exit_code": 0,
+      "path": "/workspace/scratch/legacy31-validation-b20261017/miri-move.log",
+      "sha256": "c0e44bca4dcdbb74374e80b160ac37d179b611ac16ef5efbcb95172d676f5aa6",
+      "tests_passed": 8
+    },
+    {
+      "name": "format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "path": "/workspace/scratch/legacy31-selected-validation20261017/format.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tests_passed": 0
+    },
+    {
+      "name": "unsafe",
+      "command": [
+        "/workspace/scratch/legacy-counts-tools/capntproto-dev",
+        "check-unsafe"
+      ],
+      "exit_code": 0,
+      "path": "/workspace/scratch/legacy31-selected-validation20261017/unsafe.log",
+      "sha256": "90e0a0f01db86598e74d9455ab956dfa785100953961e3ec15a3fe59192b3a66",
+      "tests_passed": 0
+    },
+    {
+      "name": "benchmark-python",
+      "command": [
+        "python3",
+        "-m",
+        "py_compile",
+        "benchmarks/rpc/topology-runner.py",
+        "benchmarks/rpc/analyze-topology.py"
+      ],
+      "exit_code": 0,
+      "path": "/workspace/scratch/legacy31-selected-validation20261017/benchmark-python.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tests_passed": 0
+    },
+    {
+      "name": "root-serial",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "capntproto",
+        "--lib",
+        "--",
+        "--test-threads=1"
+      ],
+      "exit_code": 0,
+      "path": "/workspace/scratch/legacy31-selected-validation20261017/root-serial.log",
+      "sha256": "b5fd09f45269b6b7ccad82f17a99c84763f8e864f8f321ef56da0c02df09631c",
+      "tests_passed": 287
+    },
+    {
+      "name": "core-docs",
+      "exit_code": 0,
+      "path": "/workspace/scratch/legacy31-core-docs20261017.log",
+      "sha256": "46bb38d4fa492f7205e29f695fb1effb82caecea1cc402da4b0ddec3c6a9d70f",
+      "tests_passed": 33
+    }
+  ],
+  "archive": {
+    "path": "/workspace/capntproto/target/legacy-layout-20261018",
+    "files": 13086,
+    "bytes": 1364576787,
+    "manifest_sha256": "4043fc4b6f090b8cc8c062c79477d402758e64014f61be3126c96547d28a9401",
+    "count_scope": "Logical bytes including hard links; excludes SHA256SUMS itself."
+  },
+  "verification": {
+    "source_snapshots": [
+      {
+        "snapshot": "legacy31-adaptive-source20261017",
+        "tree": "738588d2690beb55fd7025faeadecff673c1cb57",
+        "binary": "d8edf11f38dd28d4afc9ba29fcc75ae016dc817c998ddf5ffda1e7a55156f433"
+      },
+      {
+        "snapshot": "legacy31-context-source20261017",
+        "tree": "68c9ef49dba05438066654beef4067b76c42eaac",
+        "binary": "18617746ceb65a0b0afeff0a3dc62478594be371a366aff59bf7ba96ecfbe016"
+      },
+      {
+        "snapshot": "legacy31-inline-source20261017",
+        "tree": "903079e47468d6e7a58b53bfa64c44ef4af1b685",
+        "binary": "fa3957b9c91d15b5654c5e44b96cabf23cb35133308d401bb17a04cfdc4f8b5a"
+      },
+      {
+        "snapshot": "legacy31-minimum4-source20261017",
+        "tree": "167678fc20c4a3de02e9f81a816dce78bdae39ab",
+        "binary": "0944a2f87c1d8d9514761f98bed9c519501d0aa0f5f33549d108c226a1914305"
+      },
+      {
+        "snapshot": "legacy31-runtime-source20261017",
+        "tree": "6e337ceaf2365bb73963fd6c665205c6f8e59f81",
+        "binary": "a1c94737f8f22c8484719014bbfc719c3c0c032f523e027ccb1ab9d44f8ead8d"
+      },
+      {
+        "snapshot": "legacy31-selected-source20261017",
+        "tree": "48c7eae7a3a066306fca90a6ed6f9ae6b98aa73b",
+        "binary": "18617746ceb65a0b0afeff0a3dc62478594be371a366aff59bf7ba96ecfbe016"
+      },
+      {
+        "snapshot": "legacy31-settle-source20261017",
+        "tree": "f08c92f23648f2053284355a1888990add2d7197",
+        "binary": "279b1e9e1ab2e532c5603b2a72b58b110c5e312b7a23eacf4110432e5c92947d"
+      }
+    ],
+    "campaigns": [
+      {
+        "name": "context-latency",
+        "samples": 288000,
+        "verified_percentiles": true
+      },
+      {
+        "name": "minimum4-latency",
+        "samples": 288000,
+        "verified_percentiles": true
+      },
+      {
+        "name": "context-topology",
+        "samples": 144000,
+        "verified_percentiles": true
+      },
+      {
+        "name": "minimum4-topology",
+        "samples": 144000,
+        "verified_percentiles": true
+      }
+    ],
+    "fixtures_unchanged": true
+  },
+  "hosted_provenance": {
+    "run_id": 39078456460,
+    "head": "6ff8b25cb5dbcb8ea8d8efa95df70f8d78951ff1",
+    "scope": "Pre-change dedicated benchmark context; not qualification of local working-tree candidates.",
+    "artifacts": [
+      {
+        "id": 12118854819,
+        "path": "/workspace/scratch/legacy31-hosted-12118854819-20261017.zip",
+        "sha256": "b63bbd9a4f25a6e78ff6c641116f1bc3304591a144454a304f1b3aeb613b3d14"
+      },
+      {
+        "id": 12118824911,
+        "path": "/workspace/scratch/legacy31-hosted-12118824911-20261017.zip",
+        "sha256": "8f66d61f4194d6aed3dbb14c797f7a7398be072063d4c127f805818ce95c0def"
+      }
+    ]
+  },
+  "hosted_remote": {
+    "acceptance": "descriptive remote workflow baseline; no loopback ratio gate applied",
+    "portable_target": {
+      "advisory": true,
+      "all_workflows_pass": false,
+      "maximum_ratio": 1.05,
+      "metric": "pooled p50 per workflow",
+      "reference_rule": "min(legacy, capnp-cpp) in the same campaign",
+      "rows": [
+        {
+          "case": {
+            "name": "unary-empty",
+            "payload_bytes": 0,
+            "rpcs_per_iteration": 1,
+            "width": 1
+          },
+          "meets_target": true,
+          "portable_p50_ns": 129548,
+          "ratio": 1.0110826673326674,
+          "reference": "legacy",
+          "reference_p50_ns": 128128
+        },
+        {
+          "case": {
+            "name": "unary-small",
+            "payload_bytes": 64,
+            "rpcs_per_iteration": 1,
+            "width": 1
+          },
+          "meets_target": true,
+          "portable_p50_ns": 127188,
+          "ratio": 0.9984535070848216,
+          "reference": "capnp-cpp",
+          "reference_p50_ns": 127385
+        },
+        {
+          "case": {
+            "name": "unary-1k",
+            "payload_bytes": 1024,
+            "rpcs_per_iteration": 1,
+            "width": 1
+          },
+          "meets_target": true,
+          "portable_p50_ns": 122747,
+          "ratio": 0.9738888271791047,
+          "reference": "legacy",
+          "reference_p50_ns": 126038
+        },
+        {
+          "case": {
+            "name": "fanout-32",
+            "payload_bytes": 1024,
+            "rpcs_per_iteration": 32,
+            "width": 32
+          },
+          "meets_target": false,
+          "portable_p50_ns": 478382,
+          "ratio": 1.1027556096503968,
+          "reference": "legacy",
+          "reference_p50_ns": 433806
+        },
+        {
+          "case": {
+            "name": "dependent-read",
+            "payload_bytes": 1024,
+            "rpcs_per_iteration": 2,
+            "width": 1
+          },
+          "meets_target": true,
+          "portable_p50_ns": 279920,
+          "ratio": 1.0158407577434632,
+          "reference": "legacy",
+          "reference_p50_ns": 275555
+        },
+        {
+          "case": {
+            "name": "pipelined-read",
+            "payload_bytes": 1024,
+            "rpcs_per_iteration": 2,
+            "width": 1
+          },
+          "meets_target": false,
+          "portable_p50_ns": 163296,
+          "ratio": 1.1195162584068612,
+          "reference": "capnp-cpp",
+          "reference_p50_ns": 145863
+        },
+        {
+          "case": {
+            "name": "write-read",
+            "payload_bytes": 1024,
+            "rpcs_per_iteration": 2,
+            "width": 1
+          },
+          "meets_target": true,
+          "portable_p50_ns": 252967,
+          "ratio": 0.9999367546435927,
+          "reference": "legacy",
+          "reference_p50_ns": 252983
+        },
+        {
+          "case": {
+            "name": "callback",
+            "payload_bytes": 64,
+            "rpcs_per_iteration": 2,
+            "width": 1
+          },
+          "meets_target": true,
+          "portable_p50_ns": 272334,
+          "ratio": 1.0152435273723648,
+          "reference": "capnp-cpp",
+          "reference_p50_ns": 268245
+        },
+        {
+          "case": {
+            "name": "bulk-64k",
+            "payload_bytes": 65536,
+            "rpcs_per_iteration": 1,
+            "width": 1
+          },
+          "meets_target": true,
+          "portable_p50_ns": 453690,
+          "ratio": 0.9247637081864897,
+          "reference": "legacy",
+          "reference_p50_ns": 490601
+        },
+        {
+          "case": {
+            "name": "bulk-256k",
+            "payload_bytes": 262144,
+            "rpcs_per_iteration": 1,
+            "width": 1
+          },
+          "meets_target": true,
+          "portable_p50_ns": 1026207,
+          "ratio": 1.039390630760567,
+          "reference": "legacy",
+          "reference_p50_ns": 987316
+        },
+        {
+          "case": {
+            "name": "bulk-1m",
+            "payload_bytes": 1048576,
+            "rpcs_per_iteration": 1,
+            "width": 1
+          },
+          "meets_target": true,
+          "portable_p50_ns": 4191027,
+          "ratio": 1.0072095164944816,
+          "reference": "legacy",
+          "reference_p50_ns": 4161028
+        },
+        {
+          "case": {
+            "name": "bulk-4m",
+            "payload_bytes": 4194304,
+            "rpcs_per_iteration": 1,
+            "width": 1
+          },
+          "meets_target": true,
+          "portable_p50_ns": 18265231,
+          "ratio": 0.9914585285986165,
+          "reference": "capnp-cpp",
+          "reference_p50_ns": 18422587
+        }
+      ]
+    },
+    "rows": [
+      {
+        "case": {
+          "name": "unary-empty",
+          "payload_bytes": 0,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "legacy",
+        "p50_ns": 128128,
+        "p50_ratio_to_cpp": 0.9734912663257785,
+        "p95_ns": 157732,
+        "p99_ns": 172777,
+        "rpcs_per_second": 7645.9252395529165,
+        "samples": 5000,
+        "workflows_per_second": 7645.9252395529165
+      },
+      {
+        "case": {
+          "name": "unary-empty",
+          "payload_bytes": 0,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "portable",
+        "p50_ns": 129548,
+        "p50_ratio_to_cpp": 0.9842801461817242,
+        "p95_ns": 159023,
+        "p99_ns": 176741,
+        "rpcs_per_second": 7554.145508827072,
+        "samples": 5000,
+        "workflows_per_second": 7554.145508827072
+      },
+      {
+        "case": {
+          "name": "unary-empty",
+          "payload_bytes": 0,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "capnp-cpp",
+        "p50_ns": 131617,
+        "p50_ratio_to_cpp": 1.0,
+        "p95_ns": 160216,
+        "p99_ns": 175224,
+        "rpcs_per_second": 7501.377091554402,
+        "samples": 5000,
+        "workflows_per_second": 7501.377091554402
+      },
+      {
+        "case": {
+          "name": "unary-empty",
+          "payload_bytes": 0,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "grpc",
+        "p50_ns": 172416,
+        "p50_ratio_to_cpp": 1.3099827529878358,
+        "p95_ns": 206308,
+        "p99_ns": 223153,
+        "rpcs_per_second": 5720.699677771179,
+        "samples": 5000,
+        "workflows_per_second": 5720.699677771179
+      },
+      {
+        "case": {
+          "name": "unary-empty",
+          "payload_bytes": 0,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "websocket",
+        "p50_ns": 132329,
+        "p50_ratio_to_cpp": 1.0054096355334037,
+        "p95_ns": 159639,
+        "p99_ns": 178139,
+        "rpcs_per_second": 7411.3235837282655,
+        "samples": 5000,
+        "workflows_per_second": 7411.3235837282655
+      },
+      {
+        "case": {
+          "name": "unary-empty",
+          "payload_bytes": 0,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "capnp-rust",
+        "p50_ns": 132349,
+        "p50_ratio_to_cpp": 1.0055615915877127,
+        "p95_ns": 162249,
+        "p99_ns": 178333,
+        "rpcs_per_second": 7439.0218284988005,
+        "samples": 5000,
+        "workflows_per_second": 7439.0218284988005
+      },
+      {
+        "case": {
+          "name": "unary-small",
+          "payload_bytes": 64,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "legacy",
+        "p50_ns": 130242,
+        "p50_ratio_to_cpp": 1.0224280723790085,
+        "p95_ns": 157203,
+        "p99_ns": 171376,
+        "rpcs_per_second": 7570.364769063085,
+        "samples": 5000,
+        "workflows_per_second": 7570.364769063085
+      },
+      {
+        "case": {
+          "name": "unary-small",
+          "payload_bytes": 64,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "portable",
+        "p50_ns": 127188,
+        "p50_ratio_to_cpp": 0.9984535070848216,
+        "p95_ns": 154807,
+        "p99_ns": 168024,
+        "rpcs_per_second": 7703.467326175501,
+        "samples": 5000,
+        "workflows_per_second": 7703.467326175501
+      },
+      {
+        "case": {
+          "name": "unary-small",
+          "payload_bytes": 64,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "capnp-cpp",
+        "p50_ns": 127385,
+        "p50_ratio_to_cpp": 1.0,
+        "p95_ns": 158224,
+        "p99_ns": 174526,
+        "rpcs_per_second": 7676.54580691454,
+        "samples": 5000,
+        "workflows_per_second": 7676.54580691454
+      },
+      {
+        "case": {
+          "name": "unary-small",
+          "payload_bytes": 64,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "grpc",
+        "p50_ns": 173299,
+        "p50_ratio_to_cpp": 1.3604349020685325,
+        "p95_ns": 235047,
+        "p99_ns": 262220,
+        "rpcs_per_second": 5609.497700837982,
+        "samples": 5000,
+        "workflows_per_second": 5609.497700837982
+      },
+      {
+        "case": {
+          "name": "unary-small",
+          "payload_bytes": 64,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "websocket",
+        "p50_ns": 125771,
+        "p50_ratio_to_cpp": 0.9873297484005181,
+        "p95_ns": 154224,
+        "p99_ns": 168364,
+        "rpcs_per_second": 7790.187333267886,
+        "samples": 5000,
+        "workflows_per_second": 7790.187333267886
+      },
+      {
+        "case": {
+          "name": "unary-small",
+          "payload_bytes": 64,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "capnp-rust",
+        "p50_ns": 130328,
+        "p50_ratio_to_cpp": 1.0231031911135533,
+        "p95_ns": 155452,
+        "p99_ns": 170065,
+        "rpcs_per_second": 7561.215925484398,
+        "samples": 5000,
+        "workflows_per_second": 7561.215925484398
+      },
+      {
+        "case": {
+          "name": "unary-1k",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "legacy",
+        "p50_ns": 126038,
+        "p50_ratio_to_cpp": 0.9995083267248216,
+        "p95_ns": 150378,
+        "p99_ns": 169961,
+        "rpcs_per_second": 7837.725191933076,
+        "samples": 5000,
+        "workflows_per_second": 7837.725191933076
+      },
+      {
+        "case": {
+          "name": "unary-1k",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "portable",
+        "p50_ns": 122747,
+        "p50_ratio_to_cpp": 0.9734099920697858,
+        "p95_ns": 144326,
+        "p99_ns": 159736,
+        "rpcs_per_second": 8026.890403928777,
+        "samples": 5000,
+        "workflows_per_second": 8026.890403928777
+      },
+      {
+        "case": {
+          "name": "unary-1k",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "capnp-cpp",
+        "p50_ns": 126100,
+        "p50_ratio_to_cpp": 1.0,
+        "p95_ns": 148027,
+        "p99_ns": 163133,
+        "rpcs_per_second": 7795.521670494731,
+        "samples": 5000,
+        "workflows_per_second": 7795.521670494731
+      },
+      {
+        "case": {
+          "name": "unary-1k",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "grpc",
+        "p50_ns": 190025,
+        "p50_ratio_to_cpp": 1.5069389373513085,
+        "p95_ns": 247448,
+        "p99_ns": 271605,
+        "rpcs_per_second": 5086.477420327137,
+        "samples": 5000,
+        "workflows_per_second": 5086.477420327137
+      },
+      {
+        "case": {
+          "name": "unary-1k",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "websocket",
+        "p50_ns": 118535,
+        "p50_ratio_to_cpp": 0.9400079302141158,
+        "p95_ns": 141781,
+        "p99_ns": 157606,
+        "rpcs_per_second": 8302.537299069942,
+        "samples": 5000,
+        "workflows_per_second": 8302.537299069942
+      },
+      {
+        "case": {
+          "name": "unary-1k",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "capnp-rust",
+        "p50_ns": 129034,
+        "p50_ratio_to_cpp": 1.023267248215702,
+        "p95_ns": 151026,
+        "p99_ns": 164063,
+        "rpcs_per_second": 7669.345977225717,
+        "samples": 5000,
+        "workflows_per_second": 7669.345977225717
+      },
+      {
+        "case": {
+          "name": "fanout-32",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 32,
+          "width": 32
+        },
+        "implementation": "legacy",
+        "p50_ns": 433806,
+        "p50_ratio_to_cpp": 0.8780698114544222,
+        "p95_ns": 543606,
+        "p99_ns": 597735,
+        "rpcs_per_second": 72510.8993795367,
+        "samples": 5000,
+        "workflows_per_second": 2265.965605610522
+      },
+      {
+        "case": {
+          "name": "fanout-32",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 32,
+          "width": 32
+        },
+        "implementation": "portable",
+        "p50_ns": 478382,
+        "p50_ratio_to_cpp": 0.9682964102460302,
+        "p95_ns": 594949,
+        "p99_ns": 652998,
+        "rpcs_per_second": 65749.30078032853,
+        "samples": 5000,
+        "workflows_per_second": 2054.6656493852665
+      },
+      {
+        "case": {
+          "name": "fanout-32",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 32,
+          "width": 32
+        },
+        "implementation": "capnp-cpp",
+        "p50_ns": 494045,
+        "p50_ratio_to_cpp": 1.0,
+        "p95_ns": 587866,
+        "p99_ns": 632158,
+        "rpcs_per_second": 64413.11189569788,
+        "samples": 5000,
+        "workflows_per_second": 2012.9097467405588
+      },
+      {
+        "case": {
+          "name": "fanout-32",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 32,
+          "width": 32
+        },
+        "implementation": "grpc",
+        "p50_ns": 1073683,
+        "p50_ratio_to_cpp": 2.1732494003582667,
+        "p95_ns": 1181322,
+        "p99_ns": 1227741,
+        "rpcs_per_second": 29997.708883737156,
+        "samples": 5000,
+        "workflows_per_second": 937.4284026167861
+      },
+      {
+        "case": {
+          "name": "fanout-32",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 32,
+          "width": 32
+        },
+        "implementation": "websocket",
+        "p50_ns": 458095,
+        "p50_ratio_to_cpp": 0.927233349188839,
+        "p95_ns": 598378,
+        "p99_ns": 655078,
+        "rpcs_per_second": 70358.11736905176,
+        "samples": 5000,
+        "workflows_per_second": 2198.6911677828675
+      },
+      {
+        "case": {
+          "name": "fanout-32",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 32,
+          "width": 32
+        },
+        "implementation": "capnp-rust",
+        "p50_ns": 976288,
+        "p50_ratio_to_cpp": 1.9761114878199355,
+        "p95_ns": 1133035,
+        "p99_ns": 1202257,
+        "rpcs_per_second": 34646.92052395175,
+        "samples": 5000,
+        "workflows_per_second": 1082.716266373492
+      },
+      {
+        "case": {
+          "name": "dependent-read",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "legacy",
+        "p50_ns": 275555,
+        "p50_ratio_to_cpp": 0.9995755825763951,
+        "p95_ns": 312616,
+        "p99_ns": 338801,
+        "rpcs_per_second": 7254.0801084982895,
+        "samples": 5000,
+        "workflows_per_second": 3627.0400542491448
+      },
+      {
+        "case": {
+          "name": "dependent-read",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "portable",
+        "p50_ns": 279920,
+        "p50_ratio_to_cpp": 1.015409617226269,
+        "p95_ns": 319384,
+        "p99_ns": 345374,
+        "rpcs_per_second": 7085.188706901849,
+        "samples": 5000,
+        "workflows_per_second": 3542.5943534509247
+      },
+      {
+        "case": {
+          "name": "dependent-read",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "capnp-cpp",
+        "p50_ns": 275672,
+        "p50_ratio_to_cpp": 1.0,
+        "p95_ns": 311737,
+        "p99_ns": 330884,
+        "rpcs_per_second": 7189.960381075032,
+        "samples": 5000,
+        "workflows_per_second": 3594.980190537516
+      },
+      {
+        "case": {
+          "name": "dependent-read",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "grpc",
+        "p50_ns": 366910,
+        "p50_ratio_to_cpp": 1.3309657854261587,
+        "p95_ns": 531965,
+        "p99_ns": 573867,
+        "rpcs_per_second": 5224.615764006083,
+        "samples": 5000,
+        "workflows_per_second": 2612.3078820030414
+      },
+      {
+        "case": {
+          "name": "dependent-read",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "websocket",
+        "p50_ns": 252830,
+        "p50_ratio_to_cpp": 0.9171406599146812,
+        "p95_ns": 292087,
+        "p99_ns": 315526,
+        "rpcs_per_second": 7865.65727326619,
+        "samples": 5000,
+        "workflows_per_second": 3932.828636633095
+      },
+      {
+        "case": {
+          "name": "dependent-read",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "capnp-rust",
+        "p50_ns": 293735,
+        "p50_ratio_to_cpp": 1.0655235207057663,
+        "p95_ns": 331203,
+        "p99_ns": 350749,
+        "rpcs_per_second": 6766.251558689779,
+        "samples": 5000,
+        "workflows_per_second": 3383.1257793448895
+      },
+      {
+        "case": {
+          "name": "pipelined-read",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "legacy",
+        "p50_ns": 146630,
+        "p50_ratio_to_cpp": 1.0052583588709953,
+        "p95_ns": 168243,
+        "p99_ns": 184346,
+        "rpcs_per_second": 13439.250900885401,
+        "samples": 5000,
+        "workflows_per_second": 6719.625450442701
+      },
+      {
+        "case": {
+          "name": "pipelined-read",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "portable",
+        "p50_ns": 163296,
+        "p50_ratio_to_cpp": 1.1195162584068612,
+        "p95_ns": 185394,
+        "p99_ns": 202521,
+        "rpcs_per_second": 12095.629044745845,
+        "samples": 5000,
+        "workflows_per_second": 6047.8145223729225
+      },
+      {
+        "case": {
+          "name": "pipelined-read",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "capnp-cpp",
+        "p50_ns": 145863,
+        "p50_ratio_to_cpp": 1.0,
+        "p95_ns": 167843,
+        "p99_ns": 187772,
+        "rpcs_per_second": 13482.854068184726,
+        "samples": 5000,
+        "workflows_per_second": 6741.427034092363
+      },
+      {
+        "case": {
+          "name": "pipelined-read",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "capnp-rust",
+        "p50_ns": 192802,
+        "p50_ratio_to_cpp": 1.3218019648574346,
+        "p95_ns": 298437,
+        "p99_ns": 367986,
+        "rpcs_per_second": 9662.726400095236,
+        "samples": 5000,
+        "workflows_per_second": 4831.363200047618
+      },
+      {
+        "case": {
+          "name": "write-read",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "legacy",
+        "p50_ns": 252983,
+        "p50_ratio_to_cpp": 0.9646782029087193,
+        "p95_ns": 290555,
+        "p99_ns": 314578,
+        "rpcs_per_second": 7821.270412128478,
+        "samples": 5000,
+        "workflows_per_second": 3910.635206064239
+      },
+      {
+        "case": {
+          "name": "write-read",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "portable",
+        "p50_ns": 252967,
+        "p50_ratio_to_cpp": 0.9646171914919579,
+        "p95_ns": 290389,
+        "p99_ns": 313092,
+        "rpcs_per_second": 7855.195769007433,
+        "samples": 5000,
+        "workflows_per_second": 3927.5978845037166
+      },
+      {
+        "case": {
+          "name": "write-read",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "capnp-cpp",
+        "p50_ns": 262246,
+        "p50_ratio_to_cpp": 1.0,
+        "p95_ns": 302880,
+        "p99_ns": 333558,
+        "rpcs_per_second": 7553.572002319176,
+        "samples": 5000,
+        "workflows_per_second": 3776.786001159588
+      },
+      {
+        "case": {
+          "name": "write-read",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "grpc",
+        "p50_ns": 370385,
+        "p50_ratio_to_cpp": 1.4123570998223043,
+        "p95_ns": 453649,
+        "p99_ns": 519476,
+        "rpcs_per_second": 5298.643925425281,
+        "samples": 5000,
+        "workflows_per_second": 2649.3219627126405
+      },
+      {
+        "case": {
+          "name": "write-read",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "websocket",
+        "p50_ns": 245826,
+        "p50_ratio_to_cpp": 0.9373870335486528,
+        "p95_ns": 283213,
+        "p99_ns": 306415,
+        "rpcs_per_second": 8053.9915950009545,
+        "samples": 5000,
+        "workflows_per_second": 4026.9957975004772
+      },
+      {
+        "case": {
+          "name": "write-read",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "capnp-rust",
+        "p50_ns": 267995,
+        "p50_ratio_to_cpp": 1.0219221646850667,
+        "p95_ns": 303917,
+        "p99_ns": 322596,
+        "rpcs_per_second": 7410.834803224247,
+        "samples": 5000,
+        "workflows_per_second": 3705.4174016121233
+      },
+      {
+        "case": {
+          "name": "callback",
+          "payload_bytes": 64,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "legacy",
+        "p50_ns": 271966,
+        "p50_ratio_to_cpp": 1.0138716471882048,
+        "p95_ns": 312406,
+        "p99_ns": 334726,
+        "rpcs_per_second": 7267.536132450892,
+        "samples": 5000,
+        "workflows_per_second": 3633.768066225446
+      },
+      {
+        "case": {
+          "name": "callback",
+          "payload_bytes": 64,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "portable",
+        "p50_ns": 272334,
+        "p50_ratio_to_cpp": 1.0152435273723648,
+        "p95_ns": 317355,
+        "p99_ns": 347489,
+        "rpcs_per_second": 7298.876658213176,
+        "samples": 5000,
+        "workflows_per_second": 3649.438329106588
+      },
+      {
+        "case": {
+          "name": "callback",
+          "payload_bytes": 64,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "capnp-cpp",
+        "p50_ns": 268245,
+        "p50_ratio_to_cpp": 1.0,
+        "p95_ns": 308507,
+        "p99_ns": 328829,
+        "rpcs_per_second": 7398.936688154076,
+        "samples": 5000,
+        "workflows_per_second": 3699.468344077038
+      },
+      {
+        "case": {
+          "name": "callback",
+          "payload_bytes": 64,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "grpc",
+        "p50_ns": 260031,
+        "p50_ratio_to_cpp": 0.9693787395850808,
+        "p95_ns": 302308,
+        "p99_ns": 323557,
+        "rpcs_per_second": 7611.056983430311,
+        "samples": 5000,
+        "workflows_per_second": 3805.5284917151557
+      },
+      {
+        "case": {
+          "name": "callback",
+          "payload_bytes": 64,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "websocket",
+        "p50_ns": 250059,
+        "p50_ratio_to_cpp": 0.9322037689425712,
+        "p95_ns": 290683,
+        "p99_ns": 314596,
+        "rpcs_per_second": 7892.9505136991875,
+        "samples": 5000,
+        "workflows_per_second": 3946.4752568495937
+      },
+      {
+        "case": {
+          "name": "callback",
+          "payload_bytes": 64,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "capnp-rust",
+        "p50_ns": 287493,
+        "p50_ratio_to_cpp": 1.071755298328021,
+        "p95_ns": 352431,
+        "p99_ns": 381902,
+        "rpcs_per_second": 6876.533617850737,
+        "samples": 5000,
+        "workflows_per_second": 3438.2668089253684
+      },
+      {
+        "case": {
+          "name": "bulk-64k",
+          "payload_bytes": 65536,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "legacy",
+        "p50_ns": 490601,
+        "p50_ratio_to_cpp": 0.933830639328161,
+        "p95_ns": 661646,
+        "p99_ns": 725073,
+        "rpcs_per_second": 1996.441361640137,
+        "samples": 5000,
+        "workflows_per_second": 1996.441361640137
+      },
+      {
+        "case": {
+          "name": "bulk-64k",
+          "payload_bytes": 65536,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "portable",
+        "p50_ns": 453690,
+        "p50_ratio_to_cpp": 0.8635726848432705,
+        "p95_ns": 627378,
+        "p99_ns": 706703,
+        "rpcs_per_second": 2135.9978930756015,
+        "samples": 5000,
+        "workflows_per_second": 2135.9978930756015
+      },
+      {
+        "case": {
+          "name": "bulk-64k",
+          "payload_bytes": 65536,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "capnp-cpp",
+        "p50_ns": 525364,
+        "p50_ratio_to_cpp": 1.0,
+        "p95_ns": 709589,
+        "p99_ns": 768442,
+        "rpcs_per_second": 1870.119090627423,
+        "samples": 5000,
+        "workflows_per_second": 1870.119090627423
+      },
+      {
+        "case": {
+          "name": "bulk-64k",
+          "payload_bytes": 65536,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "grpc",
+        "p50_ns": 642354,
+        "p50_ratio_to_cpp": 1.2226837012052596,
+        "p95_ns": 808185,
+        "p99_ns": 866126,
+        "rpcs_per_second": 1574.5961767498543,
+        "samples": 5000,
+        "workflows_per_second": 1574.5961767498543
+      },
+      {
+        "case": {
+          "name": "bulk-64k",
+          "payload_bytes": 65536,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "websocket",
+        "p50_ns": 489250,
+        "p50_ratio_to_cpp": 0.9312590889364326,
+        "p95_ns": 665785,
+        "p99_ns": 740353,
+        "rpcs_per_second": 2008.9103434370766,
+        "samples": 5000,
+        "workflows_per_second": 2008.9103434370766
+      },
+      {
+        "case": {
+          "name": "bulk-64k",
+          "payload_bytes": 65536,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "capnp-rust",
+        "p50_ns": 641041,
+        "p50_ratio_to_cpp": 1.2201844816165555,
+        "p95_ns": 802595,
+        "p99_ns": 883896,
+        "rpcs_per_second": 1564.403189855775,
+        "samples": 5000,
+        "workflows_per_second": 1564.403189855775
+      },
+      {
+        "case": {
+          "name": "bulk-256k",
+          "payload_bytes": 262144,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "legacy",
+        "p50_ns": 987316,
+        "p50_ratio_to_cpp": 0.96998908497509,
+        "p95_ns": 1423485,
+        "p99_ns": 4396976,
+        "rpcs_per_second": 812.4480315788593,
+        "samples": 5000,
+        "workflows_per_second": 812.4480315788593
+      },
+      {
+        "case": {
+          "name": "bulk-256k",
+          "payload_bytes": 262144,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "portable",
+        "p50_ns": 1026207,
+        "p50_ratio_to_cpp": 1.008197566863124,
+        "p95_ns": 1465791,
+        "p99_ns": 4786625,
+        "rpcs_per_second": 828.4820167328132,
+        "samples": 5000,
+        "workflows_per_second": 828.4820167328132
+      },
+      {
+        "case": {
+          "name": "bulk-256k",
+          "payload_bytes": 262144,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "capnp-cpp",
+        "p50_ns": 1017863,
+        "p50_ratio_to_cpp": 1.0,
+        "p95_ns": 1416758,
+        "p99_ns": 1782993,
+        "rpcs_per_second": 810.8828258405517,
+        "samples": 5000,
+        "workflows_per_second": 810.8828258405517
+      },
+      {
+        "case": {
+          "name": "bulk-256k",
+          "payload_bytes": 262144,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "grpc",
+        "p50_ns": 1310467,
+        "p50_ratio_to_cpp": 1.2874689422839813,
+        "p95_ns": 1577124,
+        "p99_ns": 1759778,
+        "rpcs_per_second": 770.8891040925182,
+        "samples": 5000,
+        "workflows_per_second": 770.8891040925182
+      },
+      {
+        "case": {
+          "name": "bulk-256k",
+          "payload_bytes": 262144,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "websocket",
+        "p50_ns": 1032151,
+        "p50_ratio_to_cpp": 1.0140372525575643,
+        "p95_ns": 1306916,
+        "p99_ns": 1466930,
+        "rpcs_per_second": 948.8482378527765,
+        "samples": 5000,
+        "workflows_per_second": 948.8482378527765
+      },
+      {
+        "case": {
+          "name": "bulk-256k",
+          "payload_bytes": 262144,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "capnp-rust",
+        "p50_ns": 1138165,
+        "p50_ratio_to_cpp": 1.1181907584812494,
+        "p95_ns": 1514189,
+        "p99_ns": 4767272,
+        "rpcs_per_second": 804.4483787940962,
+        "samples": 5000,
+        "workflows_per_second": 804.4483787940962
+      },
+      {
+        "case": {
+          "name": "bulk-1m",
+          "payload_bytes": 1048576,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "legacy",
+        "p50_ns": 4161028,
+        "p50_ratio_to_cpp": 0.9999942322278116,
+        "p95_ns": 7902570,
+        "p99_ns": 9204685,
+        "rpcs_per_second": 198.49294436045074,
+        "samples": 5000,
+        "workflows_per_second": 198.49294436045074
+      },
+      {
+        "case": {
+          "name": "bulk-1m",
+          "payload_bytes": 1048576,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "portable",
+        "p50_ns": 4191027,
+        "p50_ratio_to_cpp": 1.0072037071394446,
+        "p95_ns": 7904827,
+        "p99_ns": 9032521,
+        "rpcs_per_second": 206.68261623574278,
+        "samples": 5000,
+        "workflows_per_second": 206.68261623574278
+      },
+      {
+        "case": {
+          "name": "bulk-1m",
+          "payload_bytes": 1048576,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "capnp-cpp",
+        "p50_ns": 4161052,
+        "p50_ratio_to_cpp": 1.0,
+        "p95_ns": 7936913,
+        "p99_ns": 9277934,
+        "rpcs_per_second": 206.28616711709265,
+        "samples": 5000,
+        "workflows_per_second": 206.28616711709265
+      },
+      {
+        "case": {
+          "name": "bulk-1m",
+          "payload_bytes": 1048576,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "grpc",
+        "p50_ns": 4178207,
+        "p50_ratio_to_cpp": 1.0041227554954852,
+        "p95_ns": 7928361,
+        "p99_ns": 9298702,
+        "rpcs_per_second": 200.27262700954287,
+        "samples": 5000,
+        "workflows_per_second": 200.27262700954287
+      },
+      {
+        "case": {
+          "name": "bulk-1m",
+          "payload_bytes": 1048576,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "websocket",
+        "p50_ns": 4498761,
+        "p50_ratio_to_cpp": 1.0811595240818908,
+        "p95_ns": 7883849,
+        "p99_ns": 9171798,
+        "rpcs_per_second": 207.18334973688306,
+        "samples": 5000,
+        "workflows_per_second": 207.18334973688306
+      },
+      {
+        "case": {
+          "name": "bulk-1m",
+          "payload_bytes": 1048576,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "capnp-rust",
+        "p50_ns": 4296762,
+        "p50_ratio_to_cpp": 1.032614348486873,
+        "p95_ns": 7764045,
+        "p99_ns": 8870671,
+        "rpcs_per_second": 207.50698545010476,
+        "samples": 5000,
+        "workflows_per_second": 207.50698545010476
+      },
+      {
+        "case": {
+          "name": "bulk-4m",
+          "payload_bytes": 4194304,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "legacy",
+        "p50_ns": 19200887,
+        "p50_ratio_to_cpp": 1.0422470524905108,
+        "p95_ns": 27918002,
+        "p99_ns": 32512060,
+        "rpcs_per_second": 49.98050562857488,
+        "samples": 5000,
+        "workflows_per_second": 49.98050562857488
+      },
+      {
+        "case": {
+          "name": "bulk-4m",
+          "payload_bytes": 4194304,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "portable",
+        "p50_ns": 18265231,
+        "p50_ratio_to_cpp": 0.9914585285986165,
+        "p95_ns": 27278570,
+        "p99_ns": 32279555,
+        "rpcs_per_second": 51.73178898966639,
+        "samples": 5000,
+        "workflows_per_second": 51.73178898966639
+      },
+      {
+        "case": {
+          "name": "bulk-4m",
+          "payload_bytes": 4194304,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "capnp-cpp",
+        "p50_ns": 18422587,
+        "p50_ratio_to_cpp": 1.0,
+        "p95_ns": 26240003,
+        "p99_ns": 32428148,
+        "rpcs_per_second": 52.132082991748135,
+        "samples": 5000,
+        "workflows_per_second": 52.132082991748135
+      },
+      {
+        "case": {
+          "name": "bulk-4m",
+          "payload_bytes": 4194304,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "grpc",
+        "p50_ns": 19174302,
+        "p50_ratio_to_cpp": 1.0408039869753363,
+        "p95_ns": 24120307,
+        "p99_ns": 28075959,
+        "rpcs_per_second": 50.90613588231845,
+        "samples": 5000,
+        "workflows_per_second": 50.90613588231845
+      },
+      {
+        "case": {
+          "name": "bulk-4m",
+          "payload_bytes": 4194304,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "websocket",
+        "p50_ns": 19029348,
+        "p50_ratio_to_cpp": 1.032935710929198,
+        "p95_ns": 22230402,
+        "p99_ns": 23510100,
+        "rpcs_per_second": 52.18939916268487,
+        "samples": 5000,
+        "workflows_per_second": 52.18939916268487
+      },
+      {
+        "case": {
+          "name": "bulk-4m",
+          "payload_bytes": 4194304,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "capnp-rust",
+        "p50_ns": 18825633,
+        "p50_ratio_to_cpp": 1.0218778177028014,
+        "p95_ns": 26170099,
+        "p99_ns": 31312034,
+        "rpcs_per_second": 51.732497305534686,
+        "samples": 5000,
+        "workflows_per_second": 51.732497305534686
+      }
+    ],
+    "topology": {
+      "client": {
+        "id": 610095407,
+        "image": "ubuntu-24-04-x64",
+        "name": "reproto-bench-1cf9c68bdbd50b0a-1792279831-39078456460-1-client",
+        "price_hourly": 0.125,
+        "private_address": "10.106.0.3",
+        "public_address": "161.35.163.216",
+        "region": "lon1",
+        "size": "c-4",
+        "vpc_uuid": "6e4e880c-76b6-4a1a-936a-349be5dd1fdc"
+      },
+      "server": {
+        "id": 610095264,
+        "image": "ubuntu-24-04-x64",
+        "name": "reproto-bench-1cf9c68bdbd50b0a-1792279831-39078456460-1-server",
+        "price_hourly": 0.125,
+        "private_address": "10.106.0.2",
+        "public_address": "165.227.229.24",
+        "region": "lon1",
+        "size": "c-4",
+        "vpc_uuid": "6e4e880c-76b6-4a1a-936a-349be5dd1fdc"
+      },
+      "topology": "two-droplet-vpc"
+    },
+    "unsupported": [
+      {
+        "case": "pipelined-read",
+        "implementation": "grpc",
+        "reason": "no native capability promise pipelining"
+      },
+      {
+        "case": "pipelined-read",
+        "implementation": "websocket",
+        "reason": "no native capability promise pipelining"
+      }
+    ],
+    "validated": true,
+    "workflow_version": 3
+  },
+  "rejected_candidates": [
+    "settle",
+    "adaptive",
+    "runtime",
+    "minimum4"
+  ],
+  "sources": {
+    "legacy31-adaptive-source20261017": {
+      "base": "6ff8b25cb5dbcb8ea8d8efa95df70f8d78951ff1",
+      "tree": "738588d2690beb55fd7025faeadecff673c1cb57",
+      "binary": "/workspace/scratch/legacy31-binaries/adaptive",
+      "binary_sha256": "d8edf11f38dd28d4afc9ba29fcc75ae016dc817c998ddf5ffda1e7a55156f433",
+      "patch_sha256": "2f54b1fd07294b5419f478ccafeb7b92066c328eae5badd63633db5c3fc90a88",
+      "source_files": {
+        "benchmarks/rpc/README.md": "4642db92a344d48352f0fd1250d1f8de8535a2490bb3666ec5088cb87d7b4590",
+        "benchmarks/rpc/topology-runner.py": "ab761c7b9cc6669634cb5dad6b3f44217c0d1308c67ea9ee8425be3f974a2ee9",
+        "crates/capntproto-codegen/src/lib.rs": "4ee0b81c0b8a4d8e15b88529808b8bf32fbbc03370704842d46d50824393257f",
+        "crates/capntproto-core/REPROTO.md": "e1a1c15fe0f2122c830ae8f8a2418978cb8d8cd0926ecc8c5697f8cd8bc83671",
+        "crates/capntproto-core/src/lib.rs": "7399f735130ddfda348355e2318cdc0f374b29c123f3564166722d22d6a70491",
+        "crates/capntproto-core/src/private/layout.rs": "e1ff7d4955969a9a31153292c3a34f5c0beee3cfe5957d39d80ca95afae925a6",
+        "crates/capntproto-futures/src/buffered_read.rs": "12f2943d190422ed5cc7d27ce351d8568a971542c93a0d90119cea7996c98e25",
+        "crates/capntproto-rpc/src/lib.rs": "6ff24804f4ba91116846a0adec88d119c27ce5bae0e9de94074c14a24beab2a9",
+        "crates/capntproto-rpc/src/task_set.rs": "f95f28817ea82483f2b4e28ea56109fbb1a89c3889c08e69abb82d5d8508973e",
+        "crates/capntproto-rpc/src/twoparty.rs": "ae9bd13ba5e171d813e462552650873a649d97aa56d4102606c71bb0425b9f53",
+        "src/native_rpc/policy.rs": "d40510484edcc5e4d8eb634056791e900fb289738325766af31f63cccf014329",
+        "src/rpc/tcp.rs": "7ccdaab2b450507f45cd1e69d431d5cb819a2b3b93048b6a7587c00a65d379a1",
+        "src/rpc/tcp/io.rs": "6f1e5ca9a81a7d263e527aee8cccfb2bed08f448cf7a33e6db162bec04dc7904"
+      },
+      "selection": {
+        "CAPNTPROTO_BENCH_PORTABLE": "0"
+      },
+      "build_args": [
+        "cargo",
+        "build",
+        "--locked",
+        "--release",
+        "--manifest-path",
+        "benchmarks/rpc/Cargo.toml",
+        "--bin",
+        "capntproto-rpc-bench"
+      ]
+    },
+    "legacy31-context-source20261017": {
+      "base": "6ff8b25cb5dbcb8ea8d8efa95df70f8d78951ff1",
+      "tree": "68c9ef49dba05438066654beef4067b76c42eaac",
+      "binary": "/workspace/scratch/legacy31-binaries/context",
+      "binary_sha256": "18617746ceb65a0b0afeff0a3dc62478594be371a366aff59bf7ba96ecfbe016",
+      "patch_sha256": "0ac76112767534351717d69c55968ba562ddce9094d652a4d1775a1b949b8d3a",
+      "source_files": {
+        "benchmarks/rpc/README.md": "4c1a251cf6b65edcb9c519a672ffe1e307c9e11f9faf2b870ac6ca765773327c",
+        "benchmarks/rpc/topology-runner.py": "daf9f7a6a995a83fa78f4492181400653c11ad02591544db362e28f3ab5b3c66",
+        "crates/capntproto-codegen/src/lib.rs": "4ee0b81c0b8a4d8e15b88529808b8bf32fbbc03370704842d46d50824393257f",
+        "crates/capntproto-core/src/lib.rs": "7399f735130ddfda348355e2318cdc0f374b29c123f3564166722d22d6a70491",
+        "crates/capntproto-core/src/private/layout.rs": "e1ff7d4955969a9a31153292c3a34f5c0beee3cfe5957d39d80ca95afae925a6"
+      },
+      "selection": {
+        "CAPNTPROTO_BENCH_PORTABLE": "0"
+      },
+      "build_args": [
+        "cargo",
+        "build",
+        "--locked",
+        "--release",
+        "--manifest-path",
+        "benchmarks/rpc/Cargo.toml",
+        "--bin",
+        "capntproto-rpc-bench"
+      ]
+    },
+    "legacy31-inline-source20261017": {
+      "base": "6ff8b25cb5dbcb8ea8d8efa95df70f8d78951ff1",
+      "tree": "903079e47468d6e7a58b53bfa64c44ef4af1b685",
+      "binary": "/workspace/scratch/legacy31-binaries/inline",
+      "binary_sha256": "fa3957b9c91d15b5654c5e44b96cabf23cb35133308d401bb17a04cfdc4f8b5a",
+      "patch_sha256": "07ebd0e944081c1082719605cb4ce67eb23393afef6c0477fa1ff42adb164363",
+      "source_files": {
+        "benchmarks/rpc/README.md": "4c1a251cf6b65edcb9c519a672ffe1e307c9e11f9faf2b870ac6ca765773327c",
+        "benchmarks/rpc/topology-runner.py": "daf9f7a6a995a83fa78f4492181400653c11ad02591544db362e28f3ab5b3c66",
+        "crates/capntproto-core/src/private/layout.rs": "e1ff7d4955969a9a31153292c3a34f5c0beee3cfe5957d39d80ca95afae925a6"
+      },
+      "selection": {
+        "CAPNTPROTO_BENCH_PORTABLE": "0"
+      },
+      "build_args": [
+        "cargo",
+        "build",
+        "--locked",
+        "--release",
+        "--manifest-path",
+        "benchmarks/rpc/Cargo.toml",
+        "--bin",
+        "capntproto-rpc-bench"
+      ]
+    },
+    "legacy31-minimum4-source20261017": {
+      "base": "6ff8b25cb5dbcb8ea8d8efa95df70f8d78951ff1",
+      "tree": "167678fc20c4a3de02e9f81a816dce78bdae39ab",
+      "binary": "/workspace/scratch/legacy31-binaries/minimum4",
+      "binary_sha256": "0944a2f87c1d8d9514761f98bed9c519501d0aa0f5f33549d108c226a1914305",
+      "patch_sha256": "f7380df59f49147593062c7f5b067984b820d87574f86a9f8ac4f9f101770aa9",
+      "source_files": {
+        "benchmarks/rpc/README.md": "4642db92a344d48352f0fd1250d1f8de8535a2490bb3666ec5088cb87d7b4590",
+        "benchmarks/rpc/topology-runner.py": "ab761c7b9cc6669634cb5dad6b3f44217c0d1308c67ea9ee8425be3f974a2ee9",
+        "crates/capntproto-codegen/src/lib.rs": "4ee0b81c0b8a4d8e15b88529808b8bf32fbbc03370704842d46d50824393257f",
+        "crates/capntproto-core/REPROTO.md": "e1a1c15fe0f2122c830ae8f8a2418978cb8d8cd0926ecc8c5697f8cd8bc83671",
+        "crates/capntproto-core/src/lib.rs": "7399f735130ddfda348355e2318cdc0f374b29c123f3564166722d22d6a70491",
+        "crates/capntproto-core/src/private/layout.rs": "e1ff7d4955969a9a31153292c3a34f5c0beee3cfe5957d39d80ca95afae925a6",
+        "src/native_rpc/policy.rs": "d40510484edcc5e4d8eb634056791e900fb289738325766af31f63cccf014329",
+        "src/rpc/tcp/io.rs": "7816d203396ad866e4a1c7f8d6786ea4427ec8c08562d7b977b796d760be24e4"
+      },
+      "selection": {
+        "CAPNTPROTO_BENCH_PORTABLE": "0"
+      },
+      "build_args": [
+        "cargo",
+        "build",
+        "--locked",
+        "--release",
+        "--manifest-path",
+        "benchmarks/rpc/Cargo.toml",
+        "--bin",
+        "capntproto-rpc-bench"
+      ]
+    },
+    "legacy31-runtime-source20261017": {
+      "base": "6ff8b25cb5dbcb8ea8d8efa95df70f8d78951ff1",
+      "tree": "6e337ceaf2365bb73963fd6c665205c6f8e59f81",
+      "binary": "/workspace/scratch/legacy31-binaries/runtime",
+      "binary_sha256": "a1c94737f8f22c8484719014bbfc719c3c0c032f523e027ccb1ab9d44f8ead8d",
+      "patch_sha256": "755bc41e24fead503852615cff794d2007b2568d126ac87ba2349b99cd0e5547",
+      "source_files": {
+        "benchmarks/rpc/README.md": "4642db92a344d48352f0fd1250d1f8de8535a2490bb3666ec5088cb87d7b4590",
+        "benchmarks/rpc/topology-runner.py": "ab761c7b9cc6669634cb5dad6b3f44217c0d1308c67ea9ee8425be3f974a2ee9",
+        "crates/capntproto-codegen/src/lib.rs": "4ee0b81c0b8a4d8e15b88529808b8bf32fbbc03370704842d46d50824393257f",
+        "crates/capntproto-core/REPROTO.md": "e1a1c15fe0f2122c830ae8f8a2418978cb8d8cd0926ecc8c5697f8cd8bc83671",
+        "crates/capntproto-core/src/lib.rs": "7399f735130ddfda348355e2318cdc0f374b29c123f3564166722d22d6a70491",
+        "crates/capntproto-core/src/private/layout.rs": "e1ff7d4955969a9a31153292c3a34f5c0beee3cfe5957d39d80ca95afae925a6",
+        "src/native_rpc/policy.rs": "d40510484edcc5e4d8eb634056791e900fb289738325766af31f63cccf014329",
+        "src/rpc/io.rs": "4b91c205444535d3759cb080759eef568a2e7c372f6533f88abee74055b03b5d"
+      },
+      "selection": {
+        "CAPNTPROTO_BENCH_PORTABLE": "0"
+      },
+      "build_args": [
+        "cargo",
+        "build",
+        "--locked",
+        "--release",
+        "--manifest-path",
+        "benchmarks/rpc/Cargo.toml",
+        "--bin",
+        "capntproto-rpc-bench"
+      ]
+    },
+    "legacy31-selected-source20261017": {
+      "compiled_snapshot": {
+        "base": "6ff8b25cb5dbcb8ea8d8efa95df70f8d78951ff1",
+        "tree": "68c9ef49dba05438066654beef4067b76c42eaac",
+        "binary": "/workspace/scratch/legacy31-binaries/context",
+        "binary_sha256": "18617746ceb65a0b0afeff0a3dc62478594be371a366aff59bf7ba96ecfbe016",
+        "patch_sha256": "0ac76112767534351717d69c55968ba562ddce9094d652a4d1775a1b949b8d3a",
+        "source_files": {
+          "benchmarks/rpc/README.md": "4c1a251cf6b65edcb9c519a672ffe1e307c9e11f9faf2b870ac6ca765773327c",
+          "benchmarks/rpc/topology-runner.py": "daf9f7a6a995a83fa78f4492181400653c11ad02591544db362e28f3ab5b3c66",
+          "crates/capntproto-codegen/src/lib.rs": "4ee0b81c0b8a4d8e15b88529808b8bf32fbbc03370704842d46d50824393257f",
+          "crates/capntproto-core/src/lib.rs": "7399f735130ddfda348355e2318cdc0f374b29c123f3564166722d22d6a70491",
+          "crates/capntproto-core/src/private/layout.rs": "e1ff7d4955969a9a31153292c3a34f5c0beee3cfe5957d39d80ca95afae925a6"
+        },
+        "selection": {
+          "CAPNTPROTO_BENCH_PORTABLE": "0"
+        },
+        "build_args": [
+          "cargo",
+          "build",
+          "--locked",
+          "--release",
+          "--manifest-path",
+          "benchmarks/rpc/Cargo.toml",
+          "--bin",
+          "capntproto-rpc-bench"
+        ]
+      },
+      "base": "6ff8b25cb5dbcb8ea8d8efa95df70f8d78951ff1",
+      "tree": "48c7eae7a3a066306fca90a6ed6f9ae6b98aa73b",
+      "binary": "/workspace/scratch/legacy31-binaries/selected",
+      "binary_sha256": "18617746ceb65a0b0afeff0a3dc62478594be371a366aff59bf7ba96ecfbe016",
+      "patch_sha256": "49ed54a1cb73a2471d4ef2511a19264cba7d2c682047d797653dd30aa86032f1",
+      "source_files": {
+        "benchmarks/rpc/README.md": "4642db92a344d48352f0fd1250d1f8de8535a2490bb3666ec5088cb87d7b4590",
+        "benchmarks/rpc/topology-runner.py": "ab761c7b9cc6669634cb5dad6b3f44217c0d1308c67ea9ee8425be3f974a2ee9",
+        "crates/capntproto-codegen/src/lib.rs": "4ee0b81c0b8a4d8e15b88529808b8bf32fbbc03370704842d46d50824393257f",
+        "crates/capntproto-core/REPROTO.md": "e1a1c15fe0f2122c830ae8f8a2418978cb8d8cd0926ecc8c5697f8cd8bc83671",
+        "crates/capntproto-core/src/lib.rs": "7399f735130ddfda348355e2318cdc0f374b29c123f3564166722d22d6a70491",
+        "crates/capntproto-core/src/private/layout.rs": "e1ff7d4955969a9a31153292c3a34f5c0beee3cfe5957d39d80ca95afae925a6",
+        "quality/unsafe-baseline.json": "44aa9b654f8a170127aa4cfe38a544c1b4bdf4a976ba3010f8ab760952f43a7b",
+        "src/native_rpc/policy.rs": "d40510484edcc5e4d8eb634056791e900fb289738325766af31f63cccf014329",
+        "tests/allocations.rs": "0f0a4b57151d01810808aeb8be886c7448c33aae53d982ebc1a334ab05ca8721"
+      },
+      "selection": {
+        "CAPNTPROTO_BENCH_PORTABLE": "0"
+      },
+      "build_args": [
+        "cargo",
+        "build",
+        "--locked",
+        "--release",
+        "--manifest-path",
+        "benchmarks/rpc/Cargo.toml",
+        "--bin",
+        "capntproto-rpc-bench"
+      ]
+    },
+    "legacy31-settle-source20261017": {
+      "base": "6ff8b25cb5dbcb8ea8d8efa95df70f8d78951ff1",
+      "tree": "f08c92f23648f2053284355a1888990add2d7197",
+      "binary": "/workspace/scratch/legacy31-binaries/settle",
+      "binary_sha256": "279b1e9e1ab2e532c5603b2a72b58b110c5e312b7a23eacf4110432e5c92947d",
+      "patch_sha256": "115ef76fc0177f87d7e31c9ebcc3e1ef55121f5a324970adac3764a4721d9205",
+      "source_files": {
+        "crates/capntproto-rpc/src/task_set.rs": "dc319893c3b8c591acfb7cb541fc58ba52b6c0a4a6edf7fed7865eab4c859202"
+      },
+      "selection": {
+        "CAPNTPROTO_BENCH_PORTABLE": "0"
+      },
+      "build_args": [
+        "cargo",
+        "build",
+        "--locked",
+        "--release",
+        "--manifest-path",
+        "benchmarks/rpc/Cargo.toml",
+        "--bin",
+        "capntproto-rpc-bench"
+      ]
+    }
+  },
+  "remaining_gap": "All-cell latency and repeatable read/attempt parity remain unmet. Frozen-legacy 2x target was not rerun and remains open."
+}

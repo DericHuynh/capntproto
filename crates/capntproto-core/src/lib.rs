@@ -216,20 +216,66 @@ impl ::core::error::Error for NotInSchema {
 pub type Result<T> = ::core::result::Result<T, Error>;
 
 /// Describes an arbitrary error that prevented an operation from completing.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Error {
     /// The general kind of the error. Code that decides how to respond to an error
     /// should read only this field in making its decision.
     pub kind: ErrorKind,
 
-    /// Extra context about error
+    // Keep cold diagnostic storage out of every successful Result's layout.
+    // Basic errors, including fixed-storage failures, allocate nothing.
     #[cfg(feature = "alloc")]
-    pub extra: alloc::string::String,
+    context: Option<alloc::boxed::Box<ErrorContext>>,
+}
 
-    /// Optional RPC exception metadata. Use the accessors below to read or set it.
-    /// Kept behind a box so ordinary serialization errors remain small.
-    #[cfg(feature = "alloc")]
-    pub metadata: Option<alloc::boxed::Box<ExceptionMetadata>>,
+/// Cold error diagnostics. Field access through [`Error`] retains ordinary
+/// `error.extra` reads and edits; the first mutable access allocates this context.
+/// Use [`Error::into_extra`] to take ownership of the description.
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, Default)]
+pub struct ErrorContext {
+    /// Extra context about the error.
+    pub extra: alloc::string::String,
+    metadata: ExceptionMetadata,
+}
+
+#[cfg(feature = "alloc")]
+impl core::ops::Deref for Error {
+    type Target = ErrorContext;
+    fn deref(&self) -> &Self::Target {
+        static EMPTY: ErrorContext = ErrorContext {
+            extra: alloc::string::String::new(),
+            metadata: ExceptionMetadata {
+                remote_trace: None,
+                details: alloc::collections::BTreeMap::new(),
+            },
+        };
+        self.context.as_deref().unwrap_or(&EMPTY)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl core::ops::DerefMut for Error {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.context.get_or_insert_with(Default::default)
+    }
+}
+
+impl core::fmt::Debug for Error {
+    fn fmt(&self, fmt: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let mut debug = fmt.debug_struct("Error");
+        debug.field("kind", &self.kind);
+        #[cfg(feature = "alloc")]
+        debug.field("extra", &self.extra).field(
+            "metadata",
+            &self
+                .context
+                .as_ref()
+                .map(|c| &c.metadata)
+                .filter(|m| m.remote_trace.is_some() || !m.details.is_empty()),
+        );
+        debug.finish()
+    }
 }
 
 /// Structured RPC exception data. Detail IDs identify opaque application-defined bytes.
@@ -486,29 +532,32 @@ impl Error {
     /// Trace received from the peer, if present. Outgoing RPC traces remain opt-in.
     #[cfg(feature = "alloc")]
     pub fn remote_trace(&self) -> Option<&str> {
-        self.metadata.as_ref()?.remote_trace.as_deref()
+        self.context.as_ref()?.metadata.remote_trace.as_deref()
     }
 
     #[cfg(feature = "alloc")]
     pub fn set_remote_trace(&mut self, trace: alloc::string::String) {
-        self.metadata
+        self.context
             .get_or_insert_with(Default::default)
+            .metadata
             .remote_trace = Some(trace);
     }
 
     /// Replace any previous value for this detail ID, matching C++ setDetail().
     #[cfg(feature = "alloc")]
     pub fn set_detail(&mut self, id: u64, data: alloc::vec::Vec<u8>) {
-        self.metadata
+        self.context
             .get_or_insert_with(Default::default)
+            .metadata
             .details
             .insert(id, data);
     }
 
     #[cfg(feature = "alloc")]
     pub fn detail(&self, id: u64) -> Option<&[u8]> {
-        self.metadata
+        self.context
             .as_ref()?
+            .metadata
             .details
             .get(&id)
             .map(alloc::vec::Vec::as_slice)
@@ -516,9 +565,9 @@ impl Error {
 
     #[cfg(feature = "alloc")]
     pub fn details(&self) -> impl Iterator<Item = (u64, &[u8])> {
-        self.metadata
+        self.context
             .as_ref()
-            .map(|m| &m.details)
+            .map(|m| &m.metadata.details)
             .into_iter()
             .flat_map(|details| details.iter())
             .map(|(&id, data)| (id, data.as_slice()))
@@ -532,17 +581,43 @@ impl Error {
         #[cfg(feature = "alloc")]
         {
             use core::fmt::Write;
-            let _ = self.extra.write_fmt(fmt);
+            struct Writer<'a>(&'a mut Error);
+            impl Write for Writer<'_> {
+                fn write_str(&mut self, value: &str) -> core::fmt::Result {
+                    if !value.is_empty() {
+                        self.0.extra.push_str(value);
+                    }
+                    Ok(())
+                }
+            }
+            let _ = Writer(self).write_fmt(fmt);
         }
     }
 
     #[cfg(feature = "alloc")]
     pub fn failed(description: alloc::string::String) -> Self {
+        Self::with_description(ErrorKind::Failed, description)
+    }
+
+    /// Attach a description without allocating context for an empty string.
+    #[cfg(feature = "alloc")]
+    pub fn with_description(kind: ErrorKind, description: alloc::string::String) -> Self {
         Self {
-            extra: description,
-            metadata: None,
-            kind: ErrorKind::Failed,
+            kind,
+            context: (!description.is_empty()).then(|| {
+                alloc::boxed::Box::new(ErrorContext {
+                    extra: description,
+                    metadata: Default::default(),
+                })
+            }),
         }
+    }
+
+    /// Consume the error and return its description, releasing other metadata.
+    #[cfg(feature = "alloc")]
+    pub fn into_extra(self) -> alloc::string::String {
+        self.context
+            .map_or_else(alloc::string::String::new, |context| context.extra)
     }
 
     pub fn from_kind(kind: ErrorKind) -> Self {
@@ -551,35 +626,22 @@ impl Error {
         #[cfg(feature = "alloc")]
         return Self {
             kind,
-            extra: alloc::string::String::new(),
-            metadata: None,
+            context: None,
         };
     }
 
     #[cfg(feature = "alloc")]
     pub fn overloaded(description: alloc::string::String) -> Self {
-        Self {
-            extra: description,
-            metadata: None,
-            kind: ErrorKind::Overloaded,
-        }
+        Self::with_description(ErrorKind::Overloaded, description)
     }
     #[cfg(feature = "alloc")]
     pub fn disconnected(description: alloc::string::String) -> Self {
-        Self {
-            extra: description,
-            metadata: None,
-            kind: ErrorKind::Disconnected,
-        }
+        Self::with_description(ErrorKind::Disconnected, description)
     }
 
     #[cfg(feature = "alloc")]
     pub fn unimplemented(description: alloc::string::String) -> Self {
-        Self {
-            extra: description,
-            metadata: None,
-            kind: ErrorKind::Unimplemented,
-        }
+        Self::with_description(ErrorKind::Unimplemented, description)
     }
 }
 
@@ -605,11 +667,7 @@ impl core::convert::From<::std::io::Error> for Error {
     fn from(err: ::std::io::Error) -> Self {
         let kind = err.kind().into();
         #[cfg(feature = "alloc")]
-        return Self {
-            kind,
-            extra: format!("{err}"),
-            metadata: None,
-        };
+        return Self::with_description(kind, format!("{err}"));
         #[cfg(not(feature = "alloc"))]
         return Self { kind };
     }
@@ -769,6 +827,45 @@ impl core::error::Error for Error {
     }
     fn cause(&self) -> Option<&dyn ::core::error::Error> {
         None
+    }
+}
+
+#[cfg(all(test, feature = "alloc"))]
+mod error_context_tests {
+    use super::*;
+
+    #[test]
+    fn compact_errors_preserve_context_when_cloned_moved_and_edited() {
+        assert_eq!(
+            core::mem::size_of::<Error>(),
+            core::mem::size_of::<ErrorKind>() + core::mem::size_of::<usize>()
+        );
+        let mut error = Error::from_kind(ErrorKind::Disconnected);
+        assert!(error.context.is_none());
+        error.write_fmt(format_args!(""));
+        assert!(error.context.is_none());
+        error.write_fmt(format_args!("failure {}", 7));
+        error.set_remote_trace("trace".into());
+        error.set_detail(12, vec![1, 2]);
+        let mut cloned = error.clone();
+        cloned.extra.push_str(" copied");
+        cloned.set_detail(12, vec![3]);
+        assert_eq!(error.extra, "failure 7");
+        assert_eq!(error.detail(12), Some([1, 2].as_slice()));
+        assert_eq!(cloned.extra, "failure 7 copied");
+        assert_eq!(cloned.remote_trace(), Some("trace"));
+        assert_eq!(cloned.detail(12), Some([3].as_slice()));
+        assert_eq!(error.into_extra(), "failure 7");
+        assert_eq!(cloned.into_extra(), "failure 7 copied");
+
+        // Editing one initially empty error must not mutate the shared empty
+        // diagnostic view returned for a different error.
+        let mut first = Error::from_kind(ErrorKind::Failed);
+        let second = first.clone();
+        first.extra = "first".into();
+        assert_eq!(first.extra, "first");
+        assert!(second.extra.is_empty());
+        assert_eq!(format!("{first}"), "Failed: first");
     }
 }
 

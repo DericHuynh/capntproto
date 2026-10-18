@@ -56,6 +56,12 @@ reverses so each implementation occupies both positions equally. `--mixed` also
 checks alternating Rust/C++ service chains in both directions, outside the latency
 comparison. `--cases` accepts comma-separated catalog names.
 
+To isolate an optimization from run-to-run shifts, add `--baseline FROZEN_RUST`
+and use `--repetitions 6`. This interleaves the candidate, the previous Rust
+binary and C++ in balanced order. At least two complete variant cycles are
+required for a qualifying budget. Mixed-chain checks still use the candidate
+and C++; the baseline runs the same homogeneous fixtures as both controls.
+
 The runner selects distinct physical cores for the client and available service
 workers. Longer chains cycle over the available service cores; the exact placement
 is retained. On a five-core host, four-service chains use one core per process,
@@ -64,7 +70,9 @@ TCP microservice chains, not cross-host network measurements.
 
 Every output directory must be new. It retains raw latency samples, per-process
 logs, server readiness/chain checks, CPU placement, binary and fixture hashes,
-and every trial's p50/p95/p99 and batch/request/service-call throughput. The 30%
+CPU quota/throttling and steal counters around each process lifecycle,
+and every trial's p50/p95/p99 and batch/request/service-call throughput. These host
+counters include setup and teardown; they do not modify or filter samples. The 30%
 latency goal is `Rust p50 <= 0.70 * C++ p50` in every cell; passing some cells
 does not qualify the suite.
 
