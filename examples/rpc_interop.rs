@@ -51,7 +51,7 @@ fn start<T: futures::AsyncRead + Unpin + 'static>(
         let client =
             is_client.then(|| system.bootstrap(capnp_rpc::rpc_twoparty_capnp::Side::Server));
         let disconnect: rpc_peer::Disconnect = Box::pin(system.get_disconnector());
-        (client, disconnect, tokio::task::spawn_local(system))
+        (client, disconnect, tokio::task::spawn_local(system.run()))
     } else {
         assert!(matches!(driver, "legacy" | "legacy-transfer"));
         let mut system = capnp_rpc::RpcSystem::new(Box::new(network), bootstrap);

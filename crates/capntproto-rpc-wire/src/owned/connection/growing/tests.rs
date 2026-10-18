@@ -1544,8 +1544,9 @@ fn incoming_growth_rejection_preserves_frame_and_does_not_make_import_owners() {
 }
 
 #[test]
-fn checked_call_payload_rejects_invalid_indices_before_import_factories() {
+fn call_payload_binds_descriptors_and_checks_content_authority_on_access() {
     with_driver(|mut driver, messages| {
+        driver.defer_call_dispatch(true);
         let target = driver
             .runtime
             .endpoint(binding::Route::local(9), clients::Location::Local)
@@ -1577,23 +1578,42 @@ fn checked_call_payload_rejects_invalid_indices_before_import_factories() {
             Ok(())
         })
         .unwrap();
-        let bytes = messages.read(&frame.lease).to_vec();
         let imports_before = driver.ledgers.imports.len();
         let answers_before = driver.ledgers.answers.len();
-        let rejected = match driver.receive(
-            frame,
-            messages,
-            &mut [0; 8],
-            |_| panic!("invalid payload called import factory"),
-            || (),
-        ) {
-            Err(rejected) => rejected,
-            Ok(_) => panic!("out-of-table capability accepted"),
-        };
-        assert_eq!(&*messages.read(&rejected.frame.lease), bytes);
-        assert_eq!(driver.ledgers.imports.len(), imports_before);
-        assert_eq!(driver.ledgers.answers.len(), answers_before);
-        rejected.frame.release(messages);
+        let mut factories = 0;
+        let received = driver
+            .receive(
+                frame,
+                messages,
+                &mut [0; 8],
+                |_| {
+                    factories += 1;
+                },
+                || (),
+            )
+            .unwrap_or_else(|rejected| panic!("{}", rejected.error));
+        assert!(matches!(received, Received::DeferredCall(_)));
+        assert_eq!(factories, 1);
+        assert_eq!(driver.ledgers.imports.len(), imports_before + 1);
+        assert_eq!(driver.ledgers.answers.len(), answers_before + 1);
+        driver
+            .call
+            .as_ref()
+            .unwrap()
+            .with(messages, |params| {
+                let pointer = params
+                    .incoming()
+                    .payload()
+                    .unwrap()
+                    .get_content()
+                    .get_as::<capnp::wire_capability::Reader<'_, ()>>()
+                    .unwrap();
+                assert!(matches!(
+                    params.capability(pointer),
+                    Err(crate::reception::Error::MissingCapability)
+                ));
+            })
+            .unwrap();
         driver.runtime.release(target);
         close(
             driver,
@@ -2376,11 +2396,14 @@ fn plain_return_shortcuts_preserve_cancellation_pipeline_and_control_owners() {
 }
 
 #[test]
-fn pending_exchange_lookup_checks_hints_and_retains_relocated_owners() {
+fn question_owner_bindings_route_distinct_slots_and_reject_corrupted_ownership() {
     use super::super::PlainReceived;
     with_driver(|mut driver, messages| {
         let target = remote(&mut driver);
         let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+        // Keep a protocol-only question alive so wire IDs and exchange slots
+        // deliberately differ without relocating any live owner.
+        let standalone = driver.ledgers.questions.reserve().unwrap().accept();
         let request = capnp::message::Builder::new_default();
         let mut keys = alloc::vec::Vec::new();
         for _ in 0..2 {
@@ -2406,22 +2429,31 @@ fn pending_exchange_lookup_checks_hints_and_retains_relocated_owners() {
         }
         for (index, key) in keys.iter().enumerate() {
             assert_eq!(
-                ExchangeSlot::pending_index(&driver.exchanges, key.id().to_wire()),
+                ExchangeSlot::pending_index(
+                    &driver.exchanges,
+                    &driver.ledgers.questions,
+                    key.id().to_wire()
+                ),
                 Some(index)
             );
         }
-        // Question lifetimes and exchange lifetimes can diverge. Deliberately
-        // put another live owner at each ID's preferred position.
+        // An internal ownership mismatch fails closed; there is no scan which
+        // can silently recover a moved owner from unrelated storage.
         driver.exchanges.swap(0, 1);
-        for (index, key) in keys.iter().enumerate() {
+        for key in &keys {
             assert_eq!(
-                ExchangeSlot::pending_index(&driver.exchanges, key.id().to_wire()),
-                Some(1 - index)
+                ExchangeSlot::pending_index(
+                    &driver.exchanges,
+                    &driver.ledgers.questions,
+                    key.id().to_wire()
+                ),
+                None
             );
         }
+        driver.exchanges.swap(0, 1);
         let capacity = driver.exchanges.len();
         assert_eq!(
-            ExchangeSlot::pending_index(&driver.exchanges, u32::MAX),
+            ExchangeSlot::pending_index(&driver.exchanges, &driver.ledgers.questions, u32::MAX),
             None
         );
         assert_eq!(driver.exchanges.len(), capacity);
@@ -2443,7 +2475,7 @@ fn pending_exchange_lookup_checks_hints_and_retains_relocated_owners() {
                     .try_receive_plain_owned(frame, messages, Some)
                     .unwrap_or_else(|(error, _)| panic!("{error}"))
                 else {
-                    panic!("relocated plain reply must find its owner")
+                    panic!("plain reply must find its registered owner")
                 };
                 assert_eq!(selected, key);
             } else {
@@ -2455,10 +2487,20 @@ fn pending_exchange_lookup_checks_hints_and_retains_relocated_owners() {
                 driver.release_response(response, messages);
             }
             assert_eq!(
-                ExchangeSlot::pending_index(&driver.exchanges, key.id().to_wire()),
+                ExchangeSlot::pending_index(
+                    &driver.exchanges,
+                    &driver.ledgers.questions,
+                    key.id().to_wire()
+                ),
                 None
             );
         }
+        driver
+            .ledgers
+            .questions
+            .returned(standalone.key().id(), true)
+            .unwrap();
+        driver.ledgers.questions.release(standalone);
         assert!(driver.ledgers.questions.is_empty());
         driver.runtime.release(target);
         close(driver, messages, &mut queue);
@@ -2525,9 +2567,15 @@ fn direct_plain_return_is_transactional_and_pins_the_original_result() {
         assert!(driver.ledgers.questions.contains(key));
         frame.release(messages);
         let frame = reply(messages, key.id().to_wire(), true, true);
+        let mut bytes = messages.read(&frame.lease).to_vec();
+        // A well-framed message with an invalid Return.results envelope pointer.
+        // The pointer occupies word 5 of this canonical single segment.
+        bytes[48..56].copy_from_slice(&0x0001_0000_7fff_fffcu64.to_le_bytes());
+        frame.release(messages);
+        let frame = Frame::copy_from(messages, &bytes, Default::default()).unwrap();
         let (error, frame) = match driver.try_receive_plain_owned(frame, messages, |_| Some(17)) {
             Err(rejected) => rejected,
-            Ok(_) => panic!("invalid capability must be rejected"),
+            Ok(_) => panic!("invalid envelope must be rejected"),
         };
         assert!(matches!(error, Error::Input(_)));
         assert!(driver.ledgers.questions.contains(key));
@@ -2576,30 +2624,30 @@ fn direct_plain_return_is_transactional_and_pins_the_original_result() {
 }
 
 #[test]
-fn checked_capability_return_rejects_content_before_import_factories_and_can_retry() {
-    with_driver(|mut driver, messages| {
-        let target = remote(&mut driver);
-        let mut queue = messages::Queue::new_growing(0, 8).unwrap();
-        let request = capnp::message::Builder::new_default();
-        let key = driver
-            .try_send_immediate(
-                &target,
-                DynamicCall {
-                    no_promise_pipelining: true,
-                    ..Default::default()
-                },
-                request.get_root_as_reader().unwrap(),
-                messages,
-                &mut queue,
-                128,
-                Default::default(),
-                (),
-            )
-            .unwrap()
-            .unwrap();
-        drain(&mut queue, messages, |_| {});
-        let imports_before = driver.ledgers.imports.len();
-        for malformed in [true, false] {
+fn capability_return_binds_descriptors_and_checks_content_authority_on_access() {
+    for malformed in [true, false] {
+        with_driver(|mut driver, messages| {
+            let target = remote(&mut driver);
+            let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+            let request = capnp::message::Builder::new_default();
+            let key = driver
+                .try_send_immediate(
+                    &target,
+                    DynamicCall {
+                        no_promise_pipelining: true,
+                        ..Default::default()
+                    },
+                    request.get_root_as_reader().unwrap(),
+                    messages,
+                    &mut queue,
+                    128,
+                    Default::default(),
+                    (),
+                )
+                .unwrap()
+                .unwrap();
+            drain(&mut queue, messages, |_| {});
+            let imports_before = driver.ledgers.imports.len();
             let frame = Frame::build(messages, 256, Default::default(), |builder| {
                 let root = builder.try_init_root::<Message>()?;
                 let mut result = root.into_field(Message::RETURN).init()?;
@@ -2618,38 +2666,45 @@ fn checked_capability_return_rejects_content_before_import_factories_and_can_ret
                 Ok(())
             })
             .unwrap();
-            let original = messages.read(&frame.lease).to_vec();
             let mut factories = 0;
-            let result = driver.receive(
-                frame,
-                messages,
-                &mut [0; 8],
-                |_| {
-                    factories += 1;
-                },
-                || (),
-            );
-            if malformed {
-                let rejected = match result {
-                    Err(rejected) => rejected,
-                    Ok(_) => panic!("out-of-table capability accepted"),
-                };
-                assert_eq!(&*messages.read(&rejected.frame.lease), original);
-                rejected.frame.release(messages);
-                assert_eq!(factories, 0);
-                assert_eq!(driver.ledgers.imports.len(), imports_before);
-                assert!(driver.ledgers.questions.contains(key));
-            } else {
-                result.unwrap_or_else(|rejected| panic!("{}", rejected.error));
-                assert_eq!(factories, 1);
-                assert_eq!(driver.ledgers.imports.len(), imports_before + 1);
-                let response = driver.take_response(key).unwrap();
-                driver.release_response(response, messages);
-            }
-        }
-        driver.runtime.release(target);
-        close(driver, messages, &mut queue);
-    });
+            driver
+                .receive(
+                    frame,
+                    messages,
+                    &mut [0; 8],
+                    |_| {
+                        factories += 1;
+                    },
+                    || (),
+                )
+                .unwrap_or_else(|rejected| panic!("{}", rejected.error));
+            assert_eq!(factories, 1);
+            assert_eq!(driver.ledgers.imports.len(), imports_before + 1);
+            let response = driver.take_response(key).unwrap();
+            response
+                .with(messages, |reply| {
+                    let super::super::Reply::Results(payload) = reply else {
+                        panic!("results")
+                    };
+                    let pointer = payload
+                        .content()
+                        .get_as::<capnp::wire_capability::Reader<'_, ()>>()
+                        .unwrap();
+                    if malformed {
+                        assert!(matches!(
+                            payload.capability(pointer),
+                            Err(crate::reception::Error::MissingCapability)
+                        ));
+                    } else {
+                        assert!(payload.capability(pointer).is_ok());
+                    }
+                })
+                .unwrap();
+            driver.release_response(response, messages);
+            driver.runtime.release(target);
+            close(driver, messages, &mut queue);
+        });
+    }
 }
 
 #[test]
@@ -2727,9 +2782,15 @@ fn buffered_plain_return_is_transactional_and_pins_the_original_result() {
         assert!(driver.ledgers.questions.contains(key));
         frame.release(messages);
         let frame = reply(messages, key.id().to_wire(), true, true);
+        let mut bytes = messages.read(&frame.lease).to_vec();
+        // A well-framed message with an invalid Return.results envelope pointer.
+        // The pointer occupies word 5 of this canonical single segment.
+        bytes[48..56].copy_from_slice(&0x0001_0000_7fff_fffcu64.to_le_bytes());
+        frame.release(messages);
+        let frame = Frame::copy_from(messages, &bytes, Default::default()).unwrap();
         let (error, frame) = match receive(&mut driver, frame, messages, |_| Some(17)) {
             Err(rejected) => rejected,
-            Ok(_) => panic!("invalid capability must be rejected"),
+            Ok(_) => panic!("invalid envelope must be rejected"),
         };
         assert!(matches!(error, Error::Input(_)));
         assert!(driver.ledgers.questions.contains(key));
@@ -3027,7 +3088,7 @@ fn direct_deferred_admission_matches_general_validation_and_ownership() {
                         outcome
                     }
                 };
-                assert_eq!(result.is_ok(), fault == 0);
+                assert_eq!(result.is_ok(), fault == 0 || fault == 2);
                 assert_eq!(imports, 0);
                 if fault == 7 {
                     assert_eq!(producers, 0);

@@ -50,6 +50,15 @@ pub trait Write: Flush {
 /// Async completion belongs inside this adapter; report bytes only when IO has
 /// accepted them, never merely because an operation has been started.
 pub trait WriteResources<R>: Flush {
+    /// Permit new writes while a previous physical flush is pending. This is
+    /// only valid for adapters that independently own accepted bytes, resources
+    /// and admission credit until completion, with bounded queue admission.
+    /// A successful flush must still cover ALL accepted writes, including those
+    /// added since the first flush poll. Ordinary borrowed buffers keep the
+    /// pending-flush barrier by returning false.
+    fn can_write_while_flushing(&self) -> bool {
+        false
+    }
     /// Hint the bounded number of queued frames before the next flush poll.
     /// The actual writes can stop early on partial IO or backpressure. This is
     /// not acceptance: all byte, resource and flush obligations remain in force.

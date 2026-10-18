@@ -47,6 +47,7 @@ pub async fn serve(address: &str) -> Result<()> {
                     Some(bootstrap.client),
                     capnp_rpc::rpc_twoparty_capnp::Side::Server,
                 )?
+                .run()
                 .await
             } else {
                 capntproto::rpc::tcp::client(
@@ -64,18 +65,22 @@ pub async fn serve(address: &str) -> Result<()> {
         });
     }
 }
-async fn connect(address: &str) -> Result<workflows::Client> {
+async fn connect(
+    address: &str,
+) -> Result<(
+    workflows::Client,
+    Option<capnp_rpc::portable::RpcSystem<capnp_rpc::rpc_twoparty_capnp::Side>>,
+)> {
     if crate::tcp_driver()? == "portable" {
         let socket = TcpStream::connect(address).await?;
         socket.set_nodelay(true)?;
         let mut driver = portable_tcp(socket, None, capnp_rpc::rpc_twoparty_capnp::Side::Client)?;
         let client = driver.bootstrap(capnp_rpc::rpc_twoparty_capnp::Side::Server);
-        tokio::task::spawn_local(driver);
-        Ok(client)
+        Ok((client, Some(driver)))
     } else {
         let mut driver = capntproto::rpc::connect(address, None, Default::default()).await?;
         let client = driver.bootstrap();
         tokio::task::spawn_local(driver);
-        Ok(client)
+        Ok((client, None))
     }
 }

@@ -1113,3 +1113,61 @@ fn extracted_network_task_keeps_cooperative_output_alive_without_the_factory() {
         Poll::Ready(Err(_))
     ));
 }
+
+#[test]
+fn extracted_output_has_one_physical_owner_and_reports_failure_to_lifecycle() {
+    use crate::VatNetwork as _;
+    let output = Rc::new(Output::default());
+    output.allowed.set(usize::MAX);
+    output.flushed.set(true);
+    let mut network = VatNetwork::new(
+        futures::io::Cursor::new(Vec::<u8>::new()),
+        Writer(output.clone()),
+        VatId::Client,
+        Default::default(),
+    );
+    let mut physical = network.take_output_driver().unwrap();
+    assert!(network.take_output_driver().is_none());
+    let mut lifecycle = network.drive_until_shutdown();
+    let mut connection = network.connect(VatId::Server).unwrap();
+    assert!(connection.output_driver().is_none());
+    let (outgoing, expected) = frame("one physical owner");
+    let mut sent = connection.send_frame(outgoing);
+    let mut cx = Context::from_waker(Waker::noop());
+    assert!(Pin::new(&mut sent).poll(&mut cx).is_pending());
+    assert!(Pin::new(&mut lifecycle).poll(&mut cx).is_pending());
+    assert!(output.bytes.borrow().is_empty());
+    assert!(Pin::new(&mut physical).poll(&mut cx).is_pending());
+    assert_eq!(&*output.bytes.borrow(), &expected);
+    assert!(matches!(
+        Pin::new(&mut sent).poll(&mut cx),
+        Poll::Ready(Ok(()))
+    ));
+    let mut write_finished = connection.when_write_finished().unwrap();
+    output.fail.set(true);
+    let (outgoing, _) = frame("failure");
+    let mut failed = connection.send_frame(outgoing);
+    assert!(Pin::new(&mut failed).poll(&mut cx).is_pending());
+    assert!(Pin::new(&mut lifecycle).poll(&mut cx).is_pending());
+    // Physical close and failure receipts precede connection teardown. The
+    // lifecycle result retains its separate disconnection fence.
+    assert!(Pin::new(&mut physical).poll(&mut cx).is_pending());
+    assert!(matches!(
+        Pin::new(&mut write_finished).poll(&mut cx),
+        Poll::Ready(Err(_))
+    ));
+    assert!(matches!(
+        Pin::new(&mut failed).poll(&mut cx),
+        Poll::Ready(Err(_))
+    ));
+    drop(connection);
+    drop(network);
+    assert!(matches!(
+        Pin::new(&mut physical).poll(&mut cx),
+        Poll::Ready(Err(_))
+    ));
+    assert!(matches!(
+        Pin::new(&mut lifecycle).poll(&mut cx),
+        Poll::Ready(Err(_))
+    ));
+}

@@ -1,6 +1,6 @@
 verus! {
 closed spec fn question_reclaimable(s: Record) -> bool {
-    s.references == 0 && s.finish.is_none() && !question::awaiting_spec(s.lifecycle)
+    s.references == 0 && s.owner.is_none() && s.finish.is_none() && !question::awaiting_spec(s.lifecycle)
 }
 closed spec fn question_pipeline(s: Record) -> bool {
     s.published && s.references != 0 && !s.provision && question::pipeline_spec(s.lifecycle)

@@ -72,7 +72,8 @@ fn rejected_inputs_never_partially_acquire_target_answer_or_imports() {
                             17,
                         )];
                         let pending = call(wire, answers, exports, imports, &mut receipts, &mut []);
-                        if variant == 0 {
+                        if variant <= 1 {
+                            // Bad content is lazy; dropping admission still commits nothing.
                             drop(pending.unwrap());
                         } else {
                             assert!(pending.is_err());

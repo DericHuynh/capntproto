@@ -2166,13 +2166,78 @@ has not yet migrated to these ledgers and wire bindings.
    transports implement `IncomingMessage::get_segments` and
    `Connection::send_frame`; their defaults preserve existing driver compatibility.
    Allocated output frames retain immutable pool buffers through physical write
-   completion. Validated data-only parameters and replies share input buffers;
-   fixed borrowed storage and capability-bearing hosted payloads keep the copy
+   completion. Hosted parameters and replies retain their bounded input reader
+   and exact capability receipts; fixed borrowed storage keeps the bounded copy
    path. Shared owners pin their charged buffer against reuse, including after
    the driver scope ends. Receive reservations publish only the prefix committed
    by IO; control builders clear their exposed prefix. Neither can seal unused
    capacity. These changes
    do not yet establish benchmark acceptance.
+   The hosted API now separates configuration, execution and live policy.
+   `portable::RpcSystem` is no longer a Future. Transfer systems into a bounded
+   `portable::Runtime` with `runtime.handle().add(system)` and drive related
+   application work with `runtime.run(application)`. A turn progresses ready
+   systems and drains ready application continuations, then polls physical output.
+   Buffered protocol input resumes in the next turn, allowing earlier output to
+   overlap work at the next service. All turns in one poll share a 32-round
+   fairness bound. Ready work produced by output starts the next turn directly,
+   sharing the same fairness allowance. Connections in a service chain can share
+   this scheduling domain. Application, protocol and output readiness are tracked
+   independently, so a wake does not poll unrelated connections. Application
+   completion returns immediately and is not
+   an implicit transport drain; await disconnectors inside the application for
+   orderly shutdown. Dropping the runtime aborts outstanding systems.
+   `system.run_with(application)` provides the single-system form;
+   `system.run()` drives a system whose application is externally scheduled.
+   `system.control()` supplies live limits and trace settings independently of
+   the runtime's exclusive ownership. Old Future and policy-setter APIs are
+   removed, without compatibility adapters.
+
+   `VatNetwork::take_output_driver` explicitly transfers physical output ownership.
+   A transferred network observes completion during lifecycle progress without
+   polling the writer there. TCP and Unix networks support this split; native
+   authenticated session transports retain their independent transport owners.
+   In-memory transports have no physical writer to transfer. This split preserves
+   physical completion, failure and shutdown accounting and does not relax the
+   fixed-storage output contract: pending flushes complete before further writes.
+   An owning writer can explicitly permit bounded queue admission during a pending
+   flush through `WriteResources::can_write_while_flushing`. The hosted adapter
+   retains accepted bytes, attachments and admission credit until physical
+   completion, and admits at most 32 outstanding frames. This lets ready protocol
+   work extend the transport batch without waiting for a previous frame's write.
+   Flush and idle still certify completion of every accepted frame; queue
+   admission alone cannot complete shutdown.
+   Calls and pipeline work use their own transactional capacity checks instead
+   of treating an unfinished flush as an admission barrier. An actual blocked
+   attempt is retried when physical completion releases retained buffers.
+   Publication distinguishes a blocked attempt from an inapplicable direct path
+   and from failure. Temporary buffer/queue exhaustion retains the original call
+   for retry, without falling through to another allocating admission path or
+   disconnecting the peer.
+   A blocked attempt waits only while accepted output can release storage.
+   Without that completion fence, capacity failure remains an error; an
+   impossible allocation cannot leave a call asleep with no wakeup source.
+
+   Inbound application content is now checked on access through its original
+   bounded reader. Admission still validates the RPC envelope and capability
+   descriptors transactionally, but no longer walks the entire application graph.
+   `SharedReader` pins an immutable arena and retains selected pointers with the
+   same traversal allowance and remaining nesting depth. Reopening or cloning a
+   view cannot reset that allowance. Capability lookup uses the admitted receipt's
+   exact descriptor table. Invalid unused application fields can be admitted and
+   fail when accessed; malformed envelopes and descriptors still fail admission.
+   The former bytes-plus-options retain API and unlimited admitted-reader mode
+   are removed. Fixed storage shares an explicit `ReadBudget` across reopened
+   views and keeps its bounded copy path.
+
+   Protocol questions bind their generation explicitly to the local exchange
+   slot. Wire IDs resolve through the authoritative question table; they never
+   size adapter storage. Pending and returned exchanges verify that binding
+   before access, rather than relying on matching free-list positions or scanning
+   unrelated entries. Adapter ownership pins the generation until response
+   transfer or release. Protocol obligations and application references retain
+   their separate retirement rules.
+
    The opt-in `portable::RpcSystem` now owns the connection tasks and automatic
    VatNetwork dialing/acceptance. Each task owns growing storage and runs the
    portable coordinator; ordinary generated ClientHooks remain the public API.

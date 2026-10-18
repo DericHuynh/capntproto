@@ -816,6 +816,11 @@ impl VatNetwork<VatId> for Network {
             Ok(Box::new(Route(endpoint)) as Box<dyn Connection<VatId>>)
         })
     }
+    fn take_output_driver(&mut self) -> Option<capnp::capability::Promise<(), capnp::Error>> {
+        // Authenticated sessions are independently driven by their transport
+        // owners; this network only routes into those existing session queues.
+        None
+    }
     fn drive_until_shutdown(&mut self) -> Promise<(), Error> {
         Promise::from_future(futures::future::pending())
     }

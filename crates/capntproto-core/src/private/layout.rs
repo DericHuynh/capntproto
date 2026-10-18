@@ -3373,16 +3373,12 @@ impl CachedPointerRoot {
     /// The selection is made while its sole segment owner remains borrowed.
     /// Rebase only offsets, and reject a pointer from another reader arena.
     #[inline(always)]
-    pub(crate) fn select(
-        root: PointerReader<'_>,
-        arena: &dyn ReaderArena,
-        nesting_limit: i32,
-    ) -> Result<Self> {
+    pub(crate) fn select(root: PointerReader<'_>, arena: &dyn ReaderArena) -> Result<Self> {
         if root.pointer.is_null() {
             return Ok(Self {
                 offset: None,
                 segment_id: 0,
-                nesting_limit,
+                nesting_limit: root.nesting_limit,
             });
         }
         if !core::ptr::addr_eq(root.arena, arena) {
@@ -3398,64 +3394,10 @@ impl CachedPointerRoot {
             // The validated pointer word fits, so offset + 1 cannot overflow.
             offset: core::num::NonZeroUsize::new(offset + 1),
             segment_id: root.segment_id,
-            nesting_limit,
+            nesting_limit: root.nesting_limit,
         })
     }
 
-    #[inline(always)]
-    pub(crate) fn retain<S: crate::message::ReaderSegments>(
-        root: PointerReader<'_>,
-        segments: &S,
-        nesting_limit: i32,
-    ) -> Result<Self> {
-        if root.pointer.is_null() {
-            return Ok(Self {
-                offset: None,
-                segment_id: 0,
-                nesting_limit,
-            });
-        }
-        let mut offset = None;
-        for index in 0..segments.len() {
-            let index = u32::try_from(index)
-                .map_err(|_| Error::from_kind(ErrorKind::MessageSizeOverflow))?;
-            let (base, words) = root.arena.get_segment(index)?;
-            let segment = segments
-                .get_segment(index)
-                .ok_or_else(|| Error::from_kind(ErrorKind::InvalidSegmentId(index)))?;
-            if segment.as_ptr() != base || segment.len() != words as usize * BYTES_PER_WORD {
-                return Err(Error::from_kind(ErrorKind::TypeMismatch));
-            }
-            if index == root.segment_id {
-                offset = Some(
-                    (root.pointer as usize)
-                        .checked_sub(base as usize)
-                        .filter(|offset| {
-                            *offset <= segment.len() && BYTES_PER_WORD <= segment.len() - *offset
-                        })
-                        .ok_or_else(|| {
-                            Error::from_kind(ErrorKind::MessageContainsOutOfBoundsPointer)
-                        })?,
-                );
-            }
-        }
-        let count = u32::try_from(segments.len())
-            .map_err(|_| Error::from_kind(ErrorKind::MessageSizeOverflow))?;
-        if root.arena.get_segment(count).is_ok() {
-            return Err(Error::from_kind(ErrorKind::TypeMismatch));
-        }
-        let offset =
-            offset.ok_or_else(|| Error::from_kind(ErrorKind::InvalidSegmentId(root.segment_id)))?;
-        Ok(Self {
-            // The validated pointer word fits, so offset + 1 cannot overflow.
-            offset: core::num::NonZeroUsize::new(offset + 1),
-            segment_id: root.segment_id,
-            nesting_limit,
-        })
-    }
-    pub(crate) fn words(&self) -> u64 {
-        u64::from(self.offset.is_some())
-    }
     /// The arena must retain the original immutable segment contents. Addresses
     /// may change when an inline owner moves; its slices must stay live while
     /// the returned view is borrowed. No capability table is retained.

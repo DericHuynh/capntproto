@@ -69,17 +69,14 @@ fn data_payloads_share_validated_frames_and_outlive_the_driver_scope() {
                         foreign
                             .set_root::<capnp::data::Owned>(&b"shared payload"[..])
                             .unwrap();
-                        let error = Payload::retain_admitted_or_copy(
-                            foreign.get_root_as_reader().unwrap(),
-                            frame.share(messages),
-                            Vec::new(),
-                        )
-                        .err()
-                        .expect("foreign content cannot acquire this frame");
-                        assert_eq!(error.kind, capnp::ErrorKind::TypeMismatch);
-                        let payload = Payload::retain_admitted_or_copy(
+                        let error = frame
+                            .retain_pointer(messages, foreign.get_root_as_reader().unwrap())
+                            .err()
+                            .expect("foreign content cannot acquire this frame");
+                        assert_eq!(error, owned::Error::Wire(capnp::ErrorKind::WrongArena));
+                        let payload = Payload::retain_or_copy(
                             content,
-                            frame.share(messages),
+                            frame.retain_pointer(messages, content).unwrap(),
                             Vec::new(),
                         )
                         .unwrap();
@@ -200,9 +197,13 @@ fn admitted_capability_payloads_keep_slot_identity_and_outlive_their_frame() {
                                 _ => panic!(),
                             };
                             content.validate_capability_indices(2).unwrap();
-                            Payload::retain_admitted_or_copy(
+                            Payload::retain_or_copy(
                                 content,
-                                shared.then(|| frame.share(messages).unwrap()),
+                                if shared {
+                                    frame.retain_pointer(messages, content).unwrap()
+                                } else {
+                                    None
+                                },
                                 vec![
                                     None,
                                     Some(crate::broken::new_cap(Error::failed(
@@ -299,12 +300,20 @@ fn shared_payload_still_enforces_the_original_traversal_budget() {
                 },
             )
             .unwrap();
-            // Sharing is available only after admission. Exercise the actual
-            // admission boundary: this small frame's void list requires 1000
-            // virtual words of traversal, exceeding the original limits before
-            // a hosted payload can escape.
+            // Admission does not walk application content. Its retained reader
+            // must still reject amplified reads after the frame is released.
             with_peer(4, |mut driver| {
-                let rejected = match capntproto_rpc_wire::owned::Call::<_, 4, 4>::admit(
+                let target = driver
+                    .runtime
+                    .endpoint(Route::local(9), clients::Location::Local)
+                    .unwrap();
+                let mut batch = driver.ledgers.exports.batch();
+                let grant =
+                    capntproto_rpc_wire::clients::stage(&mut driver.runtime, &mut batch, &target)
+                        .unwrap();
+                assert_eq!(grant.id().to_wire(), 0);
+                batch.commit();
+                let call = capntproto_rpc_wire::owned::Call::<_, 4, 4>::admit(
                     frame,
                     messages,
                     &mut driver.ledgers.imports,
@@ -312,16 +321,23 @@ fn shared_payload_still_enforces_the_original_traversal_budget() {
                     &mut driver.ledgers.answers,
                     owned::answer::State::new(owned::pipelines::Results::new(())),
                     |_| (),
-                ) {
-                    Ok(_) => panic!("over-budget input was admitted"),
-                    Err(rejected) => rejected,
-                };
-                assert!(
-                    format!("{:?}", rejected.error).contains("ReadLimitExceeded"),
-                    "{:?}",
-                    rejected.error
+                )
+                .unwrap_or_else(|rejected| panic!("{}", rejected.error));
+                let params = call.share_plain_params(messages).unwrap().unwrap();
+                call.release(
+                    messages,
+                    &mut driver.ledgers.imports,
+                    &mut driver.ledgers.exports,
+                    &mut driver.ledgers.answers,
                 );
-                rejected.frame.release(messages);
+                let error = capnp::private::capability::ParamsHook::get(&*params)
+                    .unwrap()
+                    .get_as::<capnp::primitive_list::Reader<'_, ()>>()
+                    .err()
+                    .unwrap();
+                assert_eq!(error.kind, capnp::ErrorKind::ReadLimitExceeded);
+                drop(params);
+                driver.runtime.release(target);
             });
             let writer = messages.reserve(256).unwrap();
             messages.discard(writer);

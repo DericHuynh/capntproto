@@ -37,7 +37,8 @@ pub struct Prepared<'table, 'receipts, 'id, 'storage, 'message, T> {
 }
 /// Admit senderHosted/senderPromise/none descriptors into caller-provided slots.
 /// A thirdPartyHosted descriptor uses its level-1/2 forwarding vine. All
-/// wire indices and descriptor identities are validated before table preflight.
+/// descriptor identities are validated before table preflight. Payload pointers
+/// are checked lazily; resolving a capability checks its exact receipt index.
 /// A `new` receipt supplies an absent import's owner; repeats use `alias`.
 /// Higher-level call/return admission must validate its envelope before accept.
 pub fn prepare<'table, 'receipts, 'id, 'storage, 'message, T>(
@@ -49,9 +50,6 @@ pub fn prepare<'table, 'receipts, 'id, 'storage, 'message, T>(
     if usize::try_from(descriptors.len()).ok() != Some(receipts.len()) {
         return Err(Error::DescriptorCount);
     }
-    payload
-        .get_content()
-        .validate_capability_indices(descriptors.len())?;
     for (descriptor, receipt) in descriptors.iter().zip(receipts.iter()) {
         check_descriptor(descriptor, receipt)?;
     }

@@ -144,14 +144,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 .map(Some)
                 .map_err(Error::Graph),
             Stage::Sent(question) => {
-                let exchange = self
-                    .exchanges
-                    .iter()
-                    .find_map(|slot| {
-                        slot.exchange
-                            .as_ref()
-                            .filter(|exchange| exchange.key() == question)
-                    })
+                let index = ExchangeSlot::index(&self.exchanges, &self.ledgers.questions, question)
+                    .ok_or(Error::UnknownQuestion)?;
+                let exchange = self.exchanges[index]
+                    .exchange
+                    .as_ref()
                     .ok_or(Error::UnknownQuestion)?;
                 let path = pipeline::Path::new(&entry.fields[..entry.length]);
                 match exchange {
@@ -308,17 +305,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 .iter()
                 .any(|slot| slot.pending_for(question))
             {
-                if let Some(Exchange::Pending(pending)) = self
-                    .exchanges
-                    .iter_mut()
-                    .find(|slot| {
-                        slot.canceled
-                            && slot
-                                .exchange
-                                .as_ref()
-                                .is_some_and(|exchange| exchange.key() == question)
-                    })
-                    .and_then(|slot| slot.exchange.as_mut())
+                if let Some(Exchange::Pending(pending)) =
+                    ExchangeSlot::index(&self.exchanges, &self.ledgers.questions, question)
+                        .and_then(|index| self.exchanges.get_mut(index))
+                        .filter(|slot| slot.canceled)
+                        .and_then(|slot| slot.exchange.as_mut())
                 {
                     pending.cancel(&mut self.ledgers.questions);
                 }

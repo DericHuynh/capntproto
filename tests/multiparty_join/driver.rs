@@ -64,7 +64,7 @@ impl System {
     pub async fn run(self) -> capnp::Result<()> {
         match self {
             Self::Hosted(system) => system.await,
-            Self::Portable(system) => system.await,
+            Self::Portable(system) => system.run().await,
         }
     }
 }

@@ -160,6 +160,7 @@ impl<'p, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize, R>
                         self.index += 1;
                         match exchange {
                             Some(Exchange::Pending(question)) => {
+                                driver.ledgers.questions.release_owner(question.key());
                                 question.abandon(messages, &mut driver.ledgers.questions)
                             }
                             Some(Exchange::Returned(response)) => {

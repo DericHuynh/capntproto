@@ -115,7 +115,7 @@ fn retained_plain_results_pin_the_pool_and_survive_connection_teardown() {
 }
 
 #[test]
-fn empty_descriptor_results_validate_content_for_live_and_canceled_questions() {
+fn empty_descriptor_results_check_authority_on_access_and_skip_canceled_content() {
     for plain in [false, true] {
         for canceled in [false, true] {
             let mut words = [[ZERO; 49]; 2];
@@ -192,37 +192,35 @@ fn empty_descriptor_results_validate_content_for_live_and_canceled_questions() {
                             })
                             .unwrap()
                         });
-                        let Err(rejected) = question.returned::<_, _, _, 0>(
-                            bad,
-                            messages,
-                            questions,
-                            imports,
-                            exports,
-                            answers,
-                            &mut [],
-                            |_| panic!("empty descriptor factory"),
-                        ) else {
-                            panic!("ungranted capability admitted");
-                        };
-                        assert_eq!(questions.is_live(rejected.question.key()), !canceled);
-                        assert!(imports.is_empty() && exports.is_empty() && answers.is_empty());
-                        rejected.frame.release(messages);
-                        let good = encode(messages, |b| {
-                            calls::acknowledge(b, AnswerId::from_wire(id.to_wire())).unwrap()
-                        });
-                        let response = rejected
-                            .question
+                        let response = question
                             .returned::<_, _, _, 0>(
-                                good,
+                                bad,
                                 messages,
                                 questions,
                                 imports,
                                 exports,
                                 answers,
                                 &mut [],
-                                |_| (),
+                                |_| panic!("empty descriptor factory"),
                             )
-                            .unwrap_or_else(|r| panic!("{}", r.error));
+                            .unwrap_or_else(|rejected| panic!("{}", rejected.error));
+                        assert!(imports.is_empty() && exports.is_empty() && answers.is_empty());
+                        response
+                            .with(messages, |reply| match reply {
+                                Reply::Results(payload) if !canceled => {
+                                    let pointer = payload
+                                        .content()
+                                        .get_as::<capnp::wire_capability::Reader<'_, ()>>()
+                                        .unwrap();
+                                    assert!(matches!(
+                                        payload.capability(pointer),
+                                        Err(reception::Error::MissingCapability)
+                                    ));
+                                }
+                                Reply::Discarded if canceled => (),
+                                _ => panic!("unexpected delivery"),
+                            })
+                            .unwrap();
                         response.release(messages, questions, imports, exports, answers);
                         questions.pending_finish().unwrap().accept();
                         assert!(questions.is_empty());

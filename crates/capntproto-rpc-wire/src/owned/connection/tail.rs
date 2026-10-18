@@ -32,15 +32,9 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .tails
             .vacant_mut(|_, slot| slot.entry.is_none(), || TailSlot::EMPTY)
             .ok_or(Error::Busy)?;
-        let exchange = self
-            .exchanges
-            .iter_mut()
-            .find(|slot| {
-                slot.exchange
-                    .as_ref()
-                    .is_some_and(|exchange| exchange.key() == child)
-            })
+        let index = ExchangeSlot::index(&self.exchanges, &self.ledgers.questions, child)
             .ok_or(Error::UnknownQuestion)?;
+        let exchange = &mut self.exchanges[index];
         if !exchange.authorized {
             return Err(Error::PendingAuthorization);
         }

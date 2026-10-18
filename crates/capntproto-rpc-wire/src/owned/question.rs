@@ -362,7 +362,10 @@ impl<'pool, 'q> Question<'pool, 'q> {
                     Error::Admission(inbound::Error::Question(error))
                 }
             })?;
-        if owned_only && pending.delivery() == capntproto_rpc_engine::question::Delivery::Discard {
+        if owned_only
+            && (self.local.is_none()
+                || pending.delivery() == capntproto_rpc_engine::question::Delivery::Discard)
+        {
             return Ok(None);
         }
         use capnp::traits::IntoInternalStructReader;
@@ -376,11 +379,6 @@ impl<'pool, 'q> Question<'pool, 'q> {
             return Ok(None);
         }
         let content = payload.get_content();
-        content.validate_capability_indices(0).map_err(|error| {
-            Error::Admission(inbound::Error::Reception(crate::reception::Error::from(
-                error,
-            )))
-        })?;
         Ok(Some((pending, content)))
     }
     #[inline(always)]
@@ -397,26 +395,12 @@ impl<'pool, 'q> Question<'pool, 'q> {
             return Ok(None);
         };
         #[cfg(feature = "alloc")]
-        let plain = _frame
-            .share_segments(_messages)?
-            .map(|segments| {
-                capnp::message::CheckedPointerReader::retain(
-                    _content,
-                    segments,
-                    capnp::message::ReaderOptions {
-                        traversal_limit_in_words: None,
-                        nesting_limit: i32::MAX,
-                    },
-                )
-                .and_then(capnp::message::CheckedPointerReader::into_cached)
-                .map(|message| {
-                    alloc::boxed::Box::new(PlainResults {
-                        message,
-                        owner: None,
-                    })
-                })
+        let plain = _frame.retain_pointer(_messages, _content)?.map(|message| {
+            alloc::boxed::Box::new(PlainResults {
+                message,
+                owner: None,
             })
-            .transpose()?;
+        });
         #[cfg(feature = "alloc")]
         if owned_only && plain.is_none() {
             return Ok(None);
@@ -522,17 +506,13 @@ impl<'pool, 'q> Question<'pool, 'q> {
         pending: questions::Receive<'_, 'q, '_>,
         admitted: AdmittedPlain,
     ) -> alloc::boxed::Box<PlainResults> {
-        // Plain admission validated the entire payload and excluded canceled
-        // delivery before retaining its immutable allocating segment owner.
+        // The exact bounded reader was retained before committing delivery.
+        // Direct handoff transfers both exchange ownership and its local observer.
         debug_assert!(!admitted.discarded);
         let plain = admitted.plain.expect("owned plain result");
-        if let Some(local) = self.local {
-            pending
-                .accept_releasing(local)
-                .expect("matching plain reply owner");
-        } else {
-            pending.accept();
-        }
+        pending
+            .accept_releasing_owner(self.local.expect("live plain reply owner"))
+            .expect("matching plain reply owner");
         self.original.release(messages);
         plain
     }
@@ -759,31 +739,24 @@ impl<'pool, 'q, 'i, 'e, 'a, I, const N: usize> Response<'pool, 'q, 'i, 'e, 'a, I
             Kind::Adopted(..) | Kind::Await(_) | Kind::Discarded
         )
     }
-    /// Share immutable storage only for an ordinary results frame. Adoption
-    /// and third-party control replies have different ownership semantics.
+    /// Retain selected results with their original immutable reader and budget.
     #[cfg(feature = "alloc")]
-    pub fn share_results(
+    pub fn retain_results(
         &self,
         messages: &messages::Messages<'pool, '_, '_>,
-    ) -> Option<messages::SharedBytes> {
+        content: capnp::any_pointer::Reader<'_>,
+    ) -> Result<
+        Option<
+            capnp::message::CachedPointerReader<
+                capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
+            >,
+        >,
+        Error,
+    > {
         if matches!(self.kind, Kind::Results) {
-            self.frame.share(messages)
+            self.frame.retain_pointer(messages, content)
         } else {
-            None
-        }
-    }
-    /// A successfully admitted result without descriptor owners can be handed
-    /// directly to an immutable hosted reader. Admission validated the entire
-    /// payload under this frame's original traversal and nesting limits.
-    #[cfg(feature = "alloc")]
-    pub fn share_plain_results(
-        &self,
-        messages: &messages::Messages<'pool, '_, '_>,
-    ) -> Option<messages::SharedBytes> {
-        if self.receipts.count == 0 {
-            self.share_results(messages)
-        } else {
-            None
+            Ok(None)
         }
     }
     pub fn key(&self) -> questions::Key<'q> {

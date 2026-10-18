@@ -35,10 +35,10 @@ pub enum Reply<'r, 'm, 'i, 'e, 'a, I> {
 
 /// A checked result view can only be obtained from this exact Return. Owned
 /// reception uses it before import factories and then transfers it into the
-/// transactional admission, retaining the original message's traversal checks.
+/// transactional admission. Application reads retain the original message limits.
 pub(crate) struct PreparedReturn<'m> {
     result: rpc_capnp::return_::Reader<'m>,
-    results: Option<capabilities::CheckedPayload<'m>>,
+    results: Option<capabilities::PayloadEnvelope<'m>>,
 }
 impl<'m> PreparedReturn<'m> {
     pub(crate) fn new(result: rpc_capnp::return_::Reader<'m>) -> Self {
@@ -49,12 +49,12 @@ impl<'m> PreparedReturn<'m> {
     }
     pub(crate) fn prepare_results(
         &mut self,
-    ) -> Result<Option<capabilities::CheckedPayload<'m>>, Error> {
+    ) -> Result<Option<capabilities::PayloadEnvelope<'m>>, Error> {
         if self.results.is_none() {
             if let rpc_capnp::return_::Results(payload) =
                 self.result.which().map_err(|_| Error::Unsupported)?
             {
-                self.results = Some(capabilities::CheckedPayload::new(payload?)?);
+                self.results = Some(capabilities::PayloadEnvelope::new(payload?)?);
             }
         }
         Ok(self.results)
@@ -255,16 +255,12 @@ pub(crate) fn returned_prepared<'b, 's, 'r, 'm, 'q, 'i, 'e, 'a, 'qs, 'is, 'es, '
                 return Err(Error::Unsupported);
             }
             if discard {
-                // Live results are validated by prepare_with_releases below.
-                // Discarded results still need the same bounded wire checks.
-                payload
-                    .get_content()
-                    .validate_capability_indices(table.len())?;
+                // Discarded content has no readers or capability authority.
                 Pending::Discarded(releases)
             } else {
                 Pending::Results(
                     match prepared.results {
-                        Some(checked) => capabilities::prepare_checked_with_releases(
+                        Some(checked) => capabilities::prepare_envelope_with_releases(
                             checked, imports, releases, answers, slots,
                         ),
                         None => capabilities::prepare_with_releases(

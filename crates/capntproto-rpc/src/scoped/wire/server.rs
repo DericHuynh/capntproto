@@ -159,9 +159,10 @@ impl<'id> ClientHooks<'id> {
             }
             Ok(Prepared {
                 method: params.incoming().hints(),
-                params: Payload::retain_admitted_or_copy(
+                params: Payload::retain_or_copy(
                     params.incoming().payload()?.get_content(),
-                    call.share_frame(messages),
+                    call.retain_params(messages, params.incoming().payload()?.get_content())
+                        .map_err(wire_error)?,
                     caps,
                 )?
                 .into_params(),

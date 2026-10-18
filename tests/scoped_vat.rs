@@ -133,7 +133,7 @@ async fn peer(
         options.concurrency = NonZeroUsize::new(4).unwrap();
         options.output_queue = NonZeroUsize::new(1).unwrap();
         options.poll_budget = NonZeroUsize::new(3).unwrap();
-        let mut system =
+        let system =
             capnp_rpc::portable::RpcSystem::new(transport, Some(bootstrap), options).unwrap();
         let remote = system.get_bootstrapper();
         // The initial Bootstrap and its calls are queued before the task is polled.
@@ -143,9 +143,8 @@ async fn peer(
             stop.await.unwrap();
             closed.await.unwrap();
         };
-        let (result, ()) = futures::join!(&mut system, application);
+        let (result, ()) = futures::join!(system.run(), application);
         result.unwrap();
-        drop(system);
         let client: Client = remote.bootstrap(other);
         assert!(client.when_resolved().await.is_err());
         return;
@@ -441,7 +440,7 @@ async fn portable_rpcsystem_factory_uses_peer_identity_and_retries_after_bootstr
                 .await
                 .unwrap();
         };
-        let (client, server, ()) = futures::join!(client, server, application);
+        let (client, server, ()) = futures::join!(client, server.run(), application);
         client.unwrap();
         server.unwrap();
     })

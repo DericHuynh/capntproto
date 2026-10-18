@@ -208,7 +208,7 @@ fn combined_return_release_preserves_other_observers_and_finish_backpressure() {
                     questions
                         .prepare_receive_owned(key, no_finish)
                         .unwrap()
-                        .accept_releasing(local)
+                        .accept_releasing_owner(local)
                         .unwrap(),
                     (key, Delivery::Deliver)
                 );
@@ -237,7 +237,7 @@ fn combined_return_release_preserves_other_observers_and_finish_backpressure() {
                 questions
                     .prepare_receive_owned(reused.key(), true)
                     .unwrap()
-                    .accept_releasing(reused)
+                    .accept_releasing_owner(reused)
                     .unwrap();
             })
             .unwrap();
@@ -256,7 +256,7 @@ fn combined_return_rejects_another_questions_owner_transactionally() {
         let (error, second) = questions
             .prepare_receive_owned(first_key, true)
             .unwrap()
-            .accept_releasing(second)
+            .accept_releasing_owner(second)
             .unwrap_err();
         assert_eq!(error, Error::StaleKey);
         assert!(questions.contains(first_key));
@@ -264,12 +264,48 @@ fn combined_return_rejects_another_questions_owner_transactionally() {
         questions
             .prepare_receive_owned(first_key, true)
             .unwrap()
-            .accept_releasing(first)
+            .accept_releasing_owner(first)
             .unwrap();
         questions
             .prepare_receive_owned(second_key, true)
             .unwrap()
-            .accept_releasing(second)
+            .accept_releasing_owner(second)
+            .unwrap();
+        assert!(questions.is_empty());
+    })
+    .unwrap();
+}
+
+#[test]
+fn adapter_owner_pins_generation_and_stale_release_cannot_clear_reuse() {
+    let mut slots = [Slot::EMPTY];
+    with_questions(&mut slots, |questions| {
+        let first = questions.reserve().unwrap().accept();
+        let key = first.key();
+        questions.bind_owner(key, 7).unwrap();
+        assert_eq!(questions.bind_owner(key, 9), Err(Error::AlreadyOwned));
+        assert_eq!(questions.owner_for_id(key.id()), Some((key, 7)));
+        assert_eq!(
+            questions.owner_for_id(crate::ids::QuestionId::from_wire(u32::MAX)),
+            None
+        );
+        questions.release(first);
+        questions.pending_finish().unwrap().accept();
+        questions.returned(key.id(), true).unwrap();
+        assert_eq!(questions.reserve().err(), Some(Error::Full));
+        assert_eq!(questions.owner(key), Some(7));
+        questions.release_owner(key);
+        assert!(questions.is_empty());
+        let next = questions.reserve().unwrap().accept();
+        let next_key = next.key();
+        assert_ne!(key, next_key);
+        questions.bind_owner(next_key, 9).unwrap();
+        questions.release_owner(key);
+        assert_eq!(questions.owner(next_key), Some(9));
+        questions
+            .prepare_receive_owned(next_key, true)
+            .unwrap()
+            .accept_releasing_owner(next)
             .unwrap();
         assert!(questions.is_empty());
     })

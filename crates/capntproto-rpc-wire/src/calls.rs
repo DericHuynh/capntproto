@@ -121,9 +121,6 @@ impl<'a> Incoming<'a> {
         let destination = self.results_to()?;
         self.service_info(service)?;
         let params = self.payload()?;
-        params
-            .get_content()
-            .validate_capability_indices(params.get_cap_table()?.len())?;
         let root = output.try_init_root::<Message>()?;
         let mut result = root.into_field(Message::RETURN).init()?;
         result
@@ -153,9 +150,6 @@ impl<'a> Incoming<'a> {
         let destination = self.results_to()?;
         self.context_service_info(service)?;
         let params = self.payload()?;
-        params
-            .get_content()
-            .validate_capability_indices(params.get_cap_table()?.len())?;
         let root = output.try_init_root::<Message>()?;
         let mut result = root.into_field(Message::RETURN).init()?;
         result
@@ -191,9 +185,6 @@ impl<'a> Incoming<'a> {
             return Err(capnp::Error::from_kind(capnp::ErrorKind::Unimplemented));
         }
         let payload = self.payload()?;
-        payload
-            .get_content()
-            .validate_capability_indices(payload.get_cap_table()?.len())?;
         let params = method.read_params(payload.get_content())?;
         Ok(Dispatch {
             question: self.question_id(),
@@ -215,9 +206,6 @@ impl<'a> Incoming<'a> {
             return Err(capnp::Error::from_kind(capnp::ErrorKind::Unimplemented));
         }
         let payload = self.payload()?;
-        payload
-            .get_content()
-            .validate_capability_indices(payload.get_cap_table()?.len())?;
         Ok(StreamingDispatch {
             question: self.question_id(),
             method,

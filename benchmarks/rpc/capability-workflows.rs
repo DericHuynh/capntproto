@@ -197,43 +197,53 @@ pub async fn measure(args: &[String]) -> Result<()> {
     let payload: Vec<_> = (0..case["payload_bytes"].as_u64().unwrap())
         .map(|i| (i % 251) as u8)
         .collect();
+    #[cfg(capntproto_upstream_api)]
     let client = timeout(Duration::from_secs(10), connect(&args[0])).await??;
-    // Resolve bootstrap, construct reusable state, and validate connectivity outside timing.
-    let mut request = client.open_request();
-    request.get().set_payload(&payload);
-    let response = timeout(Duration::from_secs(10), request.send().promise).await??;
-    let state = response.get()?.get_cell()?;
-    drop(response);
-    let callbacks = Rc::new(std::cell::Cell::new(0));
-    let sink: callback::Client = capnp_rpc::new_client(Sink {
-        payload: payload.clone(),
-        calls: callbacks.clone(),
-    });
-    for sequence in 0..warmup {
-        timeout(
-            Duration::from_secs(10),
-            operation(
-                &client, &state, &sink, &callbacks, &args[1], sequence, &payload,
-            ),
-        )
-        .await??;
+    #[cfg(not(capntproto_upstream_api))]
+    let (client, driver) = timeout(Duration::from_secs(10), connect(&args[0])).await??;
+    let application = async {
+        // Resolve bootstrap, construct reusable state, and validate connectivity outside timing.
+        let mut request = client.open_request();
+        request.get().set_payload(&payload);
+        let response = timeout(Duration::from_secs(10), request.send().promise).await??;
+        let state = response.get()?.get_cell()?;
+        drop(response);
+        let callbacks = Rc::new(std::cell::Cell::new(0));
+        let sink: callback::Client = capnp_rpc::new_client(Sink {
+            payload: payload.clone(),
+            calls: callbacks.clone(),
+        });
+        for sequence in 0..warmup {
+            timeout(
+                Duration::from_secs(10),
+                operation(
+                    &client, &state, &sink, &callbacks, &args[1], sequence, &payload,
+                ),
+            )
+            .await??;
+        }
+        let mut samples = Vec::with_capacity(iterations as usize);
+        let start = Instant::now();
+        for sequence in warmup..warmup + iterations {
+            let before = Instant::now();
+            timeout(
+                Duration::from_secs(10),
+                operation(
+                    &client, &state, &sink, &callbacks, &args[1], sequence, &payload,
+                ),
+            )
+            .await??;
+            samples.push(u64::try_from(before.elapsed().as_nanos())?);
+        }
+        println!(
+            "{}",
+            json!({"workflow_version": VERSION, "implementation": implementation()?, "case": case, "warmup": warmup, "iterations": iterations, "elapsed_ns": u64::try_from(start.elapsed().as_nanos())?, "latency_ns": samples})
+        );
+        Ok(())
+    };
+    #[cfg(not(capntproto_upstream_api))]
+    if let Some(driver) = driver {
+        return driver.run_with(application).await?;
     }
-    let mut samples = Vec::with_capacity(iterations as usize);
-    let start = Instant::now();
-    for sequence in warmup..warmup + iterations {
-        let before = Instant::now();
-        timeout(
-            Duration::from_secs(10),
-            operation(
-                &client, &state, &sink, &callbacks, &args[1], sequence, &payload,
-            ),
-        )
-        .await??;
-        samples.push(u64::try_from(before.elapsed().as_nanos())?);
-    }
-    println!(
-        "{}",
-        json!({"workflow_version": VERSION, "implementation": implementation()?, "case": case, "warmup": warmup, "iterations": iterations, "elapsed_ns": u64::try_from(start.elapsed().as_nanos())?, "latency_ns": samples})
-    );
-    Ok(())
+    application.await
 }

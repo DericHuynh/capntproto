@@ -3,7 +3,7 @@
 //! This replacement drives the supplied VatNetwork, accepts and reuses its
 //! connections, owns bounded growing storage, and runs protected server calls.
 //! Generated clients and servers retain their ordinary API. No executor or clock
-//! is selected: poll this system on the caller's local executor.
+//! is selected: run the application and its systems in a shared [`Runtime`].
 //!
 //! Currently opt-in while default RpcSystem parity is completed. Authenticated
 //! independent-path Join, automatic introductions, and incoming answer handoff
@@ -28,8 +28,8 @@
 //! let mut system = RpcSystem::new(network, None, options)?;
 //! let bootstrap: capnp::capability::Client = system.bootstrap(Side::Server);
 //! let disconnector = system.get_disconnector();
-//! // Poll `system` on your local executor while making calls and awaiting
-//! // `disconnector`. A caller-supplied timer can invoke disconnector.abort(...).
+//! // Pass `system` to Runtime::handle().add(system), then drive calls through
+//! // Runtime::run(application). A caller-supplied timer can abort disconnector.
 //! # let _ = (system, bootstrap, disconnector);
 //! # Ok(())
 //! # }
@@ -56,8 +56,10 @@ mod connection;
 mod introduction;
 mod join;
 mod options;
+mod runtime;
 pub use join::Joiner;
 pub use options::Options;
+pub use runtime::{Runtime, RuntimeHandle};
 
 type Network<V> = Rc<RefCell<Box<dyn VatNetwork<V>>>>;
 struct State {
@@ -109,12 +111,13 @@ struct ContextOwner<V: 'static> {
 
 /// A local-executor RPC system backed exclusively by the portable engine.
 /// All per-connection storage limits are supplied at construction.
-#[must_use = "poll the RPC system to drive its network and connection tasks"]
+#[must_use = "transfer the RPC system to a portable Runtime to drive its tasks"]
 pub struct RpcSystem<V: 'static> {
     network: Network<V>,
     context: Rc<ContextOwner<V>>,
     connections: Rc<Connections<State>>,
     tasks: TaskSet<Error>,
+    output: Option<Promise<(), Error>>,
 }
 impl<V: 'static> RpcSystem<V> {
     pub fn get_joiner(&self) -> Joiner<V> {
@@ -174,6 +177,7 @@ impl<V: 'static> RpcSystem<V> {
         options: Options,
     ) -> capnp::Result<Self> {
         options.validate()?;
+        let output = network.take_output_driver();
         let join_network = network.join_network();
         let (mut tasks, driver) = TaskSet::new(Box::new(crate::SystemTaskReaper));
         let connections = Rc::new(Connections::<State>::new());
@@ -215,6 +219,7 @@ impl<V: 'static> RpcSystem<V> {
             }),
             connections,
             tasks: driver,
+            output,
         };
         let network = system.network.clone();
         let context = system.context.clone();
@@ -273,43 +278,12 @@ impl<V: 'static> RpcSystem<V> {
             connections: Rc::downgrade(&self.connections),
         }
     }
-    /// Incoming Call backpressure, in full message words. Like C++, pause all
-    /// input above the limit and resume strictly below it. This is not a hard
-    /// memory bound; cyclic calls can deadlock while reads are paused. Zero
-    /// requires a later increase after the first charged Call crosses it.
-    pub fn set_flow_limit(&mut self, words: usize) {
-        self.context.policy.flow_limit.set(words);
-        for state in self.connections.states() {
-            state.policy.notify();
+    /// Policy controls remain usable after ownership transfers to a runtime.
+    pub fn control(&self) -> Control {
+        Control {
+            connections: Rc::downgrade(&self.connections),
+            policy: self.context.policy.clone(),
         }
-    }
-    /// Limit outgoing Calls on current and future connections. Excess requests
-    /// fail locally with Overloaded; accepted calls are never canceled by a
-    /// reduction. Zero rejects new Calls while protocol progress stays enabled.
-    ///
-    /// Credit covers remote requests before send, their question lifetime,
-    /// response/pipeline contexts, and local write completion. Purely local
-    /// unresolved calls acquire credit only if they later reach a remote route.
-    pub fn set_outgoing_call_limit(&mut self, calls: usize) {
-        self.context.policy.outgoing_limit.set(calls);
-        for state in self.connections.states() {
-            state.policy.admission.set_limit(calls);
-        }
-    }
-    /// Optional local diagnostic text for subsequently serialized exceptions on
-    /// existing and future connections. Remote traces are never echoed by default.
-    pub fn set_trace_encoder(&mut self, encoder: impl Fn(&Error) -> String + 'static) {
-        let previous = self
-            .context
-            .policy
-            .trace
-            .borrow_mut()
-            .replace(Rc::new(encoder));
-        drop(previous);
-    }
-    pub fn clear_trace_encoder(&mut self) {
-        let previous = self.context.policy.trace.borrow_mut().take();
-        drop(previous);
     }
     /// Start orderly shutdown on first poll. The returned handle can also abort
     /// an already-started drain when the caller's timer/deadline expires.
@@ -320,10 +294,32 @@ impl<V: 'static> RpcSystem<V> {
         }
     }
 }
-impl<V: 'static> Future for RpcSystem<V> {
-    type Output = capnp::Result<()>;
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+impl<V: 'static> RpcSystem<V> {
+    /// Drive this system alone. Applications making calls should attach systems
+    /// to a Runtime and run their application there so related output batches
+    /// at the end of the same turn.
+    pub async fn run(self) -> capnp::Result<()> {
+        let mut runtime = Runtime::new(NonZeroUsize::new(1).unwrap());
+        let completion = runtime.handle().add(self)?;
+        runtime.run(completion).await
+    }
+    /// Drive an application and this system in one scheduling domain.
+    pub async fn run_with<F: Future>(self, application: F) -> capnp::Result<F::Output> {
+        let mut runtime = Runtime::new(NonZeroUsize::new(1).unwrap());
+        let _completion = runtime.handle().add(self)?;
+        Ok(runtime.run(application).await)
+    }
+    fn poll_progress(&mut self, cx: &mut Context<'_>) -> Poll<capnp::Result<()>> {
         Pin::new(&mut self.tasks).poll(cx)
+    }
+    fn poll_output(&mut self, cx: &mut Context<'_>) {
+        if let Some(output) = self.output.as_mut() {
+            if Pin::new(output).poll(cx).is_ready() {
+                // The ordinary network observer owns completion and cleanup.
+                // Its wake runs that work during the next progress phase.
+                self.output = None;
+            }
+        }
     }
 }
 impl<V: 'static> Drop for RpcSystem<V> {
@@ -332,6 +328,58 @@ impl<V: 'static> Drop for RpcSystem<V> {
         for state in self.connections.states() {
             state.abort(Error::disconnected("RPC system was dropped".into()));
         }
+    }
+}
+
+/// Live policy controls. This handle retains settings, but no network or task.
+#[derive(Clone)]
+pub struct Control {
+    connections: Weak<Connections<State>>,
+    policy: Rc<coordinator::policy::Settings>,
+}
+impl Control {
+    /// Incoming Call backpressure, in full message words. Like C++, pause all
+    /// input above the limit and resume strictly below it. This is not a hard
+    /// memory bound; cyclic calls can deadlock while reads are paused. Zero
+    /// requires a later increase after the first charged Call crosses it.
+    pub fn set_flow_limit(&self, words: usize) {
+        self.policy.flow_limit.set(words);
+        for state in self
+            .connections
+            .upgrade()
+            .into_iter()
+            .flat_map(|connections| connections.states())
+        {
+            state.policy.notify();
+        }
+    }
+    /// Limit outgoing Calls on current and future connections. Excess requests
+    /// fail locally with Overloaded; accepted calls are never canceled by a
+    /// reduction. Zero rejects new Calls while protocol progress stays enabled.
+    ///
+    /// Credit covers remote requests before send, their question lifetime,
+    /// response/pipeline contexts, and local write completion. Purely local
+    /// unresolved calls acquire credit only if they later reach a remote route.
+    pub fn set_outgoing_call_limit(&self, calls: usize) {
+        self.policy.outgoing_limit.set(calls);
+        for state in self
+            .connections
+            .upgrade()
+            .into_iter()
+            .flat_map(|connections| connections.states())
+        {
+            state.policy.admission.set_limit(calls);
+        }
+    }
+    /// Optional local diagnostic text for subsequently serialized exceptions on
+    /// existing and future connections. Remote traces are never echoed by default.
+    pub fn set_trace_encoder(&self, encoder: impl Fn(&Error) -> String + 'static) {
+        let previous = self.policy.trace.borrow_mut().replace(Rc::new(encoder));
+        drop(previous);
+    }
+    pub fn clear_trace_encoder(&self) {
+        let previous = self.policy.trace.borrow_mut().take();
+        drop(previous);
     }
 }
 

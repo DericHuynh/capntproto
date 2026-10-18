@@ -637,6 +637,11 @@ pub struct Bundle {
 }
 
 impl<V> io::WriteResources<Bundle> for Writer<V> {
+    fn can_write_while_flushing(&self) -> bool {
+        // OutgoingFrame owns the bytes, resources and credit. poll_capacity
+        // bounds admission; poll_flush remains the physical completion fence.
+        true
+    }
     fn accepts_parts(&self) -> bool {
         true
     }

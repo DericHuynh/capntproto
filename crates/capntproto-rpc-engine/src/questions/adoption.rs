@@ -48,6 +48,7 @@ impl<'id, 's> Questions<'id, 's> {
                     published: false,
                     destination: ResultsTo::Caller,
                     provision: false,
+                    owner: None,
                 },
             )
             .map_err(|rejected| match rejected.kind {

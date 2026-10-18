@@ -100,14 +100,17 @@ impl access_service::Server for Service {
     }
 }
 
-async fn connect(address: &str) -> Result<access_service::Client> {
+async fn connect(
+    address: &str,
+    runtime: Option<&capnp_rpc::portable::RuntimeHandle>,
+) -> Result<access_service::Client> {
     if crate::tcp_driver()? == "portable" {
         let socket = tokio::net::TcpStream::connect(address).await?;
         socket.set_nodelay(true)?;
         let mut driver =
             crate::portable_tcp(socket, None, capnp_rpc::rpc_twoparty_capnp::Side::Client)?;
         let client = driver.bootstrap(capnp_rpc::rpc_twoparty_capnp::Side::Server);
-        tokio::task::spawn_local(driver);
+        let _completion = runtime.expect("portable runtime").add(driver)?;
         return Ok(client);
     }
     let mut driver = capntproto::rpc::connect(address, None, Default::default()).await?;
@@ -117,11 +120,23 @@ async fn connect(address: &str) -> Result<access_service::Client> {
 }
 
 pub async fn serve(args: &[String]) -> Result<()> {
+    if crate::tcp_driver()? == "portable" {
+        let mut runtime = capnp_rpc::portable::Runtime::new(256.try_into().unwrap());
+        let handle = runtime.handle();
+        runtime.run(serve_inner(args, Some(&handle))).await
+    } else {
+        serve_inner(args, None).await
+    }
+}
+async fn serve_inner(
+    args: &[String],
+    runtime: Option<&capnp_rpc::portable::RuntimeHandle>,
+) -> Result<()> {
     if !(1..=2).contains(&args.len()) {
         return Err("topology-server ADDRESS [NEXT_ADDRESS]".into());
     }
     let next = if let Some(address) = args.get(1) {
-        Some(timeout(DEADLINE, connect(address)).await??)
+        Some(timeout(DEADLINE, connect(address, runtime)).await??)
     } else {
         None
     };
@@ -152,9 +167,7 @@ pub async fn serve(args: &[String]) -> Result<()> {
                 Some(service.client.clone()),
                 capnp_rpc::rpc_twoparty_capnp::Side::Server,
             )?;
-            tokio::task::spawn_local(async move {
-                let _ = driver.await;
-            });
+            let _completion = runtime.expect("portable runtime").add(driver)?;
         } else {
             let driver = capntproto::rpc::tcp::client(
                 socket,
@@ -191,6 +204,18 @@ async fn access(
 }
 
 pub async fn measure(args: &[String]) -> Result<()> {
+    if crate::tcp_driver()? == "portable" {
+        let mut runtime = capnp_rpc::portable::Runtime::new(8.try_into().unwrap());
+        let handle = runtime.handle();
+        runtime.run(measure_inner(args, Some(&handle))).await
+    } else {
+        measure_inner(args, None).await
+    }
+}
+async fn measure_inner(
+    args: &[String],
+    runtime: Option<&capnp_rpc::portable::RuntimeHandle>,
+) -> Result<()> {
     if args.len() != 4 {
         return Err("topology-measure ADDRESS CASE WARMUP ITERATIONS".into());
     }
@@ -210,7 +235,7 @@ pub async fn measure(args: &[String]) -> Result<()> {
     }
     let mut clients = Vec::with_capacity(connections);
     for _ in 0..connections {
-        let client = timeout(DEADLINE, connect(&args[0])).await??;
+        let client = timeout(DEADLINE, connect(&args[0], runtime)).await??;
         let response = timeout(DEADLINE, client.describe_request().send().promise).await??;
         if response.get()?.get_hops() != hops {
             return Err("wrong service topology".into());

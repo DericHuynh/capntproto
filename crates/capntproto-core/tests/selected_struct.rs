@@ -408,86 +408,101 @@ fn retained_selection_checks_every_segment_and_new_reader_limits() {
 }
 
 #[test]
-fn retained_pointer_checks_identity_budget_and_shortened_storage() {
-    use capnp::{any_pointer, any_struct, message::ReaderSegments};
-    use std::{cell::Cell, rc::Rc};
-    #[derive(Clone)]
-    struct Shared {
-        words: Rc<Vec<capnp::Word>>,
-        short: Rc<Cell<bool>>,
-    }
-    impl ReaderSegments for Shared {
-        fn get_segment(&self, id: u32) -> Option<&[u8]> {
-            (id == 0).then(|| {
-                capnp::Word::words_to_bytes(if self.short.get() {
-                    &self.words[..2]
-                } else {
-                    &self.words
-                })
-            })
+fn retained_pointers_share_identity_budget_and_nesting_after_owner_drop() {
+    use capnp::{any_pointer, any_struct};
+    let words = vec![
+        capnp::word(0, 0, 0, 0, 1, 0, 1, 0),
+        capnp::word(42, 0, 0, 0, 0, 0, 0, 0),
+        capnp::word(0, 0, 0, 0, 1, 0, 0, 0),
+        capnp::word(7, 0, 0, 0, 0, 0, 0, 0),
+    ];
+    let segments = [capnp::Word::words_to_bytes(&words)];
+    for depth in [1, 2] {
+        let reader = message::Reader::new(
+            &segments[..],
+            message::ReaderOptions {
+                traversal_limit_in_words: Some(5),
+                nesting_limit: depth,
+            },
+        )
+        .into_shared()
+        .unwrap();
+        let other = message::Reader::new(&segments[..], Default::default())
+            .into_shared()
+            .unwrap();
+        let root = reader
+            .get_root::<any_struct::Reader>()
+            .unwrap()
+            .into_internal_struct_reader();
+        let content = any_pointer::Reader::new(root.get_pointer_field(0));
+        // Identical bytes are insufficient: only the source budget owns this view.
+        assert!(matches!(other.retain(content), Err(e) if e.kind == ErrorKind::WrongArena));
+        let first = reader.retain(content).unwrap();
+        let second = reader.retain(content).unwrap();
+        drop(reader);
+        if depth == 1 {
+            assert_eq!(
+                first
+                    .root()
+                    .get_as::<any_struct::Reader>()
+                    .err()
+                    .unwrap()
+                    .kind,
+                ErrorKind::MessageIsTooDeeplyNestedOrContainsCycles
+            );
+        } else {
+            assert_eq!(
+                first
+                    .root()
+                    .get_as::<any_struct::Reader>()
+                    .unwrap()
+                    .into_internal_struct_reader()
+                    .get_data_field::<u64>(0),
+                7
+            );
+            assert_eq!(
+                second
+                    .root()
+                    .get_as::<any_struct::Reader>()
+                    .unwrap()
+                    .into_internal_struct_reader()
+                    .get_data_field::<u64>(0),
+                7
+            );
+            assert_eq!(
+                first
+                    .root()
+                    .get_as::<any_struct::Reader>()
+                    .err()
+                    .unwrap()
+                    .kind,
+                ErrorKind::ReadLimitExceeded
+            );
         }
     }
-    let storage = Shared {
-        words: Rc::new(vec![
-            capnp::word(0, 0, 0, 0, 1, 0, 1, 0),
-            capnp::word(42, 0, 0, 0, 0, 0, 0, 0),
-            capnp::word(1, 0, 0, 0, 26, 0, 0, 0),
-            capnp::word(b'a', b'b', b'c', 0, 0, 0, 0, 0),
-        ]),
-        short: Rc::default(),
-    };
-    let reader = message::Reader::new(storage.clone(), Default::default());
-    let root = reader
-        .get_root::<any_struct::Reader>()
-        .unwrap()
-        .into_internal_struct_reader();
-    let content = any_pointer::Reader::new(root.get_pointer_field(0));
-    let copy = Shared {
-        words: Rc::new((*storage.words).clone()),
-        short: Rc::default(),
-    };
-    assert!(
-        matches!(message::CheckedPointerReader::retain(content, copy, Default::default()), Err(error) if error.kind == ErrorKind::TypeMismatch)
-    );
-    let checked = message::CheckedPointerReader::retain(
-        content,
-        storage.clone(),
-        message::ReaderOptions {
-            traversal_limit_in_words: Some(2),
-            ..Default::default()
-        },
-    )
-    .unwrap();
+}
+
+#[test]
+fn borrowed_readers_cannot_reset_an_external_budget() {
+    let words = [
+        capnp::word(0, 0, 0, 0, 1, 0, 0, 0),
+        capnp::word(42, 0, 0, 0, 0, 0, 0, 0),
+    ];
+    let segments = [capnp::Word::words_to_bytes(&words)];
+    let budget = message::ReadBudget::new(Some(2));
+    {
+        let first = message::Reader::with_budget(&segments[..], Default::default(), &budget);
+        assert!(first.get_root::<capnp::any_struct::Reader>().is_ok());
+    }
+    let second = message::Reader::with_budget(&segments[..], Default::default(), &budget);
     assert_eq!(
-        checked.root().get_as::<capnp::data::Reader>().unwrap(),
-        b"abc"
+        second
+            .get_root::<capnp::any_struct::Reader>()
+            .err()
+            .unwrap()
+            .kind,
+        ErrorKind::ReadLimitExceeded
     );
-    assert!(
-        matches!(checked.root().get_as::<capnp::data::Reader>(), Err(error) if error.kind == ErrorKind::ReadLimitExceeded)
-    );
-    let checked =
-        message::CheckedPointerReader::retain(content, storage.clone(), Default::default())
-            .unwrap();
-    let checked = Box::new(checked);
-    drop(reader);
-    assert_eq!(
-        checked.root().get_as::<capnp::data::Reader>().unwrap(),
-        b"abc"
-    );
-    storage.short.set(true);
-    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| checked.root())).is_err());
-    let missing = any_pointer::Reader::new(capnp::private::layout::PointerReader::new_default());
-    let empty: [&[u8]; 0] = [];
-    let checked = message::CheckedPointerReader::retain(
-        missing,
-        &empty[..],
-        message::ReaderOptions {
-            traversal_limit_in_words: Some(0),
-            nesting_limit: 0,
-        },
-    )
-    .unwrap();
-    assert!(checked.root().is_null());
 }
 
 #[test]
@@ -511,25 +526,25 @@ fn consuming_pointer_selection_preserves_budgets_and_rebases_inline_storage() {
                 ..Default::default()
             },
         );
-        let selected = source.try_select_pointer(
-            message::ReaderOptions {
-                traversal_limit_in_words: Some(2),
-                ..Default::default()
-            },
-            |root| -> capnp::Result<_> {
-                let root = root
-                    .get_as::<capnp::any_struct::Reader>()?
-                    .into_internal_struct_reader();
-                let content = capnp::any_pointer::Reader::new(root.get_pointer_field(0));
-                content.validate_capability_indices(0)?;
-                Ok(Some((content, root.get_data_field::<u64>(0))))
-            },
-        );
+        let selected = source.try_select_pointer(|root| -> capnp::Result<_> {
+            let root = root
+                .get_as::<capnp::any_struct::Reader>()?
+                .into_internal_struct_reader();
+            let content = capnp::any_pointer::Reader::new(root.get_pointer_field(0));
+            Ok(Some((content, root.get_data_field::<u64>(0))))
+        });
+        let (selected, value) = selected.unwrap().unwrap();
         if limit == 3 {
-            assert_eq!(selected.err().unwrap().kind, ErrorKind::ReadLimitExceeded);
+            assert_eq!(
+                selected
+                    .root()
+                    .get_as::<capnp::text::Reader>()
+                    .unwrap_err()
+                    .kind,
+                ErrorKind::ReadLimitExceeded
+            );
             continue;
         }
-        let (selected, value) = selected.unwrap().unwrap();
         assert_eq!(value, 7);
         let selected = Box::new(selected);
         assert_eq!(
@@ -550,27 +565,19 @@ fn consuming_pointer_selection_preserves_budgets_and_rebases_inline_storage() {
 #[test]
 fn consuming_selection_can_decline_or_retain_a_missing_field_without_a_word_charge() {
     assert!(source()
-        .try_select_pointer(Default::default(), |_| Ok::<_, capnp::Error>(
-            None::<(capnp::any_pointer::Reader<'_>, ())>
-        ))
+        .try_select_pointer(|_| Ok::<_, capnp::Error>(None::<(capnp::any_pointer::Reader<'_>, ())>))
         .unwrap()
         .is_none());
     let (missing, ()) = source()
-        .try_select_pointer(
-            message::ReaderOptions {
-                traversal_limit_in_words: Some(0),
-                ..Default::default()
-            },
-            |root| -> capnp::Result<_> {
-                let root = root
-                    .get_as::<capnp::any_struct::Reader>()?
-                    .into_internal_struct_reader();
-                Ok(Some((
-                    capnp::any_pointer::Reader::new(root.get_pointer_field(usize::from(u16::MAX))),
-                    (),
-                )))
-            },
-        )
+        .try_select_pointer(|root| -> capnp::Result<_> {
+            let root = root
+                .get_as::<capnp::any_struct::Reader>()?
+                .into_internal_struct_reader();
+            Ok(Some((
+                capnp::any_pointer::Reader::new(root.get_pointer_field(usize::from(u16::MAX))),
+                (),
+            )))
+        })
         .unwrap()
         .unwrap();
     assert!(missing.root().is_null());
@@ -693,16 +700,13 @@ fn owning_pointer_cache_pins_inline_storage_and_preserves_spent_budget() {
             lookups: lookups.clone(),
             dropped: dropped.clone(),
         },
-        Default::default(),
+        message::ReaderOptions {
+            traversal_limit_in_words: Some(8),
+            ..Default::default()
+        },
     );
     let (selected, ()) = reader
-        .try_select_pointer::<_, capnp::Error>(
-            message::ReaderOptions {
-                traversal_limit_in_words: Some(8),
-                ..Default::default()
-            },
-            |root| Ok(Some((root, ()))),
-        )
+        .try_select_pointer::<_, capnp::Error>(|root| Ok(Some((root, ()))))
         .unwrap()
         .unwrap();
     let before = selected
@@ -758,16 +762,16 @@ fn owning_pointer_cache_keeps_far_pointer_and_nesting_checks() {
             .set_uint64(());
         let bytes = capnp::serialize::write_message_to_words(&builder);
         for limit in [1, 64] {
-            let reader =
-                capnp::serialize::read_message(bytes.as_slice(), Default::default()).unwrap();
+            let reader = capnp::serialize::read_message(
+                bytes.as_slice(),
+                message::ReaderOptions {
+                    nesting_limit: limit,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
             let (selected, ()) = reader
-                .try_select_pointer::<_, capnp::Error>(
-                    message::ReaderOptions {
-                        nesting_limit: limit,
-                        ..Default::default()
-                    },
-                    |root| Ok(Some((root, ()))),
-                )
+                .try_select_pointer::<_, capnp::Error>(|root| Ok(Some((root, ()))))
                 .unwrap()
                 .unwrap();
             let cached = Box::new(selected.into_cached().unwrap());

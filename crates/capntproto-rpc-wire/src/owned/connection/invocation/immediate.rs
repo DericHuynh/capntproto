@@ -78,10 +78,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .and_then(|words| words.checked_mul(8))
             .and_then(|bytes| usize::try_from(bytes).ok())
             .ok_or(Error::Input(super::super::super::Error::Capacity))?;
-        let slot = self
+        let slot_index = self
             .exchanges
-            .vacant_mut(|_, slot| slot.exchange.is_none(), || ExchangeSlot::EMPTY)
+            .vacant(|_, slot| slot.exchange.is_none(), || ExchangeSlot::EMPTY)
             .ok_or(Error::Busy)?;
+        let slot = &mut self.exchanges[slot_index];
         let mut output = queue
             .reserve_with(resources)
             .map_err(|error| Error::Input(super::super::super::Error::Storage(error)))?;
@@ -172,6 +173,10 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         )
         .map_err(|error| Error::Input(super::super::super::Error::Output(error)))?;
         let key = question.key();
+        self.ledgers
+            .questions
+            .bind_owner(question.key(), slot_index)
+            .expect("new exchange owner");
         slot.exchange = Some(Exchange::Pending(question));
         slot.canceled = false;
         slot.tail_taken = false;
@@ -304,10 +309,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 (Some(template), minimum)
             }
         };
-        let slot = self
+        let slot_index = self
             .exchanges
-            .vacant_mut(|_, slot| slot.exchange.is_none(), || ExchangeSlot::EMPTY)
+            .vacant(|_, slot| slot.exchange.is_none(), || ExchangeSlot::EMPTY)
             .ok_or(Error::Busy)?;
+        let slot = &mut self.exchanges[slot_index];
         let output = queue
             .reserve_with(resources)
             .map_err(|e| Error::Input(super::super::super::Error::Storage(e)))?;
@@ -335,6 +341,10 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                         self.allow_answer_handoff,
                     );
                     let key = question.key();
+                    self.ledgers
+                        .questions
+                        .bind_owner(question.key(), slot_index)
+                        .expect("new exchange owner");
                     slot.exchange = Some(Exchange::Pending(question));
                     slot.canceled = false;
                     slot.tail_taken = false;
@@ -417,6 +427,10 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         )
         .map_err(Error::Input)?;
         let key = question.key();
+        self.ledgers
+            .questions
+            .bind_owner(question.key(), slot_index)
+            .expect("new exchange owner");
         slot.exchange = Some(Exchange::Pending(question));
         slot.canceled = false;
         slot.tail_taken = false;

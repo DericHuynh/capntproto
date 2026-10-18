@@ -123,6 +123,9 @@ impl VatNetwork<Peer> for TransportNetwork {
             Poll::Pending
         }))
     }
+    fn take_output_driver(&mut self) -> Option<capnp::capability::Promise<(), capnp::Error>> {
+        None
+    }
     fn drive_until_shutdown(&mut self) -> Promise<(), Error> {
         self.0.drives.set(self.0.drives.get() + 1);
         let probe = self.0.clone();
@@ -144,14 +147,20 @@ fn fixture(options: Options) -> (RpcSystem<Peer>, Rc<Probe>) {
 fn poll<F: Future + Unpin>(future: &mut F) -> Poll<F::Output> {
     Pin::new(future).poll(&mut Context::from_waker(Waker::noop()))
 }
+fn poll_system(system: &mut RpcSystem<Peer>) -> Poll<capnp::Result<()>> {
+    let mut cx = Context::from_waker(Waker::noop());
+    let progress = system.poll_progress(&mut cx);
+    system.poll_output(&mut cx);
+    progress
+}
 fn pump(system: &mut RpcSystem<Peer>) {
     for _ in 0..32 {
-        assert!(poll(system).is_pending());
+        assert!(poll_system(system).is_pending());
     }
 }
 fn finish(system: &mut RpcSystem<Peer>) -> capnp::Result<()> {
     for _ in 0..32 {
-        if let Poll::Ready(result) = poll(system) {
+        if let Poll::Ready(result) = poll_system(system) {
             return result;
         }
     }
@@ -345,7 +354,7 @@ fn network_failure_is_not_masked_by_an_already_completed_empty_disconnector() {
     *probe.network_error.borrow_mut() = Some(Error::failed("listener failed".into()));
     probe.end_network.set(true);
     assert!(
-        matches!(poll(&mut system), Poll::Ready(Err(error)) if error.extra == "listener failed")
+        matches!(poll_system(&mut system), Poll::Ready(Err(error)) if error.extra == "listener failed")
     );
 }
 
@@ -470,7 +479,7 @@ fn reentrant_abort_during_transport_construction_retires_reservation_and_preserv
 fn diagnostics_are_live_sorted_weak_and_policy_reaches_current_and_future_connections() {
     let (mut system, _) = fixture(options());
     let diagnostics = system.diagnostics();
-    system.set_outgoing_call_limit(3);
+    system.control().set_outgoing_call_limit(3);
     let first: capability::Client = system.bootstrap(Peer(7));
     let second: capability::Client = system.bootstrap(Peer(2));
     let snapshots = diagnostics.snapshot();
@@ -486,7 +495,7 @@ fn diagnostics_are_live_sorted_weak_and_policy_reaches_current_and_future_connec
         assert_eq!(snapshot.outgoing_calls, 0); // Bootstrap isn't a Call.
         assert_eq!(snapshot.questions, 0); // Task has never been polled.
     }
-    system.set_outgoing_call_limit(0);
+    system.control().set_outgoing_call_limit(0);
     pump(&mut system);
     for snapshot in diagnostics.snapshot() {
         assert_eq!(snapshot.outgoing_call_limit, 0);

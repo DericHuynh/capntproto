@@ -91,13 +91,13 @@ fn mixed_descriptors_acquire_all_owners_or_none_without_allocation() {
                         };
                         let mut release_scratch = [0];
                         let prepared = if checked {
-                            let payload = CheckedPayload::new(reader.get_root().unwrap()).unwrap();
+                            let payload = PayloadEnvelope::new(reader.get_root().unwrap()).unwrap();
                             let releases = exports
                                 .prepare_releases(&mut release_scratch)
                                 .unwrap()
                                 .finish()
                                 .unwrap();
-                            prepare_checked_with_releases(
+                            prepare_envelope_with_releases(
                                 payload, imports, releases, answers, slots,
                             )
                             .map(WithReleases::accept)

@@ -135,7 +135,7 @@ async fn peer(
             stop.await.unwrap();
             closed.await.unwrap();
         };
-        let (result, ()) = futures::join!(system, application);
+        let (result, ()) = futures::join!(system.run(), application);
         result.unwrap();
         return;
     }

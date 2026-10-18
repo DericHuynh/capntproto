@@ -156,6 +156,123 @@ fn partial_frames_flush_without_reordering_or_repeating_resources_and_allocate_n
 }
 
 #[test]
+fn owning_queue_accepts_during_flush_without_claiming_completion_or_bypassing_capacity() {
+    struct Owned {
+        bytes: [u8; 3],
+        len: usize,
+        pending: usize,
+        resources: u8,
+        completion: Option<Result<(), u8>>,
+    }
+    impl Flush for Owned {
+        type Error = u8;
+        fn poll_flush(&mut self, _: &mut Context<'_>) -> Poll<Result<(), IoError<u8>>> {
+            match self.completion {
+                None => Poll::Pending,
+                Some(Err(error)) => Poll::Ready(Err(IoError::Failed(error))),
+                Some(Ok(())) => {
+                    self.pending = 0;
+                    Poll::Ready(Ok(()))
+                }
+            }
+        }
+    }
+    impl WriteResources<Resource<'_>> for Owned {
+        fn can_write_while_flushing(&self) -> bool {
+            true
+        }
+        fn poll_write_resources(
+            &mut self,
+            _: &mut Context<'_>,
+            bytes: &[u8],
+            resource: Option<&Resource<'_>>,
+        ) -> Poll<Result<usize, IoError<u8>>> {
+            if self.pending == 2 {
+                return Poll::Pending;
+            }
+            assert_eq!(bytes.len(), 1);
+            self.bytes[self.len] = bytes[0];
+            self.len += 1;
+            self.pending += 1;
+            let bit = resource.unwrap().0;
+            assert_eq!(self.resources & bit, 0);
+            self.resources |= bit;
+            Poll::Ready(Ok(1))
+        }
+    }
+    for fail in [false, true] {
+        let mut a = [0];
+        let mut b = [0];
+        let mut c = [0];
+        let mut buffers = [
+            messages::Buffer::new(&mut a),
+            messages::Buffer::new(&mut b),
+            messages::Buffer::new(&mut c),
+        ];
+        messages::with_messages(
+            &mut buffers,
+            &mut [messages::SendSlot::EMPTY; 3],
+            |messages| {
+                let released = Cell::new(0);
+                let mut entries = [None, None, None];
+                let mut queue = Queue::with_resources(&mut entries).unwrap();
+                for (bit, bytes) in [(1, b"a"), (2, b"b"), (4, b"c")] {
+                    let lease = messages.copy_from(bytes).unwrap();
+                    let offer = messages.offer(&lease).unwrap();
+                    queue
+                        .reserve_with(Resource(bit, &released))
+                        .unwrap()
+                        .accept(messages, offer);
+                    messages.release(lease);
+                }
+                let mut sink = Owned {
+                    bytes: [0; 3],
+                    len: 0,
+                    pending: 0,
+                    resources: 0,
+                    completion: None,
+                };
+                let mut output = Output::new();
+                let mut cx = Context::from_waker(Waker::noop());
+                let budget = NonZeroUsize::new(1).unwrap();
+                for expected in [1, 2, 2] {
+                    assert_eq!(
+                        output.poll(&mut sink, &mut queue, messages, &mut cx, budget),
+                        Poll::Pending
+                    );
+                    assert!(!output.is_clean());
+                    assert_eq!(sink.len, expected);
+                }
+                assert_eq!(&sink.bytes[..2], b"ab");
+                assert_eq!(sink.resources, 3);
+                assert_eq!(released.get(), 3);
+                sink.completion = Some(if fail { Err(73) } else { Ok(()) });
+                let result = output.poll(&mut sink, &mut queue, messages, &mut cx, budget);
+                if fail {
+                    assert_eq!(result, Poll::Ready(Err(SendError::Io(73))));
+                    assert!(queue.is_failed());
+                    assert!(!output.is_clean());
+                    while queue.discard_one(messages).unwrap() {}
+                    assert_eq!(sink.len, 2);
+                } else {
+                    assert_eq!(result, Poll::Pending);
+                    assert!(output.is_clean());
+                    assert_eq!(
+                        output.poll(&mut sink, &mut queue, messages, &mut cx, budget),
+                        Poll::Ready(Ok(()))
+                    );
+                    assert!(output.is_clean());
+                    assert_eq!(&sink.bytes, b"abc");
+                    assert_eq!(sink.resources, 7);
+                }
+                assert_eq!(released.get(), 7);
+            },
+        )
+        .unwrap();
+    }
+}
+
+#[test]
 fn flush_failure_at_each_offset_is_terminal_and_preserves_remaining_resources_for_cleanup() {
     for offset in 0..3 {
         let mut bytes = [0; 3];

@@ -1,5 +1,4 @@
 use super::*;
-use std::{cell::RefCell, future::Future, pin::Pin};
 
 fn options() -> capnp_rpc::portable::Options {
     capnp_rpc::portable::Options::bounded(
@@ -36,14 +35,14 @@ async fn zero_flow_limit_pauses_after_one_call_and_live_increase_resumes_tcp() {
         let (a, b) = networks().await;
         let calls = Rc::new(Cell::new(0));
         let mut client = capnp_rpc::RpcSystem::new(a, None);
-        let server = Rc::new(RefCell::new(
-            capnp_rpc::portable::RpcSystem::new(b, Some(echo(calls.clone())), options()).unwrap(),
-        ));
-        server.borrow_mut().set_flow_limit(0);
+        let server =
+            capnp_rpc::portable::RpcSystem::new(b, Some(echo(calls.clone())), options()).unwrap();
+        let control = server.control();
+        control.set_flow_limit(0);
         let remote: Client = client.bootstrap(Side::Server);
         let cclose = client.get_disconnector();
-        let sclose = server.borrow().get_disconnector();
-        let drive = std::future::poll_fn(|cx| Pin::new(&mut *server.borrow_mut()).poll(cx));
+        let sclose = server.get_disconnector();
+        let drive = server.run();
         let operation = async {
             remote.when_resolved().await.unwrap(); // Bootstrap is not a Call charge.
             let first = payload(&remote, 11);
@@ -57,10 +56,10 @@ async fn zero_flow_limit_pauses_after_one_call_and_live_increase_resumes_tcp() {
             }
             assert!(second.as_mut().now_or_never().is_none());
             assert_eq!(calls.get(), 1);
-            server.borrow_mut().set_flow_limit(1);
+            control.set_flow_limit(1);
             second.await; // The setter must wake a parked reader.
             payload(&remote, 13).await; // Nonzero credit resumes after Return.
-            server.borrow_mut().set_flow_limit(0);
+            control.set_flow_limit(0);
             payload(&remote, 14).await;
             assert_eq!(calls.get(), 4);
             // Shutdown must still be polled while the reader is paused.
@@ -89,31 +88,30 @@ async fn bootstrap_traces_follow_live_opt_in_policy_and_never_echo_remote_trace(
     tokio::time::timeout(Duration::from_secs(10), async {
         let (a, b) = networks().await;
         let client = capnp_rpc::RpcSystem::new(a, None);
-        let server = Rc::new(RefCell::new(
-            capnp_rpc::portable::RpcSystem::new_with_bootstrap_factory(
-                b,
-                Side::Server,
-                Rc::new(Deny),
-                options(),
-            )
-            .unwrap(),
-        ));
+        let server = capnp_rpc::portable::RpcSystem::new_with_bootstrap_factory(
+            b,
+            Side::Server,
+            Rc::new(Deny),
+            options(),
+        )
+        .unwrap();
+        let control = server.control();
         let bootstrap = client.get_bootstrapper();
         let cclose = client.get_disconnector();
-        let sclose = server.borrow().get_disconnector();
-        let drive = std::future::poll_fn(|cx| Pin::new(&mut *server.borrow_mut()).poll(cx));
+        let sclose = server.get_disconnector();
+        let drive = server.run();
         let encoded = Rc::new(Cell::new(0));
         let operation = async {
             for mode in 0..4 {
                 if mode == 1 || mode == 2 {
                     let encoded = encoded.clone();
-                    server.borrow_mut().set_trace_encoder(move |error| {
+                    control.set_trace_encoder(move |error| {
                         encoded.set(encoded.get() + 1);
                         assert_eq!(error.extra, "policy denied");
                         format!("local {mode}: {}", "trace".repeat(2048))
                     });
                 } else if mode == 3 {
-                    server.borrow_mut().clear_trace_encoder();
+                    control.clear_trace_encoder();
                 }
                 let cap: Client = bootstrap.bootstrap(Side::Server);
                 let error = cap.when_resolved().await.unwrap_err();
@@ -147,15 +145,14 @@ async fn outgoing_limit_counts_unsent_requests_responses_and_pipelines_without_d
         let (a, b) = networks().await;
         let calls = Rc::new(Cell::new(0));
         let server = capnp_rpc::RpcSystem::new(b, Some(echo(calls.clone())));
-        let client = Rc::new(RefCell::new(
-            capnp_rpc::portable::RpcSystem::new(a, None, options()).unwrap(),
-        ));
-        client.borrow_mut().set_outgoing_call_limit(0);
-        let remote: Client = client.borrow_mut().bootstrap(Side::Server);
-        let diagnostics = client.borrow().diagnostics();
-        let cclose = client.borrow().get_disconnector();
+        let mut client = capnp_rpc::portable::RpcSystem::new(a, None, options()).unwrap();
+        let control = client.control();
+        control.set_outgoing_call_limit(0);
+        let remote: Client = client.bootstrap(Side::Server);
+        let diagnostics = client.diagnostics();
+        let cclose = client.get_disconnector();
         let sclose = server.get_disconnector();
-        let drive = std::future::poll_fn(|cx| Pin::new(&mut *client.borrow_mut()).poll(cx));
+        let drive = client.run();
         let operation = async {
             // An unresolved destination acquires credit only when routed remotely.
             let rejected = remote
@@ -168,7 +165,7 @@ async fn outgoing_limit_counts_unsent_requests_responses_and_pipelines_without_d
             remote.when_resolved().await.unwrap();
             assert_eq!(calls.get(), 0);
             assert_eq!(diagnostics.snapshot()[0].outgoing_calls, 0);
-            client.borrow_mut().set_outgoing_call_limit(1);
+            control.set_outgoing_call_limit(1);
             let request = remote.new_call::<any_pointer::Owned, any_pointer::Owned>(0, 0, None);
             assert_eq!(diagnostics.snapshot()[0].outgoing_calls, 1);
             let rejected = remote
@@ -184,7 +181,7 @@ async fn outgoing_limit_counts_unsent_requests_responses_and_pipelines_without_d
                 .new_call::<any_pointer::Owned, any_pointer::Owned>(0, 0, None)
                 .send();
             let response = sent.promise.await.unwrap();
-            client.borrow_mut().set_outgoing_call_limit(0); // Never revoke accepted work.
+            control.set_outgoing_call_limit(0); // Never revoke accepted work.
             let snap = diagnostics.snapshot()[0];
             assert_eq!(snap.outgoing_calls, 1);
             assert_eq!(snap.held_responses, 1);
@@ -200,7 +197,7 @@ async fn outgoing_limit_counts_unsent_requests_responses_and_pipelines_without_d
                 tokio::task::yield_now().await;
             }
             assert_eq!(diagnostics.snapshot()[0].outgoing_calls, 0);
-            client.borrow_mut().set_outgoing_call_limit(1);
+            control.set_outgoing_call_limit(1);
             let sent = remote
                 .new_call::<any_pointer::Owned, any_pointer::Owned>(0, 0, None)
                 .send();
@@ -244,17 +241,17 @@ async fn queued_and_membrane_calls_retain_response_credit_and_local_calls_ignore
         let calls = Rc::new(Cell::new(0));
         let local_calls = Rc::new(Cell::new(0));
         let server = capnp_rpc::RpcSystem::new(b, Some(echo(calls.clone())));
-        let client = Rc::new(RefCell::new(
+        let mut client =
             capnp_rpc::portable::RpcSystem::new(a, Some(echo(local_calls.clone())), options())
-                .unwrap(),
-        ));
-        client.borrow_mut().set_outgoing_call_limit(1);
-        let remote: Client = client.borrow_mut().bootstrap(Side::Server);
-        let local: Client = client.borrow_mut().bootstrap(Side::Client);
-        let diagnostics = client.borrow().diagnostics();
-        let cclose = client.borrow().get_disconnector();
+                .unwrap();
+        let control = client.control();
+        control.set_outgoing_call_limit(1);
+        let remote: Client = client.bootstrap(Side::Server);
+        let local: Client = client.bootstrap(Side::Client);
+        let diagnostics = client.diagnostics();
+        let cclose = client.get_disconnector();
         let sclose = server.get_disconnector();
-        let drive = std::future::poll_fn(|cx| Pin::new(&mut *client.borrow_mut()).poll(cx));
+        let drive = client.run();
         let operation = async {
             remote.when_resolved().await.unwrap();
             for wrapped in [false, true] {
@@ -290,7 +287,7 @@ async fn queued_and_membrane_calls_retain_response_credit_and_local_calls_ignore
                 }
                 assert_eq!(diagnostics.snapshot()[0].outgoing_calls, 0);
             }
-            client.borrow_mut().set_outgoing_call_limit(0);
+            control.set_outgoing_call_limit(0);
             payload(&local, 31).await;
             assert_eq!(local_calls.get(), 1);
             assert_eq!(calls.get(), 2);

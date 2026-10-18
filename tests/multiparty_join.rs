@@ -77,6 +77,9 @@ impl VatNetwork<Vat> for Proxies {
                 .map_ok(move |c| Box::new(Link(c, supports_join)) as Box<dyn Connection<Vat>>),
         )
     }
+    fn take_output_driver(&mut self) -> Option<capnp::capability::Promise<(), capnp::Error>> {
+        None
+    }
     fn drive_until_shutdown(&mut self) -> Promise<(), Error> {
         self.0.drive_until_shutdown()
     }

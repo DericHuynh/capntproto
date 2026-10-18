@@ -248,15 +248,12 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         let key = adoption.key();
         let outcome = (|| {
             self.check_live().map_err(AdoptionError::Connection)?;
-            let slot = self
-                .exchanges
-                .iter_mut()
-                .find(|slot| {
-                    !slot.canceled
-                        && !slot.authorized
-                        && slot.exchange.as_ref().is_some_and(|e| e.key() == key)
-                })
+            let index = ExchangeSlot::index(&self.exchanges, &self.ledgers.questions, key)
                 .ok_or(AdoptionError::Connection(Error::UnknownQuestion))?;
+            let slot = &mut self.exchanges[index];
+            if slot.canceled || slot.authorized {
+                return Err(AdoptionError::Connection(Error::UnknownQuestion));
+            }
             adoption
                 .with_completion(messages, authenticate)
                 .map_err(|e| AdoptionError::Connection(Error::Input(e)))?

@@ -67,7 +67,7 @@ impl<V: 'static> System<V> {
     pub async fn run(self) -> capnp::Result<()> {
         match self {
             Self::Hosted(s) => s.await,
-            Self::Portable(s) => s.await,
+            Self::Portable(s) => s.run().await,
         }
     }
 }

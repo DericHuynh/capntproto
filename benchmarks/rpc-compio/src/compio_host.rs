@@ -46,13 +46,17 @@ fn driver(
     };
     crate::system(network, bootstrap)
 }
-async fn connect(address: &str) -> Result<workflows::Client> {
+async fn connect(
+    address: &str,
+) -> Result<(
+    workflows::Client,
+    Option<capnp_rpc::portable::RpcSystem<capnp_rpc::rpc_twoparty_capnp::Side>>,
+)> {
     let socket = TcpStream::connect(address).await?;
     socket.set_nodelay(true)?;
     let mut driver = driver(socket, None, Side::Client)?;
     let client = driver.bootstrap(Side::Server);
-    compio::runtime::spawn(driver).detach();
-    Ok(client)
+    Ok((client, Some(driver)))
 }
 async fn serve(address: &str) -> Result<()> {
     let listener = TcpListener::bind(address).await?;
@@ -63,7 +67,7 @@ async fn serve(address: &str) -> Result<()> {
         let bootstrap: workflows::Client = capnp_rpc::new_client(capability::Service);
         let driver = driver(socket, Some(bootstrap.client), Side::Server)?;
         compio::runtime::spawn(async move {
-            if let Err(error) = driver.await {
+            if let Err(error) = driver.run().await {
                 eprintln!("workflow connection closed: {error}");
             }
         })

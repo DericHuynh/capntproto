@@ -591,6 +591,106 @@ fn plain_reply_to_an_opaque_sink_preserves_errors_owners_and_reentrant_work() {
 }
 
 #[test]
+fn owned_transport_can_admit_pipeline_work_while_previous_output_is_flushing() {
+    #[derive(Default)]
+    struct OwnedOutput(Vec<Vec<u8>>);
+    impl io::Flush for OwnedOutput {
+        type Error = ();
+        fn poll_flush(&mut self, _: &mut Context<'_>) -> Poll<Result<(), io::IoError<()>>> {
+            Poll::Pending
+        }
+    }
+    impl io::WriteResources<()> for OwnedOutput {
+        fn can_write_while_flushing(&self) -> bool {
+            true
+        }
+        fn poll_write_resources(
+            &mut self,
+            _: &mut Context<'_>,
+            bytes: &[u8],
+            _: Option<&()>,
+        ) -> Poll<Result<usize, io::IoError<()>>> {
+            if self.0.len() == 2 {
+                return Poll::Pending;
+            }
+            self.0.push(bytes.to_vec());
+            Poll::Ready(Ok(bytes.len()))
+        }
+    }
+    with_peer(|mut driver, messages| {
+        driver.use_owned_output_queues(true);
+        let mut hooks = ClientHooks::new(32, 32);
+        let client = remote(&mut driver, &mut hooks, ImportId::from_wire(7));
+        let mut coordinator = Coordinator::new(
+            driver,
+            hooks,
+            NonZeroUsize::new(32).unwrap(),
+            None,
+            options(),
+        )
+        .unwrap();
+        let mut queue = messages::Queue::new_growing(0, 4).unwrap();
+        let mut bytes = OwnedOutput::default();
+        let mut control = Policy::default();
+        let mut cx = Context::from_waker(Waker::noop());
+        let mut responses = Vec::new();
+        for pipeline_only in [false, true] {
+            let mut request = client.new_call::<any_pointer::Owned, any_pointer::Owned>(7, 0, None);
+            request.hook.set_hints(capability::CallHints {
+                only_promise_pipeline: pipeline_only,
+                ..Default::default()
+            });
+            responses.push(request.send());
+            // An independent protocol notification must not make publication
+            // wait for the earlier frame's physical completion.
+            coordinator.changed();
+            for _ in 0..128 {
+                coordinator
+                    .poll_io_work::<(), _, _>(
+                        messages,
+                        &mut queue,
+                        &mut bytes,
+                        &mut [0; 32],
+                        &NoResources,
+                        &mut control,
+                        &mut cx,
+                    )
+                    .unwrap();
+                if bytes.0.len() == responses.len() {
+                    break;
+                }
+            }
+            assert_eq!(bytes.0.len(), responses.len());
+            assert!(!coordinator.output.is_clean());
+            assert!(!coordinator.idle);
+        }
+        for (id, frame) in bytes.0.iter().enumerate() {
+            let mut source = frame.as_slice();
+            let message = capnp::serialize::read_message(&mut source, options().reader).unwrap();
+            let crate::rpc_capnp::message::Call(call) = message
+                .get_root::<crate::rpc_capnp::message::Reader>()
+                .unwrap()
+                .which()
+                .unwrap()
+            else {
+                panic!("Call")
+            };
+            assert_eq!(call.unwrap().get_question_id(), id as u32);
+            assert!(source.is_empty());
+        }
+        drop((responses, client, bytes));
+        futures::executor::block_on(coordinator.terminate::<NoResources, (), ()>(
+            messages,
+            &mut queue,
+            &mut control,
+            Ok(()),
+        ))
+        .unwrap();
+        reclaimed(messages);
+    });
+}
+
+#[test]
 fn outgoing_bursts_flush_under_pool_pressure_and_pending_receipts() {
     #[derive(Default)]
     struct OutputBytes {

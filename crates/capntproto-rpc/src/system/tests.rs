@@ -46,6 +46,9 @@ impl crate::VatNetwork<()> for Network {
     fn accept(&mut self) -> Promise<Box<dyn Connection<()>>, Error> {
         Promise::from_future(futures::future::pending())
     }
+    fn take_output_driver(&mut self) -> Option<capnp::capability::Promise<(), capnp::Error>> {
+        None
+    }
     fn drive_until_shutdown(&mut self) -> Promise<(), Error> {
         Promise::from_future(futures::future::pending())
     }

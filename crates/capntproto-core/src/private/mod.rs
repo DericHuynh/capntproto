@@ -28,7 +28,7 @@ pub mod capability;
 pub mod layout;
 mod mask;
 mod primitive;
-mod read_limiter;
+pub(crate) mod read_limiter;
 pub mod units;
 mod zero;
 

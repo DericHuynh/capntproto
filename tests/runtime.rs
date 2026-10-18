@@ -143,7 +143,8 @@ fn start_system(
         .unwrap();
         tokio::task::spawn_local(
             capnp_rpc::portable::RpcSystem::new(Box::new(network), Some(service.client), options)
-                .unwrap(),
+                .unwrap()
+                .run(),
         )
     } else {
         tokio::task::spawn_local(RpcSystem::new(Box::new(network), Some(service.client)))

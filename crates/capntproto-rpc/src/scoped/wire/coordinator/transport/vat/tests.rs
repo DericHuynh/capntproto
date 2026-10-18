@@ -516,8 +516,10 @@ fn output_receipts_apply_backpressure_and_close_is_a_separate_idempotent_fence()
     let (connection, state) = fixture();
     let (_reader, mut writer, mut failure) = connection.into_io(NonZeroUsize::new(64).unwrap());
     let bytes = frame();
+    assert!(writer.can_write_while_flushing());
     for _ in 0..MAXIMUM_RECEIPTS {
         ready_ok(writer.poll_write_resources(&mut cx(), &bytes, None));
+        assert!(writer.poll_flush(&mut cx()).is_pending());
     }
     assert!(writer
         .poll_write_resources(&mut cx(), &bytes, None)

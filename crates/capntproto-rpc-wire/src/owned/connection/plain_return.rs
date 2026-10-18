@@ -55,12 +55,12 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         {
             return Ok(PlainReceived::Deferred(frame));
         }
-        let segments = match frame.share_segments(messages) {
-            Ok(Some(segments)) => segments,
+        let source = match frame.shared_reader(messages) {
+            Ok(Some(reader)) => reader,
             Ok(None) => return Ok(PlainReceived::Deferred(frame)),
             Err(error) => return Err((Error::Input(error), frame)),
         };
-        match self.receive_plain_segments(segments, frame.options, messages, select) {
+        match self.receive_plain_reader(source, messages, select) {
             Ok(Some((receiver, message))) => {
                 frame.release(messages);
                 Ok(PlainReceived::Delivered(receiver, message))
@@ -99,75 +99,72 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         };
         let segments = capnp::serialize::NoAllocBufferSegments::from_buffer_exact(bytes, options)
             .map_err(|error| Error::Input(error.into()))?;
-        self.receive_plain_segments(segments, options, messages, select)
+        let source = capnp::message::Reader::new(segments, options)
+            .into_shared()
+            .map_err(|error| Error::Input(error.into()))?;
+        self.receive_plain_reader(&source, messages, select)
     }
 
     // Keep reply validation and ownership handoff out of each receive-pump
     // expansion. Buffered and retained-frame inputs share this transition.
     #[inline(never)]
-    fn receive_plain_segments<T>(
+    fn receive_plain_reader<T>(
         &mut self,
-        segments: capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
-        options: capnp::message::ReaderOptions,
+        source: &capnp::message::SharedReader<
+            capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
+        >,
         messages: &mut messages::Messages<'pool, '_, '_>,
         select: impl FnOnce(questions::Key<'id>) -> Option<T>,
     ) -> Result<Option<(T, alloc::boxed::Box<super::super::PlainResults>)>, Error> {
-        let source = capnp::message::Reader::new(segments, options);
-        let admitted = source.try_select_pointer(
-            capnp::message::ReaderOptions {
-                traversal_limit_in_words: None,
-                nesting_limit: i32::MAX,
-            },
-            |root| -> Result<_, super::super::Error> {
-                let root = root.get_as::<rpc_capnp::message::Reader>()?;
-                use capnp::traits::IntoInternalStructReader;
-                let fields = rpc_capnp::api::MessageRef::from(root.into_internal_struct_reader());
-                if fields.tag() != rpc_capnp::api::MessageUnionTag::Return {
-                    return Ok(None);
-                }
-                let result = rpc_capnp::return_::Reader::from(
-                    fields.r#return()?.into_internal_struct_reader(),
-                );
-                if !result.get_no_finish_needed() {
-                    return Ok(None);
-                }
-                let id = result.get_answer_id();
-                let Some(index) = ExchangeSlot::pending_index(&self.exchanges, id) else {
-                    return Ok(None);
-                };
-                let slot = &self.exchanges[index];
-                if !slot.authorized || slot.canceled {
-                    return Ok(None);
-                }
-                let Some(Exchange::Pending(question)) = &slot.exchange else {
-                    unreachable!("selected pending question")
-                };
-                let key = question.key();
-                if self.outgoing.pending_for(key)
-                    || self
-                        .invocation_pipelines
-                        .iter()
-                        .any(|slot| slot.pending_for(key))
-                {
-                    return Ok(None);
-                }
-                let Some(receiver) = select(key) else {
-                    return Ok(None);
-                };
-                question
-                    .prepare_plain_return(result, &mut self.ledgers.questions, true)
-                    .map(|prepared| {
-                        prepared.map(|(pending, content)| (content, (index, receiver, pending)))
-                    })
-            },
-        );
+        let admitted = (|| -> Result<_, super::super::Error> {
+            let root = source.get_root::<capnp::any_pointer::Reader>()?;
+            let root = root.get_as::<rpc_capnp::message::Reader>()?;
+            use capnp::traits::IntoInternalStructReader;
+            let fields = rpc_capnp::api::MessageRef::from(root.into_internal_struct_reader());
+            if fields.tag() != rpc_capnp::api::MessageUnionTag::Return {
+                return Ok(None);
+            }
+            let result =
+                rpc_capnp::return_::Reader::from(fields.r#return()?.into_internal_struct_reader());
+            if !result.get_no_finish_needed() {
+                return Ok(None);
+            }
+            let id = result.get_answer_id();
+            let Some(index) =
+                ExchangeSlot::pending_index(&self.exchanges, &self.ledgers.questions, id)
+            else {
+                return Ok(None);
+            };
+            let slot = &self.exchanges[index];
+            if !slot.authorized || slot.canceled {
+                return Ok(None);
+            }
+            let Some(Exchange::Pending(question)) = &slot.exchange else {
+                unreachable!("selected pending question")
+            };
+            let key = question.key();
+            if self.outgoing.pending_for(key)
+                || self
+                    .invocation_pipelines
+                    .iter()
+                    .any(|slot| slot.pending_for(key))
+            {
+                return Ok(None);
+            }
+            let Some(receiver) = select(key) else {
+                return Ok(None);
+            };
+            let Some((pending, content)) =
+                question.prepare_plain_return(result, &mut self.ledgers.questions, true)?
+            else {
+                return Ok(None);
+            };
+            let message = source.retain(content)?;
+            Ok(Some((message, (index, receiver, pending))))
+        })();
         match admitted {
             Ok(Some((message, (index, receiver, pending)))) => {
-                // Construct the stable application reader before committing the
-                // pending question transition; failure leaves admission intact.
-                let message = message
-                    .into_cached()
-                    .map_err(|error| Error::Input(error.into()))?;
+                // Retention completed before committing the question transition.
                 let admitted = super::super::question::AdmittedPlain::owned(message);
                 let Some(Exchange::Pending(question)) = self.exchanges[index].exchange.take()
                 else {

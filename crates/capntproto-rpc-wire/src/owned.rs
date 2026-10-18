@@ -39,10 +39,13 @@ impl core::error::Error for Error {}
 pub struct Frame<'pool> {
     lease: messages::Lease<'pool>,
     options: capnp::message::ReaderOptions,
-    // A successful framing pass certifies this immutable lease and its fixed
-    // reader options. Cache only the common single-segment layout; pointer
-    // traversal still gets a fresh arena and the original limits on every read.
-    single_bytes: core::cell::Cell<Option<core::num::NonZeroUsize>>,
+    budget: capnp::message::ReadBudget,
+    #[cfg(feature = "alloc")]
+    reader: core::cell::OnceCell<
+        capnp::message::SharedReader<
+            capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
+        >,
+    >,
 }
 impl<'pool> Frame<'pool> {
     /// Copy a complete stream frame into caller storage, checking the segment
@@ -67,39 +70,33 @@ impl<'pool> Frame<'pool> {
         Self {
             lease,
             options,
-            single_bytes: core::cell::Cell::new(None),
+            budget: capnp::message::ReadBudget::new(options.traversal_limit_in_words),
+            #[cfg(feature = "alloc")]
+            reader: core::cell::OnceCell::new(),
         }
     }
     #[inline(always)]
     fn reader<'a>(
-        &self,
+        &'a self,
         view: &'a [u8],
-    ) -> Result<capnp::message::Reader<capnp::serialize::NoAllocSliceSegments<'a>>, Error> {
-        use capnp::message::ReaderSegments;
-        if let Some(length) = self.single_bytes.get() {
-            return Ok(capnp::message::Reader::new(
-                capnp::serialize::NoAllocBufferSegments::from_segment_table_info(
-                    view,
-                    capnp::serialize::NoAllocSegmentTableInfo {
-                        segments_count: 1,
-                        segment_table_length_bytes: 8,
-                        total_segments_length_bytes: length.get() - 8,
-                    },
-                ),
-                self.options,
-            ));
-        }
+    ) -> Result<
+        capnp::message::Reader<
+            capnp::serialize::NoAllocSliceSegments<'a>,
+            &'a capnp::message::ReadBudget,
+        >,
+        Error,
+    > {
         let mut bytes = view;
         let reader =
             capnp::serialize::read_message_from_flat_slice_no_alloc(&mut bytes, self.options)?;
         if !bytes.is_empty() {
             return Err(Error::TrailingBytes);
         }
-        if reader.get_segments().len() == 1 {
-            self.single_bytes
-                .set(core::num::NonZeroUsize::new(view.len()));
-        }
-        Ok(reader)
+        Ok(capnp::message::Reader::with_budget(
+            reader.into_segments(),
+            self.options,
+            &self.budget,
+        ))
     }
     /// Build the single segment directly in its reserved wire buffer. The
     /// closure cannot publish a partial frame; every failure recovers storage.
@@ -152,20 +149,7 @@ impl<'pool> Frame<'pool> {
             }
         };
         match messages.seal(writer, length) {
-            Ok(lease) => Ok(Self {
-                lease,
-                options,
-                single_bytes: core::cell::Cell::new(
-                    if options
-                        .traversal_limit_in_words
-                        .is_none_or(|limit| (length - 8) / 8 <= limit)
-                    {
-                        core::num::NonZeroUsize::new(length)
-                    } else {
-                        None
-                    },
-                ),
-            }),
+            Ok(lease) => Ok(Self::new(lease, options)),
             Err(rejected) => {
                 messages.discard(rejected.writer);
                 Err(Error::Storage(rejected.error))
@@ -202,21 +186,51 @@ impl<'pool> Frame<'pool> {
         let Some(bytes) = self.share(messages) else {
             return Ok(None);
         };
-        let segments = if let Some(length) = self.single_bytes.get() {
-            // The private immutable lease and its options are the same ones
-            // whose framing was checked by reader(). Sharing cannot edit them.
-            capnp::serialize::NoAllocBufferSegments::from_segment_table_info(
-                bytes,
-                capnp::serialize::NoAllocSegmentTableInfo {
-                    segments_count: 1,
-                    segment_table_length_bytes: 8,
-                    total_segments_length_bytes: length.get() - 8,
-                },
-            )
-        } else {
-            capnp::serialize::NoAllocBufferSegments::from_buffer_exact(bytes, self.options)?
-        };
+        let segments =
+            capnp::serialize::NoAllocBufferSegments::from_buffer_exact(bytes, self.options)?;
         Ok(Some(segments))
+    }
+    #[cfg(feature = "alloc")]
+    fn shared_reader(
+        &self,
+        messages: &messages::Messages<'pool, '_, '_>,
+    ) -> Result<
+        Option<
+            &capnp::message::SharedReader<
+                capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
+            >,
+        >,
+        Error,
+    > {
+        if self.reader.get().is_none() {
+            let Some(segments) = self.share_segments(messages)? else {
+                return Ok(None);
+            };
+            let reader = capnp::message::Reader::new(segments, self.options).into_shared()?;
+            let _ = self.reader.set(reader);
+        }
+        Ok(self.reader.get())
+    }
+    /// Retain a selected pointer from this frame's exact shared reader. The
+    /// immutable bytes and traversal allowance remain one owner. Fixed storage
+    /// cannot escape its scope and returns None.
+    #[cfg(feature = "alloc")]
+    pub fn retain_pointer(
+        &self,
+        messages: &messages::Messages<'pool, '_, '_>,
+        pointer: capnp::any_pointer::Reader<'_>,
+    ) -> Result<
+        Option<
+            capnp::message::CachedPointerReader<
+                capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
+            >,
+        >,
+        Error,
+    > {
+        self.shared_reader(messages)?
+            .map(|reader| reader.retain(pointer))
+            .transpose()
+            .map_err(Into::into)
     }
     #[cfg(feature = "alloc")]
     #[inline(always)]
@@ -225,20 +239,9 @@ impl<'pool> Frame<'pool> {
         messages: &messages::Messages<'pool, '_, '_>,
         payload: rpc_capnp::payload::Reader<'_>,
     ) -> Result<Option<alloc::boxed::Box<PlainParams>>, Error> {
-        let Some(segments) = self.share_segments(messages)? else {
-            return Ok(None);
-        };
-        let message = capnp::message::CheckedPointerReader::retain(
-            payload.get_content(),
-            segments,
-            capnp::message::ReaderOptions {
-                traversal_limit_in_words: None,
-                nesting_limit: i32::MAX,
-            },
-        )?;
-        Ok(Some(alloc::boxed::Box::new(PlainParams {
-            message: message.into_cached()?,
-        })))
+        Ok(self
+            .retain_pointer(messages, payload.get_content())?
+            .map(|message| alloc::boxed::Box::new(PlainParams { message })))
     }
     /// Full serialized segment words, including unreachable data but excluding
     /// the segment table. Admission policies must not use root target_size(),
@@ -248,8 +251,9 @@ impl<'pool> Frame<'pool> {
         &self,
         messages: &messages::Messages<'pool, '_, '_>,
     ) -> Result<usize, Error> {
-        if let Some(length) = self.single_bytes.get() {
-            return Ok((length.get() - 8) / 8);
+        #[cfg(feature = "alloc")]
+        if let Some(reader) = self.reader.get() {
+            return Ok(reader.size_in_words());
         }
         let view = messages.read(&self.lease);
         let reader = self.reader(&view)?;
@@ -288,20 +292,7 @@ impl<'pool> Frame<'pool> {
             .and_then(core::convert::identity);
         match result {
             Ok(length) => match messages.seal(writer, length) {
-                Ok(lease) => Ok(Self {
-                    lease,
-                    options,
-                    single_bytes: core::cell::Cell::new(
-                        if options
-                            .traversal_limit_in_words
-                            .is_none_or(|limit| (length - 8) / 8 <= limit)
-                        {
-                            core::num::NonZeroUsize::new(length)
-                        } else {
-                            None
-                        },
-                    ),
-                }),
+                Ok(lease) => Ok(Self::new(lease, options)),
                 Err(rejected) => {
                     messages.discard(rejected.writer);
                     Err(Error::Storage(rejected.error))
@@ -319,6 +310,10 @@ impl<'pool> Frame<'pool> {
         messages: &messages::Messages<'pool, '_, '_>,
         f: impl FnOnce(rpc_capnp::message::Reader<'_>) -> R,
     ) -> Result<R, Error> {
+        #[cfg(feature = "alloc")]
+        if let Some(reader) = self.shared_reader(messages)? {
+            return Ok(f(reader.get_root()?));
+        }
         let view = messages.read(&self.lease);
         let reader = self.reader(&view)?;
         reader
@@ -333,12 +328,13 @@ impl<'pool> Frame<'pool> {
         messages: &messages::Messages<'pool, '_, '_>,
         f: impl FnOnce(rpc_capnp::message::Reader<'_>, usize) -> R,
     ) -> Result<R, Error> {
+        #[cfg(feature = "alloc")]
+        if let Some(reader) = self.shared_reader(messages)? {
+            return Ok(f(reader.get_root()?, reader.size_in_words()));
+        }
         let view = messages.read(&self.lease);
         let reader = self.reader(&view)?;
-        let words = self
-            .single_bytes
-            .get()
-            .map_or_else(|| reader.size_in_words(), |length| (length.get() - 8) / 8);
+        let words = reader.size_in_words();
         reader
             .with_root(|root| root.get_as().map(|root| f(root, words)))?
             .map_err(Into::into)
@@ -391,7 +387,7 @@ impl<'i, 'e, 'a, I, const N: usize> Receipts<'i, 'e, 'a, I, N> {
         spare: usize,
         receiver: &mut impl ImportReceiver<I>,
         capacity: Capacity,
-    ) -> Result<reception::full::CheckedPayload<'m>, Error> {
+    ) -> Result<reception::full::PayloadEnvelope<'m>, Error> {
         let descriptors = payload.get_cap_table()?;
         let count = usize::try_from(descriptors.len()).map_err(|_| Error::Capacity)?;
         let required = count.checked_add(spare).ok_or(Error::Capacity)?;
@@ -408,9 +404,9 @@ impl<'i, 'e, 'a, I, const N: usize> Receipts<'i, 'e, 'a, I, N> {
                 required
             },
         )?;
-        // Validate before side-effecting factories, then carry that exact
-        // immutable payload into admission instead of traversing it again.
-        let checked = reception::full::CheckedPayload::new(payload)?;
+        // Decode the exact descriptor table before constructing receipt owners.
+        // Application content is traversed lazily with the frame's budget.
+        let checked = reception::full::PayloadEnvelope::new(payload)?;
         self.initialize_descriptors(checked.descriptors(), count, imports, receiver, capacity)?;
         Ok(checked)
     }
@@ -837,10 +833,6 @@ impl<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> Call<'pool, 'i, 'e, '
                         return Err(Error::Capacity);
                     }
                     inbound::caller_question(call.get_question_id()).map_err(Error::Admission)?;
-                    payload
-                        .get_content()
-                        .validate_capability_indices(0)
-                        .map_err(|e| Error::Admission(inbound::Error::Reception(e.into())))?;
                     let target = exports
                         .prepare_lease(ExportId::from_wire(id))
                         .map_err(|e| {
@@ -877,11 +869,9 @@ impl<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> Call<'pool, 'i, 'e, '
                 if capacity.maximum::<N>() == 0 {
                     return Err(Error::Capacity);
                 }
-                reception::full::PayloadView::Unchecked(payload)
+                reception::full::PayloadEnvelope::new(payload)?
             } else {
-                reception::full::PayloadView::Checked(
-                    receipts.initialize(payload, imports, 1, receiver, capacity)?,
-                )
+                receipts.initialize(payload, imports, 1, receiver, capacity)?
             };
             let count = receipts.count;
             let admitted = receipts.storage.with_call_slots(count, |slots| {
@@ -1002,32 +992,26 @@ impl<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> Call<'pool, 'i, 'e, '
         if self.receipts.count != 0 {
             return Ok(None);
         }
-        let Some(segments) = self.frame.share_segments(messages)? else {
-            return Ok(None);
-        };
         self.with(messages, |params| {
-            let payload = params.incoming().payload()?;
-            capnp::message::CheckedPointerReader::retain(
-                payload.get_content(),
-                segments,
-                capnp::message::ReaderOptions {
-                    traversal_limit_in_words: None,
-                    nesting_limit: i32::MAX,
-                },
-            )
-            .and_then(capnp::message::CheckedPointerReader::into_cached)
-            .map(|message| Some(alloc::boxed::Box::new(PlainParams { message })))
+            self.frame
+                .retain_plain_payload(messages, params.incoming().payload()?)
         })?
-        .map_err(Error::from)
     }
-    /// Share the admitted frame's immutable bytes, without interpreting IDs as
-    /// capability authority. Its receipts remain available only through `with`.
+    /// Retain admitted content with this request's original traversal budget.
     #[cfg(feature = "alloc")]
-    pub fn share_frame(
+    pub fn retain_params(
         &self,
         messages: &messages::Messages<'pool, '_, '_>,
-    ) -> Option<messages::SharedBytes> {
-        self.frame.share(messages)
+        content: capnp::any_pointer::Reader<'_>,
+    ) -> Result<
+        Option<
+            capnp::message::CachedPointerReader<
+                capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
+            >,
+        >,
+        Error,
+    > {
+        self.frame.retain_pointer(messages, content)
     }
     /// The future borrows only this task and its reserved bytes, not the message
     /// pool or connection tables. Other frames can progress during suspension.
@@ -1041,13 +1025,17 @@ impl<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> Call<'pool, 'i, 'e, '
     where
         F: for<'m> core::ops::AsyncFnOnce(Request<'m, 'call, 'i, 'e, 'a, I, N>) -> R + 'call,
     {
+        #[cfg(feature = "alloc")]
+        let shared = self.frame.shared_reader(messages);
         let view = messages.read(&self.frame.lease);
         async move {
-            let mut bytes = &*view;
-            let reader = capnp::serialize::read_message_from_flat_slice_no_alloc(
-                &mut bytes,
-                self.frame.options,
-            )?;
+            let reader = self.frame.reader(&view)?;
+            #[cfg(feature = "alloc")]
+            let root = match shared? {
+                Some(shared) => shared.get_root::<rpc_capnp::message::Reader<'_>>()?,
+                None => reader.get_root::<rpc_capnp::message::Reader<'_>>()?,
+            };
+            #[cfg(not(feature = "alloc"))]
             let root = reader.get_root::<rpc_capnp::message::Reader<'_>>()?;
             let rpc_capnp::message::Call(call) = root.which().map_err(|_| Error::WrongMessage)?
             else {

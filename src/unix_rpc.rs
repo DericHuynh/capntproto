@@ -321,6 +321,7 @@ pub struct VatNetwork {
     accepted: bool,
     driver: Shared<LocalBoxFuture<'static, capnp::Result<()>>>,
     output_closed: Shared<Promise<(), Error>>,
+    output_extracted: bool,
 }
 impl VatNetwork {
     pub fn new(socket: UnixStream, side: Side, options: Options) -> Self {
@@ -441,6 +442,7 @@ impl VatNetwork {
             inner,
             side,
             accepted: false,
+            output_extracted: false,
             driver,
             output_closed: Promise::from_future(
                 async move { closed_rx.await.map_err(|_| stopped())? },
@@ -472,8 +474,16 @@ impl capnp_rpc::VatNetwork<Side> for VatNetwork {
             Promise::ok(Box::new(Endpoint(self.inner.clone())))
         }
     }
+    fn take_output_driver(&mut self) -> Option<Promise<(), Error>> {
+        (!std::mem::replace(&mut self.output_extracted, true))
+            .then(|| Promise::from_future(self.driver.clone()))
+    }
     fn drive_until_shutdown(&mut self) -> Promise<(), Error> {
-        Promise::from_future(self.driver.clone())
+        if self.output_extracted {
+            Promise::from_future(self.output_closed.clone())
+        } else {
+            Promise::from_future(self.driver.clone())
+        }
     }
 }
 

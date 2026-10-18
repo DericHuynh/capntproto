@@ -32,7 +32,6 @@ fn complete_frame_copy_validates_framing_limits_and_recovers_fixed_storage() {
             assert_eq!(result.is_ok(), valid);
             if let Ok(frame) = result {
                 assert_eq!(frame.size_in_words(messages), Ok(2));
-                assert!(frame.single_bytes.get().is_some());
                 frame.with(messages, |_| ()).unwrap();
                 frame.release(messages);
             }
@@ -46,7 +45,7 @@ fn complete_frame_copy_validates_framing_limits_and_recovers_fixed_storage() {
 }
 
 #[test]
-fn cached_frame_layout_preserves_framing_and_pointer_validation() {
+fn repeated_frame_views_preserve_framing_and_pointer_validation() {
     for (length, limit) in [(24, 2), (32, 2), (24, 1)] {
         let mut words = [ZERO; 8];
         let mut buffers = [messages::Buffer::new(Word::words_to_bytes_mut(&mut words))];
@@ -71,10 +70,8 @@ fn cached_frame_layout_preserves_framing_and_pointer_validation() {
                 let size = frame.size_in_words(messages);
                 if length == 24 && limit == 2 {
                     assert_eq!(size, Ok(2));
-                    assert!(frame.single_bytes.get().is_some());
                 } else {
                     assert!(size.is_err());
-                    assert!(frame.single_bytes.get().is_none());
                 }
                 assert!(frame.with(messages, |_| ()).is_err());
                 assert!(frame.with_size(messages, |_, _| ()).is_err());
@@ -86,7 +83,7 @@ fn cached_frame_layout_preserves_framing_and_pointer_validation() {
 }
 
 #[test]
-fn empty_descriptor_call_rejects_capability_pointer_before_ledger_commit() {
+fn empty_descriptor_call_rejects_capability_authority_on_access() {
     let mut words = [ZERO; 128];
     let mut buffers = [messages::Buffer::new(Word::words_to_bytes_mut(&mut words))];
     messages::with_messages(&mut buffers, &mut [], |messages| {
@@ -113,7 +110,7 @@ fn empty_descriptor_call_rejects_capability_pointer_before_ledger_commit() {
                     )
                 })
                 .unwrap();
-                let Err(rejected) = Call::<_, 1, 0>::admit(
+                let call = Call::<_, 1, 0>::admit(
                     frame,
                     messages,
                     &mut connection.imports,
@@ -121,11 +118,29 @@ fn empty_descriptor_call_rejects_capability_pointer_before_ledger_commit() {
                     &mut connection.answers,
                     (),
                     |_| panic!("empty descriptor factory"),
-                ) else {
-                    panic!("ungranted capability admitted");
-                };
-                assert!(connection.imports.is_empty() && connection.answers.is_empty());
-                rejected.frame.release(messages);
+                )
+                .unwrap_or_else(|rejected| panic!("{}", rejected.error));
+                assert!(connection.imports.is_empty());
+                call.with(messages, |params| {
+                    let pointer = params
+                        .incoming()
+                        .payload()
+                        .unwrap()
+                        .get_content()
+                        .get_as::<capnp::wire_capability::Reader<'_, ()>>()
+                        .unwrap();
+                    assert!(matches!(
+                        params.capability(pointer),
+                        Err(reception::Error::MissingCapability)
+                    ));
+                })
+                .unwrap();
+                call.release(
+                    messages,
+                    &mut connection.imports,
+                    &mut connection.exports,
+                    &mut connection.answers,
+                );
                 assert_eq!(connection.exports.release(grant.id(), 1), Ok(Some(())));
                 let writer = messages.reserve(512).unwrap();
                 messages.discard(writer);
@@ -152,7 +167,6 @@ fn frame_word_accounting_includes_unreachable_segments_without_heap_allocation()
         let frame = Frame::new(messages.seal(writer, 64).unwrap(), Default::default());
         assert_eq!(frame.size_in_words(messages).unwrap(), 6);
         assert_eq!(frame.size_in_words(messages).unwrap(), 6);
-        assert!(frame.single_bytes.get().is_none());
         frame.release(messages);
     })
     .unwrap();

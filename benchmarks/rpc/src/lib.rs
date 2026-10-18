@@ -97,6 +97,7 @@ async fn serve(protocol: &str) -> Result<()> {
                         Some(bootstrap.client),
                         capnp_rpc::rpc_twoparty_capnp::Side::Server,
                     )?
+                    .run()
                     .await?;
                 } else {
                     capntproto::rpc::tcp::client(
@@ -142,6 +143,10 @@ async fn serve(protocol: &str) -> Result<()> {
 
 enum Client {
     Native(echo_capnp::echo::Client),
+    Portable(
+        echo_capnp::echo::Client,
+        capnp_rpc::portable::RpcSystem<capnp_rpc::rpc_twoparty_capnp::Side>,
+    ),
     Grpc(grpc::echo_client::EchoClient<tonic::transport::Channel>),
     WebSocket(Box<WebSocketStream<TcpStream>>),
 }
@@ -155,8 +160,7 @@ impl Client {
                     let mut driver =
                         portable_tcp(socket, None, capnp_rpc::rpc_twoparty_capnp::Side::Client)?;
                     let client = driver.bootstrap(capnp_rpc::rpc_twoparty_capnp::Side::Server);
-                    tokio::task::spawn_local(driver);
-                    return Ok(Self::Native(client));
+                    return Ok(Self::Portable(client, driver));
                 }
                 let mut driver =
                     capntproto::rpc::connect(address, None, Default::default()).await?;
@@ -254,14 +258,27 @@ async fn measure(args: &[String]) -> Result<()> {
         return Err("benchmark bounds exceeded".into());
     }
     let payload: Vec<_> = (0..bytes).map(|n| (n % 251) as u8).collect();
-    let mut client = Client::connect(&args[0], &args[1], &args[2]).await?;
-    match &mut client {
-        Client::Native(client) => {
-            measure_calls(client, &args[0], &payload, warmup, iterations).await
+    let client = Client::connect(&args[0], &args[1], &args[2]).await?;
+    match client {
+        Client::Portable(mut client, driver) => {
+            driver
+                .run_with(measure_calls(
+                    &mut client,
+                    &args[0],
+                    &payload,
+                    warmup,
+                    iterations,
+                ))
+                .await?
         }
-        Client::Grpc(client) => measure_calls(client, &args[0], &payload, warmup, iterations).await,
-        Client::WebSocket(client) => {
-            measure_calls(&mut **client, &args[0], &payload, warmup, iterations).await
+        Client::Native(mut client) => {
+            measure_calls(&mut client, &args[0], &payload, warmup, iterations).await
+        }
+        Client::Grpc(mut client) => {
+            measure_calls(&mut client, &args[0], &payload, warmup, iterations).await
+        }
+        Client::WebSocket(mut client) => {
+            measure_calls(&mut *client, &args[0], &payload, warmup, iterations).await
         }
     }
 }

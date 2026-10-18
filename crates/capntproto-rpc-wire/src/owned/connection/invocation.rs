@@ -570,10 +570,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         let count = invocation.count;
         let template = invocation.template.filter(|_| import.is_some());
         if let Some(template) = template {
-            let slot = self
+            let slot_index = self
                 .exchanges
-                .vacant_mut(|_, slot| slot.exchange.is_none(), || ExchangeSlot::EMPTY)
+                .vacant(|_, slot| slot.exchange.is_none(), || ExchangeSlot::EMPTY)
                 .ok_or(Error::Busy)?;
+            let slot = &mut self.exchanges[slot_index];
             let output = queue
                 .reserve_with(resources)
                 .map_err(|error| Error::Input(super::super::Error::Storage(error)))?;
@@ -619,6 +620,10 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 .map_err(|error| Error::Input(super::super::Error::Output(error)))?
             };
             let key = question.key();
+            self.ledgers
+                .questions
+                .bind_owner(question.key(), slot_index)
+                .expect("new exchange owner");
             slot.exchange = Some(Exchange::Pending(question));
             slot.canceled = false;
             slot.tail_taken = false;
@@ -686,10 +691,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             *key = client.as_ref().map(clients::Client::key);
         }
         drop(ready);
-        let slot = self
+        let slot_index = self
             .exchanges
-            .vacant_mut(|_, slot| slot.exchange.is_none(), || ExchangeSlot::EMPTY)
+            .vacant(|_, slot| slot.exchange.is_none(), || ExchangeSlot::EMPTY)
             .ok_or(Error::Busy)?;
+        let slot = &mut self.exchanges[slot_index];
         let mut output = queue
             .reserve_with(resources)
             .map_err(|error| Error::Input(super::super::Error::Storage(error)))?;
@@ -811,6 +817,10 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             Question::send_granting(reservation, batch, messages, frame, scratch, output)
                 .map_err(|error| Error::Input(super::super::Error::Output(error)))?;
         let key = question.key();
+        self.ledgers
+            .questions
+            .bind_owner(question.key(), slot_index)
+            .expect("new exchange owner");
         slot.exchange = Some(Exchange::Pending(question));
         slot.canceled = false;
         slot.tail_taken = false;

@@ -31,7 +31,7 @@ pub fn call<'b, 'r, 'p, 'm, 'i, 'e, 'a, 'is, 'es, 'as_, I, E, A>(
     call_parts(
         call,
         call.get_target()?,
-        capabilities::PayloadView::Unchecked(call.get_params()?),
+        capabilities::PayloadEnvelope::new(call.get_params()?)?,
         imports,
         exports,
         answers,
@@ -47,7 +47,7 @@ pub fn call<'b, 'r, 'p, 'm, 'i, 'e, 'a, 'is, 'es, 'as_, I, E, A>(
 pub(crate) fn call_parts<'b, 'r, 'p, 'm, 'i, 'e, 'a, 'is, 'es, 'as_, I, E, A>(
     call: rpc_capnp::call::Reader<'m>,
     target: rpc_capnp::message_target::Reader<'m>,
-    payload: capabilities::PayloadView<'m>,
+    payload: capabilities::PayloadEnvelope<'m>,
     imports: &'b mut imports::Imports<'i, 'is, I>,
     exports: &'b mut exports::Exports<'e, 'es, E>,
     answers: &'b mut answers::Answers<'a, 'as_, A>,
@@ -69,7 +69,7 @@ pub(crate) fn call_parts<'b, 'r, 'p, 'm, 'i, 'e, 'a, 'is, 'es, 'as_, I, E, A>(
     let (last_export, payload_exports) = slots.exports.split_last_mut().ok_or(Error::Mismatch)?;
     let (last_answer, payload_answers) = slots.answers.split_last_mut().ok_or(Error::Mismatch)?;
     payload
-        .validate(&Slots {
+        .validate_slots(&Slots {
             imports: slots.imports,
             exports: payload_exports,
             answers: payload_answers,

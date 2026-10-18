@@ -22,11 +22,12 @@ use core::slice;
 
 use crate::message;
 use crate::message::Allocator;
+use crate::message::ReadBudget;
 use crate::message::ReaderSegments;
-use crate::private::read_limiter::ReadLimiter;
 use crate::private::units::*;
 use crate::OutputSegments;
 use crate::{Error, ErrorKind, Result};
+use core::borrow::Borrow;
 
 pub(crate) mod fixed;
 #[cfg(test)]
@@ -126,9 +127,9 @@ pub unsafe trait ReaderArena {
     //   layout::StructReader, layout::ListReader, etc. could drop their `cap_table` fields.
 }
 
-pub struct ReaderArenaImpl<S> {
+pub struct ReaderArenaImpl<S, B = ReadBudget> {
     segments: S,
-    read_limiter: ReadLimiter,
+    read_limiter: B,
     nesting_limit: i32,
 }
 
@@ -145,10 +146,22 @@ where
     S: ReaderSegments,
 {
     pub fn new(segments: S, options: message::ReaderOptions) -> Self {
-        let limiter = ReadLimiter::new(options.traversal_limit_in_words);
+        Self::with_budget(
+            segments,
+            options,
+            ReadBudget::new(options.traversal_limit_in_words),
+        )
+    }
+}
+impl<S: ReaderSegments, B: Borrow<ReadBudget>> ReaderArenaImpl<S, B> {
+    pub(crate) fn with_budget(
+        segments: S,
+        options: message::ReaderOptions,
+        read_limiter: B,
+    ) -> Self {
         Self {
             segments,
-            read_limiter: limiter,
+            read_limiter,
             nesting_limit: options.nesting_limit,
         }
     }
@@ -165,7 +178,7 @@ where
     pub(crate) fn cached(&self) -> Result<CachedReaderArena<&Self>> {
         Ok(CachedReaderArena {
             inner: self,
-            first: self.get_segment(0)?,
+            first: core::cell::Cell::new(self.get_segment(0)?),
         })
     }
 }
@@ -173,19 +186,40 @@ where
 /// Cache the common segment only after its arena has a stable address. The
 /// private constructors accept either a live borrow or an owning Rc; neither
 /// exposes mutable access or moves the arena while cached pointers exist.
+#[derive(Clone)]
 pub(crate) struct CachedReaderArena<O> {
     inner: O,
-    first: (*const u8, u32),
+    first: core::cell::Cell<(*const u8, u32)>,
 }
 #[cfg(feature = "alloc")]
-impl<S: ReaderSegments> CachedReaderArena<alloc::rc::Rc<ReaderArenaImpl<S>>> {
-    pub(crate) fn owning(arena: ReaderArenaImpl<S>) -> Result<Self> {
-        let inner = alloc::rc::Rc::new(arena);
-        let first = inner.get_segment(0)?;
-        Ok(Self { inner, first })
+pub(crate) struct OwnedArena<S>(ReaderArenaImpl<S>);
+#[cfg(feature = "alloc")]
+impl<S> core::ops::Deref for OwnedArena<S> {
+    type Target = ReaderArenaImpl<S>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
-impl<S: ReaderSegments, O: core::ops::Deref<Target = ReaderArenaImpl<S>>> CachedReaderArena<O> {
+#[cfg(feature = "alloc")]
+impl<S: ReaderSegments> CachedReaderArena<OwnedArena<S>> {
+    pub(crate) fn owning(arena: ReaderArenaImpl<S>) -> Result<alloc::rc::Rc<Self>> {
+        // Pin the complete arena before caching an inline segment's address.
+        // Interior initialization touches only the descriptor, never the segment
+        // owner, preserving the shared provenance of the cached address.
+        let owner = alloc::rc::Rc::new(Self {
+            inner: OwnedArena(arena),
+            first: core::cell::Cell::new((core::ptr::null(), 0)),
+        });
+        owner.first.set(owner.inner.get_segment(0)?);
+        Ok(owner)
+    }
+}
+impl<
+        S: ReaderSegments,
+        B: Borrow<ReadBudget>,
+        O: core::ops::Deref<Target = ReaderArenaImpl<S, B>>,
+    > CachedReaderArena<O>
+{
     // Keep non-cached segment lookup and its error storage out of the vtable's
     // common segment-zero bounds check. The same arena validates other segments.
     #[inline(never)]
@@ -202,16 +236,19 @@ impl<S: ReaderSegments, O: core::ops::Deref<Target = ReaderArenaImpl<S>>> Cached
     }
 }
 // SAFETY: private constructors cache first only after borrowing the arena or
-// placing it in an Rc. Neither constructor exposes mutation or moves its owner
-// afterward. ReaderSegments keeps returned storage live until that owner drops.
+// placing the complete cache in an Rc. Neither constructor exposes mutation
+// or moves its segment owner afterward. ReaderSegments keeps returned storage live until that owner drops.
 // Other segments and the traversal budget belong to the same retained arena.
-unsafe impl<S: ReaderSegments, O: core::ops::Deref<Target = ReaderArenaImpl<S>>> ReaderArena
-    for CachedReaderArena<O>
+unsafe impl<
+        S: ReaderSegments,
+        B: Borrow<ReadBudget>,
+        O: core::ops::Deref<Target = ReaderArenaImpl<S, B>>,
+    > ReaderArena for CachedReaderArena<O>
 {
     #[inline(always)]
     fn get_segment(&self, id: u32) -> Result<(*const u8, u32)> {
         if id == 0 {
-            Ok(self.first)
+            Ok(self.first.get())
         } else {
             self.inner.get_segment(id)
         }
@@ -227,7 +264,7 @@ unsafe impl<S: ReaderSegments, O: core::ops::Deref<Target = ReaderArenaImpl<S>>>
                 ErrorKind::MessageContainsOutOfBoundsPointer,
             ));
         }
-        self.inner.read_limiter.can_read(words)
+        self.inner.read_limiter.borrow().limiter.can_read(words)
     }
     #[inline(always)]
     unsafe fn check_offset_and_read(
@@ -242,7 +279,7 @@ unsafe impl<S: ReaderSegments, O: core::ops::Deref<Target = ReaderArenaImpl<S>>>
             // receives the same live pointer, signed offset and requested extent.
             return unsafe { self.check_other_offset_and_read(id, start, offset, words) };
         }
-        let (base, length) = self.first;
+        let (base, length) = self.first.get();
         let invalid = || Error::from_kind(ErrorKind::MessageContainsOutOfBoundsPointer);
         let relative = (start as usize)
             .checked_sub(base as usize)
@@ -256,7 +293,7 @@ unsafe impl<S: ReaderSegments, O: core::ops::Deref<Target = ReaderArenaImpl<S>>>
         if words > (bytes - target) / BYTES_PER_WORD {
             return Err(invalid());
         }
-        self.inner.read_limiter.can_read(words)?;
+        self.inner.read_limiter.borrow().limiter.can_read(words)?;
         // SAFETY: the cached/delegated segment remains live, and the complete
         // target was checked before forming this pointer (including on 32-bit).
         Ok(unsafe { base.add(target) })
@@ -282,9 +319,10 @@ unsafe impl<S: ReaderSegments, O: core::ops::Deref<Target = ReaderArenaImpl<S>>>
     }
 }
 
-unsafe impl<S> ReaderArena for ReaderArenaImpl<S>
+unsafe impl<S, B> ReaderArena for ReaderArenaImpl<S, B>
 where
     S: ReaderSegments,
+    B: Borrow<ReadBudget>,
 {
     #[inline(always)]
     fn get_segment(&self, id: u32) -> Result<(*const u8, u32)> {
@@ -320,7 +358,7 @@ where
                 ErrorKind::MessageContainsOutOfBoundsPointer,
             ));
         }
-        self.read_limiter.can_read(size_in_words)
+        self.read_limiter.borrow().limiter.can_read(size_in_words)
     }
 
     #[inline(always)]
@@ -351,7 +389,7 @@ where
         if size_in_words > (segment_bytes - target) / BYTES_PER_WORD {
             return Err(invalid());
         }
-        self.read_limiter.can_read(size_in_words)?;
+        self.read_limiter.borrow().limiter.can_read(size_in_words)?;
         // SAFETY: get_segment supplies a live initialized allocation; the
         // complete target was checked above before forming this pointer. Zero
         // sized targets may refer to its one-past-end address.
@@ -370,6 +408,8 @@ where
     }
     fn amplified_read(&self, virtual_amount: u64) -> Result<()> {
         self.read_limiter
+            .borrow()
+            .limiter
             .can_read(usize::try_from(virtual_amount).unwrap())
     }
 

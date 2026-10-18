@@ -45,9 +45,30 @@ pub(super) enum Publication<'a, 'id> {
         capability: Option<&'a Client<'id>>,
     },
 }
-pub(super) enum Published<'id> {
+pub(super) enum SendOutcome<'id> {
+    /// The request remains owned by its caller until output releases capacity.
+    Blocked(Error),
     Queued(connection::SentInvocation<'id>),
     Immediate(capntproto_rpc_engine::questions::Key<'id>),
+}
+
+pub(super) fn output_capacity_error(error: &connection::Error) -> bool {
+    matches!(
+        error,
+        connection::Error::Input(owned::Error::Storage(
+            messages::Error::NoBuffer | messages::Error::NoSendSlot
+        ))
+    )
+}
+
+pub(super) fn publication_error<'id>(
+    error: connection::Error,
+) -> capnp::Result<Option<SendOutcome<'id>>> {
+    if output_capacity_error(&error) {
+        Ok(Some(SendOutcome::Blocked(wire_error(error))))
+    } else {
+        Err(wire_error(error))
+    }
 }
 
 /// Each successful step either advances work or delivers an owned completion.
@@ -86,6 +107,7 @@ pub struct Calls<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> {
     remaining: usize,
     scan_size: usize,
     admission_streak: u8,
+    publication_blocked: bool,
     executor: Option<Rc<dyn capability::CallExecutor>>,
 }
 impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p, 'id, I, C, H> {
@@ -108,11 +130,26 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             remaining: 0,
             scan_size: 0,
             admission_streak: 0,
+            publication_blocked: false,
             executor,
         })
     }
     pub fn is_empty(&self) -> bool {
         self.pending.is_none() && self.live == 0 && self.invocations.is_empty()
+    }
+    /// Capacity exhaustion is waitable only while accepted output can release
+    /// storage. Without that fence, preserve the error (including impossible
+    /// buffer sizes) instead of leaving a call asleep without a wakeup source.
+    pub(super) fn retry_output(
+        &self,
+        result: Poll<Result<Progress, Box<Error>>>,
+        pending: bool,
+    ) -> Poll<Result<Progress, Box<Error>>> {
+        if self.publication_blocked && pending && matches!(result, Poll::Ready(Err(_))) {
+            Poll::Pending
+        } else {
+            result
+        }
     }
     pub(super) fn invalidate_scan(&mut self) {
         self.remaining = 0;
@@ -343,7 +380,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             &dyn ClientHook,
         ) -> capnp::Result<Client<'id>>,
     ) -> Poll<capnp::Result<Progress>> {
-        self.poll_using(
+        let result = self.poll_using(
             hooks,
             driver,
             messages,
@@ -378,8 +415,8 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                                     R::default(),
                                     |_, _, _| u8::MAX,
                                 )
-                                .map(|key| key.map(Published::Immediate))
-                                .map_err(wire_error);
+                                .map(|key| key.map(SendOutcome::Immediate))
+                                .or_else(publication_error);
                         }
                         return driver
                             .try_send_immediate_borrowed(
@@ -392,24 +429,25 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                                 options,
                                 R::default(),
                             )
-                            .map(|key| key.map(Published::Immediate))
-                            .map_err(wire_error);
+                            .map(|key| key.map(SendOutcome::Immediate))
+                            .or_else(publication_error);
                     }
                     Publication::Queued { direct } => direct,
                 };
                 if direct {
                     return driver
                         .send_invocation(messages, queue, minimum, options, scratch)
-                        .map(|sent| sent.map(Published::Queued))
-                        .map_err(wire_error);
+                        .map(|sent| sent.map(SendOutcome::Queued))
+                        .or_else(publication_error);
                 }
                 invocations
                     .send_one(driver, messages, queue, minimum, options, scratch)
-                    .map(|sent| sent.map(Published::Queued))
-                    .map_err(wire_error)
+                    .map(|sent| sent.map(SendOutcome::Queued))
+                    .or_else(publication_error)
             },
-        )
-        .map(|result| result.map_err(|error| *error))
+        );
+        self.retry_output(result, !queue.is_empty())
+            .map(|result| result.map_err(|error| *error))
     }
     /// Attach resources to the exact accepted Call using the same scheduler.
     #[allow(clippy::too_many_arguments)]
@@ -432,7 +470,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             &dyn ClientHook,
         ) -> capnp::Result<Client<'id>>,
     ) -> Poll<capnp::Result<Progress>> {
-        self.poll_using(
+        let result = self.poll_using(
             hooks,
             driver,
             messages,
@@ -465,8 +503,8 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                                 options,
                                 capntproto_rpc_wire::attachments::Sender::new(capacity),
                             )
-                            .map(|key| key.map(Published::Immediate))
-                            .map_err(wire_error);
+                            .map(|key| key.map(SendOutcome::Immediate))
+                            .or_else(publication_error);
                     }
                     Publication::Queued { direct } => direct,
                 };
@@ -482,8 +520,8 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                             &mut imported_resource,
                             &mut local_resource,
                         )
-                        .map(|sent| sent.map(Published::Queued))
-                        .map_err(wire_error);
+                        .map(|sent| sent.map(SendOutcome::Queued))
+                        .or_else(publication_error);
                 }
                 invocations
                     .send_one_with_attachments(
@@ -497,11 +535,12 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         &mut imported_resource,
                         &mut local_resource,
                     )
-                    .map(|sent| sent.map(Published::Queued))
-                    .map_err(wire_error)
+                    .map(|sent| sent.map(SendOutcome::Queued))
+                    .or_else(publication_error)
             },
-        )
-        .map(|result| result.map_err(|error| *error))
+        );
+        self.retry_output(result, !queue.is_empty())
+            .map(|result| result.map_err(|error| *error))
     }
     #[allow(clippy::too_many_arguments)]
     #[inline(always)]
@@ -524,8 +563,9 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             &mut messages::Messages<'p, '_, '_>,
             Option<Rc<crate::admission::Permit>>,
             Publication<'_, 'id>,
-        ) -> capnp::Result<Option<Published<'id>>>,
+        ) -> capnp::Result<Option<SendOutcome<'id>>>,
     ) -> Poll<Result<Progress, Box<Error>>> {
+        self.publication_blocked = false;
         if let Some(kind) = driver.disconnected() {
             return Poll::Ready(Err(Box::new(Error::from_kind(kind))));
         }
@@ -595,7 +635,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             &mut messages::Messages<'p, '_, '_>,
             Option<Rc<crate::admission::Permit>>,
             Publication<'_, 'id>,
-        ) -> capnp::Result<Option<Published<'id>>>,
+        ) -> capnp::Result<Option<SendOutcome<'id>>>,
     ) -> Poll<Result<Progress, Box<Error>>> {
         // A burst need not rescan every outstanding question before publishing
         // its next request. At most eight admissions precede an ordinary scan
@@ -831,7 +871,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             &mut messages::Messages<'p, '_, '_>,
             Option<Rc<crate::admission::Permit>>,
             Publication<'_, 'id>,
-        ) -> capnp::Result<Option<Published<'id>>>,
+        ) -> capnp::Result<Option<SendOutcome<'id>>>,
     ) -> capnp::Result<Option<Progress>> {
         let Some(ready) = driver.runtime.next_ready().map_err(wire_error)? else {
             return Ok(None);
@@ -893,7 +933,11 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         else {
             return Ok(None);
         };
-        let Published::Queued(sent) = sent else {
+        if let SendOutcome::Blocked(error) = sent {
+            self.publication_blocked = true;
+            return Err(error);
+        }
+        let SendOutcome::Queued(sent) = sent else {
             unreachable!("queued publication")
         };
         if direct {
@@ -976,7 +1020,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             &mut messages::Messages<'p, '_, '_>,
             Option<Rc<crate::admission::Permit>>,
             Publication<'_, 'id>,
-        ) -> capnp::Result<Option<Published<'id>>>,
+        ) -> capnp::Result<Option<SendOutcome<'id>>>,
         refresh: &mut impl FnMut(&mut ClientHooks<'id>, &mut Peer<'p, 'id, '_, I, A, P, C, H>),
     ) -> Result<Option<Progress>, Box<Error>> {
         if self.pending.is_none() {
@@ -1086,7 +1130,11 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 driver.runtime.release(capability);
             }
             if let Some(published) = published? {
-                let Published::Immediate(question) = published else {
+                if let SendOutcome::Blocked(error) = published {
+                    self.publication_blocked = true;
+                    return Err(Box::new(error));
+                }
+                let SendOutcome::Immediate(question) = published else {
                     unreachable!("immediate publication")
                 };
                 if let Some(credit) = credit {
@@ -1187,6 +1235,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             Ok(wire) => wire,
             Err(rejected) => {
                 self.pending = Some(rejected.call);
+                self.publication_blocked = rejected.output_blocked;
                 return Err(rejected.error);
             }
         };

@@ -20,8 +20,22 @@ pub fn prepare_with_releases<'b, 's, 'r, 'm, 'i, 'e, 'a, 'is, 'es, 'as_, I, E, A
 }
 
 #[allow(clippy::type_complexity)]
-pub(crate) fn prepare_checked_with_releases<'b, 's, 'r, 'm, 'i, 'e, 'a, 'is, 'es, 'as_, I, E, A>(
-    payload: CheckedPayload<'m>,
+pub(crate) fn prepare_envelope_with_releases<
+    'b,
+    's,
+    'r,
+    'm,
+    'i,
+    'e,
+    'a,
+    'is,
+    'es,
+    'as_,
+    I,
+    E,
+    A,
+>(
+    payload: PayloadEnvelope<'m>,
     imports: &'b mut imports::Imports<'i, 'is, I>,
     releases: exports::Releases<'b, 's, 'e, 'es, E>,
     answers: &'b mut answers::Answers<'a, 'as_, A>,

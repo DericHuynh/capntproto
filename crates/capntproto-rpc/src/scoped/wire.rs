@@ -30,6 +30,7 @@ pub struct Rejected {
 pub(super) struct RejectedOwner<T> {
     error: Error,
     call: T,
+    output_blocked: bool,
 }
 
 /// An owned message whose cap table is independent of scoped wire receipts.
@@ -98,25 +99,19 @@ impl Payload {
         root.set_as(reader)?;
         Ok(Self::owned(message, caps))
     }
-    fn retain_admitted_or_copy(
+    fn retain_or_copy(
         reader: any_pointer::Reader<'_>,
-        bytes: Option<messages::SharedBytes>,
+        retained: Option<
+            capnp::message::CachedPointerReader<
+                capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
+            >,
+        >,
         caps: Vec<Option<Box<dyn ClientHook>>>,
     ) -> capnp::Result<Self> {
-        // Both callers use the content and receipts of an admitted immutable
-        // Call/Return. Admission already traversed this entire graph under its
-        // original limits and validated every capability index. Each supplied
-        // slot is already bound through that frame's exact admission receipt.
-        // Retain those hooks in the original slot order alongside the immutable
-        // frame; no payload copy or capability-index remapping is required.
-        if let Some(bytes) = bytes {
-            let options = Self::admitted_reader_options();
-            let segments = capnp::serialize::NoAllocBufferSegments::from_buffer(bytes, options)?;
-            // Retain the already selected content pointer instead of decoding
-            // Call/Return and Payload ancestors again. The checked owner verifies
-            // every segment's identity and extent before keeping these offsets.
-            let message = capnp::message::CheckedPointerReader::retain(reader, segments, options)?
-                .into_cached()?;
+        // The wire owner selects content from its original arena. Bound hooks
+        // keep the exact admitted descriptor order; reads remain lazy and share
+        // the allowance already consumed by protocol decoding.
+        if let Some(message) = retained {
             return Ok(Self {
                 body: PayloadBody::Shared {
                     message: Box::new(SharedPayload { message }),
@@ -127,45 +122,6 @@ impl Payload {
         let mut reader = reader;
         reader.imbue(&caps);
         Self::copy(reader)
-    }
-    fn admitted_reader_options() -> capnp::message::ReaderOptions {
-        capnp::message::ReaderOptions {
-            traversal_limit_in_words: None,
-            // Admission traversed the full immutable graph under its original
-            // limits. Match owned builder readers for subsequent application reads.
-            nesting_limit: i32::MAX,
-        }
-    }
-    #[inline(always)]
-    fn from_admitted_result_bytes(bytes: messages::SharedBytes) -> capnp::Result<Self> {
-        let options = Self::admitted_reader_options();
-        let segments = capnp::serialize::NoAllocBufferSegments::from_buffer(bytes, options)?;
-        let (message, ()) = capnp::message::Reader::new(segments, options)
-            .try_select_pointer(options, |root| {
-                let root = root.get_as::<capntproto_rpc_wire::rpc_capnp::message::Reader>()?;
-                let capntproto_rpc_wire::rpc_capnp::message::Return(result) = root
-                    .which()
-                    .map_err(|_| Error::from_kind(capnp::ErrorKind::Failed))?
-                else {
-                    return Err(Error::failed("shared response is not a Return".into()));
-                };
-                let capntproto_rpc_wire::rpc_capnp::return_::Results(payload) = result?
-                    .which()
-                    .map_err(|_| Error::from_kind(capnp::ErrorKind::Failed))?
-                else {
-                    return Err(Error::failed("shared response is not results".into()));
-                };
-                Ok::<_, Error>(Some((payload?.get_content(), ())))
-            })?
-            .expect("result selector returns a pointer or an error");
-        Ok(Self {
-            body: PayloadBody::Shared {
-                message: Box::new(SharedPayload {
-                    message: message.into_cached()?,
-                }),
-            },
-            caps: Vec::new(),
-        })
     }
     fn reader(&self) -> capnp::Result<any_pointer::Reader<'_>> {
         let mut root: any_pointer::Reader<'_> = match &self.body {
@@ -286,6 +242,7 @@ impl<'id> ClientHooks<'id> {
         let call = owner.borrow_mut();
         let mut receiver = None;
         let mut direct_stage = None;
+        let mut output_blocked = false;
         let outcome = (|| {
             let target = self.target(call)?;
             // Remote completion needs no second channel or polling ledger.
@@ -386,7 +343,10 @@ impl<'id> ClientHooks<'id> {
                             destination,
                             |field| field.copy_with_capabilities(content, mapping),
                         )
-                        .map_err(wire_error)?;
+                        .map_err(|error| {
+                            output_blocked = calls::output_capacity_error(&error);
+                            wire_error(error)
+                        })?;
                     direct_stage = Some(DirectStage::Queued);
                     return Ok(task);
                 }
@@ -406,6 +366,7 @@ impl<'id> ClientHooks<'id> {
                         |field| field.copy_with_capabilities(content, mapping),
                     )
                     .map_err(|rejected| {
+                        output_blocked = calls::output_capacity_error(&rejected.error);
                         wire_error(format!("queued invocation: {:?}", rejected.error))
                     })
             })();
@@ -416,7 +377,13 @@ impl<'id> ClientHooks<'id> {
         })();
         let task = match outcome {
             Ok(task) => task,
-            Err(error) => return Err(RejectedOwner { error, call: owner }),
+            Err(error) => {
+                return Err(RejectedOwner {
+                    error,
+                    call: owner,
+                    output_blocked,
+                })
+            }
         };
         let pipeline = match self.attach_pipeline(call) {
             Ok(pipeline) => pipeline,
@@ -426,7 +393,11 @@ impl<'id> ClientHooks<'id> {
                 if direct_stage.is_some() {
                     driver.cancel_invocation(task, messages);
                 }
-                return Err(RejectedOwner { error, call: owner });
+                return Err(RejectedOwner {
+                    error,
+                    call: owner,
+                    output_blocked: false,
+                });
             }
         };
         Ok(WireCall {
@@ -1019,8 +990,6 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
             CallOutput::Remote(remote) => {
                 if let Some(message) = remote.take_plain_results() {
                     Ok(Payload { body: PayloadBody::Admitted(message), caps: Vec::new() })
-                } else if let Some(bytes) = remote.share_plain_results(messages) {
-                    Payload::from_admitted_result_bytes(bytes)
                 } else { remote
                 .with(messages, |reply| match reply {
                     owned::Reply::Results(payload) => {
@@ -1049,7 +1018,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                             };
                             caps.push(cap);
                         }
-                        Payload::retain_admitted_or_copy(payload.content(), remote.share_results(messages), caps)
+                        Payload::retain_or_copy(payload.content(), remote.retain_results(messages, payload.content()).map_err(wire_error)?, caps)
                     }
                     owned::Reply::Exception(error) => {
                         Err(crate::rpc::remote_exception_to_error(error))

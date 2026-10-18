@@ -64,17 +64,15 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     /// The original method and cancellation state of this affine handoff job.
     /// Never infer either from metadata or an unscoped numeric question ID.
     pub fn awaiting_method(&self, awaiting: &AwaitingResult<'pool, 'id>) -> Option<(u64, u16)> {
-        self.exchanges.iter().find_map(|slot| {
-            if slot.canceled || !slot.authorized {
-                return None;
-            }
-            match &slot.exchange {
-                Some(Exchange::Returned(response)) if response.key() == awaiting.key => {
-                    response.await_method()
-                }
-                _ => None,
-            }
-        })
+        let index = ExchangeSlot::index(&self.exchanges, &self.ledgers.questions, awaiting.key)?;
+        let slot = &self.exchanges[index];
+        if slot.canceled || !slot.authorized {
+            return None;
+        }
+        match &slot.exchange {
+            Some(Exchange::Returned(response)) => response.await_method(),
+            _ => None,
+        }
     }
 
     /// Match this exact original call to the authenticated new peer's completion.
@@ -117,10 +115,16 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     ) -> Result<(), HandoffRejected<'pool, 'id, E, CAPS>> {
         let checked = (|| {
             self.check_live().map_err(HandoffError::Connection)?;
-            let slot = self.exchanges.iter_mut().find(|slot| {
-                !slot.canceled && slot.authorized && slot.handoff.is_none()
-                    && matches!(&slot.exchange, Some(Exchange::Returned(response)) if response.key() == awaiting.key && response.await_method().is_some())
-            }).ok_or(HandoffError::Connection(Error::UnknownQuestion))?;
+            let index = ExchangeSlot::index(&self.exchanges, &self.ledgers.questions, awaiting.key)
+                .ok_or(HandoffError::Connection(Error::UnknownQuestion))?;
+            let slot = &mut self.exchanges[index];
+            if slot.canceled
+                || !slot.authorized
+                || slot.handoff.is_some()
+                || !matches!(&slot.exchange, Some(Exchange::Returned(response)) if response.await_method().is_some())
+            {
+                return Err(HandoffError::Connection(Error::UnknownQuestion));
+            }
             let Some(Exchange::Returned(response)) = &slot.exchange else {
                 unreachable!()
             };
@@ -182,15 +186,9 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         {
             return Err(Error::PendingResponse);
         }
-        let slot = self
-            .exchanges
-            .iter_mut()
-            .find(|slot| {
-                slot.exchange
-                    .as_ref()
-                    .is_some_and(|exchange| exchange.key() == key)
-            })
+        let index = ExchangeSlot::index(&self.exchanges, &self.ledgers.questions, key)
             .ok_or(Error::UnknownQuestion)?;
+        let slot = &mut self.exchanges[index];
         if !slot.authorized {
             return Err(Error::PendingAuthorization);
         }
@@ -223,15 +221,9 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         {
             return Err(Error::PendingResponse);
         }
-        let slot = self
-            .exchanges
-            .iter_mut()
-            .find(|slot| {
-                slot.exchange
-                    .as_ref()
-                    .is_some_and(|exchange| exchange.key() == key)
-            })
+        let index = ExchangeSlot::index(&self.exchanges, &self.ledgers.questions, key)
             .ok_or(Error::UnknownQuestion)?;
+        let slot = &mut self.exchanges[index];
         if !slot.authorized {
             return Err(Error::PendingAuthorization);
         }
@@ -267,6 +259,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             let Some(Exchange::Returned(response)) = slot.exchange.take() else {
                 unreachable!()
             };
+            self.ledgers.questions.release_owner(key);
             Ok(Ok(CallOutput::Remote(response)))
         }
     }

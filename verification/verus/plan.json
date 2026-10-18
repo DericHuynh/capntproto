@@ -364,8 +364,15 @@
     {
       "name": "reuse-before-finish-acceptance",
       "source": "crates/capntproto-rpc-engine/src/questions.rs",
-      "from": "self.references == 0 && self.finish.is_none() && !self.lifecycle.is_awaiting_return()",
-      "to": "self.references == 0 && !self.lifecycle.is_awaiting_return()",
+      "from": "self.references == 0\n            && self.owner.is_none()\n            && self.finish.is_none()\n            && !self.lifecycle.is_awaiting_return()",
+      "to": "self.references == 0\n            && self.owner.is_none()\n            && !self.lifecycle.is_awaiting_return()",
+      "function": "capntproto_proofs::engine::questions::Record::reclaimable"
+    },
+    {
+      "name": "reuse-with-live-exchange-owner",
+      "source": "crates/capntproto-rpc-engine/src/questions.rs",
+      "from": "self.references == 0\n            && self.owner.is_none()\n            && self.finish.is_none()\n            && !self.lifecycle.is_awaiting_return()",
+      "to": "self.references == 0\n            && self.finish.is_none()\n            && !self.lifecycle.is_awaiting_return()",
       "function": "capntproto_proofs::engine::questions::Record::reclaimable"
     },
     {

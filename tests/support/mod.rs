@@ -601,6 +601,9 @@ impl VatNetwork<u8> for Network {
             Ok(Box::new(endpoint) as Box<dyn Connection<u8>>)
         })
     }
+    fn take_output_driver(&mut self) -> Option<capnp::capability::Promise<(), capnp::Error>> {
+        None
+    }
     fn drive_until_shutdown(&mut self) -> Promise<(), Error> {
         Promise::from_future(futures::future::pending())
     }

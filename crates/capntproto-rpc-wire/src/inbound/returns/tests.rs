@@ -105,7 +105,7 @@ fn reply_admission_never_partially_releases_parameters_or_imports_results() {
                             &mut receipts,
                             &mut scratch[..usize::from(mode != 6)],
                         );
-                        if mode == 0 {
+                        if mode == 0 || mode == 2 {
                             let (key, reply) = pending.unwrap().accept();
                             assert_eq!(key, question.key());
                             assert!(matches!(
@@ -119,7 +119,14 @@ fn reply_admission_never_partially_releases_parameters_or_imports_results() {
                                 .content()
                                 .get_as::<capnp::wire_capability::Reader<'_, ()>>()
                                 .unwrap();
-                            assert_eq!(imports.get(payload.capability(pointer).unwrap()), &23);
+                            if mode == 2 {
+                                assert!(matches!(
+                                    payload.capability(pointer),
+                                    Err(reception::Error::MissingCapability)
+                                ));
+                            } else {
+                                assert_eq!(imports.get(payload.capability(pointer).unwrap()), &23);
+                            }
                             payload.release(imports);
                             assert_eq!(imports.pending_release(0).unwrap().commit(), 23);
                             assert!(exports.resolve(grant.key()).is_none());

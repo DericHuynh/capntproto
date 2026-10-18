@@ -100,9 +100,6 @@ pub fn returned<
         rpc_capnp::return_::Results(payload) => {
             let payload = payload?;
             let table = payload.get_cap_table()?;
-            payload
-                .get_content()
-                .validate_capability_indices(table.len())?;
             if result.get_no_finish_needed() && !table.is_empty() {
                 return Err(Error::Unsupported);
             }
@@ -180,9 +177,6 @@ pub(super) fn record_params<E>(
 ) -> Result<(), Error> {
     if let Some(params) = params {
         let table = params.get_cap_table()?;
-        params
-            .get_content()
-            .validate_capability_indices(table.len())?;
         record_param_descriptors(releases, table)?;
     }
     Ok(())

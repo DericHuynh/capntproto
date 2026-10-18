@@ -669,23 +669,23 @@ fn large_remote_call_retries_output_and_preserves_exception_diagnostics() {
             let offer = messages.offer(&frame).unwrap();
             queue.reserve().unwrap().accept(messages, offer);
             messages.release(frame);
-            let mut rejected = 0;
+            let mut blocked = 0;
             for _ in 0..64 {
-                if matches!(
-                    tick(
-                        &mut calls,
-                        &mut hooks,
-                        &mut driver,
-                        messages,
-                        &mut queue,
-                        &mut Context::from_waker(Waker::noop())
-                    ),
-                    Poll::Ready(Err(_))
+                match tick(
+                    &mut calls,
+                    &mut hooks,
+                    &mut driver,
+                    messages,
+                    &mut queue,
+                    &mut Context::from_waker(Waker::noop()),
                 ) {
-                    rejected += 1;
+                    Poll::Pending => blocked += 1,
+                    Poll::Ready(result) => {
+                        result.unwrap();
+                    }
                 }
             }
-            assert!(rejected > 0);
+            assert!(blocked > 0);
             assert_eq!(
                 calls.entries.iter().flatten().count() + usize::from(calls.pending.is_some()),
                 1
@@ -698,7 +698,7 @@ fn large_remote_call_retries_output_and_preserves_exception_diagnostics() {
             if no_pipeline {
                 assert!(
                     calls.pending.is_some(),
-                    "failed immediate output preserves the request"
+                    "blocked immediate output preserves the request"
                 );
             }
             assert_eq!(drain(&mut queue, messages).len(), 16);
@@ -744,6 +744,54 @@ fn large_remote_call_retries_output_and_preserves_exception_diagnostics() {
             };
             assert_eq!(error.kind, capnp::ErrorKind::Overloaded);
             assert_eq!(error.extra, "remote exception: peer overloaded");
+            drop((response, client));
+            teardown(calls, hooks, driver, messages, &mut queue);
+        });
+    }
+}
+
+#[test]
+fn capacity_failure_without_pending_output_remains_an_error_and_preserves_the_call() {
+    for pipeline_only in [false, true] {
+        with_peer(|mut driver, messages| {
+            driver.use_owned_output_queues(true);
+            let mut hooks = ClientHooks::new(24, 24);
+            let client = remote(&mut driver, &mut hooks);
+            let mut req = request(&client, 1);
+            req.hook.set_hints(CallHints {
+                only_promise_pipeline: pipeline_only,
+                ..Default::default()
+            });
+            let response = req.send();
+            let mut calls = Calls::new(8, None).unwrap();
+            let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+            let holders: Vec<_> = (0..32).map(|_| messages.reserve(1024).unwrap()).collect();
+            for _ in 0..2 {
+                assert!(matches!(
+                    tick(
+                        &mut calls,
+                        &mut hooks,
+                        &mut driver,
+                        messages,
+                        &mut queue,
+                        &mut Context::from_waker(Waker::noop())
+                    ),
+                    Poll::Ready(Err(_))
+                ));
+                assert!(queue.is_empty());
+                assert!(calls.pending.is_some());
+            }
+            for holder in holders {
+                messages.discard(holder);
+            }
+            drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+            let bytes = drain(&mut queue, messages);
+            let mut source = bytes.as_slice();
+            let _call = capnp::serialize::read_message(&mut source, Default::default()).unwrap();
+            assert!(
+                source.is_empty(),
+                "retry publishes the original call exactly once"
+            );
             drop((response, client));
             teardown(calls, hooks, driver, messages, &mut queue);
         });

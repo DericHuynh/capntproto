@@ -29,6 +29,7 @@ pub enum Error {
     PipelineReleased,
     InvalidAdoptedId,
     DuplicateAdoption,
+    AlreadyOwned,
 }
 impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -60,12 +61,19 @@ pub struct Record {
     published: bool,
     destination: ResultsTo,
     provision: bool,
+    // The protocol lifetime and adapter's response lifetime retire separately.
+    // This binding makes their relationship explicit and pins the generation
+    // until the adapter transfers or releases its owning exchange.
+    owner: Option<core::num::NonZeroUsize>,
 }
 impl Record {
     #[inline]
     #[cfg_attr(capntproto_verus, verus_spec(r => ensures r == question_reclaimable(*self)))]
     fn reclaimable(&self) -> bool {
-        self.references == 0 && self.finish.is_none() && !self.lifecycle.is_awaiting_return()
+        self.references == 0
+            && self.owner.is_none()
+            && self.finish.is_none()
+            && !self.lifecycle.is_awaiting_return()
     }
     #[inline]
     #[cfg_attr(capntproto_verus, verus_spec(r => ensures r == question_pipeline(*self)))]
@@ -303,6 +311,7 @@ impl<'id, 'storage> Questions<'id, 'storage> {
                 published: false,
                 destination,
                 provision: false,
+                owner: None,
             })
             .map_err(|_| Error::Full)?;
         self.generation = generation;
@@ -337,6 +346,48 @@ impl<'id, 'storage> Questions<'id, 'storage> {
     /// cancels. A pending late Return still belongs to this exact generation.
     pub fn contains(&self, key: Key<'id>) -> bool {
         self.record(key).is_ok_and(|record| record.published)
+    }
+    /// Bind one adapter-owned exchange to this published generation. The slot
+    /// is local storage, never a peer-selected wire ID. Rebinding is an error.
+    pub fn bind_owner(&mut self, key: Key<'id>, index: usize) -> Result<(), Error> {
+        let owner = index
+            .checked_add(1)
+            .and_then(core::num::NonZeroUsize::new)
+            .ok_or(Error::Full)?;
+        let record = self.record_mut(key)?;
+        if !record.published {
+            return Err(Error::StaleKey);
+        }
+        if record.owner.is_some() {
+            return Err(Error::AlreadyOwned);
+        }
+        record.owner = Some(owner);
+        Ok(())
+    }
+    /// Resolve a wire ID through the authoritative question table. Unknown IDs
+    /// never grow adapter storage; the returned key includes the live generation.
+    pub fn owner_for_id(&self, id: QuestionId) -> Option<(Key<'id>, usize)> {
+        let record = self.table.get(id).filter(|record| record.published)?;
+        Some((
+            Key {
+                id,
+                generation: record.generation,
+                brand: PhantomData,
+            },
+            record.owner?.get() - 1,
+        ))
+    }
+    pub fn owner(&self, key: Key<'id>) -> Option<usize> {
+        self.record(key).ok()?.owner.map(|owner| owner.get() - 1)
+    }
+    /// Transfer the exchange out of the adapter, or finish releasing it. A stale
+    /// key cannot clear a newer generation's binding. Protocol obligations and
+    /// application references continue to pin the question independently.
+    pub fn release_owner(&mut self, key: Key<'id>) {
+        if let Ok(record) = self.record_mut(key) {
+            record.owner = None;
+            self.reclaim(key.id);
+        }
     }
     /// Attach a hosted Call's reservation to this exact question generation.
     /// The guard invokes no callbacks and survives cancellation until both the
@@ -522,11 +573,11 @@ impl<'id> Receive<'_, 'id, '_> {
     pub fn delivery(&self) -> question::Delivery {
         self.delivery
     }
-    /// Commit a validated Return and release one exact local observer in the
-    /// same lookup. A mismatched owner is returned without changing either
+    /// Commit a validated Return, transfer its adapter owner and release one
+    /// exact local observer in the same lookup. A mismatched owner is returned without changing either
     /// question. Remaining pipelines and retained Finish work are unchanged.
     #[inline(always)]
-    pub fn accept_releasing(
+    pub fn accept_releasing_owner(
         self,
         local: Local<'id>,
     ) -> Result<(Key<'id>, question::Delivery), (Error, Local<'id>)> {
@@ -537,6 +588,7 @@ impl<'id> Receive<'_, 'id, '_> {
             Ok(record) => record,
             Err(error) => return Err((error, local)),
         };
+        record.owner = None;
         if self.no_finish_needed && record.references == 1 && record.finish.is_none() {
             // Exclusive preflight already validated Return and fixed its delivery.
             // This consumes the last local owner and owes no Finish: discard the

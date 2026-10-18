@@ -21,8 +21,9 @@ impl Output {
 
     /// Poll writes and flushes with bounded work. Ready(Ok) means both the FIFO
     /// and transport buffer are empty. The queue's individual receipts still
-    /// indicate byte acceptance only. A pending flush precedes any later write,
-    /// and an idle, clean output does not flush or schedule itself.
+    /// indicate byte acceptance only. A pending flush precedes later writes
+    /// unless the adapter explicitly permits independent owned queue admission.
+    /// An idle, clean output does not flush or schedule itself.
     #[inline(always)]
     pub fn poll<'pool, R, W: WriteResources<R>>(
         &mut self,
@@ -52,7 +53,7 @@ impl Output {
         cx: &mut Context<'_>,
         budget: NonZeroUsize,
     ) -> Poll<Result<(), SendError<W::Error>>> {
-        if !self.flushing {
+        if !queue.is_empty() && (!self.flushing || writer.can_write_while_flushing()) {
             writer.start_batch(queue.len().min(budget.get()));
             let mut tracked = Tracking {
                 writer,
@@ -109,6 +110,9 @@ impl<W: Flush> Flush for Tracking<'_, W> {
     }
 }
 impl<R, W: WriteResources<R>> WriteResources<R> for Tracking<'_, W> {
+    fn can_write_while_flushing(&self) -> bool {
+        self.writer.can_write_while_flushing()
+    }
     #[cfg(feature = "alloc")]
     fn accepts_parts(&self) -> bool {
         self.writer.accepts_parts()

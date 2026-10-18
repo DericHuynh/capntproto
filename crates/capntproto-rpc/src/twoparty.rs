@@ -434,8 +434,27 @@ struct OutputDriver {
     task: RefCell<Option<Promise<(), capnp::Error>>>,
     result: RefCell<Option<capnp::Result<()>>>,
     network: RefCell<Option<std::task::Waker>>,
+    extracted: std::cell::Cell<bool>,
+    completion: RefCell<Vec<std::task::Waker>>,
 }
 impl OutputDriver {
+    fn poll_completion(
+        &self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<capnp::Result<()>> {
+        if let Some(result) = self.result.borrow().as_ref() {
+            return std::task::Poll::Ready(result.clone());
+        }
+        if !self
+            .completion
+            .borrow()
+            .iter()
+            .any(|wake| wake.will_wake(cx.waker()))
+        {
+            self.completion.borrow_mut().push(cx.waker().clone());
+        }
+        std::task::Poll::Pending
+    }
     fn poll_network(&self, cx: &mut std::task::Context<'_>) -> std::task::Poll<capnp::Result<()>> {
         if self
             .network
@@ -467,6 +486,10 @@ impl OutputDriver {
             if let Some(wake) = wake {
                 wake.wake();
             }
+            let wakes = std::mem::take(&mut *self.completion.borrow_mut());
+            for wake in wakes {
+                wake.wake();
+            }
         }
         result
     }
@@ -474,6 +497,9 @@ impl OutputDriver {
         &self,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<capnp::Result<()>> {
+        if self.extracted.get() {
+            return self.poll_completion(cx);
+        }
         let wake = self.network.borrow().clone();
         match wake {
             Some(wake) => self.poll_inner(&mut std::task::Context::from_waker(&wake)),
@@ -481,6 +507,9 @@ impl OutputDriver {
         }
     }
     fn drive_ready(&self) {
+        if self.extracted.get() {
+            return;
+        }
         let wake = self.network.borrow().clone();
         if let Some(wake) = wake {
             let _ = self.poll_inner(&mut std::task::Context::from_waker(&wake));
@@ -864,6 +893,12 @@ where
 
     fn output_driver(&self) -> Option<Promise<(), capnp::Error>> {
         let driver = self.inner.borrow().output_driver.clone();
+        if driver
+            .upgrade()
+            .is_some_and(|driver| driver.extracted.get())
+        {
+            return None;
+        }
         Some(Promise::from_future(std::future::poll_fn(move |cx| {
             let Some(driver) = driver.upgrade() else {
                 return std::task::Poll::Ready(Err(capnp::Error::disconnected(
@@ -1151,6 +1186,8 @@ where
             task: RefCell::new(Some(execution)),
             result: RefCell::new(None),
             network: RefCell::new(None),
+            extracted: std::cell::Cell::new(false),
+            completion: RefCell::new(Vec::new()),
         });
         let network_driver = output_driver.clone();
         let execution_driver = Promise::from_future(std::future::poll_fn(move |cx| {
@@ -1214,6 +1251,13 @@ impl<T> crate::VatNetwork<VatId> for VatNetwork<T>
 where
     T: AsyncRead + Unpin,
 {
+    fn take_output_driver(&mut self) -> Option<Promise<(), capnp::Error>> {
+        if self._output_driver.extracted.replace(true) {
+            return None;
+        }
+        Some(Promise::from_future(self.execution_driver.clone()))
+    }
+
     fn task_yield(&self) -> fn(&mut std::task::Context<'_>) {
         self.task_yield
     }
@@ -1241,6 +1285,12 @@ where
     }
 
     fn drive_until_shutdown(&mut self) -> Promise<(), ::capnp::Error> {
+        if self._output_driver.extracted.get() {
+            let output = self._output_driver.clone();
+            return Promise::from_future(std::future::poll_fn(move |cx| {
+                output.poll_completion(cx)
+            }));
+        }
         let driver = self.execution_driver.clone();
         let output = self._output_driver.clone();
         Promise::from_future(async move {

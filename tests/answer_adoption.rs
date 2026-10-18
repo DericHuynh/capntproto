@@ -131,7 +131,8 @@ async fn portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_
                             Some(service.client),
                             options,
                         )
-                        .unwrap(),
+                        .unwrap()
+                        .run(),
                     );
                     let factory = Rc::new(Factory(RefCell::new(None)));
                     let mut relay = capnp_rpc::RpcSystem::new_with_bootstrap_factory(
@@ -152,7 +153,7 @@ async fn portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_
                     )
                     .unwrap();
                     let remote: harness::Client = caller.bootstrap(2);
-                    let caller = tokio::task::spawn_local(caller);
+                    let caller = tokio::task::spawn_local(caller.run());
                     let request = remote.pending_request().send();
                     let early = request.pipeline.get_cap().echo_request().send().promise;
                     while calls.get() == 0 {

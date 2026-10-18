@@ -75,7 +75,7 @@ fn typed_capability_resolution_rejects_same_index_from_another_message() {
 
 #[test]
 fn malformed_or_mismatched_descriptor_tables_never_import_a_prefix() {
-    for variant in [0, 1, 2, 4] {
+    for variant in [0, 1, 2] {
         let mut slots = [imports::Slot::EMPTY];
         let mut words = [word(0, 0, 0, 0, 0, 0, 0, 0); 24];
         let mut builder = FixedBuilder::new(&mut words).unwrap();
@@ -129,6 +129,32 @@ fn tombstone_is_not_callable_and_dropped_preflight_keeps_input_owners() {
         ));
         received.release(imports);
         assert!(imports.is_empty());
+    })
+    .unwrap();
+}
+
+#[test]
+fn out_of_table_pointer_cannot_resolve_an_admitted_descriptor() {
+    let mut slots = [imports::Slot::EMPTY];
+    let mut words = [word(0, 0, 0, 0, 0, 0, 0, 0); 24];
+    let mut builder = FixedBuilder::new(&mut words).unwrap();
+    payload(&mut builder, 7, 1, 0);
+    let reader = capnp::message::Reader::new(builder.get_segments_for_output(), Default::default());
+    imports::with_imports(&mut slots, |imports| {
+        let mut receipts = [imports::ReceiveSlot::new(ImportId::from_wire(7), 42)];
+        let received = prepare(reader.get_root().unwrap(), imports, &mut receipts)
+            .unwrap()
+            .accept();
+        let pointer = received
+            .content()
+            .get_as::<capnp::wire_capability::Reader<'_, ()>>()
+            .unwrap();
+        assert!(matches!(
+            received.capability(pointer),
+            Err(Error::MissingCapability)
+        ));
+        received.release(imports);
+        assert_eq!(imports.pending_release(0).unwrap().commit(), 42);
     })
     .unwrap();
 }

@@ -175,6 +175,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     Poll::Ready(Ok(()))
                 }
                 Poll::Ready(Ok(Progress::Idle)) | Poll::Pending => {
+                    self.calls_waiting_for_output |= !queue.is_empty() || !self.output.is_clean();
                     self.schedule.active = WorkSet::NONE;
                     if self.driver.runtime.has_retired() {
                         self.driver.invalidate_maintenance();
@@ -357,28 +358,13 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             // sleeps on IO, while a zero-capacity queue is a configuration error.
             let writable = if index.publishes() && !empty {
                 let queued = !queue.is_empty();
-                if index == Lane::Calls
-                    && self.driver.uses_owned_output_queues()
-                    && (queued || !self.output.is_clean())
-                    && !self.can_batch_request(messages)
-                {
-                    // Waiting questions must resume after the physical flush,
-                    // but need not force that flush ahead of ready cleanup.
-                    if self.hooks.inbox.queue.borrow().is_empty() && !self.calls.has_unpublished() {
-                        self.calls_waiting_for_output = true;
-                    } else {
+                match queue.ensure_capacity() {
+                    Ok(()) => true,
+                    Err(messages::Error::NoSendSlot) if queued => {
                         self.output_blocked = true;
+                        false
                     }
-                    false
-                } else {
-                    match queue.ensure_capacity() {
-                        Ok(()) => true,
-                        Err(messages::Error::NoSendSlot) if queued => {
-                            self.output_blocked = true;
-                            false
-                        }
-                        Err(error) => return Poll::Ready(Err(wire_error(error))),
-                    }
+                    Err(error) => return Poll::Ready(Err(wire_error(error))),
                 }
             } else {
                 true
@@ -505,6 +491,12 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     }
                 }
             };
+            if index == Lane::Calls && outcome.is_pending() {
+                // Admission owns its capacity checks. Only retry after flush
+                // when a real attempt could have waited for retained buffers;
+                // physical output must not gate otherwise-ready protocol work.
+                self.calls_waiting_for_output |= !queue.is_empty() || !self.output.is_clean();
+            }
             // Hook collection can retire the final graph reference even when
             // its application lane reports Pending. Maintenance may already
             // have certified idle earlier in this rotation; reactivate it so
@@ -675,7 +667,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         refresh: bool,
     ) -> Poll<Result<Progress, Box<Error>>> {
         let options = self.options;
-        self.calls.poll_using(
+        let result = self.calls.poll_using(
             &mut self.hooks,
             &mut self.driver,
             messages,
@@ -714,8 +706,8 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                                     bundle,
                                     |owner, imports, bundle| output.attach(owner, imports, bundle),
                                 )
-                                .map(|key| key.map(super::calls::Published::Immediate))
-                                .map_err(wire_error);
+                                .map(|key| key.map(super::calls::SendOutcome::Immediate))
+                                .or_else(super::calls::publication_error);
                         }
                         return driver
                             .try_send_immediate_borrowed(
@@ -728,8 +720,8 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                                 options.reader,
                                 bundle,
                             )
-                            .map(|key| key.map(super::calls::Published::Immediate))
-                            .map_err(wire_error);
+                            .map(|key| key.map(super::calls::SendOutcome::Immediate))
+                            .or_else(super::calls::publication_error);
                     }
                     super::calls::Publication::Queued { direct } => direct,
                 };
@@ -744,8 +736,8 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                             bundle,
                             |owner, imports, bundle| output.attach(owner, imports, bundle),
                         )
-                        .map(|sent| sent.map(super::calls::Published::Queued))
-                        .map_err(wire_error);
+                        .map(|sent| sent.map(super::calls::SendOutcome::Queued))
+                        .or_else(super::calls::publication_error);
                 }
                 invocations
                     .send_one_with_resources(
@@ -758,10 +750,12 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         bundle,
                         |owner, imports, bundle| output.attach(owner, imports, bundle),
                     )
-                    .map(|sent| sent.map(super::calls::Published::Queued))
-                    .map_err(|error| wire_error(format!("outgoing invocation: {error:?}")))
+                    .map(|sent| sent.map(super::calls::SendOutcome::Queued))
+                    .or_else(super::calls::publication_error)
             },
-        )
+        );
+        self.calls
+            .retry_output(result, !queue.is_empty() || !self.output.is_clean())
     }
 
     // Inline the small lane adapter into the scheduler so its concrete closures
