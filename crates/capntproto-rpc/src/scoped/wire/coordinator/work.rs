@@ -153,7 +153,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             );
             return match result {
                 Poll::Ready(Err(error)) => Poll::Ready(Err(*error)),
-                Poll::Ready(Ok(Progress::Published))
+                Poll::Ready(Ok(Progress::Published { plain: true }))
                     if self.calls.idle_after_publication()
                         && self.hooks.inbox.queue.borrow().is_empty()
                         && self.notifications.pending() == WorkSet::NONE =>
@@ -369,7 +369,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             } else {
                 true
             };
-            let mut published = false;
+            let mut publication = None;
             let mut published_retirement = false;
             let outcome = if !writable {
                 Poll::Pending
@@ -412,8 +412,8 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                             self.cleanup_on_enqueue = true;
                             Poll::Ready(Ok(()))
                         }
-                        Poll::Ready(Ok(Progress::Published)) => {
-                            published = true;
+                        Poll::Ready(Ok(Progress::Published { plain })) => {
+                            publication = Some(plain);
                             Poll::Ready(Ok(()))
                         }
                         Poll::Ready(Ok(_)) => Poll::Ready(Ok(())),
@@ -552,7 +552,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 // Its response cannot have arrived during publication. The
                 // inbox wake was registered by calls.poll_using; preserve any
                 // cancellation/new-call wake delivered during its callbacks.
-                if published
+                if publication == Some(true)
                     && self.calls.idle_after_publication()
                     && self.hooks.inbox.queue.borrow().is_empty()
                     && self.notifications.pending() == WorkSet::NONE
@@ -591,7 +591,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 advanced = true;
                 // Publish promptly and give a completed application's waker a
                 // chance to run before scanning unrelated maintenance lanes.
-                let batch_calls = published
+                let batch_calls = publication.is_some()
                     && !self.hooks.inbox.queue.borrow().is_empty()
                     && if self.driver.uses_owned_output_queues() {
                         queue.len() < 32 && self.can_batch_request(messages)

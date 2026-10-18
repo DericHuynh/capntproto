@@ -78,7 +78,11 @@ pub enum Progress {
     Yield,
     Idle,
     Advanced,
-    Published,
+    /// A Call is in the output FIFO. `plain` means publication added no
+    /// capability grants; it does not imply that the caller discarded pipelines.
+    Published {
+        plain: bool,
+    },
     Completed,
 }
 
@@ -171,7 +175,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
     /// input or an application wake (including cancellation). Do not apply this
     /// certificate to older entries, queued invocations or pipeline work. Call
     /// only after `Progress::Published`: admission just consumed `pending` and
-    /// installed a direct Sent entry with no task, receiver or pipeline. If it
+    /// installed a direct Sent entry with no task or receiver. If it
     /// is the sole slot, there cannot also be an older call needing a poll.
     pub(super) fn idle_after_publication(&self) -> bool {
         self.entries.len() == 1 && self.invocations.is_empty()
@@ -660,7 +664,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 &mut send,
                 &mut refresh,
             )? {
-                Some(Progress::Published) => return Poll::Ready(Ok(Progress::Published)),
+                Some(progress @ Progress::Published { .. }) => return Poll::Ready(Ok(progress)),
                 Some(_) => advanced = true,
                 None => (),
             }
@@ -836,7 +840,9 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                     // Use the remaining allowance for ready preparation and
                     // completion. Stop after publishing: the caller reserved
                     // FIFO capacity for exactly one outgoing frame.
-                    if index == 2 || matches!(progress, Progress::Completed | Progress::Published) {
+                    if index == 2
+                        || matches!(progress, Progress::Completed | Progress::Published { .. })
+                    {
                         return Poll::Ready(Ok(progress));
                     }
                     advanced = true;
@@ -1108,10 +1114,8 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 }
                 _ => None,
             };
-            let progress = if retained.is_some() {
-                Progress::Advanced
-            } else {
-                Progress::Published
+            let progress = Progress::Published {
+                plain: retained.is_none(),
             };
             let publication = Publication::Immediate {
                 target,

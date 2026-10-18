@@ -772,7 +772,7 @@ fn server_idle_certificate_observes_deferred_answer_and_export_cleanup() {
 }
 
 #[test]
-fn maintenance_idle_scan_keeps_its_budget_after_empty_tables_grow() {
+fn maintenance_idle_phase_cost_does_not_grow_with_retained_capacity() {
     for quantum in [1, 2, 7, 32] {
         with_driver(|mut driver, messages| {
             // Exceed the bounded vacancy certificate so this still exercises
@@ -809,7 +809,9 @@ fn maintenance_idle_scan_keeps_its_budget_after_empty_tables_grow() {
                 .commit();
             driver.invalidate_maintenance();
             let total = 16 + driver.tails.len() + driver.ledgers.imports.capacity();
-            for _ in 1..total.div_ceil(quantum) {
+            // The import phase has grown, but its live no-release certificate
+            // still costs one check. Physical scan coverage tracks every slot.
+            for _ in 1..initial.div_ceil(quantum) {
                 assert!(matches!(poll!(), Progress::Yield));
             }
             assert!(matches!(poll!(), Progress::Idle));

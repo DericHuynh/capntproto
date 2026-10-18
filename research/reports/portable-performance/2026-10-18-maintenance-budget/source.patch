@@ -1,0 +1,274 @@
+diff --git a/crates/capntproto-rpc-wire/src/owned/connection/growing/tests.rs b/crates/capntproto-rpc-wire/src/owned/connection/growing/tests.rs
+index 1d2b9ea..cc9fc47 100644
+--- a/crates/capntproto-rpc-wire/src/owned/connection/growing/tests.rs
++++ b/crates/capntproto-rpc-wire/src/owned/connection/growing/tests.rs
+@@ -772,7 +772,7 @@ fn server_idle_certificate_observes_deferred_answer_and_export_cleanup() {
+ }
+ 
+ #[test]
+-fn maintenance_idle_scan_keeps_its_budget_after_empty_tables_grow() {
++fn maintenance_idle_phase_cost_does_not_grow_with_retained_capacity() {
+     for quantum in [1, 2, 7, 32] {
+         with_driver(|mut driver, messages| {
+             // Exceed the bounded vacancy certificate so this still exercises
+@@ -809,7 +809,9 @@ fn maintenance_idle_scan_keeps_its_budget_after_empty_tables_grow() {
+                 .commit();
+             driver.invalidate_maintenance();
+             let total = 16 + driver.tails.len() + driver.ledgers.imports.capacity();
+-            for _ in 1..total.div_ceil(quantum) {
++            // The import phase has grown, but its live no-release certificate
++            // still costs one check. Physical scan coverage tracks every slot.
++            for _ in 1..initial.div_ceil(quantum) {
+                 assert!(matches!(poll!(), Progress::Yield));
+             }
+             assert!(matches!(poll!(), Progress::Idle));
+diff --git a/crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs b/crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs
+index d433caa..5ac9b8b 100644
+--- a/crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs
++++ b/crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs
+@@ -150,7 +150,9 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+     /// Poll maintenance and subtract only visited work from a shared budget.
+     /// A productive transition may stop before exhausting the allowance. The
+     /// caller can spend the remainder on more ready work before flushing output.
+-    /// An idle certificate costs one step; a zero budget performs no work.
++    /// An idle certificate costs one step, including a certificate for an entire
++    /// maintenance phase. Retained vacant capacity does not consume additional
++    /// budget. A zero budget performs no work.
+     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+     #[inline(never)]
+     pub fn poll_maintenance_budget_with<R: Default>(
+@@ -251,16 +253,15 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+                 _ => false,
+             };
+             // An empty lane cannot change until a transition/callback runs.
+-            // Charge the same slots and stop at the same budget/idle boundary,
+-            // but skip its remaining vacant capacity with one cursor update.
++            // Charge the proof once and skip its remaining capacity. The scan
++            // still accounts for every slot, while the work budget accounts for
++            // checks and transitions rather than retained allocation sizes.
+             let visited = if empty {
+-                (self.maintenance_sizes[phase] - index)
+-                    .min(*budget)
+-                    .min(self.scan_remaining)
++                (self.maintenance_sizes[phase] - index).min(self.scan_remaining)
+             } else {
+                 1
+             };
+-            *budget -= visited;
++            *budget -= 1;
+             self.maintenance_index += visited;
+             if self.maintenance_index == self.maintenance_sizes[phase] {
+                 self.maintenance_index = 0;
+diff --git a/crates/capntproto-rpc-wire/src/owned/connection/server_output/tests.rs b/crates/capntproto-rpc-wire/src/owned/connection/server_output/tests.rs
+index 5f283cd..85c7c2c 100644
+--- a/crates/capntproto-rpc-wire/src/owned/connection/server_output/tests.rs
++++ b/crates/capntproto-rpc-wire/src/owned/connection/server_output/tests.rs
+@@ -968,8 +968,8 @@ fn endpoint_retirement_bursts_charge_each_owner_and_preserve_the_rotating_cursor
+         assert!(matches!(poll!(), Progress::Yield));
+         assert_eq!(remaining, 0);
+         assert_eq!(
+-            driver.maintenance_phase, 6,
+-            "the answer slots retain their normal rotation"
++            driver.maintenance_phase, 7,
++            "one idle-phase proof skips vacant answers without retiring another owner"
+         );
+         // The first burst freed exactly eight owners, leaving the other two
+         // available to the ordinary round-robin maintenance scan.
+diff --git a/crates/capntproto-rpc/src/scoped/wire/calls.rs b/crates/capntproto-rpc/src/scoped/wire/calls.rs
+index 4f7008d..42206f3 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/calls.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/calls.rs
+@@ -78,7 +78,11 @@ pub enum Progress {
+     Yield,
+     Idle,
+     Advanced,
+-    Published,
++    /// A Call is in the output FIFO. `plain` means publication added no
++    /// capability grants; it does not imply that the caller discarded pipelines.
++    Published {
++        plain: bool,
++    },
+     Completed,
+ }
+ 
+@@ -171,7 +175,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
+     /// input or an application wake (including cancellation). Do not apply this
+     /// certificate to older entries, queued invocations or pipeline work. Call
+     /// only after `Progress::Published`: admission just consumed `pending` and
+-    /// installed a direct Sent entry with no task, receiver or pipeline. If it
++    /// installed a direct Sent entry with no task or receiver. If it
+     /// is the sole slot, there cannot also be an older call needing a poll.
+     pub(super) fn idle_after_publication(&self) -> bool {
+         self.entries.len() == 1 && self.invocations.is_empty()
+@@ -660,7 +664,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
+                 &mut send,
+                 &mut refresh,
+             )? {
+-                Some(Progress::Published) => return Poll::Ready(Ok(Progress::Published)),
++                Some(progress @ Progress::Published { .. }) => return Poll::Ready(Ok(progress)),
+                 Some(_) => advanced = true,
+                 None => (),
+             }
+@@ -836,7 +840,9 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
+                     // Use the remaining allowance for ready preparation and
+                     // completion. Stop after publishing: the caller reserved
+                     // FIFO capacity for exactly one outgoing frame.
+-                    if index == 2 || matches!(progress, Progress::Completed | Progress::Published) {
++                    if index == 2
++                        || matches!(progress, Progress::Completed | Progress::Published { .. })
++                    {
+                         return Poll::Ready(Ok(progress));
+                     }
+                     advanced = true;
+@@ -1108,10 +1114,8 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
+                 }
+                 _ => None,
+             };
+-            let progress = if retained.is_some() {
+-                Progress::Advanced
+-            } else {
+-                Progress::Published
++            let progress = Progress::Published {
++                plain: retained.is_none(),
+             };
+             let publication = Publication::Immediate {
+                 target,
+diff --git a/crates/capntproto-rpc/src/scoped/wire/calls/tests.rs b/crates/capntproto-rpc/src/scoped/wire/calls/tests.rs
+index 71a7198..0aa5928 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/calls/tests.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/calls/tests.rs
+@@ -824,7 +824,10 @@ fn publication_resolves_waiting_children_before_the_parent_flushes() {
+                 &mut queue,
+                 &mut Context::from_waker(Waker::noop()),
+             );
+-            assert!(matches!(progress, Poll::Ready(Ok(Progress::Published))));
++            assert!(matches!(
++                progress,
++                Poll::Ready(Ok(Progress::Published { plain: true }))
++            ));
+             assert_eq!(queue.len(), 1, "the parent has not been flushed");
+             assert_eq!(
+                 hooks.inbox.queue.borrow().len(),
+@@ -920,7 +923,7 @@ fn direct_remote_projections_keep_the_parent_question_before_and_after_publicati
+                 if project_before_send {
+                     Progress::Advanced
+                 } else {
+-                    Progress::Published
++                    Progress::Published { plain: true }
+                 }
+             );
+             if !project_before_send {
+@@ -1132,7 +1135,7 @@ fn immediate_pipeline_sink_failure_cancels_the_published_question() {
+                 &mut queue,
+                 &mut Context::from_waker(Waker::noop())
+             ),
+-            Poll::Ready(Ok(Progress::Published))
++            Poll::Ready(Ok(Progress::Published { plain: true }))
+         ));
+         assert!(calls.is_empty());
+         let error = ready(&mut response.promise)
+@@ -1364,7 +1367,7 @@ fn immediate_reply_index_survives_bursts_cancellation_and_question_reuse() {
+                             NonZeroUsize::new(budget).unwrap(),
+                             import,
+                         ) {
+-                            if result.unwrap() == Progress::Published {
++                            if matches!(result.unwrap(), Progress::Published { plain: true }) {
+                                 published = true;
+                                 break;
+                             }
+@@ -1527,7 +1530,7 @@ fn immediate_calls_deliver_out_of_order_and_drain_a_canceled_reply() {
+         for _ in 0..4 {
+             assert!(matches!(
+                 poll(&mut calls, &mut hooks, &mut driver, messages, &mut queue),
+-                Poll::Ready(Ok(Progress::Published))
++                Poll::Ready(Ok(Progress::Published { plain: true }))
+             ));
+         }
+         assert_eq!(calls.invocations.capacity(), 0);
+@@ -1618,21 +1621,17 @@ fn immediate_single_capability_calls_keep_only_reachable_grants() {
+             let response = req.send();
+             let mut calls = Calls::new(8, None).unwrap();
+             let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+-            for _ in 0..128 {
+-                if let Poll::Ready(result) = tick(
++            assert!(matches!(
++                tick(
+                     &mut calls,
+                     &mut hooks,
+                     &mut driver,
+                     messages,
+                     &mut queue,
+                     &mut Context::from_waker(Waker::noop()),
+-                ) {
+-                    result.unwrap();
+-                }
+-                if !queue.is_empty() {
+-                    break;
+-                }
+-            }
++                ),
++                Poll::Ready(Ok(Progress::Published { plain })) if plain != reachable
++            ));
+             assert_eq!(queue.len(), 1);
+             let entry = calls.entries.iter().flatten().next().unwrap();
+             assert!(
+@@ -2060,7 +2059,7 @@ fn queued_child_keeps_parent_until_output_acceptance_or_cancellation() {
+                     &mut queue,
+                     &mut Context::from_waker(Waker::noop())
+                 ),
+-                Poll::Ready(Ok(Progress::Published))
++                Poll::Ready(Ok(Progress::Published { plain: true }))
+             ));
+             assert_eq!(queue.len(), 1);
+             drop((parent, child));
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs
+index d6e396c..2d0abe5 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs
+@@ -153,7 +153,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+             );
+             return match result {
+                 Poll::Ready(Err(error)) => Poll::Ready(Err(*error)),
+-                Poll::Ready(Ok(Progress::Published))
++                Poll::Ready(Ok(Progress::Published { plain: true }))
+                     if self.calls.idle_after_publication()
+                         && self.hooks.inbox.queue.borrow().is_empty()
+                         && self.notifications.pending() == WorkSet::NONE =>
+@@ -369,7 +369,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+             } else {
+                 true
+             };
+-            let mut published = false;
++            let mut publication = None;
+             let mut published_retirement = false;
+             let outcome = if !writable {
+                 Poll::Pending
+@@ -412,8 +412,8 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+                             self.cleanup_on_enqueue = true;
+                             Poll::Ready(Ok(()))
+                         }
+-                        Poll::Ready(Ok(Progress::Published)) => {
+-                            published = true;
++                        Poll::Ready(Ok(Progress::Published { plain })) => {
++                            publication = Some(plain);
+                             Poll::Ready(Ok(()))
+                         }
+                         Poll::Ready(Ok(_)) => Poll::Ready(Ok(())),
+@@ -552,7 +552,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+                 // Its response cannot have arrived during publication. The
+                 // inbox wake was registered by calls.poll_using; preserve any
+                 // cancellation/new-call wake delivered during its callbacks.
+-                if published
++                if publication == Some(true)
+                     && self.calls.idle_after_publication()
+                     && self.hooks.inbox.queue.borrow().is_empty()
+                     && self.notifications.pending() == WorkSet::NONE
+@@ -591,7 +591,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+                 advanced = true;
+                 // Publish promptly and give a completed application's waker a
+                 // chance to run before scanning unrelated maintenance lanes.
+-                let batch_calls = published
++                let batch_calls = publication.is_some()
+                     && !self.hooks.inbox.queue.borrow().is_empty()
+                     && if self.driver.uses_owned_output_queues() {
+                         queue.len() < 32 && self.can_batch_request(messages)

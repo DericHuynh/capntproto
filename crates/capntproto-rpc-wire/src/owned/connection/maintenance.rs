@@ -150,7 +150,9 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     /// Poll maintenance and subtract only visited work from a shared budget.
     /// A productive transition may stop before exhausting the allowance. The
     /// caller can spend the remainder on more ready work before flushing output.
-    /// An idle certificate costs one step; a zero budget performs no work.
+    /// An idle certificate costs one step, including a certificate for an entire
+    /// maintenance phase. Retained vacant capacity does not consume additional
+    /// budget. A zero budget performs no work.
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     #[inline(never)]
     pub fn poll_maintenance_budget_with<R: Default>(
@@ -251,16 +253,15 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 _ => false,
             };
             // An empty lane cannot change until a transition/callback runs.
-            // Charge the same slots and stop at the same budget/idle boundary,
-            // but skip its remaining vacant capacity with one cursor update.
+            // Charge the proof once and skip its remaining capacity. The scan
+            // still accounts for every slot, while the work budget accounts for
+            // checks and transitions rather than retained allocation sizes.
             let visited = if empty {
-                (self.maintenance_sizes[phase] - index)
-                    .min(*budget)
-                    .min(self.scan_remaining)
+                (self.maintenance_sizes[phase] - index).min(self.scan_remaining)
             } else {
                 1
             };
-            *budget -= visited;
+            *budget -= 1;
             self.maintenance_index += visited;
             if self.maintenance_index == self.maintenance_sizes[phase] {
                 self.maintenance_index = 0;

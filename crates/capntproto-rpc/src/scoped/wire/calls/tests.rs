@@ -824,7 +824,10 @@ fn publication_resolves_waiting_children_before_the_parent_flushes() {
                 &mut queue,
                 &mut Context::from_waker(Waker::noop()),
             );
-            assert!(matches!(progress, Poll::Ready(Ok(Progress::Published))));
+            assert!(matches!(
+                progress,
+                Poll::Ready(Ok(Progress::Published { plain: true }))
+            ));
             assert_eq!(queue.len(), 1, "the parent has not been flushed");
             assert_eq!(
                 hooks.inbox.queue.borrow().len(),
@@ -920,7 +923,7 @@ fn direct_remote_projections_keep_the_parent_question_before_and_after_publicati
                 if project_before_send {
                     Progress::Advanced
                 } else {
-                    Progress::Published
+                    Progress::Published { plain: true }
                 }
             );
             if !project_before_send {
@@ -1132,7 +1135,7 @@ fn immediate_pipeline_sink_failure_cancels_the_published_question() {
                 &mut queue,
                 &mut Context::from_waker(Waker::noop())
             ),
-            Poll::Ready(Ok(Progress::Published))
+            Poll::Ready(Ok(Progress::Published { plain: true }))
         ));
         assert!(calls.is_empty());
         let error = ready(&mut response.promise)
@@ -1364,7 +1367,7 @@ fn immediate_reply_index_survives_bursts_cancellation_and_question_reuse() {
                             NonZeroUsize::new(budget).unwrap(),
                             import,
                         ) {
-                            if result.unwrap() == Progress::Published {
+                            if matches!(result.unwrap(), Progress::Published { plain: true }) {
                                 published = true;
                                 break;
                             }
@@ -1527,7 +1530,7 @@ fn immediate_calls_deliver_out_of_order_and_drain_a_canceled_reply() {
         for _ in 0..4 {
             assert!(matches!(
                 poll(&mut calls, &mut hooks, &mut driver, messages, &mut queue),
-                Poll::Ready(Ok(Progress::Published))
+                Poll::Ready(Ok(Progress::Published { plain: true }))
             ));
         }
         assert_eq!(calls.invocations.capacity(), 0);
@@ -1618,21 +1621,17 @@ fn immediate_single_capability_calls_keep_only_reachable_grants() {
             let response = req.send();
             let mut calls = Calls::new(8, None).unwrap();
             let mut queue = messages::Queue::new_growing(0, 1).unwrap();
-            for _ in 0..128 {
-                if let Poll::Ready(result) = tick(
+            assert!(matches!(
+                tick(
                     &mut calls,
                     &mut hooks,
                     &mut driver,
                     messages,
                     &mut queue,
                     &mut Context::from_waker(Waker::noop()),
-                ) {
-                    result.unwrap();
-                }
-                if !queue.is_empty() {
-                    break;
-                }
-            }
+                ),
+                Poll::Ready(Ok(Progress::Published { plain })) if plain != reachable
+            ));
             assert_eq!(queue.len(), 1);
             let entry = calls.entries.iter().flatten().next().unwrap();
             assert!(
@@ -2060,7 +2059,7 @@ fn queued_child_keeps_parent_until_output_acceptance_or_cancellation() {
                     &mut queue,
                     &mut Context::from_waker(Waker::noop())
                 ),
-                Poll::Ready(Ok(Progress::Published))
+                Poll::Ready(Ok(Progress::Published { plain: true }))
             ));
             assert_eq!(queue.len(), 1);
             drop((parent, child));

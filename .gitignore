@@ -179,6 +179,13 @@ _apalache-tmp/
 !/research/reports/portable-performance/2026-10-18-prepared-pipelines/readfirst.json
 !/research/reports/portable-performance/2026-10-18-prepared-pipelines/focused-experiments.json
 !/research/reports/portable-performance/2026-10-18-prepared-pipelines/source.patch
+!/research/reports/portable-performance/2026-10-18-maintenance-budget/
+/research/reports/portable-performance/2026-10-18-maintenance-budget/*
+!/research/reports/portable-performance/2026-10-18-maintenance-budget/README.md
+!/research/reports/portable-performance/2026-10-18-maintenance-budget/report.json
+!/research/reports/portable-performance/2026-10-18-maintenance-budget/focused-experiments.json
+!/research/reports/portable-performance/2026-10-18-maintenance-budget/remote-parent.json
+!/research/reports/portable-performance/2026-10-18-maintenance-budget/source.patch
 
 # Locally discovered fuzz inputs; checked-in upstream corpora remain included.
 /fuzz/artifacts/

@@ -968,8 +968,8 @@ fn endpoint_retirement_bursts_charge_each_owner_and_preserve_the_rotating_cursor
         assert!(matches!(poll!(), Progress::Yield));
         assert_eq!(remaining, 0);
         assert_eq!(
-            driver.maintenance_phase, 6,
-            "the answer slots retain their normal rotation"
+            driver.maintenance_phase, 7,
+            "one idle-phase proof skips vacant answers without retiring another owner"
         );
         // The first burst freed exactly eight owners, leaving the other two
         // available to the ordinary round-robin maintenance scan.
