@@ -155,6 +155,11 @@ _apalache-tmp/
 !/research/reports/portable-performance/2026-10-18-receive-and-pooling/README.md
 !/research/reports/portable-performance/2026-10-18-receive-and-pooling/report.json
 !/research/reports/portable-performance/2026-10-18-receive-and-pooling/source.patch
+!/research/reports/portable-performance/2026-10-18-exchange-lookups/
+/research/reports/portable-performance/2026-10-18-exchange-lookups/*
+!/research/reports/portable-performance/2026-10-18-exchange-lookups/README.md
+!/research/reports/portable-performance/2026-10-18-exchange-lookups/report.json
+!/research/reports/portable-performance/2026-10-18-exchange-lookups/source.patch
 
 # Locally discovered fuzz inputs; checked-in upstream corpora remain included.
 /fuzz/artifacts/

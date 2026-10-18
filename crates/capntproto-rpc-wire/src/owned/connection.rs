@@ -89,6 +89,24 @@ impl<I, const CAPS: usize> ExchangeSlot<'_, '_, I, CAPS> {
         retain_handoff_routes: false,
         handoff: None,
     };
+
+    /// Ordinary questions and exchange slots both reuse their lowest free
+    /// position. Try that position first, but treat it only as a hint: retained
+    /// questions, cancellation and handoff can separate the two allocations.
+    /// A peer ID never grows storage or selects an owner without matching it.
+    #[inline(always)]
+    fn pending_index(slots: &[Self], id: u32) -> Option<usize> {
+        let matches = |slot: &Self| {
+            matches!(&slot.exchange, Some(Exchange::Pending(question))
+                if question.key().id().to_wire() == id)
+        };
+        if let Ok(index) = usize::try_from(id) {
+            if slots.get(index).is_some_and(matches) {
+                return Some(index);
+            }
+        }
+        slots.iter().position(matches)
+    }
 }
 
 pub struct Storage<'pool, 'id, 's, I, const CAPS: usize, const PATH: usize> {
@@ -723,6 +741,26 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         self.scan_remaining = self.maintenance_total;
     }
 
+    /// Without observers, no retained result can impose a propagation fence.
+    /// Check that small set before walking every outstanding exchange. When
+    /// observers exist, preserve the exact response/observer ownership test.
+    fn has_ordered_propagation(&self) -> bool {
+        if self.outgoing.is_empty()
+            && !self
+                .invocation_pipelines
+                .iter()
+                .any(InvocationPipelineSlot::is_occupied)
+        {
+            return false;
+        }
+        self.exchanges.iter().any(|slot| {
+            matches!(&slot.exchange, Some(Exchange::Returned(response))
+                if (response.requires_ordered_propagation() || slot.handoff.is_some())
+                    && (self.outgoing.pending_for(response.key())
+                        || self.invocation_pipelines.iter().any(|slot| slot.pending_for(response.key()))))
+        })
+    }
+
     /// Poll one outgoing observer across the retained responses. Unrelated
     /// replies cannot settle it. Reflected routes retain their barrier inside
     /// the driver until ordered loopback output and its matching echo complete.
@@ -1173,10 +1211,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             });
         }
         use IncomingKind as Kind;
-        let propagation_blocked = self.resolution.is_some() || self.exchanges.iter().any(|slot| {
-            matches!(&slot.exchange, Some(Exchange::Returned(response))
-                if (response.requires_ordered_propagation() || slot.handoff.is_some()) && (self.outgoing.pending_for(response.key()) || self.invocation_pipelines.iter().any(|slot| slot.pending_for(response.key()))))
-        });
+        let propagation_blocked = self.resolution.is_some() || self.has_ordered_propagation();
         let mut admitted_return = None;
         let mut admitted_call = None;
         let mut call_owner = None;
@@ -1198,16 +1233,12 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                         let awaiting = ReturnRef::from(result.into_internal_struct_reader()).tag()
                             == ReturnUnionTag::AwaitFromThirdParty;
                         if !awaiting && !propagation_blocked {
-                            if let Some(question) =
-                                self.exchanges.iter().find_map(|slot| match &slot.exchange {
-                                    Some(Exchange::Pending(question))
-                                        if question.key().id().to_wire() == id =>
-                                    {
-                                        Some(question)
-                                    }
-                                    _ => None,
-                                })
-                            {
+                            if let Some(index) = ExchangeSlot::pending_index(&self.exchanges, id) {
+                                let Some(Exchange::Pending(question)) =
+                                    &self.exchanges[index].exchange
+                                else {
+                                    unreachable!("selected pending question")
+                                };
                                 admitted_return = Some(question.admit_return(
                                     result,
                                     &frame,
@@ -1367,10 +1398,17 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 } else {
                     None
                 };
-                let Some(slot) = self.exchanges.iter_mut().find(|slot| matches!(&slot.exchange, Some(Exchange::Pending(question)) if question.key().id().to_wire() == id)) else {
-                    if let Some(metadata) = metadata { metadata.release(messages); }
-                    return Err(Rejected { error: Error::UnknownQuestion, frame, producer: None })
+                let Some(index) = ExchangeSlot::pending_index(&self.exchanges, id) else {
+                    if let Some(metadata) = metadata {
+                        metadata.release(messages);
+                    }
+                    return Err(Rejected {
+                        error: Error::UnknownQuestion,
+                        frame,
+                        producer: None,
+                    });
                 };
+                let slot = &mut self.exchanges[index];
                 let Some(Exchange::Pending(question)) = slot.exchange.take() else {
                     unreachable!()
                 };

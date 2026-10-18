@@ -1,0 +1,427 @@
+diff --git a/crates/capntproto-rpc-wire/src/owned/connection.rs b/crates/capntproto-rpc-wire/src/owned/connection.rs
+index 8d60b84..a930ff6 100644
+--- a/crates/capntproto-rpc-wire/src/owned/connection.rs
++++ b/crates/capntproto-rpc-wire/src/owned/connection.rs
+@@ -89,6 +89,24 @@ impl<I, const CAPS: usize> ExchangeSlot<'_, '_, I, CAPS> {
+         retain_handoff_routes: false,
+         handoff: None,
+     };
++
++    /// Ordinary questions and exchange slots both reuse their lowest free
++    /// position. Try that position first, but treat it only as a hint: retained
++    /// questions, cancellation and handoff can separate the two allocations.
++    /// A peer ID never grows storage or selects an owner without matching it.
++    #[inline(always)]
++    fn pending_index(slots: &[Self], id: u32) -> Option<usize> {
++        let matches = |slot: &Self| {
++            matches!(&slot.exchange, Some(Exchange::Pending(question))
++                if question.key().id().to_wire() == id)
++        };
++        if let Ok(index) = usize::try_from(id) {
++            if slots.get(index).is_some_and(matches) {
++                return Some(index);
++            }
++        }
++        slots.iter().position(matches)
++    }
+ }
+ 
+ pub struct Storage<'pool, 'id, 's, I, const CAPS: usize, const PATH: usize> {
+@@ -723,6 +741,26 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+         self.scan_remaining = self.maintenance_total;
+     }
+ 
++    /// Without observers, no retained result can impose a propagation fence.
++    /// Check that small set before walking every outstanding exchange. When
++    /// observers exist, preserve the exact response/observer ownership test.
++    fn has_ordered_propagation(&self) -> bool {
++        if self.outgoing.is_empty()
++            && !self
++                .invocation_pipelines
++                .iter()
++                .any(InvocationPipelineSlot::is_occupied)
++        {
++            return false;
++        }
++        self.exchanges.iter().any(|slot| {
++            matches!(&slot.exchange, Some(Exchange::Returned(response))
++                if (response.requires_ordered_propagation() || slot.handoff.is_some())
++                    && (self.outgoing.pending_for(response.key())
++                        || self.invocation_pipelines.iter().any(|slot| slot.pending_for(response.key()))))
++        })
++    }
++
+     /// Poll one outgoing observer across the retained responses. Unrelated
+     /// replies cannot settle it. Reflected routes retain their barrier inside
+     /// the driver until ordered loopback output and its matching echo complete.
+@@ -1173,10 +1211,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+             });
+         }
+         use IncomingKind as Kind;
+-        let propagation_blocked = self.resolution.is_some() || self.exchanges.iter().any(|slot| {
+-            matches!(&slot.exchange, Some(Exchange::Returned(response))
+-                if (response.requires_ordered_propagation() || slot.handoff.is_some()) && (self.outgoing.pending_for(response.key()) || self.invocation_pipelines.iter().any(|slot| slot.pending_for(response.key()))))
+-        });
++        let propagation_blocked = self.resolution.is_some() || self.has_ordered_propagation();
+         let mut admitted_return = None;
+         let mut admitted_call = None;
+         let mut call_owner = None;
+@@ -1198,16 +1233,12 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+                         let awaiting = ReturnRef::from(result.into_internal_struct_reader()).tag()
+                             == ReturnUnionTag::AwaitFromThirdParty;
+                         if !awaiting && !propagation_blocked {
+-                            if let Some(question) =
+-                                self.exchanges.iter().find_map(|slot| match &slot.exchange {
+-                                    Some(Exchange::Pending(question))
+-                                        if question.key().id().to_wire() == id =>
+-                                    {
+-                                        Some(question)
+-                                    }
+-                                    _ => None,
+-                                })
+-                            {
++                            if let Some(index) = ExchangeSlot::pending_index(&self.exchanges, id) {
++                                let Some(Exchange::Pending(question)) =
++                                    &self.exchanges[index].exchange
++                                else {
++                                    unreachable!("selected pending question")
++                                };
+                                 admitted_return = Some(question.admit_return(
+                                     result,
+                                     &frame,
+@@ -1367,10 +1398,17 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+                 } else {
+                     None
+                 };
+-                let Some(slot) = self.exchanges.iter_mut().find(|slot| matches!(&slot.exchange, Some(Exchange::Pending(question)) if question.key().id().to_wire() == id)) else {
+-                    if let Some(metadata) = metadata { metadata.release(messages); }
+-                    return Err(Rejected { error: Error::UnknownQuestion, frame, producer: None })
++                let Some(index) = ExchangeSlot::pending_index(&self.exchanges, id) else {
++                    if let Some(metadata) = metadata {
++                        metadata.release(messages);
++                    }
++                    return Err(Rejected {
++                        error: Error::UnknownQuestion,
++                        frame,
++                        producer: None,
++                    });
+                 };
++                let slot = &mut self.exchanges[index];
+                 let Some(Exchange::Pending(question)) = slot.exchange.take() else {
+                     unreachable!()
+                 };
+diff --git a/crates/capntproto-rpc-wire/src/owned/connection/growing/tests.rs b/crates/capntproto-rpc-wire/src/owned/connection/growing/tests.rs
+index 0af2b93..ac66668 100644
+--- a/crates/capntproto-rpc-wire/src/owned/connection/growing/tests.rs
++++ b/crates/capntproto-rpc-wire/src/owned/connection/growing/tests.rs
+@@ -2375,6 +2375,96 @@ fn plain_return_shortcuts_preserve_cancellation_pipeline_and_control_owners() {
+     }
+ }
+ 
++#[test]
++fn pending_exchange_lookup_checks_hints_and_retains_relocated_owners() {
++    use super::super::PlainReceived;
++    with_driver(|mut driver, messages| {
++        let target = remote(&mut driver);
++        let mut queue = messages::Queue::new_growing(0, 8).unwrap();
++        let request = capnp::message::Builder::new_default();
++        let mut keys = alloc::vec::Vec::new();
++        for _ in 0..2 {
++            keys.push(
++                driver
++                    .try_send_immediate(
++                        &target,
++                        DynamicCall {
++                            no_promise_pipelining: true,
++                            ..Default::default()
++                        },
++                        request.get_root_as_reader().unwrap(),
++                        messages,
++                        &mut queue,
++                        128,
++                        Default::default(),
++                        (),
++                    )
++                    .unwrap()
++                    .unwrap(),
++            );
++            drain(&mut queue, messages, |_| {});
++        }
++        for (index, key) in keys.iter().enumerate() {
++            assert_eq!(
++                ExchangeSlot::pending_index(&driver.exchanges, key.id().to_wire()),
++                Some(index)
++            );
++        }
++        // Question lifetimes and exchange lifetimes can diverge. Deliberately
++        // put another live owner at each ID's preferred position.
++        driver.exchanges.swap(0, 1);
++        for (index, key) in keys.iter().enumerate() {
++            assert_eq!(
++                ExchangeSlot::pending_index(&driver.exchanges, key.id().to_wire()),
++                Some(1 - index)
++            );
++        }
++        let capacity = driver.exchanges.len();
++        assert_eq!(
++            ExchangeSlot::pending_index(&driver.exchanges, u32::MAX),
++            None
++        );
++        assert_eq!(driver.exchanges.len(), capacity);
++        for (index, key) in keys.into_iter().enumerate() {
++            let frame = Frame::build(messages, 128, Default::default(), |b| {
++                let mut result = b
++                    .try_init_root::<Message>()?
++                    .into_field(Message::RETURN)
++                    .init()?;
++                result.scalar(Return::ANSWER_ID).set(key.id().to_wire());
++                result.scalar(Return::RELEASE_PARAM_CAPS).set(false);
++                result.scalar(Return::NO_FINISH_NEEDED).set(true);
++                result.into_field(Return::RESULTS).init()?;
++                Ok(())
++            })
++            .unwrap();
++            if index == 0 {
++                let PlainReceived::Delivered(selected, _) = driver
++                    .try_receive_plain_owned(frame, messages, Some)
++                    .unwrap_or_else(|(error, _)| panic!("{error}"))
++                else {
++                    panic!("relocated plain reply must find its owner")
++                };
++                assert_eq!(selected, key);
++            } else {
++                assert!(
++                    matches!(driver.receive(frame, messages, &mut [0; 8], |_| (), || ()),
++                    Ok(Received::Returned(selected)) if selected == key)
++                );
++                let response = driver.take_response(key).unwrap();
++                driver.release_response(response, messages);
++            }
++            assert_eq!(
++                ExchangeSlot::pending_index(&driver.exchanges, key.id().to_wire()),
++                None
++            );
++        }
++        assert!(driver.ledgers.questions.is_empty());
++        driver.runtime.release(target);
++        close(driver, messages, &mut queue);
++    });
++}
++
+ #[test]
+ fn direct_plain_return_is_transactional_and_pins_the_original_result() {
+     use super::super::PlainReceived;
+diff --git a/crates/capntproto-rpc-wire/src/owned/connection/plain_return.rs b/crates/capntproto-rpc-wire/src/owned/connection/plain_return.rs
+index 6ecca89..c27df7e 100644
+--- a/crates/capntproto-rpc-wire/src/owned/connection/plain_return.rs
++++ b/crates/capntproto-rpc-wire/src/owned/connection/plain_return.rs
+@@ -48,14 +48,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+         messages: &mut messages::Messages<'pool, '_, '_>,
+         select: impl FnOnce(questions::Key<'id>) -> Option<T>,
+     ) -> Result<PlainReceived<'pool, T>, (Error, Frame<'pool>)> {
+-        if self.disconnected.is_some() || self.resolution.is_some()
++        if self.disconnected.is_some()
++            || self.resolution.is_some()
+             || self.ledgers.questions.is_empty()
+-            || self.exchanges.iter().any(|slot| {
+-                matches!(&slot.exchange, Some(Exchange::Returned(response))
+-                    if (response.requires_ordered_propagation() || slot.handoff.is_some())
+-                        && (self.outgoing.pending_for(response.key()) || self.invocation_pipelines.iter().any(|slot| slot.pending_for(response.key()))))
+-            })
+-        { return Ok(PlainReceived::Deferred(frame)); }
++            || self.has_ordered_propagation()
++        {
++            return Ok(PlainReceived::Deferred(frame));
++        }
+         let segments = match frame.share_segments(messages) {
+             Ok(Some(segments)) => segments,
+             Ok(None) => return Ok(PlainReceived::Deferred(frame)),
+@@ -82,14 +81,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+         messages: &mut messages::Messages<'pool, '_, '_>,
+         select: impl FnOnce(questions::Key<'id>) -> Option<T>,
+     ) -> Result<Option<(T, alloc::boxed::Box<super::super::PlainResults>)>, Error> {
+-        if self.disconnected.is_some() || self.resolution.is_some()
++        if self.disconnected.is_some()
++            || self.resolution.is_some()
+             || self.ledgers.questions.is_empty()
+-            || self.exchanges.iter().any(|slot| {
+-                matches!(&slot.exchange, Some(Exchange::Returned(response))
+-                    if (response.requires_ordered_propagation() || slot.handoff.is_some())
+-                        && (self.outgoing.pending_for(response.key()) || self.invocation_pipelines.iter().any(|slot| slot.pending_for(response.key()))))
+-            })
+-        { return Ok(None); }
++            || self.has_ordered_propagation()
++        {
++            return Ok(None);
++        }
+         if canonical_nonplain(bytes) {
+             return Ok(None);
+         }
+@@ -134,21 +132,15 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+                     return Ok(None);
+                 }
+                 let id = result.get_answer_id();
+-                let Some((index, question)) =
+-                    self.exchanges.iter().enumerate().find_map(|(index, slot)| {
+-                        match &slot.exchange {
+-                            Some(Exchange::Pending(question))
+-                                if slot.authorized
+-                                    && !slot.canceled
+-                                    && question.key().id().to_wire() == id =>
+-                            {
+-                                Some((index, question))
+-                            }
+-                            _ => None,
+-                        }
+-                    })
+-                else {
++                let Some(index) = ExchangeSlot::pending_index(&self.exchanges, id) else {
++                    return Ok(None);
++                };
++                let slot = &self.exchanges[index];
++                if !slot.authorized || slot.canceled {
+                     return Ok(None);
++                }
++                let Some(Exchange::Pending(question)) = &slot.exchange else {
++                    unreachable!("selected pending question")
+                 };
+                 let key = question.key();
+                 if self.outgoing.pending_for(key)
+diff --git a/crates/capntproto-rpc/src/scoped/wire/calls.rs b/crates/capntproto-rpc/src/scoped/wire/calls.rs
+index fab2408..35f95e0 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/calls.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/calls.rs
+@@ -74,6 +74,8 @@ pub enum Progress {
+ pub struct Calls<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> {
+     invocations: connection::Invocations<'s, 'wait, 'p, 'id, I, C>,
+     entries: Vec<Option<Entry<'p, 'id, I, C, H>>>,
++    live: usize,
++    first_free: usize,
+     // An owner lookup, not a protocol ledger. Only immediate calls are indexed;
+     // the entry's full branded/generational key remains authoritative. Allocate
+     // lazily beyond the small-call scan, and remove owners on every retirement.
+@@ -97,6 +99,8 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
+         Ok(Self {
+             invocations: connection::Invocations::new_growing(0, maximum).map_err(wire_error)?,
+             entries: Vec::new(),
++            live: 0,
++            first_free: 0,
+             reply_owners: ReplyOwners::default(),
+             pending: None,
+             maximum,
+@@ -108,9 +112,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
+         })
+     }
+     pub fn is_empty(&self) -> bool {
+-        self.pending.is_none()
+-            && self.entries.iter().all(Option::is_none)
+-            && self.invocations.is_empty()
++        self.pending.is_none() && self.live == 0 && self.invocations.is_empty()
+     }
+     pub(super) fn invalidate_scan(&mut self) {
+         self.remaining = 0;
+@@ -267,6 +269,25 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
+             }
+         }
+         self.entries[index] = None;
++        self.live -= 1;
++        self.first_free = self.first_free.min(index);
++    }
++    /// Advance allocation only after admission commits. Failed publication
++    /// leaves the free position available; retirement restores the lowest
++    /// hole. This preserves scan order without searching from zero each time.
++    fn insert_entry(&mut self, index: usize, entry: Entry<'p, 'id, I, C, H>) {
++        debug_assert_eq!(index, self.first_free);
++        if index == self.entries.len() {
++            self.entries.push(Some(entry));
++        } else {
++            debug_assert!(self.entries[index].is_none());
++            self.entries[index] = Some(entry);
++        }
++        self.live += 1;
++        self.first_free = self.entries[index + 1..]
++            .iter()
++            .position(Option::is_none)
++            .map_or(self.entries.len(), |offset| index + 1 + offset);
+     }
+     pub(crate) fn has_unpublished(&self) -> bool {
+         self.pending.is_some()
+@@ -978,11 +999,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
+             // Preserve the new call until that slot is reclaimed.
+             return Ok(None);
+         }
+-        let index = self
+-            .entries
+-            .iter()
+-            .position(Option::is_none)
+-            .unwrap_or(self.entries.len());
++        let index = self.first_free;
+         if index == self.entries.len() {
+             if index == self.maximum {
+                 // Accepted calls are bounded independently of the inbox. Keep
+@@ -1096,7 +1113,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
+                         return Ok(Some(progress));
+                     }
+                 };
+-                let entry = Some(Entry {
++                let entry = Entry {
+                     wire: WireCall {
+                         call: Some(call),
+                         task: None,
+@@ -1108,12 +1125,8 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
+                     },
+                     local: None,
+                     reply_id: Some(question.id().to_wire()),
+-                });
+-                if index == self.entries.len() {
+-                    self.entries.push(entry);
+-                } else {
+-                    self.entries[index] = entry;
+-                }
++                };
++                self.insert_entry(index, entry);
+                 if indexed {
+                     self.reply_owners.insert(question.id().to_wire(), index);
+                 }
+@@ -1177,16 +1190,12 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
+                 return Err(rejected.error);
+             }
+         };
+-        let entry = Some(Entry {
++        let entry = Entry {
+             wire,
+             local: None,
+             reply_id: None,
+-        });
+-        if index == self.entries.len() {
+-            self.entries.push(entry);
+-        } else {
+-            self.entries[index] = entry;
+-        }
++        };
++        self.insert_entry(index, entry);
+         Ok(Some(Progress::Advanced))
+     }
+     /// End tracked bindings, then release every externally running local call.
+diff --git a/crates/capntproto-rpc/src/scoped/wire/calls/tests.rs b/crates/capntproto-rpc/src/scoped/wire/calls/tests.rs
+index 602d64f..4869a50 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/calls/tests.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/calls/tests.rs
+@@ -1337,6 +1337,8 @@ fn immediate_reply_index_survives_bursts_cancellation_and_question_reuse() {
+                     })
+                     .collect();
+                 assert_eq!(calls.reply_owners.len(), 12);
++                assert_eq!(calls.live, 12);
++                assert_eq!(calls.first_free, calls.entries.len());
+                 for old in &previous {
+                     assert!(
+                         calls.plain_receiver(*old).is_none(),
+@@ -1423,6 +1425,8 @@ fn immediate_reply_index_survives_bursts_cancellation_and_question_reuse() {
+                     }
+                 }
+                 assert!(calls.is_empty());
++                assert_eq!(calls.live, 0);
++                assert_eq!(calls.first_free, 0);
+                 assert!(
+                     calls.reply_owners.is_empty(),
+                     "retirement must release every index entry"

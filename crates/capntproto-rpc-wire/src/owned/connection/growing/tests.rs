@@ -2376,6 +2376,96 @@ fn plain_return_shortcuts_preserve_cancellation_pipeline_and_control_owners() {
 }
 
 #[test]
+fn pending_exchange_lookup_checks_hints_and_retains_relocated_owners() {
+    use super::super::PlainReceived;
+    with_driver(|mut driver, messages| {
+        let target = remote(&mut driver);
+        let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+        let request = capnp::message::Builder::new_default();
+        let mut keys = alloc::vec::Vec::new();
+        for _ in 0..2 {
+            keys.push(
+                driver
+                    .try_send_immediate(
+                        &target,
+                        DynamicCall {
+                            no_promise_pipelining: true,
+                            ..Default::default()
+                        },
+                        request.get_root_as_reader().unwrap(),
+                        messages,
+                        &mut queue,
+                        128,
+                        Default::default(),
+                        (),
+                    )
+                    .unwrap()
+                    .unwrap(),
+            );
+            drain(&mut queue, messages, |_| {});
+        }
+        for (index, key) in keys.iter().enumerate() {
+            assert_eq!(
+                ExchangeSlot::pending_index(&driver.exchanges, key.id().to_wire()),
+                Some(index)
+            );
+        }
+        // Question lifetimes and exchange lifetimes can diverge. Deliberately
+        // put another live owner at each ID's preferred position.
+        driver.exchanges.swap(0, 1);
+        for (index, key) in keys.iter().enumerate() {
+            assert_eq!(
+                ExchangeSlot::pending_index(&driver.exchanges, key.id().to_wire()),
+                Some(1 - index)
+            );
+        }
+        let capacity = driver.exchanges.len();
+        assert_eq!(
+            ExchangeSlot::pending_index(&driver.exchanges, u32::MAX),
+            None
+        );
+        assert_eq!(driver.exchanges.len(), capacity);
+        for (index, key) in keys.into_iter().enumerate() {
+            let frame = Frame::build(messages, 128, Default::default(), |b| {
+                let mut result = b
+                    .try_init_root::<Message>()?
+                    .into_field(Message::RETURN)
+                    .init()?;
+                result.scalar(Return::ANSWER_ID).set(key.id().to_wire());
+                result.scalar(Return::RELEASE_PARAM_CAPS).set(false);
+                result.scalar(Return::NO_FINISH_NEEDED).set(true);
+                result.into_field(Return::RESULTS).init()?;
+                Ok(())
+            })
+            .unwrap();
+            if index == 0 {
+                let PlainReceived::Delivered(selected, _) = driver
+                    .try_receive_plain_owned(frame, messages, Some)
+                    .unwrap_or_else(|(error, _)| panic!("{error}"))
+                else {
+                    panic!("relocated plain reply must find its owner")
+                };
+                assert_eq!(selected, key);
+            } else {
+                assert!(
+                    matches!(driver.receive(frame, messages, &mut [0; 8], |_| (), || ()),
+                    Ok(Received::Returned(selected)) if selected == key)
+                );
+                let response = driver.take_response(key).unwrap();
+                driver.release_response(response, messages);
+            }
+            assert_eq!(
+                ExchangeSlot::pending_index(&driver.exchanges, key.id().to_wire()),
+                None
+            );
+        }
+        assert!(driver.ledgers.questions.is_empty());
+        driver.runtime.release(target);
+        close(driver, messages, &mut queue);
+    });
+}
+
+#[test]
 fn direct_plain_return_is_transactional_and_pins_the_original_result() {
     use super::super::PlainReceived;
     use capnp::private::capability::ResponseHook;

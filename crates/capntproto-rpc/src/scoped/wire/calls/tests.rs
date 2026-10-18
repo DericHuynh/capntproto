@@ -1337,6 +1337,8 @@ fn immediate_reply_index_survives_bursts_cancellation_and_question_reuse() {
                     })
                     .collect();
                 assert_eq!(calls.reply_owners.len(), 12);
+                assert_eq!(calls.live, 12);
+                assert_eq!(calls.first_free, calls.entries.len());
                 for old in &previous {
                     assert!(
                         calls.plain_receiver(*old).is_none(),
@@ -1423,6 +1425,8 @@ fn immediate_reply_index_survives_bursts_cancellation_and_question_reuse() {
                     }
                 }
                 assert!(calls.is_empty());
+                assert_eq!(calls.live, 0);
+                assert_eq!(calls.first_free, 0);
                 assert!(
                     calls.reply_owners.is_empty(),
                     "retirement must release every index entry"

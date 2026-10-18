@@ -74,6 +74,8 @@ pub enum Progress {
 pub struct Calls<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> {
     invocations: connection::Invocations<'s, 'wait, 'p, 'id, I, C>,
     entries: Vec<Option<Entry<'p, 'id, I, C, H>>>,
+    live: usize,
+    first_free: usize,
     // An owner lookup, not a protocol ledger. Only immediate calls are indexed;
     // the entry's full branded/generational key remains authoritative. Allocate
     // lazily beyond the small-call scan, and remove owners on every retirement.
@@ -97,6 +99,8 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         Ok(Self {
             invocations: connection::Invocations::new_growing(0, maximum).map_err(wire_error)?,
             entries: Vec::new(),
+            live: 0,
+            first_free: 0,
             reply_owners: ReplyOwners::default(),
             pending: None,
             maximum,
@@ -108,9 +112,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         })
     }
     pub fn is_empty(&self) -> bool {
-        self.pending.is_none()
-            && self.entries.iter().all(Option::is_none)
-            && self.invocations.is_empty()
+        self.pending.is_none() && self.live == 0 && self.invocations.is_empty()
     }
     pub(super) fn invalidate_scan(&mut self) {
         self.remaining = 0;
@@ -267,6 +269,25 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             }
         }
         self.entries[index] = None;
+        self.live -= 1;
+        self.first_free = self.first_free.min(index);
+    }
+    /// Advance allocation only after admission commits. Failed publication
+    /// leaves the free position available; retirement restores the lowest
+    /// hole. This preserves scan order without searching from zero each time.
+    fn insert_entry(&mut self, index: usize, entry: Entry<'p, 'id, I, C, H>) {
+        debug_assert_eq!(index, self.first_free);
+        if index == self.entries.len() {
+            self.entries.push(Some(entry));
+        } else {
+            debug_assert!(self.entries[index].is_none());
+            self.entries[index] = Some(entry);
+        }
+        self.live += 1;
+        self.first_free = self.entries[index + 1..]
+            .iter()
+            .position(Option::is_none)
+            .map_or(self.entries.len(), |offset| index + 1 + offset);
     }
     pub(crate) fn has_unpublished(&self) -> bool {
         self.pending.is_some()
@@ -978,11 +999,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             // Preserve the new call until that slot is reclaimed.
             return Ok(None);
         }
-        let index = self
-            .entries
-            .iter()
-            .position(Option::is_none)
-            .unwrap_or(self.entries.len());
+        let index = self.first_free;
         if index == self.entries.len() {
             if index == self.maximum {
                 // Accepted calls are bounded independently of the inbox. Keep
@@ -1096,7 +1113,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         return Ok(Some(progress));
                     }
                 };
-                let entry = Some(Entry {
+                let entry = Entry {
                     wire: WireCall {
                         call: Some(call),
                         task: None,
@@ -1108,12 +1125,8 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                     },
                     local: None,
                     reply_id: Some(question.id().to_wire()),
-                });
-                if index == self.entries.len() {
-                    self.entries.push(entry);
-                } else {
-                    self.entries[index] = entry;
-                }
+                };
+                self.insert_entry(index, entry);
                 if indexed {
                     self.reply_owners.insert(question.id().to_wire(), index);
                 }
@@ -1177,16 +1190,12 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 return Err(rejected.error);
             }
         };
-        let entry = Some(Entry {
+        let entry = Entry {
             wire,
             local: None,
             reply_id: None,
-        });
-        if index == self.entries.len() {
-            self.entries.push(entry);
-        } else {
-            self.entries[index] = entry;
-        }
+        };
+        self.insert_entry(index, entry);
         Ok(Some(Progress::Advanced))
     }
     /// End tracked bindings, then release every externally running local call.

@@ -48,14 +48,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         messages: &mut messages::Messages<'pool, '_, '_>,
         select: impl FnOnce(questions::Key<'id>) -> Option<T>,
     ) -> Result<PlainReceived<'pool, T>, (Error, Frame<'pool>)> {
-        if self.disconnected.is_some() || self.resolution.is_some()
+        if self.disconnected.is_some()
+            || self.resolution.is_some()
             || self.ledgers.questions.is_empty()
-            || self.exchanges.iter().any(|slot| {
-                matches!(&slot.exchange, Some(Exchange::Returned(response))
-                    if (response.requires_ordered_propagation() || slot.handoff.is_some())
-                        && (self.outgoing.pending_for(response.key()) || self.invocation_pipelines.iter().any(|slot| slot.pending_for(response.key()))))
-            })
-        { return Ok(PlainReceived::Deferred(frame)); }
+            || self.has_ordered_propagation()
+        {
+            return Ok(PlainReceived::Deferred(frame));
+        }
         let segments = match frame.share_segments(messages) {
             Ok(Some(segments)) => segments,
             Ok(None) => return Ok(PlainReceived::Deferred(frame)),
@@ -82,14 +81,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         messages: &mut messages::Messages<'pool, '_, '_>,
         select: impl FnOnce(questions::Key<'id>) -> Option<T>,
     ) -> Result<Option<(T, alloc::boxed::Box<super::super::PlainResults>)>, Error> {
-        if self.disconnected.is_some() || self.resolution.is_some()
+        if self.disconnected.is_some()
+            || self.resolution.is_some()
             || self.ledgers.questions.is_empty()
-            || self.exchanges.iter().any(|slot| {
-                matches!(&slot.exchange, Some(Exchange::Returned(response))
-                    if (response.requires_ordered_propagation() || slot.handoff.is_some())
-                        && (self.outgoing.pending_for(response.key()) || self.invocation_pipelines.iter().any(|slot| slot.pending_for(response.key()))))
-            })
-        { return Ok(None); }
+            || self.has_ordered_propagation()
+        {
+            return Ok(None);
+        }
         if canonical_nonplain(bytes) {
             return Ok(None);
         }
@@ -134,21 +132,15 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     return Ok(None);
                 }
                 let id = result.get_answer_id();
-                let Some((index, question)) =
-                    self.exchanges.iter().enumerate().find_map(|(index, slot)| {
-                        match &slot.exchange {
-                            Some(Exchange::Pending(question))
-                                if slot.authorized
-                                    && !slot.canceled
-                                    && question.key().id().to_wire() == id =>
-                            {
-                                Some((index, question))
-                            }
-                            _ => None,
-                        }
-                    })
-                else {
+                let Some(index) = ExchangeSlot::pending_index(&self.exchanges, id) else {
                     return Ok(None);
+                };
+                let slot = &self.exchanges[index];
+                if !slot.authorized || slot.canceled {
+                    return Ok(None);
+                }
+                let Some(Exchange::Pending(question)) = &slot.exchange else {
+                    unreachable!("selected pending question")
                 };
                 let key = question.key();
                 if self.outgoing.pending_for(key)
