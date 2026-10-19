@@ -206,7 +206,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 {
                     self.schedule.active = (WorkSet::ACCEPT) | (WorkSet::WORKER);
                     self.schedule.cursor = Lane::Accept;
-                    self.worker.invalidate_scan();
+                    self.worker.protocol_changed();
                 } else if pump.returned.is_none() {
                     self.resume_at(first);
                 }

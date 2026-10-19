@@ -5,6 +5,8 @@ use capntproto_rpc_engine::{answers, clients};
 use capntproto_rpc_wire::clients::{Endpoint, Route};
 use std::num::NonZeroUsize;
 
+mod ready;
+
 type Running<'p, 'id, I, const C: usize, const P: usize> =
     dispatch::Running<'id, connection::Request<'p, 'id, I, C, P>>;
 type Peer<'p, 'id, 's, I, P, const C: usize, const H: usize> =
@@ -21,6 +23,7 @@ struct Entry<'p, 'id, I, const C: usize, const H: usize> {
     running: Running<'p, 'id, I, C, H>,
     results: Results,
     stage: Stage,
+    waker: Waker,
 }
 impl<'p, 'id, I, const C: usize, const H: usize> Entry<'p, 'id, I, C, H> {
     fn request(&self) -> &connection::Request<'p, 'id, I, C, H> {
@@ -32,7 +35,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Entry<'p, 'id, I, C, H> {
 /// output/capacity errors retain the operation and advance the fairness cursor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Progress {
-    /// The bounded scan has more slots to visit; poll again.
+    /// Ready operations remain after the shared budget; poll again.
     Yield,
     Idle,
     Advanced,
@@ -42,7 +45,9 @@ pub enum Progress {
 /// Incoming service execution for a hosted connection using the portable driver.
 ///
 /// Call `accept` for ready incoming Calls and `poll` alongside IO, invocation
-/// delivery and `Driver::poll_maintenance_with`. The maintenance resolver must
+/// delivery and `Driver::poll_maintenance_with`. After external driver mutations,
+/// call `protocol_changed` before polling again; spurious polls do not recheck
+/// parked operations. The maintenance resolver must
 /// use `ClientHooks::server_pipeline` so explicit early pipelines win over final
 /// results. Other dispatcher tasks and authenticated third-party answers remain
 /// with their caller. Local endpoint owners are the original policy-preserving
@@ -57,8 +62,7 @@ pub struct Worker<'p, 'id, I, const C: usize, const H: usize> {
     live: usize,
     first_free: usize,
     maximum: usize,
-    cursor: usize,
-    remaining: usize,
+    ready: ready::Queue,
     completed_plain: bool,
     completed_ordinary: bool,
     results_cache: results::Cache,
@@ -71,8 +75,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             live: 0,
             first_free: 0,
             maximum,
-            cursor: 0,
-            remaining: 0,
+            ready: ready::Queue::default(),
             completed_plain: false,
             completed_ordinary: false,
             results_cache: results::Cache::default(),
@@ -95,8 +98,11 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
     pub(crate) fn completed_ordinary(&self) -> bool {
         self.completed_plain || self.completed_ordinary
     }
-    pub(crate) fn invalidate_scan(&mut self) {
-        self.remaining = 0;
+    /// Recheck accepted work after mutating the driver outside this worker.
+    /// Application futures use their individual wakers; protocol changes such
+    /// as Finish, redirect publication or released capacity need this signal.
+    pub fn protocol_changed(&mut self) {
+        self.ready.invalidate();
     }
     pub(crate) fn has_undispatched(&self) -> bool {
         self.entries
@@ -210,6 +216,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         results: Results,
     ) {
         let entry = Entry {
+            waker: self.ready.insert(index),
             running,
             results,
             stage: if execute {
@@ -231,7 +238,6 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             .iter()
             .position(Option::is_none)
             .map_or(self.entries.len(), |offset| index + 1 + offset);
-        self.remaining = self.entries.len();
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -369,22 +375,31 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         if self.is_empty() {
             return Poll::Ready(Ok(Progress::Idle));
         }
-        if self.remaining == 0 {
-            self.remaining = self.entries.len();
-        }
+        self.ready.register(cx.waker());
         let mut advanced = false;
         let mut remaining_budget = budget.get();
-        let exclusive = self.entries.len() == 1;
+        let exclusive = self.live == 1;
         while remaining_budget != 0 {
-            remaining_budget -= 1;
-            let index = self.cursor;
-            self.cursor = if index + 1 == self.entries.len() {
-                0
-            } else {
-                index + 1
+            let Some(index) = self.ready.pop() else {
+                return if advanced {
+                    Poll::Ready(Ok(Progress::Advanced))
+                } else {
+                    Poll::Pending
+                };
             };
-            let outcome = if let Some(entry) = &mut self.entries[index] {
-                Self::step(
+            let Some(entry) = self.entries[index].as_mut() else {
+                // Conservative protocol invalidation visits retained holes
+                // under the same budget as live operations.
+                remaining_budget -= 1;
+                continue;
+            };
+            let waker = entry.waker.clone();
+            // A ready completion continues toward Return in this turn, as KJ
+            // chains its answer continuation. Only suspension or the shared
+            // budget yields the operation; intermediate stages need no enqueue.
+            let outcome = loop {
+                remaining_budget -= 1;
+                let outcome = Self::step(
                     entry,
                     &self.executor,
                     hooks,
@@ -392,7 +407,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     messages,
                     minimum,
                     options,
-                    cx,
+                    &mut Context::from_waker(&waker),
                     &mut import,
                     &mut refresh,
                     &mut publish,
@@ -402,45 +417,47 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     exclusive,
                     &mut self.completed_plain,
                     &mut self.completed_ordinary,
-                )
-            } else {
-                Poll::Pending
+                );
+                if matches!(outcome, Poll::Ready(Ok(Progress::Advanced))) {
+                    advanced = true;
+                    if remaining_budget != 0 {
+                        continue;
+                    }
+                }
+                break outcome;
             };
             if let Poll::Ready(outcome) = outcome {
-                self.remaining = self.entries.len();
                 if matches!(outcome, Ok(Progress::Replied)) {
+                    // Retire before dropping application owners: their wakes
+                    // cannot enqueue this slot or a later occupant of it.
+                    self.ready.remove(index);
                     let entry = self.entries[index].take().expect("replied operation");
                     self.live -= 1;
                     self.first_free = self.first_free.min(index);
                     self.results_cache.recycle(release(entry, driver, messages));
+                } else {
+                    // Budget exhaustion or a retryable error retains work at
+                    // the FIFO tail. Pending sleeps until its own notification
+                    // or an explicit protocol change.
+                    self.ready.push(index);
                 }
                 if matches!(outcome, Ok(Progress::Advanced)) {
-                    advanced = true;
                     continue;
                 }
                 return Poll::Ready(outcome);
             }
-            self.remaining -= 1;
-            if self.remaining == 0 {
-                return if advanced {
-                    Poll::Ready(Ok(Progress::Advanced))
-                } else if self.is_empty() {
-                    Poll::Ready(Ok(Progress::Idle))
-                } else {
-                    Poll::Pending
-                };
-            }
         }
-        // More slots remain unpolled; do not lose their application wakeups.
-        Poll::Ready(Ok(if advanced {
-            Progress::Advanced
+        if advanced {
+            Poll::Ready(Ok(Progress::Advanced))
+        } else if self.ready.is_empty() {
+            Poll::Pending
         } else {
-            Progress::Yield
-        }))
+            Poll::Ready(Ok(Progress::Yield))
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
-    // Keep the stage transition inside its bounded scan. Otherwise the many
+    // Keep the stage transition inside its bounded ready turn. Otherwise the many
     // adapter arguments are spilled and reloaded for every synchronous stage.
     #[inline(always)]
     fn step<P: Copy + Eq>(
@@ -688,6 +705,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         driver: &mut Peer<'p, 'id, '_, I, P, C, H>,
         messages: &mut messages::Messages<'p, '_, '_>,
     ) {
+        self.ready.close();
         for entry in self.entries.into_iter().flatten() {
             drop(release(entry, driver, messages));
         }

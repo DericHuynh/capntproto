@@ -168,7 +168,7 @@ impl<I, P: Copy + Eq, const C: usize, const H: usize> Drop
                 }
                 if !coordinator.worker.is_empty() {
                     coordinator.schedule.active |= WorkSet::WORKER;
-                    coordinator.worker.invalidate_scan();
+                    coordinator.worker.protocol_changed();
                 }
             }
             Effects::None => (),

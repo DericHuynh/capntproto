@@ -1,0 +1,1054 @@
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator.rs
+index d12e15a..a3a973b 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator.rs
+@@ -97,6 +97,7 @@ pub struct Coordinator<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: us
+     cleanup_before_call: bool,
+     notifications: Notifications,
+     control_waker: Waker,
++    worker_waker: Waker,
+     enqueue_waker: Rc<EnqueueWake>,
+     commands: Rc<handle::Commands>,
+     output: io::Output,
+@@ -141,6 +142,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+         let notifications = Notifications::default();
+         let enqueue_waker = Rc::new(notifications.enqueue());
+         let control_waker = notifications.control_waker();
++        let worker_waker = notifications.worker_waker();
+         // Commands have one coordinator owner and retain this stable notifier.
+         // Parent-task replacement is handled by WorkWake's registration, so
+         // ordinary calls need not register the command inbox again.
+@@ -160,6 +162,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+             cleanup_before_call: false,
+             notifications,
+             control_waker,
++            worker_waker,
+             enqueue_waker,
+             commands,
+             output: io::Output::new(),
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator/control.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator/control.rs
+index 3d0f856..15b1c49 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator/control.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator/control.rs
+@@ -168,7 +168,7 @@ impl<I, P: Copy + Eq, const C: usize, const H: usize> Drop
+                 }
+                 if !coordinator.worker.is_empty() {
+                     coordinator.schedule.active |= WorkSet::WORKER;
+-                    coordinator.worker.invalidate_scan();
++                    coordinator.worker.protocol_changed();
+                 }
+             }
+             Effects::None => (),
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator/ingress.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator/ingress.rs
+index 71233c7..3c70d7f 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator/ingress.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator/ingress.rs
+@@ -206,7 +206,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+                 {
+                     self.schedule.active = (WorkSet::ACCEPT) | (WorkSet::WORKER);
+                     self.schedule.cursor = Lane::Accept;
+-                    self.worker.invalidate_scan();
++                    self.worker.protocol_changed();
+                 } else if pump.returned.is_none() {
+                     self.resume_at(first);
+                 }
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator/scheduler.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator/scheduler.rs
+index 2170263..3f8872a 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator/scheduler.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator/scheduler.rs
+@@ -146,6 +146,15 @@ impl Wake for WorkWake {
+ // Local enqueue shares the notifier without a task-waker clone per request.
+ pub(in crate::scoped) struct EnqueueWake(Arc<WorkWake>);
+ struct ControlWake(Arc<WorkWake>);
++struct WorkerWake(Arc<WorkWake>);
++impl Wake for WorkerWake {
++    fn wake(self: Arc<Self>) {
++        self.wake_by_ref();
++    }
++    fn wake_by_ref(self: &Arc<Self>) {
++        self.0.notify(WorkSet::WORKER);
++    }
++}
+ impl Wake for ControlWake {
+     fn wake(self: Arc<Self>) {
+         self.wake_by_ref();
+@@ -166,6 +175,9 @@ pub(super) struct Notifications {
+     parent: Option<Waker>,
+ }
+ impl Notifications {
++    pub(super) fn worker_waker(&self) -> Waker {
++        Waker::from(Arc::new(WorkerWake(self.wake.clone())))
++    }
+     pub(super) fn control_waker(&self) -> Waker {
+         Waker::from(Arc::new(ControlWake(self.wake.clone())))
+     }
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator/tests/worker.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator/tests/worker.rs
+index 6d95d61..8a59ca3 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator/tests/worker.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator/tests/worker.rs
+@@ -328,3 +328,213 @@ fn pending_worker_wake_dispatches_early_pipeline_before_parent_completes() {
+         });
+     }
+ }
++
++#[test]
++fn single_service_wake_never_polls_parked_siblings() {
++    for generic in [false, true] {
++        for repeat in 0..5 {
++            for owned in [false, true] {
++                for budget in [1usize, 8, 64] {
++                    for count in [1usize, 2, 8, 16] {
++                        for selected in [0, count / 2, count - 1] {
++                            with_peer(|mut driver, messages| {
++                                driver.use_owned_output_queues(owned);
++                                let polls = Rc::new(RefCell::new(vec![0usize; count]));
++                                let waiters = Rc::new(RefCell::new(vec![None::<Waker>; count]));
++                                let ready = Rc::new(RefCell::new(vec![false; count]));
++                                let service_polls = polls.clone();
++                                let service_waiters = waiters.clone();
++                                let service_ready = ready.clone();
++                                let next = std::cell::Cell::new(0);
++                                let target = expose(
++                                    &mut driver,
++                                    service(move |mut results| {
++                                        let index = next.get();
++                                        next.set(index + 1);
++                                        let polls = service_polls.clone();
++                                        let waiters = service_waiters.clone();
++                                        let ready = service_ready.clone();
++                                        capability::DispatchCallResult::with_cancellation_policy(
++                                            capability::Promise::from_future(
++                                                futures::future::poll_fn(move |cx| {
++                                                    polls.borrow_mut()[index] += 1;
++                                                    waiters.borrow_mut()[index] =
++                                                        Some(cx.waker().clone());
++                                                    if ready.borrow()[index] {
++                                                        results
++                                                            .get()
++                                                            .set_as::<capnp::text::Owned>(
++                                                                "ready",
++                                                            )?;
++                                                        Poll::Ready(Ok(()))
++                                                    } else {
++                                                        Poll::Pending
++                                                    }
++                                                }),
++                                            ),
++                                            false,
++                                            true,
++                                        )
++                                    }),
++                                );
++                                for index in 0..count {
++                                    let frame = Frame::build(
++                                        messages,
++                                        512,
++                                        Default::default(),
++                                        |builder| {
++                                            calls::dynamic_call(
++                                                builder,
++                                                QuestionId::from_wire(index as u32),
++                                                calls::Target::Imported(target),
++                                                DynamicCall {
++                                                    interface: 7,
++                                                    no_promise_pipelining: true,
++                                                    ..Default::default()
++                                                },
++                                                |_| Ok(()),
++                                            )
++                                        },
++                                    )
++                                    .unwrap();
++                                    driver
++                                        .receive(
++                                            frame,
++                                            messages,
++                                            &mut [0; 16],
++                                            |_| (),
++                                            server::Results::new,
++                                        )
++                                        .unwrap_or_else(|rejected| panic!("{}", rejected.error));
++                                }
++                                let mut opts = options();
++                                opts.budget = NonZeroUsize::new(budget).unwrap();
++                                let mut coordinator = Coordinator::new(
++                                    driver,
++                                    ClientHooks::new(128, 32),
++                                    NonZeroUsize::new(count).unwrap(),
++                                    None,
++                                    opts,
++                                )
++                                .unwrap();
++                                let mut queue = messages::Queue::new_growing(0, count).unwrap();
++                                let mut scratch = [0; 32];
++                                let mut cx = Context::from_waker(Waker::noop());
++                                let mut parked = false;
++                                for _ in 0..4096 {
++                                    if let Poll::Ready(result) = coordinator.poll_work(
++                                        messages,
++                                        &mut queue,
++                                        &mut scratch,
++                                        &NoResources,
++                                        &mut cx,
++                                    ) {
++                                        result.unwrap();
++                                    }
++                                    if coordinator.schedule.active == WorkSet::NONE
++                                        && coordinator.notifications.pending() == WorkSet::NONE
++                                        && waiters.borrow().iter().all(Option::is_some)
++                                    {
++                                        parked = true;
++                                        break;
++                                    }
++                                }
++                                assert!(parked);
++                                assert!(queue.is_empty());
++                                let before = polls.borrow().clone();
++                                ready.borrow_mut()[selected] = true;
++                                waiters.borrow()[selected].as_ref().unwrap().wake_by_ref();
++                                if generic {
++                                    coordinator.notifications.waker().wake_by_ref();
++                                }
++                                let mut published = false;
++                                let mut turns = 0;
++                                for _ in 0..4096 {
++                                    turns += 1;
++                                    if let Poll::Ready(result) = coordinator.poll_work(
++                                        messages,
++                                        &mut queue,
++                                        &mut scratch,
++                                        &NoResources,
++                                        &mut cx,
++                                    ) {
++                                        result.unwrap();
++                                    }
++                                    if !queue.is_empty() {
++                                        published = true;
++                                        break;
++                                    }
++                                }
++                                assert!(published);
++                                let delta: Vec<_> = polls
++                                    .borrow()
++                                    .iter()
++                                    .zip(before)
++                                    .map(|(after, before)| after - before)
++                                    .collect();
++                                let sibling_polls = delta
++                                    .iter()
++                                    .enumerate()
++                                    .filter(|(i, _)| *i != selected)
++                                    .map(|(_, n)| *n)
++                                    .sum::<usize>();
++                                println!("COORDINATOR_PROBE generic={} repeat={repeat} owned={} budget={budget} parked={count} selected={selected} ready_polls={} sibling_polls={sibling_polls} coordinator_polls={turns}", usize::from(generic), usize::from(owned), delta[selected]);
++                                assert_eq!(delta[selected], 1);
++                                assert_eq!(
++                                sibling_polls, 0,
++                                "owned={owned} budget={budget} count={count} selected={selected}"
++                            );
++                                assert_eq!(queue.len(), 1);
++                                let mut bytes = Vec::new();
++                                while let Some(window) = queue.window(messages).unwrap() {
++                                    let length = window.bytes().len();
++                                    bytes.extend_from_slice(window.bytes());
++                                    window.advance(length).unwrap();
++                                }
++                                let mut input = bytes.as_slice();
++                                let message = capnp::serialize::read_message_from_flat_slice(
++                                    &mut input,
++                                    Default::default(),
++                                )
++                                .unwrap();
++                                assert!(input.is_empty());
++                                let rpc_capnp::message::Return(reply) = message
++                                    .get_root::<rpc_capnp::message::Reader>()
++                                    .unwrap()
++                                    .which()
++                                    .unwrap()
++                                else {
++                                    panic!("expected one Return")
++                                };
++                                let reply = reply.unwrap();
++                                assert_eq!(reply.get_answer_id(), selected as u32);
++                                let rpc_capnp::return_::Results(payload) = reply.which().unwrap()
++                                else {
++                                    panic!("expected results")
++                                };
++                                assert_eq!(
++                                    payload
++                                        .unwrap()
++                                        .get_content()
++                                        .get_as::<capnp::text::Reader>()
++                                        .unwrap(),
++                                    "ready"
++                                );
++                                futures::executor::block_on(
++                                    coordinator.terminate::<NoResources, (), ()>(
++                                        messages,
++                                        &mut queue,
++                                        &mut Policy::default(),
++                                        Ok(()),
++                                    ),
++                                )
++                                .unwrap();
++                                reclaimed(messages);
++                            });
++                        }
++                    }
++                }
++            }
++        }
++    }
++}
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs
+index 2d0abe5..d58c38c 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs
+@@ -8,6 +8,12 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+     /// lanes report Yield separately from true Pending, so mismatched scan sizes
+     /// cannot continually wake one another on an otherwise idle connection.
+     pub(super) fn changed(&mut self) {
++        self.worker.protocol_changed();
++        self.progressed();
++    }
++    /// Local progress may change routes and cleanup, but cannot make an
++    /// unrelated parked service future ready. Its operation waker owns that.
++    fn progressed(&mut self) {
+         self.control_idle = false;
+         self.schedule.active = WorkSet::FOREIGN | WorkSet::CALLS | WorkSet::MAINTENANCE;
+         if self.driver.runtime.queued() != 0 || self.driver.has_pending_call() {
+@@ -20,7 +26,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+             self.schedule.active |= WorkSet::COMMANDS;
+         }
+         self.calls.invalidate_scan();
+-        self.worker.invalidate_scan();
+         self.foreign.invalidate_scan();
+         self.driver.invalidate_maintenance();
+     }
+@@ -68,7 +73,14 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+         }
+         let changed = notified & !WorkSet::CONTROL;
+         if changed != WorkSet::NONE {
+-            if changed == WorkSet::CALLS {
++            if changed & !(WorkSet::CALLS | WorkSet::WORKER) == WorkSet::NONE
++                && changed & WorkSet::WORKER != WorkSet::NONE
++            {
++                // The worker queue already retains the specific ready keys.
++                // Early pipelines can also unblock dispatch and maintenance.
++                self.schedule.resume_at(Lane::Worker);
++                self.progressed();
++            } else if changed == WorkSet::CALLS {
+                 // A newly enqueued request cannot change foreign promises,
+                 // server tasks, network controls or cleanup before admission.
+                 if self.schedule.active == WorkSet::NONE {
+@@ -77,7 +89,11 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+                 self.schedule.active |= WorkSet::CALLS;
+                 self.calls.invalidate_scan();
+             } else {
+-                self.resume_at(Lane::Calls);
++                // Coalesced application notifications still carry readiness
++                // in the worker queue. Protocol effects are committed by
++                // ingress and ControlContext, never inferred from a wake.
++                self.schedule.resume_at(Lane::Calls);
++                self.progressed();
+             }
+             if self.cleanup_on_enqueue
+                 && self.calls.is_empty()
+@@ -188,7 +204,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+                     Poll::Pending
+                 }
+                 Poll::Ready(Ok(progress)) => {
+-                    self.changed();
++                    self.progressed();
+                     self.delivered |= progress == Progress::Completed;
+                     self.cleanup_on_enqueue |= progress == Progress::Completed;
+                     Poll::Ready(Ok(()))
+@@ -208,7 +224,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+                 self.schedule.active = WorkSet::WORKER;
+                 self.schedule.cursor = Lane::Worker;
+             } else {
+-                self.changed();
++                self.progressed();
+             }
+         }
+         if self.schedule.active == WorkSet::WORKER && *remaining > 0 {
+@@ -228,7 +244,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+                 queue,
+                 scratch,
+                 output,
+-                &mut Context::from_waker(waker),
+                 NonZeroUsize::new(quantum).unwrap(),
+             );
+             if self.driver.runtime.has_retired() {
+@@ -269,7 +284,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+                     Poll::Pending
+                 }
+                 Poll::Ready(Ok(_)) => {
+-                    self.changed();
++                    self.progressed();
+                     Poll::Ready(Ok(()))
+                 }
+             };
+@@ -420,20 +435,15 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+                         Poll::Ready(Err(e)) => Poll::Ready(Err(*e)),
+                         Poll::Pending => Poll::Pending,
+                     },
+-                    Lane::Worker => match self.poll_worker(
+-                        messages,
+-                        queue,
+-                        scratch,
+-                        output,
+-                        &mut application_cx,
+-                        quantum,
+-                    ) {
+-                        Poll::Ready(Ok(server::Progress::Idle)) => Poll::Pending,
+-                        Poll::Ready(Ok(server::Progress::Yield)) => continue,
+-                        Poll::Ready(Ok(_)) => Poll::Ready(Ok(())),
+-                        Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+-                        Poll::Pending => Poll::Pending,
+-                    },
++                    Lane::Worker => {
++                        match self.poll_worker(messages, queue, scratch, output, quantum) {
++                            Poll::Ready(Ok(server::Progress::Idle)) => Poll::Pending,
++                            Poll::Ready(Ok(server::Progress::Yield)) => continue,
++                            Poll::Ready(Ok(_)) => Poll::Ready(Ok(())),
++                            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
++                            Poll::Pending => Poll::Pending,
++                        }
++                    }
+                     Lane::Commands => match self.commands.take() {
+                         None => Poll::Pending,
+                         Some(sender) => {
+@@ -586,7 +596,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+                     self.schedule.active |= (WorkSet::CALLS) | (WorkSet::MAINTENANCE);
+                     self.calls.invalidate_scan();
+                 } else {
+-                    self.changed();
++                    self.progressed();
+                 }
+                 advanced = true;
+                 // Publish promptly and give a completed application's waker a
+@@ -768,18 +778,18 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+         queue: &mut messages::Queue<'p, '_, O::Bundle>,
+         scratch: &mut [u32],
+         output: &O,
+-        cx: &mut Context<'_>,
+         quantum: NonZeroUsize,
+     ) -> Poll<capnp::Result<server::Progress>> {
+         let options = self.options;
+         let queue = RefCell::new(queue);
++        let mut worker_cx = Context::from_waker(&self.worker_waker);
+         self.worker.poll_using(
+             &mut self.hooks,
+             &mut self.driver,
+             messages,
+             options.output_bytes.get(),
+             options.reader,
+-            cx,
++            &mut worker_cx,
+             quantum,
+             |runtime, hook| self.foreign.import(runtime, hook),
+             Self::hook_refresh(output, true),
+diff --git a/crates/capntproto-rpc/src/scoped/wire/server/worker.rs b/crates/capntproto-rpc/src/scoped/wire/server/worker.rs
+index 6a865ca..753178f 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/server/worker.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/server/worker.rs
+@@ -5,6 +5,8 @@ use capntproto_rpc_engine::{answers, clients};
+ use capntproto_rpc_wire::clients::{Endpoint, Route};
+ use std::num::NonZeroUsize;
+ 
++mod ready;
++
+ type Running<'p, 'id, I, const C: usize, const P: usize> =
+     dispatch::Running<'id, connection::Request<'p, 'id, I, C, P>>;
+ type Peer<'p, 'id, 's, I, P, const C: usize, const H: usize> =
+@@ -21,6 +23,7 @@ struct Entry<'p, 'id, I, const C: usize, const H: usize> {
+     running: Running<'p, 'id, I, C, H>,
+     results: Results,
+     stage: Stage,
++    waker: Waker,
+ }
+ impl<'p, 'id, I, const C: usize, const H: usize> Entry<'p, 'id, I, C, H> {
+     fn request(&self) -> &connection::Request<'p, 'id, I, C, H> {
+@@ -32,7 +35,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Entry<'p, 'id, I, C, H> {
+ /// output/capacity errors retain the operation and advance the fairness cursor.
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+ pub enum Progress {
+-    /// The bounded scan has more slots to visit; poll again.
++    /// Ready operations remain after the shared budget; poll again.
+     Yield,
+     Idle,
+     Advanced,
+@@ -42,7 +45,9 @@ pub enum Progress {
+ /// Incoming service execution for a hosted connection using the portable driver.
+ ///
+ /// Call `accept` for ready incoming Calls and `poll` alongside IO, invocation
+-/// delivery and `Driver::poll_maintenance_with`. The maintenance resolver must
++/// delivery and `Driver::poll_maintenance_with`. After external driver mutations,
++/// call `protocol_changed` before polling again; spurious polls do not recheck
++/// parked operations. The maintenance resolver must
+ /// use `ClientHooks::server_pipeline` so explicit early pipelines win over final
+ /// results. Other dispatcher tasks and authenticated third-party answers remain
+ /// with their caller. Local endpoint owners are the original policy-preserving
+@@ -57,8 +62,7 @@ pub struct Worker<'p, 'id, I, const C: usize, const H: usize> {
+     live: usize,
+     first_free: usize,
+     maximum: usize,
+-    cursor: usize,
+-    remaining: usize,
++    ready: ready::Queue,
+     completed_plain: bool,
+     completed_ordinary: bool,
+     results_cache: results::Cache,
+@@ -71,8 +75,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
+             live: 0,
+             first_free: 0,
+             maximum,
+-            cursor: 0,
+-            remaining: 0,
++            ready: ready::Queue::default(),
+             completed_plain: false,
+             completed_ordinary: false,
+             results_cache: results::Cache::default(),
+@@ -95,8 +98,11 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
+     pub(crate) fn completed_ordinary(&self) -> bool {
+         self.completed_plain || self.completed_ordinary
+     }
+-    pub(crate) fn invalidate_scan(&mut self) {
+-        self.remaining = 0;
++    /// Recheck accepted work after mutating the driver outside this worker.
++    /// Application futures use their individual wakers; protocol changes such
++    /// as Finish, redirect publication or released capacity need this signal.
++    pub fn protocol_changed(&mut self) {
++        self.ready.invalidate();
+     }
+     pub(crate) fn has_undispatched(&self) -> bool {
+         self.entries
+@@ -210,6 +216,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
+         results: Results,
+     ) {
+         let entry = Entry {
++            waker: self.ready.insert(index),
+             running,
+             results,
+             stage: if execute {
+@@ -231,7 +238,6 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
+             .iter()
+             .position(Option::is_none)
+             .map_or(self.entries.len(), |offset| index + 1 + offset);
+-        self.remaining = self.entries.len();
+     }
+ 
+     #[allow(clippy::too_many_arguments)]
+@@ -369,22 +375,31 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
+         if self.is_empty() {
+             return Poll::Ready(Ok(Progress::Idle));
+         }
+-        if self.remaining == 0 {
+-            self.remaining = self.entries.len();
+-        }
++        self.ready.register(cx.waker());
+         let mut advanced = false;
+         let mut remaining_budget = budget.get();
+-        let exclusive = self.entries.len() == 1;
++        let exclusive = self.live == 1;
+         while remaining_budget != 0 {
+-            remaining_budget -= 1;
+-            let index = self.cursor;
+-            self.cursor = if index + 1 == self.entries.len() {
+-                0
+-            } else {
+-                index + 1
++            let Some(index) = self.ready.pop() else {
++                return if advanced {
++                    Poll::Ready(Ok(Progress::Advanced))
++                } else {
++                    Poll::Pending
++                };
++            };
++            let Some(entry) = self.entries[index].as_mut() else {
++                // Conservative protocol invalidation visits retained holes
++                // under the same budget as live operations.
++                remaining_budget -= 1;
++                continue;
+             };
+-            let outcome = if let Some(entry) = &mut self.entries[index] {
+-                Self::step(
++            let waker = entry.waker.clone();
++            // A ready completion continues toward Return in this turn, as KJ
++            // chains its answer continuation. Only suspension or the shared
++            // budget yields the operation; intermediate stages need no enqueue.
++            let outcome = loop {
++                remaining_budget -= 1;
++                let outcome = Self::step(
+                     entry,
+                     &self.executor,
+                     hooks,
+@@ -392,7 +407,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
+                     messages,
+                     minimum,
+                     options,
+-                    cx,
++                    &mut Context::from_waker(&waker),
+                     &mut import,
+                     &mut refresh,
+                     &mut publish,
+@@ -402,45 +417,47 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
+                     exclusive,
+                     &mut self.completed_plain,
+                     &mut self.completed_ordinary,
+-                )
+-            } else {
+-                Poll::Pending
++                );
++                if matches!(outcome, Poll::Ready(Ok(Progress::Advanced))) {
++                    advanced = true;
++                    if remaining_budget != 0 {
++                        continue;
++                    }
++                }
++                break outcome;
+             };
+             if let Poll::Ready(outcome) = outcome {
+-                self.remaining = self.entries.len();
+                 if matches!(outcome, Ok(Progress::Replied)) {
++                    // Retire before dropping application owners: their wakes
++                    // cannot enqueue this slot or a later occupant of it.
++                    self.ready.remove(index);
+                     let entry = self.entries[index].take().expect("replied operation");
+                     self.live -= 1;
+                     self.first_free = self.first_free.min(index);
+                     self.results_cache.recycle(release(entry, driver, messages));
++                } else {
++                    // Budget exhaustion or a retryable error retains work at
++                    // the FIFO tail. Pending sleeps until its own notification
++                    // or an explicit protocol change.
++                    self.ready.push(index);
+                 }
+                 if matches!(outcome, Ok(Progress::Advanced)) {
+-                    advanced = true;
+                     continue;
+                 }
+                 return Poll::Ready(outcome);
+             }
+-            self.remaining -= 1;
+-            if self.remaining == 0 {
+-                return if advanced {
+-                    Poll::Ready(Ok(Progress::Advanced))
+-                } else if self.is_empty() {
+-                    Poll::Ready(Ok(Progress::Idle))
+-                } else {
+-                    Poll::Pending
+-                };
+-            }
+         }
+-        // More slots remain unpolled; do not lose their application wakeups.
+-        Poll::Ready(Ok(if advanced {
+-            Progress::Advanced
++        if advanced {
++            Poll::Ready(Ok(Progress::Advanced))
++        } else if self.ready.is_empty() {
++            Poll::Pending
+         } else {
+-            Progress::Yield
+-        }))
++            Poll::Ready(Ok(Progress::Yield))
++        }
+     }
+ 
+     #[allow(clippy::too_many_arguments)]
+-    // Keep the stage transition inside its bounded scan. Otherwise the many
++    // Keep the stage transition inside its bounded ready turn. Otherwise the many
+     // adapter arguments are spilled and reloaded for every synchronous stage.
+     #[inline(always)]
+     fn step<P: Copy + Eq>(
+@@ -688,6 +705,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
+         driver: &mut Peer<'p, 'id, '_, I, P, C, H>,
+         messages: &mut messages::Messages<'p, '_, '_>,
+     ) {
++        self.ready.close();
+         for entry in self.entries.into_iter().flatten() {
+             drop(release(entry, driver, messages));
+         }
+diff --git a/crates/capntproto-rpc/src/scoped/wire/server/worker/ready.rs b/crates/capntproto-rpc/src/scoped/wire/server/worker/ready.rs
+new file mode 100644
+index 0000000..f5e90d5
+--- /dev/null
++++ b/crates/capntproto-rpc/src/scoped/wire/server/worker/ready.rs
+@@ -0,0 +1,296 @@
++//! Bounded FIFO of operation identities. Wakers carry no driver references.
++//! Slot generations reject notifications retained by an earlier operation.
++use std::sync::{Arc, Mutex, Weak};
++use std::task::{Wake, Waker};
++
++#[derive(Default)]
++struct Slot {
++    generation: u64,
++    active: bool,
++    queued: bool,
++    previous: Option<usize>,
++    next: Option<usize>,
++    notify: Option<Arc<Notify>>,
++}
++#[derive(Default)]
++struct State {
++    slots: Vec<Slot>,
++    head: Option<usize>,
++    tail: Option<usize>,
++    closed: bool,
++    live: usize,
++    protocol_cursor: usize,
++    protocol_remaining: usize,
++    protocol_span: usize,
++}
++impl State {
++    fn push(&mut self, index: usize) -> bool {
++        let slot = &mut self.slots[index];
++        if self.closed || !slot.active || slot.queued {
++            return false;
++        }
++        slot.queued = true;
++        slot.previous = self.tail;
++        slot.next = None;
++        if let Some(tail) = self.tail {
++            self.slots[tail].next = Some(index);
++        } else {
++            self.head = Some(index);
++        }
++        self.tail = Some(index);
++        true
++    }
++    fn unlink(&mut self, index: usize) {
++        let slot = &mut self.slots[index];
++        if !slot.queued {
++            return;
++        }
++        slot.queued = false;
++        let previous = slot.previous.take();
++        let next = slot.next.take();
++        if let Some(previous) = previous {
++            self.slots[previous].next = next;
++        } else {
++            self.head = next;
++        }
++        if let Some(next) = next {
++            self.slots[next].previous = previous;
++        } else {
++            self.tail = previous;
++        }
++    }
++}
++#[derive(Default)]
++struct Shared {
++    state: Mutex<State>,
++    parent: futures::task::AtomicWaker,
++}
++struct Notify {
++    shared: Weak<Shared>,
++    index: usize,
++    generation: u64,
++}
++impl Wake for Notify {
++    fn wake(self: Arc<Self>) {
++        self.wake_by_ref();
++    }
++    fn wake_by_ref(self: &Arc<Self>) {
++        let Some(shared) = self.shared.upgrade() else {
++            return;
++        };
++        let queued = {
++            let mut state = shared.state.lock().unwrap();
++            state.slots[self.index].generation == self.generation && state.push(self.index)
++        };
++        // Never invoke an executor while holding the queue lock.
++        if queued {
++            shared.parent.wake();
++        }
++    }
++}
++#[derive(Default)]
++pub(super) struct Queue(Arc<Shared>);
++impl Queue {
++    pub(super) fn insert(&self, index: usize) -> Waker {
++        let mut state = self.0.state.lock().unwrap();
++        assert!(!state.closed);
++        if index == state.slots.len() {
++            state.slots.push(Slot::default());
++        }
++        let slot = &mut state.slots[index];
++        assert!(!slot.active && !slot.queued);
++        slot.generation = slot
++            .generation
++            .checked_add(1)
++            .expect("operation generation exhausted");
++        slot.active = true;
++        // Most synchronous methods release every waker before slot reuse.
++        // Reuse their notifier allocation only when no old observer remains;
++        // otherwise the old generation stays immutable for escaped wakers.
++        let generation = slot.generation;
++        let notify = match slot.notify.as_mut().and_then(Arc::get_mut) {
++            Some(notify) => {
++                notify.generation = generation;
++                slot.notify.as_ref().unwrap().clone()
++            }
++            None => {
++                let notify = Arc::new(Notify {
++                    shared: Arc::downgrade(&self.0),
++                    index,
++                    generation,
++                });
++                slot.notify = Some(notify.clone());
++                notify
++            }
++        };
++        state.live += 1;
++        state.push(index);
++        Waker::from(notify)
++    }
++
++    pub(super) fn register(&self, parent: &Waker) {
++        self.0.parent.register(parent);
++    }
++    pub(super) fn push(&self, index: usize) {
++        self.0.state.lock().unwrap().push(index);
++    }
++    /// One ready operation or one protocol slot to inspect. A vacant protocol
++    /// slot still consumes a worker budget unit; never hide a scan in this pop.
++    pub(super) fn pop(&self) -> Option<usize> {
++        let mut state = self.0.state.lock().unwrap();
++        let index = if state.protocol_remaining != 0 {
++            state.protocol_remaining -= 1;
++            let index = state.protocol_cursor;
++            state.protocol_cursor = if index + 1 == state.protocol_span {
++                0
++            } else {
++                index + 1
++            };
++            index
++        } else {
++            state.head?
++        };
++        state.unlink(index);
++        Some(index)
++    }
++    pub(super) fn is_empty(&self) -> bool {
++        let state = self.0.state.lock().unwrap();
++        state.head.is_none() && state.protocol_remaining == 0
++    }
++    pub(super) fn remove(&self, index: usize) {
++        let mut state = self.0.state.lock().unwrap();
++        state.unlink(index);
++        state.slots[index].active = false;
++        state.live -= 1;
++        if state.live == 0 {
++            state.protocol_remaining = 0;
++        }
++    }
++    pub(super) fn invalidate(&self) {
++        let mut state = self.0.state.lock().unwrap();
++        // Preserve the rotating cursor under repeated IO. Freeze the span so
++        // admission during a partial scan cannot cause an old slot to be missed.
++        // Only explicit protocol effects enter this conservative, budgeted scan.
++        if state.live != 0 {
++            state.protocol_span = state.slots.len();
++            state.protocol_remaining = state.protocol_span;
++        }
++    }
++    pub(super) fn close(&self) {
++        self.0.state.lock().unwrap().closed = true;
++        self.0.parent.take();
++    }
++}
++impl Drop for Queue {
++    fn drop(&mut self) {
++        self.close();
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use std::sync::atomic::{AtomicUsize, Ordering};
++    #[derive(Default)]
++    struct Count(AtomicUsize);
++    impl Wake for Count {
++        fn wake(self: Arc<Self>) {
++            self.0.fetch_add(1, Ordering::SeqCst);
++        }
++    }
++    #[test]
++    fn fifo_coalesces_and_removes_queued_operations() {
++        let queue = Queue::default();
++        let a = queue.insert(0);
++        let b = queue.insert(1);
++        let c = queue.insert(2);
++        b.wake_by_ref();
++        assert_eq!(queue.pop(), Some(0));
++        a.wake_by_ref();
++        a.wake_by_ref();
++        queue.remove(2); // Unlink the middle, between 1 and 0.
++        c.wake_by_ref();
++        assert_eq!(queue.pop(), Some(1));
++        assert_eq!(queue.pop(), Some(0));
++        assert_eq!(queue.pop(), None);
++        queue.invalidate();
++        assert_eq!(queue.pop(), Some(0));
++        assert_eq!(queue.pop(), Some(1));
++        assert_eq!(queue.pop(), Some(2)); // Vacant protocol visits are charged too.
++        assert_eq!(queue.pop(), None);
++    }
++    #[test]
++    fn stale_cross_thread_wakes_cannot_reactivate_reused_or_closed_slots() {
++        let queue = Queue::default();
++        let old = queue.insert(0);
++        queue.remove(0);
++        let current = queue.insert(0);
++        assert_eq!(queue.pop(), Some(0));
++        std::thread::spawn(move || old.wake()).join().unwrap();
++        assert_eq!(queue.pop(), None);
++        let parent = Arc::new(Count::default());
++        queue.register(&Waker::from(parent.clone()));
++        std::thread::spawn({
++            let current = current.clone();
++            move || current.wake()
++        })
++        .join()
++        .unwrap();
++        assert_eq!(parent.0.load(Ordering::SeqCst), 1);
++        assert_eq!(queue.pop(), Some(0));
++        queue.close();
++        current.wake();
++        assert_eq!(queue.pop(), None);
++    }
++    #[test]
++    fn parent_replacement_and_reentrant_wake_keep_pending_work() {
++        let queue = Queue::default();
++        let operation = queue.insert(0);
++        let first = Arc::new(Count::default());
++        let second = Arc::new(Count::default());
++        queue.register(&Waker::from(first.clone()));
++        assert_eq!(queue.pop(), Some(0));
++        queue.register(&Waker::from(second.clone()));
++        operation.wake_by_ref();
++        operation.wake_by_ref();
++        assert_eq!(first.0.load(Ordering::SeqCst), 0);
++        assert_eq!(second.0.load(Ordering::SeqCst), 1);
++        assert_eq!(queue.pop(), Some(0));
++        // A wake while an operation is being polled must survive Pending.
++        queue.register(&Waker::from(second.clone()));
++        operation.wake();
++        assert_eq!(queue.pop(), Some(0));
++        assert_eq!(queue.pop(), None);
++        assert_eq!(second.0.load(Ordering::SeqCst), 2);
++    }
++}
++
++#[cfg(test)]
++#[test]
++fn protocol_visits_keep_their_budget_and_cursor_across_growth_and_reinvalidation() {
++    let queue = Queue::default();
++    let _wakers: Vec<_> = (0..3).map(|index| queue.insert(index)).collect();
++    for index in 0..3 {
++        assert_eq!(queue.pop(), Some(index));
++    }
++    queue.invalidate();
++    assert_eq!(queue.pop(), Some(0));
++    queue.remove(1);
++    let _new = queue.insert(3);
++    assert_eq!(queue.pop(), Some(1)); // One vacant visit, not a hidden loop.
++    assert_eq!(queue.pop(), Some(2)); // Growth did not change the old scan span.
++    assert_eq!(queue.pop(), Some(3));
++    assert!(queue.is_empty());
++    queue.invalidate();
++    assert_eq!(queue.pop(), Some(0));
++    queue.invalidate(); // Repeated IO does not restart at slot zero.
++    for index in [1, 2, 3, 0] {
++        assert_eq!(queue.pop(), Some(index));
++    }
++    assert!(queue.is_empty());
++    queue.invalidate();
++    queue.remove(0);
++    queue.remove(2);
++    queue.remove(3);
++    assert!(queue.is_empty()); // No scan debt survives the final operation.
++}
+diff --git a/crates/capntproto-rpc/src/scoped/wire/server/worker/tests.rs b/crates/capntproto-rpc/src/scoped/wire/server/worker/tests.rs
+index 982628c..c851fa1 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/server/worker/tests.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/server/worker/tests.rs
+@@ -624,6 +624,7 @@ fn finish_cancels_interest_but_preserves_protected_execution() {
+                 }
+                 assert!(entered.get());
+                 finish(&mut driver, messages, 0);
++                worker.protocol_changed();
+             }
+             for _ in 0..16 {
+                 if matches!(
+@@ -1072,3 +1073,67 @@ fn bounded_poll_registers_every_pending_method_and_stops_after_disconnect() {
+         close(worker, hooks, driver, messages, &mut queue);
+     });
+ }
++
++#[test]
++fn self_waking_service_respects_budget_and_does_not_starve_other_replies() {
++    for budget in [1, 2, 8, 64] {
++        with_peer(|mut driver, messages| {
++            let polls = Rc::new(Cell::new(0));
++            let seen = polls.clone();
++            let id = expose(
++                &mut driver,
++                server(move |method, mut results| {
++                    if method == 0 {
++                        let seen = seen.clone();
++                        return capability::DispatchCallResult::with_cancellation_policy(
++                            Promise::from_future(futures::future::poll_fn(move |cx| {
++                                let _ = &results;
++                                seen.set(seen.get() + 1);
++                                cx.waker().wake_by_ref();
++                                Poll::Pending
++                            })),
++                            false,
++                            true,
++                        );
++                    }
++                    results.get().set_as::<capnp::text::Owned>("ready").unwrap();
++                    capability::DispatchCallResult::new(Promise::ok(()), false)
++                }),
++            );
++            let mut worker = Worker::new(2, None);
++            let mut hooks = ClientHooks::new(64, 16);
++            let mut queue = messages::Queue::new_growing(0, 1).unwrap();
++            incoming(&mut driver, messages, 0, 0, calls::Target::Imported(id));
++            incoming(&mut driver, messages, 1, 1, calls::Target::Imported(id));
++            assert!(worker.accept(&mut driver).unwrap());
++            assert!(worker.accept(&mut driver).unwrap());
++            let mut replied = false;
++            for _ in 0..16 {
++                let before = polls.get();
++                let result = worker.poll(
++                    &mut hooks,
++                    &mut driver,
++                    messages,
++                    &mut queue,
++                    128,
++                    Default::default(),
++                    &mut [0; 16],
++                    &mut Context::from_waker(Waker::noop()),
++                    NonZeroUsize::new(budget).unwrap(),
++                    import,
++                );
++                assert!(polls.get() - before <= budget);
++                if matches!(result, Poll::Ready(Ok(Progress::Replied))) {
++                    replied = true;
++                    break;
++                }
++            }
++            assert!(replied);
++            assert!(polls.get() > 0);
++            check(&drain(&mut queue, messages), |r| {
++                assert_eq!(r.get_answer_id(), 1)
++            });
++            close(worker, hooks, driver, messages, &mut queue);
++        });
++    }
++}

@@ -8,6 +8,12 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
     /// lanes report Yield separately from true Pending, so mismatched scan sizes
     /// cannot continually wake one another on an otherwise idle connection.
     pub(super) fn changed(&mut self) {
+        self.worker.protocol_changed();
+        self.progressed();
+    }
+    /// Local progress may change routes and cleanup, but cannot make an
+    /// unrelated parked service future ready. Its operation waker owns that.
+    fn progressed(&mut self) {
         self.control_idle = false;
         self.schedule.active = WorkSet::FOREIGN | WorkSet::CALLS | WorkSet::MAINTENANCE;
         if self.driver.runtime.queued() != 0 || self.driver.has_pending_call() {
@@ -20,7 +26,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             self.schedule.active |= WorkSet::COMMANDS;
         }
         self.calls.invalidate_scan();
-        self.worker.invalidate_scan();
         self.foreign.invalidate_scan();
         self.driver.invalidate_maintenance();
     }
@@ -68,7 +73,14 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         }
         let changed = notified & !WorkSet::CONTROL;
         if changed != WorkSet::NONE {
-            if changed == WorkSet::CALLS {
+            if changed & !(WorkSet::CALLS | WorkSet::WORKER) == WorkSet::NONE
+                && changed & WorkSet::WORKER != WorkSet::NONE
+            {
+                // The worker queue already retains the specific ready keys.
+                // Early pipelines can also unblock dispatch and maintenance.
+                self.schedule.resume_at(Lane::Worker);
+                self.progressed();
+            } else if changed == WorkSet::CALLS {
                 // A newly enqueued request cannot change foreign promises,
                 // server tasks, network controls or cleanup before admission.
                 if self.schedule.active == WorkSet::NONE {
@@ -77,7 +89,11 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 self.schedule.active |= WorkSet::CALLS;
                 self.calls.invalidate_scan();
             } else {
-                self.resume_at(Lane::Calls);
+                // Coalesced application notifications still carry readiness
+                // in the worker queue. Protocol effects are committed by
+                // ingress and ControlContext, never inferred from a wake.
+                self.schedule.resume_at(Lane::Calls);
+                self.progressed();
             }
             if self.cleanup_on_enqueue
                 && self.calls.is_empty()
@@ -188,7 +204,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     Poll::Pending
                 }
                 Poll::Ready(Ok(progress)) => {
-                    self.changed();
+                    self.progressed();
                     self.delivered |= progress == Progress::Completed;
                     self.cleanup_on_enqueue |= progress == Progress::Completed;
                     Poll::Ready(Ok(()))
@@ -208,7 +224,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 self.schedule.active = WorkSet::WORKER;
                 self.schedule.cursor = Lane::Worker;
             } else {
-                self.changed();
+                self.progressed();
             }
         }
         if self.schedule.active == WorkSet::WORKER && *remaining > 0 {
@@ -228,7 +244,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 queue,
                 scratch,
                 output,
-                &mut Context::from_waker(waker),
                 NonZeroUsize::new(quantum).unwrap(),
             );
             if self.driver.runtime.has_retired() {
@@ -269,7 +284,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     Poll::Pending
                 }
                 Poll::Ready(Ok(_)) => {
-                    self.changed();
+                    self.progressed();
                     Poll::Ready(Ok(()))
                 }
             };
@@ -420,20 +435,15 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         Poll::Ready(Err(e)) => Poll::Ready(Err(*e)),
                         Poll::Pending => Poll::Pending,
                     },
-                    Lane::Worker => match self.poll_worker(
-                        messages,
-                        queue,
-                        scratch,
-                        output,
-                        &mut application_cx,
-                        quantum,
-                    ) {
-                        Poll::Ready(Ok(server::Progress::Idle)) => Poll::Pending,
-                        Poll::Ready(Ok(server::Progress::Yield)) => continue,
-                        Poll::Ready(Ok(_)) => Poll::Ready(Ok(())),
-                        Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
-                        Poll::Pending => Poll::Pending,
-                    },
+                    Lane::Worker => {
+                        match self.poll_worker(messages, queue, scratch, output, quantum) {
+                            Poll::Ready(Ok(server::Progress::Idle)) => Poll::Pending,
+                            Poll::Ready(Ok(server::Progress::Yield)) => continue,
+                            Poll::Ready(Ok(_)) => Poll::Ready(Ok(())),
+                            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+                            Poll::Pending => Poll::Pending,
+                        }
+                    }
                     Lane::Commands => match self.commands.take() {
                         None => Poll::Pending,
                         Some(sender) => {
@@ -586,7 +596,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     self.schedule.active |= (WorkSet::CALLS) | (WorkSet::MAINTENANCE);
                     self.calls.invalidate_scan();
                 } else {
-                    self.changed();
+                    self.progressed();
                 }
                 advanced = true;
                 // Publish promptly and give a completed application's waker a
@@ -768,18 +778,18 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         queue: &mut messages::Queue<'p, '_, O::Bundle>,
         scratch: &mut [u32],
         output: &O,
-        cx: &mut Context<'_>,
         quantum: NonZeroUsize,
     ) -> Poll<capnp::Result<server::Progress>> {
         let options = self.options;
         let queue = RefCell::new(queue);
+        let mut worker_cx = Context::from_waker(&self.worker_waker);
         self.worker.poll_using(
             &mut self.hooks,
             &mut self.driver,
             messages,
             options.output_bytes.get(),
             options.reader,
-            cx,
+            &mut worker_cx,
             quantum,
             |runtime, hook| self.foreign.import(runtime, hook),
             Self::hook_refresh(output, true),

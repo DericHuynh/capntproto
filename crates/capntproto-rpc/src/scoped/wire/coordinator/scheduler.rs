@@ -146,6 +146,15 @@ impl Wake for WorkWake {
 // Local enqueue shares the notifier without a task-waker clone per request.
 pub(in crate::scoped) struct EnqueueWake(Arc<WorkWake>);
 struct ControlWake(Arc<WorkWake>);
+struct WorkerWake(Arc<WorkWake>);
+impl Wake for WorkerWake {
+    fn wake(self: Arc<Self>) {
+        self.wake_by_ref();
+    }
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.0.notify(WorkSet::WORKER);
+    }
+}
 impl Wake for ControlWake {
     fn wake(self: Arc<Self>) {
         self.wake_by_ref();
@@ -166,6 +175,9 @@ pub(super) struct Notifications {
     parent: Option<Waker>,
 }
 impl Notifications {
+    pub(super) fn worker_waker(&self) -> Waker {
+        Waker::from(Arc::new(WorkerWake(self.wake.clone())))
+    }
     pub(super) fn control_waker(&self) -> Waker {
         Waker::from(Arc::new(ControlWake(self.wake.clone())))
     }

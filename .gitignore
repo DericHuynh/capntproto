@@ -224,3 +224,10 @@ Desktop.ini
 !/research/reports/portable-performance/2026-10-19-architecture-audit/evidence.json
 !/research/reports/portable-performance/2026-10-19-architecture-audit/coordinator-probe.patch
 !/research/reports/portable-performance/2026-10-19-architecture-audit/kj-ready.c++
+
+!/research/reports/portable-performance/2026-10-19-worker-readiness/
+/research/reports/portable-performance/2026-10-19-worker-readiness/*
+!/research/reports/portable-performance/2026-10-19-worker-readiness/README.md
+!/research/reports/portable-performance/2026-10-19-worker-readiness/report.json
+!/research/reports/portable-performance/2026-10-19-worker-readiness/readiness.json
+!/research/reports/portable-performance/2026-10-19-worker-readiness/source.patch
