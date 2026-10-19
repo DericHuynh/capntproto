@@ -11,7 +11,7 @@ Generated automatically from CI evidence. Each lane keeps its own measured commi
 
 ### Cargo tests
 
-Latest Cargo run: [2026-10-15T15:50:28Z · run 38763852450 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/38763852450) · commit `2c9548c998fb` · **success**
+Latest Cargo run: [2026-10-19T08:55:25Z · run 39226234714 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/39226234714) · commit `2c9548c998fb` · **failure**
 
 ![Cargo test results](docs/reports/cargo-history.svg)
 
@@ -57,21 +57,7 @@ AFL++ guides the RPC lifecycle oracle with IJON state and progress annotations. 
 
 ### LLVM coverage
 
-![LLVM lines&#58; current versus reviewed baseline](docs/reports/coverage-lines.svg)
-
-Gray&#58; reviewed baseline&#46; Blue&#58; current run&#46; N&#47;A&#58; no mapped counters&#59; never treated as 0&#37; or 100&#37;&#46;
-
-![LLVM regions&#58; current versus reviewed baseline](docs/reports/coverage-regions.svg)
-
-Gray&#58; reviewed baseline&#46; Blue&#58; current run&#46; N&#47;A&#58; no mapped counters&#59; never treated as 0&#37; or 100&#37;&#46;
-
-![LLVM functions&#58; current versus reviewed baseline](docs/reports/coverage-functions.svg)
-
-Gray&#58; reviewed baseline&#46; Blue&#58; current run&#46; N&#47;A&#58; no mapped counters&#59; never treated as 0&#37; or 100&#37;&#46;
-
-![LLVM branches&#58; current versus reviewed baseline](docs/reports/coverage-branches.svg)
-
-Gray&#58; reviewed baseline&#46; Blue&#58; current run&#46; N&#47;A&#58; no mapped counters&#59; never treated as 0&#37; or 100&#37;&#46;
+No validated coverage/baseline comparison is available for the latest run. Missing or unmapped counters are never presented as 100% coverage.
 
 ### Linux loopback benchmark comparisons
 
