@@ -218,3 +218,9 @@ Desktop.ini
 !/research/reports/portable-performance/2026-10-19-maintenance-branches/experiments.json
 !/research/reports/portable-performance/2026-10-19-maintenance-branches/parent-hosted.json
 !/research/reports/portable-performance/2026-10-19-maintenance-branches/source.patch
+!/research/reports/portable-performance/2026-10-19-architecture-audit/
+/research/reports/portable-performance/2026-10-19-architecture-audit/*
+!/research/reports/portable-performance/2026-10-19-architecture-audit/README.md
+!/research/reports/portable-performance/2026-10-19-architecture-audit/evidence.json
+!/research/reports/portable-performance/2026-10-19-architecture-audit/coordinator-probe.patch
+!/research/reports/portable-performance/2026-10-19-architecture-audit/kj-ready.c++

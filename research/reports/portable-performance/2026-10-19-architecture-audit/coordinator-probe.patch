@@ -1,0 +1,106 @@
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator/tests/worker.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator/tests/worker.rs
+index 6d95d61..ea3c49f 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator/tests/worker.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator/tests/worker.rs
+@@ -328,3 +328,101 @@ fn pending_worker_wake_dispatches_early_pipeline_before_parent_completes() {
+         });
+     }
+ }
++
++
++#[test]
++fn architecture_probe_coordinator_single_service_wake() {
++    for repeat in 0..5 {
++        for owned in [false, true] {
++            for budget in [1usize, 8, 64] {
++                for count in [1usize, 2, 8, 16] {
++                    for selected in [0, count / 2, count - 1] {
++                        with_peer(|mut driver, messages| {
++                            driver.use_owned_output_queues(owned);
++                            let polls = Rc::new(RefCell::new(vec![0usize; count]));
++                            let waiters = Rc::new(RefCell::new(vec![None::<Waker>; count]));
++                            let ready = Rc::new(RefCell::new(vec![false; count]));
++                            let service_polls = polls.clone();
++                            let service_waiters = waiters.clone();
++                            let service_ready = ready.clone();
++                            let next = std::cell::Cell::new(0);
++                            let target = expose(&mut driver, service(move |mut results| {
++                                let index = next.get();
++                                next.set(index + 1);
++                                let polls = service_polls.clone();
++                                let waiters = service_waiters.clone();
++                                let ready = service_ready.clone();
++                                capability::DispatchCallResult::with_cancellation_policy(
++                                    capability::Promise::from_future(futures::future::poll_fn(move |cx| {
++                                        polls.borrow_mut()[index] += 1;
++                                        waiters.borrow_mut()[index] = Some(cx.waker().clone());
++                                        if ready.borrow()[index] {
++                                            results.get().set_as::<capnp::text::Owned>("ready")?;
++                                            Poll::Ready(Ok(()))
++                                        } else { Poll::Pending }
++                                    })), false, true)
++                            }));
++                            for index in 0..count {
++                                let frame = Frame::build(messages, 512, Default::default(), |builder| {
++                                    calls::dynamic_call(builder, QuestionId::from_wire(index as u32),
++                                        calls::Target::Imported(target), DynamicCall {
++                                            interface: 7, no_promise_pipelining: true, ..Default::default()
++                                        }, |_| Ok(()))
++                                }).unwrap();
++                                driver.receive(frame, messages, &mut [0; 16], |_| (), server::Results::new)
++                                    .unwrap_or_else(|rejected| panic!("{}", rejected.error));
++                            }
++                            let mut opts = options();
++                            opts.budget = NonZeroUsize::new(budget).unwrap();
++                            let mut coordinator = Coordinator::new(driver, ClientHooks::new(128, 32),
++                                NonZeroUsize::new(count).unwrap(), None, opts).unwrap();
++                            let mut queue = messages::Queue::new_growing(0, count).unwrap();
++                            let mut scratch = [0; 32];
++                            let mut cx = Context::from_waker(Waker::noop());
++                            let mut parked = false;
++                            for _ in 0..4096 {
++                                if let Poll::Ready(result) = coordinator.poll_work(messages, &mut queue, &mut scratch, &NoResources, &mut cx) { result.unwrap(); }
++                                if coordinator.schedule.active == WorkSet::NONE && coordinator.notifications.pending() == WorkSet::NONE && waiters.borrow().iter().all(Option::is_some) {
++                                    parked = true; break;
++                                }
++                            }
++                            assert!(parked);
++                            assert!(queue.is_empty());
++                            let before = polls.borrow().clone();
++                            ready.borrow_mut()[selected] = true;
++                            waiters.borrow()[selected].as_ref().unwrap().wake_by_ref();
++                            let mut published = false;
++                            let mut turns = 0;
++                            for _ in 0..4096 {
++                                turns += 1;
++                                if let Poll::Ready(result) = coordinator.poll_work(messages, &mut queue, &mut scratch, &NoResources, &mut cx) { result.unwrap(); }
++                                if !queue.is_empty() { published = true; break; }
++                            }
++                            assert!(published);
++                            let delta: Vec<_> = polls.borrow().iter().zip(before).map(|(after, before)| after - before).collect();
++                            let sibling_polls = delta.iter().enumerate().filter(|(i, _)| *i != selected).map(|(_, n)| *n).sum::<usize>();
++                            println!("COORDINATOR_PROBE repeat={repeat} owned={} budget={budget} parked={count} selected={selected} ready_polls={} sibling_polls={sibling_polls} coordinator_polls={turns}", usize::from(owned), delta[selected]);
++                            assert_eq!(queue.len(), 1);
++                            let mut bytes = Vec::new();
++                            while let Some(window) = queue.window(messages).unwrap() {
++                                let length = window.bytes().len();
++                                bytes.extend_from_slice(window.bytes());
++                                window.advance(length).unwrap();
++                            }
++                            let mut input = bytes.as_slice();
++                            let message = capnp::serialize::read_message_from_flat_slice(&mut input, Default::default()).unwrap();
++                            assert!(input.is_empty());
++                            let rpc_capnp::message::Return(reply) = message.get_root::<rpc_capnp::message::Reader>().unwrap().which().unwrap() else { panic!("expected one Return") };
++                            let reply = reply.unwrap();
++                            assert_eq!(reply.get_answer_id(), selected as u32);
++                            let rpc_capnp::return_::Results(payload) = reply.which().unwrap() else { panic!("expected results") };
++                            assert_eq!(payload.unwrap().get_content().get_as::<capnp::text::Reader>().unwrap(), "ready");
++                            futures::executor::block_on(coordinator.terminate::<NoResources, (), ()>(messages, &mut queue, &mut Policy::default(), Ok(()))).unwrap();
++                            reclaimed(messages);
++                        });
++                    }
++                }
++            }
++        }
++    }
++}
