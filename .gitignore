@@ -211,3 +211,10 @@ credentials.json
 .DS_Store
 Thumbs.db
 Desktop.ini
+!/research/reports/portable-performance/2026-10-19-maintenance-branches/
+/research/reports/portable-performance/2026-10-19-maintenance-branches/*
+!/research/reports/portable-performance/2026-10-19-maintenance-branches/README.md
+!/research/reports/portable-performance/2026-10-19-maintenance-branches/report.json
+!/research/reports/portable-performance/2026-10-19-maintenance-branches/experiments.json
+!/research/reports/portable-performance/2026-10-19-maintenance-branches/parent-hosted.json
+!/research/reports/portable-performance/2026-10-19-maintenance-branches/source.patch

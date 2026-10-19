@@ -1,0 +1,857 @@
+{
+  "commit": "ab76901a88a8cf477f57a30156c6738879c6c7bc",
+  "ci_run": 39173507619,
+  "ci_conclusion": "failure",
+  "ci_failure": "coverage regressions",
+  "dedicated_run": 39173500903,
+  "dedicated_conclusion": "success",
+  "artifact_id": 12154637438,
+  "artifact_sha256": "2d8bd8f6278384cea3e15413983bef99533ea842100207955d9b547e3fc9f8c7",
+  "scope": "Separate two-host hosted baseline campaign, not candidate qualification; complete artifact retained as ZIP.",
+  "remote_passes": 3,
+  "remote_cases": 12,
+  "rows": [
+    {
+      "case": "unary-empty",
+      "portable": {
+        "case": {
+          "name": "unary-empty",
+          "payload_bytes": 0,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "portable",
+        "max_ns": 20565836,
+        "mean_ns": 272450.3544,
+        "min_ns": 229398,
+        "p50_ns": 266254,
+        "p50_ratio_to_cpp": 1.0389548563825013,
+        "p95_ns": 298293,
+        "p99_ns": 344281,
+        "repetition_mean_ns": [
+          288695.574,
+          276840.901,
+          275961.735,
+          259371.737,
+          261381.825
+        ],
+        "repetition_mean_range_ns": [
+          259371.737,
+          288695.574
+        ],
+        "repetition_mean_stddev_ns": 12135.448376464092,
+        "rpcs_per_second": 3669.1502099953364,
+        "samples": 5000,
+        "statistics_version": 1,
+        "stddev_ns": 287756.0903848523,
+        "workflows_per_second": 3669.1502099953364
+      },
+      "cpp": {
+        "case": {
+          "name": "unary-empty",
+          "payload_bytes": 0,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "capnp-cpp",
+        "max_ns": 420334,
+        "mean_ns": 257774.7722,
+        "min_ns": 207293,
+        "p50_ns": 256271,
+        "p50_ratio_to_cpp": 1.0,
+        "p95_ns": 287486,
+        "p99_ns": 312680,
+        "repetition_mean_ns": [
+          244628.985,
+          266875.969,
+          253604.486,
+          256106.731,
+          267657.69
+        ],
+        "repetition_mean_range_ns": [
+          244628.985,
+          267657.69
+        ],
+        "repetition_mean_stddev_ns": 9662.9345565462,
+        "rpcs_per_second": 3878.269395255884,
+        "samples": 5000,
+        "statistics_version": 1,
+        "stddev_ns": 17655.7216814359,
+        "workflows_per_second": 3878.269395255884
+      },
+      "passes": false
+    },
+    {
+      "case": "unary-small",
+      "portable": {
+        "case": {
+          "name": "unary-small",
+          "payload_bytes": 64,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "portable",
+        "max_ns": 482551,
+        "mean_ns": 261487.8272,
+        "min_ns": 201119,
+        "p50_ns": 260805,
+        "p50_ratio_to_cpp": 1.0215268556925137,
+        "p95_ns": 292747,
+        "p99_ns": 322939,
+        "repetition_mean_ns": [
+          266374.818,
+          267645.55,
+          262831.043,
+          239328.364,
+          271259.361
+        ],
+        "repetition_mean_range_ns": [
+          239328.364,
+          271259.361
+        ],
+        "repetition_mean_stddev_ns": 12748.81504261269,
+        "rpcs_per_second": 3822.9689714847827,
+        "samples": 5000,
+        "statistics_version": 1,
+        "stddev_ns": 20216.418644198562,
+        "workflows_per_second": 3822.9689714847827
+      },
+      "cpp": {
+        "case": {
+          "name": "unary-small",
+          "payload_bytes": 64,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "capnp-cpp",
+        "max_ns": 464957,
+        "mean_ns": 257833.8436,
+        "min_ns": 207721,
+        "p50_ns": 255309,
+        "p50_ratio_to_cpp": 1.0,
+        "p95_ns": 291221,
+        "p99_ns": 336334,
+        "repetition_mean_ns": [
+          250818.608,
+          266772.802,
+          276209.749,
+          248710.421,
+          246657.638
+        ],
+        "repetition_mean_range_ns": [
+          246657.638,
+          276209.749
+        ],
+        "repetition_mean_stddev_ns": 12989.773079444554,
+        "rpcs_per_second": 3877.2807033608046,
+        "samples": 5000,
+        "statistics_version": 1,
+        "stddev_ns": 21634.191322755225,
+        "workflows_per_second": 3877.2807033608046
+      },
+      "passes": false
+    },
+    {
+      "case": "unary-1k",
+      "portable": {
+        "case": {
+          "name": "unary-1k",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "portable",
+        "max_ns": 475333,
+        "mean_ns": 266329.5162,
+        "min_ns": 228964,
+        "p50_ns": 264242,
+        "p50_ratio_to_cpp": 1.0019755726696016,
+        "p95_ns": 296222,
+        "p99_ns": 319812,
+        "repetition_mean_ns": [
+          263018.851,
+          256165.615,
+          274368.955,
+          277081.336,
+          261012.824
+        ],
+        "repetition_mean_range_ns": [
+          256165.615,
+          277081.336
+        ],
+        "repetition_mean_stddev_ns": 8982.856072124436,
+        "rpcs_per_second": 3753.5211002585897,
+        "samples": 5000,
+        "statistics_version": 1,
+        "stddev_ns": 17711.266234317147,
+        "workflows_per_second": 3753.5211002585897
+      },
+      "cpp": {
+        "case": {
+          "name": "unary-1k",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "capnp-cpp",
+        "max_ns": 545813,
+        "mean_ns": 266588.1462,
+        "min_ns": 232792,
+        "p50_ns": 263721,
+        "p50_ratio_to_cpp": 1.0,
+        "p95_ns": 293485,
+        "p99_ns": 334491,
+        "repetition_mean_ns": [
+          266743.022,
+          269810.653,
+          270686.155,
+          268212.707,
+          257488.194
+        ],
+        "repetition_mean_range_ns": [
+          257488.194,
+          270686.155
+        ],
+        "repetition_mean_stddev_ns": 5306.847947452687,
+        "rpcs_per_second": 3750.139525816128,
+        "samples": 5000,
+        "statistics_version": 1,
+        "stddev_ns": 17984.958454190088,
+        "workflows_per_second": 3750.139525816128
+      },
+      "passes": false
+    },
+    {
+      "case": "fanout-32",
+      "portable": {
+        "case": {
+          "name": "fanout-32",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 32,
+          "width": 32
+        },
+        "implementation": "portable",
+        "max_ns": 1465012,
+        "mean_ns": 720088.843,
+        "min_ns": 465709,
+        "p50_ns": 713187,
+        "p50_ratio_to_cpp": 0.8863473670081875,
+        "p95_ns": 868499,
+        "p99_ns": 950603,
+        "repetition_mean_ns": [
+          736588.913,
+          665367.803,
+          688242.301,
+          712344.007,
+          797901.191
+        ],
+        "repetition_mean_range_ns": [
+          665367.803,
+          797901.191
+        ],
+        "repetition_mean_stddev_ns": 50979.38493151979,
+        "rpcs_per_second": 44431.975449805104,
+        "samples": 5000,
+        "statistics_version": 1,
+        "stddev_ns": 86264.4973110401,
+        "workflows_per_second": 1388.4992328064095
+      },
+      "cpp": {
+        "case": {
+          "name": "fanout-32",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 32,
+          "width": 32
+        },
+        "implementation": "capnp-cpp",
+        "max_ns": 1367934,
+        "mean_ns": 807204.4838,
+        "min_ns": 540609,
+        "p50_ns": 804636,
+        "p50_ratio_to_cpp": 1.0,
+        "p95_ns": 913704,
+        "p99_ns": 959584,
+        "repetition_mean_ns": [
+          820083.112,
+          840307.729,
+          776810.636,
+          783310.119,
+          815510.823
+        ],
+        "repetition_mean_range_ns": [
+          776810.636,
+          840307.729
+        ],
+        "repetition_mean_stddev_ns": 26577.27333303616,
+        "rpcs_per_second": 39637.78476004128,
+        "samples": 5000,
+        "statistics_version": 1,
+        "stddev_ns": 65813.19231987157,
+        "workflows_per_second": 1238.68077375129
+      },
+      "passes": true
+    },
+    {
+      "case": "dependent-read",
+      "portable": {
+        "case": {
+          "name": "dependent-read",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "portable",
+        "max_ns": 981895,
+        "mean_ns": 570705.5524,
+        "min_ns": 448731,
+        "p50_ns": 571855,
+        "p50_ratio_to_cpp": 1.094168249977518,
+        "p95_ns": 628976,
+        "p99_ns": 692880,
+        "repetition_mean_ns": [
+          573017.394,
+          520011.233,
+          590619.087,
+          596723.554,
+          573156.494
+        ],
+        "repetition_mean_range_ns": [
+          520011.233,
+          596723.554
+        ],
+        "repetition_mean_stddev_ns": 30227.268373367442,
+        "rpcs_per_second": 3503.8395846765516,
+        "samples": 5000,
+        "statistics_version": 1,
+        "stddev_ns": 40598.18863979801,
+        "workflows_per_second": 1751.9197923382758
+      },
+      "cpp": {
+        "case": {
+          "name": "dependent-read",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "capnp-cpp",
+        "max_ns": 984829,
+        "mean_ns": 526133.6182,
+        "min_ns": 463233,
+        "p50_ns": 522639,
+        "p50_ratio_to_cpp": 1.0,
+        "p95_ns": 573939,
+        "p99_ns": 620242,
+        "repetition_mean_ns": [
+          531446.119,
+          516193.606,
+          517504.585,
+          521777.077,
+          543746.704
+        ],
+        "repetition_mean_range_ns": [
+          516193.606,
+          543746.704
+        ],
+        "repetition_mean_stddev_ns": 11518.321968480373,
+        "rpcs_per_second": 3800.7572145978197,
+        "samples": 5000,
+        "statistics_version": 1,
+        "stddev_ns": 29601.438357164152,
+        "workflows_per_second": 1900.3786072989099
+      },
+      "passes": false
+    },
+    {
+      "case": "pipelined-read",
+      "portable": {
+        "case": {
+          "name": "pipelined-read",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "portable",
+        "max_ns": 510950,
+        "mean_ns": 317684.963,
+        "min_ns": 259575,
+        "p50_ns": 313875,
+        "p50_ratio_to_cpp": 1.0883661418005417,
+        "p95_ns": 361164,
+        "p99_ns": 417578,
+        "repetition_mean_ns": [
+          315665.499,
+          326029.477,
+          304149.669,
+          322270.599,
+          320309.571
+        ],
+        "repetition_mean_range_ns": [
+          304149.669,
+          326029.477
+        ],
+        "repetition_mean_stddev_ns": 8438.453014150286,
+        "rpcs_per_second": 6293.666195570647,
+        "samples": 5000,
+        "statistics_version": 1,
+        "stddev_ns": 25062.85686722285,
+        "workflows_per_second": 3146.8330977853234
+      },
+      "cpp": {
+        "case": {
+          "name": "pipelined-read",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "capnp-cpp",
+        "max_ns": 1597367,
+        "mean_ns": 291961.2972,
+        "min_ns": 252909,
+        "p50_ns": 288391,
+        "p50_ratio_to_cpp": 1.0,
+        "p95_ns": 319930,
+        "p99_ns": 374346,
+        "repetition_mean_ns": [
+          291977.434,
+          285246.657,
+          294452.122,
+          303428.113,
+          284702.16
+        ],
+        "repetition_mean_range_ns": [
+          284702.16,
+          303428.113
+        ],
+        "repetition_mean_stddev_ns": 7672.577778615529,
+        "rpcs_per_second": 6848.394578592251,
+        "samples": 5000,
+        "statistics_version": 1,
+        "stddev_ns": 35511.82823570478,
+        "workflows_per_second": 3424.1972892961253
+      },
+      "passes": false
+    },
+    {
+      "case": "write-read",
+      "portable": {
+        "case": {
+          "name": "write-read",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "portable",
+        "max_ns": 1807853,
+        "mean_ns": 530745.945,
+        "min_ns": 443818,
+        "p50_ns": 526465,
+        "p50_ratio_to_cpp": 0.9810138375936823,
+        "p95_ns": 580714,
+        "p99_ns": 644778,
+        "repetition_mean_ns": [
+          546516.308,
+          514208.77,
+          531955.841,
+          534149.336,
+          526899.47
+        ],
+        "repetition_mean_range_ns": [
+          514208.77,
+          546516.308
+        ],
+        "repetition_mean_stddev_ns": 11726.303708838886,
+        "rpcs_per_second": 3767.5859292886084,
+        "samples": 5000,
+        "statistics_version": 1,
+        "stddev_ns": 43653.215059518625,
+        "workflows_per_second": 1883.7929646443042
+      },
+      "cpp": {
+        "case": {
+          "name": "write-read",
+          "payload_bytes": 1024,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "capnp-cpp",
+        "max_ns": 2034497,
+        "mean_ns": 540821.8004,
+        "min_ns": 451615,
+        "p50_ns": 536654,
+        "p50_ratio_to_cpp": 1.0,
+        "p95_ns": 596791,
+        "p99_ns": 645377,
+        "repetition_mean_ns": [
+          551290.593,
+          546090.928,
+          554445.224,
+          533663.174,
+          518619.083
+        ],
+        "repetition_mean_range_ns": [
+          518619.083,
+          554445.224
+        ],
+        "repetition_mean_stddev_ns": 14723.820722140827,
+        "rpcs_per_second": 3697.5793441486157,
+        "samples": 5000,
+        "statistics_version": 1,
+        "stddev_ns": 45626.47377000223,
+        "workflows_per_second": 1848.7896720743079
+      },
+      "passes": true
+    },
+    {
+      "case": "callback",
+      "portable": {
+        "case": {
+          "name": "callback",
+          "payload_bytes": 64,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "portable",
+        "max_ns": 1080789,
+        "mean_ns": 557039.363,
+        "min_ns": 474229,
+        "p50_ns": 553649,
+        "p50_ratio_to_cpp": 1.0251240556954526,
+        "p95_ns": 611300,
+        "p99_ns": 675405,
+        "repetition_mean_ns": [
+          543187.231,
+          568885.886,
+          534440.317,
+          581989.532,
+          556693.849
+        ],
+        "repetition_mean_range_ns": [
+          534440.317,
+          581989.532
+        ],
+        "repetition_mean_stddev_ns": 19141.374436660924,
+        "rpcs_per_second": 3589.7127438022017,
+        "samples": 5000,
+        "statistics_version": 1,
+        "stddev_ns": 36296.52979044412,
+        "workflows_per_second": 1794.8563719011008
+      },
+      "cpp": {
+        "case": {
+          "name": "callback",
+          "payload_bytes": 64,
+          "rpcs_per_iteration": 2,
+          "width": 1
+        },
+        "implementation": "capnp-cpp",
+        "max_ns": 845016,
+        "mean_ns": 543887.3696,
+        "min_ns": 477059,
+        "p50_ns": 540080,
+        "p50_ratio_to_cpp": 1.0,
+        "p95_ns": 590169,
+        "p99_ns": 641766,
+        "repetition_mean_ns": [
+          559123.03,
+          545593.12,
+          544231.453,
+          533214.701,
+          537274.544
+        ],
+        "repetition_mean_range_ns": [
+          533214.701,
+          559123.03
+        ],
+        "repetition_mean_stddev_ns": 9909.448056007283,
+        "rpcs_per_second": 3676.7375247865607,
+        "samples": 5000,
+        "statistics_version": 1,
+        "stddev_ns": 29393.269419049386,
+        "workflows_per_second": 1838.3687623932803
+      },
+      "passes": false
+    },
+    {
+      "case": "bulk-64k",
+      "portable": {
+        "case": {
+          "name": "bulk-64k",
+          "payload_bytes": 65536,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "portable",
+        "max_ns": 2046884,
+        "mean_ns": 711933.9936,
+        "min_ns": 450485,
+        "p50_ns": 704390,
+        "p50_ratio_to_cpp": 0.9810240733132316,
+        "p95_ns": 892250,
+        "p99_ns": 961621,
+        "repetition_mean_ns": [
+          726813.164,
+          774752.341,
+          708714.383,
+          653876.025,
+          695514.055
+        ],
+        "repetition_mean_range_ns": [
+          653876.025,
+          774752.341
+        ],
+        "repetition_mean_stddev_ns": 44210.41301509552,
+        "rpcs_per_second": 1404.447664017747,
+        "samples": 5000,
+        "statistics_version": 1,
+        "stddev_ns": 102530.9345002193,
+        "workflows_per_second": 1404.447664017747
+      },
+      "cpp": {
+        "case": {
+          "name": "bulk-64k",
+          "payload_bytes": 65536,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "capnp-cpp",
+        "max_ns": 5774336,
+        "mean_ns": 726099.0792,
+        "min_ns": 483296,
+        "p50_ns": 718015,
+        "p50_ratio_to_cpp": 1.0,
+        "p95_ns": 893637,
+        "p99_ns": 981527,
+        "repetition_mean_ns": [
+          730191.633,
+          753228.455,
+          686503.268,
+          764022.042,
+          696549.998
+        ],
+        "repetition_mean_range_ns": [
+          686503.268,
+          764022.042
+        ],
+        "repetition_mean_stddev_ns": 34028.95678603716,
+        "rpcs_per_second": 1377.0810978349623,
+        "samples": 5000,
+        "statistics_version": 1,
+        "stddev_ns": 118428.60936494936,
+        "workflows_per_second": 1377.0810978349623
+      },
+      "passes": true
+    },
+    {
+      "case": "bulk-256k",
+      "portable": {
+        "case": {
+          "name": "bulk-256k",
+          "payload_bytes": 262144,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "portable",
+        "max_ns": 1779414,
+        "mean_ns": 1134848.0308,
+        "min_ns": 891326,
+        "p50_ns": 1129720,
+        "p50_ratio_to_cpp": 1.0322111422374016,
+        "p95_ns": 1283439,
+        "p99_ns": 1365520,
+        "repetition_mean_ns": [
+          1129100.515,
+          1176627.608,
+          1108230.995,
+          1103277.971,
+          1157003.065
+        ],
+        "repetition_mean_range_ns": [
+          1103277.971,
+          1176627.608
+        ],
+        "repetition_mean_stddev_ns": 31522.00747033426,
+        "rpcs_per_second": 881.0871868724071,
+        "samples": 5000,
+        "statistics_version": 1,
+        "stddev_ns": 88414.4517981331,
+        "workflows_per_second": 881.0871868724071
+      },
+      "cpp": {
+        "case": {
+          "name": "bulk-256k",
+          "payload_bytes": 262144,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "capnp-cpp",
+        "max_ns": 7288319,
+        "mean_ns": 1120143.5426,
+        "min_ns": 803271,
+        "p50_ns": 1094466,
+        "p50_ratio_to_cpp": 1.0,
+        "p95_ns": 1356641,
+        "p99_ns": 1595909,
+        "repetition_mean_ns": [
+          1231255.055,
+          1006972.323,
+          1094742.212,
+          1180917.503,
+          1086830.62
+        ],
+        "repetition_mean_range_ns": [
+          1006972.323,
+          1231255.055
+        ],
+        "repetition_mean_stddev_ns": 87467.05923470792,
+        "rpcs_per_second": 892.6739331690022,
+        "samples": 5000,
+        "statistics_version": 1,
+        "stddev_ns": 199364.37708499067,
+        "workflows_per_second": 892.6739331690022
+      },
+      "passes": false
+    },
+    {
+      "case": "bulk-1m",
+      "portable": {
+        "case": {
+          "name": "bulk-1m",
+          "payload_bytes": 1048576,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "portable",
+        "max_ns": 209237385,
+        "mean_ns": 4941255.074,
+        "min_ns": 2650287,
+        "p50_ns": 4684558,
+        "p50_ratio_to_cpp": 1.046168173164427,
+        "p95_ns": 5918841,
+        "p99_ns": 9920286,
+        "repetition_mean_ns": [
+          5109482.594,
+          4884710.01,
+          4928630.392,
+          4903722.215,
+          4879730.159
+        ],
+        "repetition_mean_range_ns": [
+          4879730.159,
+          5109482.594
+        ],
+        "repetition_mean_stddev_ns": 95983.40483409961,
+        "rpcs_per_second": 202.37059679853186,
+        "samples": 5000,
+        "statistics_version": 1,
+        "stddev_ns": 4331001.809577583,
+        "workflows_per_second": 202.37059679853186
+      },
+      "cpp": {
+        "case": {
+          "name": "bulk-1m",
+          "payload_bytes": 1048576,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "capnp-cpp",
+        "max_ns": 209655725,
+        "mean_ns": 4770030.0462,
+        "min_ns": 2702994,
+        "p50_ns": 4477825,
+        "p50_ratio_to_cpp": 1.0,
+        "p95_ns": 5887180,
+        "p99_ns": 9770817,
+        "repetition_mean_ns": [
+          4803394.466,
+          4752697.049,
+          4726679.081,
+          4773905.045,
+          4793474.59
+        ],
+        "repetition_mean_range_ns": [
+          4726679.081,
+          4803394.466
+        ],
+        "repetition_mean_stddev_ns": 31054.732867904193,
+        "rpcs_per_second": 209.6369153584087,
+        "samples": 5000,
+        "statistics_version": 1,
+        "stddev_ns": 5186617.45796355,
+        "workflows_per_second": 209.6369153584087
+      },
+      "passes": false
+    },
+    {
+      "case": "bulk-4m",
+      "portable": {
+        "case": {
+          "name": "bulk-4m",
+          "payload_bytes": 4194304,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "portable",
+        "max_ns": 225740098,
+        "mean_ns": 19500650.4478,
+        "min_ns": 11513778,
+        "p50_ns": 18881571,
+        "p50_ratio_to_cpp": 1.0262079196006906,
+        "p95_ns": 24297108,
+        "p99_ns": 29871183,
+        "repetition_mean_ns": [
+          19357833.642,
+          19274462.841,
+          19617244.521,
+          19622402.169,
+          19631309.066
+        ],
+        "repetition_mean_range_ns": [
+          19274462.841,
+          19631309.066
+        ],
+        "repetition_mean_stddev_ns": 171060.52110239374,
+        "rpcs_per_second": 51.27949573971717,
+        "samples": 5000,
+        "statistics_version": 1,
+        "stddev_ns": 5894939.674075365,
+        "workflows_per_second": 51.27949573971717
+      },
+      "cpp": {
+        "case": {
+          "name": "bulk-4m",
+          "payload_bytes": 4194304,
+          "rpcs_per_iteration": 1,
+          "width": 1
+        },
+        "implementation": "capnp-cpp",
+        "max_ns": 226670349,
+        "mean_ns": 18950793.3496,
+        "min_ns": 11731015,
+        "p50_ns": 18399362,
+        "p50_ratio_to_cpp": 1.0,
+        "p95_ns": 23309974,
+        "p99_ns": 25835912,
+        "repetition_mean_ns": [
+          18707347.627,
+          19024885.457,
+          19011837.89,
+          18984409.74,
+          19025486.034
+        ],
+        "repetition_mean_range_ns": [
+          18707347.627,
+          19025486.034
+        ],
+        "repetition_mean_stddev_ns": 137104.8457844029,
+        "rpcs_per_second": 52.76788077685502,
+        "samples": 5000,
+        "statistics_version": 1,
+        "stddev_ns": 6986730.954971627,
+        "workflows_per_second": 52.76788077685502
+      },
+      "passes": false
+    }
+  ],
+  "build_source_id": "bfa0820ea20da45cde59550b98a57c16970f2d46974d8a0020a2ec2944a606ed",
+  "cpp_revision": "0de72d8d8cec6b69edaa29de51d3bd490341f9c2"
+}

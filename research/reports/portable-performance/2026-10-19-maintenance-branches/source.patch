@@ -1,0 +1,185 @@
+diff --git a/crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs b/crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs
+index 5ac9b8b..3c8d302 100644
+--- a/crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs
++++ b/crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs
+@@ -1,4 +1,12 @@
+ use super::*;
++
++/// Result of visiting consecutive idle phases without polling any owner.
++enum IdleWalk {
++    Active,
++    Complete,
++    Budget,
++}
++
+ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
+     Driver<'pool, 'id, 's, I, A, P, S, CAPS, PATH>
+ {
+@@ -35,6 +43,77 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+                 .iter()
+                 .all(|slot| !slot.is_occupied())
+     }
++    /// Charge one live idle proof, accounting for all skipped physical slots.
++    /// Share this bookkeeping across the straight-line phase walk so each
++    /// phase does not duplicate its cursor, budget and completion branches.
++    #[inline(never)]
++    fn advance_idle_phase(&mut self, budget: &mut usize, phase: usize) -> Option<IdleWalk> {
++        let visited =
++            (self.maintenance_sizes[phase] - self.maintenance_index).min(self.scan_remaining);
++        *budget -= 1;
++        self.maintenance_index += visited;
++        if self.maintenance_index == self.maintenance_sizes[phase] {
++            self.maintenance_index = 0;
++            self.maintenance_phase = if phase + 1 == self.maintenance_sizes.len() {
++                0
++            } else {
++                phase + 1
++            };
++        }
++        self.scan_remaining -= visited;
++        if self.scan_remaining == 0 {
++            self.scan_remaining = self.maintenance_total;
++            return Some(IdleWalk::Complete);
++        }
++        (*budget == 0).then_some(IdleWalk::Budget)
++    }
++    /// Walk empty phases in order, without repeatedly dispatching on the
++    /// cursor. Every proof is evaluated only when its phase is reached. Stop
++    /// before an active phase, so callbacks always precede fresh live checks.
++    fn walk_idle_phases(&mut self, budget: &mut usize) -> IdleWalk {
++        macro_rules! phase {
++            ($phase:literal, $idle:expr) => {
++                if self.maintenance_phase == $phase {
++                    if !$idle {
++                        return IdleWalk::Active;
++                    }
++                    if let Some(stop) = self.advance_idle_phase(budget, $phase) {
++                        return stop;
++                    }
++                }
++            };
++        }
++        loop {
++            phase!(0, self.call.is_none());
++            phase!(1, self.resolution.is_none());
++            phase!(2, self.pipelines.is_empty());
++            phase!(3, self.outgoing_maintenance_is_idle());
++            phase!(4, self.ledgers.exports.retirement_is_idle(8));
++            phase!(5, !self.runtime.has_retired());
++            phase!(6, self.ledgers.answers.reclamation_is_idle(8));
++            phase!(7, !self.canceled_exchanges);
++            phase!(8, self.exported.is_empty());
++            phase!(9, !self.ledgers.questions.has_pending_finish());
++            phase!(10, !self.ledgers.imports.has_pending_release());
++            phase!(11, self.call.is_none() && self.runtime.queued() == 0);
++            phase!(12, self.runtime.queued() == 0);
++            phase!(13, self.barrier.is_none());
++            phase!(14, self.echo.is_none());
++            phase!(
++                15,
++                self.tails.len() <= 8 && self.tails.iter().all(|slot| !slot.is_occupied())
++            );
++            phase!(
++                16,
++                self.invocation_pipelines.len() <= 8
++                    && self
++                        .invocation_pipelines
++                        .iter()
++                        .all(|slot| !slot.is_occupied())
++            );
++            phase!(17, self.runtime.queued() == 0);
++        }
++    }
+     /// Outgoing observers can only progress against an authorized Return.
+     /// Pending questions alone do not require a scan of every observer slot.
+     /// This uses the same prerequisite as poll_outgoing, reads live state on
+@@ -220,49 +299,21 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+         let mut advanced = false;
+         let mut retired_burst = 0;
+         while *budget != 0 {
++            match self.walk_idle_phases(budget) {
++                IdleWalk::Active => {}
++                IdleWalk::Complete => {
++                    return Ok(if advanced {
++                        Progress::Advanced
++                    } else {
++                        Progress::Idle
++                    })
++                }
++                IdleWalk::Budget => break,
++            }
+             let phase = self.maintenance_phase;
+             let index = self.maintenance_index;
+-            // Keep empty lanes out of the ownership-bearing transition call.
+-            // They still consume one budget unit and advance the idle scan in
+-            // exactly the same order. Inspect live storage on every step so a
+-            // newly admitted operation cannot be hidden by an old idle mask.
+-            let empty = match phase {
+-                0 => self.call.is_none(),
+-                1 => self.resolution.is_none(),
+-                2 => self.pipelines.is_empty(),
+-                3 => self.outgoing_maintenance_is_idle(),
+-                4 => self.ledgers.exports.retirement_is_idle(8),
+-                5 => !self.runtime.has_retired(),
+-                6 => self.ledgers.answers.reclamation_is_idle(8),
+-                7 => !self.canceled_exchanges,
+-                8 => self.exported.is_empty(),
+-                9 => !self.ledgers.questions.has_pending_finish(),
+-                10 => !self.ledgers.imports.has_pending_release(),
+-                11 => self.call.is_none() && self.runtime.queued() == 0,
+-                12 | 17 => self.runtime.queued() == 0,
+-                13 => self.barrier.is_none(),
+-                14 => self.echo.is_none(),
+-                15 => self.tails.len() <= 8 && self.tails.iter().all(|slot| !slot.is_occupied()),
+-                16 => {
+-                    self.invocation_pipelines.len() <= 8
+-                        && self
+-                            .invocation_pipelines
+-                            .iter()
+-                            .all(|slot| !slot.is_occupied())
+-                }
+-                _ => false,
+-            };
+-            // An empty lane cannot change until a transition/callback runs.
+-            // Charge the proof once and skip its remaining capacity. The scan
+-            // still accounts for every slot, while the work budget accounts for
+-            // checks and transitions rather than retained allocation sizes.
+-            let visited = if empty {
+-                (self.maintenance_sizes[phase] - index).min(self.scan_remaining)
+-            } else {
+-                1
+-            };
+             *budget -= 1;
+-            self.maintenance_index += visited;
++            self.maintenance_index += 1;
+             if self.maintenance_index == self.maintenance_sizes[phase] {
+                 self.maintenance_index = 0;
+                 self.maintenance_phase = if phase + 1 == self.maintenance_sizes.len() {
+@@ -271,14 +322,10 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+                     phase + 1
+                 };
+             }
+-            let result = if empty {
+-                Ok(None)
+-            } else {
+-                self.maintenance_step(
+-                    phase, index, messages, queue, minimum, options, scratch, resources, attach,
+-                    resolve,
+-                )
+-            };
++            let result = self.maintenance_step(
++                phase, index, messages, queue, minimum, options, scratch, resources, attach,
++                resolve,
++            );
+             match result {
+                 Ok(Some(Progress::Advanced)) if matches!(phase, 4 | 5) => {
+                     // Export/endpoint retirement publishes no frame and returns
+@@ -297,7 +344,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+                     }
+                 }
+                 Ok(None) => {
+-                    self.scan_remaining -= visited;
++                    self.scan_remaining -= 1;
+                     if self.scan_remaining == 0 {
+                         self.scan_remaining = self.maintenance_total;
+                         return Ok(if advanced {
