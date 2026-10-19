@@ -727,6 +727,9 @@ fn server_idle_certificate_observes_deferred_answer_and_export_cleanup() {
         assert!(!driver.pipelines.is_empty());
         assert!(!matches!(poll!(), Progress::Idle));
         driver.runtime.release(observer);
+        // The first one-step poll can now visit the pending observer. This
+        // external graph mutation must invalidate that partial idle scan.
+        driver.invalidate_maintenance();
         let mut idle = false;
         for _ in 0..128 {
             if matches!(poll!(), Progress::Idle) {
@@ -793,7 +796,7 @@ fn maintenance_idle_phase_cost_does_not_grow_with_retained_capacity() {
                         .unwrap()
                 };
             }
-            let initial = 17 + driver.tails.len();
+            let initial = 1 + driver.tails.len();
             for _ in 1..initial.div_ceil(quantum) {
                 assert!(matches!(poll!(), Progress::Yield));
             }
@@ -810,7 +813,9 @@ fn maintenance_idle_phase_cost_does_not_grow_with_retained_capacity() {
             driver.invalidate_maintenance();
             let total = 16 + driver.tails.len() + driver.ledgers.imports.capacity();
             // The import phase has grown, but its live no-release certificate
-            // still costs one check. Physical scan coverage tracks every slot.
+            // joins the same bounded empty-phase walk. Only individual tail
+            // slots and the final idle proof consume budget; physical scan
+            // coverage still tracks every slot.
             for _ in 1..initial.div_ceil(quantum) {
                 assert!(matches!(poll!(), Progress::Yield));
             }

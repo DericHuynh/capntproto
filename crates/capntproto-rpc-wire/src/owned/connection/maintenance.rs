@@ -4,7 +4,6 @@ use super::*;
 enum IdleWalk {
     Active,
     Complete,
-    Budget,
 }
 
 impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
@@ -43,14 +42,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 .iter()
                 .all(|slot| !slot.is_occupied())
     }
-    /// Charge one live idle proof, accounting for all skipped physical slots.
-    /// Share this bookkeeping across the straight-line phase walk so each
-    /// phase does not duplicate its cursor, budget and completion branches.
+    /// Account for skipped physical slots without charging an owner poll.
+    /// Empty phases form one bounded search for the next operation, just as
+    /// maintenance_is_idle proves the whole driver idle in one budget step.
     #[inline(never)]
-    fn advance_idle_phase(&mut self, budget: &mut usize, phase: usize) -> Option<IdleWalk> {
+    fn advance_idle_phase(&mut self, phase: usize) -> bool {
         let visited =
             (self.maintenance_sizes[phase] - self.maintenance_index).min(self.scan_remaining);
-        *budget -= 1;
         self.maintenance_index += visited;
         if self.maintenance_index == self.maintenance_sizes[phase] {
             self.maintenance_index = 0;
@@ -63,22 +61,24 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         self.scan_remaining -= visited;
         if self.scan_remaining == 0 {
             self.scan_remaining = self.maintenance_total;
-            return Some(IdleWalk::Complete);
+            return true;
         }
-        (*budget == 0).then_some(IdleWalk::Budget)
+        false
     }
     /// Walk empty phases in order, without repeatedly dispatching on the
-    /// cursor. Every proof is evaluated only when its phase is reached. Stop
-    /// before an active phase, so callbacks always precede fresh live checks.
-    fn walk_idle_phases(&mut self, budget: &mut usize) -> IdleWalk {
+    /// cursor. At most one complete cycle of the fixed phase table is visited.
+    /// Each proof is bounded independently of storage capacity. Stop before an
+    /// active phase: its operation consumes a budget step, and any following
+    /// proofs must observe the state after that operation's callbacks.
+    fn walk_idle_phases(&mut self) -> IdleWalk {
         macro_rules! phase {
             ($phase:literal, $idle:expr) => {
                 if self.maintenance_phase == $phase {
                     if !$idle {
                         return IdleWalk::Active;
                     }
-                    if let Some(stop) = self.advance_idle_phase(budget, $phase) {
-                        return stop;
+                    if self.advance_idle_phase($phase) {
+                        return IdleWalk::Complete;
                     }
                 }
             };
@@ -229,9 +229,10 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     /// Poll maintenance and subtract only visited work from a shared budget.
     /// A productive transition may stop before exhausting the allowance. The
     /// caller can spend the remainder on more ready work before flushing output.
-    /// An idle certificate costs one step, including a certificate for an entire
-    /// maintenance phase. Retained vacant capacity does not consume additional
-    /// budget. A zero budget performs no work.
+    /// Each owner poll costs one step, including a bounded walk over preceding
+    /// empty phases. A complete idle proof also costs one step. These walks
+    /// invoke no callbacks and retain the rotating cursor; retained vacant
+    /// capacity does not consume additional budget. Zero performs no work.
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     #[inline(never)]
     pub fn poll_maintenance_budget_with<R: Default>(
@@ -299,16 +300,16 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         let mut advanced = false;
         let mut retired_burst = 0;
         while *budget != 0 {
-            match self.walk_idle_phases(budget) {
+            match self.walk_idle_phases() {
                 IdleWalk::Active => {}
                 IdleWalk::Complete => {
+                    *budget -= 1;
                     return Ok(if advanced {
                         Progress::Advanced
                     } else {
                         Progress::Idle
-                    })
+                    });
                 }
-                IdleWalk::Budget => break,
             }
             let phase = self.maintenance_phase;
             let index = self.maintenance_index;

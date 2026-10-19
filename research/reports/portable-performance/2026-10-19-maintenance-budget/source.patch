@@ -1,0 +1,231 @@
+diff --git a/crates/capntproto-rpc-wire/src/owned/connection/growing/tests.rs b/crates/capntproto-rpc-wire/src/owned/connection/growing/tests.rs
+index cc9fc47..fac1b84 100644
+--- a/crates/capntproto-rpc-wire/src/owned/connection/growing/tests.rs
++++ b/crates/capntproto-rpc-wire/src/owned/connection/growing/tests.rs
+@@ -727,6 +727,9 @@ fn server_idle_certificate_observes_deferred_answer_and_export_cleanup() {
+         assert!(!driver.pipelines.is_empty());
+         assert!(!matches!(poll!(), Progress::Idle));
+         driver.runtime.release(observer);
++        // The first one-step poll can now visit the pending observer. This
++        // external graph mutation must invalidate that partial idle scan.
++        driver.invalidate_maintenance();
+         let mut idle = false;
+         for _ in 0..128 {
+             if matches!(poll!(), Progress::Idle) {
+@@ -793,7 +796,7 @@ fn maintenance_idle_phase_cost_does_not_grow_with_retained_capacity() {
+                         .unwrap()
+                 };
+             }
+-            let initial = 17 + driver.tails.len();
++            let initial = 1 + driver.tails.len();
+             for _ in 1..initial.div_ceil(quantum) {
+                 assert!(matches!(poll!(), Progress::Yield));
+             }
+@@ -810,7 +813,9 @@ fn maintenance_idle_phase_cost_does_not_grow_with_retained_capacity() {
+             driver.invalidate_maintenance();
+             let total = 16 + driver.tails.len() + driver.ledgers.imports.capacity();
+             // The import phase has grown, but its live no-release certificate
+-            // still costs one check. Physical scan coverage tracks every slot.
++            // joins the same bounded empty-phase walk. Only individual tail
++            // slots and the final idle proof consume budget; physical scan
++            // coverage still tracks every slot.
+             for _ in 1..initial.div_ceil(quantum) {
+                 assert!(matches!(poll!(), Progress::Yield));
+             }
+diff --git a/crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs b/crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs
+index 3c8d302..0d2f536 100644
+--- a/crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs
++++ b/crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs
+@@ -4,7 +4,6 @@ use super::*;
+ enum IdleWalk {
+     Active,
+     Complete,
+-    Budget,
+ }
+ 
+ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
+@@ -43,14 +42,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+                 .iter()
+                 .all(|slot| !slot.is_occupied())
+     }
+-    /// Charge one live idle proof, accounting for all skipped physical slots.
+-    /// Share this bookkeeping across the straight-line phase walk so each
+-    /// phase does not duplicate its cursor, budget and completion branches.
++    /// Account for skipped physical slots without charging an owner poll.
++    /// Empty phases form one bounded search for the next operation, just as
++    /// maintenance_is_idle proves the whole driver idle in one budget step.
+     #[inline(never)]
+-    fn advance_idle_phase(&mut self, budget: &mut usize, phase: usize) -> Option<IdleWalk> {
++    fn advance_idle_phase(&mut self, phase: usize) -> bool {
+         let visited =
+             (self.maintenance_sizes[phase] - self.maintenance_index).min(self.scan_remaining);
+-        *budget -= 1;
+         self.maintenance_index += visited;
+         if self.maintenance_index == self.maintenance_sizes[phase] {
+             self.maintenance_index = 0;
+@@ -63,22 +61,24 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+         self.scan_remaining -= visited;
+         if self.scan_remaining == 0 {
+             self.scan_remaining = self.maintenance_total;
+-            return Some(IdleWalk::Complete);
++            return true;
+         }
+-        (*budget == 0).then_some(IdleWalk::Budget)
++        false
+     }
+     /// Walk empty phases in order, without repeatedly dispatching on the
+-    /// cursor. Every proof is evaluated only when its phase is reached. Stop
+-    /// before an active phase, so callbacks always precede fresh live checks.
+-    fn walk_idle_phases(&mut self, budget: &mut usize) -> IdleWalk {
++    /// cursor. At most one complete cycle of the fixed phase table is visited.
++    /// Each proof is bounded independently of storage capacity. Stop before an
++    /// active phase: its operation consumes a budget step, and any following
++    /// proofs must observe the state after that operation's callbacks.
++    fn walk_idle_phases(&mut self) -> IdleWalk {
+         macro_rules! phase {
+             ($phase:literal, $idle:expr) => {
+                 if self.maintenance_phase == $phase {
+                     if !$idle {
+                         return IdleWalk::Active;
+                     }
+-                    if let Some(stop) = self.advance_idle_phase(budget, $phase) {
+-                        return stop;
++                    if self.advance_idle_phase($phase) {
++                        return IdleWalk::Complete;
+                     }
+                 }
+             };
+@@ -229,9 +229,10 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+     /// Poll maintenance and subtract only visited work from a shared budget.
+     /// A productive transition may stop before exhausting the allowance. The
+     /// caller can spend the remainder on more ready work before flushing output.
+-    /// An idle certificate costs one step, including a certificate for an entire
+-    /// maintenance phase. Retained vacant capacity does not consume additional
+-    /// budget. A zero budget performs no work.
++    /// Each owner poll costs one step, including a bounded walk over preceding
++    /// empty phases. A complete idle proof also costs one step. These walks
++    /// invoke no callbacks and retain the rotating cursor; retained vacant
++    /// capacity does not consume additional budget. Zero performs no work.
+     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+     #[inline(never)]
+     pub fn poll_maintenance_budget_with<R: Default>(
+@@ -299,16 +300,16 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+         let mut advanced = false;
+         let mut retired_burst = 0;
+         while *budget != 0 {
+-            match self.walk_idle_phases(budget) {
++            match self.walk_idle_phases() {
+                 IdleWalk::Active => {}
+                 IdleWalk::Complete => {
++                    *budget -= 1;
+                     return Ok(if advanced {
+                         Progress::Advanced
+                     } else {
+                         Progress::Idle
+-                    })
++                    });
+                 }
+-                IdleWalk::Budget => break,
+             }
+             let phase = self.maintenance_phase;
+             let index = self.maintenance_index;
+diff --git a/crates/capntproto-rpc-wire/src/owned/connection/server_output/tests.rs b/crates/capntproto-rpc-wire/src/owned/connection/server_output/tests.rs
+index 85c7c2c..f83708b 100644
+--- a/crates/capntproto-rpc-wire/src/owned/connection/server_output/tests.rs
++++ b/crates/capntproto-rpc-wire/src/owned/connection/server_output/tests.rs
+@@ -965,15 +965,14 @@ fn endpoint_retirement_bursts_charge_each_owner_and_preserve_the_rotating_cursor
+         assert_eq!(driver.maintenance_phase, 6);
+         assert!(driver.runtime.has_retired());
+         remaining = 1;
+-        assert!(matches!(poll!(), Progress::Yield));
++        assert!(matches!(poll!(), Progress::Advanced));
+         assert_eq!(remaining, 0);
+         assert_eq!(
+-            driver.maintenance_phase, 7,
+-            "one idle-phase proof skips vacant answers without retiring another owner"
++            driver.maintenance_phase, 6,
++            "the next rotation skips empty phases and charges one retired owner"
+         );
+-        // The first burst freed exactly eight owners, leaving the other two
+-        // available to the ordinary round-robin maintenance scan.
+-        assert!(driver.drain_endpoint().is_some());
++        // The first burst freed exactly eight owners. A single subsequent
++        // step frees one more; it cannot drain both remaining owners.
+         assert!(driver.drain_endpoint().is_some());
+         assert!(driver.drain_endpoint().is_none());
+         assert!(queue.is_empty());
+@@ -1354,3 +1353,42 @@ fn bootstrap_completion_retries_and_preserves_pipelines_after_finish_without_all
+         }
+     }
+ }
++
++#[test]
++fn empty_maintenance_phases_do_not_delay_the_next_owned_operation() {
++    for phase in 0..18 {
++        with_driver(|mut driver, messages| {
++            let client = driver
++                .runtime
++                .endpoint(binding::Route::local(99), clients::Location::Local)
++                .unwrap();
++            driver.runtime.release(client);
++            driver.maintenance_phase = phase;
++            driver.maintenance_index = 0;
++            let mut slots = [None];
++            let mut queue = messages::Queue::new(&mut slots).unwrap();
++            let mut remaining = 1;
++            let outcome = driver
++                .poll_maintenance_budget_with(
++                    messages,
++                    &mut queue,
++                    512,
++                    Default::default(),
++                    &mut [0; 8],
++                    &mut remaining,
++                    &mut || (),
++                    &mut |_, _, _| 255,
++                    &mut |_, _, _| Ok(None),
++                )
++                .unwrap();
++            assert!(
++                matches!(outcome, Progress::Server(99)),
++                "starting phase {phase}"
++            );
++            assert_eq!(remaining, 0);
++            assert_eq!(driver.maintenance_phase, 6);
++            assert!(!driver.runtime.has_retired());
++            close(driver, messages, &mut queue);
++        });
++    }
++}
+diff --git a/verification/portable/src/streaming_pump.rs b/verification/portable/src/streaming_pump.rs
+index f943390..1753d13 100644
+--- a/verification/portable/src/streaming_pump.rs
++++ b/verification/portable/src/streaming_pump.rs
+@@ -506,7 +506,6 @@ pub fn growing_binding_cleanup() {
+                     )
+                     .unwrap();
+                 peer.ledgers.answers.release_pipeline_deferred(answer);
+-                peer.runtime.release(observer);
+                 assert!(peer
+                     .ledgers
+                     .answers
+@@ -517,8 +516,9 @@ pub fn growing_binding_cleanup() {
+                 assert!(peer.ledgers.answers.finish(id, false).retired.is_none());
+                 if n == 0 {
+                     // Growth invalidates the empty-ledger idle certificate.
+-                    // Suspend the new scan before the other bindings grow, so
+-                    // both idle-to-active and mid-scan growth are exercised.
++                    // Keep this observer live for its first Pending poll, so
++                    // the scan suspends before the other bindings grow. Empty
++                    // phases no longer consume the one-step allowance.
+                     assert!(matches!(
+                         peer.poll_maintenance(
+                             messages,
+@@ -532,6 +532,7 @@ pub fn growing_binding_cleanup() {
+                         Progress::Yield
+                     ));
+                 }
++                peer.runtime.release(observer);
+             }
+             assert_eq!(peer.pipelines.capacity(), 4);
+             let mut producers = 0;

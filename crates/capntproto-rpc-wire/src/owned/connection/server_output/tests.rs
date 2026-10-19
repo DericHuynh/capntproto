@@ -965,15 +965,14 @@ fn endpoint_retirement_bursts_charge_each_owner_and_preserve_the_rotating_cursor
         assert_eq!(driver.maintenance_phase, 6);
         assert!(driver.runtime.has_retired());
         remaining = 1;
-        assert!(matches!(poll!(), Progress::Yield));
+        assert!(matches!(poll!(), Progress::Advanced));
         assert_eq!(remaining, 0);
         assert_eq!(
-            driver.maintenance_phase, 7,
-            "one idle-phase proof skips vacant answers without retiring another owner"
+            driver.maintenance_phase, 6,
+            "the next rotation skips empty phases and charges one retired owner"
         );
-        // The first burst freed exactly eight owners, leaving the other two
-        // available to the ordinary round-robin maintenance scan.
-        assert!(driver.drain_endpoint().is_some());
+        // The first burst freed exactly eight owners. A single subsequent
+        // step frees one more; it cannot drain both remaining owners.
         assert!(driver.drain_endpoint().is_some());
         assert!(driver.drain_endpoint().is_none());
         assert!(queue.is_empty());
@@ -1352,5 +1351,44 @@ fn bootstrap_completion_retries_and_preserves_pipelines_after_finish_without_all
             });
             assert_eq!(measured.count_total, 0);
         }
+    }
+}
+
+#[test]
+fn empty_maintenance_phases_do_not_delay_the_next_owned_operation() {
+    for phase in 0..18 {
+        with_driver(|mut driver, messages| {
+            let client = driver
+                .runtime
+                .endpoint(binding::Route::local(99), clients::Location::Local)
+                .unwrap();
+            driver.runtime.release(client);
+            driver.maintenance_phase = phase;
+            driver.maintenance_index = 0;
+            let mut slots = [None];
+            let mut queue = messages::Queue::new(&mut slots).unwrap();
+            let mut remaining = 1;
+            let outcome = driver
+                .poll_maintenance_budget_with(
+                    messages,
+                    &mut queue,
+                    512,
+                    Default::default(),
+                    &mut [0; 8],
+                    &mut remaining,
+                    &mut || (),
+                    &mut |_, _, _| 255,
+                    &mut |_, _, _| Ok(None),
+                )
+                .unwrap();
+            assert!(
+                matches!(outcome, Progress::Server(99)),
+                "starting phase {phase}"
+            );
+            assert_eq!(remaining, 0);
+            assert_eq!(driver.maintenance_phase, 6);
+            assert!(!driver.runtime.has_retired());
+            close(driver, messages, &mut queue);
+        });
     }
 }

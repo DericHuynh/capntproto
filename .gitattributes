@@ -1,3 +1,6 @@
 # Source-info tests assert these documentation bytes and offsets exactly.
 # CRLF preservation is covered separately with an explicit CRLF test string.
 crates/capntproto-compiler/examples/documentation.capnp text eol=lf
+
+# Retained unified diffs use a single space on empty context lines.
+research/reports/portable-performance/**/source.patch -whitespace

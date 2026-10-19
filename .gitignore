@@ -237,3 +237,9 @@ Desktop.ini
 !/research/reports/portable-performance/2026-10-19-ready-dispatch/README.md
 !/research/reports/portable-performance/2026-10-19-ready-dispatch/report.json
 !/research/reports/portable-performance/2026-10-19-ready-dispatch/source.patch
+
+!/research/reports/portable-performance/2026-10-19-maintenance-budget/
+/research/reports/portable-performance/2026-10-19-maintenance-budget/*
+!/research/reports/portable-performance/2026-10-19-maintenance-budget/README.md
+!/research/reports/portable-performance/2026-10-19-maintenance-budget/report.json
+!/research/reports/portable-performance/2026-10-19-maintenance-budget/source.patch

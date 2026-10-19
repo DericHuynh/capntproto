@@ -506,7 +506,6 @@ pub fn growing_binding_cleanup() {
                     )
                     .unwrap();
                 peer.ledgers.answers.release_pipeline_deferred(answer);
-                peer.runtime.release(observer);
                 assert!(peer
                     .ledgers
                     .answers
@@ -517,8 +516,9 @@ pub fn growing_binding_cleanup() {
                 assert!(peer.ledgers.answers.finish(id, false).retired.is_none());
                 if n == 0 {
                     // Growth invalidates the empty-ledger idle certificate.
-                    // Suspend the new scan before the other bindings grow, so
-                    // both idle-to-active and mid-scan growth are exercised.
+                    // Keep this observer live for its first Pending poll, so
+                    // the scan suspends before the other bindings grow. Empty
+                    // phases no longer consume the one-step allowance.
                     assert!(matches!(
                         peer.poll_maintenance(
                             messages,
@@ -532,6 +532,7 @@ pub fn growing_binding_cleanup() {
                         Progress::Yield
                     ));
                 }
+                peer.runtime.release(observer);
             }
             assert_eq!(peer.pipelines.capacity(), 4);
             let mut producers = 0;
