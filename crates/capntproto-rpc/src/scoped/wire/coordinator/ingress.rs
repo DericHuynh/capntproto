@@ -161,11 +161,11 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 // this descriptor-free request arrived. It does not settle
                 // their questions. Application work still invalidates the
                 // certificate through the registered notifier during dispatch.
+                let plain_admission = matches!(event, connection::Received::DeferredCall(_))
+                    && self.driver.has_plain_pending_call();
                 let plain_call = was_idle
-                    && matches!(event, connection::Received::DeferredCall(_))
-                    && self.driver.has_plain_pending_call()
+                    && plain_admission
                     && self.driver.runtime.queued() == 0
-                    && self.worker.is_empty()
                     && self.foreign.is_empty()
                     && self.commands.is_empty();
                 let retirement = was_idle
@@ -206,9 +206,22 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 {
                     self.schedule.active = (WorkSet::ACCEPT) | (WorkSet::WORKER);
                     self.schedule.cursor = Lane::Accept;
-                    self.worker.protocol_changed();
+                    // Admission queues the new operation. Existing parked
+                    // workers retain their idle certificate and specific wake.
                 } else if pump.returned.is_none() {
-                    self.resume_at(first);
+                    if plain_admission
+                        && preserves_application
+                        && controls.preserves_idle(Activity::PlainCall)
+                    {
+                        // A descriptor-free hosted Call creates a new answer;
+                        // it cannot resolve or cancel another operation. Keep
+                        // parked execution owned by its registered waker while
+                        // refreshing admission, routing and cleanup normally.
+                        self.schedule.resume_at(first);
+                        self.progressed();
+                    } else {
+                        self.resume_at(first);
+                    }
                 }
             }
             // Shutdown must not need a fresh input buffer. A full pool can still

@@ -231,3 +231,9 @@ Desktop.ini
 !/research/reports/portable-performance/2026-10-19-worker-readiness/report.json
 !/research/reports/portable-performance/2026-10-19-worker-readiness/readiness.json
 !/research/reports/portable-performance/2026-10-19-worker-readiness/source.patch
+
+!/research/reports/portable-performance/2026-10-19-ready-dispatch/
+/research/reports/portable-performance/2026-10-19-ready-dispatch/*
+!/research/reports/portable-performance/2026-10-19-ready-dispatch/README.md
+!/research/reports/portable-performance/2026-10-19-ready-dispatch/report.json
+!/research/reports/portable-performance/2026-10-19-ready-dispatch/source.patch

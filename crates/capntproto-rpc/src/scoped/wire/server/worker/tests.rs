@@ -1137,3 +1137,136 @@ fn self_waking_service_respects_budget_and_does_not_starve_other_replies() {
         });
     }
 }
+
+#[test]
+fn pending_dispatch_waits_for_a_wake_before_polling_again() {
+    for width in [1, 2, 4] {
+        for budget in [1, 2, 4, 8, 64] {
+            with_peer(|mut driver, messages| {
+                let polls = Rc::new(vec![Cell::new(0); width]);
+                let ready = Rc::new(vec![Cell::new(false); width]);
+                let wakes = Rc::new(RefCell::new(vec![None::<Waker>; width]));
+                let counted = polls.clone();
+                let released = ready.clone();
+                let registered = wakes.clone();
+                let id = expose(
+                    &mut driver,
+                    server(move |method, results| {
+                        let index = usize::from(method);
+                        let polls = counted.clone();
+                        let ready = released.clone();
+                        let wakes = registered.clone();
+                        let mut results = Some(results);
+                        capability::DispatchCallResult::with_cancellation_policy(
+                            Promise::from_future(futures::future::poll_fn(move |cx| {
+                                polls[index].set(polls[index].get() + 1);
+                                if !ready[index].get() {
+                                    wakes.borrow_mut()[index] = Some(cx.waker().clone());
+                                    return Poll::Pending;
+                                }
+                                results
+                                    .take()
+                                    .unwrap()
+                                    .get()
+                                    .set_as::<capnp::text::Owned>("ready")?;
+                                Poll::Ready(Ok(()))
+                            })),
+                            false,
+                            true,
+                        )
+                    }),
+                );
+                let mut worker = Worker::new(width, None);
+                let mut hooks = ClientHooks::new(64, 16);
+                let mut queue = messages::Queue::new_growing(0, 4).unwrap();
+                for index in 0..width {
+                    incoming(
+                        &mut driver,
+                        messages,
+                        index as u32,
+                        index as u16,
+                        calls::Target::Imported(id),
+                    );
+                    assert!(worker.accept(&mut driver).unwrap());
+                }
+                fn poll<'p, 'id>(
+                    worker: &mut TestWorker<'p, 'id>,
+                    hooks: &mut ClientHooks<'id>,
+                    driver: &mut TestPeer<'p, 'id, '_>,
+                    messages: &mut messages::Messages<'p, '_, '_>,
+                    queue: &mut messages::Queue<'p, '_>,
+                    budget: usize,
+                ) -> Poll<capnp::Result<Progress>> {
+                    worker.poll(
+                        hooks,
+                        driver,
+                        messages,
+                        queue,
+                        128,
+                        Default::default(),
+                        &mut [0; 16],
+                        &mut Context::from_waker(Waker::noop()),
+                        NonZeroUsize::new(budget).unwrap(),
+                        import,
+                    )
+                }
+                for _ in 0..64 {
+                    match poll(
+                        &mut worker,
+                        &mut hooks,
+                        &mut driver,
+                        messages,
+                        &mut queue,
+                        budget,
+                    ) {
+                        Poll::Pending => break,
+                        Poll::Ready(result) => {
+                            result.unwrap();
+                        }
+                    }
+                }
+                assert!(queue.is_empty());
+                assert_eq!(
+                    polls.iter().map(Cell::get).collect::<Vec<_>>(),
+                    vec![1; width],
+                    "width {width}, budget {budget}"
+                );
+                ready[0].set(true);
+                wakes.borrow_mut()[0].take().unwrap().wake();
+                for _ in 0..64 {
+                    if matches!(
+                        poll(
+                            &mut worker,
+                            &mut hooks,
+                            &mut driver,
+                            messages,
+                            &mut queue,
+                            budget
+                        ),
+                        Poll::Ready(Ok(Progress::Replied))
+                    ) {
+                        break;
+                    }
+                }
+                let mut expected = vec![1; width];
+                expected[0] = 2;
+                assert_eq!(polls.iter().map(Cell::get).collect::<Vec<_>>(), expected);
+                check(&drain(&mut queue, messages), |reply| {
+                    assert_eq!(reply.get_answer_id(), 0);
+                    let rpc_capnp::return_::Results(payload) = reply.which().unwrap() else {
+                        panic!("results")
+                    };
+                    assert_eq!(
+                        payload
+                            .unwrap()
+                            .get_content()
+                            .get_as::<capnp::text::Reader>()
+                            .unwrap(),
+                        "ready"
+                    );
+                });
+                close(worker, hooks, driver, messages, &mut queue);
+            });
+        }
+    }
+}

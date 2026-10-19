@@ -378,7 +378,6 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         self.ready.register(cx.waker());
         let mut advanced = false;
         let mut remaining_budget = budget.get();
-        let exclusive = self.live == 1;
         while remaining_budget != 0 {
             let Some(index) = self.ready.pop() else {
                 return if advanced {
@@ -399,6 +398,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             // budget yields the operation; intermediate stages need no enqueue.
             let outcome = loop {
                 remaining_budget -= 1;
+                let preparing = matches!(entry.stage, Stage::Prepare);
                 let outcome = Self::step(
                     entry,
                     &self.executor,
@@ -414,10 +414,13 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     &mut prepare,
                     &mut publish_plain,
                     &mut remaining_budget,
-                    exclusive,
                     &mut self.completed_plain,
                     &mut self.completed_ordinary,
                 );
+                // Dispatch can create routes or cleanup even when its first
+                // execution poll suspends. Report that progress without
+                // enqueueing an unwoken future for another Execute poll.
+                advanced |= preparing && outcome.is_pending();
                 if matches!(outcome, Poll::Ready(Ok(Progress::Advanced))) {
                     advanced = true;
                     if remaining_budget != 0 {
@@ -488,7 +491,6 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             &Rc<connection::PreparedReturn<capnp::message::HeapAllocator>>,
         ) -> capnp::Result<bool>,
         remaining_budget: &mut usize,
-        exclusive: bool,
         completed_plain: &mut bool,
         completed_ordinary: &mut bool,
     ) -> Poll<capnp::Result<Progress>> {
@@ -556,28 +558,29 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 };
                 let prepared = hooks.prepare_received_server(entry.request(), driver, messages)?;
                 refresh(hooks, driver);
-                let mut execution = if exclusive && *remaining_budget != 0 {
+                let mut execution = if *remaining_budget != 0 {
                     prepared.execute_during_dispatch(&*target, &entry.results, executor.clone())?
                 } else {
                     prepared.execute(&*target, &entry.results, executor.clone())?
                 };
                 entry.stage = if entry.results.transfer_ready() {
                     Stage::Transfer(entry.results.start_transfer(execution)?)
-                } else if exclusive && *remaining_budget != 0 {
-                    // With one worker there is no intervening dispatch or IO.
-                    // Poll before moving the execution into its suspended slot;
-                    // synchronous services need no stored Execute state. Charge
+                } else if *remaining_budget != 0 {
+                    // A selected ready turn has no intervening dispatch or IO,
+                    // regardless of other live operations. Synchronous services
+                    // need no stored Execute state. Charge
                     // the same quantum as the separate Execute step.
                     *remaining_budget -= 1;
                     if entry.results.poll_work(&mut execution, cx).is_ready() {
                         Stage::Collect
                     } else {
-                        Stage::Execute(execution)
+                        entry.stage = Stage::Execute(execution);
+                        return Poll::Pending;
                     }
                 } else {
                     Stage::Execute(execution)
                 };
-                if exclusive && *remaining_budget >= 2 && matches!(entry.stage, Stage::Collect) {
+                if *remaining_budget >= 2 && matches!(entry.stage, Stage::Collect) {
                     if let Some(payload) = entry.results.plain_payload() {
                         if publish_plain(driver, messages, entry.request(), &payload)? {
                             // A synchronous completion needs no suspended

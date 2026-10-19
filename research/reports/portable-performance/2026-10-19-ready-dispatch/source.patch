@@ -1,0 +1,482 @@
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator/ingress.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator/ingress.rs
+index 3c70d7f..137cf4e 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator/ingress.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator/ingress.rs
+@@ -161,11 +161,11 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+                 // this descriptor-free request arrived. It does not settle
+                 // their questions. Application work still invalidates the
+                 // certificate through the registered notifier during dispatch.
++                let plain_admission = matches!(event, connection::Received::DeferredCall(_))
++                    && self.driver.has_plain_pending_call();
+                 let plain_call = was_idle
+-                    && matches!(event, connection::Received::DeferredCall(_))
+-                    && self.driver.has_plain_pending_call()
++                    && plain_admission
+                     && self.driver.runtime.queued() == 0
+-                    && self.worker.is_empty()
+                     && self.foreign.is_empty()
+                     && self.commands.is_empty();
+                 let retirement = was_idle
+@@ -206,9 +206,22 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+                 {
+                     self.schedule.active = (WorkSet::ACCEPT) | (WorkSet::WORKER);
+                     self.schedule.cursor = Lane::Accept;
+-                    self.worker.protocol_changed();
++                    // Admission queues the new operation. Existing parked
++                    // workers retain their idle certificate and specific wake.
+                 } else if pump.returned.is_none() {
+-                    self.resume_at(first);
++                    if plain_admission
++                        && preserves_application
++                        && controls.preserves_idle(Activity::PlainCall)
++                    {
++                        // A descriptor-free hosted Call creates a new answer;
++                        // it cannot resolve or cancel another operation. Keep
++                        // parked execution owned by its registered waker while
++                        // refreshing admission, routing and cleanup normally.
++                        self.schedule.resume_at(first);
++                        self.progressed();
++                    } else {
++                        self.resume_at(first);
++                    }
+                 }
+             }
+             // Shutdown must not need a fresh input buffer. A full pool can still
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator/pump.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator/pump.rs
+index 9db0cc2..d7d5c27 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator/pump.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator/pump.rs
+@@ -104,10 +104,12 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+             // Publication already committed protocol state and invalidated scans.
+             // Draining bytes only reactivates lanes which waited for FIFO capacity;
+             // resource/application notifications still arrive through WorkWake.
++            // A worker blocked on publication retains its ready key; freeing
++            // FIFO capacity cannot resolve an unrelated sleeping execution.
+             if queue.len() < queued || (output_ready && self.output_blocked) {
+                 self.control_idle = false;
+                 if std::mem::take(&mut self.output_blocked) {
+-                    self.changed();
++                    self.progressed();
+                 }
+             }
+             if output_ready && std::mem::take(&mut self.calls_waiting_for_output) {
+@@ -225,7 +227,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+                         self.control_idle = false;
+                     }
+                     if std::mem::take(&mut self.output_blocked) {
+-                        self.changed();
++                        self.progressed();
+                     }
+                 }
+             }
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator/tests/plain.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator/tests/plain.rs
+index a3bb733..e518d7e 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator/tests/plain.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator/tests/plain.rs
+@@ -1871,3 +1871,167 @@ fn general_notification_refreshes_late_metadata_before_enqueue_only_admission()
+         });
+     }
+ }
++
++#[test]
++fn plain_admission_does_not_repoll_a_parked_sibling() {
++    #[derive(Clone)]
++    struct Parked(Rc<Cell<usize>>);
++    impl capability::Server for Parked {
++        fn as_ptr(&self) -> usize {
++            Rc::as_ptr(&self.0) as usize
++        }
++        fn dispatch_call(
++            self,
++            _: u64,
++            method: u16,
++            context: capability::CallContext<'_, any_pointer::Owned, any_pointer::Owned>,
++        ) -> capability::DispatchCallResult {
++            let (_, mut results) = context.into_owned();
++            let promise = if method == 0 {
++                Promise::from_future(std::future::poll_fn(move |_| {
++                    self.0.set(self.0.get() + 1);
++                    let _ = &mut results;
++                    Poll::Pending
++                }))
++            } else {
++                Promise::from(results.get().set_as::<capnp::text::Owned>("independent"))
++            };
++            capability::DispatchCallResult {
++                promise,
++                is_streaming: false,
++                allow_cancellation: true,
++            }
++        }
++    }
++    for owned in [false, true] {
++        for budget in [1, 8, 64] {
++            for busy in [false, true] {
++                with_peer(|mut driver, messages| {
++                    driver.use_owned_output_queues(owned);
++                    let polls = Rc::new(Cell::new(0));
++                    let target = expose(
++                        &mut driver,
++                        Rc::new(crate::local::Client::new(Parked(polls.clone()))),
++                    );
++                    let mut opts = options();
++                    opts.budget = NonZeroUsize::new(budget).unwrap();
++                    let mut coordinator = Coordinator::new(
++                        driver,
++                        ClientHooks::new(8, 8),
++                        NonZeroUsize::new(8).unwrap(),
++                        None,
++                        opts,
++                    )
++                    .unwrap();
++                    let mut queue = messages::Queue::new_growing(0, 1).unwrap();
++                    let pipe = Rc::new(RefCell::new(Pipe::default()));
++                    let mut writer = Writer(pipe.clone());
++                    let mut control = Policy {
++                        preserve_plain: true,
++                        ..Default::default()
++                    };
++                    let mut reader = BufferedInput;
++                    let mut pump = Pump::default();
++                    let mut stop = std::pin::pin!(std::future::pending());
++                    let mut cx = Context::from_waker(Waker::noop());
++                    let wake = coordinator.notifications.waker();
++                    for method in [0, 1] {
++                        let before = polls.get();
++                        if busy && method == 1 {
++                            coordinator.schedule.active |= WorkSet::MAINTENANCE;
++                            coordinator.driver.invalidate_maintenance();
++                        }
++                        let mut pending = Some(
++                            Frame::build(messages, 512, opts.reader, |builder| {
++                                calls::dynamic_call(
++                                    builder,
++                                    QuestionId::from_wire(u32::from(method)),
++                                    calls::Target::Imported(target),
++                                    calls::DynamicCall {
++                                        interface: 7,
++                                        method,
++                                        no_promise_pipelining: true,
++                                        ..Default::default()
++                                    },
++                                    |_| Ok(()),
++                                )
++                            })
++                            .unwrap(),
++                        );
++                        for _ in 0..4096 {
++                            if let Poll::Ready(result) = coordinator.poll_prepared(
++                                messages,
++                                &mut queue,
++                                &mut reader,
++                                &mut transport::Writer(&mut writer),
++                                &mut [0; 32],
++                                &NoResources,
++                                &mut control,
++                                stop.as_mut(),
++                                &mut pending,
++                                &mut pump,
++                                &mut cx,
++                                &wake,
++                            ) {
++                                result.unwrap();
++                            }
++                            if pending.is_none()
++                                && coordinator.schedule.active == WorkSet::NONE
++                                && coordinator.notifications.pending() == WorkSet::NONE
++                                && queue.is_empty()
++                                && coordinator.output.is_clean()
++                            {
++                                break;
++                            }
++                        }
++                        assert!(pending.is_none() && coordinator.schedule.active == WorkSet::NONE);
++                        assert!(!coordinator.worker.is_empty());
++                        if method == 0 {
++                            assert!(polls.get() > 0);
++                        } else {
++                            assert_eq!(
++                                polls.get(),
++                                before,
++                                "owned {owned}, budget {budget}, busy {busy}"
++                            );
++                        }
++                    }
++                    let bytes: Vec<_> = pipe.borrow_mut().bytes.drain(..).collect();
++                    let mut bytes = bytes.as_slice();
++                    let message = capnp::serialize::read_message(&mut bytes, opts.reader).unwrap();
++                    let crate::rpc_capnp::message::Return(Ok(returned)) = message
++                        .get_root::<crate::rpc_capnp::message::Reader>()
++                        .unwrap()
++                        .which()
++                        .unwrap()
++                    else {
++                        panic!("Return")
++                    };
++                    assert_eq!(returned.get_answer_id(), 1);
++                    let crate::rpc_capnp::return_::Results(Ok(payload)) = returned.which().unwrap()
++                    else {
++                        panic!("results")
++                    };
++                    assert_eq!(
++                        payload
++                            .get_content()
++                            .get_as::<capnp::text::Reader>()
++                            .unwrap(),
++                        "independent"
++                    );
++                    assert!(bytes.is_empty());
++                    futures::executor::block_on(
++                        coordinator.terminate::<NoResources, (), &'static str>(
++                            messages,
++                            &mut queue,
++                            &mut control,
++                            Ok(()),
++                        ),
++                    )
++                    .unwrap();
++                    reclaimed(messages);
++                });
++            }
++        }
++    }
++}
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs
+index d58c38c..23463a9 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs
+@@ -11,9 +11,10 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
+         self.worker.protocol_changed();
+         self.progressed();
+     }
+-    /// Local progress may change routes and cleanup, but cannot make an
+-    /// unrelated parked service future ready. Its operation waker owns that.
+-    fn progressed(&mut self) {
++    /// Local progress and plain Call admission can change routes and cleanup,
++    /// but cannot make an unrelated parked service future ready. Its operation
++    /// waker owns that; protocol resolution/cancellation still calls changed().
++    pub(super) fn progressed(&mut self) {
+         self.control_idle = false;
+         self.schedule.active = WorkSet::FOREIGN | WorkSet::CALLS | WorkSet::MAINTENANCE;
+         if self.driver.runtime.queued() != 0 || self.driver.has_pending_call() {
+diff --git a/crates/capntproto-rpc/src/scoped/wire/server/worker.rs b/crates/capntproto-rpc/src/scoped/wire/server/worker.rs
+index 753178f..96b0a5c 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/server/worker.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/server/worker.rs
+@@ -378,7 +378,6 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
+         self.ready.register(cx.waker());
+         let mut advanced = false;
+         let mut remaining_budget = budget.get();
+-        let exclusive = self.live == 1;
+         while remaining_budget != 0 {
+             let Some(index) = self.ready.pop() else {
+                 return if advanced {
+@@ -399,6 +398,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
+             // budget yields the operation; intermediate stages need no enqueue.
+             let outcome = loop {
+                 remaining_budget -= 1;
++                let preparing = matches!(entry.stage, Stage::Prepare);
+                 let outcome = Self::step(
+                     entry,
+                     &self.executor,
+@@ -414,10 +414,13 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
+                     &mut prepare,
+                     &mut publish_plain,
+                     &mut remaining_budget,
+-                    exclusive,
+                     &mut self.completed_plain,
+                     &mut self.completed_ordinary,
+                 );
++                // Dispatch can create routes or cleanup even when its first
++                // execution poll suspends. Report that progress without
++                // enqueueing an unwoken future for another Execute poll.
++                advanced |= preparing && outcome.is_pending();
+                 if matches!(outcome, Poll::Ready(Ok(Progress::Advanced))) {
+                     advanced = true;
+                     if remaining_budget != 0 {
+@@ -488,7 +491,6 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
+             &Rc<connection::PreparedReturn<capnp::message::HeapAllocator>>,
+         ) -> capnp::Result<bool>,
+         remaining_budget: &mut usize,
+-        exclusive: bool,
+         completed_plain: &mut bool,
+         completed_ordinary: &mut bool,
+     ) -> Poll<capnp::Result<Progress>> {
+@@ -556,28 +558,29 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
+                 };
+                 let prepared = hooks.prepare_received_server(entry.request(), driver, messages)?;
+                 refresh(hooks, driver);
+-                let mut execution = if exclusive && *remaining_budget != 0 {
++                let mut execution = if *remaining_budget != 0 {
+                     prepared.execute_during_dispatch(&*target, &entry.results, executor.clone())?
+                 } else {
+                     prepared.execute(&*target, &entry.results, executor.clone())?
+                 };
+                 entry.stage = if entry.results.transfer_ready() {
+                     Stage::Transfer(entry.results.start_transfer(execution)?)
+-                } else if exclusive && *remaining_budget != 0 {
+-                    // With one worker there is no intervening dispatch or IO.
+-                    // Poll before moving the execution into its suspended slot;
+-                    // synchronous services need no stored Execute state. Charge
++                } else if *remaining_budget != 0 {
++                    // A selected ready turn has no intervening dispatch or IO,
++                    // regardless of other live operations. Synchronous services
++                    // need no stored Execute state. Charge
+                     // the same quantum as the separate Execute step.
+                     *remaining_budget -= 1;
+                     if entry.results.poll_work(&mut execution, cx).is_ready() {
+                         Stage::Collect
+                     } else {
+-                        Stage::Execute(execution)
++                        entry.stage = Stage::Execute(execution);
++                        return Poll::Pending;
+                     }
+                 } else {
+                     Stage::Execute(execution)
+                 };
+-                if exclusive && *remaining_budget >= 2 && matches!(entry.stage, Stage::Collect) {
++                if *remaining_budget >= 2 && matches!(entry.stage, Stage::Collect) {
+                     if let Some(payload) = entry.results.plain_payload() {
+                         if publish_plain(driver, messages, entry.request(), &payload)? {
+                             // A synchronous completion needs no suspended
+diff --git a/crates/capntproto-rpc/src/scoped/wire/server/worker/tests.rs b/crates/capntproto-rpc/src/scoped/wire/server/worker/tests.rs
+index c851fa1..7dd5171 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/server/worker/tests.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/server/worker/tests.rs
+@@ -1137,3 +1137,136 @@ fn self_waking_service_respects_budget_and_does_not_starve_other_replies() {
+         });
+     }
+ }
++
++#[test]
++fn pending_dispatch_waits_for_a_wake_before_polling_again() {
++    for width in [1, 2, 4] {
++        for budget in [1, 2, 4, 8, 64] {
++            with_peer(|mut driver, messages| {
++                let polls = Rc::new(vec![Cell::new(0); width]);
++                let ready = Rc::new(vec![Cell::new(false); width]);
++                let wakes = Rc::new(RefCell::new(vec![None::<Waker>; width]));
++                let counted = polls.clone();
++                let released = ready.clone();
++                let registered = wakes.clone();
++                let id = expose(
++                    &mut driver,
++                    server(move |method, results| {
++                        let index = usize::from(method);
++                        let polls = counted.clone();
++                        let ready = released.clone();
++                        let wakes = registered.clone();
++                        let mut results = Some(results);
++                        capability::DispatchCallResult::with_cancellation_policy(
++                            Promise::from_future(futures::future::poll_fn(move |cx| {
++                                polls[index].set(polls[index].get() + 1);
++                                if !ready[index].get() {
++                                    wakes.borrow_mut()[index] = Some(cx.waker().clone());
++                                    return Poll::Pending;
++                                }
++                                results
++                                    .take()
++                                    .unwrap()
++                                    .get()
++                                    .set_as::<capnp::text::Owned>("ready")?;
++                                Poll::Ready(Ok(()))
++                            })),
++                            false,
++                            true,
++                        )
++                    }),
++                );
++                let mut worker = Worker::new(width, None);
++                let mut hooks = ClientHooks::new(64, 16);
++                let mut queue = messages::Queue::new_growing(0, 4).unwrap();
++                for index in 0..width {
++                    incoming(
++                        &mut driver,
++                        messages,
++                        index as u32,
++                        index as u16,
++                        calls::Target::Imported(id),
++                    );
++                    assert!(worker.accept(&mut driver).unwrap());
++                }
++                fn poll<'p, 'id>(
++                    worker: &mut TestWorker<'p, 'id>,
++                    hooks: &mut ClientHooks<'id>,
++                    driver: &mut TestPeer<'p, 'id, '_>,
++                    messages: &mut messages::Messages<'p, '_, '_>,
++                    queue: &mut messages::Queue<'p, '_>,
++                    budget: usize,
++                ) -> Poll<capnp::Result<Progress>> {
++                    worker.poll(
++                        hooks,
++                        driver,
++                        messages,
++                        queue,
++                        128,
++                        Default::default(),
++                        &mut [0; 16],
++                        &mut Context::from_waker(Waker::noop()),
++                        NonZeroUsize::new(budget).unwrap(),
++                        import,
++                    )
++                }
++                for _ in 0..64 {
++                    match poll(
++                        &mut worker,
++                        &mut hooks,
++                        &mut driver,
++                        messages,
++                        &mut queue,
++                        budget,
++                    ) {
++                        Poll::Pending => break,
++                        Poll::Ready(result) => {
++                            result.unwrap();
++                        }
++                    }
++                }
++                assert!(queue.is_empty());
++                assert_eq!(
++                    polls.iter().map(Cell::get).collect::<Vec<_>>(),
++                    vec![1; width],
++                    "width {width}, budget {budget}"
++                );
++                ready[0].set(true);
++                wakes.borrow_mut()[0].take().unwrap().wake();
++                for _ in 0..64 {
++                    if matches!(
++                        poll(
++                            &mut worker,
++                            &mut hooks,
++                            &mut driver,
++                            messages,
++                            &mut queue,
++                            budget
++                        ),
++                        Poll::Ready(Ok(Progress::Replied))
++                    ) {
++                        break;
++                    }
++                }
++                let mut expected = vec![1; width];
++                expected[0] = 2;
++                assert_eq!(polls.iter().map(Cell::get).collect::<Vec<_>>(), expected);
++                check(&drain(&mut queue, messages), |reply| {
++                    assert_eq!(reply.get_answer_id(), 0);
++                    let rpc_capnp::return_::Results(payload) = reply.which().unwrap() else {
++                        panic!("results")
++                    };
++                    assert_eq!(
++                        payload
++                            .unwrap()
++                            .get_content()
++                            .get_as::<capnp::text::Reader>()
++                            .unwrap(),
++                        "ready"
++                    );
++                });
++                close(worker, hooks, driver, messages, &mut queue);
++            });
++        }
++    }
++}

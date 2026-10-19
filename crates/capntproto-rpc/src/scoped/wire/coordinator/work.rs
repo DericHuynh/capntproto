@@ -11,9 +11,10 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         self.worker.protocol_changed();
         self.progressed();
     }
-    /// Local progress may change routes and cleanup, but cannot make an
-    /// unrelated parked service future ready. Its operation waker owns that.
-    fn progressed(&mut self) {
+    /// Local progress and plain Call admission can change routes and cleanup,
+    /// but cannot make an unrelated parked service future ready. Its operation
+    /// waker owns that; protocol resolution/cancellation still calls changed().
+    pub(super) fn progressed(&mut self) {
         self.control_idle = false;
         self.schedule.active = WorkSet::FOREIGN | WorkSet::CALLS | WorkSet::MAINTENANCE;
         if self.driver.runtime.queued() != 0 || self.driver.has_pending_call() {

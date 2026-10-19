@@ -104,10 +104,12 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             // Publication already committed protocol state and invalidated scans.
             // Draining bytes only reactivates lanes which waited for FIFO capacity;
             // resource/application notifications still arrive through WorkWake.
+            // A worker blocked on publication retains its ready key; freeing
+            // FIFO capacity cannot resolve an unrelated sleeping execution.
             if queue.len() < queued || (output_ready && self.output_blocked) {
                 self.control_idle = false;
                 if std::mem::take(&mut self.output_blocked) {
-                    self.changed();
+                    self.progressed();
                 }
             }
             if output_ready && std::mem::take(&mut self.calls_waiting_for_output) {
@@ -225,7 +227,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         self.control_idle = false;
                     }
                     if std::mem::take(&mut self.output_blocked) {
-                        self.changed();
+                        self.progressed();
                     }
                 }
             }
