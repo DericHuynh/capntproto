@@ -143,12 +143,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 unreachable!("selected pending question")
             };
             let key = question.key();
-            if self.outgoing.pending_for(key)
-                || self
-                    .invocation_pipelines
-                    .iter()
-                    .any(|slot| slot.pending_for(key))
-            {
+            if self.outgoing.pending_for(key) || self.invocation_pipelines.pending_for(key) {
                 return Ok(None);
             }
             let Some(receiver) = select(key) else {

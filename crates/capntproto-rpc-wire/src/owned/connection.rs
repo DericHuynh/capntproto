@@ -179,7 +179,7 @@ pub struct Driver<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, cons
     network: Option<NetworkRequest<'pool, 'id, PATH>>,
     disconnected: Option<capnp::ErrorKind>,
     tails: SlotStorage<'s, TailSlot<'id>>,
-    invocation_pipelines: SlotStorage<'s, InvocationPipelineSlot<'id, PATH>>,
+    invocation_pipelines: invocation_pipeline::Bindings<'s, 'id, PATH>,
     message_capabilities: Capacity,
     message_path: Capacity,
     maintenance_sizes: [usize; 18],
@@ -494,7 +494,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             network: None,
             disconnected: None,
             tails: storage.tails,
-            invocation_pipelines: storage.invocation_pipelines,
+            invocation_pipelines: invocation_pipeline::Bindings::new(storage.invocation_pipelines),
             maintenance_sizes,
             maintenance_total: scan_remaining,
             maintenance_phase: 0,
@@ -667,10 +667,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     }
 
     pub fn cancel(&mut self, key: questions::Key<'id>) -> Result<(), Error> {
-        let pending_invocation = self
-            .invocation_pipelines
-            .iter()
-            .any(|slot| slot.pending_for(key));
+        let pending_invocation = self.invocation_pipelines.pending_for(key);
         let index = ExchangeSlot::index(&self.exchanges, &self.ledgers.questions, key)
             .ok_or(Error::UnknownQuestion)?;
         let slot = &mut self.exchanges[index];
@@ -690,12 +687,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         &mut self,
         key: questions::Key<'id>,
     ) -> Result<Response<'pool, 'id, I, CAPS>, Error> {
-        if self.outgoing.pending_for(key)
-            || self
-                .invocation_pipelines
-                .iter()
-                .any(|slot| slot.pending_for(key))
-        {
+        if self.outgoing.pending_for(key) || self.invocation_pipelines.pending_for(key) {
             return Err(Error::PendingResponse);
         }
         let index = ExchangeSlot::index(&self.exchanges, &self.ledgers.questions, key)
@@ -747,19 +739,14 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     /// Check that small set before walking every outstanding exchange. When
     /// observers exist, preserve the exact response/observer ownership test.
     fn has_ordered_propagation(&self) -> bool {
-        if self.outgoing.is_empty()
-            && !self
-                .invocation_pipelines
-                .iter()
-                .any(InvocationPipelineSlot::is_occupied)
-        {
+        if self.outgoing.is_empty() && self.invocation_pipelines.is_empty() {
             return false;
         }
         self.exchanges.iter().any(|slot| {
             matches!(&slot.exchange, Some(Exchange::Returned(response))
                 if (response.requires_ordered_propagation() || slot.handoff.is_some())
                     && (self.outgoing.pending_for(response.key())
-                        || self.invocation_pipelines.iter().any(|slot| slot.pending_for(response.key()))))
+                        || self.invocation_pipelines.pending_for(response.key())))
         })
     }
 
@@ -1891,7 +1878,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         let slot = self.exchanges.iter_mut().find(|slot| {
             let live = slot.canceled && slot.exchange.is_some();
             canceled |= live;
-            live && matches!(&slot.exchange, Some(Exchange::Returned(response)) if !self.outgoing.pending_for(response.key()) && !self.invocation_pipelines.iter().any(|slot| slot.pending_for(response.key())))
+            live && matches!(&slot.exchange, Some(Exchange::Returned(response)) if !self.outgoing.pending_for(response.key()) && !self.invocation_pipelines.pending_for(response.key()))
         });
         let Some(slot) = slot else {
             self.canceled_exchanges = canceled;

@@ -453,9 +453,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             unreachable!()
         };
         invocation.release(messages, &mut self.runtime);
-        for slot in &mut *self.invocation_pipelines {
-            slot.canceled(task);
-        }
+        self.invocation_pipelines.canceled(task);
         true
     }
     /// Send the oldest ready task if it is an outgoing call to this peer. Local
@@ -628,9 +626,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             slot.canceled = false;
             slot.tail_taken = false;
             slot.authorized = true;
-            for slot in &mut *self.invocation_pipelines {
-                slot.sent(task, key);
-            }
+            self.invocation_pipelines.sent(task, key);
             let Task::Invoke(invocation) =
                 self.runtime.cancel(task).unwrap_or_else(|_| unreachable!())
             else {
@@ -825,9 +821,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         slot.canceled = false;
         slot.tail_taken = false;
         slot.authorized = true;
-        for slot in &mut *self.invocation_pipelines {
-            slot.sent(task, key);
-        }
+        self.invocation_pipelines.sent(task, key);
         // No callback or graph resolution occurs between selecting this task
         // and FIFO acceptance. Release its route only after output owns the Call.
         let Task::Invoke(invocation) = self.runtime.cancel(task).unwrap_or_else(|_| unreachable!())

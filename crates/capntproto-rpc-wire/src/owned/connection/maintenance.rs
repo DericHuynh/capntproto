@@ -36,11 +36,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             && self.echo.is_none()
             && self.tails.len() <= 8
             && self.tails.iter().all(|slot| !slot.is_occupied())
-            && self.invocation_pipelines.len() <= 8
-            && self
-                .invocation_pipelines
-                .iter()
-                .all(|slot| !slot.is_occupied())
+            && self.invocation_pipelines.is_empty()
     }
     /// Account for skipped physical slots without charging an owner poll.
     /// Empty phases form one bounded search for the next operation, just as
@@ -103,14 +99,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 15,
                 self.tails.len() <= 8 && self.tails.iter().all(|slot| !slot.is_occupied())
             );
-            phase!(
-                16,
-                self.invocation_pipelines.len() <= 8
-                    && self
-                        .invocation_pipelines
-                        .iter()
-                        .all(|slot| !slot.is_occupied())
-            );
+            phase!(16, self.invocation_pipelines.is_empty());
             phase!(17, self.runtime.queued() == 0);
         }
     }

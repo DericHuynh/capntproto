@@ -243,3 +243,9 @@ Desktop.ini
 !/research/reports/portable-performance/2026-10-19-maintenance-budget/README.md
 !/research/reports/portable-performance/2026-10-19-maintenance-budget/report.json
 !/research/reports/portable-performance/2026-10-19-maintenance-budget/source.patch
+
+!/research/reports/portable-performance/2026-10-21-observer-occupancy/
+/research/reports/portable-performance/2026-10-21-observer-occupancy/*
+!/research/reports/portable-performance/2026-10-21-observer-occupancy/README.md
+!/research/reports/portable-performance/2026-10-21-observer-occupancy/report.json
+!/research/reports/portable-performance/2026-10-21-observer-occupancy/source.patch

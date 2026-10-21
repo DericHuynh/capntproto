@@ -178,12 +178,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         messages: &mut messages::Messages<'pool, '_, '_>,
     ) -> Result<Option<alloc::boxed::Box<super::super::question::PlainResults>>, Error> {
         self.check_live()?;
-        if self.outgoing.pending_for(key)
-            || self
-                .invocation_pipelines
-                .iter()
-                .any(|slot| slot.pending_for(key))
-        {
+        if self.outgoing.pending_for(key) || self.invocation_pipelines.pending_for(key) {
             return Err(Error::PendingResponse);
         }
         let index = ExchangeSlot::index(&self.exchanges, &self.ledgers.questions, key)
@@ -213,12 +208,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         messages: &mut messages::Messages<'pool, '_, '_>,
     ) -> Result<CallResult<'pool, 'id, I, CAPS>, Error> {
         self.check_live()?;
-        if self.outgoing.pending_for(key)
-            || self
-                .invocation_pipelines
-                .iter()
-                .any(|slot| slot.pending_for(key))
-        {
+        if self.outgoing.pending_for(key) || self.invocation_pipelines.pending_for(key) {
             return Err(Error::PendingResponse);
         }
         let index = ExchangeSlot::index(&self.exchanges, &self.ledgers.questions, key)

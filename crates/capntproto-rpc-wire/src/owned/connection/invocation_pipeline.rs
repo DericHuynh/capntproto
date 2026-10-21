@@ -47,6 +47,50 @@ impl<'id, const PATH: usize> InvocationPipelineSlot<'id, PATH> {
         self.entry = None;
     }
 }
+// Keep occupancy with its storage: admission, removal and terminal clearing are
+// the only writers. Callers can inspect slots but cannot bypass this bookkeeping.
+pub(super) struct Bindings<'s, 'id, const PATH: usize> {
+    slots: SlotStorage<'s, InvocationPipelineSlot<'id, PATH>>,
+    live: usize,
+}
+impl<'s, 'id, const PATH: usize> Bindings<'s, 'id, PATH> {
+    pub(super) fn new(slots: SlotStorage<'s, InvocationPipelineSlot<'id, PATH>>) -> Self {
+        debug_assert!(slots.iter().all(|slot| !slot.is_occupied()));
+        Self { slots, live: 0 }
+    }
+    pub(super) fn is_empty(&self) -> bool {
+        self.live == 0
+    }
+    pub(super) fn pending_for(&self, question: questions::Key<'id>) -> bool {
+        self.live != 0 && self.slots.iter().any(|slot| slot.pending_for(question))
+    }
+    pub(super) fn sent(&mut self, task: dispatch::TaskKey<'id>, question: questions::Key<'id>) {
+        if self.live != 0 {
+            for slot in &mut *self.slots {
+                slot.sent(task, question);
+            }
+        }
+    }
+    pub(super) fn canceled(&mut self, task: dispatch::TaskKey<'id>) {
+        if self.live != 0 {
+            for slot in &mut *self.slots {
+                slot.canceled(task);
+            }
+        }
+    }
+    pub(super) fn clear_terminal(&mut self) {
+        for slot in &mut *self.slots {
+            slot.clear();
+        }
+        self.live = 0;
+    }
+}
+impl<'id, const PATH: usize> core::ops::Deref for Bindings<'_, 'id, PATH> {
+    type Target = [InvocationPipelineSlot<'id, PATH>];
+    fn deref(&self) -> &Self::Target {
+        &self.slots
+    }
+}
 impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
     Driver<'pool, 'id, 's, I, A, P, S, CAPS, PATH>
 {
@@ -93,6 +137,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         }
         let slot = self
             .invocation_pipelines
+            .slots
             .vacant_mut(
                 |_, slot| slot.entry.is_none(),
                 || InvocationPipelineSlot::EMPTY,
@@ -103,6 +148,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .copy(path.fields())
             .ok_or(Error::Input(super::super::Error::Capacity))?;
         let client = self.runtime.promise(&mut None).map_err(Error::Graph)?;
+        self.invocation_pipelines.live += 1;
         slot.entry = Some(Entry {
             task,
             client: client.key(),
@@ -298,13 +344,10 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         }
     }
     fn finish_invocation_observer(&mut self, index: usize) {
-        let entry = self.invocation_pipelines[index].entry.take().unwrap();
+        let entry = self.invocation_pipelines.slots[index].entry.take().unwrap();
+        self.invocation_pipelines.live -= 1;
         if let Stage::Sent(question) = entry.stage {
-            if !self
-                .invocation_pipelines
-                .iter()
-                .any(|slot| slot.pending_for(question))
-            {
+            if !self.invocation_pipelines.pending_for(question) {
                 if let Some(Exchange::Pending(pending)) =
                     ExchangeSlot::index(&self.exchanges, &self.ledgers.questions, question)
                         .and_then(|index| self.exchanges.get_mut(index))

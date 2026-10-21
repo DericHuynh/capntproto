@@ -194,9 +194,7 @@ impl<'p, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize, R>
                     }
                     driver.imports.clear_terminal();
                     driver.outgoing.clear_terminal();
-                    for slot in &mut *driver.invocation_pipelines {
-                        slot.clear();
-                    }
+                    driver.invocation_pipelines.clear_terminal();
                     let Stage::Tasks(driver) = core::mem::replace(&mut self.stage, Stage::Done)
                     else {
                         unreachable!()

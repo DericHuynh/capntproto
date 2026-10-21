@@ -182,12 +182,12 @@ fn retained_vacant_pipeline_capacity_does_not_require_maintenance() {
             .tails
             .vacant_mut(|_, _| true, || TailSlot::EMPTY)
             .unwrap();
-        driver
-            .invocation_pipelines
-            .vacant_mut(|_, _| true, || InvocationPipelineSlot::EMPTY)
-            .unwrap();
+        // Large retained capacity is still idle when it has no observers.
+        driver.invocation_pipelines = invocation_pipeline::Bindings::new(
+            SlotStorage::growing(32, 32, || InvocationPipelineSlot::EMPTY).unwrap(),
+        );
         assert_eq!(driver.tails.len(), 1);
-        assert_eq!(driver.invocation_pipelines.len(), 1);
+        assert_eq!(driver.invocation_pipelines.len(), 32);
         assert!(driver.maintenance_is_idle());
         let mut slots = [None];
         let mut queue = messages::Queue::new(&mut slots).unwrap();
@@ -203,6 +203,78 @@ fn retained_vacant_pipeline_capacity_does_not_require_maintenance() {
             Ok(Progress::Idle)
         ));
         assert!(queue.is_empty());
+        close(driver, messages, &mut queue);
+    });
+}
+
+#[test]
+fn abandoned_invocation_observers_sleep_after_growth_and_reactivate_on_reuse() {
+    with_driver(|mut driver, messages| {
+        let target = driver
+            .runtime
+            .endpoint(binding::Route::local(73), clients::Location::Local)
+            .unwrap();
+        let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+        for count in [16, 1] {
+            let task = driver
+                .enqueue_dynamic(
+                    &target,
+                    DynamicCall::default(),
+                    &[],
+                    messages,
+                    128,
+                    Default::default(),
+                    |_| Ok(()),
+                )
+                .unwrap();
+            let mut observers = alloc::vec::Vec::new();
+            for _ in 0..count {
+                observers.push(
+                    driver
+                        .invocation_pipeline(task, pipeline::Path::new(&[]), messages)
+                        .unwrap(),
+                );
+            }
+            assert!(driver.cancel_invocation(task, messages));
+            let last = observers.pop().unwrap();
+            for (index, observer) in observers.into_iter().enumerate() {
+                driver.runtime.release(observer);
+                assert_eq!(
+                    driver.poll_invocation_pipeline(index).unwrap(),
+                    Propagation::Abandoned
+                );
+            }
+            while driver.runtime.has_retired() {
+                driver.drain_endpoint();
+            }
+            assert!(
+                !driver.maintenance_is_idle(),
+                "the last observer still needs cancellation"
+            );
+            driver.runtime.release(last);
+            assert_eq!(
+                driver.poll_invocation_pipeline(count - 1).unwrap(),
+                Propagation::Abandoned
+            );
+            while driver.runtime.has_retired() {
+                driver.drain_endpoint();
+            }
+            assert_eq!(driver.invocation_pipelines.len(), 16);
+            assert!(driver.maintenance_is_idle());
+            assert!(matches!(
+                driver.poll_maintenance(
+                    messages,
+                    &mut queue,
+                    128,
+                    Default::default(),
+                    &mut [],
+                    NonZeroUsize::new(1).unwrap()
+                ),
+                Ok(Progress::Idle)
+            ));
+            assert!(queue.is_empty());
+        }
+        driver.runtime.release(target);
         close(driver, messages, &mut queue);
     });
 }

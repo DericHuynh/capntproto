@@ -1,0 +1,470 @@
+diff --git a/crates/capntproto-rpc-wire/src/clients/outgoing.rs b/crates/capntproto-rpc-wire/src/clients/outgoing.rs
+index 42c004c..6c1577c 100644
+--- a/crates/capntproto-rpc-wire/src/clients/outgoing.rs
++++ b/crates/capntproto-rpc-wire/src/clients/outgoing.rs
+@@ -185,11 +185,12 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
+         })
+     }
+     pub fn pending_for(&self, question: questions::Key<'id>) -> bool {
+-        self.slots.iter().any(|slot| {
+-            slot.entry
+-                .as_ref()
+-                .is_some_and(|entry| entry.question == question)
+-        })
++        self.live != 0
++            && self.slots.iter().any(|slot| {
++                slot.entry
++                    .as_ref()
++                    .is_some_and(|entry| entry.question == question)
++            })
+     }
+ 
+     /// Register an observer whose invocation was still queued when Return
+diff --git a/crates/capntproto-rpc-wire/src/owned/connection.rs b/crates/capntproto-rpc-wire/src/owned/connection.rs
+index b4b353c..f8df00f 100644
+--- a/crates/capntproto-rpc-wire/src/owned/connection.rs
++++ b/crates/capntproto-rpc-wire/src/owned/connection.rs
+@@ -179,7 +179,7 @@ pub struct Driver<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, cons
+     network: Option<NetworkRequest<'pool, 'id, PATH>>,
+     disconnected: Option<capnp::ErrorKind>,
+     tails: SlotStorage<'s, TailSlot<'id>>,
+-    invocation_pipelines: SlotStorage<'s, InvocationPipelineSlot<'id, PATH>>,
++    invocation_pipelines: invocation_pipeline::Bindings<'s, 'id, PATH>,
+     message_capabilities: Capacity,
+     message_path: Capacity,
+     maintenance_sizes: [usize; 18],
+@@ -494,7 +494,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+             network: None,
+             disconnected: None,
+             tails: storage.tails,
+-            invocation_pipelines: storage.invocation_pipelines,
++            invocation_pipelines: invocation_pipeline::Bindings::new(storage.invocation_pipelines),
+             maintenance_sizes,
+             maintenance_total: scan_remaining,
+             maintenance_phase: 0,
+@@ -667,10 +667,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+     }
+ 
+     pub fn cancel(&mut self, key: questions::Key<'id>) -> Result<(), Error> {
+-        let pending_invocation = self
+-            .invocation_pipelines
+-            .iter()
+-            .any(|slot| slot.pending_for(key));
++        let pending_invocation = self.invocation_pipelines.pending_for(key);
+         let index = ExchangeSlot::index(&self.exchanges, &self.ledgers.questions, key)
+             .ok_or(Error::UnknownQuestion)?;
+         let slot = &mut self.exchanges[index];
+@@ -690,12 +687,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+         &mut self,
+         key: questions::Key<'id>,
+     ) -> Result<Response<'pool, 'id, I, CAPS>, Error> {
+-        if self.outgoing.pending_for(key)
+-            || self
+-                .invocation_pipelines
+-                .iter()
+-                .any(|slot| slot.pending_for(key))
+-        {
++        if self.outgoing.pending_for(key) || self.invocation_pipelines.pending_for(key) {
+             return Err(Error::PendingResponse);
+         }
+         let index = ExchangeSlot::index(&self.exchanges, &self.ledgers.questions, key)
+@@ -747,19 +739,14 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+     /// Check that small set before walking every outstanding exchange. When
+     /// observers exist, preserve the exact response/observer ownership test.
+     fn has_ordered_propagation(&self) -> bool {
+-        if self.outgoing.is_empty()
+-            && !self
+-                .invocation_pipelines
+-                .iter()
+-                .any(InvocationPipelineSlot::is_occupied)
+-        {
++        if self.outgoing.is_empty() && self.invocation_pipelines.is_empty() {
+             return false;
+         }
+         self.exchanges.iter().any(|slot| {
+             matches!(&slot.exchange, Some(Exchange::Returned(response))
+                 if (response.requires_ordered_propagation() || slot.handoff.is_some())
+                     && (self.outgoing.pending_for(response.key())
+-                        || self.invocation_pipelines.iter().any(|slot| slot.pending_for(response.key()))))
++                        || self.invocation_pipelines.pending_for(response.key())))
+         })
+     }
+ 
+@@ -1891,7 +1878,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+         let slot = self.exchanges.iter_mut().find(|slot| {
+             let live = slot.canceled && slot.exchange.is_some();
+             canceled |= live;
+-            live && matches!(&slot.exchange, Some(Exchange::Returned(response)) if !self.outgoing.pending_for(response.key()) && !self.invocation_pipelines.iter().any(|slot| slot.pending_for(response.key())))
++            live && matches!(&slot.exchange, Some(Exchange::Returned(response)) if !self.outgoing.pending_for(response.key()) && !self.invocation_pipelines.pending_for(response.key()))
+         });
+         let Some(slot) = slot else {
+             self.canceled_exchanges = canceled;
+diff --git a/crates/capntproto-rpc-wire/src/owned/connection/awaiting.rs b/crates/capntproto-rpc-wire/src/owned/connection/awaiting.rs
+index d24d484..7c075f4 100644
+--- a/crates/capntproto-rpc-wire/src/owned/connection/awaiting.rs
++++ b/crates/capntproto-rpc-wire/src/owned/connection/awaiting.rs
+@@ -178,12 +178,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+         messages: &mut messages::Messages<'pool, '_, '_>,
+     ) -> Result<Option<alloc::boxed::Box<super::super::question::PlainResults>>, Error> {
+         self.check_live()?;
+-        if self.outgoing.pending_for(key)
+-            || self
+-                .invocation_pipelines
+-                .iter()
+-                .any(|slot| slot.pending_for(key))
+-        {
++        if self.outgoing.pending_for(key) || self.invocation_pipelines.pending_for(key) {
+             return Err(Error::PendingResponse);
+         }
+         let index = ExchangeSlot::index(&self.exchanges, &self.ledgers.questions, key)
+@@ -213,12 +208,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+         messages: &mut messages::Messages<'pool, '_, '_>,
+     ) -> Result<CallResult<'pool, 'id, I, CAPS>, Error> {
+         self.check_live()?;
+-        if self.outgoing.pending_for(key)
+-            || self
+-                .invocation_pipelines
+-                .iter()
+-                .any(|slot| slot.pending_for(key))
+-        {
++        if self.outgoing.pending_for(key) || self.invocation_pipelines.pending_for(key) {
+             return Err(Error::PendingResponse);
+         }
+         let index = ExchangeSlot::index(&self.exchanges, &self.ledgers.questions, key)
+diff --git a/crates/capntproto-rpc-wire/src/owned/connection/growing/tests.rs b/crates/capntproto-rpc-wire/src/owned/connection/growing/tests.rs
+index fac1b84..0c1e01c 100644
+--- a/crates/capntproto-rpc-wire/src/owned/connection/growing/tests.rs
++++ b/crates/capntproto-rpc-wire/src/owned/connection/growing/tests.rs
+@@ -182,12 +182,12 @@ fn retained_vacant_pipeline_capacity_does_not_require_maintenance() {
+             .tails
+             .vacant_mut(|_, _| true, || TailSlot::EMPTY)
+             .unwrap();
+-        driver
+-            .invocation_pipelines
+-            .vacant_mut(|_, _| true, || InvocationPipelineSlot::EMPTY)
+-            .unwrap();
++        // Large retained capacity is still idle when it has no observers.
++        driver.invocation_pipelines = invocation_pipeline::Bindings::new(
++            SlotStorage::growing(32, 32, || InvocationPipelineSlot::EMPTY).unwrap(),
++        );
+         assert_eq!(driver.tails.len(), 1);
+-        assert_eq!(driver.invocation_pipelines.len(), 1);
++        assert_eq!(driver.invocation_pipelines.len(), 32);
+         assert!(driver.maintenance_is_idle());
+         let mut slots = [None];
+         let mut queue = messages::Queue::new(&mut slots).unwrap();
+@@ -207,6 +207,78 @@ fn retained_vacant_pipeline_capacity_does_not_require_maintenance() {
+     });
+ }
+ 
++#[test]
++fn abandoned_invocation_observers_sleep_after_growth_and_reactivate_on_reuse() {
++    with_driver(|mut driver, messages| {
++        let target = driver
++            .runtime
++            .endpoint(binding::Route::local(73), clients::Location::Local)
++            .unwrap();
++        let mut queue = messages::Queue::new_growing(0, 1).unwrap();
++        for count in [16, 1] {
++            let task = driver
++                .enqueue_dynamic(
++                    &target,
++                    DynamicCall::default(),
++                    &[],
++                    messages,
++                    128,
++                    Default::default(),
++                    |_| Ok(()),
++                )
++                .unwrap();
++            let mut observers = alloc::vec::Vec::new();
++            for _ in 0..count {
++                observers.push(
++                    driver
++                        .invocation_pipeline(task, pipeline::Path::new(&[]), messages)
++                        .unwrap(),
++                );
++            }
++            assert!(driver.cancel_invocation(task, messages));
++            let last = observers.pop().unwrap();
++            for (index, observer) in observers.into_iter().enumerate() {
++                driver.runtime.release(observer);
++                assert_eq!(
++                    driver.poll_invocation_pipeline(index).unwrap(),
++                    Propagation::Abandoned
++                );
++            }
++            while driver.runtime.has_retired() {
++                driver.drain_endpoint();
++            }
++            assert!(
++                !driver.maintenance_is_idle(),
++                "the last observer still needs cancellation"
++            );
++            driver.runtime.release(last);
++            assert_eq!(
++                driver.poll_invocation_pipeline(count - 1).unwrap(),
++                Propagation::Abandoned
++            );
++            while driver.runtime.has_retired() {
++                driver.drain_endpoint();
++            }
++            assert_eq!(driver.invocation_pipelines.len(), 16);
++            assert!(driver.maintenance_is_idle());
++            assert!(matches!(
++                driver.poll_maintenance(
++                    messages,
++                    &mut queue,
++                    128,
++                    Default::default(),
++                    &mut [],
++                    NonZeroUsize::new(1).unwrap()
++                ),
++                Ok(Progress::Idle)
++            ));
++            assert!(queue.is_empty());
++        }
++        driver.runtime.release(target);
++        close(driver, messages, &mut queue);
++    });
++}
++
+ #[test]
+ fn immediate_promised_targets_preserve_retry_paths_and_segmented_parameters() {
+     for encoded in [false, true] {
+diff --git a/crates/capntproto-rpc-wire/src/owned/connection/invocation.rs b/crates/capntproto-rpc-wire/src/owned/connection/invocation.rs
+index 5128e8a..f4dd88a 100644
+--- a/crates/capntproto-rpc-wire/src/owned/connection/invocation.rs
++++ b/crates/capntproto-rpc-wire/src/owned/connection/invocation.rs
+@@ -453,9 +453,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+             unreachable!()
+         };
+         invocation.release(messages, &mut self.runtime);
+-        for slot in &mut *self.invocation_pipelines {
+-            slot.canceled(task);
+-        }
++        self.invocation_pipelines.canceled(task);
+         true
+     }
+     /// Send the oldest ready task if it is an outgoing call to this peer. Local
+@@ -628,9 +626,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+             slot.canceled = false;
+             slot.tail_taken = false;
+             slot.authorized = true;
+-            for slot in &mut *self.invocation_pipelines {
+-                slot.sent(task, key);
+-            }
++            self.invocation_pipelines.sent(task, key);
+             let Task::Invoke(invocation) =
+                 self.runtime.cancel(task).unwrap_or_else(|_| unreachable!())
+             else {
+@@ -825,9 +821,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+         slot.canceled = false;
+         slot.tail_taken = false;
+         slot.authorized = true;
+-        for slot in &mut *self.invocation_pipelines {
+-            slot.sent(task, key);
+-        }
++        self.invocation_pipelines.sent(task, key);
+         // No callback or graph resolution occurs between selecting this task
+         // and FIFO acceptance. Release its route only after output owns the Call.
+         let Task::Invoke(invocation) = self.runtime.cancel(task).unwrap_or_else(|_| unreachable!())
+diff --git a/crates/capntproto-rpc-wire/src/owned/connection/invocation_pipeline.rs b/crates/capntproto-rpc-wire/src/owned/connection/invocation_pipeline.rs
+index cfecd34..b2dd9a9 100644
+--- a/crates/capntproto-rpc-wire/src/owned/connection/invocation_pipeline.rs
++++ b/crates/capntproto-rpc-wire/src/owned/connection/invocation_pipeline.rs
+@@ -47,6 +47,50 @@ impl<'id, const PATH: usize> InvocationPipelineSlot<'id, PATH> {
+         self.entry = None;
+     }
+ }
++// Keep occupancy with its storage: admission, removal and terminal clearing are
++// the only writers. Callers can inspect slots but cannot bypass this bookkeeping.
++pub(super) struct Bindings<'s, 'id, const PATH: usize> {
++    slots: SlotStorage<'s, InvocationPipelineSlot<'id, PATH>>,
++    live: usize,
++}
++impl<'s, 'id, const PATH: usize> Bindings<'s, 'id, PATH> {
++    pub(super) fn new(slots: SlotStorage<'s, InvocationPipelineSlot<'id, PATH>>) -> Self {
++        debug_assert!(slots.iter().all(|slot| !slot.is_occupied()));
++        Self { slots, live: 0 }
++    }
++    pub(super) fn is_empty(&self) -> bool {
++        self.live == 0
++    }
++    pub(super) fn pending_for(&self, question: questions::Key<'id>) -> bool {
++        self.live != 0 && self.slots.iter().any(|slot| slot.pending_for(question))
++    }
++    pub(super) fn sent(&mut self, task: dispatch::TaskKey<'id>, question: questions::Key<'id>) {
++        if self.live != 0 {
++            for slot in &mut *self.slots {
++                slot.sent(task, question);
++            }
++        }
++    }
++    pub(super) fn canceled(&mut self, task: dispatch::TaskKey<'id>) {
++        if self.live != 0 {
++            for slot in &mut *self.slots {
++                slot.canceled(task);
++            }
++        }
++    }
++    pub(super) fn clear_terminal(&mut self) {
++        for slot in &mut *self.slots {
++            slot.clear();
++        }
++        self.live = 0;
++    }
++}
++impl<'id, const PATH: usize> core::ops::Deref for Bindings<'_, 'id, PATH> {
++    type Target = [InvocationPipelineSlot<'id, PATH>];
++    fn deref(&self) -> &Self::Target {
++        &self.slots
++    }
++}
+ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
+     Driver<'pool, 'id, 's, I, A, P, S, CAPS, PATH>
+ {
+@@ -93,6 +137,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+         }
+         let slot = self
+             .invocation_pipelines
++            .slots
+             .vacant_mut(
+                 |_, slot| slot.entry.is_none(),
+                 || InvocationPipelineSlot::EMPTY,
+@@ -103,6 +148,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+             .copy(path.fields())
+             .ok_or(Error::Input(super::super::Error::Capacity))?;
+         let client = self.runtime.promise(&mut None).map_err(Error::Graph)?;
++        self.invocation_pipelines.live += 1;
+         slot.entry = Some(Entry {
+             task,
+             client: client.key(),
+@@ -298,13 +344,10 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+         }
+     }
+     fn finish_invocation_observer(&mut self, index: usize) {
+-        let entry = self.invocation_pipelines[index].entry.take().unwrap();
++        let entry = self.invocation_pipelines.slots[index].entry.take().unwrap();
++        self.invocation_pipelines.live -= 1;
+         if let Stage::Sent(question) = entry.stage {
+-            if !self
+-                .invocation_pipelines
+-                .iter()
+-                .any(|slot| slot.pending_for(question))
+-            {
++            if !self.invocation_pipelines.pending_for(question) {
+                 if let Some(Exchange::Pending(pending)) =
+                     ExchangeSlot::index(&self.exchanges, &self.ledgers.questions, question)
+                         .and_then(|index| self.exchanges.get_mut(index))
+diff --git a/crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs b/crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs
+index 0d2f536..1944fb7 100644
+--- a/crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs
++++ b/crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs
+@@ -36,11 +36,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+             && self.echo.is_none()
+             && self.tails.len() <= 8
+             && self.tails.iter().all(|slot| !slot.is_occupied())
+-            && self.invocation_pipelines.len() <= 8
+-            && self
+-                .invocation_pipelines
+-                .iter()
+-                .all(|slot| !slot.is_occupied())
++            && self.invocation_pipelines.is_empty()
+     }
+     /// Account for skipped physical slots without charging an owner poll.
+     /// Empty phases form one bounded search for the next operation, just as
+@@ -103,14 +99,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+                 15,
+                 self.tails.len() <= 8 && self.tails.iter().all(|slot| !slot.is_occupied())
+             );
+-            phase!(
+-                16,
+-                self.invocation_pipelines.len() <= 8
+-                    && self
+-                        .invocation_pipelines
+-                        .iter()
+-                        .all(|slot| !slot.is_occupied())
+-            );
++            phase!(16, self.invocation_pipelines.is_empty());
+             phase!(17, self.runtime.queued() == 0);
+         }
+     }
+diff --git a/crates/capntproto-rpc-wire/src/owned/connection/plain_return.rs b/crates/capntproto-rpc-wire/src/owned/connection/plain_return.rs
+index 455b737..795312a 100644
+--- a/crates/capntproto-rpc-wire/src/owned/connection/plain_return.rs
++++ b/crates/capntproto-rpc-wire/src/owned/connection/plain_return.rs
+@@ -143,12 +143,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+                 unreachable!("selected pending question")
+             };
+             let key = question.key();
+-            if self.outgoing.pending_for(key)
+-                || self
+-                    .invocation_pipelines
+-                    .iter()
+-                    .any(|slot| slot.pending_for(key))
+-            {
++            if self.outgoing.pending_for(key) || self.invocation_pipelines.pending_for(key) {
+                 return Ok(None);
+             }
+             let Some(receiver) = select(key) else {
+diff --git a/crates/capntproto-rpc-wire/src/owned/connection/terminated.rs b/crates/capntproto-rpc-wire/src/owned/connection/terminated.rs
+index 5205b8e..0ec7122 100644
+--- a/crates/capntproto-rpc-wire/src/owned/connection/terminated.rs
++++ b/crates/capntproto-rpc-wire/src/owned/connection/terminated.rs
+@@ -194,9 +194,7 @@ impl<'p, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize, R>
+                     }
+                     driver.imports.clear_terminal();
+                     driver.outgoing.clear_terminal();
+-                    for slot in &mut *driver.invocation_pipelines {
+-                        slot.clear();
+-                    }
++                    driver.invocation_pipelines.clear_terminal();
+                     let Stage::Tasks(driver) = core::mem::replace(&mut self.stage, Stage::Done)
+                     else {
+                         unreachable!()
+diff --git a/crates/capntproto-rpc/src/scoped/wire/coordinator/tests/worker.rs b/crates/capntproto-rpc/src/scoped/wire/coordinator/tests/worker.rs
+index 8a59ca3..e6feb65 100644
+--- a/crates/capntproto-rpc/src/scoped/wire/coordinator/tests/worker.rs
++++ b/crates/capntproto-rpc/src/scoped/wire/coordinator/tests/worker.rs
+@@ -331,11 +331,21 @@ fn pending_worker_wake_dispatches_early_pipeline_before_parent_completes() {
+ 
+ #[test]
+ fn single_service_wake_never_polls_parked_siblings() {
++    // Repetition measures native scheduling variation. Under the interpreter,
++    // keep both output modes, dispatch paths, budget extremes and table sizes
++    // on either side of the small-table threshold without repeating the probe.
++    let repeats = if cfg!(miri) { 1 } else { 5 };
++    let budgets: &[usize] = if cfg!(miri) { &[1, 64] } else { &[1, 8, 64] };
++    let counts: &[usize] = if cfg!(miri) {
++        &[1, 2, 16]
++    } else {
++        &[1, 2, 8, 16]
++    };
+     for generic in [false, true] {
+-        for repeat in 0..5 {
++        for repeat in 0..repeats {
+             for owned in [false, true] {
+-                for budget in [1usize, 8, 64] {
+-                    for count in [1usize, 2, 8, 16] {
++                for &budget in budgets {
++                    for &count in counts {
+                         for selected in [0, count / 2, count - 1] {
+                             with_peer(|mut driver, messages| {
+                                 driver.use_owned_output_queues(owned);
+@@ -492,11 +502,10 @@ fn single_service_wake_never_polls_parked_siblings() {
+                                     window.advance(length).unwrap();
+                                 }
+                                 let mut input = bytes.as_slice();
+-                                let message = capnp::serialize::read_message_from_flat_slice(
+-                                    &mut input,
+-                                    Default::default(),
+-                                )
+-                                .unwrap();
++                                // Transport bytes have byte alignment, including under Miri.
++                                let message =
++                                    capnp::serialize::read_message(&mut input, Default::default())
++                                        .unwrap();
+                                 assert!(input.is_empty());
+                                 let rpc_capnp::message::Return(reply) = message
+                                     .get_root::<rpc_capnp::message::Reader>()

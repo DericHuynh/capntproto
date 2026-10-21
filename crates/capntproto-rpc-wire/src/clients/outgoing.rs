@@ -185,11 +185,12 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
         })
     }
     pub fn pending_for(&self, question: questions::Key<'id>) -> bool {
-        self.slots.iter().any(|slot| {
-            slot.entry
-                .as_ref()
-                .is_some_and(|entry| entry.question == question)
-        })
+        self.live != 0
+            && self.slots.iter().any(|slot| {
+                slot.entry
+                    .as_ref()
+                    .is_some_and(|entry| entry.question == question)
+            })
     }
 
     /// Register an observer whose invocation was still queued when Return

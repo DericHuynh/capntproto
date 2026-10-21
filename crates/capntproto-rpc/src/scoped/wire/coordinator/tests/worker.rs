@@ -331,11 +331,21 @@ fn pending_worker_wake_dispatches_early_pipeline_before_parent_completes() {
 
 #[test]
 fn single_service_wake_never_polls_parked_siblings() {
+    // Repetition measures native scheduling variation. Under the interpreter,
+    // keep both output modes, dispatch paths, budget extremes and table sizes
+    // on either side of the small-table threshold without repeating the probe.
+    let repeats = if cfg!(miri) { 1 } else { 5 };
+    let budgets: &[usize] = if cfg!(miri) { &[1, 64] } else { &[1, 8, 64] };
+    let counts: &[usize] = if cfg!(miri) {
+        &[1, 2, 16]
+    } else {
+        &[1, 2, 8, 16]
+    };
     for generic in [false, true] {
-        for repeat in 0..5 {
+        for repeat in 0..repeats {
             for owned in [false, true] {
-                for budget in [1usize, 8, 64] {
-                    for count in [1usize, 2, 8, 16] {
+                for &budget in budgets {
+                    for &count in counts {
                         for selected in [0, count / 2, count - 1] {
                             with_peer(|mut driver, messages| {
                                 driver.use_owned_output_queues(owned);
@@ -492,11 +502,10 @@ fn single_service_wake_never_polls_parked_siblings() {
                                     window.advance(length).unwrap();
                                 }
                                 let mut input = bytes.as_slice();
-                                let message = capnp::serialize::read_message_from_flat_slice(
-                                    &mut input,
-                                    Default::default(),
-                                )
-                                .unwrap();
+                                // Transport bytes have byte alignment, including under Miri.
+                                let message =
+                                    capnp::serialize::read_message(&mut input, Default::default())
+                                        .unwrap();
                                 assert!(input.is_empty());
                                 let rpc_capnp::message::Return(reply) = message
                                     .get_root::<rpc_capnp::message::Reader>()
