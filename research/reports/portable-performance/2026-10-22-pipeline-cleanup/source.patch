@@ -1,0 +1,84 @@
+diff --git a/crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs b/crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs
+index 1944fb7..8d03645 100644
+--- a/crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs
++++ b/crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs
+@@ -38,48 +38,40 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+             && self.tails.iter().all(|slot| !slot.is_occupied())
+             && self.invocation_pipelines.is_empty()
+     }
+-    /// Account for skipped physical slots without charging an owner poll.
+-    /// Empty phases form one bounded search for the next operation, just as
+-    /// maintenance_is_idle proves the whole driver idle in one budget step.
+-    #[inline(never)]
+-    fn advance_idle_phase(&mut self, phase: usize) -> bool {
+-        let visited =
+-            (self.maintenance_sizes[phase] - self.maintenance_index).min(self.scan_remaining);
+-        self.maintenance_index += visited;
+-        if self.maintenance_index == self.maintenance_sizes[phase] {
+-            self.maintenance_index = 0;
+-            self.maintenance_phase = if phase + 1 == self.maintenance_sizes.len() {
+-                0
+-            } else {
+-                phase + 1
+-            };
+-        }
+-        self.scan_remaining -= visited;
+-        if self.scan_remaining == 0 {
+-            self.scan_remaining = self.maintenance_total;
+-            return true;
+-        }
+-        false
+-    }
+     /// Walk empty phases in order, without repeatedly dispatching on the
+     /// cursor. At most one complete cycle of the fixed phase table is visited.
+     /// Each proof is bounded independently of storage capacity. Stop before an
+     /// active phase: its operation consumes a budget step, and any following
+     /// proofs must observe the state after that operation's callbacks.
+     fn walk_idle_phases(&mut self) -> IdleWalk {
++        // These predicates call no application code. Keep the scan position
++        // local while skipping empty phases, then commit it once before the
++        // next owner poll. No empty phase needs a separate call or state write.
++        let mut phase = self.maintenance_phase;
++        let mut index = self.maintenance_index;
++        let mut remaining = self.scan_remaining;
+         macro_rules! phase {
+             ($phase:literal, $idle:expr) => {
+-                if self.maintenance_phase == $phase {
++                if phase == $phase {
+                     if !$idle {
+                         return IdleWalk::Active;
+                     }
+-                    if self.advance_idle_phase($phase) {
++                    let size = self.maintenance_sizes[$phase];
++                    let visited = (size - index).min(remaining);
++                    index += visited;
++                    if index == size {
++                        index = 0;
++                        phase = ($phase + 1) % self.maintenance_sizes.len();
++                    }
++                    remaining -= visited;
++                    if remaining == 0 {
++                        remaining = self.maintenance_total;
+                         return IdleWalk::Complete;
+                     }
+                 }
+             };
+         }
+-        loop {
++        let outcome = (|| loop {
+             phase!(0, self.call.is_none());
+             phase!(1, self.resolution.is_none());
+             phase!(2, self.pipelines.is_empty());
+@@ -101,7 +93,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
+             );
+             phase!(16, self.invocation_pipelines.is_empty());
+             phase!(17, self.runtime.queued() == 0);
+-        }
++        })();
++        self.maintenance_phase = phase;
++        self.maintenance_index = index;
++        self.scan_remaining = remaining;
++        outcome
+     }
+     /// Outgoing observers can only progress against an authorized Return.
+     /// Pending questions alone do not require a scan of every observer slot.
